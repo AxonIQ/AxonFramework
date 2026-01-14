@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.axonframework.extensions.spring</groupId>
+        <artifactId>axon-spring-extension</artifactId>
+        <version>5.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>axon-spring-boot-starter</artifactId>
+    <version>5.1.0-SNAPSHOT</version>
+
+    <name>Axon Extension - Spring - SpringBoot Starter</name>
+    <description>
+        Bundling axon-spring and axon-spring-boot-autoconfigure as a starter.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- explicitly define transitive dependencies to increase version priority -->
+        <!-- see https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Transitive_Dependencies -->
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-eventsourcing</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-messaging</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-modelling</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

@@ -34,6 +34,8 @@
 
     <modules>
         <module>kotlin</module>
+        <module>spring</module>
+        <module>micronaut</module>
         <module>metrics</module>
         <module>reactor</module>
         <module>spring</module>

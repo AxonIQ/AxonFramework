@@ -92,6 +92,8 @@
         <db-scheduler.version>16.7.1</db-scheduler.version>
         <jobrunr.version>8.5.2</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
+        <!-- Micronaut -->
+        <micronaut.version>4.10.7</micronaut.version>
         <!-- Spring -->
         <spring.version>6.2.18</spring.version>
         <spring.boot.version>3.5.14</spring.boot.version>
@@ -314,6 +316,14 @@
                 <groupId>tools.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
                 <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Micronaut -->
+            <dependency>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>${micronaut.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
