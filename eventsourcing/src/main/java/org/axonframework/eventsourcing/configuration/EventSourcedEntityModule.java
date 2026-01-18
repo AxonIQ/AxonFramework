@@ -171,7 +171,8 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
 
         /**
          * Registers the given {@link ComponentBuilder} of a {@link CriteriaResolver} as the criteria resolver for the
-         * event-sourced entity being built.
+         * event-sourced entity being built. This resolver will be used for both sourcing (loading events) and
+         * appending (consistency checking).
          * <p>
          * A {@code CriteriaResolver} receives the entity's identifier of type {@code I} and expects the
          * {@link EventCriteria} as a result. The resulting {@code EventCriteria} is used to
@@ -179,10 +180,52 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * entity from the {@link org.axonframework.eventsourcing.eventstore.EventStore}.
          *
          * @param criteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for the
-         *                         event-sourced entity.
+         *                         event-sourced entity, used for both sourcing and appending.
          * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
          */
         OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver);
+
+        /**
+         * Registers separate {@link ComponentBuilder}s for sourcing and appending {@link CriteriaResolver}s.
+         * This enables Dynamic Consistency Boundaries (DCB) where the criteria used for sourcing events
+         * (loading state) can differ from the criteria used for consistency checking (appending events).
+         * <p>
+         * <b>Example - Accounting Use Case:</b>
+         * <ul>
+         *   <li><b>sourceCriteriaResolver</b>: Resolves to criteria that loads both CreditsIncreased AND CreditsDecreased
+         *       events to calculate the balance.</li>
+         *   <li><b>appendCriteriaResolver</b>: Resolves to criteria that only checks for conflicts on CreditsDecreased
+         *       events, allowing concurrent credit increases.</li>
+         * </ul>
+         * <pre>{@code
+         * EventSourcedEntityModule
+         *     .declarative(String.class, Account.class)
+         *     .messagingModel(...)
+         *     .entityFactory(...)
+         *     .criteriaResolvers(
+         *         // Source resolver - load all credit events
+         *         c -> (id, ctx) -> EventCriteria
+         *             .havingTags("accountId", id)
+         *             .andBeingOneOfTypes("CreditsIncreased", "CreditsDecreased"),
+         *         // Append resolver - only check decreases
+         *         c -> (id, ctx) -> EventCriteria
+         *             .havingTags("accountId", id)
+         *             .andBeingOneOfTypes("CreditsDecreased")
+         *     )
+         *     .entityIdResolver(...)
+         *     .build();
+         * }</pre>
+         *
+         * @param sourceCriteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for
+         *                               sourcing (loading) the event-sourced entity.
+         * @param appendCriteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for
+         *                               consistency checking when appending events.
+         * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
+         */
+        OptionalPhase<ID, E> criteriaResolvers(
+                ComponentBuilder<CriteriaResolver<ID>> sourceCriteriaResolver,
+                ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver
+        );
     }
 
     /**

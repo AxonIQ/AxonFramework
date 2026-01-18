@@ -144,7 +144,8 @@ class AnnotatedEventSourcedEntityModuleTest {
 
         sourcingHandlerCaptor.getValue().describeTo(componentDescriptor);
 
-        verify(componentDescriptor).describeProperty(eq("criteriaResolver"), isA(CustomCriteriaResolver.class));
+        verify(componentDescriptor).describeProperty(eq("sourceCriteriaResolver"), isA(CustomCriteriaResolver.class));
+        verify(componentDescriptor).describeProperty(eq("appendCriteriaResolver"), isA(CustomCriteriaResolver.class));
     }
 
     @Test

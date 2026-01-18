@@ -23,6 +23,7 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.LifecycleRegistry;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.GeneralConverter;
@@ -30,6 +31,9 @@ import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
+import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
 import org.axonframework.eventsourcing.handler.SimpleSourcingHandler;
 import org.axonframework.eventsourcing.handler.SnapshottingSourcingHandler;
 import org.axonframework.eventsourcing.handler.SourcingHandler;
@@ -40,12 +44,17 @@ import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.configuration.EntityMetamodelConfigurationBuilder;
 import org.axonframework.modelling.entity.EntityCommandHandlingComponent;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.repository.Repository;
+import org.jspecify.annotations.NonNull;
+
+import java.util.concurrent.CompletableFuture;
 
 import static java.util.Objects.requireNonNull;
 
@@ -69,7 +78,9 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
     private final Class<E> entityType;
 
     private ComponentBuilder<EventSourcedEntityFactory<ID, E>> entityFactory;
-    private ComponentBuilder<CriteriaResolver<ID>> criteriaResolver;
+    private ComponentBuilder<CriteriaResolver<ID>> sourceCriteriaResolver;
+    private ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver;
+    private boolean isDcb = false;
     private ComponentBuilder<EntityMetamodel<E>> entityModel;
     private ComponentBuilder<EntityIdResolver<ID>> entityIdResolver;
     private ComponentBuilder<SnapshotPolicy> snapshotPolicy;
@@ -99,7 +110,19 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
     @Override
     public OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver) {
-        this.criteriaResolver = requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
+        requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
+        this.sourceCriteriaResolver = criteriaResolver;
+        this.appendCriteriaResolver = criteriaResolver;
+        this.isDcb = false;
+        return this;
+    }
+
+    @Override
+    public OptionalPhase<ID, E> criteriaResolvers(ComponentBuilder<CriteriaResolver<ID>> sourceCriteriaResolver,
+                                                   ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver) {
+        this.sourceCriteriaResolver = requireNonNull(sourceCriteriaResolver, "The source criteria resolver cannot be null.");
+        this.appendCriteriaResolver = requireNonNull(appendCriteriaResolver, "The append criteria resolver cannot be null.");
+        this.isDcb = true;
         return this;
     }
 
@@ -134,14 +157,17 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
     private void validate() {
         requireNonNull(entityFactory, "The EntityFactory must be provided to module [%s].".formatted(name()));
-        requireNonNull(criteriaResolver, "The CriteriaResolver must be provided to module [%s].".formatted(name()));
+        requireNonNull(sourceCriteriaResolver, "The CriteriaResolver must be provided to module [%s].".formatted(name()));
         requireNonNull(entityModel, "The EntityModel must be provided to module [%s].".formatted(name()));
     }
 
     private void registerComponents() {
         componentRegistry(cr -> {
             cr.registerComponent(entityFactory());
-            cr.registerComponent(criteriaResolver());
+            cr.registerComponent(sourceCriteriaResolver());
+            if (isDcb) {
+                cr.registerComponent(appendCriteriaResolver());
+            }
             cr.registerComponent(entityModel());
             cr.registerComponent(repository());
 
@@ -181,46 +207,61 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
         return ComponentDefinition
                 .ofTypeAndName(type, entityName())
                 .withBuilder(config -> {
-                    @SuppressWarnings("unchecked")
-                    CriteriaResolver<ID> criteriaResolver = config.getComponent(CriteriaResolver.class, entityName());
                     EventStore eventStore = config.getComponent(EventStore.class);
-                    SnapshotPolicy snapshotPolicy = config.getOptionalComponent(SnapshotPolicy.class, entityName()).orElse(null);
+                    SnapshotPolicy resolvedSnapshotPolicy =
+                            config.getOptionalComponent(SnapshotPolicy.class, entityName()).orElse(null);
                     SourcingHandler<ID, E> sourcingHandler;
 
-                    if (snapshotPolicy == null) {
-                        sourcingHandler = new SimpleSourcingHandler<>(eventStore, criteriaResolver);
-                    }
-                    else {
-                        Converter converter = config.getOptionalComponent(GeneralConverter.class)
-                            .orElseThrow(() -> new IllegalStateException("A Converter must be configured to use snapshotting."));
-                        SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class)
-                            .orElseThrow(() -> new IllegalStateException("A SnapshotStore must be configured to use snapshotting."));
-                        MessageType messageType = config.getOptionalComponent(MessageTypeResolver.class)
-                            .flatMap(mtr -> mtr.resolve(entityType))
-                            .orElseThrow(() -> new IllegalStateException("A MessageTypeResolver capable of resolving " + entityType + " must be configured to use snapshotting."));
+                    if (isDcb) {
+                        @SuppressWarnings("unchecked")
+                        CriteriaResolver<ID> sourceCR =
+                                config.getComponent(CriteriaResolver.class, sourceCriteriaResolverName());
+                        @SuppressWarnings("unchecked")
+                        CriteriaResolver<ID> appendCR =
+                                config.getComponent(CriteriaResolver.class, appendCriteriaResolverName());
+                        sourcingHandler = new DcbSourcingHandler<>(eventStore, sourceCR, appendCR);
+                    } else {
+                        @SuppressWarnings("unchecked")
+                        CriteriaResolver<ID> criteriaResolver =
+                                config.getComponent(CriteriaResolver.class, entityName());
 
-                        sourcingHandler = new SnapshottingSourcingHandler<>(
-                            eventStore,
-                            criteriaResolver,
-                            messageType,
-                            snapshotPolicy,
-                            new StoreBackedSnapshotter<>(
-                                snapshotStore,
-                                messageType,
-                                converter,
-                                entityType
-                            )
-                        );
+                        if (resolvedSnapshotPolicy == null) {
+                            sourcingHandler = new SimpleSourcingHandler<>(eventStore, criteriaResolver);
+                        } else {
+                            Converter converter = config.getOptionalComponent(GeneralConverter.class)
+                                    .orElseThrow(() -> new IllegalStateException(
+                                            "A Converter must be configured to use snapshotting."));
+                            SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class)
+                                    .orElseThrow(() -> new IllegalStateException(
+                                            "A SnapshotStore must be configured to use snapshotting."));
+                            MessageType messageType = config.getOptionalComponent(MessageTypeResolver.class)
+                                    .flatMap(mtr -> mtr.resolve(entityType))
+                                    .orElseThrow(() -> new IllegalStateException(
+                                            "A MessageTypeResolver capable of resolving " + entityType + " must be configured to use snapshotting."));
+
+                            sourcingHandler = new SnapshottingSourcingHandler<>(
+                                    eventStore,
+                                    criteriaResolver,
+                                    messageType,
+                                    resolvedSnapshotPolicy,
+                                    new StoreBackedSnapshotter<>(
+                                            snapshotStore,
+                                            messageType,
+                                            converter,
+                                            entityType
+                                    )
+                            );
+                        }
                     }
 
                     @SuppressWarnings("unchecked")
                     var repository = new EventSourcingRepository<ID, E>(
-                        idType,
-                        entityType,
-                        eventStore,
-                        config.getComponent(EventSourcedEntityFactory.class, entityName()),
-                        config.getComponent(EntityMetamodel.class, entityName()),
-                        sourcingHandler
+                            idType,
+                            entityType,
+                            eventStore,
+                            config.getComponent(EventSourcedEntityFactory.class, entityName()),
+                            config.getComponent(EntityMetamodel.class, entityName()),
+                            sourcingHandler
                     );
 
                     return repository;
@@ -259,16 +300,69 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                 .withBuilder(entityFactory);
     }
 
-    private ComponentDefinition<CriteriaResolver<ID>> criteriaResolver() {
+    private String sourceCriteriaResolverName() {
+        return entityName() + "#source";
+    }
+
+    private String appendCriteriaResolverName() {
+        return entityName() + "#append";
+    }
+
+    private ComponentDefinition<CriteriaResolver<ID>> sourceCriteriaResolver() {
+        TypeReference<CriteriaResolver<ID>> type = new TypeReference<>() {
+        };
+        String name = isDcb ? sourceCriteriaResolverName() : entityName();
+        return ComponentDefinition
+                .ofTypeAndName(type, name)
+                .withBuilder(sourceCriteriaResolver);
+    }
+
+    private ComponentDefinition<CriteriaResolver<ID>> appendCriteriaResolver() {
         TypeReference<CriteriaResolver<ID>> type = new TypeReference<>() {
         };
         return ComponentDefinition
-                .ofTypeAndName(type, entityName())
-                .withBuilder(criteriaResolver);
+                .ofTypeAndName(type, appendCriteriaResolverName())
+                .withBuilder(appendCriteriaResolver);
     }
 
     @Override
     public EventSourcedEntityModule<ID, E> build() {
         return this;
+    }
+
+    /**
+     * A {@link SourcingHandler} that supports Dynamic Consistency Boundaries (DCB) by using separate
+     * {@link CriteriaResolver}s for sourcing events and for consistency checking when appending events.
+     */
+    private static class DcbSourcingHandler<I, E> implements SourcingHandler<I, E> {
+
+        private final EventStore eventStore;
+        private final CriteriaResolver<I> sourceCriteriaResolver;
+        private final CriteriaResolver<I> appendCriteriaResolver;
+
+        DcbSourcingHandler(EventStore eventStore,
+                           CriteriaResolver<I> sourceCriteriaResolver,
+                           CriteriaResolver<I> appendCriteriaResolver) {
+            this.eventStore = eventStore;
+            this.sourceCriteriaResolver = sourceCriteriaResolver;
+            this.appendCriteriaResolver = appendCriteriaResolver;
+        }
+
+        @Override
+        public CompletableFuture<E> source(@NonNull I identifier,
+                                           @NonNull InitializingEntityEvolver<I, E> evolver,
+                                           @NonNull ProcessingContext pc) {
+            EventCriteria sourceCriteria = sourceCriteriaResolver.resolve(identifier, pc);
+            EventCriteria appendCriteria = appendCriteriaResolver.resolve(identifier, pc);
+            EventStoreTransaction transaction = eventStore.transaction(pc).overrideAppendCondition(appendCriteria);
+            return transaction.source(SourcingCondition.conditionFor(sourceCriteria))
+                              .reduce((E) null, (entity, entry) -> evolver.evolve(identifier, entity, entry.message(), pc));
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            descriptor.describeProperty("sourceCriteriaResolver", sourceCriteriaResolver);
+            descriptor.describeProperty("appendCriteriaResolver", appendCriteriaResolver);
+        }
     }
 }

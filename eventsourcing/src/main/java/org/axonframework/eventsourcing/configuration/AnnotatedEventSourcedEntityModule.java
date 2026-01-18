@@ -24,7 +24,7 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
-import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
+import org.axonframework.eventsourcing.annotation.AnnotationBasedCriteriaResolvers;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -82,7 +82,10 @@ class AnnotatedEventSourcedEntityModule<I, E>
                         .declarative(idType, entityType)
                         .messagingModel((c, b) -> this.buildMetaModel(c))
                         .entityFactory(entityFactory(annotationAttributes, concreteTypes))
-                        .criteriaResolver(criteriaResolver(annotationAttributes))
+                        .criteriaResolvers(
+                                sourceCriteriaResolver(),
+                                appendCriteriaResolver()
+                        )
                         .entityIdResolver(entityIdResolver(annotationAttributes))
                         .build()
         ));
@@ -109,12 +112,18 @@ class AnnotatedEventSourcedEntityModule<I, E>
         );
     }
 
-    @SuppressWarnings("unchecked")
-    private ComponentBuilder<CriteriaResolver<I>> criteriaResolver(Map<String, Object> attributes) {
-        var criteriaResolverType = (Class<CriteriaResolverDefinition>) attributes.get("criteriaResolverDefinition");
-        var criteriaResolverDefinition = ConstructorUtils.getConstructorFunctionWithZeroArguments(criteriaResolverType)
-                                                         .get();
-        return c -> criteriaResolverDefinition.createEventCriteriaResolver(entityType, idType, c);
+    private ComponentBuilder<CriteriaResolver<I>> sourceCriteriaResolver() {
+        return c -> {
+            var resolvers = new AnnotationBasedCriteriaResolvers<E, I>(entityType, idType, c);
+            return resolvers.sourceCriteriaResolver();
+        };
+    }
+
+    private ComponentBuilder<CriteriaResolver<I>> appendCriteriaResolver() {
+        return c -> {
+            var resolvers = new AnnotationBasedCriteriaResolvers<E, I>(entityType, idType, c);
+            return resolvers.appendCriteriaResolver();
+        };
     }
 
     @SuppressWarnings("unchecked")
