@@ -24,6 +24,7 @@ import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.integrationtests.testsuite.AbstractIntegrationTest;
 import org.axonframework.integrationtests.testsuite.student.events.StudentEnrolledEvent;
+import org.axonframework.integrationtests.testsuite.student.events.StudentUnenrolledEvent;
 import org.axonframework.integrationtests.testsuite.student.state.Course;
 import org.axonframework.integrationtests.testsuite.student.state.Student;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
@@ -62,8 +63,8 @@ public abstract class AbstractStudentIT extends AbstractIntegrationTest {
 
     protected UnitOfWorkFactory unitOfWorkFactory;
 
-    private EventSourcedEntityModule<String, Course> courseEntity;
-    private EventSourcedEntityModule<String, Student> studentEntity;
+    protected EventSourcedEntityModule<String, Course> courseEntity;
+    protected EventSourcedEntityModule<String, Student> studentEntity;
 
     @BeforeEach
     protected void prepareModule() {
@@ -124,6 +125,11 @@ public abstract class AbstractStudentIT extends AbstractIntegrationTest {
             if (event.type().name().equals(StudentEnrolledEvent.class.getName())) {
                 // Convert the payload to the expected type
                 StudentEnrolledEvent convert = event.payloadAs(StudentEnrolledEvent.class);
+                Objects.requireNonNull(convert, "The converted payload must not be null.");
+                course.handle(convert);
+            } else if (event.type().name().equals(StudentUnenrolledEvent.class.getName())) {
+                // Convert the payload to the expected type
+                StudentUnenrolledEvent convert = event.payloadAs(StudentUnenrolledEvent.class);
                 Objects.requireNonNull(convert, "The converted payload must not be null.");
                 course.handle(convert);
             }

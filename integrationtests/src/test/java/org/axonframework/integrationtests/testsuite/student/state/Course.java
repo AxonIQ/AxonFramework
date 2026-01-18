@@ -17,6 +17,7 @@
 package org.axonframework.integrationtests.testsuite.student.state;
 
 import org.axonframework.integrationtests.testsuite.student.events.StudentEnrolledEvent;
+import org.axonframework.integrationtests.testsuite.student.events.StudentUnenrolledEvent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,10 @@ public class Course {
 
     public void handle(StudentEnrolledEvent event) {
         studentsEnrolled.add(event.studentId());
+    }
+
+    public void handle(StudentUnenrolledEvent event) {
+        studentsEnrolled.remove(event.studentId());
     }
 
     @Override
