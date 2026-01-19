@@ -56,6 +56,7 @@ public abstract class MonitoringPooledEventProcessingReportIT extends AbstractSt
 
     @BeforeEach
     void setUp() {
+        purgeAxonServer();
         reportedMessages.clear();
     }
 
@@ -65,13 +66,13 @@ public abstract class MonitoringPooledEventProcessingReportIT extends AbstractSt
 
         storeEvent(UnknownEvent.class, new UnknownEvent(id), Metadata.with("id", id));
 
-        await().untilAsserted(
-                () -> assertThat(reportedMessages.ignoredReports().stream()
-                                                 .filter(it -> it.message().metadata().get("id").equals(id))
-                                                 .findFirst())
-                        .as("UnknownEvent(%s) should have been reported as ignored, but wasn't.", id)
-                        .isNotEmpty()
-        );
+        await().untilAsserted(() -> {
+            assertThat(reportedMessages.ignoredReports().stream()
+                                       .filter(it -> id.equals(it.message().metadata().get("id")))
+                                       .findFirst())
+                    .as("UnknownEvent(%s) should have been reported as ignored, but wasn't.", id)
+                    .isNotEmpty();
+        });
     }
 
     @Test
@@ -82,7 +83,7 @@ public abstract class MonitoringPooledEventProcessingReportIT extends AbstractSt
 
         await().untilAsserted(() -> {
             assertThat(reportedMessages.failureReports().stream()
-                                       .filter(it -> it.message().metadata().get("id").equals(id))
+                                       .filter(it -> id.equals(it.message().metadata().get("id")))
                                        .findFirst())
                     .as("Error on KnownEvent(%s) should have been reported as failure, but wasn't.", id)
                     .isNotEmpty();
@@ -95,13 +96,13 @@ public abstract class MonitoringPooledEventProcessingReportIT extends AbstractSt
 
         storeEvent(KnownEvent.class, new KnownEvent(id), Metadata.with("id", id));
 
-        await().untilAsserted(
-                () -> assertThat(reportedMessages.successReports().stream()
-                                                 .filter(it -> it.message().metadata().get("id").equals(id))
-                                                 .findFirst())
-                        .as("KnownEvent(%s) should have been reported as success, but wasn't.", id)
-                        .isNotEmpty()
-        );
+        await().untilAsserted(() -> {
+            assertThat(reportedMessages.successReports().stream()
+                                       .filter(it -> id.equals(it.message().metadata().get("id")))
+                                       .findFirst())
+                    .as("KnownEvent(%s) should have been reported as success, but wasn't.", id)
+                    .isNotEmpty();
+        });
     }
 
     @Override
