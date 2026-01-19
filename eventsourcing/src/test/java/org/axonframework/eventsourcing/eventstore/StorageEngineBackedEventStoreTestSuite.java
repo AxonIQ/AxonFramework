@@ -572,6 +572,180 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
                 );
             }
         }
+
+        @Nested
+        protected class SeparateSourceAndAppendCriteria {
+
+            @Test
+            protected void shouldNotConflictWhenEventsOnlyMatchSourceCriteriaButNotAppendCriteria() {
+                // given
+                UnitOfWork workUnit1 = unitOfWork();
+                UnitOfWork workUnit2 = unitOfWork();
+                EventMessage newMessage1 = message(new CourseUpdated(TAG1.value(), "new1"));
+                EventMessage newMessage2 = message(new CourseUpdated(TAG2.value(), "new2"));
+
+                CountDownLatch sourcingFinished = new CountDownLatch(1);
+                CountDownLatch latch1 = new CountDownLatch(1);
+
+                EventCriteria sourceCriteria = EventCriteria.havingTags(TAG1).or().havingTags(TAG2);
+                EventCriteria appendCriteria = EventCriteria.havingTags(TAG1);
+
+                // when
+                // Transaction 1: Source TAG1+TAG2, but append with criteria on TAG1 only
+                workUnit1.runOnInvocation(pc -> {
+                    EventStoreTransaction tx = eventStore.transaction(pc).overrideAppendCondition(appendCriteria);
+                    MessageStream<? extends EventMessage> sourcing = tx.source(SourcingCondition.conditionFor(sourceCriteria));
+
+                    // Should see all 5 events (3 TAG1 + 2 TAG2)
+                    assertThat(sourcing.reduce(0, (c, m) -> ++c).join()).isEqualTo(5);
+
+                    sourcingFinished.countDown();
+                    awaitLatch(latch1);
+
+                    tx.appendEvent(newMessage1);
+                });
+
+                // Transaction 2: Append event with TAG2 (not in Transaction 1's append criteria)
+                workUnit2.runOnInvocation(pc -> {
+                    eventStore.publish(pc, newMessage2);
+                });
+
+                // Start Transaction 1
+                CompletableFuture<Void> execute1 = workUnit1.execute();
+                awaitLatch(sourcingFinished);
+
+                // Commit Transaction 2 (TAG2 event) while Transaction 1 is waiting
+                assertDoesNotThrow(() -> workUnit2.execute().join());
+
+                // Now let Transaction 1 continue - should NOT conflict
+                latch1.countDown();
+
+                // then
+                assertDoesNotThrow(() -> execute1.join());
+
+                // Verify both events were stored
+                assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG1)), 4))
+                    .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                    .containsExactly(event1, event2, event5, newMessage1);
+                assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG2)), 3))
+                    .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                    .containsExactly(event3, event4, newMessage2);
+            }
+
+            @Test
+            protected void shouldConflictWhenEventsMatchAppendCriteria() {
+                // given
+                UnitOfWork workUnit1 = unitOfWork();
+                UnitOfWork workUnit2 = unitOfWork();
+                EventMessage newMessage1 = message(new CourseUpdated(TAG1.value(), "new1"));
+                EventMessage newMessage2 = message(new CourseUpdated(TAG1.value(), "new2"));
+
+                CountDownLatch sourcingFinished = new CountDownLatch(1);
+                CountDownLatch latch1 = new CountDownLatch(1);
+
+                EventCriteria sourceCriteria = EventCriteria.havingTags(TAG1).or().havingTags(TAG2);
+                EventCriteria appendCriteria = EventCriteria.havingTags(TAG1);
+
+                // when
+                // Transaction 1: Source TAG1+TAG2, append with criteria on TAG1
+                workUnit1.runOnInvocation(pc -> {
+                    EventStoreTransaction tx = eventStore.transaction(pc).overrideAppendCondition(appendCriteria);
+                    MessageStream<? extends EventMessage> sourcing = tx.source(SourcingCondition.conditionFor(sourceCriteria));
+
+                    assertThat(sourcing.reduce(0, (c, m) -> ++c).join()).isEqualTo(5);
+
+                    sourcingFinished.countDown();
+                    awaitLatch(latch1);
+
+                    tx.appendEvent(newMessage1);
+                });
+
+                // Transaction 2: Append event with TAG1 (IS in Transaction 1's append criteria)
+                workUnit2.runOnInvocation(pc -> {
+                    eventStore.publish(pc, newMessage2);
+                });
+
+                CompletableFuture<Void> execute1 = workUnit1.execute();
+                awaitLatch(sourcingFinished);
+
+                // Commit Transaction 2 (TAG1 event)
+                assertDoesNotThrow(() -> workUnit2.execute().join());
+
+                // Transaction 1 should fail due to conflict
+                latch1.countDown();
+
+                // then
+                assertThatThrownBy(() -> execute1.join())
+                    .isInstanceOf(CompletionException.class)
+                    .cause()
+                    .isInstanceOf(AppendEventsTransactionRejectedException.class);
+
+                // Verify that the store only contains the message from Transaction 2
+                assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG1)), 4))
+                    .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                    .containsExactly(event1, event2, event5, newMessage2);
+            }
+
+            @Test
+            protected void shouldAllowConcurrentTransactionsWithNonOverlappingAppendCriteria() {
+                // given
+                UnitOfWork workUnit1 = unitOfWork();
+                UnitOfWork workUnit2 = unitOfWork();
+                EventMessage newMessage1 = message(new CourseUpdated(TAG1.value(), "new1"));
+                EventMessage newMessage2 = message(new CourseUpdated(TAG2.value(), "new2"));
+
+                CountDownLatch sourcingFinished = new CountDownLatch(2);
+                CountDownLatch latch1 = new CountDownLatch(1);
+                CountDownLatch latch2 = new CountDownLatch(1);
+
+                EventCriteria sourceCriteria = EventCriteria.havingTags(TAG1).or().havingTags(TAG2);
+
+                // when
+                // Transaction 1: Source both, append with TAG1 criteria
+                EventCriteria appendCriteria1 = EventCriteria.havingTags(TAG1);
+                workUnit1.runOnInvocation(pc -> {
+                    EventStoreTransaction tx = eventStore.transaction(pc).overrideAppendCondition(appendCriteria1);
+                    tx.source(SourcingCondition.conditionFor(sourceCriteria)).reduce(0, (c, m) -> ++c).join();
+
+                    sourcingFinished.countDown();
+                    awaitLatch(latch1);
+
+                    tx.appendEvent(newMessage1);
+                });
+
+                // Transaction 2: Source both, append with TAG2 criteria
+                EventCriteria appendCriteria2 = EventCriteria.havingTags(TAG2);
+                workUnit2.runOnInvocation(pc -> {
+                    EventStoreTransaction tx = eventStore.transaction(pc).overrideAppendCondition(appendCriteria2);
+                    tx.source(SourcingCondition.conditionFor(sourceCriteria)).reduce(0, (c, m) -> ++c).join();
+
+                    sourcingFinished.countDown();
+                    awaitLatch(latch2);
+
+                    tx.appendEvent(newMessage2);
+                });
+
+                CompletableFuture<Void> execute1 = workUnit1.execute();
+                CompletableFuture<Void> execute2 = workUnit2.execute();
+                awaitLatch(sourcingFinished);
+
+                // Let both proceed - both should succeed
+                latch1.countDown();
+                latch2.countDown();
+
+                // then
+                assertDoesNotThrow(() -> execute1.join());
+                assertDoesNotThrow(() -> execute2.join());
+
+                // Verify both events were stored
+                assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG1)), 4))
+                    .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                    .containsExactly(event1, event2, event5, newMessage1);
+                assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG2)), 3))
+                    .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                    .containsExactly(event3, event4, newMessage2);
+            }
+        }
     }
 
     private void awaitLatch(CountDownLatch latch) {
