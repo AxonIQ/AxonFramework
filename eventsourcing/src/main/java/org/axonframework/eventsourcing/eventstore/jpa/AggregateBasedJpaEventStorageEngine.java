@@ -33,6 +33,7 @@ import org.axonframework.eventsourcing.eventstore.ContinuousMessageStream;
 import org.axonframework.eventsourcing.eventstore.EmptyAppendTransaction;
 import org.axonframework.eventsourcing.eventstore.EventCoordinator;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.GlobalIndexConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.StreamSpliterator;
 import org.axonframework.eventsourcing.eventstore.TaggedEventMessage;
@@ -469,6 +470,19 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                          .getSingleResult(),
             Set.of()
         ));
+    }
+
+    @Override
+    public ConsistencyMarker consistencyMarker(@Nullable TrackingToken token) {
+        if (token == null) {
+            return ConsistencyMarker.ORIGIN;
+        }
+        if (token instanceof GapAwareTrackingToken gat) {
+            return new GlobalIndexConsistencyMarker(gat.getIndex());
+        }
+        throw new IllegalArgumentException(
+                "Token [" + token + "] is of the wrong type. Expected [" + GapAwareTrackingToken.class.getSimpleName() + "]"
+        );
     }
 
     @Override
