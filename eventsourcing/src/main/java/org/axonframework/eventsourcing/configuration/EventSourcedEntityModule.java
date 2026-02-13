@@ -186,6 +186,24 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
         OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver);
 
         /**
+         * Registers only an append {@link CriteriaResolver}, without any sourcing criteria. This means no events
+         * will be loaded from the store — only consistency checking is performed when appending.
+         * <p>
+         * This is used when only an {@code @AppendCriteriaBuilder} is defined, without an {@code @EventCriteriaBuilder}
+         * or {@code @SourceCriteriaBuilder}. The {@link org.axonframework.eventsourcing.eventstore.ConsistencyMarker}
+         * is resolved from the
+         * {@link org.axonframework.eventsourcing.eventstore.EventStorageEngine#latestToken(
+         * org.axonframework.messaging.core.unitofwork.ProcessingContext) latest token} in the store.
+         *
+         * @param appendCriteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for
+         *                               consistency checking when appending events.
+         * @return The {@link EntityIdResolverPhase} phase of this builder, for a fluent API.
+         */
+        EntityIdResolverPhase<ID, E> appendCriteriaResolver(
+                @Nonnull ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver
+        );
+
+        /**
          * Registers separate {@link ComponentBuilder}s for sourcing and appending {@link CriteriaResolver}s.
          * This enables Dynamic Consistency Boundaries (DCB) where the criteria used for sourcing events
          * (loading state) can differ from the criteria used for consistency checking (appending events).
