@@ -17,7 +17,10 @@
 package org.axonframework.extension.micronaut.config;
 
 import io.micronaut.context.annotation.Parameter;
+import io.micronaut.context.annotation.Prototype;
 import io.micronaut.context.event.ShutdownEvent;
+import io.micronaut.core.annotation.Introspected;
+import io.micronaut.core.order.Ordered;
 import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Provider;
@@ -26,6 +29,7 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.LifecycleHandler;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
@@ -37,33 +41,33 @@ import java.util.concurrent.ExecutionException;
  * @since 5.1.0
  */
 @Internal
-//@Singleton
-public class MicronautLifecycleShutdownHandler {
-
-    private final Provider<Configuration> configurationProvider;
-    private final LifecycleHandler lifecycleHandler;
+@Introspected
+public class MicronautLifecycleShutdownHandler extends MicronautLifecycleHandler implements Ordered {
 
     /**
      * Initialize the bean to have the given {@code task} executed on start-up in the given {@code phase}.
      *
+     * @param configurationProvider
+     * @param phase
+     * @param lifecycleHandler
+     *
      */
     MicronautLifecycleShutdownHandler(
-            Provider<Configuration> configurationProvider, @Parameter LifecycleHandler lifecycleHandler
-    ) {
-        this.configurationProvider = configurationProvider;
-        this.lifecycleHandler = lifecycleHandler;
+            Provider<Configuration> configurationProvider,
+            @Parameter int phase,
+            @Parameter LifecycleHandler lifecycleHandler) {
+        super(configurationProvider, phase, lifecycleHandler);
     }
 
-    @EventListener
-    public void on(ShutdownEvent shutdownEvent) {
-        try {
-            this.lifecycleHandler.run(configurationProvider.get()).get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new CompletionException(e);
-        } catch (ExecutionException e) {
-            // This is what the join() would throw
-            throw new CompletionException(e);
-        }
+    /**
+     * Cant use {@link EventListener} directly because it does not take order into consideration
+     * <a href="https://github.com/micronaut-projects/micronaut-core/issues/12129">open issue</a>
+     *
+     * @param shutdownEvent
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public void on(ShutdownEvent shutdownEvent) throws ExecutionException, InterruptedException {
+        this.run().get();
     }
 }

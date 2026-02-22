@@ -38,6 +38,8 @@ import java.util.function.Supplier;
 /**
  * An {@link ApplicationConfigurer} implementation using Micronaut-based {@link ComponentRegistry} and
  * {@link LifecycleRegistry}.
+ * <p>
+ * Implementation is based on {@link org.axonframework.extension.spring.config.SpringAxonApplication}
  *
  * @author Daniel Karapishchenko
  * @since 5.1.0

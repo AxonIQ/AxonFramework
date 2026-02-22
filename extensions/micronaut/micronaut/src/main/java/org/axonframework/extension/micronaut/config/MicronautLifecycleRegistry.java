@@ -17,98 +17,167 @@
 package org.axonframework.extension.micronaut.config;
 
 import io.micronaut.context.BeanContext;
+import io.micronaut.context.RuntimeBeanDefinition;
+import io.micronaut.context.event.ShutdownEvent;
 import io.micronaut.context.event.StartupEvent;
+import io.micronaut.inject.qualifiers.Qualifiers;
+import io.micronaut.runtime.context.scope.Refreshable;
+import io.micronaut.runtime.event.ApplicationShutdownEvent;
+import io.micronaut.runtime.event.ApplicationStartupEvent;
 import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.annotation.Nonnull;
-import jakarta.annotation.PreDestroy;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.LifecycleHandler;
 import org.axonframework.common.configuration.LifecycleRegistry;
+import org.axonframework.common.lifecycle.LifecycleHandlerInvocationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+
+import static org.axonframework.common.FutureUtils.runFailing;
 
 /**
- * A {@link LifecycleRegistry} implementation that registers all lifecycle handlers as Micronaut Singletons
- * beans to ensure Micronaut weaves these lifecycles into the other
- * Micronaut bean lifecycles.
+ * A {@link LifecycleRegistry} implementation that registers all lifecycle handlers as Beans and ties them to the
+ * application lifecycle beans to ensure Micronaut weaves these lifecycles into the other Micronaut bean lifecycles.
  * <p>
- * this {@code LifecycleRegistry} is capable of registering the
- * beans based on the {@link LifecycleHandler LifecycleHandlers} provided through
- * {@link #onStart(int, LifecycleHandler)}  and {@link #onShutdown(int, LifecycleHandler)}.
+ * Singletons to be registered into the application's lifecycle this {@code LifecycleRegistry} is capable of registering
+ * the beans based on the {@link LifecycleHandler LifecycleHandlers} provided through
+ * <p>
+ * {@link #onStart(int, LifecycleHandler)}  and {@link #onShutdown(int, LifecycleHandler)}. Micronaut does not support
+ * lifecycle ordering <a href="https://github.com/micronaut-projects/micronaut-core/issues/6493">yet</a>, so we cannot
+ * simply create Ordered
  *
- * @author Allard Buijze
+ * @author Daniel Karapishchenko
  * @since 5.0.0
  */
 @Internal
+@Refreshable
 @Singleton
-public class MicronautLifecycleRegistry implements  LifecycleRegistry {
+public class MicronautLifecycleRegistry implements LifecycleRegistry {
 
     private final BeanContext beanContext;
 
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    private final TreeMap<Integer, List<MicronautLifecycleHandler>> startHandlers = new TreeMap<>();
+    private final TreeMap<Integer, List<MicronautLifecycleHandler>> shutdownHandlers = new TreeMap<>(Comparator.reverseOrder());
+
+    /**
+     * @param beanContext
+     */
     public MicronautLifecycleRegistry(BeanContext beanContext) {
         this.beanContext = beanContext;
     }
 
-    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-    private final TreeMap<Integer, List<LifecycleHandler>> startHandlers = new TreeMap<>();
-    private final TreeMap<Integer, List<LifecycleHandler>> shutdownHandlers = new TreeMap<>(Comparator.reverseOrder());
-
-
     @Override
     public LifecycleRegistry registerLifecyclePhaseTimeout(long timeout, @Nonnull TimeUnit timeUnit) {
-        logger.warn("Registering lifecycle phase timeout on a Micronaut-based LifecycleRegistry is not supported. "
-                            + "Please use Micronauts \"Graceful Shutdown\" support instead.");
+        logger.warn("Registering lifecycle phase timeout on a Micronaut-based LifecycleRegistry is not supported.");
         return this;
     }
 
-    @EventListener
-    public void on(StartupEvent startupEvent) {
-    /*    try {
-            startLifecycleHandlers.entrySet().stream().
-            this.lifecycleHandlerRunTask = this.lifecycleHandler.run(configurationProvider.get());
-            this.lifecycleHandlerRunTask.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new CompletionException(e);
-        } catch (ExecutionException e) {
-            // This is what the join() would throw
-            throw new CompletionException(e);
-        }*/
+
+    private void invokeStartHandlers() {
+        invokeLifecycleHandlers(
+                startHandlers,
+                (phase, e) -> {
+                    String startFailure = String.format(
+                            "One of the start handlers in phase [%d] failed with the following exception: ",
+                            phase
+                    );
+                    logger.warn(startFailure, e);
+                    throw new LifecycleHandlerInvocationException(startFailure, e);
+                }
+        );
     }
 
-    @PreDestroy
-    public void on(ShutDownEvent shutDownEvent) {
- /*       try {
-            startLifecycleHandlers.entrySet().stream().
-            this.lifecycleHandlerRunTask = this.lifecycleHandler.run(configurationProvider.get());
-            this.lifecycleHandlerRunTask.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new CompletionException(e);
-        } catch (ExecutionException e) {
-            // This is what the join() would throw
-            throw new CompletionException(e);
-        }*/
+    private void invokeShutdownHandlers() {
+        invokeLifecycleHandlers(
+                shutdownHandlers,
+                (phase, e) -> {
+                    String startFailure = String.format(
+                            "One of the shutdown handlers in phase [%d] failed with the following exception: ",
+                            phase
+                    );
+                    logger.warn(startFailure, e);
+                }
+        );
+    }
+
+    private void invokeLifecycleHandlers(TreeMap<Integer, List<MicronautLifecycleHandler>> lifecycleHandlerMap,
+                                         BiConsumer<Integer, Exception> exceptionHandler) {
+        Integer currentLifecyclePhase;
+        Map.Entry<Integer, List<MicronautLifecycleHandler>> phasedHandlers = lifecycleHandlerMap.firstEntry();
+        if (phasedHandlers == null) {
+            return;
+        }
+
+        do {
+            currentLifecyclePhase = phasedHandlers.getKey();
+            List<MicronautLifecycleHandler> handlers = phasedHandlers.getValue();
+            try {
+                handlers.stream()
+                        .map(lch -> runFailing(lch::run))
+                        .map(c -> c.thenRun(() -> {
+                        }))
+                        .reduce(CompletableFuture::allOf)
+                        .orElse(FutureUtils.emptyCompletedFuture())
+                        .get();
+            } catch (CompletionException | ExecutionException e) {
+                exceptionHandler.accept(currentLifecyclePhase, e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn(
+                        "Completion interrupted during phase [{}]. Proceeding to following phase",
+                        currentLifecyclePhase);
+            }
+        } while ((phasedHandlers = lifecycleHandlerMap.higherEntry(currentLifecyclePhase)) != null);
+    }
+
+    @EventListener
+    void on(ApplicationStartupEvent startupEvent) {
+        invokeStartHandlers();
+    }
+
+    @EventListener
+    void on(ApplicationShutdownEvent shutdownEvent) {
+        invokeShutdownHandlers();
     }
 
     @Override
     public LifecycleRegistry onStart(int phase, @Nonnull LifecycleHandler startHandler) {
-//        startLifecycleHandlers.put(phase, startHandler);
-        beanContext.createBean(MicronautLifecycleStartHandler.class,startHandler);
+        MicronautLifecycleStartHandler micronautLifecycleStartHandler = beanContext.createBean(
+                MicronautLifecycleStartHandler.class,
+                phase,
+                startHandler);
+        startHandlers.computeIfAbsent(phase, p -> new CopyOnWriteArrayList<>())
+                     .add(micronautLifecycleStartHandler);
         return this;
     }
 
     @Override
     public LifecycleRegistry onShutdown(int phase, @Nonnull LifecycleHandler shutdownHandler) {
-        beanContext.createBean(MicronautLifecycleShutdownHandler.class, shutdownHandler);
+        MicronautLifecycleShutdownHandler micronautLifecycleShutdownHandler = beanContext.createBean(
+                MicronautLifecycleShutdownHandler.class,
+                phase,
+                shutdownHandler);
+        shutdownHandlers.computeIfAbsent(phase, p -> new CopyOnWriteArrayList<>())
+                        .add(micronautLifecycleShutdownHandler);
         return this;
     }
 }

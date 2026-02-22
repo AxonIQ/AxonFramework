@@ -16,11 +16,17 @@
 
 package org.axonframework.extension.micronaut.config;
 
+import io.micronaut.context.BeanContext;
+import io.micronaut.context.event.ShutdownEvent;
+import io.micronaut.test.annotation.MockBean;
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import jakarta.inject.Inject;
+import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.LifecycleHandler;
 import org.junit.jupiter.api.*;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -28,56 +34,38 @@ import static org.mockito.Mockito.*;
 /**
  * Test class validating the {@link MicronautLifecycleShutdownHandler}.
  *
- * @author Allard Buijze
+ * @author Daniel Karapishchenko
  */
-//class MicronautLifecycleShutdownHandlerTest {
-//
-//    private Supplier<CompletableFuture<?>> action;
-//
-//    private MicronautLifecycleShutdownHandler testSubject;
-//
-//    @BeforeEach
-//    void setUp() {
-//        //noinspection unchecked
-//        action = mock();
-//        doReturn(CompletableFuture.completedFuture(null)).when(action)
-//                                                         .get();
-//
-//        testSubject = new MicronautLifecycleShutdownHandler(42, action);
-//    }
-//
-//    @Test
-//    void phaseIsRegisteredCorrectly() {
-//        assertEquals(42, testSubject.getPhase());
-//    }
-//
-//    @Test
-//    void isRunningReflectsCorrectState() {
-//        assertFalse(testSubject.isRunning());
-//        testSubject.start();
-//        assertTrue(testSubject.isRunning());
-//        testSubject.stop();
-//        assertFalse(testSubject.isRunning());
-//    }
-//
-//    @Test
-//    void actionIsInvokedOnShutdown() {
-//        testSubject.stop();
-//        verify(action).get();
-//    }
-//
-//    @Test
-//    void callbackInvokedOnAsyncShutdown() {
-//        CompletableFuture<Object> future = new CompletableFuture<>();
-//        doReturn(future).when(action).get();
-//
-//        AtomicBoolean callbackInvoked = new AtomicBoolean(false);
-//        testSubject.stop(() -> callbackInvoked.set(true));
-//
-//        verify(action).get();
-//        assertFalse(callbackInvoked.get());
-//
-//        future.complete(null);
-//        assertTrue(callbackInvoked.get());
-//    }
-//}
+@MicronautTest(startApplication = false)
+class MicronautLifecycleShutdownHandlerTest {
+
+    private LifecycleHandler action;
+
+    private MicronautLifecycleShutdownHandler testSubject;
+    @Inject
+    private BeanContext beanContext;
+
+
+    @MockBean(Configuration.class)
+    Configuration configuration() {
+        return mock();
+    }
+
+    @BeforeEach
+    void setUp() {
+        action = mock();
+        doReturn(CompletableFuture.completedFuture(null)).when(action).run(any());
+        testSubject = beanContext.createBean(MicronautLifecycleShutdownHandler.class, 42, action);
+        beanContext.registerSingleton(testSubject);
+    }
+
+    @Test
+    void phaseIsRegisteredCorrectly() {
+        assertEquals(42, testSubject.getOrder());
+    }
+    @Test
+    void actionIsInvokedOnStartupEvent() throws ExecutionException, InterruptedException {
+        testSubject.on(new ShutdownEvent(beanContext));
+        verify(action).run(any());
+    }
+}

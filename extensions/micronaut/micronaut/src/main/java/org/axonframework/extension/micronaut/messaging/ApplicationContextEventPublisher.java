@@ -20,10 +20,10 @@ import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.event.ApplicationEventPublisher;
 import jakarta.annotation.PostConstruct;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.SubscribableEventSource;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 /**
  * Component that forward events received from a {@link SubscribableEventSource} to Micronauts ApplicationContext.
@@ -57,18 +57,11 @@ public class ApplicationContextEventPublisher {
      */
     @PostConstruct
     public void postConstruct() {
-        messageSource.subscribe((msgs, ctx) -> {
-            msgs.stream()
-                .map(msg -> applicationEventPublisher.publishEventAsync(msg.payload()))
-                .forEach(future -> {
-                    try {
-                        future.get();
-                    } catch (InterruptedException ignored) {
-                    } catch (ExecutionException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            return CompletableFuture.completedFuture(null);
-        });
+        messageSource.subscribe(
+                (msgs, ctx) -> msgs
+                        .stream()
+                        .map(msg -> (CompletableFuture<Void>) applicationEventPublisher.publishEventAsync(msg.payload()))
+                        .reduce(CompletableFuture::allOf)
+                        .orElse(FutureUtils.emptyCompletedFuture()));
     }
 }

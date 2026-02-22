@@ -16,12 +16,21 @@
 
 package org.axonframework.extension.micronaut.config;
 
+import io.micronaut.context.annotation.Bean;
+import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Parameter;
+import io.micronaut.context.annotation.Prototype;
+import io.micronaut.context.annotation.Secondary;
 import io.micronaut.context.event.StartupEvent;
+import io.micronaut.core.annotation.Introspected;
+import io.micronaut.core.annotation.Order;
+import io.micronaut.core.order.Ordered;
 import io.micronaut.runtime.event.annotation.EventListener;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import jakarta.inject.Inject;
 import jakarta.inject.Provider;
-import jakarta.inject.Singleton;
+import jakarta.inject.Scope;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.LifecycleHandler;
@@ -31,47 +40,31 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
 /**
- * A Parameterized Singleton implementation wrapping a {@link LifecycleHandler start-specific lifecycle handler} to allow
- * it to be managed by Micronaut.
+ * A Parameterized Singleton implementation wrapping a {@link LifecycleHandler start-specific lifecycle handler} to
+ * allow it to be managed by Micronaut.
  *
  * @author Daniel Karapishchenko
  * @since 5.1.0
  */
 @Internal
-//@Singleton
-public class MicronautLifecycleStartHandler {
+@Prototype final class MicronautLifecycleStartHandler extends MicronautLifecycleHandler implements Ordered {
 
-    private final Provider<Configuration> configurationProvider;
-    private final LifecycleHandler lifecycleHandler;
-    private CompletableFuture<?> lifecycleHandlerRunTask;
+    MicronautLifecycleStartHandler(
+            Provider<Configuration> configurationProvider,
+            @Parameter int phase,
+            @Parameter LifecycleHandler lifecycleHandler) {
+        super(configurationProvider, phase, lifecycleHandler);
+    }
 
     /**
-     * Initialize the bean to have the given {@code task} executed on start-up in the given {@code phase}.
+     * Cant use {@link EventListener} directly because it does not take order into consideration
+     * <a href="https://github.com/micronaut-projects/micronaut-core/issues/12129">open issue</a>
      *
+     * @param startupEvent
+     * @throws ExecutionException
+     * @throws InterruptedException
      */
-    MicronautLifecycleStartHandler(
-            Provider<Configuration> configurationProvider, @Parameter LifecycleHandler lifecycleHandler
-    ) {
-        this.configurationProvider = configurationProvider;
-        this.lifecycleHandler = lifecycleHandler;
-    }
-
-    @EventListener
-    public void on(StartupEvent startupEvent) {
-        try {
-            this.lifecycleHandlerRunTask = this.lifecycleHandler.run(configurationProvider.get());
-            this.lifecycleHandlerRunTask.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new CompletionException(e);
-        } catch (ExecutionException e) {
-            // This is what the join() would throw
-            throw new CompletionException(e);
-        }
-    }
-
-    @PreDestroy
-    public void preDestroy() {
-        this.lifecycleHandlerRunTask.cancel(true);
+    public void on(StartupEvent startupEvent) throws ExecutionException, InterruptedException {
+        this.run().get();
     }
 }

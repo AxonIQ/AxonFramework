@@ -16,7 +16,11 @@
 
 package org.axonframework.extension.micronaut.config;
 
-//import org.axonframework.common.configuration.ApplicationConfigurerTestSuite;
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import jakarta.inject.Provider;
+import org.axonframework.common.configuration.ApplicationConfigurerTestSuite;
+
+import javax.annotation.Nonnull;
 
 /**
  * Test suite implementation validating the {@link MicronautAxonApplication}.
@@ -28,37 +32,48 @@ package org.axonframework.extension.micronaut.config;
  *
  * @author Steven van Beelen
  */
-//class MicronautAxonApplicationTest extends ApplicationConfigurerTestSuite<MicronautAxonApplication> {
-//
-//    private MicronautComponentRegistry componentRegistry;
-//
-//    @Override
-//    public MicronautAxonApplication createConfigurer() {
+@MicronautTest
+class MicronautAxonApplicationTest extends ApplicationConfigurerTestSuite<MicronautAxonApplication> {
+
+    private MicronautComponentRegistry componentRegistry;
+    private MicronautLifecycleRegistry lifecycleRegistry;
+    private Provider<MicronautAxonApplication> micronautAxonApplicationProvider;
+
+    MicronautAxonApplicationTest(@Nonnull MicronautComponentRegistry componentRegistry,
+                                 MicronautLifecycleRegistry lifecycleRegistry,
+                                 @Nonnull Provider<MicronautAxonApplication> micronautAxonApplicationProvider) {
+        this.componentRegistry = componentRegistry;
+        this.lifecycleRegistry = lifecycleRegistry;
+        this.micronautAxonApplicationProvider = micronautAxonApplicationProvider;
+    }
+
+    @Override
+    public MicronautAxonApplication createConfigurer() {
 //        ConfigurableListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-//        MicronautLifecycleRegistry lifecycleRegistry = new MicronautLifecycleRegistry();
 //        lifecycleRegistry.setBeanFactory(beanFactory);
 //        componentRegistry = new MicronautComponentRegistry(beanFactory, lifecycleRegistry);
 //        componentRegistry.postProcessBeanFactory(beanFactory);
+        return micronautAxonApplicationProvider.get();
 //        return new MicronautAxonApplication(componentRegistry, lifecycleRegistry);
-//    }
-//
-//    @Override
-//    protected void initialize(MicronautAxonApplication testSubject) {
+    }
+
+    @Override
+    protected void initialize(MicronautAxonApplication testSubject) {
 //        componentRegistry.postProcessAfterInitialization(new Object(), "something");
-//    }
-//
-//    @Override
-//    public boolean supportsOverriding() {
-//        return false;
-//    }
-//
-//    @Override
-//    public boolean supportsComponentFactories() {
-//        return false;
-//    }
-//
-//    @Override
-//    public boolean doesOwnLifecycleManagement() {
-//        return false;
-//    }
-//}
+    }
+
+    @Override
+    public boolean supportsOverriding() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsComponentFactories() {
+        return false;
+    }
+
+    @Override
+    public boolean doesOwnLifecycleManagement() {
+        return false;
+    }
+}

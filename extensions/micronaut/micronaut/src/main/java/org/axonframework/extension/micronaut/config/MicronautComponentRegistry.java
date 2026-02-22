@@ -17,13 +17,21 @@
 package org.axonframework.extension.micronaut.config;
 
 import io.micronaut.context.BeanContext;
+import io.micronaut.context.BeanProvider;
 import io.micronaut.context.BeanRegistration;
 import io.micronaut.context.Qualifier;
+import io.micronaut.context.annotation.ClassImport;
+import io.micronaut.context.annotation.Import;
+import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.event.BeanCreatedEvent;
 import io.micronaut.context.event.BeanCreatedEventListener;
+import io.micronaut.core.annotation.Introspected;
 import io.micronaut.inject.qualifiers.Qualifiers;
+import io.micronaut.inject.validation.RequiresValidation;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
+import jakarta.inject.Singleton;
+import jakarta.validation.constraints.NotNull;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Component;
 import org.axonframework.common.configuration.ComponentDefinition;
@@ -41,9 +49,14 @@ import org.axonframework.common.configuration.Module;
 import org.axonframework.common.configuration.OverridePolicy;
 import org.axonframework.common.configuration.SearchScope;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.Metadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -62,26 +75,36 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
+import static io.micronaut.core.util.StringUtils.FALSE;
+import static io.micronaut.core.util.StringUtils.TRUE;
+import static org.axonframework.extension.micronaut.config.MicronautComponentRegistry.AXON_ENHANCER_SCANNING_PROPERTY_NAME;
+
+;
+
 /**
  * A {@link ComponentRegistry} implementation that connects into Micronaut's ecosystem
  * <p>
- * By being a {@link BeanCreatedEventListener}, this {@code ComponentRegistry} can decorate any Microanut bean that matches with
- * decorators set in this {@code ComponentRegistry} or any {@link ConfigurationEnhancer}.
+ * By being a {@link BeanCreatedEventListener}, this {@code ComponentRegistry} can decorate any Microanut bean that
+ * matches with decorators set in this {@code ComponentRegistry} or any {@link ConfigurationEnhancer}.
  * <p>
- * By using the {@link BeanContext}, this {@code ComponentRegistry} can return any component, regardless of
- * whether it was registered with this {@code ComponentRegistry}, through a {@code ConfigurationEnhancer}, or comes from
- * Micronaut's Application Context directly. The latter integration ensures that <b>any</b> Axon Framework component using
- * the {@link Configuration} resulting from this {@code ComponentRegistry} can retrieve <b>any</b> bean that's
- * available.
- * The {@link BeanContext} is also used to
+ * By using the {@link BeanContext}, this {@code ComponentRegistry} can return any component, regardless of whether it
+ * was registered with this {@code ComponentRegistry}, through a {@code ConfigurationEnhancer}, or comes from
+ * Micronaut's Application Context directly. The latter integration ensures that <b>any</b> Axon Framework component
+ * using the {@link Configuration} resulting from this {@code ComponentRegistry} can retrieve <b>any</b> bean that's
+ * available. The {@link BeanContext} is also used to
  * {@link #hasComponent(Class, String) validate if this registery has a certain component}.
  *
  * @author Daniel Karapishchenko
  * @since 5.1.0
  */
-@Internal
-//@Singleton
-public class MicronautComponentRegistry implements ComponentRegistry, BeanCreatedEventListener<Object> {
+@ClassImport(classes = ConfigurationEnhancer.class, annotate = {RequiresEnhancerScanning.class})
+//@ClassImport(classes = DecoratorDefinition.class);
+@Introspected(classes = {Module.class, ConfigurationEnhancer.class}) @Internal @Singleton
+public class MicronautComponentRegistry implements ComponentRegistry
+//        , BeanCreatedEventListener<Object>
+{
+
+    static final String AXON_ENHANCER_SCANNING_PROPERTY_NAME = "axon.enhancer-scanning";
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -89,8 +112,6 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
 
     private final Components components = new Components();
     private final List<DecoratorDefinition.CompletedDecoratorDefinition<?, ?>> decorators = new CopyOnWriteArrayList<>();
-    private final Map<String, ConfigurationEnhancer> enhancers = new ConcurrentHashMap<>();
-    private final Map<String, Module> modules = new ConcurrentHashMap<>();
     private final List<ComponentFactory<?>> factories = new ArrayList<>();
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -98,7 +119,6 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
     private final Map<String, Configuration> moduleConfigurations = new ConcurrentHashMap<>();
     @Nonnull private final BeanContext beanContext;
 
-    private boolean disableEnhancerScanning = false;
     private final List<Class<? extends ConfigurationEnhancer>> disabledEnhancers = new CopyOnWriteArrayList<>();
     private final List<Class<? extends ConfigurationEnhancer>> invokedEnhancers = new CopyOnWriteArrayList<>();
 
@@ -107,16 +127,16 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
      * Constructs a {@code MicronautComponentRegistry} with the given {@code listableBeanFactory}. The
      * {@code listableBeanFactory} is used to discover all beans of type {@link ConfigurationEnhancer}.
      *
-     * @param beanContext The beanContext for registering and retrieving components
+     * @param beanContext       The beanContext for registering and retrieving components
      * @param lifecycleRegistry The {@link LifecycleRegistry} used to initializes
      *                          {@link #registerModule(Module) registered modules}.
      */
     @Internal
     public MicronautComponentRegistry(@Nonnull BeanContext beanContext,
-                                      @Nonnull MicronautLifecycleRegistry lifecycleRegistry) {
+                                      @Nonnull MicronautLifecycleRegistry lifecycleRegistry,
+                                      @NotNull BeanProvider<Module> moduleProvider) {
         this.beanContext = beanContext;
-        this.lifecycleRegistry =
-                Objects.requireNonNull(lifecycleRegistry, "The Lifecycle Registry may not be null.");
+        this.lifecycleRegistry = Objects.requireNonNull(lifecycleRegistry, "The Lifecycle Registry may not be null.");
     }
 
     @Override
@@ -150,9 +170,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
     }
 
     @Override
-    public boolean hasComponent(@Nonnull Class<?> type,
-                                @Nullable String name,
-                                @Nonnull SearchScope searchScope) {
+    public boolean hasComponent(@Nonnull Class<?> type, @Nullable String name, @Nonnull SearchScope searchScope) {
         // Checks both the local Components as the BeanFactory,
         //  since the ConfigurationEnhancers act before component registration with the Application Context.
         return switch (searchScope) {
@@ -169,24 +187,30 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
      * with that exact name.
      */
     private boolean contextHasComponent(Class<?> type, String name) {
-        return name != null
-                ? beanContext.containsBean(type, Qualifiers.byName(name))
-                : beanContext.containsBean(type);
+        return name != null ? beanContext.containsBean(type, Qualifiers.byName(name)) : beanContext.containsBean(type);
+    }
+
+    private Collection<Module> getModules() {
+        return beanContext.getBeansOfType(Module.class);
+    }
+
+    private Collection<ConfigurationEnhancer> getEnhancers() {
+        return beanContext.getBeansOfType(ConfigurationEnhancer.class);
     }
 
     @Override
     public ComponentRegistry registerEnhancer(@Nonnull ConfigurationEnhancer enhancer) {
         logger.debug("Registering enhancer [{}].", enhancer.getClass().getSimpleName());
-        doRegisterEnhancer(enhancer.getClass().getName(), enhancer);
+        doRegisterEnhancer(enhancer);
         return this;
     }
 
-    private void doRegisterEnhancer(@Nonnull String name, @Nonnull ConfigurationEnhancer enhancer) {
-        ConfigurationEnhancer previous = this.enhancers.put(name, enhancer);
-        if (previous != null) {
+    private void doRegisterEnhancer(@Nonnull ConfigurationEnhancer enhancer) {
+        if (beanContext.containsBean(ConfigurationEnhancer.class)) {
             logger.warn("Duplicate Configuration Enhancer registration detected. Replaced enhancer of type [{}].",
                         enhancer.getClass().getSimpleName());
         }
+        beanContext.registerSingleton(enhancer);
     }
 
     @Override
@@ -194,10 +218,11 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         if (logger.isDebugEnabled()) {
             logger.debug("Registering module [{}].", module.name());
         }
-        if (modules.containsKey(module.name())) {
+        Qualifier<Module> moduleQualifier = Qualifiers.byName(module.name());
+        if (beanContext.containsBean(Module.class, moduleQualifier)) {
             throw new DuplicateModuleRegistrationException(module);
         }
-        this.modules.put(module.name(), module);
+        beanContext.registerSingleton(Module.class, module, moduleQualifier);
         return this;
     }
 
@@ -221,7 +246,9 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
 
     @Override
     public ComponentRegistry disableEnhancerScanning() {
-        this.disableEnhancerScanning = true;
+        logger.warn("Disabling enhancer scanning on a Micronaut-based Component-Registry is not supported"
+                            + "Please set the micronaut property \"" + AXON_ENHANCER_SCANNING_PROPERTY_NAME
+                            + "\" to false instead.");
         return this;
     }
 
@@ -231,9 +258,8 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         try {
             var enhancerClass = Class.forName(fullyQualifiedClassName);
             if (!ConfigurationEnhancer.class.isAssignableFrom(enhancerClass)) {
-                throw new IllegalArgumentException(
-                        String.format("Class %s is not a ConfigurationEnhancer", fullyQualifiedClassName)
-                );
+                throw new IllegalArgumentException(String.format("Class %s is not a ConfigurationEnhancer",
+                                                                 fullyQualifiedClassName));
             }
             //noinspection unchecked
             return disableEnhancer((Class<? extends ConfigurationEnhancer>) enhancerClass);
@@ -262,8 +288,8 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         descriptor.describeProperty("initialized", initialized.get());
         descriptor.describeProperty("components", components);
         descriptor.describeProperty("decorators", decorators);
-        descriptor.describeProperty("configurerEnhancers", enhancers);
-        descriptor.describeProperty("modules", modules.values());
+        descriptor.describeProperty("configurerEnhancers", getEnhancers());
+        descriptor.describeProperty("modules", getModules());
         descriptor.describeProperty("factories", factories);
     }
 
@@ -317,7 +343,6 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         if (initialized.getAndSet(true)) {
             return;
         }
-        scanForConfigurationEnhancers();
         invokeEnhancers();
         scanForDecoratorDefinitions();
         decorateComponents();
@@ -326,24 +351,6 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         buildModules();
         scanForComponentFactories();
         registerFactoryShutdownHandlers();
-    }
-
-    /**
-     * Scans for additional {@link ConfigurationEnhancer ConfigurationEnhancers} through means of a
-     * {@link ServiceLoader}.
-     * <p>
-     * If {@link #disabledEnhancers disabled}, no {@code ServiceLoader} will be invoked.
-     */
-    private void scanForConfigurationEnhancers() {
-        if (disableEnhancerScanning) {
-            return;
-        }
-        ServiceLoader<ConfigurationEnhancer> enhancerLoader =
-                ServiceLoader.load(ConfigurationEnhancer.class, getClass().getClassLoader());
-        enhancerLoader.stream()
-                      .map(ServiceLoader.Provider::get)
-                      .filter(enhancer -> !disabledEnhancers.contains(enhancer.getClass()))
-                      .forEach(this::registerEnhancer);
     }
 
     /**
@@ -366,31 +373,28 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
     private void invokeEnhancers() {
         Set<String> processedEnhancerKeys = new HashSet<>();
 
-        beanContext.getBeanRegistrations(ConfigurationEnhancer.class).forEach(
-                (registration) -> {
-                    this.doRegisterEnhancer(registration.getName(), registration.bean());
-                });
+        Collection<ConfigurationEnhancer> enhancers = getEnhancers();
         while (processedEnhancerKeys.size() < enhancers.size()) {
             // Find the next unprocessed enhancer with the lowest order value
-            Optional<Map.Entry<String, ConfigurationEnhancer>> nextEnhancer =
-                    enhancers.entrySet()
-                             .stream()
-                             .filter(entry -> !processedEnhancerKeys.contains(entry.getKey()))
-                             .min(Comparator.comparingInt(entry -> entry.getValue().order()));
+//            Optional<Map.Entry<String, ConfigurationEnhancer>> nextEnhancer =
+//                    enhancers.entrySet()
+//                             .stream()
+//                             .filter(entry -> !processedEnhancerKeys.contains(entry.getKey()))
+//                             .min(Comparator.comparingInt(entry -> entry.getValue().order()));
 
-            if (nextEnhancer.isEmpty()) {
-                break; // No more enhancers to process
-            }
+//            if (nextEnhancer.isEmpty()) {
+//                break; // No more enhancers to process
+//            }
 
-            Map.Entry<String, ConfigurationEnhancer> entry = nextEnhancer.get();
-            String key = entry.getKey();
-            ConfigurationEnhancer enhancer = entry.getValue();
-
-            if (!disabledEnhancers.contains(enhancer.getClass())) {
-                enhancer.enhance(this);
-                invokedEnhancers.add(enhancer.getClass());
-            }
-            processedEnhancerKeys.add(key);
+//            Map.Entry<String, ConfigurationEnhancer> entry = nextEnhancer.get();
+//            String key = entry.getKey();
+//            ConfigurationEnhancer enhancer = entry.getValue();
+//
+//            if (!disabledEnhancers.contains(enhancer.getClass())) {
+//                enhancer.enhance(this);
+//                invokedEnhancers.add(enhancer.getClass());
+//            }
+//            processedEnhancerKeys.add(key);
         }
     }
 
@@ -408,6 +412,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     private void decorateComponents() {
+//        beanContext.getBeansOfType(DecoratorDefinition.class);
         decorators.sort(Comparator.comparingInt(DecoratorDefinition.CompletedDecoratorDefinition::order));
         for (DecoratorDefinition.CompletedDecoratorDefinition decorator : decorators) {
             for (Component.Identifier id : components.identifiers()) {
@@ -435,10 +440,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
                 return;
             }
             //noinspection unchecked
-            beanContext.registerSingleton((Class<Component<?>>) component.getClass(),
-                                          component,
-                                          qualifiers
-            );
+            beanContext.registerSingleton((Class<Component<?>>) component.getClass(), component, qualifiers);
             // Initialize the components lifecycle handlers, by adapting them into SmartLifecycle beans through the SpringLifecycleRegistry.
             component.initLifecycle(configuration, lifecycleRegistry);
         });
@@ -457,10 +459,11 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
      * exposure on {@link Configuration#getModuleConfigurations()}.
      */
     private void buildModules() {
-        for (Module module : modules.values()) {
-            Configuration builtModule = HierarchicalLifecycleRegistry.build(
-                    lifecycleRegistry, (childLifecycleRegistry) -> module.build(configuration, childLifecycleRegistry)
-            );
+        for (Module module : getModules()) {
+            Configuration builtModule = HierarchicalLifecycleRegistry.build(lifecycleRegistry,
+                                                                            (childLifecycleRegistry) -> module.build(
+                                                                                    configuration,
+                                                                                    childLifecycleRegistry));
             moduleConfigurations.put(module.name(), builtModule);
         }
     }
@@ -481,11 +484,12 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         factories.forEach(factory -> factory.registerShutdownHandlers(lifecycleRegistry));
     }
 
-    @Override
+//    @Override
     public Object onCreated(@Nonnull BeanCreatedEvent<Object> event) {
         initialize();
 
-        Component.Identifier<Object> componentId = new Component.Identifier<>(event.getBeanType().getType(), event.getBeanIdentifier().getName());
+        Component.Identifier<Object> componentId = new Component.Identifier<>(event.getBeanType().getType(),
+                                                                              event.getBeanIdentifier().getName());
         if (isLocalComponent(componentId)) {
             logger.debug("Will not post process component [{}] since Axon registered it directly.", componentId);
             return event.getBean();
@@ -514,8 +518,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
 
         @Nonnull
         @Override
-        public <C> C getComponent(@Nonnull Class<C> type,
-                                  @Nullable String name) {
+        public <C> C getComponent(@Nonnull Class<C> type, @Nullable String name) {
             if (name == null) {
                 return getComponent(type);
             }
@@ -528,8 +531,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         }
 
         @Override
-        public <C> Optional<C> getOptionalComponent(@Nonnull Class<C> type,
-                                                    @Nullable String name) {
+        public <C> Optional<C> getOptionalComponent(@Nonnull Class<C> type, @Nullable String name) {
             if (name == null) {
                 return getOptionalComponent(type);
             }
@@ -538,9 +540,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
 
         @Nonnull
         @Override
-        public <C> C getComponent(@Nonnull Class<C> type,
-                                  @Nullable String name,
-                                  @Nonnull Supplier<C> defaultImpl) {
+        public <C> C getComponent(@Nonnull Class<C> type, @Nullable String name, @Nonnull Supplier<C> defaultImpl) {
             return getOptionalComponent(type, name).orElseGet(defaultImpl);
         }
 
@@ -625,8 +625,7 @@ public class MicronautComponentRegistry implements ComponentRegistry, BeanCreate
         }
 
         @Override
-        public void initLifecycle(@Nonnull Configuration configuration,
-                                  @Nonnull LifecycleRegistry lifecycleRegistry) {
+        public void initLifecycle(@Nonnull Configuration configuration, @Nonnull LifecycleRegistry lifecycleRegistry) {
             // Unimplemented since Micronaut manages the lifecycle of all beans.
         }
 

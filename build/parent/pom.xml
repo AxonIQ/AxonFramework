@@ -93,7 +93,7 @@
         <jobrunr.version>8.5.2</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Micronaut -->
-        <micronaut.version>4.10.7</micronaut.version>
+        <micronaut.version>4.10.9</micronaut.version>
         <!-- Spring -->
         <spring.version>6.2.18</spring.version>
         <spring.boot.version>3.5.14</spring.boot.version>
