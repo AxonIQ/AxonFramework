@@ -4,7 +4,7 @@ site:
 content:
   sources:
   - url: ../..
-    start_paths: [ 'docs/*', '!docs/_*', '!docs/reference/*', 'docs/_reference-guide-preview' ]
+    start_paths: ['docs/*', '!docs/_*', '!docs/reference/*']
 
 asciidoc:
   attributes:
@@ -39,3 +39,4 @@ runtime:
 ui:
   bundle:
     url: https://github.com/AxonIQ/axoniq-library-ui/releases/latest/download/ui-bundle.zip
+    snapshot: true # forces Antora to skip the cache for the ui-bundle

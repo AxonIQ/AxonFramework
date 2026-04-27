@@ -1,5 +1,5 @@
+[.axoniq-feature]
 = Dead-Letter Queue Migration
-//TODO Axoniq feature
 
 Axon Framework 5 introduces slight changes to how the Dead-Letter Queue (DLQ) works, reflecting the broader shift to async-first APIs and finer-grained component model in Axon Framework 5.
 

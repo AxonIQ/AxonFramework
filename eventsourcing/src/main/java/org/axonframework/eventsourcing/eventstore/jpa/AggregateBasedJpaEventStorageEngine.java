@@ -297,7 +297,9 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                                          entry -> setMarkerAndBuildContext(entry, markerReference))
                              // Defaults the marker when the aggregate stream was empty
                              .onComplete(() -> markerReference.compareAndSet(
-                                     null, new AggregateBasedConsistencyMarker(aggregateIdentifier, 0)
+                                     // making sequence number (=last seen event) -1 makes the position in the Consistency Marker 0
+                                     // this ensures 0-based sequence numbers, as they are derived from the marker when appending
+                                     null, new AggregateBasedConsistencyMarker(aggregateIdentifier, -1)
                              ))
                              .cast();
         return new AggregateSource(markerReference, source);

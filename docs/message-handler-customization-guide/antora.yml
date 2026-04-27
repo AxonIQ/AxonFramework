@@ -2,7 +2,7 @@ name: message-handler-customization-guide
 title: Customizing Message Handlers
 version:
   axon-(?<version>+({0..9}).+({0..9})).*: $<version>
-  master: development
+  '*': development
 start_page: ROOT:index.adoc
 
 asciidoc:

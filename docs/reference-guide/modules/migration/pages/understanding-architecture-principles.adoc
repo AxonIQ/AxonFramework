@@ -48,9 +48,6 @@ This breaks down into specific layer configurers:
 
 Instead of a monolithic configuration class, you now compose modular configurers:
 
-// TODO other Storage engine example or
-// TODO Axoniq feature
-
 [source,java]
 ----
 import io.axoniq.axonserver.connector.AxonServerConnection;

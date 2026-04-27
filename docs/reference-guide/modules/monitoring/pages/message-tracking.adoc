@@ -7,7 +7,7 @@ There are several ways to track messages in your system.
 ifdef::advanced-framework[]
 A clear solution to this, is xref:tracing:index.adoc[tracing], albeit slightly involved.
 endif::[]
-Among the options you have through the base framework, there are xref:messaging-concepts:message-correlation.adoc[correlation data providers] or straight out logging in xref:messaging-concepts:message-intercepting.adoc[interceptors]
+Among the options you have through the Axon Framework, there are xref:messaging-concepts:message-correlation.adoc[correlation data providers] or straight out logging in xref:messaging-concepts:message-intercepting.adoc[interceptors]
 You can correlate messages to each other with a Correlation Data Provider or log the messages being handled and dispatched.
 
 == Correlation data

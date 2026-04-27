@@ -8,6 +8,10 @@ include::events:partial$nav.adoc[]
 
 include::queries:partial$nav.adoc[]
 
+ifdef::workflows[]
+include::workflows:partial$nav.adoc[]
+endif::[]
+
 include::testing:partial$nav.adoc[]
 
 * xref:ROOT:conversion.adoc[]

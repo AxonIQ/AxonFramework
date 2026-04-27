@@ -24,7 +24,6 @@ When looking to provide a pull request, be sure to adjust link:https://github.co
 [TIP]
 .PostgreSQL Extension
 ====
-// TODO Axoniq feature
 You can use Axoniq's PostgreSQL Extension instead of setting up PostgreSQL yourself as a event storage solution. For more information, please check the repository link:https://github.com/AxonIQ/extension-postgresql[here.]
 ====
 

@@ -93,6 +93,7 @@ These extensions are part of the main Axon Framework repository and provide esse
 |<<Axon Reactor>>                       |`axon-reactor`                    |`org.axonframework.extensions.reactor`  |https://central.sonatype.com/search?q=a:axon-reactor[available]
 |<<Axon Dropwizard metrics>>            |`axon-metrics-dropwizard`         |`org.axonframework.extensions.metrics`  |https://central.sonatype.com/search?q=a:axon-metrics-dropwizard[available]
 |<<Axon Micrometer metrics>>            |`axon-metrics-micrometer`         |`org.axonframework.extensions.metrics`  |https://central.sonatype.com/search?q=a:axon-metrics-micrometer[available]
+|<<Axon Kotlin>>                        |`axon-kotlin`, `axon-kotlin-test`                     |`org.axonframework.extensions.kotlin`   |https://central.sonatype.com/search?q=a:axon-kotlin[available]
 |===
 
 === Axon Spring
@@ -159,16 +160,29 @@ ifdef::advanced-framework[]
 include::ROOT:partial$modules-advanced-framework.adoc[]
 endif::[]
 
+=== Axon Kotlin
+
+The Kotlin extension provides idiomatic Kotlin support for Axon Framework, reducing boilerplate and enabling natural Kotlin API usage through extension functions and reified generics.
+
+Features include, among others:
+
+* reified generics support to eliminate explicit type parameters
+* idiomatic extension functions for messaging gateways and metadata
+* Kotlin value class support for entity identifiers
+* reduced boilerplate in event sourcing handlers
+* test fixture support tailored for Kotlin (`axon-kotlin-test`)
+
 == Axon Framework Bill of Materials
 
-In addition to the base framework modules and extensions and advanced framework modules, Axon also provides two https://en.wikipedia.org/wiki/Software_bill_of_materials[Bills of Materials], or BOM for both base and advanced framework.
+In addition to the Axon Framework modules and extensions and Axoniq Framework modules, Axon also provides two https://en.wikipedia.org/wiki/Software_bill_of_materials[Bills of Materials], or BOM for both Axon Framework and Axoniq Framework.
 The BOM is provided to ensure the use of compatible framework and extension dependencies inside an Axon application.
 As such, it is the recommended approach towards defining the overall Axon version used inside of an application.
 
-[#base-framework-bom]
-=== Base Axon Framework Bill of Materials
+// TODO anchor
+[#axon-framework-bom]
+=== Axon Framework Bill of Materials
 
-For the base framework and extensions, we provide a BOM under the `org.axonframework` Group id as follows:
+For the Axon Framework and extensions, we provide a BOM under the `org.axonframework` Group id as follows:
 
 [cols="<,<,<,^"]
 |===

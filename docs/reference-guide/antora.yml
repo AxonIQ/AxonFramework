@@ -1,5 +1,16 @@
 name: axon-framework-reference
+title: Axon Framework
 version:
   axon-(?<version>+({0..9}).+({0..9})).*: $<version>
   '*': development
-prerelease: true
+prerelease: false
+start_page: ROOT:index.adoc
+
+asciidoc:
+  attributes:
+    component_description: The Axon Framework reference guide
+    type: reference
+    group: product
+
+nav:
+  - modules/nav.adoc

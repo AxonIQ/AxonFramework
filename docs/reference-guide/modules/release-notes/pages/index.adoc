@@ -5,7 +5,7 @@
 The release notes section for the Axon framework for all major/minor releases.
 You can switch the documentation to other major version on the right side of the header, right above the every chapter.
 
-== Base framework and extensions
+== Axon Framework and extensions
 
 [cols="<,<"]
 |===

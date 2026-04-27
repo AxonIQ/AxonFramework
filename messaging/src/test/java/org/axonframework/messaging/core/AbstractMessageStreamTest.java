@@ -19,6 +19,7 @@ package org.axonframework.messaging.core;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.axonframework.messaging.core.AbstractMessageStream.FetchResult;
 import org.axonframework.messaging.core.MessageStream.Entry;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayDeque;
@@ -65,6 +66,7 @@ class AbstractMessageStreamTest {
             thrownExceptionInOnCompleted = e;
         }
 
+        @NonNull
         @Override
         protected FetchResult<Entry<Message>> fetchNext() {
             FetchResult<Entry<Message>> result = results.poll();
@@ -156,6 +158,13 @@ class AbstractMessageStreamTest {
             stream.enqueue(FetchResult.of(expected));
 
             assertThat(stream.next()).contains(expected);
+        }
+
+        @Test
+        void whenNullValueAvailableThenReturnsEmptyOptional() {
+            stream.enqueue(FetchResult.of((Entry<Message>) null));
+
+            assertThat(stream.next()).isEmpty();
         }
 
         @Test
@@ -322,6 +331,7 @@ class AbstractMessageStreamTest {
             assertThat(count.get()).isEqualTo(0);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void withNullCallbackThenThrowsNullPointerException() {
             assertThatThrownBy(() -> stream.setCallback(null))
@@ -553,7 +563,7 @@ class AbstractMessageStreamTest {
              * The class doc says: "If the registered callback throws an exception, the stream is
              * completed exceptionally, unless the callback was called to signal completion."
              *
-             * When complete() fires the callback and it throws, completeExceptionally() is called
+             * When complete() fires the callback, and it throws, completeExceptionally() is called
              * but is a no-op because completed=true already. The stream remains normally completed.
              */
 

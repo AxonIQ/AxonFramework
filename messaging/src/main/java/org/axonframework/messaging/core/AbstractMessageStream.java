@@ -86,7 +86,7 @@ import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK
  * All methods in this class are either {@code final}, {@code private}, {@code abstract} or empty to
  * protect its invariants.
  *
- * @param <M> The type of {@link Message} contained in the {@link MessageStream.Entry entries} of this stream.
+ * @param <M> the type of {@link Message} contained in the {@link MessageStream.Entry entries} of this stream
  * @author Jan Galinski
  * @author John Hendrikx
  * @since 5.1.0
@@ -108,15 +108,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * This abstraction allows implementations to distinguish between a stream that is
      * temporarily out of elements and one that has been fully exhausted.
      *
-     * @param <T> The type of value returned when available
+     * @param <T> the type of value returned when available
      */
-    public sealed interface FetchResult<T extends Entry<?>> {
+    public sealed interface FetchResult<T extends @Nullable Entry<?>> {
 
         /**
-         * Creates a {@link FetchResult} reflecting the current observable state of the given {@link MessageStream}.
+         * Creates a {@code FetchResult} reflecting the current observable state of the given {@link MessageStream}.
          * <p>
          * This method inspects the provided {@code delegate} in a non-blocking manner and translates its state into a
-         * corresponding {@link FetchResult}:
+         * corresponding {@code FetchResult}:
          * <ul>
          *     <li>If {@link MessageStream#hasNextAvailable()} returns {@code true}, this method
          *     retrieves the next entry via {@link MessageStream#next()} and returns a
@@ -129,7 +129,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          *     containing the reported error.</li>
          * </ul>
          * <p>
-         * This method effectively adapts a {@link MessageStream} to the {@link FetchResult}-based
+         * This method effectively adapts a {@link MessageStream} to the {@code FetchResult}-based
          * consumption model used by {@link AbstractMessageStream}.
          * <p>
          * Note that this method may consume an entry from the delegate when one is available,
@@ -138,7 +138,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          *
          * @param <M>      the message type contained in the stream
          * @param delegate the {@link MessageStream} to inspect, must not be {@code null}
-         * @return a {@link FetchResult} representing the delegate's current state
+         * @return a {@code FetchResult} representing the delegate's current state
          * @throws NullPointerException if {@code delegate} is {@code null}
          */
         static <M extends Message> FetchResult<Entry<M>> of(MessageStream<M> delegate) {
@@ -156,18 +156,18 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * Creates a {@link FetchResult} representing a successfully fetched value.
+         * Creates a {@code FetchResult} representing a successfully fetched value.
          *
          * @param <T>   the entry type
          * @param value the non-{@code null} value
          * @return a {@link Value} containing the given value, never {@code null}
          */
-        static <T extends Entry<?>> FetchResult<T> of(T value) {
+        static <T extends @Nullable Entry<?>> FetchResult<T> of(@Nullable T value) {
             return new Value<>(value);
         }
 
         /**
-         * Creates a {@link FetchResult} representing a producer side error.
+         * Creates a {@code FetchResult} representing a producer side error.
          *
          * @param <T>   the entry type
          * @param error the non-{@code null} error
@@ -178,7 +178,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * Returns a {@link FetchResult} indicating that no element is available and no further elements will be
+         * Returns a {@code FetchResult} indicating that no element is available and no further elements will be
          * produced.
          *
          * @param <T> the entry type
@@ -190,7 +190,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * Returns a {@link FetchResult} indicating that no element is currently available, but more elements may become
+         * Returns a {@code FetchResult} indicating that no element is currently available, but more elements may become
          * available in the future.
          *
          * @param <T> the entry type
@@ -220,6 +220,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          */
         record Error<T extends Entry<?>>(Throwable error) implements FetchResult<T> {
 
+            /**
+             * Compact constructor ensuring the given {@code error} is not {@code null}.
+             *
+             * @param error the non-{@code null} error
+             */
             public Error {
                 Objects.requireNonNull(error, "error");
             }
@@ -347,9 +352,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         switch (initialFetchResult) {
-            case FetchResult.Value(Entry<M> value) -> throw new IllegalArgumentException(
-                    "Value fetchResult not supported during initialization");
-            case FetchResult.Error(Throwable error) -> completeExceptionally(error);
+            case FetchResult.Value(Entry<M> ignored) -> throw new IllegalArgumentException("Value fetchResult not supported during initialization");
+            case FetchResult.Error(Throwable throwable) -> completeExceptionally(throwable);
             case FetchResult.Completed() -> complete();
             case FetchResult.NotReady() -> awaitingData = true;
         }
@@ -519,14 +523,14 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         this.awaitingData = false;
 
         return switch (fetchNext()) {
-            case FetchResult.Value(Entry<M> v) -> Optional.of(v);
+            case FetchResult.Value(Entry<M> v) -> Optional.ofNullable(v);
             case FetchResult.NotReady() -> {
                 awaitingData = true;
 
                 yield Optional.empty();
             }
-            case FetchResult.Error(Throwable error) -> {
-                completeExceptionally(error);
+            case FetchResult.Error(Throwable throwable) -> {
+                completeExceptionally(throwable);
 
                 yield Optional.empty();
             }
@@ -681,11 +685,12 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
                 : null;
         String flags = describeFlags();  // pipe separated
         String delegates = describeDelegates();  // comma separated, with the active prepended with asterisk
-        String statusDescription = Stream.of(status, (peekedEntry == null ? null : "P"), flags).filter(Objects::nonNull)
-                                         .collect(Collectors.joining("|"));
+        String statusDescription = Stream.of(status, (peekedEntry == null ? null : "P"), flags)
+                                         .filter(Objects::nonNull).collect(Collectors.joining("|"));
 
-        return getClass().getSimpleName().replace("MessageStream", "") + (statusDescription.isEmpty() ? "" :
-                "[" + statusDescription + "]") + (delegates == null ? "" : "{" + delegates + "}");
+        return getClass().getSimpleName().replace("MessageStream", "")
+                + (statusDescription.isEmpty() ? "" : "[" + statusDescription + "]")
+                + (delegates == null ? "" : "{" + delegates + "}");
     }
 
     /**
@@ -696,6 +701,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      *
      * @return the flags that apply to this stream, or {@code null} if there are no relevant flags
      */
+    @Nullable
     protected String describeFlags() {
         return null;
     }
@@ -709,6 +715,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      *
      * @return the description of delegate streams, or {@code null} if there are no delegates
      */
+    @Nullable
     protected String describeDelegates() {
         return null;
     }

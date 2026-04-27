@@ -78,6 +78,19 @@
             </dependency>
 
             <dependency>
+                <groupId>org.axonframework.extensions.kotlin</groupId>
+                <artifactId>axon-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.axonframework.extensions.kotlin</groupId>
+                <artifactId>axon-kotlin-test</artifactId>
+                <version>${project.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
                 <groupId>org.axonframework.extensions.metrics</groupId>
                 <artifactId>axon-metrics-dropwizard</artifactId>
                 <version>${project.version}</version>
