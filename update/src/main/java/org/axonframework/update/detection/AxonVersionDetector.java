@@ -39,7 +39,7 @@ import java.util.jar.JarFile;
  * in the classpath and extracts the Axon Framework module versions. If an error occurs during detection, it logs the
  * error and returns an empty list.
  * <p>
- * Will only detect Axon Framework modules that are part of the Axon Framework or AxonIQ ecosystem, as defined by the
+ * Will only detect Axon Framework modules that are part of the Axon Framework or Axoniq ecosystem, as defined by the
  * group IDs:
  * <ul>
  *     <li>org.axonframework</li>
@@ -100,7 +100,7 @@ public final class AxonVersionDetector {
             try {
                 String filePath = url.getFile();
                 if (GROUP_IDS.stream().noneMatch(filePath::contains) && !filePath.contains("test-classes")) {
-                    continue; // Skip URLs that do not match the AxonIQ group IDs
+                    continue; // Skip URLs that do not match the Axoniq group IDs
                 }
                 if (url.getProtocol().equals("jar")) {
                     foundVersions.addAll(extractVersionFromJar(url));

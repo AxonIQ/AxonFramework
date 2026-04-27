@@ -82,7 +82,7 @@ public record UpdateCheckRequest(
     public String toUserAgent() {
         String axonBaseVersion = getAxonBaseVersion();
         return String.format(
-                "AxonIQ UpdateChecker/%s (Java %s %s; %s; %s; %s)",
+                "Axoniq UpdateChecker/%s (Java %s %s; %s; %s; %s)",
                 axonBaseVersion,
                 jvmVersion, jvmVendor, osName, osVersion, osArch
         );
