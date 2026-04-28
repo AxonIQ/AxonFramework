@@ -45,6 +45,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -223,6 +225,45 @@ class CachingEventSourcingRepositoryTest {
             // great, that's what we expect
         }
         assertNull(cache.get("id1"));
+    }
+
+    @Test
+    void committedVersionFromSupplierIsUsedWhenPresent() throws Exception {
+        startAndGetUnitOfWork();
+        testSubject.newInstance(() -> new StubAggregate("aggregateId")).execute(StubAggregate::doSomething);
+        CurrentUnitOfWork.commit();
+
+        // Simulate a DCB-style event store that registers a corrected sequence supplier (e.g. global token 42).
+        startAndGetUnitOfWork();
+        CurrentUnitOfWork.get().resources()
+                         .put(CachingEventSourcingRepository.COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX + "aggregateId",
+                              (Supplier<Optional<Long>>) () -> Optional.of(42L));
+        testSubject.load("aggregateId").execute(StubAggregate::doSomething);
+        CurrentUnitOfWork.commit();
+
+        AggregateCacheEntry<?> updated = (AggregateCacheEntry<?>) cache.get("aggregateId");
+        assertNotNull(updated);
+        // Version should be 42 (from the supplier), not 1 (the locally-predicted sequence).
+        assertEquals(42L, updated.getVersion());
+    }
+
+    @Test
+    void aggregateNotCachedWhenSupplierSignalsConcurrentCommit() throws Exception {
+        startAndGetUnitOfWork();
+        testSubject.newInstance(() -> new StubAggregate("aggregateId")).execute(StubAggregate::doSomething);
+        CurrentUnitOfWork.commit();
+
+        cache.remove("aggregateId");
+
+        // Supplier returns empty — another node committed for this aggregate after ours.
+        startAndGetUnitOfWork();
+        CurrentUnitOfWork.get().resources()
+                         .put(CachingEventSourcingRepository.COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX + "aggregateId",
+                              (Supplier<Optional<Long>>) Optional::empty);
+        testSubject.load("aggregateId").execute(StubAggregate::doSomething);
+        CurrentUnitOfWork.commit();
+
+        assertNull(cache.get("aggregateId"));
     }
 
     private UnitOfWork<?> startAndGetUnitOfWork() {

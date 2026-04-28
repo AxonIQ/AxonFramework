@@ -86,6 +86,11 @@ class AxonServerEventStoreFactoryTest {
                                                  .build();
     }
 
+    @AfterEach
+    void tearDown() {
+        connectionManager.shutdown();
+    }
+
     @Test
     void constructForContextUsesFactoryComponents() throws NoSuchFieldException {
         AxonServerEventStore result = testSubject.constructFor(TEST_CONTEXT);

@@ -45,11 +45,20 @@ import static org.mockito.Mockito.*;
  */
 class ServerConnectorConfigurerModuleTest {
 
+    private Configuration testSubject;
+
+    @AfterEach
+    void tearDown() {
+        if (testSubject != null) {
+            testSubject.shutdown();
+        }
+    }
+
     @Test
     void axonServerConfiguredInDefaultConfiguration() {
-        Configuration testSubject = DefaultConfigurer.defaultConfiguration()
-                                                     .configureSerializer(c -> TestSerializer.xStreamSerializer())
-                                                     .buildConfiguration();
+        testSubject = DefaultConfigurer.defaultConfiguration()
+                                       .configureSerializer(c -> TestSerializer.xStreamSerializer())
+                                       .buildConfiguration();
 
         AxonServerConfiguration resultAxonServerConfig = testSubject.getComponent(AxonServerConfiguration.class);
 
@@ -78,26 +87,25 @@ class ServerConnectorConfigurerModuleTest {
 
     @Test
     void queryUpdateEmitterIsTakenFromConfiguration() {
-        Configuration configuration = DefaultConfigurer.defaultConfiguration()
-                                                       .configureSerializer(c -> TestSerializer.xStreamSerializer())
-                                                       .buildConfiguration();
+        testSubject = DefaultConfigurer.defaultConfiguration()
+                                       .configureSerializer(c -> TestSerializer.xStreamSerializer())
+                                       .buildConfiguration();
 
-        assertTrue(configuration.queryBus() instanceof AxonServerQueryBus);
-        assertSame(configuration.queryBus().queryUpdateEmitter(), configuration.queryUpdateEmitter());
-        assertSame(((AxonServerQueryBus) configuration.queryBus()).localSegment().queryUpdateEmitter(),
-                   configuration.queryUpdateEmitter());
+        assertTrue(testSubject.queryBus() instanceof AxonServerQueryBus);
+        assertSame(testSubject.queryBus().queryUpdateEmitter(), testSubject.queryUpdateEmitter());
+        assertSame(((AxonServerQueryBus) testSubject.queryBus()).localSegment().queryUpdateEmitter(),
+                   testSubject.queryUpdateEmitter());
     }
 
     @Test
     void customCommandLoadFactorProvider() throws NoSuchFieldException {
         CommandLoadFactorProvider expected = command -> 5000;
-        Configuration config =
-                DefaultConfigurer.defaultConfiguration()
-                                 .configureSerializer(c -> TestSerializer.xStreamSerializer())
-                                 .registerComponent(CommandLoadFactorProvider.class, c -> expected)
-                                 .buildConfiguration();
+        testSubject = DefaultConfigurer.defaultConfiguration()
+                                       .configureSerializer(c -> TestSerializer.xStreamSerializer())
+                                       .registerComponent(CommandLoadFactorProvider.class, c -> expected)
+                                       .buildConfiguration();
 
-        CommandBus commandBus = config.commandBus();
+        CommandBus commandBus = testSubject.commandBus();
         assertTrue(commandBus instanceof AxonServerCommandBus);
         CommandLoadFactorProvider result = ReflectionUtils.getFieldValue(
                 AxonServerCommandBus.class.getDeclaredField("loadFactorProvider"), commandBus
@@ -131,6 +139,8 @@ class ServerConnectorConfigurerModuleTest {
         await().pollDelay(Duration.ofMillis(50))
                .atMost(Duration.ofMillis(500))
                .untilAsserted(() -> verify(connectionManager).getConnection());
+
+        config.shutdown();
     }
 
     /**
@@ -169,5 +179,7 @@ class ServerConnectorConfigurerModuleTest {
         await().pollDelay(Duration.ofMillis(50))
                .atMost(Duration.ofMillis(500))
                .untilAsserted(() -> verify(connectionManager, times(2)).getConnection());
+
+        config.shutdown();
     }
 }

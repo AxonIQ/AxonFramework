@@ -58,6 +58,7 @@ class AxonServerConnectionManagerTest {
     private StubServer stubServer;
     private StubServer secondNode;
     private AxonServerConfiguration testConfig;
+    private AxonServerConnectionManager testSubject;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -75,6 +76,10 @@ class AxonServerConnectionManagerTest {
 
     @AfterEach
     void tearDown() throws InterruptedException {
+        if (testSubject != null) {
+            testSubject.shutdown();
+            testSubject = null;
+        }
         stubServer.shutdown();
         secondNode.shutdown();
     }
@@ -83,7 +88,7 @@ class AxonServerConnectionManagerTest {
     void whetherConnectionPreferenceIsSent() {
         TagsConfiguration testTags = new TagsConfiguration(Collections.singletonMap("key", "value"));
 
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .tagsConfiguration(testTags)
                                                                              .build();
@@ -126,7 +131,7 @@ class AxonServerConnectionManagerTest {
                                                                     .connectTimeout(50)
                                                                     .build();
 
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 
@@ -145,7 +150,7 @@ class AxonServerConnectionManagerTest {
     @Test
     void enablingHeartbeatsEnsuresHeartbeatMessagesAreSent() {
         testConfig.getHeartbeat().setEnabled(true);
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
         testSubject.start();
@@ -162,7 +167,7 @@ class AxonServerConnectionManagerTest {
     @Test
     void enablingHeartbeatsEnsuresHeartbeatMessagesAreSentOnOtherContexts() {
         testConfig.getHeartbeat().setEnabled(true);
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
         testSubject.start();
@@ -183,7 +188,7 @@ class AxonServerConnectionManagerTest {
     @Test
     void disablingHeartbeatsEnsuresNoHeartbeatMessagesAreSent() {
         testConfig.getHeartbeat().setEnabled(false);
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
         testSubject.start();
@@ -224,7 +229,7 @@ class AxonServerConnectionManagerTest {
 
     @Test
     void isConnected() {
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 
@@ -264,7 +269,7 @@ class AxonServerConnectionManagerTest {
 
     @Test
     void disconnectClosesAllConnections() {
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 
@@ -289,7 +294,7 @@ class AxonServerConnectionManagerTest {
 
     @Test
     void disconnectSingleConnection() {
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 
@@ -314,7 +319,7 @@ class AxonServerConnectionManagerTest {
 
     @Test
     void connectionsReturnsConnectionStatus() {
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 
@@ -345,7 +350,7 @@ class AxonServerConnectionManagerTest {
         testConfig.setReconnectInterval(expectedReconnectInterval);
         testConfig.setForceReconnectThroughServers(false);
 
-        AxonServerConnectionManager testSubject = AxonServerConnectionManager.builder()
+        testSubject = AxonServerConnectionManager.builder()
                                                                              .axonServerConfiguration(testConfig)
                                                                              .build();
 

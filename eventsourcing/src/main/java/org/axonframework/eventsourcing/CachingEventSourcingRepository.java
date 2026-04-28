@@ -20,9 +20,13 @@ import org.axonframework.common.caching.Cache;
 import org.axonframework.common.lock.LockFactory;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
+import org.axonframework.messaging.unitofwork.UnitOfWork;
 import org.axonframework.modelling.command.Aggregate;
 import org.axonframework.modelling.command.RepositoryProvider;
 import org.axonframework.modelling.command.inspection.AggregateModel;
+
+import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
@@ -38,6 +42,14 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * @since 0.3
  */
 public class CachingEventSourcingRepository<T> extends EventSourcingRepository<T> {
+
+    /**
+     * UnitOfWork resource key prefix used to share a committed-sequence supplier between the event store and this
+     * repository. The event store appends the aggregate identifier to form the full key. When present, the supplier
+     * is called in {@code afterCommit} to obtain the actual sequence number assigned by the store, replacing the
+     * locally-predicted value that would otherwise be cached.
+     */
+    public static final String COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX = "CommittedSequenceSupplier/";
 
     private final EventStore eventStore;
     private final RepositoryProvider repositoryProvider;
@@ -84,16 +96,43 @@ public class CachingEventSourcingRepository<T> extends EventSourcingRepository<T
     protected void doSaveWithLock(EventSourcedAggregate<T> aggregate) {
         super.doSaveWithLock(aggregate);
         String key = aggregate.identifierAsString();
-        CurrentUnitOfWork.get().onRollback(u -> cache.remove(aggregate.identifierAsString()));
+        Long predictedVersion = aggregate.version();
         cache.put(key, new AggregateCacheEntry<>(aggregate));
+        CurrentUnitOfWork.get().onRollback(u -> cache.remove(key));
+        CurrentUnitOfWork.get().afterCommit(u -> maybeCorrectCachedVersion(u, key, aggregate, predictedVersion));
     }
 
     @Override
     protected void doDeleteWithLock(EventSourcedAggregate<T> aggregate) {
         super.doDeleteWithLock(aggregate);
         String key = aggregate.identifierAsString();
-        CurrentUnitOfWork.get().onRollback(u -> cache.remove(aggregate.identifierAsString()));
+        Long predictedVersion = aggregate.version();
         cache.put(key, new AggregateCacheEntry<>(aggregate));
+        CurrentUnitOfWork.get().onRollback(u -> cache.remove(key));
+        CurrentUnitOfWork.get().afterCommit(u -> maybeCorrectCachedVersion(u, key, aggregate, predictedVersion));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void maybeCorrectCachedVersion(UnitOfWork<?> unitOfWork, String key,
+                                           EventSourcedAggregate<T> aggregate, Long predictedVersion) {
+        Supplier<Optional<Long>> supplier =
+                unitOfWork.root().getResource(COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX + key);
+        if (supplier == null) {
+            // No committed-sequence supplier registered; the locally-predicted version is already correct.
+            return;
+        }
+        AggregateCacheEntry<?> current = cache.get(key);
+        if (current == null || !predictedVersion.equals(current.getVersion())) {
+            // Cache was cleared or a nested UoW already put a newer entry; leave it alone.
+            return;
+        }
+        Optional<Long> resolved = supplier.get();
+        if (!resolved.isPresent()) {
+            // A concurrent commit was detected; remove the stale entry.
+            cache.remove(key);
+            return;
+        }
+        cache.put(key, new AggregateCacheEntry<>(aggregate, resolved.get()));
     }
 
     /**

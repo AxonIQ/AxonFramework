@@ -32,13 +32,30 @@ public class AggregateCacheEntry<T> implements Serializable {
     private final transient EventSourcedAggregate<T> aggregate;
 
     public AggregateCacheEntry(EventSourcedAggregate<T> aggregate) {
+        this(aggregate, aggregate.version());
+    }
+
+    /**
+     * Creates a cache entry with an explicit version. Intended for event stores that assign sequence numbers at
+     * transaction commit time rather than at event-apply time (e.g. DCB-mode AxonServer), where the
+     * locally-predicted sequence number on the aggregate may differ from the one actually stored.
+     */
+    public AggregateCacheEntry(EventSourcedAggregate<T> aggregate, Long version) {
         this.aggregate = aggregate;
         this.aggregateRoot = aggregate.getAggregateRoot();
-        this.version = aggregate.version();
+        this.version = version;
         this.deleted = aggregate.isDeleted();
         this.snapshotTrigger =
                 (aggregate.getSnapshotTrigger() instanceof Serializable) ? aggregate.getSnapshotTrigger() :
                         NoSnapshotTriggerDefinition.TRIGGER;
+    }
+
+    /**
+     * Returns the version (sequence number) stored in this cache entry. Used by
+     * {@link CachingEventSourcingRepository} to detect whether the entry has been superseded by a more recent commit.
+     */
+    Long getVersion() {
+        return version;
     }
 
     public EventSourcedAggregate<T> recreateAggregate(AggregateModel<T> model,
