@@ -32,10 +32,12 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.TrackingEventStream;
+import org.axonframework.eventsourcing.CachingEventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
 import org.axonframework.eventsourcing.eventstore.EventStoreException;
 import org.axonframework.eventsourcing.snapshotting.SnapshotFilter;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
 import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
 import org.axonframework.serialization.json.JacksonSerializer;
@@ -52,9 +54,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.axonframework.axonserver.connector.utils.AssertUtils.assertWithin;
@@ -246,7 +250,7 @@ class AxonServerEventStoreTest {
 
     @Test
     void lastSequenceNumberFor() {
-        assertThrows(EventStoreException.class, () -> testSubject.lastSequenceNumberFor("Agg1"));
+        assertFalse(testSubject.lastSequenceNumberFor("Agg1").isPresent());
     }
 
     @Test
@@ -491,6 +495,45 @@ class AxonServerEventStoreTest {
         assertEquals(testPayloadThree, thirdResultEvent.getPayload());
 
         assertFalse(resultStream.hasNext());
+    }
+
+    @Test
+    void lastSequenceNumberForReturnsSequenceAfterPublishingDomainEvent() throws Exception {
+        GenericDomainEventMessage<String> event =
+                new GenericDomainEventMessage<>(AGGREGATE_TYPE, AGGREGATE_ID, 0, "Test1");
+
+        UnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
+        testSubject.publish(event);
+        uow.commit();
+
+        DefaultUnitOfWork.startAndGet(null);
+        Optional<Long> lastSeq = testSubject.lastSequenceNumberFor(AGGREGATE_ID);
+        CurrentUnitOfWork.commit();
+
+        assertTrue(lastSeq.isPresent());
+        assertEquals(0L, lastSeq.get());
+    }
+
+    @Test
+    void committedSequenceSupplierReturnsTrueVersionWhenLastEventIsOurs() throws Exception {
+        GenericDomainEventMessage<String> event =
+                new GenericDomainEventMessage<>(AGGREGATE_TYPE, AGGREGATE_ID, 0, "Test1");
+
+        // Supplier registration happens during onPrepareCommit (inside commit()), not during publish().
+        UnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
+        testSubject.publish(event);
+        uow.commit();
+
+        @SuppressWarnings("unchecked")
+        Supplier<Optional<Long>> supplier =
+                (Supplier<Optional<Long>>) uow.root()
+                        .getResource(CachingEventSourcingRepository.COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX
+                                             + AGGREGATE_ID);
+        assertNotNull(supplier, "Supplier should be registered after commit");
+
+        Optional<Long> result = supplier.get();
+        assertTrue(result.isPresent());
+        assertEquals(0L, result.get());
     }
 }
 

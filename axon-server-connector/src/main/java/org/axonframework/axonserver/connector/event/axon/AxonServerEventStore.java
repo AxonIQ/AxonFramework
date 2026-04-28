@@ -43,6 +43,7 @@ import org.axonframework.eventhandling.TrackedEventData;
 import org.axonframework.eventhandling.TrackedEventMessage;
 import org.axonframework.eventhandling.TrackingEventStream;
 import org.axonframework.eventhandling.TrackingToken;
+import org.axonframework.eventsourcing.CachingEventSourcingRepository;
 import org.axonframework.eventsourcing.EventStreamUtils;
 import org.axonframework.eventsourcing.eventstore.AbstractEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.AbstractEventStore;
@@ -70,6 +71,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Spliterators;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -405,6 +408,8 @@ public class AxonServerEventStore extends AbstractEventStore {
 
         private static final int ALLOW_SNAPSHOTS_MAGIC_VALUE = -42;
         private final String APPEND_EVENT_TRANSACTION = this + "/APPEND_EVENT_TRANSACTION";
+        private final String LAST_MESSAGE_ID_KEY_PREFIX = this + "/LastMessageId/";
+        private final String PREDICTED_SEQUENCE_KEY_PREFIX = this + "/PredictedSequence/";
         private static final boolean WITHOUT_SNAPSHOTS = false;
 
         private final AxonServerConfiguration configuration;
@@ -469,10 +474,78 @@ public class AxonServerEventStore extends AbstractEventStore {
             }
             for (EventMessage<?> eventMessage : events) {
                 sender.appendEvent(map(eventMessage, serializer));
+                if (CurrentUnitOfWork.isStarted() && eventMessage instanceof DomainEventMessage) {
+                    registerCommittedSequenceSupplier((DomainEventMessage<?>) eventMessage);
+                }
             }
             if (!CurrentUnitOfWork.isStarted()) {
                 commit(sender);
             }
+        }
+
+        /**
+         * Called for each {@link DomainEventMessage} appended in the current transaction. Keeps track of the last
+         * event's identifier and locally-predicted sequence number per aggregate, and lazily registers a
+         * {@link Supplier} under {@link CachingEventSourcingRepository#COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX} in the
+         * root UnitOfWork. The supplier is called by {@link CachingEventSourcingRepository} after commit to obtain
+         * the actual server-assigned sequence number for the cached aggregate entry.
+         */
+        private void registerCommittedSequenceSupplier(DomainEventMessage<?> event) {
+            String aggregateId = event.getAggregateIdentifier();
+            AtomicReference<String> lastIdRef = CurrentUnitOfWork.get().root()
+                    .getOrComputeResource(LAST_MESSAGE_ID_KEY_PREFIX + aggregateId, k -> new AtomicReference<>());
+            lastIdRef.set(event.getIdentifier());
+            AtomicLong predictedSeqRef = CurrentUnitOfWork.get().root()
+                    .getOrComputeResource(PREDICTED_SEQUENCE_KEY_PREFIX + aggregateId, k -> new AtomicLong());
+            predictedSeqRef.set(event.getSequenceNumber());
+            CurrentUnitOfWork.get().root()
+                    .<Supplier<Optional<Long>>>getOrComputeResource(
+                            CachingEventSourcingRepository.COMMITTED_SEQUENCE_SUPPLIER_KEY_PREFIX + aggregateId,
+                            k -> () -> resolveCommittedSequence(aggregateId, lastIdRef, predictedSeqRef)
+                    );
+        }
+
+        /**
+         * Resolves the sequence number that was actually assigned to the last event committed for the given aggregate.
+         * <p>
+         * First asks the server for the current highest sequence number. If it matches the locally-predicted value,
+         * no concurrent commit occurred and the sequence is returned immediately (one roundtrip). If the value
+         * differs — as happens in DCB contexts where the server assigns global rather than per-aggregate sequence
+         * numbers — the event at that position is read and its message identifier is compared against the last event
+         * we sent. A match confirms the sequence belongs to our transaction; a mismatch indicates a concurrent commit
+         * and {@link Optional#empty()} is returned to signal that caching should be skipped.
+         */
+        private Optional<Long> resolveCommittedSequence(String aggregateId,
+                                                        AtomicReference<String> expectedLastIdRef,
+                                                        AtomicLong predictedSeqRef) {
+            try {
+                Optional<Long> lastSeq = lastSequenceNumberFor(aggregateId);
+                if (!lastSeq.isPresent()) {
+                    return Optional.empty();
+                }
+                long sequence = lastSeq.get();
+                if (sequence == predictedSeqRef.get()) {
+                    // Sequence matches the locally-predicted value; no concurrent commit occurred.
+                    return Optional.of(sequence);
+                }
+                // Sequence differs from prediction (DCB global sequences, or a concurrent commit).
+                // Read the event at that position and verify it belongs to our transaction.
+                AggregateEventStream stream = connectionManager.getConnection(context)
+                                                               .eventChannel()
+                                                               .openAggregateStream(aggregateId, sequence, sequence);
+                try {
+                    if (stream.hasNext() && expectedLastIdRef.get().equals(stream.next().getMessageIdentifier())) {
+                        return Optional.of(sequence);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    stream.cancel();
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to resolve committed sequence for aggregate [{}]", aggregateId, e);
+            }
+            return Optional.empty();
         }
 
         private void commit(AppendEventsTransaction appendEventTransaction) {

@@ -123,9 +123,11 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
         if (snapshot != null) {
             responseObserver.onNext(snapshot);
         }
+        long maxSeq = request.getMaxSequence() > 0 ? request.getMaxSequence() : Long.MAX_VALUE;
         events.stream()
               .filter(e -> e.getAggregateIdentifier().equals(request.getAggregateId()))
               .filter(e -> e.getAggregateSequenceNumber() >= request.getInitialSequence()
+                      && e.getAggregateSequenceNumber() <= maxSeq
                       && (snapshot == null || snapshot.getAggregateSequenceNumber() < e.getAggregateSequenceNumber()))
               .forEach(responseObserver::onNext);
         responseObserver.onCompleted();
@@ -210,6 +212,12 @@ public class EventStoreImpl extends EventStoreGrpc.EventStoreImplBase {
     @Override
     public void readHighestSequenceNr(ReadHighestSequenceNrRequest request,
                                       StreamObserver<ReadHighestSequenceNrResponse> responseObserver) {
-        super.readHighestSequenceNr(request, responseObserver);
+        long highest = events.stream()
+                             .filter(e -> e.getAggregateIdentifier().equals(request.getAggregateId()))
+                             .mapToLong(Event::getAggregateSequenceNumber)
+                             .max()
+                             .orElse(-1L);
+        responseObserver.onNext(ReadHighestSequenceNrResponse.newBuilder().setToSequenceNr(highest).build());
+        responseObserver.onCompleted();
     }
 }
