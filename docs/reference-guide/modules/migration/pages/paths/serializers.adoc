@@ -151,7 +151,7 @@ Available types for properties are:
 
 * `jackson` - using jackson latest version 3 as propagated by Spring Boot 4
 * `jackson2` - fallback for legacy jackson version 2 (Spring Boot 2/3)
-* `avro` - https://avro.apache.org/[Apache Avro] schema based, see the xref:axon-framework-reference:ROOT:conversion.adoc#avro_converter[AvroConverter] section
+* `avro` - https://avro.apache.org/[Apache Avro] schema based, see the xref:ROOT:conversion.adoc#avro_converter[AvroConverter] section
 * `cbor` - uses Jackson/CBORMapper to convert objects into the Concise Binary Object Representation.
 
 Note that `avro` can only be used for `messages` or `events`, not as a `general` converter.

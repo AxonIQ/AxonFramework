@@ -237,7 +237,7 @@ If you instead propagate the exception so the event processor keeps retrying, th
 Although this behavior is sufficient on many occasions, sometimes it is beneficial if we can unblock event handling by parking the problematic event.
 This is where the dead-letter queue comes in.
 It is a mechanism to park events until they can be processed successfully.
-You can find more information in the xref:axon-framework-reference:events:event-processors/dead-letter-queue.adoc[] section.
+You can find more information in the xref:events:event-processors/dead-letter-queue.adoc[] section.
 
 [[general_processor_configuration]]
 == General processor configuration
