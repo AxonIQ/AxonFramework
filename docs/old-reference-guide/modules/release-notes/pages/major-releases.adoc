@@ -461,14 +461,14 @@ For an exhaustive list of all adjustments made for release 4.5 you can check out
 * A new type of `EventProcessor` has been introduced in pull request https://github.com/AxonFramework/AxonFramework/pull/1712[#1712], called the `PooledStreamingEventProcessor`.
  This `EventProcessor` allows the same set of operations as the `TrackingEventProcessor`, but uses a different threading approach for handling events and processing operations.
  In all, this solution provides a more straightforward processor implementation and configuration, allowing for enhanced event processing in general.
- For specifics on how to configure it, check out xref:axon-framework-reference:events:event-processors/streaming.adoc[this] section.
+ For specifics on how to configure it, check out xref:events:event-processors/streaming.adoc[this] section.
 
-* Sagas support the use of xref:axon-framework-reference:deadlines:deadline-managers.adoc#_handling_a_deadline[Deadline Handlers], but an `@DeadlineHandler` annotated method couldn't automatically close a Saga with the `@EndSaga` annotation.
+* Sagas support the use of xref:deadlines:deadline-managers.adoc#_handling_a_deadline[Deadline Handlers], but an `@DeadlineHandler` annotated method couldn't automatically close a Saga with the `@EndSaga` annotation.
  This enhancement has been described in https://github.com/AxonFramework/AxonFramework/issues/1469[#1469] and resolved in pull request https://github.com/AxonFramework/AxonFramework/pull/1656[#1656].
  As such, as of Axon 4.5, an `@DeadlineHandler` annotated can also be annotated with `@EndSaga`, to automatically close the Saga whenever the given deadline is handled.
 
 * Whenever an application uses snapshots, the point arises that old snapshot versions need to be invalidated when loading an Aggregate.
- To that end the xref:axon-framework-reference:tuning:event-snapshots.adoc#_filtering_snapshot_events[`SnapshotFilter`] can be configured.
+ To that end the xref:tuning:event-snapshots.adoc#_filtering_snapshot_events[`SnapshotFilter`] can be configured.
  As a simplified solution, the `@Revision` annotation can now be placed on the Aggregate class to automatically configure a revision based `SnapshotFilter`.
  Due to this, old snapshots will be filtered out automatically when an Aggregate is reconstructed from the `EventStore`.
  For those interested, the implementation of this feature can be found https://github.com/AxonFramework/AxonFramework/pull/1657[here].
@@ -506,7 +506,7 @@ For an exhaustive list of all adjustments made for release 4.5 you can check out
  This annotation allows you to introduce a specific bit of logic to be invoked _prior_ to entering the message handling function or after invocation.
  It for example allows the additional introduction of a `@ExceptionHandler` annotation, allowing you to specifically deal with the exceptions thrown from your message handlers.
  The original pull request can be found under https://github.com/AxonFramework/AxonFramework/pull/1394[#1394].
- For more specifics on using this annotation, check out the xref:axon-framework-reference:messaging-concepts:message-intercepting.adoc#annotated-MessageHandlerInterceptor[@MessageHandlerInterceptor] section.
+ For more specifics on using this annotation, check out the xref:messaging-concepts:message-intercepting.adoc#annotated-MessageHandlerInterceptor[@MessageHandlerInterceptor] section.
 
 * Configuring a `Snapshotter` and `SnapshotFilter` have been simplified in this release.
  Pull request https://github.com/AxonFramework/AxonFramework/pull/1447[#1447] shares the load of allowing for distinct `Snapshotter` configuration.
@@ -549,7 +549,7 @@ For a full list of all the feature request and enhancements done for release 4.4
 
 * The `TrackingEventProcessor#processingStatus` method as of 4.3 exposes more status information.
  The current token position, token-at-reset, is-merging and merge-completed position have been added to the set.
- Read the xref:axon-framework-reference:monitoring:processors.adoc#event-tracker-status[Event Tracker Status] section for more specifics on this.
+ Read the xref:monitoring:processors.adoc#event-tracker-status[Event Tracker Status] section for more specifics on this.
 
 === _Bug fixes_
 

@@ -714,7 +714,7 @@ For an exhaustive list of all the changes, check out the https://github.com/Axon
 === Release 4.5.3
 
 * One new feature has been introduced in 4.5.3: the `PropertySequencingPolicy` by contributor `nils-christian`.
- This xref:axon-framework-reference:events:event-processors/streaming.adoc#sequential-processing[sequencing policy] can be configured to look for a common property in the events.
+ This xref:events:event-processors/streaming.adoc#sequential-processing[sequencing policy] can be configured to look for a common property in the events.
 
 * The version of the `axonserver-connector-java` has been updated to 4.5.2.
  This update resolves a troublesome issue around permit updates for subscription queries, which exhausted the number of queries an application could have running.
@@ -1047,7 +1047,7 @@ For a complete list of all resolved bugs we refer to the https://github.com/Axon
 
 === Release 4.1.1
 
-* Query Dispatch Interceptors were not called correctly when a xref:axon-framework-reference:queries:query-dispatchers.adoc#subscription-queries[subscription query] was performed when Axon Server was used as the `QueryBus`.
+* Query Dispatch Interceptors were not called correctly when a xref:queries:query-dispatchers.adoc#subscription-queries[subscription query] was performed when Axon Server was used as the `QueryBus`.
 
 This issue was marked https://github.com/AxonFramework/AxonFramework/issues/1013[here] and resolved in pull request https://github.com/AxonFramework/AxonFramework/pull/1042[#1042].
 
