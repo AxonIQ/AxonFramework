@@ -205,6 +205,9 @@ public class AxonTestFixture implements AxonTestPhase.Setup {
             configurer = configurer.componentRegistry(cr -> cr.disableEnhancer(
                     "io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer"
             ));
+            configurer = configurer.componentRegistry(cr -> cr.disableEnhancer(
+                    "io.axoniq.framework.postgresql.PostgresqlConfigurationEnhancer"
+            ));
         }
         var recordingEnhancer = new MessagesRecordingConfigurationEnhancer();
         var configuration = configurer.componentRegistry(cr -> cr.registerEnhancer(recordingEnhancer))
