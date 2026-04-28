@@ -1,7 +1,7 @@
 = Query Dispatchers
 :navtitle: Dispatching
 
-How to handle a query message has been covered in more detail in the xref:axon-framework-reference:queries:query-handlers.adoc[Query Handling section]. Queries have to be dispatched, just like any type of message, before they can be handled. To that end Axon provides two interfaces:
+How to handle a query message has been covered in more detail in the xref:queries:query-handlers.adoc[Query Handling section]. Queries have to be dispatched, just like any type of message, before they can be handled. To that end Axon provides two interfaces:
 
 . The Query Bus, and
 . The Query Gateway
