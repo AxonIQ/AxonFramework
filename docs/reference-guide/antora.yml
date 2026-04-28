@@ -3,7 +3,6 @@ title: Axon Framework
 version:
   axon-(?<version>+({0..9}).+({0..9})).*: $<version>
   '*': development
-prerelease: false
 start_page: ROOT:index.adoc
 
 asciidoc:

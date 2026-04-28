@@ -69,7 +69,7 @@
     </organization>
 
     <properties>
-        <revision>5.1.0-SNAPSHOT</revision>
+        <revision>5.1.1-SNAPSHOT</revision>
         <java.version>21</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
