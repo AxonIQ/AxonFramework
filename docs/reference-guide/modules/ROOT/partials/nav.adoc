@@ -16,6 +16,10 @@ include::testing:partial$nav.adoc[]
 
 * xref:ROOT:conversion.adoc[]
 
+ifdef::data-protection[]
+include::data-protection:partial$nav.adoc[]
+endif::[]
+
 include::tuning:partial$nav.adoc[]
 
 include::monitoring:partial$nav.adoc[]
