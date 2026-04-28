@@ -442,7 +442,7 @@ public void registerQueryHandlerInterceptor(MessagingConfigurer configurer) {
 [[reactive-dispatch-interceptors]]
 == Reactor dispatch interceptors
 
-When using the xref:axon-framework-reference:ROOT:modules.adoc#axon-reactor[Reactor extension], reactor gateways provide their own interceptor type: `ReactorMessageDispatchInterceptor`.
+When using the xref:ROOT:modules.adoc#axon-reactor[Reactor extension], reactor gateways provide their own interceptor type: `ReactorMessageDispatchInterceptor`.
 Unlike the standard `MessageDispatchInterceptor`, the reactor variant runs inside the Reactor subscription chain.
 This means interceptors can access Reactor context using `Mono.deferContextual()`, enabling integration with reactive context holders such as Spring Security's `ReactiveSecurityContextHolder`.
 
