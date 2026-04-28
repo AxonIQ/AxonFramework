@@ -1,6 +1,6 @@
 = Dead-Letter Queue
 
-When configuring xref:axon-framework-reference:events:event-processors/index.adoc#error-handling[error handling] for your event processors, you might want to consider a Dead-Letter Queue to park events that you were unable to handle.
+When configuring xref:events:event-processors/index.adoc#error-handling[error handling] for your event processors, you might want to consider a Dead-Letter Queue to park events that you were unable to handle.
 
 Instead of either logging the error and continuing, or infinitely retrying the current event, a Dead-Letter Queue will park the event in the queue so you can decide to try and handle it again later. In addition, it will prevent handling of later events in the same sequence until the failed event is successfully processed.
 
