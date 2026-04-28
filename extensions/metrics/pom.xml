@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework.extensions</groupId>
         <artifactId>axon-extensions</artifactId>
-        <version>5.0.5-SNAPSHOT</version>
+        <version>5.0.5</version>
     </parent>
 
     <groupId>org.axonframework.extensions.metrics</groupId>
@@ -85,6 +85,6 @@
     </build>
 
   <scm>
-    <tag>axon-5.0.4</tag>
+    <tag>axon-5.0.5</tag>
   </scm>
 </project>

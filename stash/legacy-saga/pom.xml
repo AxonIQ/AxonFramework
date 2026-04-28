@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.0.5-SNAPSHOT</version>
+        <version>5.0.5</version>
         <relativePath>../../build/parent/pom.xml</relativePath>
     </parent>
 
@@ -239,6 +239,6 @@
     </dependencies>
 
   <scm>
-    <tag>axon-5.0.4</tag>
+    <tag>axon-5.0.5</tag>
   </scm>
 </project>

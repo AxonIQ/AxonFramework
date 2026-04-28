@@ -20,11 +20,11 @@
     <parent>
         <groupId>org.axonframework.extensions.spring</groupId>
         <artifactId>axon-spring-extension</artifactId>
-        <version>5.0.5-SNAPSHOT</version>
+        <version>5.0.5</version>
     </parent>
 
     <artifactId>axon-spring-boot-starter</artifactId>
-    <version>5.0.5-SNAPSHOT</version>
+    <version>5.0.5</version>
 
     <name>Axon Extension - Spring - SpringBoot Starter</name>
     <description>
@@ -64,6 +64,6 @@
     </dependencies>
 
   <scm>
-    <tag>axon-5.0.4</tag>
+    <tag>axon-5.0.5</tag>
   </scm>
 </project>
