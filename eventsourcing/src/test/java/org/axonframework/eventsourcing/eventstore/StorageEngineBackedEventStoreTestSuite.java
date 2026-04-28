@@ -280,6 +280,30 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
         }
 
         @Test
+        protected void shouldAppendMultipleEventsAfterSourcing() {
+            UnitOfWork uow = unitOfWork();
+            EventMessage newMessage1 = message(new CourseUpdated(TAG1.value(), "4"));
+            EventMessage newMessage2 = message(new CourseUpdated(TAG1.value(), "5"));
+
+            uow.runOnInvocation(pc -> {
+                EventStoreTransaction tx = eventStore.transaction(pc);
+                MessageStream<? extends EventMessage> sourcing = tx.source(SourcingCondition.conditionFor(EventCriteria.havingTags(TAG1)));
+
+                assertThat(sourcing.reduce(0, (c, m) -> ++c).join()).isEqualTo(3);
+                assertThat(tx.appendPosition()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+
+                tx.appendEvent(newMessage1);
+                tx.appendEvent(newMessage2);
+            });
+
+            execute(uow);
+
+            assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG1)), 5))
+                .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                .containsExactly(event1, event2, event5, newMessage1, newMessage2);
+        }
+
+        @Test
         protected void latestTokenShouldSeeOnlyNewEvents() {
             TrackingToken latestToken = unitOfWork().executeWithResult(eventStore::latestToken).join();
 
