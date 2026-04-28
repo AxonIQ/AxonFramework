@@ -113,13 +113,20 @@ If you are only using `@EventSourced` annotations today, you will need to move t
 == Snapshot storage
 
 Axon Framework 5.1 uses a dedicated `SnapshotStore` for persisting snapshots.
-For the 5.1.0 release, the practical options are:
-
-* `InMemorySnapshotStore` for tests and ephemeral setups
-* `AxonServerSnapshotStore` for persistent snapshot storage
-
 Snapshots are stored separately from the regular event stream, and the snapshot store is responsible for loading the latest compatible snapshot for an entity.
 If no usable snapshot is available, the entity is reconstructed from the event stream.
 
+=== `InMemorySnapshotStore`
+
+Use `InMemorySnapshotStore` for tests and other ephemeral setups where snapshot persistence is not required.
+
+[.axoniq-feature]
+=== `AxonServerSnapshotStore`
+
+Use `AxonServerSnapshotStore` when you want persistent snapshot storage backed by Axon Server.
+
+[NOTE]
+====
 When migrating from Axon Framework 4, make sure your application no longer assumes snapshot persistence is part of the event store implementation itself.
 Snapshot storage is now an explicit dependency of the entity module.
+====
