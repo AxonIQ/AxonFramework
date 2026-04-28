@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon</artifactId>
-        <version>5.0.5</version>
+        <version>5.0.6-SNAPSHOT</version>
     </parent>
 
     <artifactId>axon-framework-bom</artifactId>
