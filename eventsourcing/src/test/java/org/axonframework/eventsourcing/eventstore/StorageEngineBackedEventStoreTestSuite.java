@@ -47,7 +47,11 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,6 +95,14 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
 
     private static Instant nextEventTimestamp = Instant.EPOCH;  // tracks auto time incrementing for created events
     private static long messageId;
+
+    /*
+     * Potential bug fix for a hanging test during CI. This executor ensures
+     * it has sufficient threads to run tests that rely on parallelism to
+     * execute. Locally, the CI problem was reproducable by using a single
+     * thread pool.
+     */
+    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(5);
 
     /**
      * A tag for some of the messages inserted by the tests. Created
@@ -143,6 +155,11 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
         baseTime = nextEventTimestamp.plusSeconds(24 * 60 * 60).truncatedTo(ChronoUnit.DAYS);
         baseToken = unitOfWork().executeWithResult(eventStore::latestToken).join();
         nextEventTimestamp = baseTime;
+    }
+
+    @AfterAll
+    static void afterAll() {
+        EXECUTOR.shutdown();
     }
 
     /**
@@ -454,13 +471,13 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
              * Start both units of work, and wait until they finished sourcing:
              */
 
-            CompletableFuture<Void> execute1 = CompletableFuture.runAsync(() -> uow1.execute().join());
-            CompletableFuture<Void> execute2 = CompletableFuture.runAsync(() -> uow2.execute().join());
+            CompletableFuture<Void> execute1 = CompletableFuture.runAsync(() -> execute(uow1), EXECUTOR);
+            CompletableFuture<Void> execute2 = CompletableFuture.runAsync(() -> execute(uow2), EXECUTOR);
 
             awaitLatch(sourcingFinished);
 
             /*
-             * Unblock transaction 2 and verifies it commits succesfully:
+             * Unblock transaction 2 and verify it commits succesfully:
              */
 
             latch2.countDown();
@@ -552,7 +569,9 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
 
     private void awaitLatch(CountDownLatch latch) {
         try {
-            latch.await(10, TimeUnit.SECONDS);
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Latch did not become available after 10 seconds");
+            }
         }
         catch (InterruptedException e) {
             throw new AssertionError(e);
@@ -652,9 +671,12 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
      */
     protected final void execute(UnitOfWork workUnit) {
         try {
-            workUnit.execute().join();
+            workUnit.execute().get(10, TimeUnit.SECONDS);
         }
-        catch(CompletionException e) {
+        catch (InterruptedException | TimeoutException e) {
+            throw new AssertionError(e);
+        }
+        catch (ExecutionException e) {
             if(e.getCause() instanceof Error error) {
                 throw error;
             }
@@ -662,7 +684,7 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
                 throw re;
             }
 
-            throw e;
+            throw new RuntimeException(e);
         }
     }
 
