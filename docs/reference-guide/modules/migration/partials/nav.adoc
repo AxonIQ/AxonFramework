@@ -12,6 +12,7 @@
 **** xref:migration:paths/aggregates/polymorphism-migration.adoc[]
 *** xref:migration:paths/projectors-event-processors.adoc[]
 *** xref:migration:paths/event-store.adoc[]
+*** xref:migration:paths/snapshotting.adoc[]
 *** xref:migration:paths/test-fixtures.adoc[]
 *** xref:migration:paths/serializers.adoc[]
 *** xref:migration:paths/dlq.adoc[]
