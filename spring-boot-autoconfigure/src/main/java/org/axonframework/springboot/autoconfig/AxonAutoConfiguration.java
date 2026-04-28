@@ -76,6 +76,7 @@ import org.axonframework.serialization.json.JacksonSerializer;
 import org.axonframework.serialization.xml.XStreamSerializer;
 import org.axonframework.spring.eventsourcing.SpringAggregateSnapshotter;
 import org.axonframework.springboot.DistributedCommandBusProperties;
+import org.axonframework.springboot.EmbeddedEventStoreProperties;
 import org.axonframework.springboot.EventProcessorProperties;
 import org.axonframework.springboot.SerializerProperties;
 import org.axonframework.springboot.TagsConfigurationProperties;
@@ -109,6 +110,7 @@ import static org.springframework.beans.factory.BeanFactoryUtils.beansOfTypeIncl
 @AutoConfiguration
 @AutoConfigureAfter(EventProcessingAutoConfiguration.class)
 @EnableConfigurationProperties(value = {
+        EmbeddedEventStoreProperties.class,
         EventProcessorProperties.class,
         DistributedCommandBusProperties.class,
         SerializerProperties.class,
@@ -116,6 +118,7 @@ import static org.springframework.beans.factory.BeanFactoryUtils.beansOfTypeIncl
 })
 public class AxonAutoConfiguration implements BeanClassLoaderAware {
 
+    private final EmbeddedEventStoreProperties embeddedEventStoreProperties;
     private final EventProcessorProperties eventProcessorProperties;
     private final SerializerProperties serializerProperties;
     private final TagsConfigurationProperties tagsConfigurationProperties;
@@ -123,10 +126,12 @@ public class AxonAutoConfiguration implements BeanClassLoaderAware {
 
     private ClassLoader beanClassLoader;
 
-    public AxonAutoConfiguration(EventProcessorProperties eventProcessorProperties,
+    public AxonAutoConfiguration(EmbeddedEventStoreProperties embeddedEventStoreProperties,
+                                 EventProcessorProperties eventProcessorProperties,
                                  SerializerProperties serializerProperties,
                                  TagsConfigurationProperties tagsConfigurationProperties,
                                  ApplicationContext applicationContext) {
+        this.embeddedEventStoreProperties = embeddedEventStoreProperties;
         this.eventProcessorProperties = eventProcessorProperties;
         this.serializerProperties = serializerProperties;
         this.tagsConfigurationProperties = tagsConfigurationProperties;
@@ -291,6 +296,10 @@ public class AxonAutoConfiguration implements BeanClassLoaderAware {
                                  .storageEngine(storageEngine)
                                  .messageMonitor(configuration.messageMonitor(EventStore.class, "eventStore"))
                                  .spanFactory(configuration.getComponent(EventBusSpanFactory.class))
+                                 .optimizeEventConsumption(embeddedEventStoreProperties.isOptimizeEventConsumption())
+                                 .cachedEvents(embeddedEventStoreProperties.getCachedEvents())
+                                 .fetchDelay(embeddedEventStoreProperties.getFetchDelay().toMillis())
+                                 .cleanupDelay(embeddedEventStoreProperties.getCleanupDelay().toMillis())
                                  .build();
     }
 

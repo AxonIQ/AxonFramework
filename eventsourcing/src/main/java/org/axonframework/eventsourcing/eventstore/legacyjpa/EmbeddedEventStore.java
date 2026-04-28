@@ -495,7 +495,7 @@ public class EmbeddedEventStore extends AbstractEventStore {
         private ThreadFactory threadFactory = new AxonThreadFactory(THREAD_GROUP);
         private boolean optimizeEventConsumption = fetchEventConsumptionSystemPropertyOrDefault();
 
-        // Default to optimize event consumption of no property has been set
+        // Default to optimize event consumption if no property has been set
         private static boolean fetchEventConsumptionSystemPropertyOrDefault() {
             String optimizeEventConsumptionSystemProperty = System.getProperty(
                     OPTIMIZE_EVENT_CONSUMPTION_SYSTEM_PROPERTY);

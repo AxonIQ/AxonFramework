@@ -207,6 +207,33 @@ class AxonAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void embeddedEventStoreDefaultsToOptimizeEventConsumptionEnabled() throws Exception {
+        new ApplicationContextRunner()
+                .withUserConfiguration(MinimalContext.class)
+                .withPropertyValues("axon.axonserver.enabled=false")
+                .run(context -> {
+                    EmbeddedEventStore eventStore = context.getBean(EmbeddedEventStore.class);
+                    java.lang.reflect.Field field = EmbeddedEventStore.class.getDeclaredField("optimizeEventConsumption");
+                    field.setAccessible(true);
+                    assertTrue((boolean) field.get(eventStore));
+                });
+    }
+
+    @Test
+    void embeddedEventStoreOptimizeEventConsumptionCanBeDisabledViaProperties() throws Exception {
+        new ApplicationContextRunner()
+                .withUserConfiguration(MinimalContext.class)
+                .withPropertyValues("axon.axonserver.enabled=false",
+                                    "axon.eventstore.optimize-event-consumption=false")
+                .run(context -> {
+                    EmbeddedEventStore eventStore = context.getBean(EmbeddedEventStore.class);
+                    java.lang.reflect.Field field = EmbeddedEventStore.class.getDeclaredField("optimizeEventConsumption");
+                    field.setAccessible(true);
+                    assertFalse((boolean) field.get(eventStore));
+                });
+    }
+
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class})
     @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
     @Configuration
@@ -315,6 +342,17 @@ class AxonAutoConfigurationTest {
         @Component
         public static class SomeOtherComponent {
 
+        }
+    }
+
+    @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class})
+    @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
+    @Configuration
+    public static class MinimalContext {
+
+        @Bean
+        public EventStorageEngine storageEngine() {
+            return new InMemoryEventStorageEngine();
         }
     }
 
