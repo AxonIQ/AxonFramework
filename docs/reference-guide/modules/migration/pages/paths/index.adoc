@@ -15,6 +15,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/messages.adoc[Message Migration (@Event, @Command, @Query)]
 * xref:migration:paths/aggregates/index.adoc[Aggregate Migration]
 * xref:migration:paths/event-store.adoc[Event Store migration]
+* xref:migration:paths/snapshotting.adoc[Snapshot migration]
 * xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]
@@ -277,7 +278,6 @@ As Axon Framework 5.0 is the first step in this new major version, not all featu
 
 - **Saga & Deadline Overhaul**: Sagas and Deadlines do not have a native "async-native" replacement yet. A full redesign is in progress.
 - **Event Upcasters**: Event upcasting is not yet available.
-- **Snapshots**: The snapshotting feature for entities is not yet available. Currently scheduled for 5.1.
 - **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
 - **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
 - **Annotated Features (Coming in 5.2.0)**:
@@ -299,4 +299,3 @@ If you find that your specific migration challenge is not addressed here, or if 
 2.  **Open an Issue**: Let us know by opening a documentation issue on our link:https://github.com/AxonFramework/AxonFramework/issues[GitHub repository].
 
 Your feedback helps us make this guide better for everyone!
-
