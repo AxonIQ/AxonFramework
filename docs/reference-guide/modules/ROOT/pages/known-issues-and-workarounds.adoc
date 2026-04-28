@@ -27,7 +27,7 @@ When looking to provide a pull request, be sure to adjust link:https://github.co
 You can use Axoniq's PostgreSQL Extension instead of setting up PostgreSQL yourself as a event storage solution. For more information, please check the repository link:https://github.com/AxonIQ/extension-postgresql[here.]
 ====
 
-When storing the serialized formats of, for example, xref:axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tokens], or xref:axon-framework-reference:events:infrastructure.adoc[events], it is good to know Axon uses JPAs `@Lob` annotation for these columns.
+When storing the serialized formats of, for example, xref:events:event-processors/streaming.adoc#tracking_tokens[tokens], or xref:events:infrastructure.adoc[events], it is good to know Axon uses JPAs `@Lob` annotation for these columns.
 
 This choice combined with link:https://www.postgresql.org/[PostgreSQL] and Hibernate, causes unexpected behavior for most.
 
@@ -42,7 +42,7 @@ However, even when using Axon Server, the predicament remains for tokens and sag
 
 For those cases, it would be wise to adjust the Hibernate mapping.
 The most straightforward way, is to enforce the use of the `BYTEA` column type; with some additional steps, of course.
-For a full explanation and walkthrough, please check the xref:axon-framework-reference:tuning:rdbms-tuning.adoc#_postgresql_lob_annotated_columns_and_default_hibernate_mapping[PostegreSQL, LOB annotated columns, and default Hibernate mapping] tuning page.
+For a full explanation and walkthrough, please check the xref:tuning:rdbms-tuning.adoc#_postgresql_lob_annotated_columns_and_default_hibernate_mapping[PostegreSQL, LOB annotated columns, and default Hibernate mapping] tuning page.
 
 == Sequence generation issues with JPA Entities
 
@@ -50,12 +50,12 @@ For the JPA entities that require a generated sequence, we decided to use the de
 In the pre-Hibernate-6 age, this typically resulted in the construction of a single sequence generator that would be reused by several tables.
 This can be regarded as suboptimal, as frequently, the sequence generator would be reused between tables.
 
-Especially given the nature of the `global_index` column on the `domain_event_entry` table, which is used to keep the progress in xref:axon-framework-reference:events:event-processors/streaming.adoc[streaming event processors], a reused generator, causes unexpected gaps in event processing.
+Especially given the nature of the `global_index` column on the `domain_event_entry` table, which is used to keep the progress in xref:events:event-processors/streaming.adoc[streaming event processors], a reused generator, causes unexpected gaps in event processing.
 Although Axon Framework can deal with these gaps, they make the queries to the `domain_event_entry` table rather bulky.
 
 Just as with any event storage solution, using a dedicated event store implementation like xref:axon-server-reference::index.adoc[Axon Server] will solve the problem entirely.
 Instead of using Axon Server, it is also possible to define sequence generators manually for Axon's entities.
-The xref:axon-framework-reference:tuning:rdbms-tuning.adoc[Relational Database Tuning page] contains a section on how to do this, called xref:axon-framework-reference:tuning:rdbms-tuning.adoc#auto_increment_and_sequences[Auto-Increment and Sequences].
+The xref:tuning:rdbms-tuning.adoc[Relational Database Tuning page] contains a section on how to do this, called xref:tuning:rdbms-tuning.adoc#auto_increment_and_sequences[Auto-Increment and Sequences].
 
 As described earlier, the `@GeneratedValue` was introduced in 2016.
 With the recent move to Hibernate 6, which defaults the increment value to 50, the problem of gaps or unintended reuse between tables has only become bigger.
