@@ -20,7 +20,7 @@
     <parent>
         <artifactId>axon</artifactId>
         <groupId>org.axonframework</groupId>
-        <version>4.13.1</version>
+        <version>4.13.2-SNAPSHOT</version>
     </parent>
 
     <artifactId>axon-spring-boot-4-integrationtests</artifactId>

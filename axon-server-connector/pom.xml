@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon</artifactId>
-        <version>4.13.1</version>
+        <version>4.13.2-SNAPSHOT</version>
     </parent>
 
     <artifactId>axon-server-connector</artifactId>
