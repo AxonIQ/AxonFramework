@@ -15,7 +15,7 @@ Axon Framework uses a flexible approach to message identification and conversion
 
 === Message type vs Java class
 
-Messages in Axon Framework are identified by their `MessageType` (as described in the xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
+Messages in Axon Framework are identified by their `MessageType` (as described in the xref:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
 
 * A `QualifiedName` - The fully qualified business name of the message, consisting of:
 ** A `namespace` (defaults to the package name of the message class)
@@ -28,7 +28,7 @@ This approach means that:
 * Different handlers can receive the same message in different Java types
 * The Java class is one possible representation of a message, not its sole identifier
 
-For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
+For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
 
 === Payload conversion at handling time
 

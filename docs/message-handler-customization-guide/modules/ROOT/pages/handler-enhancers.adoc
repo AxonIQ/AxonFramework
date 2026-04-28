@@ -1,7 +1,7 @@
 :navtitle: Handler Enhancers
 = Handler Enhancers
 
-Handler Enhancers allow you to wrap handlers and add custom logic to the execution or eligibility of handlers for a specific message. Handler enhancers differ from xref:axon-framework-reference:messaging-concepts:message-intercepting.adoc[message handler interceptors] by the access they provide to the message handling component (for example, the aggregate member) at the resolution time. Hence, handler enhancers allow for more fine-grained control. You can use handler enhancers to intercept and perform checks on groups of `@MessageHandler` annotated methods, like a command, event, or query handler.
+Handler Enhancers allow you to wrap handlers and add custom logic to the execution or eligibility of handlers for a specific message. Handler enhancers differ from xref:5.1@axon-framework-reference:messaging-concepts:message-intercepting.adoc[message handler interceptors] by the access they provide to the message handling component (for example, the aggregate member) at the resolution time. Hence, handler enhancers allow for more fine-grained control. You can use handler enhancers to intercept and perform checks on groups of `@MessageHandler` annotated methods, like a command, event, or query handler.
 
 To create a handler enhancer, you implement the `HandlerEnhancerDefinition` interface and override the `wrapHandler()` method. All this method does is give you access to the `MessageHandlingMember<T>`, which is an object representing any handler specified in the system.
 
