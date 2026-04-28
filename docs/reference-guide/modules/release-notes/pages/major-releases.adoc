@@ -90,7 +90,7 @@ For those looking for a quick overview of "what is Axon and what is Axoniq Frame
 - Remove unused imports by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4235[#4235]
 - Update copyright notice for 2026 by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4066[#4066]
 
-=== Bug Fixes
+=== Bug fixes
 
 - [#3784] Polymorphic @EventSourcedEntity - doesn't evolve immutable entities
 - [#3784] Support Polymorphic Sealed Interface Entity Evolution by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/3975[#3975]
@@ -130,8 +130,8 @@ For those looking for a quick overview of "what is Axon and what is Axoniq Frame
 - [#4427] Re-enable Examples build
 - [#4427] Re-enable Examples build by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4447[#4447]
 - [#4437] Fix consistency marker when sourcing an empty stream in the AggregateBasedJpaEventStorageEngine by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4454[#4454]
-- [#4455] NullPointerException in AbstractMessageStream.next() - FetchResult.Value(@Nullable) + Optional.of() crash PooledStreamingEventProcessors
-- [#4455] Support a null MessageStream.Entry on the AbstractMessageStream.FetchResult by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4457[#4457]
+- [#4455] NullPointerException in `AbstractMessageStream.next()` - `FetchResult.Value(@Nullable)` + `Optional.of()` crash PooledStreamingEventProcessors
+- [#4455] Support a null `MessageStream.Entry` on the `AbstractMessageStream.FetchResult` by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4457[#4457]
 - [#4450] Order JdbcAutoConfiguration correctly for Datasource by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4451[#4451]
 - Ensure UnitOfWork recorded cause on runErrorHandlers is set by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4435[#4435]
 - Fix flakey test in AbstractSubscriptionQueryTestSuite by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4433[#4433]
