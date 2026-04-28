@@ -19,7 +19,7 @@
     <parent>
         <artifactId>axon</artifactId>
         <groupId>org.axonframework</groupId>
-        <version>4.13.1-SNAPSHOT</version>
+        <version>4.13.1</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
