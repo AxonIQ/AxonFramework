@@ -418,6 +418,180 @@ It provides `streamingQuery()` returning `Flux<R>` directly, along with `query()
 Reactor dispatch interceptors enable access to Reactor context at the gateway boundary.
 ====
 
+[[graceful-shutdown]]
+== Graceful shutdown
+
+Subscription queries and streaming queries started on the local node keep their streams open until they are explicitly closed.
+This means that during application shutdown, any active query streams will hold open the connections consuming them. For example, server-sent event (SSE) connections in a web application.
+This prevents the web server from completing a graceful shutdown, because it waits for open connections to drain.
+
+The `QueryShutdownManager` addresses this by letting callers explicitly register query streams for termination at shutdown.
+It is a standalone component with no changes required to existing bus or gateway infrastructure.
+
+[NOTE]
+====
+Only query streams initiated on the local node need to be tracked.
+Subscription queries received from a remote node via Axon Server (where this node is the handler supplying updates) are managed by the Axon Server connector and do not require tracking.
+====
+
+=== Shutdown policy
+
+Two shutdown policies are available:
+
+* **Close immediately:** all active streams are terminated as soon as shutdown begins.
+  Use this for long-lived streams such as SSE endpoints.
+* **Wait with grace period:** the manager waits up to the configured duration for streams to complete
+  naturally, then force-closes any that remain.
+  Streaming queries are finite by nature, so a short grace period is usually appropriate.
+
+To configure a policy, pass a lambda to the relevant method on `QueryGatewayConfigurer` (for gateway-level tracking) or create a `QueryShutdownManager` directly (for call-site tracking):
+
+[source,java]
+----
+// Close immediately
+QueryShutdownManager.closeImmediately();
+
+// Wait with grace period
+QueryShutdownManager.withGracePeriod(Duration.ofSeconds(30));
+----
+
+When using a standalone manager for call-site tracking, register it with Axon's lifecycle:
+
+[source,java]
+----
+QueryShutdownManager manager = QueryShutdownManager.closeImmediately();
+MessagingConfigurer.create()
+    .lifecycleRegistry(manager::registerShutdown);
+----
+
+This ensures `manager.shutdown()` is called at the correct phase during application shutdown.
+To apply shutdown tracking automatically at the gateway level, see the next section.
+
+=== Gateway-level tracking
+
+For applications that route queries through the `QueryGateway`, configure shutdown tracking directly on a named gateway.
+Every query dispatched through that gateway is then tracked automatically, with no changes needed at individual call sites.
+
+Each call to `queryGateway(name, configurer)` registers a new, independently configured `QueryGateway` component under the given name.
+Retrieve it from the configuration by that name:
+
+[source,java]
+----
+AxonConfiguration config = MessagingConfigurer.create()
+    .queryGateway("sse", g -> g
+        .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately()) // <1>
+        .cancellingStreamingQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(5))) // <2>
+    )
+    .build();
+
+QueryGateway sseGateway = config.getComponent(QueryGateway.class, "sse"); // <3>
+----
+
+<1> All subscription queries dispatched through this gateway are automatically tracked and closed immediately on shutdown.
+<2> All streaming queries dispatched through this gateway are tracked with a 5-second grace period, allowing in-progress result sets to drain.
+<3> Retrieve the gateway by its registered name.
+
+When no shutdown tracking is needed, use `withDefaults()` to register a plain gateway without decorators:
+
+[source,java]
+----
+MessagingConfigurer.create()
+    .queryGateway("reporting", QueryGatewayConfigurer::withDefaults);
+----
+
+Multiple gateways with different policies can be registered in the same configuration:
+
+[source,java]
+----
+MessagingConfigurer.create()
+    .queryGateway("sse", g -> g
+        .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately())
+    )
+    .queryGateway("internal", g -> g
+        .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(30))
+    );
+----
+
+[[registering-query-streams-for-shutdown]]
+=== Registering query streams for shutdown
+
+When the gateway-level option is not used, the manager provides two `track()` methods, one for each entry point:
+
+[source,java]
+----
+@Autowired
+QueryShutdownManager shutdownManager;
+
+// Via QueryGateway (returns Publisher<T>):
+@GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Publisher<MyDto> stream() {
+    return shutdownManager.track( // <1>
+        queryGateway.subscriptionQuery(new MyQuery(), MyDto.class)
+    );
+}
+
+// Via QueryBus directly (returns MessageStream<T>):
+MessageStream<QueryResponseMessage> stream = shutdownManager.track(
+    queryBus.subscriptionQuery(queryMessage, null, 100) // <2>
+);
+----
+
+<1> Wrap the result of `subscriptionQuery` with `track()`, which returns a `Publisher<T>` that participates in the manager's shutdown.
+<2> For direct `QueryBus` users, wrap the `MessageStream` with `track()` and use the returned wrapper. `queryMessage` must be a `QueryMessage` instance.
+
+In both cases, the caller must use the returned wrapper instead of the original.
+When a tracked stream completes naturally (stream sealed, subscriber cancels), it deregisters itself automatically.
+
+=== Spring Boot
+
+When using Spring Boot with Axon, declare a `QueryShutdownManager` bean to enable shutdown lifecycle management.
+Axon automatically calls `shutdown()` at the web server graceful-shutdown phase, so active query streams
+are cancelled at the same moment the web server stops accepting new connections:
+
+[source,java]
+----
+@Bean
+public QueryShutdownManager queryShutdownManager() {
+    return QueryShutdownManager.closeImmediately();
+}
+----
+
+For gateway-level tracking, declare a named `QueryGateway` bean directly.
+Axon's Spring integration bridges all `QueryGateway` beans into Axon's component registry by their bean name,
+so the named gateway is available everywhere Axon resolves components:
+
+[source,java]
+----
+@Bean
+public QueryGateway sseGateway(QueryBus queryBus,
+                               MessageTypeResolver resolver,
+                               QueryPriorityCalculator calculator,
+                               MessageConverter converter,
+                               QueryShutdownManager shutdownManager) { // <1>
+    DefaultQueryGateway base = new DefaultQueryGateway(queryBus, resolver, calculator, converter);
+    return new ShutdownTrackingQueryGateway(base, shutdownManager, shutdownManager); // <2>
+}
+----
+
+<1> Inject the `QueryShutdownManager` bean declared above. Spring's `@Qualifier` selects the right one when multiple managers are defined.
+<2> Pass the same manager for both subscription and streaming tracking, or pass separate managers if different policies are needed.
+
+Multiple `QueryShutdownManager` beans can coexist; each is registered with the lifecycle independently.
+Inject the appropriate manager by name using `@Qualifier` at each call site or gateway declaration.
+
+=== Manual lifecycle integration
+
+For programmatic (non-Spring) configuration, register the manager with the `MessagingConfigurer` lifecycle:
+
+[source,java]
+----
+QueryShutdownManager manager = QueryShutdownManager.withGracePeriod(Duration.ofSeconds(5));
+configurer.lifecycleRegistry(manager::registerShutdown);
+----
+
+When neither `MessagingConfigurer` nor Spring Boot is available, call `shutdown()` directly from whatever lifecycle mechanism the application provides.
+The method returns a `CompletableFuture<Void>` that completes once all tracked streams are closed.
+
 == Configuration
 
 Both `QueryGateway` and `QueryBus` are automatically configured by Axon Framework.
