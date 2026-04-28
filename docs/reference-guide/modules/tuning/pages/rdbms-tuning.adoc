@@ -66,14 +66,14 @@ Here, again, a shorter (but variable) length field should suffice.
 [#auto_increment_and_sequences]
 :navtitle: Auto-Increment and Sequences
 
-When using a relational database as an event store, Axon Framework relies on an auto-increment value to allow xref:axon-framework-reference:events:event-processors/streaming.adoc[streaming event processors] to read all events roughly in the order they were inserted.
+When using a relational database as an event store, Axon Framework relies on an auto-increment value to allow xref:events:event-processors/streaming.adoc[streaming event processors] to read all events roughly in the order they were inserted.
 We say "roughly", because "insert-order" and "commit-order" are different things.
 
 While auto-increment values are (generally) generated at insert-time, these values only become visible at commit-time.
 This means another process may observe these sequence numbers arriving in a different order.
 While Axon Framework has mechanisms to ensure that eventually all events are handled, even when they become visible in a different order, there are limitations and performance aspects to consider.
 
-When a xref:axon-framework-reference:events:event-processors/streaming.adoc[streaming event processor] reads events, it uses the "global sequence" to track its progress.
+When a xref:events:event-processors/streaming.adoc[streaming event processor] reads events, it uses the "global sequence" to track its progress.
 When events become available in a different order than they were inserted, Axon Framework will encounter a "gap." Axon Framework will remember these "gaps" to verify that data has become available since the last read.
 These gaps may be the result of events becoming visible in a different order, but also because a transaction was rolled back.
 It is highly recommended to ensure that no gaps exist because of over eagerly increasing the sequence number.
@@ -153,7 +153,7 @@ Thus, the dedicate large object storage solution will be used if you are using P
 As events and snapshots are frequently read, the overhead predicament discussed earlier will be hit.
 Arguably more problematic is issue two, especially for the `token_entry` table.
 
-The "claim" on a token is frequently updated to allow correct collaboration in a distributed Axon setup (please read our xref:axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[Tracking Tokens] section for more details).
+The "claim" on a token is frequently updated to allow correct collaboration in a distributed Axon setup (please read our xref:events:event-processors/streaming.adoc#tracking_tokens[Tracking Tokens] section for more details).
 As the large object table is **not** automatically cleared, it will eventually overflow through all the updates.
 
 Hence, it would be best to avoid the Large Object Storage behavior and instead opt for the transparent TOAST feature.

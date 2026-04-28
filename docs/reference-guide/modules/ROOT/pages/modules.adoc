@@ -116,7 +116,7 @@ https://micrometer.io/[Micrometer] is a dimensional-first metrics collection fac
 
 ==== Axon Tracing OpenTelemetry
 
-This extension contains the components needed to xref:axon-framework-reference:monitoring:tracing.adoc[enable tracing with OpenTelemetry].
+This extension contains the components needed to xref:monitoring:tracing.adoc[enable tracing with OpenTelemetry].
 
 === External extensions
 
