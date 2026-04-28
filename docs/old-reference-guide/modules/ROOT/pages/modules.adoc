@@ -97,7 +97,7 @@ This module contains components that enable migration of older Axon projects to 
 
 === Axon Tracing OpenTelemetry
 
-This module contains the components needed to xref:axon-framework-reference:monitoring:tracing.adoc[enable tracing with OpenTelemetry].
+This module contains the components needed to xref:monitoring:tracing.adoc[enable tracing with OpenTelemetry].
 
 == Extension modules
 
