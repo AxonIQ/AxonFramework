@@ -8,16 +8,16 @@ These are messages that request information in a certain format. Any application
 
 There are multiple types of queries that cane be distinguished.
 
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#point-to-point-queries[Point-to-point queries]:
+. xref:queries:query-dispatchers.adoc#point-to-point-queries[Point-to-point queries]:
 They are routed to a single handler, which is expected to return a single result. This is the most common type of query.
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#scatter-gather-queries[Scatter-gather queries]:
+. xref:queries:query-dispatchers.adoc#scatter-gather-queries[Scatter-gather queries]:
 These queries are dispatched to all handlers that are capable of handling the query.
 The results of all handlers are then aggregated and returned to the client.
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#subscription-queries[Subscription queries]: These request an initial result and then continue to receive updates as long as the subscription is active.
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#streaming-queries[Streaming queries]: These queries are used to request a stream of results, which are returned as they become available.
+. xref:queries:query-dispatchers.adoc#subscription-queries[Subscription queries]: These request an initial result and then continue to receive updates as long as the subscription is active.
+. xref:queries:query-dispatchers.adoc#streaming-queries[Streaming queries]: These queries are used to request a stream of results, which are returned as they become available.
 
 
-You can find more about each type of query in the xref:axon-framework-reference:queries:query-dispatchers.adoc[Query Dispatchers] section.
+You can find more about each type of query in the xref:queries:query-dispatchers.adoc[Query Dispatchers] section.
 
 
 == Subsections
