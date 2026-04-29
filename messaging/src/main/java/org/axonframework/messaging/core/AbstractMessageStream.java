@@ -203,15 +203,12 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * A {@link FetchResult} containing a successfully fetched value. The value can be {@code null} to support
-         * {@link MessageStream#ignoreEntries()}.
+         * A {@link FetchResult} containing a successfully fetched value.
          *
          * @param <T>   the entry type
          * @param value the value
          */
-        record Value<T extends Entry<?>>(@Nullable T value) implements FetchResult<T> {
-
-        }
+        record Value<T extends Entry<?>>(T value) implements FetchResult<T> {}
 
         /**
          * A {@link FetchResult} representing a terminal error in the stream.
@@ -527,24 +524,31 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
         this.awaitingData = false;
 
-        return switch (fetchNext()) {
-            case FetchResult.Value(Entry<M> v) -> Optional.ofNullable(v);
-            case FetchResult.NotReady() -> {
-                awaitingData = true;
+        try {
+            return switch (fetchNext()) {
+                case FetchResult.Value(Entry<M> v) -> Optional.of(v);
+                case FetchResult.NotReady() -> {
+                    awaitingData = true;
 
-                yield Optional.empty();
-            }
-            case FetchResult.Error(Throwable throwable) -> {
-                completeExceptionally(throwable);
+                    yield Optional.empty();
+                }
+                case FetchResult.Error(Throwable error) -> {
+                    completeExceptionally(error);
 
-                yield Optional.empty();
-            }
-            case FetchResult.Completed() -> {
-                complete();
+                    yield Optional.empty();
+                }
+                case FetchResult.Completed() -> {
+                    complete();
 
-                yield Optional.empty();
-            }
-        };
+                    yield Optional.empty();
+                }
+            };
+        }
+        catch (Exception e) {
+            completeExceptionally(e);
+
+            return Optional.empty();
+        }
     }
 
     /**
@@ -575,6 +579,9 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * Implementations must not attempt to complete or close the stream directly.
      * Instead, they must return {@link FetchResult.Completed} or {@link FetchResult.Error}
      * to signal termination.
+     * <p>
+     * If an implementation throws an exception, the stream completes exceptionally with
+     * that exception.
      *
      * @return a {@link FetchResult} representing the outcome of the fetch attempt
      */
