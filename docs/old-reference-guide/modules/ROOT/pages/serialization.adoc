@@ -43,7 +43,8 @@ A flexible, general-purpose serializer like http://x-stream.github.io/[XStream] 
 By default, all three `Serializer` flavors are set to use the `XStreamSerializer`, which internally uses http://x-stream.github.io/[XStream] to serialize objects to an XML format.
 XML is verbose, but XStream has the major benefit of being able to serialize virtually anything.
 
-____
+[NOTE]
+====
 
 _XStream and JDK 17_
 
@@ -54,8 +55,16 @@ Hence, if you're using JDK 17, the chances are that objects (for example, your s
 On some occasions configuring XStream's security settings is sufficient.
 Other times you will have to introduce custom https://x-stream.github.io/converters.html[`Converters`] to de-/serialize specific types.
 If you prefer not to deal with specific XStream settings, it might be better to use the `JacksonSerializer` throughout your Axon application.
+====
 
-____
+[IMPORTANT]
+====
+Jackson 3 changed the default deserializing `final` fields (see https://github.com/FasterXML/jackson-databind/issues/4552[the original Jackson GitHub issue] for details).
+This prevents `final` fields from being deserialized, which—for example—might affect usages of Kotlin `val` properties for message payloads (because they are `final` by default).
+
+When upgrading to Jackson 3, be sure to check if any of your payloads that get serialized using the `Jackson3Serializer` (that is using Jackson 3 under the hood) are affected by this change.
+If so, you can either set the Jackson 3 feature `ALLOW_FINAL_FIELDS_AS_MUTATORS` to `true`, or adjust your payload representation in code as necessary.
+====
 
 XML's verbosity is typically fine when storing tokens, sagas, or snapshots, but for messages (and specifically events) XML might cost too much due to its serialized size.
 Thus for optimization reasons you can configure different serializers for your messages.
