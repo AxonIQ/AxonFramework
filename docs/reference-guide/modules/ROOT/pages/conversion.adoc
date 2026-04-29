@@ -226,6 +226,15 @@ public Converter customJacksonConverter() {
 
 TIP: If you have not migrated to Jackson 3 yet, Axon Framework also provides a `Jackson2Converter` in the `org.axonframework.conversion.jackson2` package. This converter uses the Jackson 2 library (`com.fasterxml.jackson`) and works identically to the `JacksonConverter`.
 
+[#jackson3_converter_final_fields_note]
+[IMPORTANT]
+====
+Jackson 3 changed the default deserializing `final` fields (see https://github.com/FasterXML/jackson-databind/issues/4552[the original Jackson GitHub issue] for details).
+This prevents `final` fields from being deserialized, which—for example—affects any usage of Kotlin `val` properties for message payloads (because they are `final` by default).
+
+When upgrading to Jackson 3, be sure to check if any of your payloads that get serialized using the `JacksonConverter` (that is using Jackson 3 under the hood) are affected by this change. If so, you can either set the Jackson 3 feature `ALLOW_FINAL_FIELDS_AS_MUTATORS` to `false`, or adjust your payload representation in code as necessary.
+====
+
 ==== XML support
 
 If you need to serialize to XML format instead of JSON, you can configure the `JacksonConverter` with an `XmlMapper`:

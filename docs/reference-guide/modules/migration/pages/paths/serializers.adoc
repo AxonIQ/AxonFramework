@@ -154,7 +154,9 @@ Available types for properties are:
 * `avro` - https://avro.apache.org/[Apache Avro] schema based, see the xref:ROOT:conversion.adoc#avro_converter[AvroConverter] section
 * `cbor` - uses Jackson/CBORMapper to convert objects into the Concise Binary Object Representation.
 
-Note that `avro` can only be used for `messages` or `events`, not as a `general` converter.
+NOTE: The `avro` converter can only be used for `messages` or `events`, not as a `general` converter.
+
+IMPORTANT: Jackson 3 changed the default for deserializing `final` fields. If your upgrade from Jackson 2 to Jackson 3, check the xref:ROOT:conversion.adoc#jackson3_converter_final_fields_note[additional information in the conversion reference].
 
 
 
