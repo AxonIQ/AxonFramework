@@ -138,7 +138,7 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
 
     @Override
     public void describeTo(ComponentDescriptor descriptor) {
-        descriptor.describeProperty("delegate", delegate);
+        descriptor.describeWrapperOf(delegate);
         if (subscriptionQueryShutdownManager != null) {
             descriptor.describeProperty("subscriptionQueryShutdownManager", subscriptionQueryShutdownManager);
         }
