@@ -156,10 +156,6 @@ This extension provides basic implementations based on Dropwizard to collect mon
 This extension provides basic implementations based on Micrometer to collect monitoring information.
 https://micrometer.io/[Micrometer] is a dimensional-first metrics collection facade whose aim is to allow you to time, count, and gauge your code with a vendor neutral API.
 
-ifdef::advanced-framework[]
-include::ROOT:partial$modules-advanced-framework.adoc[]
-endif::[]
-
 === Axon Kotlin
 
 The Kotlin extension provides idiomatic Kotlin support for Axon Framework, reducing boilerplate and enabling natural Kotlin API usage through extension functions and reified generics.
@@ -171,6 +167,10 @@ Features include, among others:
 * Kotlin value class support for entity identifiers
 * reduced boilerplate in event sourcing handlers
 * test fixture support tailored for Kotlin (`axon-kotlin-test`)
+
+ifdef::advanced-framework[]
+include::ROOT:partial$modules-advanced-framework.adoc[]
+endif::[]
 
 == Axon Framework Bill of Materials
 
