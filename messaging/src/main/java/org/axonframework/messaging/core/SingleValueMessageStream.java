@@ -17,12 +17,10 @@
 package org.axonframework.messaging.core;
 
 import org.axonframework.messaging.core.MessageStream.Entry;
-import org.jspecify.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 /**
  * A {@link MessageStream} implementation using a single {@link Entry entry} or {@link CompletableFuture} completing to
@@ -47,8 +45,8 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
      *
      * @param entry The {@link Entry entry} which is the singular value contained in this {@link MessageStream stream}.
      */
-    SingleValueMessageStream(@Nullable Entry<M> entry) {
-        this(CompletableFuture.completedFuture(entry));
+    SingleValueMessageStream(Entry<M> entry) {
+        this(CompletableFuture.completedFuture(Objects.requireNonNull(entry, "The entry parameter must not be null.")));
     }
 
     /**
@@ -59,8 +57,10 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
      *               {@link MessageStream stream}.
      */
     SingleValueMessageStream(CompletableFuture<Entry<M>> source) {
-        this.source = source;
-        this.source.whenComplete((e, t) -> signalProgress());
+        this.source = Objects.requireNonNull(source, "The source parameter must not be null.");
+
+        source.thenApply(e -> Objects.requireNonNull(e, "SingleValueMessageStream source completed with null entry"))
+            .whenComplete((e, t) -> signalProgress());
     }
 
     @Override
@@ -88,17 +88,6 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
         if (!source.isDone()) {
             source.cancel(false);
         }
-    }
-
-    @Override
-    public <RM extends Message> Single<RM> map(Function<Entry<M>, Entry<RM>> mapper) {
-        return new SingleValueMessageStream<>(source.thenApply(mapper));
-    }
-
-    @Override
-    public <R> CompletableFuture<R> reduce(R identity,
-                                           BiFunction<R, ? super Entry<M>, R> accumulator) {
-        return source.thenApply(message -> accumulator.apply(identity, message));
     }
 
     @Override

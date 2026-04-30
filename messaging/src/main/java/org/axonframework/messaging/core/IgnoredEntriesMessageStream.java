@@ -16,8 +16,7 @@
 
 package org.axonframework.messaging.core;
 
-import java.util.Optional;
-import java.util.function.Consumer;
+import org.axonframework.messaging.core.MessageStream.Entry;
 
 /**
  * Implementation of the {@link MessageStream} that ignores all {@link Entry entries} of the {@code delegate} stream and
@@ -29,13 +28,13 @@ import java.util.function.Consumer;
  *
  * @param <M> The type of {@link Message} from the delegate stream that will be ignored.
  * @author Mateusz Nowak
+ * @author John Hendrikx
  * @since 5.0.0
  */
-class IgnoredEntriesMessageStream<M extends Message>
-        extends DelegatingMessageStream<M, Message>
+class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStream<Message>
         implements MessageStream.Empty<Message> {
 
-    private final Empty<Message> empty;
+    private final MessageStream<M> delegate;
 
     /**
      * Constructs the IgnoreMessageStream with given {@code delegate} to receive and ignore entries from.
@@ -43,23 +42,44 @@ class IgnoredEntriesMessageStream<M extends Message>
      * @param delegate The instance to delegate calls to.
      */
     IgnoredEntriesMessageStream(MessageStream<M> delegate) {
-        super(delegate);
-        this.empty = MessageStream.empty();
+        this.delegate = delegate;
+
+        delegate.setCallback(this::onDelegateProgress);
+
+        if (delegate.isCompleted()) {
+            initialize(delegate.error()
+                .map(FetchResult::<Entry<Message>>error)
+                .orElse(FetchResult.completed())
+            );
+        }
+    }
+
+    private void onDelegateProgress() {
+        while (delegate.hasNextAvailable()) {
+            delegate.next();
+        }
+
+        signalProgress();
     }
 
     @Override
-    public Optional<Entry<Message>> next() {
-        return delegate().next().flatMap(r -> Optional.empty());
+    protected FetchResult<Entry<Message>> fetchNext() {
+        if (delegate.isCompleted()) {
+            return delegate.error()
+                .map(FetchResult::<Entry<Message>>error)
+                .orElse(FetchResult.completed());
+        }
+
+        return FetchResult.notReady();
     }
 
     @Override
-    public Optional<Entry<Message>> peek() {
-        return Optional.empty();
+    protected void onCompleted() {
+        delegate.close();
     }
 
     @Override
-    public Empty<Message> onNext(Consumer<Entry<Message>> onNext) {
-        return empty.onNext(onNext);
+    protected String describeDelegates() {
+        return delegate.toString();
     }
-
 }

@@ -20,8 +20,6 @@ import org.axonframework.messaging.core.MessageStream.Entry;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -116,18 +114,6 @@ class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStrea
     protected synchronized void onCompleted() {
         active.close();
         streams.forEach(MessageStream::close);
-    }
-
-    @Override
-    public synchronized <R> CompletableFuture<R> reduce(R identity,
-                                                        BiFunction<R, ? super Entry<M>, R> accumulator) {
-        CompletableFuture<R> reduction = active.reduce(identity, accumulator);
-
-        for (MessageStream<M> stream : streams) {
-            reduction = reduction.thenCompose(intermediate -> stream.reduce(intermediate, accumulator));
-        }
-
-        return reduction;
     }
 
     @Override
