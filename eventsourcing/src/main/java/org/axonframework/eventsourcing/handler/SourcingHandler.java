@@ -17,7 +17,6 @@
 package org.axonframework.eventsourcing.handler;
 
 import org.axonframework.common.annotation.Internal;
-import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 import java.util.concurrent.CompletableFuture;
@@ -34,7 +33,7 @@ import java.util.concurrent.CompletableFuture;
  * @author John Hendrikx
  */
 @Internal
-public interface SourcingHandler<I, E> extends DescribableComponent {
+public interface SourcingHandler<I, E> {
 
     /**
      * Sources the entity identified by the given {@code identifier}.
@@ -46,9 +45,8 @@ public interface SourcingHandler<I, E> extends DescribableComponent {
      * reconstructed or evolved to its latest state.
      *
      * @param identifier the identifier of the entity to source, cannot be {@code null}
-     * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
      * @param processingContext the {@link ProcessingContext} associated with this sourcing operation, cannot be {@code null}
      * @return a {@link CompletableFuture} that completes with the sourced entity, never {@code null}
      */
-    CompletableFuture<E> source(I identifier, InitializingEntityEvolver<I, E> evolver, ProcessingContext processingContext);
+    CompletableFuture<E> source(I identifier, ProcessingContext processingContext);
 }

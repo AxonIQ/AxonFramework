@@ -23,9 +23,11 @@ import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
+import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
@@ -35,6 +37,7 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A {@link ConfigurationEnhancer} registering the default components of the {@link EventSourcingConfigurer}.
@@ -102,8 +105,15 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
     }
 
     private static StorageEngineBackedEventStore simpleEventStore(Configuration config) {
+        EventStorageEngine engine = config.getComponent(EventStorageEngine.class);
+        Optional<SnapshotStore> snapshotStore = config.getOptionalComponent(SnapshotStore.class);
+
+        EventStorageEngine effectiveEngine = snapshotStore.isEmpty() || engine instanceof SnapshotStore
+            ? engine
+            : new SnapshotCapableEventStorageEngine(engine, snapshotStore.orElseThrow());
+
         return new StorageEngineBackedEventStore(
-                config.getComponent(EventStorageEngine.class),
+                effectiveEngine,
                 new SimpleEventBus(),
                 config.getComponent(TagResolver.class)
         );

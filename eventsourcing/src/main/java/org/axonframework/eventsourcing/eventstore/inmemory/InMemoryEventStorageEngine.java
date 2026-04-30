@@ -22,15 +22,17 @@ import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPosition;
+import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
 import org.axonframework.eventsourcing.eventstore.TaggedEventMessage;
+import org.axonframework.eventsourcing.eventstore.TerminalEventMessage;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventsCondition;
@@ -184,7 +186,10 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
         }
 
         // Get start position and ensure it is within valid bounds for this implementation:
-        long start = Math.max(0, GlobalIndexPosition.toIndex(condition.start()));
+        long start = switch (condition.sourcingStrategy()) {
+            case SourcingStrategy.Absolute(Position position) -> Math.max(0, GlobalIndexPosition.toIndex(position));
+            default -> throw new UnsupportedOperationException("Unsupported sourcing strategy: " + condition.sourcingStrategy());
+        };
 
         // Set end to the CURRENT last position, to reflect it's a finite stream.
         MapBackedMessageStream messageStream = new MapBackedSourcingEventMessageStream(

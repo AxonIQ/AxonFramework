@@ -26,27 +26,35 @@ import static java.util.Objects.requireNonNull;
  * The {@code start} refers to the start point of the event stream that is of interest to this
  * {@link SourcingCondition}.
  *
- * @param start    The start position in the event sequence to retrieve of the entity to source.
- * @param criteria The {@link EventCriteria} set of the entity to source.
+ * @param sourcingStrategy the {@link SourcingStrategy} used to construct the message stream
+ * @param criteria the {@link EventCriteria} set of the entity to source
  * @author Steven van Beelen
  * @author John Hendrikx
  * @since 5.0.0
  */
 record DefaultSourcingCondition(
-        Position start,
+        SourcingStrategy sourcingStrategy,
         EventCriteria criteria
 ) implements SourcingCondition {
 
     DefaultSourcingCondition {
-        requireNonNull(start, "start cannot be null");
+        requireNonNull(sourcingStrategy, "sourcingStrategy cannot be null");
         requireNonNull(criteria, "criteria cannot be null");
     }
 
     @Override
     public SourcingCondition or(SourcingCondition other) {
         return new DefaultSourcingCondition(
-            other.start().min(start),
+            other.sourcingStrategy().merge(sourcingStrategy),
             other.criteria().or(criteria)
         );
+    }
+
+    @Override
+    public Position start() {
+        return switch (sourcingStrategy) {
+            case SourcingStrategy.Absolute(Position p) -> p;
+            default -> throw new IllegalStateException("No start position is available, please use sourcingStrategy method");
+        };
     }
 }

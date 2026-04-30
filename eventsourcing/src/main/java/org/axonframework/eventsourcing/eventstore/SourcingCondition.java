@@ -32,6 +32,7 @@ import org.axonframework.messaging.eventstreaming.EventsCondition;
  * @author Marco Amann
  * @author Sara Pellegrini
  * @author Steven van Beelen
+ * @auhtor John Hendrikx
  * @since 5.0.0
  */
 public sealed interface SourcingCondition extends EventsCondition permits DefaultSourcingCondition {
@@ -39,8 +40,9 @@ public sealed interface SourcingCondition extends EventsCondition permits Defaul
     /**
      * Construct a {@code SourcingCondition} used to source a model based on the given {@code criteria}.
      *
-     * @param criteria The {@link EventCriteria} used as the {@link SourcingCondition#criteria()}.
-     * @return A {@code SourcingCondition} that will retrieve an event sequence matching the given {@code criteria}.
+     * @param criteria the {@link EventCriteria} used as the {@link SourcingCondition#criteria()}
+     * @return a {@code SourcingCondition} that will retrieve an event sequence matching the given {@code criteria}
+     * @throws NullPointerException if any argument is {@code null}
      */
     static SourcingCondition conditionFor(EventCriteria criteria) {
         return conditionFor(Position.START, criteria);
@@ -49,38 +51,68 @@ public sealed interface SourcingCondition extends EventsCondition permits Defaul
     /**
      * Construct a {@code SourcingCondition} used to source a model based on the given {@code criteria}.
      * <p>
-     * Will start the sequence at the given {@code start} value.
+     * Will start the sequence at the given absolute {@code position} value using the
+     * {@link SourcingStrategy.Absolute absolute sourcing strategy}.
      *
-     * @param start    The start position in the event sequence to retrieve of the model to source.
-     * @param criteria The {@link EventCriteria} used as the {@link SourcingCondition#criteria()}.
-     * @return A {@code SourcingCondition} that will retrieve an event sequence matching the given {@code criteria},
-     * starting at the given {@code start}.
+     * @param position the position to use for the {@link SourcingStrategy.Absolute absolute sourcing strategy}
+     * @param criteria the {@link EventCriteria} used as the {@link SourcingCondition#criteria()}
+     * @return a {@code SourcingCondition} that will retrieve an event sequence matching the given {@code criteria},
+     *     starting at the given {@code start}
+     * @throws NullPointerException if any argument is {@code null}
      */
-    static SourcingCondition conditionFor(Position start, EventCriteria criteria) {
-        return new DefaultSourcingCondition(start, criteria);
+    static SourcingCondition conditionFor(Position position, EventCriteria criteria) {
+        return new DefaultSourcingCondition(new SourcingStrategy.Absolute(position), criteria);
     }
 
     /**
-     * The start position in the event sequence to source. Defaults to {@code -1L} to ensure we start at the beginning
+     * Construct a {@code SourcingCondition} used to source a model based on the given {@code criteria}
+     * and {@link SourcingStrategy sourcing strategy}.
+     *
+     * @param sourcingStrategy the {@link SourcingStrategy} used to construct the message stream
+     * @param criteria         the {@link EventCriteria} used as the {@link SourcingCondition#criteria()}
+     * @return a {@code SourcingCondition} that will retrieve an event sequence matching the given {@code criteria},
+     *     starting at the given {@code start}
+     * @throws NullPointerException if any argument is {@code null}
+     */
+    static SourcingCondition conditionFor(SourcingStrategy sourcingStrategy, EventCriteria criteria) {
+        return new DefaultSourcingCondition(sourcingStrategy, criteria);
+    }
+
+    /**
+     * The start position in the event sequence to source. Defaults to {@code Position.START} to ensure we start at the beginning
      * of the sequence's stream complying to the {@link #criteria()}.
      *
-     * @return The start position in the event sequence to source, never {@code null}.
+     * @return the start position in the event sequence to source, never {@code null}
+     * @deprecated use {@link #sourcingStrategy()}'s and check for the {@link SourcingStrategy.Absolute absolute mode}
      */
+    @Deprecated(since = "5.1.0", forRemoval = true)
     default Position start() {
         return Position.START;
     }
 
     /**
-     * Merges {@code this SourcingCondition} with the given {@code other SourcingCondition}, by combining their
-     * {@link #criteria() search criteria} and {@link #start() starting points}.
-     * <p>
-     * Warning: If the starting points don't overlap or connect properly, the merged condition might return some events
-     * that neither of the original conditions would have returned on their own.
-     * <p>
-     * Usually, the earlier starting point (minimum start value) will be used in the final merged condition.
+     * The sourcing strategy used for this sourcing condition.
      *
-     * @param other The {@code SourcingCondition} to combine with {@code this SourcingCondition}.
-     * @return A combined {@code SourcingCondition} based on {@code this SourcingCondition} and the given {@code other}.
+     * @return a {@link SourcingStrategy}, never {@code null}
+     */
+    default SourcingStrategy sourcingStrategy() {
+        return new SourcingStrategy.Absolute(Position.START);
+    }
+
+    /**
+     * Merges {@code this SourcingCondition} with the given {@code other SourcingCondition}, by combining their
+     * {@link #criteria() search criteria} and {@link #sourcingStrategy() sourcing strategies}.
+     * <p>
+     * Warning: if the sourcing strategies cannot be combined, this method will fail with an {@link UnsupportedOperationException}.
+     * If both sourcing strategies use {@link SourcingStrategy.Absolute absolute positioning}, then the merged condition
+     * might return some events that neither of the original conditions would have returned on their own.
+     * <p>
+     * For positional strategies, usually the earlier starting point (minimum start value) will be used in the final merged condition.
+     *
+     * @param other the {@code SourcingCondition} to combine with {@code this SourcingCondition}
+     * @return a combined {@code SourcingCondition} based on {@code this SourcingCondition} and the given {@code other}
+     * @throws NullPointerException if any argument is {@code null}
+     * @throws UnsupportedOperationException if the strategies are uncombinable
      */
     SourcingCondition or(SourcingCondition other);
 }

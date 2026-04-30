@@ -26,12 +26,14 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.modelling.repository.ManagedEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * A simple implementation of {@link SourcingHandler} that reconstructs an entity
+ * A simple implementation of {@link EntityLifecycleHandler} that reconstructs an entity
  * by sourcing events directly from an {@link EventStore}.
  * <p>
  * This implementation retrieves all events for a given identifier according to the
@@ -47,25 +49,44 @@ import java.util.concurrent.CompletableFuture;
  * @author John Hendrikx
  */
 @Internal
-public class SimpleSourcingHandler<I, E> implements SourcingHandler<I, E> {
+public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandler<I, E> {
 
     private final EventStore eventStore;
     private final CriteriaResolver<I> criteriaResolver;
+    private final InitializingEntityEvolver<I, E> evolver;
 
     /**
-     * Creates a new {@code SimpleSourcingHandler}.
+     * Constructs a new instance.
      *
      * @param eventStore the {@link EventStore} from which events are sourced, cannot be {@code null}
      * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
      * @throws NullPointerException when any argument is {@code null}
      */
-    public SimpleSourcingHandler(EventStore eventStore, CriteriaResolver<I> criteriaResolver) {
+    public SimpleEntityLifecycleHandler(EventStore eventStore, CriteriaResolver<I> criteriaResolver, InitializingEntityEvolver<I, E> evolver) {
         this.eventStore = Objects.requireNonNull(eventStore, "The eventStore parameter must not be null.");
         this.criteriaResolver = Objects.requireNonNull(criteriaResolver, "The criteriaResolver parameter must not be null.");
+        this.evolver = Objects.requireNonNull(evolver, "The evolver parameter must not be null.");
     }
 
     @Override
-    public CompletableFuture<E> source(I identifier, InitializingEntityEvolver<I, E> evolver, ProcessingContext pc) {
+    public E initialize(I identifier, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
+        return evolver.initialize(identifier, firstEventMessage, context);
+    }
+
+    @Override
+    public void subscribe(ManagedEntity<I, E> entity, ProcessingContext context) {
+        eventStore.transaction(context)
+            .onAppend(event -> entity.applyStateChange(e -> evolver.evolve(
+                entity.identifier(),
+                entity.entity(),
+                event,
+                context
+            )));
+    }
+
+    @Override
+    public CompletableFuture<E> source(I identifier, ProcessingContext pc) {
         EventCriteria criteria = criteriaResolver.resolve(identifier, pc);
         EventStoreTransaction transaction = eventStore.transaction(pc);
         MessageStream<? extends EventMessage> source = transaction.source(SourcingCondition.conditionFor(criteria));
@@ -80,5 +101,6 @@ public class SimpleSourcingHandler<I, E> implements SourcingHandler<I, E> {
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("eventStore", eventStore);
         descriptor.describeProperty("criteriaResolver", criteriaResolver);
+        descriptor.describeProperty("evolver", evolver);
     }
 }

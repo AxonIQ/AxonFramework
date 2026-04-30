@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.handler;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EntityMissingAfterLoadOrCreateException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
@@ -43,7 +45,7 @@ import java.util.Objects;
  * @author John Hendrikx
  */
 @Internal
-public class InitializingEntityEvolver<I, E> {
+public class InitializingEntityEvolver<I, E> implements DescribableComponent {
     private final EventSourcedEntityFactory<I, E> entityFactory;
     private final EntityEvolver<E> entityEvolver;
 
@@ -62,13 +64,14 @@ public class InitializingEntityEvolver<I, E> {
      * Creates an empty entity {@code E}.
      *
      * @param identifier the entity's identifier, cannot be {@code null}
+     * @param firstEventMessage optional first event message to initialize the entiy with
      * @param context a {@link ProcessingContext}, cannot be {@code null}
      * @return a new entity of type {@code E}
      */
-    public E initialize(I identifier, ProcessingContext context) {
+    public E initialize(I identifier, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
         E entity = entityFactory.create(
             Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
-            null,
+            firstEventMessage,
             Objects.requireNonNull(context, "The context parameter must not be null.")
         );
 
@@ -108,5 +111,11 @@ public class InitializingEntityEvolver<I, E> {
         }
 
         return entityEvolver.evolve(entity, message, context);
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("entityFactory", entityFactory);
+        descriptor.describeProperty("entityEvolver", entityEvolver);
     }
 }

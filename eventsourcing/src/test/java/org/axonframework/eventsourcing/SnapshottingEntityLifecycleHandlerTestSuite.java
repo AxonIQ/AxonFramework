@@ -31,10 +31,10 @@ import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPosition;
+import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
-import org.axonframework.eventsourcing.snapshot.store.StoreBackedSnapshotter;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -64,12 +64,12 @@ import java.util.function.BiFunction;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test suite for the {@link StoreBackedSnapshotter}.
+ * Test suite for the {@link SnapshottingEntityLifecycleHandler}.
  *
  * @author John Hendrikx
  */
 @LoggerContextSource("log4j2-list-appender.xml")
-public abstract class StoreBackedSnapshotterTestSuite {
+public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
     private static volatile int evolveCalls;
 
     protected final String ACCOUNT_ID = UUID.randomUUID().toString();
@@ -305,19 +305,18 @@ public abstract class StoreBackedSnapshotterTestSuite {
 
         appender.clear();
 
-        {   // Expect that a full evolution is needed, despite the snapshot
-            evolveCalls = 0;
+        // Expect that a full evolution is needed, despite the snapshot
+        evolveCalls = 0;
 
-            Account account = loadAccount(ACCOUNT_ID);
+        Account account = loadAccount(ACCOUNT_ID);
 
-            assertThat(evolveCalls).isEqualTo(2);
-            assertThat(account.balance).isEqualTo(10050);  // if snapshot was not ignored, would be far higher
+        assertThat(evolveCalls).isEqualTo(2);
+        assertThat(account.balance).isEqualTo(10050);
 
-            assertThat(appender.getEvents())
-                .extracting(LogEvent::getMessage)
-                .extracting(Message::getFormattedMessage)
-                .containsExactly("Snapshot loading failed, falling back to full reconstruction for: " + qualifiedName + "#0.0.1 (" + ACCOUNT_ID + ")");
-        }
+        assertThat(appender.getEvents())
+            .extracting(LogEvent::getMessage)
+            .extracting(Message::getFormattedMessage)
+            .containsExactly("Snapshot loading failed, falling back to full reconstruction for: " + qualifiedName + "#0.0.1 (" + ACCOUNT_ID + ")");
     }
 
     /*
@@ -333,16 +332,15 @@ public abstract class StoreBackedSnapshotterTestSuite {
 
         appender.clear();
 
-        {   // Expect a full evolution as there is no snapshot
-            evolveCalls = 0;
+        // Expect a full evolution as there is no snapshot
+        evolveCalls = 0;
 
-            Account account = loadAccount(ACCOUNT_ID);
+        Account account = loadAccount(ACCOUNT_ID);
 
-            assertThat(evolveCalls).isEqualTo(2);
-            assertThat(account.balance).isEqualTo(10050);
+        assertThat(evolveCalls).isEqualTo(2);
+        assertThat(account.balance).isEqualTo(10050);
 
-            assertThat(appender.getEvents()).isEmpty();  // expect no log messages
-        }
+        assertThat(appender.getEvents()).isEmpty();  // expect no log messages
     }
 
     /**

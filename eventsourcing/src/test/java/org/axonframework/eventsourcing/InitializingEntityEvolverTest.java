@@ -46,14 +46,14 @@ class InitializingEntityEvolverTest {
 
     @Test
     void initializeShouldCreateEntity() {
-        when(entityFactory.create(1001, null, context)).thenReturn("entity(1001)");
+        when(entityFactory.create(1001, event, context)).thenReturn("entity(1001)");
 
-        assertThat(evolver.initialize(1001, context)).isEqualTo("entity(1001)");
+        assertThat(evolver.initialize(1001, event, context)).isEqualTo("entity(1001)");
     }
 
     @Test
     void initializeShouldThrowExceptionWhenFactoryReturnsNull() {
-        assertThatThrownBy(() -> evolver.initialize(1001, context)).isInstanceOf(EntityMissingAfterLoadOrCreateException.class);
+        assertThatThrownBy(() -> evolver.initialize(1001, null, context)).isInstanceOf(EntityMissingAfterLoadOrCreateException.class);
     }
 
     @Test

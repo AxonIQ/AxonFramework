@@ -19,14 +19,13 @@ package org.axonframework.eventsourcing;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
-import org.axonframework.eventsourcing.snapshot.store.StoreBackedSnapshotter;
 
 /**
- * Tests the {@link StoreBackedSnapshotter} with an {@link InMemorySnapshotStore}.
+ * Tests the {@link SnapshottingEntityLifecycleHandler} with an {@link InMemorySnapshotStore}.
  *
  * @author John Hendrikx
  */
-public class InMemoryStoreBackedSnapshotterIT extends StoreBackedSnapshotterTestSuite {
+public class InMemorySnapshottingEntityLifecycleHandlerIT extends SnapshottingEntityLifecycleHandlerTestSuite {
     @Override
     protected void registerComponents(ComponentRegistry registry) {
         registry.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore());

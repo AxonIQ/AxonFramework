@@ -18,10 +18,9 @@ package org.axonframework.eventsourcing;
 
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
+import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
-import org.axonframework.eventsourcing.handler.SimpleSourcingHandler;
-import org.axonframework.eventsourcing.handler.SourcingHandler;
+import org.axonframework.eventsourcing.handler.SimpleEntityLifecycleHandler;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -34,15 +33,25 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNull;
 
 /**
- * {@link Repository} implementation that loads entities based on their historic event streams, provided by an
- * {@link EventStore}.
+ * {@link Repository} implementation which manages event-sourced entities and delegates
+ * lifecycle concerns (loading, initialization, snapshot handling, and live updates)
+ * to an {@link EntityLifecycleHandler}.
+ * <p>
+ * The repository is responsible for:
+ * <ul>
+ *   <li>coordinating access to managed entity instances within a processing context</li>
+ *   <li>caching active entities per identifier</li>
+ *   <li>delegating entity reconstruction and initialization to the lifecycle handler</li>
+ *   <li>attaching entities to the lifecycle handler for live update propagation</li>
+ * </ul>
+ *
+ * The lifecycle handler encapsulates all event-stream interpretation concerns.
  *
  * @param <ID> The type of identifier used to identify the event sourced entity.
  * @param <E>  The type of the event sourced entity to load.
@@ -57,17 +66,20 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
 
     private final Class<ID> idType;
     private final Class<E> entityType;
-    private final EventStore eventStore;
-    private final SourcingHandler<ID, E> sourcingHandler;
-    private final InitializingEntityEvolver<ID, E> initializingEntityEvolver;
-
-    private final EventSourcedEntityFactory<ID, E> entityFactory;  // only for describe
-    private final EntityEvolver<E> entityEvolver;  // only for describe
+    private final EntityLifecycleHandler<ID, E> lifecycleHandler;
 
     /**
      * Initialize the repository to load events from the given {@code eventStore} using the given {@code entityEvolver} to
      * apply state transitions to the entity based on the events received, and given {@code criteriaResolver} to resolve
      * the {@link EventCriteria} of the given identifier type used to source an entity.
+     * <p>
+     * This constructor implicitly builds a default lifecycle handler that:
+     * <ul>
+     *   <li>sources events from the given event store</li>
+     *   <li>uses the criteria resolver to locate the event stream</li>
+     *   <li>applies the provided entity evolver for state transitions</li>
+     *   <li>initializes entities when no event stream exists</li>
+     * </ul>
      *
      * @param idType           the type of the identifier for the event sourced entity this repository serves
      * @param entityType       the type of the event sourced entity this repository serves
@@ -77,7 +89,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * @param criteriaResolver converts the given identifier to an {@link EventCriteria} used to load a matching event
      *                         stream
      * @param entityEvolver    the function used to evolve the state of loaded entities based on events
-     * @deprecated use {@link EventSourcingRepository#EventSourcingRepository(Class, Class, EventStore, EventSourcedEntityFactory, EntityEvolver, SourcingHandler)}
+     * @deprecated use {@link EventSourcingRepository#EventSourcingRepository(Class, Class, EntityLifecycleHandler)}
      */
     @Deprecated
     public EventSourcingRepository(Class<ID> idType,
@@ -90,12 +102,13 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
         this(
             requireNonNull(idType, "The id type must not be null."),
             requireNonNull(entityType, "The entity type must not be null."),
-            requireNonNull(eventStore, "The event store must not be null."),
-            requireNonNull(entityFactory, "The entity factory must not be null."),
-            requireNonNull(entityEvolver, "The entity evolver must not be null."),
-            new SimpleSourcingHandler<>(
+            new SimpleEntityLifecycleHandler<>(
                 requireNonNull(eventStore, "The event store must not be null."),
-                requireNonNull(criteriaResolver, "The criteria resolver must not be null.")
+                requireNonNull(criteriaResolver, "The criteria resolver must not be null."),
+                new InitializingEntityEvolver<>(
+                    requireNonNull(entityFactory, "The entity factory must not be null."),
+                    requireNonNull(entityEvolver, "The entity evolver must not be null.")
+                )
             )
         );
     }
@@ -105,32 +118,18 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * apply state transitions to the entity based on the events received, and given {@code sourcingHandler} to process
      * the event stream.
      *
-     * @param idType          the type of the identifier for the event sourced entity this repository serves
-     * @param entityType      the type of the event sourced entity this repository serves
-     * @param eventStore      the event store to load events from
-     * @param entityFactory   the entity factory to create new instances of the entity based on the entity's type and a
-     *                        provided identifier
-     * @param entityEvolver   the function used to evolve the state of loaded entities based on events
-     * @param sourcingHandler the handler which will source the actual events and convert them into an entity
+     * @param idType           the type of the identifier for the event sourced entity this repository serves
+     * @param entityType       the type of the event sourced entity this repository serves
+     * @param lifecycleHandler the {@link EntityLifecycleHandler} used to create and manage entities
      */
     public EventSourcingRepository(
         Class<ID> idType,
         Class<E> entityType,
-        EventStore eventStore,
-        EventSourcedEntityFactory<ID, E> entityFactory,
-        EntityEvolver<E> entityEvolver,
-        SourcingHandler<ID, E> sourcingHandler
+        EntityLifecycleHandler<ID, E> lifecycleHandler
     ) {
         this.idType = requireNonNull(idType, "The id type must not be null.");
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
-        this.eventStore = requireNonNull(eventStore, "The event store must not be null.");
-        this.initializingEntityEvolver = new InitializingEntityEvolver<>(
-            requireNonNull(entityFactory, "The entity factory must not be null."),
-            requireNonNull(entityEvolver, "The entity evolver must not be null.")
-        );
-        this.sourcingHandler = requireNonNull(sourcingHandler, "The sourcing handler must not be null.");
-        this.entityFactory = entityFactory;  // only for describe
-        this.entityEvolver = entityEvolver;  // only for describe
+        this.lifecycleHandler = requireNonNull(lifecycleHandler, "The lifecycleHandler parameter must not be null.");
     }
 
     @Override
@@ -177,15 +176,11 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
 
         return managedEntities.computeIfAbsent(
                 identifier,
-                id -> sourcingHandler.source(identifier, initializingEntityEvolver, context)
-                        .thenApply(entity -> create && entity == null ? createIfRequested(identifier, context) : entity)
+                id -> lifecycleHandler.source(identifier, context)
+                        .thenApply(entity -> create && entity == null ? lifecycleHandler.initialize(identifier, null, context) : entity)
                         .thenApply(e -> new EventSourcedEntity<>(identifier, e))
                         .whenComplete((entity, exception) -> updateActiveEntity(entity, context, exception))
         ).thenApply(Function.identity());
-    }
-
-    private E createIfRequested(ID identifier, ProcessingContext context) {
-        return initializingEntityEvolver.initialize(identifier, context);
     }
 
     @Override
@@ -209,32 +204,21 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     }
 
     /**
-     * Update the given {@code entity} for any event that is published within its lifecycle, by invoking the
-     * {@link EntityEvolver} in the {@link EventStoreTransaction#onAppend(Consumer)}. The {@code onAppend} hook is used
-     * to immediately source events that are being published by the entity.
+     * Registers the given entity with the lifecycle handler so it receives live updates
+     * from the event stream during its lifetime.
      *
-     * @param entity            An {@link ManagedEntity} to make the state change for.
-     * @param processingContext The {@link ProcessingContext} for which to retrieve the active
-     *                          {@link EventStoreTransaction}.
+     * @param entity            a {@link ManagedEntity} to update
+     * @param processingContext the {@link ProcessingContext} required
      */
-    private void updateActiveEntity(EventSourcedEntity<ID, E> entity, ProcessingContext processingContext) {
-        eventStore.transaction(processingContext)
-                  .onAppend(event -> entity.applyStateChange(e -> initializingEntityEvolver.evolve(
-                      entity.identifier(),
-                      entity.entity(),
-                      event,
-                      processingContext
-                  )));
+    private void updateActiveEntity(ManagedEntity<ID, E> entity, ProcessingContext processingContext) {
+        lifecycleHandler.subscribe(entity, processingContext);
     }
 
     @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("idType", idType);
         descriptor.describeProperty("entityType", entityType);
-        descriptor.describeProperty("eventStore", eventStore);
-        descriptor.describeProperty("entityFactory", entityFactory);
-        descriptor.describeProperty("entityEvolver", entityEvolver);
-        descriptor.describeProperty("sourcingHandler", sourcingHandler);
+        descriptor.describeProperty("entityLifecycleHandler", lifecycleHandler);
     }
 
     /**

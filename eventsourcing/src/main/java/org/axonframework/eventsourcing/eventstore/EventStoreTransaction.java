@@ -18,7 +18,6 @@ package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.jspecify.annotations.Nullable;
 

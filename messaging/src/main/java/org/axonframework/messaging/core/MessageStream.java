@@ -459,7 +459,7 @@ public interface MessageStream<M extends Message> {
      * stream.
      * @throws UnsupportedOperationException if this stream is unbounded
      */
-    default <R> CompletableFuture<R> reduce(R identity, BiFunction<R, ? super Entry<M>, R> accumulator) {
+    default <R> CompletableFuture<R> reduce(@Nullable R identity, BiFunction<@Nullable R, ? super Entry<M>, R> accumulator) {
         return MessageStreamUtils.reduce(this, identity, accumulator);
     }
 

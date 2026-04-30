@@ -33,9 +33,12 @@ import org.axonframework.eventsourcing.eventstore.ContinuousMessageStream;
 import org.axonframework.eventsourcing.eventstore.EmptyAppendTransaction;
 import org.axonframework.eventsourcing.eventstore.EventCoordinator;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
 import org.axonframework.eventsourcing.eventstore.StreamSpliterator;
 import org.axonframework.eventsourcing.eventstore.TaggedEventMessage;
+import org.axonframework.eventsourcing.eventstore.TerminalEventMessage;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.MessageStream;
@@ -46,7 +49,6 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionalExecutorProvider;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GapAwareTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -279,7 +281,12 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private AggregateSource aggregateSourceForCriterion(SourcingCondition condition, EventCriterion criterion) {
         AtomicReference<@Nullable AggregateBasedConsistencyMarker> markerReference = new AtomicReference<>();
         var aggregateIdentifier = resolveAggregateIdentifier(criterion.tags());
-        long firstSequenceNumber = AggregateSequenceNumberPosition.toSequenceNumber(condition.start());
+
+        long firstSequenceNumber = switch (condition.sourcingStrategy()) {
+            case SourcingStrategy.Absolute(Position position) -> AggregateSequenceNumberPosition.toSequenceNumber(position);
+            default -> throw new UnsupportedOperationException("Unsupported sourcing strategy: " + condition.sourcingStrategy());
+        };
+
         //noinspection DataFlowIssue
         StreamSpliterator<? extends AggregateEventEntry> entrySpliterator = new StreamSpliterator<>(
                 lastEntry -> queryEventsBy(

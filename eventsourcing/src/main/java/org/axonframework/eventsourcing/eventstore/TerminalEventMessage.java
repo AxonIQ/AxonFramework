@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling;
+package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
 
 /**
  * Empty {@link EventMessage} implementation without any {@link EventMessage#payload() payload}, used as the
