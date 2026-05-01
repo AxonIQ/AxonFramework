@@ -31,6 +31,10 @@ import java.util.function.Predicate;
  * <p>
  * Note that this transaction includes operations for {@link #source(SourcingCondition)} the model as well as
  * {@link #appendEvent(EventMessage) appending events}.
+ * <p>
+ * To use separate {@link EventCriteria} for sourcing (loading events) and appending (consistency checking), call
+ * {@link #overrideAppendCondition(EventCriteria)} before {@link #source(SourcingCondition) sourcing}. This enables
+ * Dynamic Consistency Boundaries (DCB) where the read scope differs from the consistency scope.
  *
  * @author Allard Buijze
  * @author Steven van Beelen
@@ -95,6 +99,47 @@ public interface EventStoreTransaction {
             SourcingCondition condition,
             @Nullable Consumer<Position> resumePositionCallback
     );
+
+    /**
+     * Overrides the {@link EventCriteria} used for consistency checking when appending events, enabling Dynamic
+     * Consistency Boundaries (DCB) where the criteria used for
+     * {@link #source(SourcingCondition) sourcing} events can differ from the criteria used for consistency checking.
+     * <p>
+     * <b>Understanding {@link ConsistencyMarker} vs {@link EventCriteria} (Orthogonal Concerns):</b>
+     * <p>
+     * The {@link ConsistencyMarker} and the append {@link EventCriteria} are two orthogonal concerns that together
+     * define the {@link AppendCondition}:
+     * <ul>
+     *   <li><b>{@link ConsistencyMarker}</b>: The "read position" — always extracted from the events returned by
+     *       {@link #source(SourcingCondition)}. It tells the system: <em>"I have seen events up to this position."</em></li>
+     *   <li><b>Append {@link EventCriteria}</b>: WHICH events to check for conflicts after the marker position.
+     *       It tells the system: <em>"Check if any events matching this criteria exist after my read position."</em></li>
+     * </ul>
+     * <p>
+     * Must be called <b>before</b> {@link #source(SourcingCondition)} to take effect. The marker will be set
+     * automatically during sourcing.
+     * <p>
+     * <b>Example - Accounting Use Case:</b>
+     * <pre>{@code
+     * // Source: Load CreditsIncreased AND CreditsDecreased to calculate balance
+     * // Append: Only check for conflicts on CreditsDecreased (allow concurrent increases)
+     *
+     * EventCriteria sourceCriteria = EventCriteria.havingTags("accountId", id)
+     *     .andBeingOneOfTypes("CreditsIncreased", "CreditsDecreased");
+     * EventCriteria appendCriteria = EventCriteria.havingTags("accountId", id)
+     *     .andBeingOneOfTypes("CreditsDecreased");
+     *
+     * eventStore.transaction(context)
+     *     .overrideAppendCondition(appendCriteria)
+     *     .source(SourcingCondition.conditionFor(sourceCriteria))
+     *     .reduce(...);
+     * }</pre>
+     *
+     * @param appendCriteria The {@link EventCriteria} defining which events to check for conflicts when appending.
+     *                       The {@link ConsistencyMarker} is always determined from the sourced events.
+     * @return This transaction for method chaining.
+     */
+    EventStoreTransaction overrideAppendCondition(@Nonnull EventCriteria appendCriteria);
 
     /**
      * Appends an {@code eventMessage} to be appended to an {@link EventStore} in this transaction.
