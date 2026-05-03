@@ -165,27 +165,6 @@ public interface EventStorageEngine extends DescribableComponent {
     CompletableFuture<TrackingToken> tokenAt(Instant at);
 
     /**
-     * Converts the given {@link TrackingToken} to a {@link ConsistencyMarker}.
-     * <p>
-     * This method bridges the streaming world ({@link TrackingToken}) and the sourcing/appending world
-     * ({@link ConsistencyMarker}). It is primarily useful for obtaining a consistency marker without sourcing events,
-     * for example when combined with {@link #latestToken(ProcessingContext)}:
-     * <pre>{@code
-     * engine.latestToken(context)
-     *       .thenApply(engine::consistencyMarker);
-     * }</pre>
-     * <p>
-     * Each implementation must provide its own conversion logic, as only the engine itself knows the relationship
-     * between its {@link TrackingToken} type and its {@link ConsistencyMarker} type. Implementations that do not
-     * support this conversion (e.g., aggregate-based engines) may throw {@link UnsupportedOperationException}.
-     *
-     * @param token The {@link TrackingToken} to convert. May be {@code null}, in which case
-     *              {@link ConsistencyMarker#ORIGIN} is returned.
-     * @return The corresponding {@link ConsistencyMarker}, never {@code null}.
-     */
-    ConsistencyMarker consistencyMarker(@Nullable TrackingToken token);
-
-    /**
      * Interface representing the transaction of an appendEvents invocation.
      * <p>
      * Events may only be visible to consumers after the invocation of {@link #commit()}.

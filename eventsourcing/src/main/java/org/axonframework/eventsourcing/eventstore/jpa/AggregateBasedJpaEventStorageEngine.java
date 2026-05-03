@@ -473,19 +473,6 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     }
 
     @Override
-    public ConsistencyMarker consistencyMarker(@Nullable TrackingToken token) {
-        if (token == null) {
-            return ConsistencyMarker.ORIGIN;
-        }
-        if (token instanceof GapAwareTrackingToken gat) {
-            return new GlobalIndexConsistencyMarker(gat.getIndex());
-        }
-        throw new IllegalArgumentException(
-                "Token [" + token + "] is of the wrong type. Expected [" + GapAwareTrackingToken.class.getSimpleName() + "]"
-        );
-    }
-
-    @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("transactionalExecutorProvider", transactionalExecutorProvider);
         descriptor.describeProperty("converter", converter);

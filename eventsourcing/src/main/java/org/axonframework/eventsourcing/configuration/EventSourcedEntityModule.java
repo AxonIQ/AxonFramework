@@ -21,6 +21,8 @@ import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.messaging.commandhandling.CommandBus;
@@ -170,38 +172,21 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
     interface CriteriaResolverPhase<ID, E> {
 
         /**
-         * Registers the given {@link ComponentBuilder} of a {@link CriteriaResolver} as the criteria resolver for the
-         * event-sourced entity being built. This resolver will be used for both sourcing (loading events) and
-         * appending (consistency checking).
+         * Registers the given {@link ComponentBuilder} of a {@link CriteriaResolver} as the sourcing criteria resolver
+         * for the event-sourced entity being built.
          * <p>
-         * A {@code CriteriaResolver} receives the entity's identifier of type {@code I} and expects the
-         * {@link EventCriteria} as a result. The resulting {@code EventCriteria} is used to
-         * {@link org.axonframework.eventsourcing.eventstore.EventStoreTransaction#source(SourcingCondition) source} the
-         * entity from the {@link org.axonframework.eventsourcing.eventstore.EventStore}.
+         * No separate append criteria resolver is configured. The append {@link AppendCondition} used for consistency
+         * checking is automatically derived from all
+         * {@link org.axonframework.eventsourcing.eventstore.EventStoreTransaction#source(SourcingCondition) sourcing}
+         * calls accumulated in the current {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}: the
+         * criteria are the union of all sourcing criteria, and the {@link ConsistencyMarker} is the position reached
+         * at the end of the sourced stream.
          *
-         * @param criteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for the
-         *                         event-sourced entity, used for both sourcing and appending.
+         * @param criteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for sourcing
+         *                         the event-sourced entity.
          * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
          */
         OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver);
-
-        /**
-         * Registers only an append {@link CriteriaResolver}, without any sourcing criteria. This means no events
-         * will be loaded from the store — only consistency checking is performed when appending.
-         * <p>
-         * This is used when only an {@code @AppendCriteriaBuilder} is defined, without an {@code @EventCriteriaBuilder}
-         * or {@code @SourceCriteriaBuilder}. The {@link org.axonframework.eventsourcing.eventstore.ConsistencyMarker}
-         * is resolved from the
-         * {@link org.axonframework.eventsourcing.eventstore.EventStorageEngine#latestToken(
-         * org.axonframework.messaging.core.unitofwork.ProcessingContext) latest token} in the store.
-         *
-         * @param appendCriteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} for
-         *                               consistency checking when appending events.
-         * @return The {@link EntityIdResolverPhase} phase of this builder, for a fluent API.
-         */
-        EntityIdResolverPhase<ID, E> appendCriteriaResolver(
-                @Nonnull ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver
-        );
 
         /**
          * Registers separate {@link ComponentBuilder}s for sourcing and appending {@link CriteriaResolver}s.

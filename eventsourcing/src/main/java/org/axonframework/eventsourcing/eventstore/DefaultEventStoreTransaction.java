@@ -23,13 +23,18 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNullElse;
 import static org.axonframework.common.ObjectUtils.getOrDefault;
@@ -49,6 +54,8 @@ import static org.axonframework.common.ObjectUtils.getOrDefault;
  */
 public class DefaultEventStoreTransaction implements EventStoreTransaction {
 
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
     private final EventStorageEngine eventStorageEngine;
     private final ProcessingContext processingContext;
     private final Function<EventMessage, TaggedEventMessage<?>> eventTagger;
@@ -59,6 +66,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     private final ResourceKey<List<TaggedEventMessage<?>>> eventQueueKey = ResourceKey.withLabel("eventQueue");
     private final ResourceKey<ConsistencyMarker> appendPositionKey = ResourceKey.withLabel("appendPosition");
     private final ResourceKey<Boolean> prepareCommitExecuted = ResourceKey.withLabel("prepareCommitExecuted");
+    private final ResourceKey<UnaryOperator<AppendCondition>> conditionOverrideKey = ResourceKey.withLabel("conditionOverride");
 
     /**
      * Constructs a {@code DefaultEventStoreTransaction} using the given {@code eventStorageEngine} to
@@ -140,6 +148,14 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     }
 
     @Override
+    public void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
+        Objects.requireNonNull(conditionOverride, "The conditionOverride cannot be null");
+        processingContext.updateResource(conditionOverrideKey, previous ->
+                previous == null ? conditionOverride : ac -> conditionOverride.apply(previous.apply(ac))
+        );
+    }
+
+    @Override
     public void appendEvent(EventMessage eventMessage) {
         List<TaggedEventMessage<?>> eventQueue = processingContext.computeResourceIfAbsent(
                 eventQueueKey,
@@ -155,15 +171,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     private void attachAppendEventsStep() {
         processingContext.onPrepareCommit(
                 context -> {
-                    // we need to update the condition with the marker that we may have updated during reading
-                    AppendCondition appendCondition =
-                            context.updateResource(appendConditionKey, current -> {
-                                if (current == null || AppendCondition.none().equals(current)) {
-                                    return AppendCondition.none();
-                                }
-                                return current.withMarker(getOrDefault(context.getResource(appendPositionKey),
-                                                                       current.consistencyMarker()));
-                            });
+                    AppendCondition appendCondition = resolveAppendCondition(context);
 
                     context.putResource(prepareCommitExecuted, true);
 
@@ -179,6 +187,26 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                                              });
                 }
         );
+    }
+
+    private AppendCondition resolveAppendCondition(ProcessingContext context) {
+        AppendCondition resolved = context.updateResource(appendConditionKey, current -> {
+            if (current == null || AppendCondition.none().equals(current)) {
+                return AppendCondition.none();
+            }
+            return current.withMarker(getOrDefault(context.getResource(appendPositionKey),
+                                                   current.consistencyMarker()));
+        });
+
+        UnaryOperator<AppendCondition> override = context.getResource(conditionOverrideKey);
+        if (override == null) {
+            return resolved;
+        }
+
+        // A null return from the override is treated as AppendCondition.none() (no conflict detection).
+        AppendCondition overridden = getOrDefault(override.apply(resolved), AppendCondition.none());
+        logger.debug("AppendCondition overridden from [{}] to [{}]", resolved, overridden);
+        return overridden;
     }
 
     private <R> CompletableFuture<ConsistencyMarker> doAfterCommit(ProcessingContext context,
