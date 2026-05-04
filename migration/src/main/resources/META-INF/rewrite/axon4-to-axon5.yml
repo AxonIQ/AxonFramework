@@ -1,0 +1,107 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Top-level Axon Framework 4 → free Axon Framework 5 upgrade.
+#
+# WARNING for users: a few AF4 features were dropped from free AF5 and exist
+# only in Axoniq Framework 5 commercial — Axon Server connector, sequenced
+# dead-letter queue, and DistributedCommandBus. If your AF4 application uses
+# any of those, this recipe alone leaves your codebase non-compiling. Use
+# `UpgradeAxon4ToAxoniq5` instead.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.UpgradeAxon4ToAxon5
+displayName: Upgrade to free Axon Framework 5
+description: >-
+  Migrates an Axon Framework 4.x application to free (Apache 2.0)
+  Axon Framework 5. Bumps the Axon Framework dependency versions, applies
+  per-module rename recipes (one per core framework module), and renames
+  Maven coordinates within the `org.axonframework.*` namespace. Does NOT
+  touch features dropped from free AF5 (Axon Server, DLQ, DistributedCommandBus)
+  — see `UpgradeAxon4ToAxoniq5` for the commercial path.
+recipeList:
+  # ── 1. Java compiler-target bump ────────────────────────────────────────
+  - org.axonframework.migration.UpgradeJava
+
+  # ── 2. Spring Boot upgrade (2.x / 3.x → 3.5.x) ────────────────────────
+  # Bumps spring-boot-starter-parent (or spring-boot-dependencies BOM) to the
+  # latest 3.5.x patch, migrates javax → jakarta, and applies all incremental
+  # Spring Boot 3.x API changes. Safe on projects already at 3.5.x or later
+  # (including Spring Boot 4.x) — OpenRewrite never downgrades version numbers,
+  # and the source-level sub-recipes are idempotent against already-migrated code.
+  # Running this before the Axon renames keeps the javax→jakarta rewrite from
+  # clashing with the Axon package moves.
+  - org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5
+
+  # ── 3. BOM rename (axon-bom → axon-framework-bom, version → 5.1.0) ──────
+  - org.axonframework.migration.Axon4ToAxon5Bom
+
+  # ── 4. Core framework module migrations ─────────────────────────────────
+  - org.axonframework.migration.Axon4ToAxon5Common
+  - org.axonframework.migration.Axon4ToAxon5Conversion
+  - org.axonframework.migration.Axon4ToAxon5Messaging
+  - org.axonframework.migration.Axon4ToAxon5Modelling
+  - org.axonframework.migration.Axon4ToAxon5EventSourcing
+  - org.axonframework.migration.Axon4ToAxon5Test
+
+  # ── 5. Active extension migrations ──────────────────────────────────────
+  # Run BEFORE the wildcard version bump below: several extensions move
+  # the dependency's groupId out of `org.axonframework` (e.g. axon-spring,
+  # axon-spring-boot-starter, axon-spring-boot-autoconfigure → `org.axonframework.extensions.spring`;
+  # axon-metrics-* → `org.axonframework.extensions.metrics`;
+  # axon-tracing-opentelemetry → `org.axonframework.extensions.tracing`).
+  # Bumping `org.axonframework:* → 5.1.0` first would try to resolve those
+  # artifacts at the OLD groupId and version 5.1.0 — coordinates that were
+  # never published — and OpenRewrite's resolver fails the run with
+  # repeated "Failed to download …:5.1.0" warnings. Doing the coordinate
+  # moves first means the wildcard bump only sees artifacts that still live
+  # at `org.axonframework` in AF5.
+  - org.axonframework.migration.Axon4ToAxon5SpringExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringAotExtension
+  - org.axonframework.migration.Axon4ToAxon5MetricsDropwizardExtension
+  - org.axonframework.migration.Axon4ToAxon5MetricsMicrometerExtension
+  - org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
+  - org.axonframework.migration.Axon4ToAxon5ReactorExtension
+
+  # ── 6. Bump dependency versions ─────────────────────────────────────────
+  # Pinned to an explicit AF5 release so the migration is reproducible across
+  # recipe builds (independent of the recipe project's own ${project.version}).
+  # One bump per AF5 groupId — the extension recipes above split the AF4
+  # `org.axonframework:*` namespace into `org.axonframework.*` sub-groups, and
+  # those leftover-version coordinates need pinning to 5.1.0 too.
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: org.axonframework
+      artifactId: "*"
+      newVersion: 5.1.0
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: org.axonframework.extensions.spring
+      artifactId: "*"
+      newVersion: 5.1.0
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: org.axonframework.extensions.metrics
+      artifactId: "*"
+      newVersion: 5.1.0
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: org.axonframework.extensions.tracing
+      artifactId: "*"
+      newVersion: 5.1.0
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: org.axonframework.extensions.reactor
+      artifactId: "*"
+      newVersion: 5.1.0

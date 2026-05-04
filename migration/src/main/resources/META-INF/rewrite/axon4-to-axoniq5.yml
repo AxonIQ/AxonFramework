@@ -1,0 +1,67 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Top-level Axon Framework 4 → Axoniq Framework 5 commercial upgrade.
+#
+# This composite runs `UpgradeAxon4ToAxon5` first (the entire free AF5
+# migration), then layers commercial-only migrations on top: source rewrites
+# for Axon Server / DLQ / distributed-messaging, BOM swap to
+# `axoniq-framework-bom`, Spring Boot starter swap to
+# `axoniq-spring-boot-starter`, and conditional `AddDependency` for the
+# Axoniq jars when the corresponding feature is in use.
+#
+# Use this when your AF4 application uses Axon Server, the sequenced DLQ,
+# or DistributedCommandBus — those features were dropped from free AF5 and
+# exist only in Axoniq Framework 5 commercial.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.UpgradeAxon4ToAxoniq5
+displayName: Upgrade to Axoniq Framework 5 (commercial)
+description: >-
+  Migrates an Axon Framework 4.x application to Axoniq Framework 5
+  (commercial). Composes `UpgradeAxon4ToAxon5` (the free leg) and then layers
+  commercial-only migrations: BOM swap to
+  `io.axoniq.framework:axoniq-framework-bom`, Spring Boot starter swap to
+  `io.axoniq.framework:axoniq-spring-boot-starter`, source rewrites and
+  Maven adds for Axon Server connector, sequenced dead-letter queue, and
+  distributed messaging.
+recipeList:
+  # ── 1. Run the free-AF5 migration first ─────────────────────────────────
+  - org.axonframework.migration.UpgradeAxon4ToAxon5
+
+  # ── 2. Swap the BOM to the Axoniq commercial BOM (and pin to 5.1.0) ─────
+  - org.axonframework.migration.Axon4ToAxoniq5Bom
+
+  # ── 3. Commercial-only feature migrations (most foundational first) ─────
+  - org.axonframework.migration.Axon4ToAxoniq5AxonServerConnector
+  - org.axonframework.migration.Axon4ToAxoniq5DeadLetter
+  - org.axonframework.migration.Axon4ToAxoniq5DistributedMessaging
+
+  # ── 4. Spring family — starter wraps the features above ─────────────────
+  - org.axonframework.migration.Axon4ToAxoniq5SpringBoot
+
+  # ── 5. Testing utilities ────────────────────────────────────────────────
+  - org.axonframework.migration.Axon4ToAxoniq5Testcontainer
+
+  # ── 6. Pin Axoniq commercial artifact versions ──────────────────────────
+  # Coordinate moves above (BOM swap, starter swap, connector move) leave
+  # `<version>` placeholders pointing at the AF4 version. Pin them to the
+  # current Axoniq Framework 5 release so the resulting POM resolves.
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
+      groupId: io.axoniq.framework
+      artifactId: "*"
+      newVersion: 5.1.0

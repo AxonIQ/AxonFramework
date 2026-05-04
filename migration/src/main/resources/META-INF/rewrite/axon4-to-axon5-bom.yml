@@ -1,0 +1,54 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Framework 4 → 5 BOM rename. The Maven coordinates of the published
+# bill-of-materials artifact changed:
+#   AF4: org.axonframework:axon-bom
+#   AF5: org.axonframework:axon-framework-bom
+# The groupId is unchanged; only the artifactId moves. The recipe also pins
+# the imported BOM to the AF5 line — `UpgradeDependencyVersion` doesn't lift
+# the version after the rename because the renamed coordinate didn't exist
+# at the AF4 line, leaving the managed import at `4.x` otherwise.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Bom
+displayName: Migrate the Axon Framework BOM coordinates
+description: >-
+  Renames the imported `org.axonframework:axon-bom` BOM in
+  `<dependencyManagement>` to `org.axonframework:axon-framework-bom` and pins
+  the imported version to the current Axon Framework 5 release. The BOM
+  artifactId changed between Axon Framework 4 and Axon Framework 5; the
+  groupId is unchanged.
+recipeList:
+  # Maven leg: BOM is imported via `<dependencyManagement>` with
+  # `<scope>import</scope><type>pom</type>` — `ChangeManagedDependencyGroupIdAndArtifactId`
+  # is the recipe that touches managed-only entries.
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      newVersion: 5.1.0
+  # Gradle leg: BOM is consumed via `implementation(platform("g:a:v"))`,
+  # `api(platform(...))`, or the Spring DM plugin's `mavenBom("g:a:v")` —
+  # `gradle.ChangeDependency` rewrites those calls.
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      newVersion: 5.1.0
