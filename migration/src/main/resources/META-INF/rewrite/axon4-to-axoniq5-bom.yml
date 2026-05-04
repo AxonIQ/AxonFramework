@@ -1,0 +1,64 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axoniq Framework 5 BOM swap. Switches the imported BOM from the free
+# Axon Framework 5 BOM to the Axoniq commercial BOM.
+#
+# Source coords (both supported, for order-independence):
+#   - org.axonframework:axon-bom            (raw AF4 — when Axon4ToAxon5Bom hasn't run)
+#   - org.axonframework:axon-framework-bom  (post-Axon4ToAxon5Bom)
+# Target:
+#   - io.axoniq.framework:axoniq-framework-bom
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxoniq5Bom
+displayName: Swap the BOM to Axoniq Framework 5 commercial
+description: >-
+  Replaces the imported `org.axonframework:axon-bom` (AF4) or
+  `org.axonframework:axon-framework-bom` (free AF5) in `<dependencyManagement>`
+  with the Axoniq Framework 5 commercial BOM `io.axoniq.framework:axoniq-framework-bom`.
+recipeList:
+  # Maven leg: BOM is imported via `<dependencyManagement>` with
+  # `<scope>import</scope><type>pom</type>` — `ChangeManagedDependencyGroupIdAndArtifactId`
+  # is the recipe that touches managed-only entries.
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0
+  # Gradle leg: BOM is consumed via `implementation(platform("g:a:v"))`,
+  # `api(platform(...))`, or the Spring DM plugin's `mavenBom("g:a:v")` —
+  # `gradle.ChangeDependency` rewrites those calls.
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0

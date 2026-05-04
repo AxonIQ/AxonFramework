@@ -1,0 +1,42 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# OpenTelemetry tracing extension (axon-tracing-opentelemetry): package move.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
+displayName: Migrate the OpenTelemetry tracing extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.tracing.opentelemetry` to
+  `org.axonframework.extension.tracing.opentelemetry`.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.tracing.opentelemetry
+      newPackageName: org.axonframework.extension.tracing.opentelemetry
+      recursive: true
+  # Build-tool coordinate move: org.axonframework:axon-tracing-opentelemetry →
+  # org.axonframework.extensions.tracing:axon-tracing-opentelemetry. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven and Gradle.
+  # `newVersion` is set inline so the rename and version bump happen atomically;
+  # without it, ChangeDependency would validate the renamed coordinate against
+  # the pre-bump AF4 version (which doesn't exist at the new groupId).
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-tracing-opentelemetry
+      newGroupId: org.axonframework.extensions.tracing
+      newArtifactId: axon-tracing-opentelemetry
+      newVersion: 5.1.0
