@@ -1,0 +1,49 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Spring family of Axoniq 5 extensions. Today only the Spring Boot starter
+# swap lives here (`axoniq-spring-boot-autoconfigure` / `-starter`); Axoniq
+# does not publish a separate non-boot `axon-spring` equivalent. Mirrors the
+# AF5-side `axon4-to-axon5-extension-spring.yml` grouping.
+#
+# Maven changes are active; class-level mappings for the Axoniq commercial
+# autoconfig classes (`io.axoniq.framework.springboot.*` — Axon Server,
+# distributed messaging, DLQ, Axon Server actuator) are deferred until a
+# stable mapping table is available.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxoniq5SpringBoot
+displayName: Swap the Spring Boot starter to Axoniq Framework 5 commercial
+description: >-
+  Swaps the Spring Boot starter dependency to the Axoniq commercial variant
+  (`io.axoniq.framework:axoniq-spring-boot-starter`). Accepts both the AF4
+  raw coordinate (`org.axonframework:axon-spring-boot-starter`) and the
+  post-`Axon4ToAxon5SpringBootExtension` coordinate
+  (`org.axonframework.extensions.spring:axon-spring-boot-starter`).
+  Class-level mappings for the Axoniq autoconfig package
+  `io.axoniq.framework.springboot.*` are not yet implemented.
+recipeList:
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-starter
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-spring-boot-starter
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework.extensions.spring
+      oldArtifactId: axon-spring-boot-starter
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-spring-boot-starter

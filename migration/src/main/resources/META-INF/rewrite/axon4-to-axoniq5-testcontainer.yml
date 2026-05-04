@@ -1,0 +1,68 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Server Testcontainer — extracted from `axon-test` into a dedicated
+# Axoniq 5 artifact `io.axoniq.framework:axoniq-testcontainer`.
+#
+# AF4: bundled in `org.axonframework:axon-test`
+#   - org.axonframework.test.server.AxonServerContainer
+#   - org.axonframework.test.server.AxonServerContainerUtils
+#   - org.axonframework.test.server.AxonServerEEContainer  (Enterprise Edition)
+#   - org.axonframework.test.server.AxonServerSEContainer  (Standard Edition)
+# AF5 / Axoniq 5: io.axoniq.framework:axoniq-testcontainer
+#   - io.axoniq.framework.testcontainer.AxonServerContainer
+#   - io.axoniq.framework.testcontainer.AxonServerContainerUtils
+#   (the EE/SE distinction is dropped — both collapse into AxonServerContainer)
+#
+# `axon-test` is NOT removed by this recipe; AxonTestFixture still lives
+# there. Only the testcontainer-specific classes move out.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxoniq5Testcontainer
+displayName: Migrate the Axon Server Testcontainer to Axoniq Framework 5
+description: >-
+  Relocates the Axon Server Testcontainer types from the AF4 `axon-test`
+  package `org.axonframework.test.server` to the dedicated Axoniq commercial
+  artifact `io.axoniq.framework:axoniq-testcontainer` under
+  `io.axoniq.framework.testcontainer`. The Enterprise (`AxonServerEEContainer`)
+  and Standard (`AxonServerSEContainer`) edition variants both collapse into
+  the unified `AxonServerContainer` in Axoniq 5.
+recipeList:
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.server.AxonServerContainer
+      newFullyQualifiedTypeName: io.axoniq.framework.testcontainer.AxonServerContainer
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.server.AxonServerContainerUtils
+      newFullyQualifiedTypeName: io.axoniq.framework.testcontainer.AxonServerContainerUtils
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.server.AxonServerEEContainer
+      newFullyQualifiedTypeName: io.axoniq.framework.testcontainer.AxonServerContainer
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.server.AxonServerSEContainer
+      newFullyQualifiedTypeName: io.axoniq.framework.testcontainer.AxonServerContainer
+  # Build-tool dep add: when testcontainer types are detected, pull in the
+  # Axoniq testcontainer jar at test scope. `axon-test` stays — it still
+  # contains AxonTestFixture and other test utilities. Unified recipe covers
+  # both Maven (`<scope>test</scope>`) and Gradle (mapped to `testImplementation`).
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: io.axoniq.framework
+      artifactId: axoniq-testcontainer
+      version: 5.1.0
+      scope: test
+      # Use the AF4 FQN — `onlyIfUsing` resolves against the LST as parsed,
+      # so the post-rename Axoniq name would never match.
+      onlyIfUsing: org.axonframework.test.server.AxonServerContainer

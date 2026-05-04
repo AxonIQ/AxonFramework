@@ -1,0 +1,68 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Sequenced Dead-Letter Queue — moved into the Axoniq commercial offering.
+# Class names are preserved; only the package changes.
+#
+# AF4: bundled in `axon-messaging`
+#   - org.axonframework.messaging.deadletter.*
+#     (DeadLetter, SequencedDeadLetterQueue, InMemorySequencedDeadLetterQueue,
+#      EnqueuePolicy, Decisions, ThrowableCause, …)
+#   - org.axonframework.eventhandling.deadletter.*
+#     (DeadLetteredEventProcessingTask, SequenceIdentifierCache, jpa, jdbc, …)
+# AF5: io.axoniq.framework:axoniq-dead-letter
+#   - io.axoniq.framework.messaging.deadletter.*  (same class names)
+#   - io.axoniq.framework.messaging.eventhandling.deadletter.*
+#     (note: `messaging.` is inserted before `eventhandling.deadletter`)
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxoniq5DeadLetter
+displayName: Migrate the Sequenced Dead-Letter Queue to Axoniq Framework 5
+description: >-
+  Relocates the Sequenced Dead-Letter Queue (DLQ) types from the open-source
+  `axon-messaging` module to the Axoniq commercial `axoniq-dead-letter`
+  module (`io.axoniq.framework:axoniq-dead-letter`). Class names — including
+  `SequencedDeadLetterQueue`, `JpaSequencedDeadLetterQueue`,
+  `JdbcSequencedDeadLetterQueue`, `DeadLetteredEventProcessingTask`,
+  `EnqueuePolicy`, `Decisions`, `ThrowableCause` — are preserved.
+recipeList:
+  # Core DLQ types: org.axonframework.messaging.deadletter → io.axoniq.framework.messaging.deadletter
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.deadletter
+      newPackageName: io.axoniq.framework.messaging.deadletter
+      recursive: true
+  # Event-handling DLQ types: org.axonframework.eventhandling.deadletter →
+  #                           io.axoniq.framework.messaging.eventhandling.deadletter
+  # The Axoniq packaging inserts `messaging.` before `eventhandling.deadletter`.
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.eventhandling.deadletter
+      newPackageName: io.axoniq.framework.messaging.eventhandling.deadletter
+      recursive: true
+  # Order-independence: also accept the post-Axon4ToAxon5Messaging coord, in
+  # case the OSS messaging recipe ran first and rewrote `eventhandling` to
+  # `messaging.eventhandling`.
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.eventhandling.deadletter
+      newPackageName: io.axoniq.framework.messaging.eventhandling.deadletter
+      recursive: true
+  # Build-tool dep add: when DLQ types are detected, pull in the Axoniq DLQ jar.
+  # Unified recipe covers both Maven and Gradle.
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: io.axoniq.framework
+      artifactId: axoniq-dead-letter
+      version: latest.release
+      onlyIfUsing: io.axoniq.framework.messaging.deadletter.SequencedDeadLetterQueue

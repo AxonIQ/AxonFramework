@@ -31,13 +31,13 @@
         <module>extensions</module>
         <module>eventsourcing</module>
         <module>messaging</module>
+        <module>migration</module>
         <module>modelling</module>
         <module>test</module>
         <module>update</module>
 
         <module>integrationtests</module>
 
-        <module>stash/migration</module>
         <module>stash/todo</module>
         <module>stash/legacy</module>
         <module>stash/legacy-aggregate</module>
