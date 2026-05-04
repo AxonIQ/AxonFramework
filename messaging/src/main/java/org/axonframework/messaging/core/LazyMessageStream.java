@@ -25,7 +25,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.Objects.requireNonNullElse;
 
 /**
  * A {@link MessageStream} that defers creation of its delegate stream until the first message is requested.
@@ -104,9 +103,7 @@ public class LazyMessageStream<M extends Message> implements MessageStream<M> {
         // if we didn't initialize it yet, we may consider this one an empty stream.
         // It was closed before it got a chance to initialize. To avoid issues with components attempting to read after
         // close, we initialize it as empty.
-        requireNonNullElse(delegate.updateAndGet(s -> s == null ? MessageStream.empty() : s),
-                           MessageStream.empty())
-                .close();
+        requireNonNull(delegate.updateAndGet(s -> s == null ? MessageStream.empty() : s)).close();
     }
 
     /**

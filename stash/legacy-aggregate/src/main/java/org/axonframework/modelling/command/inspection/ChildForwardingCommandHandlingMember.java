@@ -143,7 +143,7 @@ public class ChildForwardingCommandHandlingMember<P, C> implements ForwardingCom
     private MessageHandlerInterceptorMemberChain<C> interceptorChain(Class<?> childType) {
         return childHandlingInterceptors.isEmpty()
                 ? NoMoreInterceptors.instance()
-                : new ChainedMessageHandlerInterceptorMember<>(childType, childHandlingInterceptors.iterator());
+                : new ChainedMessageHandlerInterceptorMember<>(childHandlingInterceptors.iterator());
     }
 
     @SuppressWarnings("unchecked")

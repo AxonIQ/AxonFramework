@@ -19,9 +19,9 @@ package org.axonframework.messaging.eventhandling.annotation;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
-import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -33,6 +33,7 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.annotation.SourceId;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -43,7 +44,6 @@ import org.axonframework.messaging.eventhandling.replay.GenericReplayStatusChang
 import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.annotation.ReplayStatusChangedHandler;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
@@ -935,7 +935,7 @@ class AnnotatedEventHandlingComponentTest {
             var event = eventMessage(0);
 
             // when
-            var result = component.handle(event, simpleContext(event));
+            component.handle(event, simpleContext(event));
 
             // then
             assertThat(log).containsExactly("interceptor", "handler");

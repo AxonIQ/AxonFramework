@@ -32,7 +32,7 @@ import java.util.Iterator;
  *
  * @param <T> The type that declares the handlers in this chain.
  * @author Allard Buijze
- * @since 4.4.0
+ * @since 4.4.0, 5.2.0
  */
 public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandlerInterceptorMemberChain<T> {
 
@@ -40,20 +40,17 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
     private final MessageHandlerInterceptorMemberChain<T> next;
 
     /**
-     * Constructs a chained message handling interceptor for the given {@code handlerType}, constructing a chain from
-     * the given {@code iterator}.
+     * Constructs a chained message handling interceptor, building a chain from the given {@code iterator}.
      * <p>
      * The {@code iterator} should <em>at least</em>> have a single {@link MessageHandlingMember}. If there are more
      * {@code MessageHandlingMembers} present in the given {@code iterator}, this constructor will be invoked again.
      *
-     * @param handlerType The type for which to construct a message handler interceptor chain.
-     * @param iterator    The {@code MessageHandlingMembers} from which to construct the chain.
+     * @param iterator the {@code MessageHandlingMembers} from which to construct the chain.
      */
-    public ChainedMessageHandlerInterceptorMember(Class<?> handlerType,
-                                                  Iterator<MessageHandlingMember<? super T>> iterator) {
+    public ChainedMessageHandlerInterceptorMember(Iterator<MessageHandlingMember<? super T>> iterator) {
         this.delegate = iterator.next();
         this.next = iterator.hasNext()
-                ? new ChainedMessageHandlerInterceptorMember<>(handlerType, iterator)
+                ? new ChainedMessageHandlerInterceptorMember<>(iterator)
                 : NoMoreInterceptors.instance();
     }
 

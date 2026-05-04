@@ -296,7 +296,7 @@ public class AnnotatedHandlerInspector<T> {
             if (i.isEmpty()) {
                 return NoMoreInterceptors.instance();
             }
-            return new ChainedMessageHandlerInterceptorMember<>(t, i.iterator());
+            return new ChainedMessageHandlerInterceptorMember<>(i.iterator());
         });
     }
 

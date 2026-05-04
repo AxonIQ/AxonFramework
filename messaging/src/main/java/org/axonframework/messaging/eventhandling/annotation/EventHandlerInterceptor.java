@@ -31,10 +31,11 @@ import java.lang.annotation.Target;
  * An annotated interceptor is invoked before every {@link org.axonframework.messaging.eventhandling.EventHandler
  * @EventHandler} method on the same component instance. Two styles are supported:
  * <ul>
- *   <li><strong>Before-interceptor</strong> — a {@code void} method with no
- *       {@link org.axonframework.messaging.core.MessageHandlerInterceptorChain} parameter. The method runs before
- *       the handler; the chain is automatically proceeded after the method returns normally. If it throws, the handler
- *       is not invoked.</li>
+ *   <li><strong>Before-interceptor</strong> — a method with no
+ *       {@link org.axonframework.messaging.core.MessageHandlerInterceptorChain} parameter that returns either
+ *       {@code void} or {@code CompletableFuture<Void>}. The method runs before the handler; the chain is
+ *       automatically proceeded after the method returns (or the future completes) normally. If it throws (or the
+ *       future completes exceptionally), the handler is not invoked.</li>
  *   <li><strong>Surround-interceptor</strong> — a method that declares a
  *       {@link org.axonframework.messaging.core.MessageHandlerInterceptorChain} parameter and returns a
  *       {@link org.axonframework.messaging.core.MessageStream}. The method controls whether and when the chain is

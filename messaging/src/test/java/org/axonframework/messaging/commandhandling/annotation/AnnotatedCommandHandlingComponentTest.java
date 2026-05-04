@@ -801,7 +801,9 @@ class AnnotatedCommandHandlingComponentTest {
                 @CommandHandlerInterceptor
                 String intercept() { return "not void"; }
                 @CommandHandler
-                void handle(Integer payload) {}
+                void handle(Integer payload) {
+                    // method implementation not relevant
+                }
             };
 
             // when / then

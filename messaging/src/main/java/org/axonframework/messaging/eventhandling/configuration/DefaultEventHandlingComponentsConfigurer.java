@@ -94,6 +94,7 @@ public class DefaultEventHandlingComponentsConfigurer
     ) {
         requireNonNull(interceptorBuilder, "interceptorBuilder must not be null");
         if (interceptors.isEmpty()) {
+            // empty, so we're registering the decorator for the first interceptor; subsequent calls only add to the list
             decorated((cfg, component) -> new InterceptingEventHandlingComponent(
                     interceptors.stream()
                                 .map(builder -> builder.build(cfg))
