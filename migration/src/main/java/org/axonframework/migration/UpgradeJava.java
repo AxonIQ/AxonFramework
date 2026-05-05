@@ -37,11 +37,11 @@ import java.util.List;
  *       rather than producing a build that cannot compile against Axon 5.</li>
  * </ul>
  * <p>
- * This recipe only updates build files ({@code pom.xml}, {@code build.gradle}). Source-level Java
- * modernizations (text blocks, pattern matching, sequenced collections, {@code javax}→{@code jakarta},
- * removed/deprecated API rewrites) are applied separately by the YAML-defined upstream recipe
- * {@code org.openrewrite.java.migrate.UpgradeToJava21}, which is composed alongside this recipe in
- * {@code axon-4to5.yml}.
+ * This recipe only updates build files ({@code pom.xml}, {@code build.gradle}); it does not apply
+ * any source-level Java modernizations. If you also want source rewrites such as text blocks,
+ * pattern matching, sequenced collections or {@code javax}→{@code jakarta} translation, run the
+ * upstream {@code org.openrewrite.java.migrate.UpgradeToJava21} separately or compose it into your
+ * own wrapping recipe.
  * <p>
  * The {@link #targetVersion} option is overridable per invocation — see the module {@code README.md}
  * for instructions on switching between Java 25 (default) and Java 21.

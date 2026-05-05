@@ -35,19 +35,19 @@ Available recipes are declared under `src/main/resources/META-INF/rewrite/`.
 
 ## Java version upgrade
 
-The top-level `UpgradeAxonFramework4to5` recipe upgrades the Java compiler target as its first step.
-Two recipes work together:
+The top-level `UpgradeAxonFramework4to5` recipe bumps the Java compiler target as its first step,
+via **`org.axonframework.migration.UpgradeJava`** — a thin, validated wrapper around the upstream
+`UpgradeJavaVersion` recipe that:
 
-1. **`org.openrewrite.java.migrate.UpgradeToJava21`** (upstream, from `rewrite-migrate-java`)
-   chains source-level modernizations from Java 8 up through 21 — text blocks, pattern matching,
-   sequenced collections, `javax`→`jakarta` rewrites, removed/deprecated API replacements. It is
-   self-gating: modules already on Java 21+ are left untouched.
+- defaults to **Java 25** (the latest LTS at the time of writing);
+- rejects targets below 21 with a clear error, since Axon Framework 5 requires Java 21+;
+- is a no-op for modules already at or above the requested target.
 
-2. **`org.axonframework.migration.UpgradeJava`** (this module) bumps the compiler target in
-   `pom.xml`/`build.gradle`. It is a thin, validated wrapper around `UpgradeJavaVersion` that:
-   - defaults to **Java 25** (the latest LTS at the time of writing);
-   - rejects targets below 21 with a clear error, since Axon Framework 5 requires Java 21+;
-   - is a no-op for modules already at or above the requested target.
+This recipe only updates build files (`pom.xml` / `build.gradle`). **It does not apply source-level
+Java modernizations** (text blocks, pattern matching, sequenced collections, `javax`→`jakarta`,
+removed/deprecated API rewrites). If you want those as well, run the upstream
+`org.openrewrite.java.migrate.UpgradeToJava21` recipe separately, or compose it into your own
+wrapping recipe (see below).
 
 ### Choosing the target version
 
@@ -63,9 +63,10 @@ type: specs.openrewrite.org/v1beta/recipe
 name: com.acme.UpgradeAxonForUs
 displayName: Upgrade to Axon 5, keep Java 21
 recipeList:
-  - org.openrewrite.java.migrate.UpgradeToJava21
   - org.axonframework.migration.UpgradeJava:
       targetVersion: 21
+  # Optional: also apply source-level Java modernizations.
+  # - org.openrewrite.java.migrate.UpgradeToJava21
   - org.openrewrite.maven.UpgradeDependencyVersion:
       groupId: org.axonframework
       artifactId: "*"

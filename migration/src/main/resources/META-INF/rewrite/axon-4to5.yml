@@ -15,11 +15,13 @@
 #
 
 # Top-level upgrade recipe. Composes the per-module rename recipes (one per
-# AF5 framework module / extension). Each per-module recipe is independently
-# runnable. Placeholder extension recipes (Reactor, Kafka, AMQP, Mongo,
-# JGroups, Spring Cloud, Multitenancy, CDI, OpenTracing) are intentionally
-# excluded from this composite — they are no-ops today and will be enabled
-# here once their structural-rewrite implementations land.
+# AF5 framework module, one per Axoniq commercial module, one per extension).
+# Each per-module recipe is independently runnable. Placeholder recipes
+# (Reactor / Kafka / AMQP / Mongo / JGroups / Spring Cloud / Multitenancy /
+# CDI / OpenTracing extensions; Axoniq event-streaming, postgresql,
+# snapshotting, spring-boot autoconfig) are intentionally excluded from this
+# composite — they are no-ops today and will be enabled here once their
+# structural implementations land.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -44,7 +46,14 @@ recipeList:
       artifactId: "*"
       newVersion: ${project.version}
 
-  # ── 3. Active extension migrations ──────────────────────────────────────
+  # ── 3. Axoniq commercial module migrations ──────────────────────────────
+  # Run before the core OSS messaging rename so the Axoniq destinations win
+  # for distributed-messaging classes that move to commercial.
+  - org.axonframework.migration.AxonFramework4to5AxoniqAxonServerConnector
+  - org.axonframework.migration.AxonFramework4to5AxoniqDeadLetter
+  - org.axonframework.migration.AxonFramework4to5AxoniqDistributedMessaging
+
+  # ── 4. Active extension migrations ──────────────────────────────────────
   - org.axonframework.migration.AxonFramework4to5SpringExtension
   - org.axonframework.migration.AxonFramework4to5SpringBootExtension
   - org.axonframework.migration.AxonFramework4to5SpringBootActuatorExtension
@@ -52,7 +61,7 @@ recipeList:
   - org.axonframework.migration.AxonFramework4to5MicrometerExtension
   - org.axonframework.migration.AxonFramework4to5TracingOpenTelemetryExtension
 
-  # ── 4. Core framework module migrations ─────────────────────────────────
+  # ── 5. Core framework module migrations ─────────────────────────────────
   - org.axonframework.migration.AxonFramework4to5MessagingRenames
   - org.axonframework.migration.AxonFramework4to5ModellingRenames
   - org.axonframework.migration.AxonFramework4to5EventSourcingRenames
