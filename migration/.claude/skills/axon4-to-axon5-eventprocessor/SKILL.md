@@ -233,15 +233,63 @@ For the in-context case:
    | `commandGateway.send(cmd, metadata)` | `commandDispatcher.send(cmd, metadata)` |
    | `commandGateway.sendAndWait(cmd, ResultType.class)` | `commandDispatcher.send(cmd, ResultType.class)` (returns `CompletableFuture<ResultType>`) |
 
-### 5. Return-type change: `void` → `CompletableFuture<?>`
+### 5. Return-type change & dispatch shape: prefer `CompletableFuture<?>`, block as last resort
 
-If the handler now returns the dispatcher's result instead of blocking:
+**Preference order** (apply the first one that fits the candidate's shape):
 
-- Change the return type from `void` to `CompletableFuture<?>`.
-- Add `import java.util.concurrent.CompletableFuture;` if missing.
-- `return commandDispatcher.send(cmd, metadata);` directly. The framework
-  consumes the returned future / `CommandResult` so do **not** call
-  `.join()`, `.get()`, or `.getResultMessage().join()`.
+1. **Single dispatch → return the future.** Change the handler return
+   type from `void` to `CompletableFuture<?>`, add
+   `import java.util.concurrent.CompletableFuture;`, and write
+   `return commandDispatcher.send(cmd, metadata);` directly. The
+   framework consumes the returned future / `CommandResult`, so do
+   **not** call `.join()`, `.get()`, or `.getResultMessage().join()`.
+2. **Loop / multiple dispatches → `CompletableFuture.allOf(...)`.**
+   Collect each dispatch's `CompletableFuture<? extends Message>` (via
+   `.getResultMessage()` on the `CommandResult`) into a list, then
+   return:
+
+   ```java
+   var futures = repository.findAllByGameId(gameId).stream()
+       .filter(...)
+       .map(item -> commandDispatcher
+                       .send(commandFor(item), metadata)
+                       .getResultMessage())
+       .toArray(CompletableFuture[]::new);
+   return CompletableFuture.allOf(futures);
+   ```
+
+   Aggregating with `allOf` keeps the handler non-blocking — the
+   framework still observes one future and only sees completion when
+   every dispatch resolves (or any one fails).
+3. **Last resort — block with an explicit timeout.** Reach for this
+   only when the surrounding code genuinely cannot become async (e.g.
+   the handler must keep `void`, or it must observe a result before
+   subsequent imperative work that resists chaining). Always use
+   `.orTimeout(duration, unit).join()` — never plain `.join()` or
+   `.get()`. This is the AF5 project rule (see
+   `.claude/rules/completablefuture-blocking.md`):
+
+   ```java
+   // No metadata — send(cmd) returns CommandResult, so .getResultMessage() first
+   commandDispatcher.send(cmd)
+       .getResultMessage()
+       .orTimeout(2, TimeUnit.SECONDS)
+       .join();
+
+   // With metadata — send(cmd, metadata) ALSO returns CommandResult,
+   // so .getResultMessage() is still required before .orTimeout()
+   commandDispatcher.send(cmd, metadata)
+       .getResultMessage()
+       .orTimeout(2, TimeUnit.SECONDS)
+       .join();
+   ```
+
+   `CommandResult` is **not** a `CompletableFuture` — `.orTimeout(...)`
+   lives on `CompletableFuture` only. Always call `.getResultMessage()`
+   to get the future before chaining `.orTimeout(...).join()`.
+
+**Branching rules (when option 1 applies):**
+
 - If the handler dispatches in **multiple branches** (e.g. try/catch
   compensation, `if/else` with different commands), every branch must
   return a future. Return a `CompletableFuture` from each branch.
@@ -266,11 +314,11 @@ If the handler now returns the dispatcher's result instead of blocking:
    return commandDispatcher.send(cmd, metadata);
    ```
 
-  Reads top-down, makes the dispatch the obvious main path, and keeps the
-  guard-clause idiom familiar to most Java codebases.
+  Reads top-down, makes the dispatch the obvious main path, and keeps
+  the guard-clause idiom familiar to most Java codebases.
 - If the handler still has work to do after dispatch (logging,
   bookkeeping), prefer chaining via `.thenRun(...)` / `.thenApply(...)`
-  on the dispatcher's result rather than blocking.
+  on `commandResult.getResultMessage()` rather than blocking.
 
 ### 6. Delete unused private fields and constructors
 
@@ -410,6 +458,12 @@ rather than editing the existing ones.
   processor with multi-DI constructor (gateway + a calculator) and a
   conditional `if (cond) sendAndWait(...)` branch with no-op false path
   (early-return inversion + `completedFuture(null)`).
+- `references/examples/03-heroes-when-week-symbol-proclaimed.md` —
+  Spring Boot processor with a **loop** of `sendAndWait` calls in a
+  helper method, plus a second `@EventHandler` doing pure read-model
+  updates (no dispatch). Demonstrates the `CompletableFuture.allOf`
+  aggregation pattern alongside the last-resort blocking variant
+  (`.getResultMessage().orTimeout(d, unit).join()`).
 
 ## Variants
 
@@ -437,9 +491,10 @@ rather than editing the existing ones.
 - If you change something manually (e.g. you decide to keep the gateway
   on a particular class because the handler dispatches through a
   non-context path), mention it briefly so reflect can capture the *why*.
-- The example file's `commandDispatcher.send(cmd, metadata)` returns
-  `CommandResult`, not `CompletableFuture` directly. The `@EventHandler`
-  return type `CompletableFuture<?>` is honoured because AF5's handler
-  adapter accepts the dispatcher's result; if you ever need to compose
-  with other futures explicitly, use `commandResult.getResultMessage()`
-  to obtain a `CompletableFuture<? extends Message>`.
+- `commandDispatcher.send(cmd)` and `commandDispatcher.send(cmd, metadata)`
+  both return `CommandResult` (not `CompletableFuture`). When the
+  `@EventHandler` return type is `CompletableFuture<?>`, returning the
+  `CommandResult` directly is fine — AF5's handler adapter accepts it.
+  But when you need to **compose** with other futures (`thenRun`,
+  `thenApply`, `allOf`, `orTimeout`, …), call `.getResultMessage()` on
+  the `CommandResult` first to obtain `CompletableFuture<? extends Message>`.
