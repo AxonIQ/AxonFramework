@@ -105,6 +105,11 @@ recipeList:
       oldPackageName: org.axonframework.messaging.eventhandling.async
       newPackageName: org.axonframework.messaging.core.sequencing
       recursive: true
+  # AF5 changed `SequencingPolicy.sequenceIdentifierFor` to take a second
+  # `ProcessingContext` argument and return `Optional<Object>`. AF4 lambdas
+  # of the shape `e -> body` no longer compile; this rewrites them to
+  # `(e, ctx) -> Optional.ofNullable(body)`.
+  - org.axonframework.migration.MigrateSequencingPolicyLambda
 
   # ── Query gateway moved into its own gateway subpackage ─────────────────
   - org.openrewrite.java.ChangeType:

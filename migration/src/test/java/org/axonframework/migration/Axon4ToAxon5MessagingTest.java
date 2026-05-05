@@ -311,6 +311,41 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     }
 
     @Test
+    void rewritesSequencingPolicyLambdaToTwoArgOptional() {
+        // AF5 changed SequencingPolicy from one-arg/Object-return to
+        // two-arg/Optional<Object>-return. This recipe rewrites the common
+        // single-param lambda shape; block-body and anonymous-class
+        // implementations stay manual.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.EventMessage;
+                        import org.axonframework.eventhandling.async.SequencingPolicy;
+                        class Cfg {
+                            SequencingPolicy<EventMessage<?>> policy() {
+                                return e -> e.getMetaData().get("gameId");
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.eventhandling.EventMessage;
+                        import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+
+                        import java.util.Optional;
+
+                        class Cfg {
+                            SequencingPolicy<EventMessage> policy() {
+                                return (e, ctx) -> Optional.ofNullable(e.metadata().get("gameId"));
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void renamesGetTimestampOnEventMessage() {
         // getTimestamp is EventMessage-specific (not on Message); needs its own
         // ChangeMethodName rule against the EventMessage type pattern.
