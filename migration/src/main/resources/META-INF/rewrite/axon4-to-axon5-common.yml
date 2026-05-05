@@ -28,8 +28,9 @@ displayName: Apply Axon Framework 5 common module renames
 description: >-
   Migrates `org.axonframework.config` to `org.axonframework.common.configuration`,
   renames `ConfigurerModule` to `ConfigurationEnhancer`, `ModuleConfiguration` to
-  `Module`, `LifecycleOperations` to `LifecycleRegistry`, and relocates
-  `EventProcessingConfigurer` under the messaging.eventhandling namespace.
+  `Module`, `LifecycleOperations` to `LifecycleRegistry`, relocates
+  `EventProcessingConfigurer` under the messaging.eventhandling namespace, and
+  swaps `@ProcessingGroup` for the AF5 `@Namespace` annotation.
 recipeList:
   # ── Package-prefix move: config → common.configuration ──────────────────
   - org.openrewrite.java.ChangePackage:
@@ -50,3 +51,16 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.common.configuration.EventProcessingConfigurer
       newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.configuration.EventProcessingConfigurer
+
+  # ── @ProcessingGroup → @Namespace ───────────────────────────────────────
+  # AF4 used `@ProcessingGroup("...")` to label projection / event-handler
+  # classes for an event-processor configuration. AF5 replaces it with the
+  # bounded-context-style `@Namespace("...")` from
+  # `org.axonframework.messaging.core.annotation`. Both annotations carry a
+  # single `String value()`, so the rename preserves the argument as-is.
+  # `ChangeType` source uses the post-`ChangePackage` FQN
+  # (`common.configuration.ProcessingGroup`) since the package move above
+  # has already run.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.common.configuration.ProcessingGroup
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.Namespace

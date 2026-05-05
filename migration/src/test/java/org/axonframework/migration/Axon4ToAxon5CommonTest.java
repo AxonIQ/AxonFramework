@@ -58,4 +58,32 @@ class Axon4ToAxon5CommonTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void renamesProcessingGroupToNamespacePreservingAttributeValue() {
+        // AF4 `@ProcessingGroup("...")` → AF5 `@Namespace("...")`. Both
+        // annotations carry a single `String value()`, so `ChangeType`
+        // preserves the argument verbatim. The processor name string the
+        // user picked stays as-is — operators may want to revisit naming
+        // since AF5's namespace concept is broader than AF4's processing
+        // group, but that's a manual decision.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.config.ProcessingGroup;
+                        @ProcessingGroup("automation_processor")
+                        class Projection {}
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.core.annotation.Namespace;
+
+                        @Namespace("automation_processor")
+                        class Projection {}
+                        """
+                )
+        );
+    }
 }
