@@ -82,7 +82,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                                             .activateRecipes(
                                                     "org.axonframework.migration.UpgradeAxon4ToAxon5"))
                         .typeValidationOptions(TypeValidation.none())
-                        .expectedCyclesThatMakeChanges(2),
+                        .expectedCyclesThatMakeChanges(1),
                 java(
                         """
                         package com.example;
@@ -94,13 +94,63 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                         """,
                         """
                         package com.example;
-
+                        import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
                         import org.axonframework.extension.spring.stereotype.EventSourced;
 
                         @EventSourced
                         class GiftCard {
                             @EntityCreator
                             GiftCard() { }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void addsEntityCreatorWhenConstructorIsAtEndOfClassBodyAfterHandlers() {
+        // Mirrors the structure of Heroes' `Army.java` — the no-arg
+        // constructor is the last member, after several command/event handlers.
+        // Earlier failures showed the constructor was being skipped in this
+        // layout despite the unit test for the simpler "constructor first"
+        // shape passing; this test pins the regression.
+        rewriteRun(
+                spec -> spec.recipe(Environment.builder()
+                                            .scanRuntimeClasspath("org.axonframework.migration")
+                                            .build()
+                                            .activateRecipes(
+                                                    "org.axonframework.migration.UpgradeAxon4ToAxon5"))
+                        .typeValidationOptions(TypeValidation.none())
+                        .expectedCyclesThatMakeChanges(1),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.spring.stereotype.Aggregate;
+                        import org.axonframework.commandhandling.CommandHandler;
+                        @Aggregate
+                        class Order {
+                            @CommandHandler
+                            void handle(Object cmd) {}
+                            Order() {
+                                // required by Axon
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+                        import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+
+                        @EventSourced
+                        class Order {
+                            @CommandHandler
+                            void handle(Object cmd) {}
+
+                            @EntityCreator
+                            Order() {
+                                // required by Axon
+                            }
                         }
                         """
                 )
@@ -137,7 +187,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                                             .activateRecipes(
                                                     "org.axonframework.migration.UpgradeAxon4ToAxon5"))
                         .typeValidationOptions(TypeValidation.none())
-                        .expectedCyclesThatMakeChanges(2),
+                        .expectedCyclesThatMakeChanges(1),
                 java(
                         """
                         package com.example;
@@ -153,6 +203,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                         """,
                         """
                         package com.example;
+                        import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
                         import org.axonframework.extension.spring.stereotype.EventSourced;
                         import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 

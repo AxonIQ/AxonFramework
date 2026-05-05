@@ -44,6 +44,11 @@ public class AddEntityCreatorAnnotation extends Recipe {
     private static final String ENTITY_CREATOR_FQN = "org.axonframework.eventsourcing.annotation.reflection.EntityCreator";
     private static final String EVENT_SOURCED_ENTITY_FQN = "org.axonframework.eventsourcing.annotation.EventSourcedEntity";
     private static final String EVENT_SOURCED_SPRING_FQN = "org.axonframework.extension.spring.stereotype.EventSourced";
+    // Match AF4 stereotypes too, because `ChangeType` doesn't always rebind the
+    // J.Annotation's resolved type before this visitor runs in the next cycle —
+    // matching by AF4 FQN keeps the recipe single-cycle on raw AF4 input.
+    private static final String AF4_AGGREGATE_FQN = "org.axonframework.spring.stereotype.Aggregate";
+    private static final String AF4_AGGREGATE_ROOT_FQN = "org.axonframework.modelling.command.AggregateRoot";
 
     @Override
     public String getDisplayName() {
@@ -85,12 +90,15 @@ public class AddEntityCreatorAnnotation extends Recipe {
                 if (enclosing == null || !isEventSourcedEntity(enclosing)) {
                     return md;
                 }
-                maybeAddImport(ENTITY_CREATOR_FQN);
-                return JavaTemplate.builder("@EntityCreator")
+                J.MethodDeclaration annotated = JavaTemplate.builder("@EntityCreator")
                         .imports(ENTITY_CREATOR_FQN)
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
                         .apply(getCursor(), md.getCoordinates().addAnnotation((a, b) -> 0));
+                // maybeAddImport AFTER the template so the visitor's pending-
+                // import queue is hit on the post-rewrite cursor.
+                maybeAddImport(ENTITY_CREATOR_FQN, null, false);
+                return annotated;
             }
 
             private boolean isEventSourcedEntity(J.ClassDeclaration cd) {
@@ -99,7 +107,9 @@ public class AddEntityCreatorAnnotation extends Recipe {
                 }
                 for (J.Annotation a : cd.getLeadingAnnotations()) {
                     if (TypeUtils.isOfClassType(a.getType(), EVENT_SOURCED_ENTITY_FQN)
-                            || TypeUtils.isOfClassType(a.getType(), EVENT_SOURCED_SPRING_FQN)) {
+                            || TypeUtils.isOfClassType(a.getType(), EVENT_SOURCED_SPRING_FQN)
+                            || TypeUtils.isOfClassType(a.getType(), AF4_AGGREGATE_FQN)
+                            || TypeUtils.isOfClassType(a.getType(), AF4_AGGREGATE_ROOT_FQN)) {
                         return true;
                     }
                 }
@@ -111,7 +121,18 @@ public class AddEntityCreatorAnnotation extends Recipe {
                     return false;
                 }
                 for (J.Annotation a : md.getLeadingAnnotations()) {
+                    // Type-based match handles imported annotations whose
+                    // bindings have already resolved.
                     if (TypeUtils.isOfClassType(a.getType(), ENTITY_CREATOR_FQN)) {
+                        return true;
+                    }
+                    // Fallback: simple-name match. After the first application
+                    // adds `@EntityCreator` via JavaTemplate, the second
+                    // cycle's LST may not have the type binding yet — without
+                    // this check the visitor would re-add a duplicate
+                    // annotation on the next cycle.
+                    if (a.getAnnotationType() instanceof J.Identifier
+                            && "EntityCreator".equals(((J.Identifier) a.getAnnotationType()).getSimpleName())) {
                         return true;
                     }
                 }
