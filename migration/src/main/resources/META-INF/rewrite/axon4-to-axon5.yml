@@ -50,8 +50,8 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5SpringExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
-  - org.axonframework.migration.Axon4ToAxon5MetricsExtension
-  - org.axonframework.migration.Axon4ToAxon5MicrometerExtension
+  - org.axonframework.migration.Axon4ToAxon5MetricsDropwizardExtension
+  - org.axonframework.migration.Axon4ToAxon5MetricsMicrometerExtension
   - org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
   - org.axonframework.migration.Axon4ToAxon5ReactorExtension
 
@@ -59,6 +59,6 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5Messaging
   - org.axonframework.migration.Axon4ToAxon5Modelling
   - org.axonframework.migration.Axon4ToAxon5EventSourcing
-  - org.axonframework.migration.Axon4ToAxon5Configuration
+  - org.axonframework.migration.Axon4ToAxon5Common
   - org.axonframework.migration.Axon4ToAxon5Conversion
-  - org.axonframework.migration.Axon4ToAxon5TestFixture
+  - org.axonframework.migration.Axon4ToAxon5Test

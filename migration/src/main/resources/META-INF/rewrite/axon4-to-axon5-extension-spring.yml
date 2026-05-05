@@ -14,7 +14,15 @@
 # limitations under the License.
 #
 
-# Spring extension (axon-spring): package move + stereotype rename.
+# Spring family of extensions (extensions/spring/* in AF5):
+#   - axon-spring (core Spring support)
+#   - axon-spring-boot-autoconfigure / axon-spring-boot-starter
+#   - axon-spring-boot-actuator-autoconfigure (AF4-only; AF5 has no successor
+#     artifact, but the package move is still applied for source compatibility)
+#
+# Each artifact has its own recipe so the umbrella can compose them
+# individually; they are colocated here because the AF5 source layout groups
+# them under one Maven parent.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -43,3 +51,46 @@ recipeList:
       oldArtifactId: axon-spring
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+displayName: Migrate the Spring Boot extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.springboot` to
+  `org.axonframework.extension.springboot`, matching the Maven groupId move
+  to `org.axonframework.extensions.spring`. Covers both the autoconfigure
+  and starter artifacts (apps depend on the starter, which transitively
+  pulls autoconfigure).
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.springboot
+      newPackageName: org.axonframework.extension.springboot
+      recursive: true
+  # Maven coordinate moves for the Spring Boot artifacts: groupId
+  # `org.axonframework` → `org.axonframework.extensions.spring`. ArtifactIds
+  # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are unchanged.
+  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-starter
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-starter
+  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-autoconfigure
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-autoconfigure
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
+displayName: Migrate the Spring Boot Actuator extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.actuator` to
+  `org.axonframework.extension.springboot.actuator`. The Actuator support is
+  now nested under the Spring Boot extension namespace.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.actuator
+      newPackageName: org.axonframework.extension.springboot.actuator
+      recursive: true

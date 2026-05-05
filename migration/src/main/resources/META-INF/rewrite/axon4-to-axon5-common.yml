@@ -14,14 +14,17 @@
 # limitations under the License.
 #
 
-# Configuration API renames and the serialization → conversion migration.
-# These are colocated because both touch infrastructure-level concerns
-# (component wiring, serialization) rather than user domain code.
+# Common module (axon-common) renames.
+#
+# AF4 shipped a separate `axon-configuration` artifact whose contents merged
+# into `axon-common` in AF5. The package `org.axonframework.config` therefore
+# moves under `org.axonframework.common.configuration`, with class-level
+# renames layered on top.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5Configuration
-displayName: Apply Axon Framework 5 configuration module renames
+name: org.axonframework.migration.Axon4ToAxon5Common
+displayName: Apply Axon Framework 5 common module renames
 description: >-
   Migrates `org.axonframework.config` to `org.axonframework.common.configuration`,
   renames `ConfigurerModule` to `ConfigurationEnhancer`, `ModuleConfiguration` to
@@ -47,18 +50,3 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.common.configuration.EventProcessingConfigurer
       newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.configuration.EventProcessingConfigurer
-
----
-type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5Conversion
-displayName: Apply Axon Framework 5 serialization → conversion rename
-description: >-
-  Migrates the Serializer-based `org.axonframework.serialization` namespace
-  to the new Converter-based `org.axonframework.conversion` namespace.
-  Note: this is a package rename; concrete renames such as `JacksonSerializer`
-  to `JacksonConverter` are NOT applied here and must be handled separately.
-recipeList:
-  - org.openrewrite.java.ChangePackage:
-      oldPackageName: org.axonframework.serialization
-      newPackageName: org.axonframework.conversion
-      recursive: true

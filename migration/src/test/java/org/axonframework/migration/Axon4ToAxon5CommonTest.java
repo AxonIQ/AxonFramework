@@ -24,11 +24,11 @@ import org.openrewrite.test.RewriteTest;
 import static org.openrewrite.java.Assertions.java;
 
 /**
- * Verifies the configuration-module migration: package move from
+ * Verifies the common-module migration: package move from
  * {@code org.axonframework.config} to {@code org.axonframework.common.configuration}
  * and the {@code ConfigurerModule} → {@code ConfigurationEnhancer} rename.
  */
-class Axon4ToAxon5ConfigurationTest implements RewriteTest {
+class Axon4ToAxon5CommonTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -36,7 +36,7 @@ class Axon4ToAxon5ConfigurationTest implements RewriteTest {
                             .scanRuntimeClasspath("org.axonframework.migration")
                             .build()
                             .activateRecipes(
-                                    "org.axonframework.migration.Axon4ToAxon5Configuration"));
+                                    "org.axonframework.migration.Axon4ToAxon5Common"));
     }
 
     @Test

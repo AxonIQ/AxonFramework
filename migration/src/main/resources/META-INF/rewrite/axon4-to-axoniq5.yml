@@ -53,3 +53,4 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxoniq5AxonServerConnector
   - org.axonframework.migration.Axon4ToAxoniq5DeadLetter
   - org.axonframework.migration.Axon4ToAxoniq5DistributedMessaging
+  - org.axonframework.migration.Axon4ToAxoniq5Testcontainer

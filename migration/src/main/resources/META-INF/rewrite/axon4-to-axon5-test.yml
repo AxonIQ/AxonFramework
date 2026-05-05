@@ -14,15 +14,16 @@
 # limitations under the License.
 #
 
-# Test fixture renames.
+# Test module (axon-test) renames.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5TestFixture
-displayName: Apply Axon Framework 5 test fixture renames
+name: org.axonframework.migration.Axon4ToAxon5Test
+displayName: Apply Axon Framework 5 test module renames
 description: >-
   Renames `AggregateTestFixture` and `SagaTestFixture` to the unified
-  `AxonTestFixture` introduced in Axon Framework 5.
+  `AxonTestFixture` introduced in Axon Framework 5. Targets the `axon-test`
+  Maven artifact.
 recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.AggregateTestFixture

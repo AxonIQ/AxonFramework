@@ -28,7 +28,7 @@ import static org.openrewrite.java.Assertions.java;
  * and {@code SagaTestFixture} both rename to the unified
  * {@code AxonTestFixture}.
  */
-class Axon4ToAxon5TestFixtureTest implements RewriteTest {
+class Axon4ToAxon5TestTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -36,7 +36,7 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
                             .scanRuntimeClasspath("org.axonframework.migration")
                             .build()
                             .activateRecipes(
-                                    "org.axonframework.migration.Axon4ToAxon5TestFixture"));
+                                    "org.axonframework.migration.Axon4ToAxon5Test"));
     }
 
     @Test

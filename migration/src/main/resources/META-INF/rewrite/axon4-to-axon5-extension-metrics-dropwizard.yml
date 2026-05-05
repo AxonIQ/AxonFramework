@@ -14,25 +14,26 @@
 # limitations under the License.
 #
 
-# Micrometer extension (axon-micrometer): package move.
+# Dropwizard Metrics extension: AF4 `axon-metrics` → AF5 `axon-metrics-dropwizard`.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5MicrometerExtension
-displayName: Migrate the Micrometer extension to Axon Framework 5
+name: org.axonframework.migration.Axon4ToAxon5MetricsDropwizardExtension
+displayName: Migrate the Dropwizard Metrics extension to Axon Framework 5
 description: >-
-  Relocates `org.axonframework.micrometer` to
-  `org.axonframework.extension.metrics.micrometer`, reflecting the move into
-  the per-provider `extension.metrics.*` layout.
+  Relocates `org.axonframework.metrics` to
+  `org.axonframework.extension.metrics.dropwizard`, reflecting the move from a
+  flat `metrics` namespace to a per-provider layout under
+  `extension.metrics.*`.
 recipeList:
   - org.openrewrite.java.ChangePackage:
-      oldPackageName: org.axonframework.micrometer
-      newPackageName: org.axonframework.extension.metrics.micrometer
+      oldPackageName: org.axonframework.metrics
+      newPackageName: org.axonframework.extension.metrics.dropwizard
       recursive: true
-  # Maven coordinate move: org.axonframework:axon-micrometer →
-  # org.axonframework.extensions.metrics:axon-metrics-micrometer.
+  # Maven coordinate move: org.axonframework:axon-metrics →
+  # org.axonframework.extensions.metrics:axon-metrics-dropwizard.
   - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
       oldGroupId: org.axonframework
-      oldArtifactId: axon-micrometer
+      oldArtifactId: axon-metrics
       newGroupId: org.axonframework.extensions.metrics
-      newArtifactId: axon-metrics-micrometer
+      newArtifactId: axon-metrics-dropwizard

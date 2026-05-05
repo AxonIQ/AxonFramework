@@ -28,7 +28,7 @@ import static org.openrewrite.java.Assertions.java;
  * {@code org.axonframework.micrometer} to
  * {@code org.axonframework.extension.metrics.micrometer}.
  */
-class Axon4ToAxon5MicrometerExtensionTest implements RewriteTest {
+class Axon4ToAxon5MetricsMicrometerExtensionTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -36,7 +36,7 @@ class Axon4ToAxon5MicrometerExtensionTest implements RewriteTest {
                             .scanRuntimeClasspath("org.axonframework.migration")
                             .build()
                             .activateRecipes(
-                                    "org.axonframework.migration.Axon4ToAxon5MicrometerExtension"));
+                                    "org.axonframework.migration.Axon4ToAxon5MetricsMicrometerExtension"));
     }
 
     @Test

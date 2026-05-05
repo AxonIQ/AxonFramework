@@ -14,18 +14,19 @@
 # limitations under the License.
 #
 
-# Spring Boot Actuator extension (axon-spring-boot-actuator-autoconfigure): package move.
+# Conversion module (axon-conversion) — was Serialization in AF4.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
-displayName: Migrate the Spring Boot Actuator extension to Axon Framework 5
+name: org.axonframework.migration.Axon4ToAxon5Conversion
+displayName: Apply Axon Framework 5 serialization → conversion rename
 description: >-
-  Relocates `org.axonframework.actuator` to
-  `org.axonframework.extension.springboot.actuator`. The Actuator support is
-  now nested under the Spring Boot extension namespace.
+  Migrates the Serializer-based `org.axonframework.serialization` namespace
+  to the new Converter-based `org.axonframework.conversion` namespace.
+  Note: this is a package rename; concrete renames such as `JacksonSerializer`
+  to `JacksonConverter` are NOT applied here and must be handled separately.
 recipeList:
   - org.openrewrite.java.ChangePackage:
-      oldPackageName: org.axonframework.actuator
-      newPackageName: org.axonframework.extension.springboot.actuator
+      oldPackageName: org.axonframework.serialization
+      newPackageName: org.axonframework.conversion
       recursive: true

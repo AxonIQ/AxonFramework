@@ -44,14 +44,14 @@ also run independently. Module names map 1:1 to published Maven modules.
 | Messaging | `Axon4ToAxon5Messaging` |
 | Modelling | `Axon4ToAxon5Modelling` |
 | Event sourcing | `Axon4ToAxon5EventSourcing` |
-| Configuration | `Axon4ToAxon5Configuration` |
+| Common (config + module API; was AF4 `axon-configuration`) | `Axon4ToAxon5Common` |
 | Conversion (was Serialization) | `Axon4ToAxon5Conversion` |
-| Test fixture | `Axon4ToAxon5TestFixture` |
+| Test (axon-test) | `Axon4ToAxon5Test` |
 | Spring extension | `Axon4ToAxon5SpringExtension` |
 | Spring Boot extension | `Axon4ToAxon5SpringBootExtension` |
 | Spring Boot Actuator extension | `Axon4ToAxon5SpringBootActuatorExtension` |
-| Dropwizard Metrics extension | `Axon4ToAxon5MetricsExtension` |
-| Micrometer extension | `Axon4ToAxon5MicrometerExtension` |
+| Dropwizard Metrics extension | `Axon4ToAxon5MetricsDropwizardExtension` |
+| Micrometer Metrics extension | `Axon4ToAxon5MetricsMicrometerExtension` |
 | OpenTelemetry tracing extension | `Axon4ToAxon5TracingOpenTelemetryExtension` |
 | Reactor extension | `Axon4ToAxon5ReactorExtension` |
 
@@ -68,6 +68,7 @@ files; they're no-ops today.
 | Axon Server connector | `Axon4ToAxoniq5AxonServerConnector` (also covers `AxonServerSnapshotStore` since it lives in this Maven module) |
 | Sequenced Dead-Letter Queue | `Axon4ToAxoniq5DeadLetter` |
 | Distributed messaging | `Axon4ToAxoniq5DistributedMessaging` |
+| Testcontainer (Axon Server) | `Axon4ToAxoniq5Testcontainer` |
 
 Placeholders for Axoniq-only Maven modules without finalized class-level mappings
 (`Axon4ToAxoniq5EventStreaming`, `Axon4ToAxoniq5Postgresql`) exist as
@@ -149,9 +150,9 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5Messaging
   - org.axonframework.migration.Axon4ToAxon5Modelling
   - org.axonframework.migration.Axon4ToAxon5EventSourcing
-  - org.axonframework.migration.Axon4ToAxon5Configuration
+  - org.axonframework.migration.Axon4ToAxon5Common
   - org.axonframework.migration.Axon4ToAxon5Conversion
-  - org.axonframework.migration.Axon4ToAxon5TestFixture
+  - org.axonframework.migration.Axon4ToAxon5Test
 ```
 
 Then invoke your wrapper recipe:
