@@ -84,6 +84,8 @@ A.2. Configure the `@EventSourced` annotation:
 - **`tagKey`**: set to the same value used in events' `@EventTag(key = ...)`. Default is the entity's simple class name; if you use that as the tag key, you can omit `tagKey`. Recommended: be explicit (`@EventSourced(tagKey = "Army")`).
 - **`idType`**: set when the AF4 `@AggregateIdentifier` field is **not** `String`. The default is `String.class`; mismatched types cause silent identifier-resolution failures. Example: `@EventSourced(tagKey = "Army", idType = ArmyId.class)` when the id field is `ArmyId`.
 
+> ⚠️ **`snapshotTriggerDefinition` is not portable.** If the AF4 `@Aggregate` had `snapshotTriggerDefinition = "..."`, that attribute does not exist on `@EventSourced` — it is silently dropped during migration. Warn the user that snapshot configuration must be re-wired separately (e.g. via a Spring `@Bean` or configurer API) if snapshotting was required.
+
 ### Path B: Axon Framework Native Configuration
 
 Not supported right now. Keep it for later.
@@ -111,7 +113,7 @@ T.3. **Convert each test method to the fluent given/when/then API.** Mapping (se
 | AF4 | AF5 |
 |---|---|
 | `fixture.given(events…)` | `fixture.given().events(events…)` (or `.event(e)` for single) |
-| `fixture.given(List<?> events)` | `fixture.given().events(list)` |
+| `fixture.given(List<?> events)` | `fixture.given().events(list)` — but prefer `.given().noPriorActivity()` when the list is empty |
 | `fixture.givenCommands(c…)` | `fixture.given().command(c)` |
 | `fixture.givenNoPriorActivity()` | `fixture.given().noPriorActivity()` |
 | `.when(cmd)` | `.when().command(cmd)` |
@@ -126,11 +128,16 @@ T.3. **Convert each test method to the fluent given/when/then API.** Mapping (se
 
 T.4. **Adjust behavioral assertions for AF5 semantics.** Several AF4 fixture errors no longer exist in AF5:
 - `AggregateNotFoundException` is **not** thrown for instance handlers in AF5. With a no-arg `@EntityCreator`, the framework always materializes an empty entity, so the handler runs and any domain rule against empty state surfaces instead. Update such tests to expect the actual domain exception (e.g. a domain-rule violation message) and add a comment noting the semantic shift.
+  - **Watch out for NPE as the "actual exception"**: if a domain rule's `isViolated()` calls a method on a null entity-state field (e.g. `null.equals(...)` when `creatureId` was never set), it throws `NullPointerException` rather than a `DomainRule.ViolatedException`. In that case, use `Exception.class` as the expected type and add a `// TODO` comment that the domain model should add an explicit "not yet initialised" guard (e.g. checking that the entity id field is not null before applying other business rules).
 - Static (creational) handlers throw `EntityAlreadyExistsForCreationalCommandHandlerException` (`org.axonframework.modelling.entity`) when the entity already exists. If you see this in a test that should succeed on existing entities, the handler shouldn't be `static` — re-check step 14.
 
 T.5. **Run just the migrated tests.** Confirm all tests pass before moving on. If tests fail, do not declare success — re-check steps 14 and T.4 for handler shape and exception expectations. The test run is also the smoke test for step 14: a wrong static-vs-instance `CreationPolicy` choice has no compile-time signal — only the test run surfaces `EntityAlreadyExistsForCreationalCommandHandlerException`.
 
-If the project's other modules / sub-packages still use AF4 APIs and the surrounding `mvn compile` is broken, run the `axon4-to-axon5-maven-migration-profile` skill to add (or extend) a `migration` Maven profile that scopes compilation and tests to the files currently being migrated. Re-run that skill any time the working diff grows beyond the existing include list. Then verify with:
+If the project's other modules / sub-packages still use AF4 APIs and the surrounding `mvn compile` is broken, run the `axon4-to-axon5-maven-migration-profile` skill to add (or extend) a `migration` Maven profile that scopes compilation and tests to the files currently being migrated. Re-run that skill any time the working diff grows beyond the existing include list.
+
+> ⚠️ **Prefer per-file includes over package wildcards.** A glob like `com/example/write/**/*.java` will pull in every file in that package — including `*Mcp.java`, `*RestApi.java`, and other non-migration files that may still use AF4 APIs or Java preview features. If those files fail compilation, switch from the wildcard to an explicit per-file `<include>` list. The `axon4-to-axon5-maven-migration-profile` skill supports both strategies.
+
+Then verify with:
 
 ```bash
 ./mvnw test -Pmigration -Dtest='<FQTestClass1>,<FQTestClass2>' -DfailIfNoTests=false
