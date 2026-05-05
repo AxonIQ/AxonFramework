@@ -138,3 +138,157 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.MessageHandlerInterceptor
       newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageHandlerInterceptor
+
+  # ── Strip the dropped payload type parameter from message types ─────────
+  # AF5 dropped the {@code <T>} payload parameter from Message / EventMessage /
+  # CommandMessage / QueryMessage / QueryResponseMessage / ResultMessage. Any
+  # AF4 source that wrote {@code EventMessage<?>} or {@code CommandMessage<Foo>}
+  # would not compile against AF5 raw types; this strips the angle brackets
+  # in place. Other usages (variables, fields, parameters, generic bounds,
+  # method return types) are all reached via the LST's ParameterizedType node.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.core.Message
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.commandhandling.CommandMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryResponseMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.ResultMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.core.unitofwork.UnitOfWork
+
+  # ── Message accessor renames: drop the AF4 `get` prefix, fix MetaData → Metadata ─
+  # AF5 dropped JavaBean prefixes on Message accessors and renamed the metadata
+  # methods from `MetaData` to `Metadata`. `matchOverrides: true` makes the
+  # rename apply on subtype call-sites (EventMessage / CommandMessage / etc.).
+  #
+  # Each rename has TWO `ChangeMethodName` entries — one against the AF4 type
+  # FQN (`org.axonframework.messaging.Message`, `org.axonframework.eventhandling.EventMessage`)
+  # and one against the AF5 type FQN (`org.axonframework.messaging.core.Message`,
+  # `org.axonframework.messaging.eventhandling.EventMessage`). This is because
+  # the prior `ChangePackage` step in this recipe rewrites *some* type
+  # references in the LST to the AF5 FQN before `ChangeMethodName` runs, but
+  # not all (the rebinding is incomplete for some method-call receivers).
+  # Running both ensures the rename fires regardless of which type the call
+  # site is currently bound to.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  # EventMessage / CommandMessage / QueryMessage redeclare `getIdentifier` as an
+  # `@Override`, and `matchOverrides: true` on the supertype pattern doesn't
+  # always rebind those call sites — list the subtypes explicitly.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getMetaData()
+      newMethodName: metadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getMetaData()
+      newMethodName: metadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getPayload()
+      newMethodName: payload
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getPayload()
+      newMethodName: payload
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getPayloadType()
+      newMethodName: payloadType
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getPayloadType()
+      newMethodName: payloadType
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  # EventMessage/CommandMessage/QueryMessage redeclare withMetaData/andMetaData
+  # with covariant returns — same matchOverrides quirk as getIdentifier.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.commandhandling.CommandMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.commandhandling.CommandMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.queryhandling.QueryMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.queryhandling.QueryMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.commandhandling.CommandMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.commandhandling.CommandMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.queryhandling.QueryMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.queryhandling.QueryMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage getTimestamp()
+      newMethodName: timestamp
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage getTimestamp()
+      newMethodName: timestamp
+      matchOverrides: true
