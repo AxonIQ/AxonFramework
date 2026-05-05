@@ -1,0 +1,37 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Framework 4 → 5 BOM rename. The Maven coordinates of the published
+# bill-of-materials artifact changed:
+#   AF4: org.axonframework:axon-bom
+#   AF5: org.axonframework:axon-framework-bom
+# The groupId is unchanged; only the artifactId moves.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Bom
+displayName: Migrate the Axon Framework BOM coordinates
+description: >-
+  Renames the imported `org.axonframework:axon-bom` BOM in
+  `<dependencyManagement>` to `org.axonframework:axon-framework-bom`. The BOM
+  artifactId changed between Axon Framework 4 and Axon Framework 5; the
+  groupId is unchanged.
+recipeList:
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom

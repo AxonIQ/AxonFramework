@@ -1,0 +1,59 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Reactor extension (axon-reactor / axon-reactor-spring-boot-starter):
+# package move + sub-package interpolation.
+#
+# AF4: org.axonframework.extensions.reactor.{commandhandling,eventhandling,
+#      queryhandling}.gateway.* and .messaging.* (plural `extensions`).
+# AF5: org.axonframework.extension.reactor.messaging.{commandhandling,
+#      eventhandling,queryhandling}.gateway.* and
+#      .messaging.core.* (singular `extension`, `messaging.` inserted
+#      to mirror the core OSS messaging restructure).
+#
+# Maven coordinates are unchanged (groupId
+# `org.axonframework.extensions.reactor`, artifacts `axon-reactor` /
+# `axon-reactor-spring-boot-starter`); only the version bumps, handled by
+# the top-level UpgradeDependencyVersion recipe.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5ReactorExtension
+displayName: Migrate the Reactor extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.extensions.reactor.*` to
+  `org.axonframework.extension.reactor.*` (singular `extension`) and inserts
+  the `messaging.` segment in front of the `commandhandling`, `eventhandling`,
+  and `queryhandling` subpackages. The bare `extensions.reactor.messaging.*`
+  package (which holds `ReactorMessageDispatchInterceptor` and the
+  interceptor chain) is moved under `extension.reactor.messaging.core.*`.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.commandhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.commandhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.eventhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.eventhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.queryhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.queryhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.messaging
+      newPackageName: org.axonframework.extension.reactor.messaging.core
+      recursive: true

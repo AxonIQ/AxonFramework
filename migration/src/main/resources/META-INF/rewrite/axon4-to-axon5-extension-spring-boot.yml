@@ -1,0 +1,44 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Spring Boot extension (axon-spring-boot-autoconfigure / -starter): package move.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+displayName: Migrate the Spring Boot extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.springboot` to
+  `org.axonframework.extension.springboot`, matching the Maven groupId move
+  to `org.axonframework.extensions.spring`.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.springboot
+      newPackageName: org.axonframework.extension.springboot
+      recursive: true
+  # Maven coordinate moves for the Spring Boot artifacts: groupId
+  # `org.axonframework` → `org.axonframework.extensions.spring`. ArtifactIds
+  # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are unchanged.
+  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-starter
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-starter
+  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-autoconfigure
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-autoconfigure

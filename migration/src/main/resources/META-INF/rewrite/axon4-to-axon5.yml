@@ -1,0 +1,64 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Top-level Axon Framework 4 → free Axon Framework 5 upgrade.
+#
+# WARNING for users: a few AF4 features were dropped from free AF5 and exist
+# only in Axoniq Framework 5 commercial — Axon Server connector, sequenced
+# dead-letter queue, and DistributedCommandBus. If your AF4 application uses
+# any of those, this recipe alone leaves your codebase non-compiling. Use
+# `UpgradeAxon4ToAxoniq5` instead.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.UpgradeAxon4ToAxon5
+displayName: Upgrade to free Axon Framework 5
+description: >-
+  Migrates an Axon Framework 4.x application to free (Apache 2.0)
+  Axon Framework 5. Bumps the Axon Framework dependency versions, applies
+  per-module rename recipes (one per core framework module), and renames
+  Maven coordinates within the `org.axonframework.*` namespace. Does NOT
+  touch features dropped from free AF5 (Axon Server, DLQ, DistributedCommandBus)
+  — see `UpgradeAxon4ToAxoniq5` for the commercial path.
+recipeList:
+  # ── 1. Java compiler-target bump ────────────────────────────────────────
+  - org.axonframework.migration.UpgradeJava
+
+  # ── 2. Bump dependency versions ─────────────────────────────────────────
+  - org.openrewrite.maven.UpgradeDependencyVersion:
+      groupId: org.axonframework
+      artifactId: "*"
+      newVersion: ${project.version}
+
+  # ── 3. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
+  - org.axonframework.migration.Axon4ToAxon5Bom
+
+  # ── 4. Active extension migrations ──────────────────────────────────────
+  - org.axonframework.migration.Axon4ToAxon5SpringExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
+  - org.axonframework.migration.Axon4ToAxon5MetricsExtension
+  - org.axonframework.migration.Axon4ToAxon5MicrometerExtension
+  - org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
+  - org.axonframework.migration.Axon4ToAxon5ReactorExtension
+
+  # ── 5. Core framework module migrations ─────────────────────────────────
+  - org.axonframework.migration.Axon4ToAxon5Messaging
+  - org.axonframework.migration.Axon4ToAxon5Modelling
+  - org.axonframework.migration.Axon4ToAxon5EventSourcing
+  - org.axonframework.migration.Axon4ToAxon5Configuration
+  - org.axonframework.migration.Axon4ToAxon5Conversion
+  - org.axonframework.migration.Axon4ToAxon5TestFixture
