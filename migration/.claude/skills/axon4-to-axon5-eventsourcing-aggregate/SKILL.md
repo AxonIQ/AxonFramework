@@ -1,6 +1,6 @@
 ---
 name: axon4-to-axon5-eventsourcing-aggregate
-description: Migrates  classes annotated with @Aggregate and with @EventSourcingHandler insider to the @EventSourcedEntity
+description: Migrates classes annotated with @Aggregate and with @EventSourcingHandler inside to the @EventSourcedEntity
 ---
 
 Execute following migration instruction based on the migration paths from:
