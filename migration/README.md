@@ -28,7 +28,7 @@ Run the upgrade recipe against a target project with the Maven plugin:
 ```bash
 mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
   -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:LATEST \
-  -DactiveRecipes=org.axonframework.migration.UpgradeAxonFramework_5
+  -DactiveRecipes=org.axonframework.migration.UpgradeAxonFramework4to5
 ```
 
 Available recipes are declared under `src/main/resources/META-INF/rewrite/`.

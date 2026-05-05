@@ -33,6 +33,10 @@
 
     <properties>
         <rewrite-recipe-bom.version>3.30.0</rewrite-recipe-bom.version>
+        <!-- Axon Framework 4.x version used to resolve types in recipe tests
+             (the rename recipes match AF4 fully-qualified names, so the test
+             parser needs the AF4 classpath to produce a typed LST). -->
+        <axon4.version>4.13.1</axon4.version>
     </properties>
 
     <dependencyManagement>
@@ -75,5 +79,64 @@
             <artifactId>rewrite-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Axon Framework 4.x type stubs for recipe tests. These are scoped
+             to test only so they do not pollute the published recipe artifact. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-messaging</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-modelling</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-eventsourcing</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-spring</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-micrometer</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <resources>
+            <!-- Filter rewrite recipe YAMLs so they can interpolate ${project.version}. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>META-INF/rewrite/**</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>META-INF/rewrite/**</exclude>
+                </excludes>
+            </resource>
+        </resources>
+    </build>
 </project>

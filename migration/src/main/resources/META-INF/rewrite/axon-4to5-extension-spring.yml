@@ -1,0 +1,38 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Spring extension (axon-spring): package move + stereotype rename.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.AxonFramework4to5SpringExtension
+displayName: Migrate the Spring extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.spring` to `org.axonframework.extension.spring`
+  and renames the Spring stereotype `@Aggregate` to `@EventSourced`. The
+  stereotype rename is mapped from both the AF4 location and the post-package-
+  move location, so the recipe is order-independent.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring
+      newPackageName: org.axonframework.extension.spring
+      recursive: true
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.spring.stereotype.Aggregate
+      newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.Aggregate
+      newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced

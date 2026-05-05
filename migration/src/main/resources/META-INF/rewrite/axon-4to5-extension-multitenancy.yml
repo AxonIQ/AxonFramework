@@ -14,13 +14,15 @@
 # limitations under the License.
 #
 
+# Multitenancy extension (axon-multitenancy): placeholder.
+
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.UpgradeAxonFramework_5
-displayName: Upgrade to Axon Framework 5
-description: Migrates an Axon Framework 4.x application to Axon Framework 5.
-recipeList:
-  - org.openrewrite.maven.UpgradeDependencyVersion:
-      groupId: org.axonframework
-      artifactId: "*"
-      newVersion: 5.x
+name: org.axonframework.migration.AxonFramework4to5MultitenancyExtension
+displayName: Migrate the Multitenancy extension to Axon Framework 5 (placeholder)
+description: >-
+  Placeholder for the Multitenancy extension migration. The extension lives at
+  `org.axonframework.extensions.multitenancy` in AF4 and does not yet have a
+  finalized Axon Framework 5 equivalent. Update this recipe once the AF5
+  multitenancy story ships.
+recipeList: []
