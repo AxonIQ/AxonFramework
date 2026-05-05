@@ -88,18 +88,48 @@ the "From" shape above. Never migrate more than one per run.
    method and at least one of: `@ProcessingGroup`, a `CommandGateway`
    field, an AF4 `@DisallowReplay`, or an AF4 `@MetaDataValue` parameter.
 
-2. **Read the canonical migration-path doc** before transforming
+2. **Sweep for external configuration tied to this processor.** Before
+   transforming anything, grep the project for the AF4 processing-group
+   name — i.e. the string argument inside the candidate's
+   `@ProcessingGroup("...")`. Look in:
+   - `application.yml` / `application.properties` /
+     `application-*.{yml,properties}` (typical key shape:
+     `axon.eventhandling.processors.<group>.*`)
+   - `@Configuration` / `@Component` classes that declare `@Bean`
+     methods returning `SequencingPolicy`, `ErrorHandler`,
+     `ListenerInvocationErrorHandler`, etc., or that call
+     `EventProcessingConfigurer#registerSequencingPolicy(group, ...)` /
+     `#registerListenerInvocationErrorHandler(group, ...)` /
+     `#registerErrorHandler(group, ...)` against this group name.
+
+   ```bash
+   grep -rln --include='*.yml' --include='*.yaml' --include='*.properties' \
+     '<group-name>' <project root>
+   grep -rln --include='*.java' \
+     -e '<group-name>' \
+     -e 'registerSequencingPolicy' \
+     -e 'registerListenerInvocationErrorHandler' \
+     <source roots>
+   ```
+
+   Note what the sweep finds. Some of it (sequencing policy) becomes a
+   class-level annotation in transformation step 8; the rest may need
+   to be **deleted** as part of this migration so dead config does not
+   linger. If nothing turns up, skip step 8 — the AF5 defaults apply.
+
+3. **Read the canonical migration-path doc** before transforming
    anything: `docs/reference-guide/modules/migration/pages/paths/projectors-event-processors.adoc`.
    Local excerpts in `references/migration-paths.md`.
 
-3. **Apply the transformation instructions** below. They are this skill's
+4. **Apply the transformation instructions** below. They are this skill's
    LLM-specific edits — narrower and more prescriptive than the doc, and
    they grow over time as `reflect` folds in lessons from real runs.
 
-4. **Show the diff** and summarize what changed (annotations swapped,
-   imports moved, gateway → dispatcher, return type changes).
+5. **Show the diff** and summarize what changed (annotations swapped,
+   imports moved, gateway → dispatcher, return type changes, external
+   config deleted).
 
-5. **Stop and ask the human to verify.** Do **not** rely on `mvn compile`
+6. **Stop and ask the human to verify.** Do **not** rely on `mvn compile`
    passing — peer constructs are typically still on the old API and the
    project is expected to be broken mid-migration. The human decides
    acceptable / not-acceptable.
@@ -156,8 +186,11 @@ Use this for every step below — never guess imports.
 
 - Replace `@ProcessingGroup("X")` with `@Namespace("X")` — same string
   argument. Update the import accordingly.
-- Keep `@DisallowReplay` (and any framework-agnostic stereotypes such as
-  Spring's `@Component`); just update its import to the AF5 FQN.
+- Keep `@DisallowReplay` and `@ResetHandler` (and any framework-agnostic
+  stereotypes such as Spring's `@Component`); just update their imports
+  to the AF5 FQNs. Both replay annotations move from
+  `org.axonframework.eventhandling.*` to
+  `org.axonframework.messaging.eventhandling.replay.annotation.*`.
 
 ### 3. Handler-method imports
 
