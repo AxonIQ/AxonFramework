@@ -169,10 +169,14 @@ top-of-chain entry points; dispatcher inside another handler.)
 
 For the in-context case:
 
-1. **Remove the field** (e.g. `private final CommandGateway commandGateway;`).
-2. **Remove the constructor parameter** that injected the gateway. If
-   that was the only constructor, you may delete the entire constructor —
-   Spring will use the default no-arg one.
+1. **Remove ONLY the gateway field** (e.g.
+   `private final CommandGateway commandGateway;`). Other private fields
+   on the class (calculators, repositories, helpers) stay untouched.
+2. **Remove ONLY the gateway parameter** from the constructor — leave any
+   other constructor parameters in place and keep their corresponding
+   field assignments. Delete the entire constructor only when the gateway
+   was its **sole** parameter; in that case Spring will use the default
+   no-arg one.
 3. **Add `CommandDispatcher commandDispatcher`** as a parameter on every
    `@EventHandler` method that previously called `commandGateway.*`. It
    will be auto-injected by `CommandDispatcherParameterResolverFactory`.
@@ -200,6 +204,27 @@ If the handler now returns the dispatcher's result instead of blocking:
   return a future. Return a `CompletableFuture` from each branch.
 - If a branch does **no** command dispatch (early-return path), return
   `CompletableFuture.completedFuture(null)`.
+- **Conditional dispatch — prefer early-return inversion.** When the AF4
+  shape was `if (cond) { commandGateway.sendAndWait(...); }` (no `else`,
+  the no-dispatch branch is empty), invert the condition and return
+  early instead of wrapping the dispatch in `if`:
+
+   ```java
+   // WRONG — leaves an implicit no-return path on the false branch
+   if (cond) {
+       return commandDispatcher.send(cmd, metadata);
+   }
+   return CompletableFuture.completedFuture(null);
+
+   // PREFERRED — early-return for the no-op branch, then dispatch flat
+   if (!cond) {
+       return CompletableFuture.completedFuture(null);
+   }
+   return commandDispatcher.send(cmd, metadata);
+   ```
+
+  Reads top-down, makes the dispatch the obvious main path, and keeps the
+  guard-clause idiom familiar to most Java codebases.
 - If the handler still has work to do after dispatch (logging,
   bookkeeping), prefer chaining via `.thenRun(...)` / `.thenApply(...)`
   on the dispatcher's result rather than blocking.
@@ -257,6 +282,10 @@ rather than editing the existing ones.
 
 - `references/examples/01-heroes-when-creature-recruited.md` — Spring
   Boot processor with try/catch compensation, two `sendAndWait` calls.
+- `references/examples/02-heroes-when-week-started.md` — Spring Boot
+  processor with multi-DI constructor (gateway + a calculator) and a
+  conditional `if (cond) sendAndWait(...)` branch with no-op false path
+  (early-return inversion + `completedFuture(null)`).
 
 ## Variants
 
