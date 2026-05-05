@@ -1,5 +1,5 @@
 ---
-name: axon4-to-axon5-prepare-migration
+name: axon4-to-axon5-maven-migration-profile
 description: Adds (or updates) a `migration` Maven profile in the target project that scopes `maven-compiler-plugin` compilation and tests to the files currently being migrated. Detects the migration scope from the working git diff so the includes match the user's actual progress, regardless of whether they're migrating aggregates, projections, sagas, configuration, or anything else.
 ---
 
