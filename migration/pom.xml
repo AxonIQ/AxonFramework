@@ -118,6 +118,12 @@
             <version>${axon4.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
