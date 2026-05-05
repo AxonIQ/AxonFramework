@@ -25,7 +25,7 @@ Use this table for every step below — never guess imports.
 | `@Revision` | `org.axonframework.serialization.Revision` |
 | `@RoutingKey` | `org.axonframework.commandhandling.RoutingKey` |
 
-### AF5 (add these)
+### AF5 (add these if needed)
 
 | Element | FQN |
 |---|---|
