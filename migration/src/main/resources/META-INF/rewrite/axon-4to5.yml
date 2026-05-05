@@ -30,13 +30,21 @@ description: >-
   Axon Framework dependency versions, then applies the per-module rename
   recipes (one per active extension and one per core framework module).
 recipeList:
-  # ── 1. Bump dependency versions ─────────────────────────────────────────
+  # ── 1. Java compiler-target bump ────────────────────────────────────────
+  # Updates the compiler target in build files (pom.xml / build.gradle) to
+  # the configured LTS. Default is the latest LTS (Java 25); to target a
+  # different version (e.g. Java 21), wrap this recipe in your own
+  # rewrite.yml — see migration/README.md. No source-level modernizations
+  # are applied here.
+  - org.axonframework.migration.UpgradeJava
+
+  # ── 2. Bump dependency versions ─────────────────────────────────────────
   - org.openrewrite.maven.UpgradeDependencyVersion:
       groupId: org.axonframework
       artifactId: "*"
       newVersion: ${project.version}
 
-  # ── 2. Active extension migrations ──────────────────────────────────────
+  # ── 3. Active extension migrations ──────────────────────────────────────
   - org.axonframework.migration.AxonFramework4to5SpringExtension
   - org.axonframework.migration.AxonFramework4to5SpringBootExtension
   - org.axonframework.migration.AxonFramework4to5SpringBootActuatorExtension
@@ -44,7 +52,7 @@ recipeList:
   - org.axonframework.migration.AxonFramework4to5MicrometerExtension
   - org.axonframework.migration.AxonFramework4to5TracingOpenTelemetryExtension
 
-  # ── 3. Core framework module migrations ─────────────────────────────────
+  # ── 4. Core framework module migrations ─────────────────────────────────
   - org.axonframework.migration.AxonFramework4to5MessagingRenames
   - org.axonframework.migration.AxonFramework4to5ModellingRenames
   - org.axonframework.migration.AxonFramework4to5EventSourcingRenames
