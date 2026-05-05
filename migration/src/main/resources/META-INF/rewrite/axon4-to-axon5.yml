@@ -46,7 +46,15 @@ recipeList:
   # ── 3. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
   - org.axonframework.migration.Axon4ToAxon5Bom
 
-  # ── 4. Active extension migrations ──────────────────────────────────────
+  # ── 4. Core framework module migrations ─────────────────────────────────
+  - org.axonframework.migration.Axon4ToAxon5Common
+  - org.axonframework.migration.Axon4ToAxon5Conversion
+  - org.axonframework.migration.Axon4ToAxon5Messaging
+  - org.axonframework.migration.Axon4ToAxon5Modelling
+  - org.axonframework.migration.Axon4ToAxon5EventSourcing
+  - org.axonframework.migration.Axon4ToAxon5Test
+
+  # ── 5. Active extension migrations ──────────────────────────────────────
   - org.axonframework.migration.Axon4ToAxon5SpringExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
@@ -54,11 +62,3 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5MetricsMicrometerExtension
   - org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
   - org.axonframework.migration.Axon4ToAxon5ReactorExtension
-
-  # ── 5. Core framework module migrations ─────────────────────────────────
-  - org.axonframework.migration.Axon4ToAxon5Messaging
-  - org.axonframework.migration.Axon4ToAxon5Modelling
-  - org.axonframework.migration.Axon4ToAxon5EventSourcing
-  - org.axonframework.migration.Axon4ToAxon5Common
-  - org.axonframework.migration.Axon4ToAxon5Conversion
-  - org.axonframework.migration.Axon4ToAxon5Test

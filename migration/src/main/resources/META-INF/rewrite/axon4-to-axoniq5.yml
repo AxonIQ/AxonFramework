@@ -46,11 +46,13 @@ recipeList:
   # ── 2. Swap the BOM to the Axoniq commercial BOM ────────────────────────
   - org.axonframework.migration.Axon4ToAxoniq5Bom
 
-  # ── 3. Swap the Spring Boot starter to the Axoniq commercial starter ────
-  - org.axonframework.migration.Axon4ToAxoniq5SpringBoot
-
-  # ── 4. Commercial-only feature migrations ───────────────────────────────
+  # ── 3. Commercial-only feature migrations (most foundational first) ─────
   - org.axonframework.migration.Axon4ToAxoniq5AxonServerConnector
   - org.axonframework.migration.Axon4ToAxoniq5DeadLetter
   - org.axonframework.migration.Axon4ToAxoniq5DistributedMessaging
+
+  # ── 4. Spring family — starter wraps the features above ─────────────────
+  - org.axonframework.migration.Axon4ToAxoniq5SpringBoot
+
+  # ── 5. Testing utilities ────────────────────────────────────────────────
   - org.axonframework.migration.Axon4ToAxoniq5Testcontainer

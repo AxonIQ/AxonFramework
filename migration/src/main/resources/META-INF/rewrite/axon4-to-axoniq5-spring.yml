@@ -14,13 +14,15 @@
 # limitations under the License.
 #
 
-# Axoniq Spring Boot starter swap.
+# Spring family of Axoniq 5 extensions. Today only the Spring Boot starter
+# swap lives here (`axoniq-spring-boot-autoconfigure` / `-starter`); Axoniq
+# does not publish a separate non-boot `axon-spring` equivalent. Mirrors the
+# AF5-side `axon4-to-axon5-extension-spring.yml` grouping.
 #
-# Maven changes are active in this recipe; class-level mappings for the
-# Axoniq commercial autoconfig classes
-# (`io.axoniq.framework.springboot.*` —  Axon Server, distributed messaging,
-# DLQ, Axon Server actuator) are deferred until a stable mapping table is
-# available.
+# Maven changes are active; class-level mappings for the Axoniq commercial
+# autoconfig classes (`io.axoniq.framework.springboot.*` — Axon Server,
+# distributed messaging, DLQ, Axon Server actuator) are deferred until a
+# stable mapping table is available.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe

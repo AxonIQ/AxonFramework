@@ -143,16 +143,17 @@ recipeList:
       groupId: org.axonframework
       artifactId: "*"
       newVersion: 5.x
-  # Compose the rest of the AF4 → free-AF5 migration:
+  # Compose the rest of the AF4 → free-AF5 migration (core modules first,
+  # then extensions):
   - org.axonframework.migration.Axon4ToAxon5Bom
-  - org.axonframework.migration.Axon4ToAxon5SpringExtension
-  - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+  - org.axonframework.migration.Axon4ToAxon5Common
+  - org.axonframework.migration.Axon4ToAxon5Conversion
   - org.axonframework.migration.Axon4ToAxon5Messaging
   - org.axonframework.migration.Axon4ToAxon5Modelling
   - org.axonframework.migration.Axon4ToAxon5EventSourcing
-  - org.axonframework.migration.Axon4ToAxon5Common
-  - org.axonframework.migration.Axon4ToAxon5Conversion
   - org.axonframework.migration.Axon4ToAxon5Test
+  - org.axonframework.migration.Axon4ToAxon5SpringExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
 ```
 
 Then invoke your wrapper recipe:
