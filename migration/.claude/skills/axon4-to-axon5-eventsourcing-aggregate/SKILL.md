@@ -4,7 +4,8 @@ description: Migrates  classes annotated with @Aggregate and with @EventSourcing
 ---
 
 Execute following migration instruction based on the migration paths from:
-[aggregates](../../../../docs/reference-guide/modules/migration/pages/paths/aggregates)
+- [aggregates](../../../../docs/reference-guide/modules/migration/pages/paths/aggregates)
+- [test-fixtures.adoc](../../../../docs/reference-guide/modules/migration/pages/paths/test-fixtures.adoc)
 
 ## Annotation / class FQN cheat sheet
 
@@ -24,6 +25,9 @@ Use this table for every step below — never guess imports.
 | `@Aggregate` (Spring) | `org.axonframework.spring.stereotype.Aggregate` |
 | `@Revision` | `org.axonframework.serialization.Revision` |
 | `@RoutingKey` | `org.axonframework.commandhandling.RoutingKey` |
+| `AggregateTestFixture` | `org.axonframework.test.aggregate.AggregateTestFixture` |
+| `FixtureConfiguration` | `org.axonframework.test.aggregate.FixtureConfiguration` |
+| `AggregateNotFoundException` | `org.axonframework.modelling.command.AggregateNotFoundException` |
 
 ### AF5 (add these if needed)
 
@@ -40,12 +44,15 @@ Use this table for every step below — never guess imports.
 | `@InjectEntity` (NOT `@InjectState`) | `org.axonframework.modelling.annotation.InjectEntity` |
 | `@EventSourced` (Spring) | `org.axonframework.extension.spring.stereotype.EventSourced` |
 | `@EventSourcedEntity` (core) | `org.axonframework.eventsourcing.annotation.EventSourcedEntity` |
+| `AxonTestFixture` | `org.axonframework.test.fixture.AxonTestFixture` |
+| `EventSourcingConfigurer` | `org.axonframework.eventsourcing.configuration.EventSourcingConfigurer` |
+| `EventSourcedEntityModule` | `org.axonframework.eventsourcing.configuration.EventSourcedEntityModule` |
 
 > ⚠️ The reference docs sometimes show `@InjectState` — that name does not exist in the codebase. Always use `@InjectEntity`.
 
 ## Instructions
 
-1. Work on the class given while invoking this skill or find the first class that is annotated with `@Aggregate` and has methods annotated with `@EventSourcingHandler`. This is the Aggregate that we will be working on.
+1. Work on the class given while invoking this skill or find the first class that is annotated with `@Aggregate` and has methods annotated with `@EventSourcingHandler`. This is the Aggregate that we will be working on. It's possible that some work is already done on this class — like changed annotations. Then continue work and make sure that it compiles and the corresponding tests are green.
 2. Identify all classes for commands handled by this Aggregate — first parameter of the methods annotated with `@CommandHandler`.
 3. Identify all classes for events handled by this Aggregate — first parameter of the methods annotated with `@EventSourcingHandler`.
 4. In each command class:
@@ -54,16 +61,16 @@ Use this table for every step below — never guess imports.
     - replace `@TargetAggregateIdentifier` with `@TargetEntityId`
 5. Annotate each command class with `@Command` (FQN above). If the AF4 class had `@RoutingKey` on a property, set `@Command(routingKey = "<propertyName>")` and remove the `@RoutingKey` annotation + import.
 6. In the aggregate class, identify the `@AggregateIdentifier`-annotated property and which `@EventSourcingHandler` sets it from an event property. That event property is the one to annotate with `@EventTag`.
-7. Annotate the aggregate-id field in **every** event with `@EventTag(key = "<EntityName>")`. Use the entity's simple class name (e.g. `"Army"`) so it matches the entity's `tagKey` (see step 14). Without DCB, exactly one `@EventTag` per event.
+7. Annotate the aggregate-id field in **every** event with `@EventTag(key = "<EntityName>")`. Use the entity's simple class name (e.g. `"Army"`) so it matches the entity's `tagKey` (see Path A.2). Without DCB, exactly one `@EventTag` per event.
 8. Annotate each event class with `@Event` (FQN above). If the AF4 event had `@Revision("x")`, replace it with `@Event(version = "x")` and remove the `@Revision` annotation + import. Otherwise add bare `@Event` (default name = simple class name, default version = `0.0.1`).
 9. Remove the `@AggregateIdentifier` annotation (and import) from the aggregate class. The id field stays as a regular field.
 10. Replace import `org.axonframework.eventsourcing.EventSourcingHandler` → `org.axonframework.eventsourcing.annotation.EventSourcingHandler`.
 11. Replace import `org.axonframework.commandhandling.CommandHandler` → `org.axonframework.messaging.commandhandling.annotation.CommandHandler`.
 12. Annotate the aggregate's no-arg constructor with `@EntityCreator` (mandatory in AF5). If no no-arg ctor exists, add one. The framework instantiates the entity via this ctor before applying events.
 13. Replace `AggregateLifecycle.apply(event)` calls with `eventAppender.append(event)`. Add `EventAppender eventAppender` as a method parameter to every `@CommandHandler`. Remove the static import of `AggregateLifecycle.apply`.
-14. Migrate `@CreationPolicy` / `AggregateCreationPolicy` (remove imports + annotation) by reshaping the command handler:
-    - **`CreationPolicy.ALWAYS`** (creation command) → make the `@CommandHandler` a **`static`** method. No entity injection needed; static = "no instance exists yet".
-    - **`CreationPolicy.CREATE_IF_MISSING`** → **`static`** `@CommandHandler` with an `@InjectEntity @Nullable <Entity> entity` parameter (use `org.jspecify.annotations.Nullable`). Branch on `entity == null` for the create path vs the update path. ⚠️ Semantic note: AF4's CREATE_IF_MISSING was "create-or-update". The doc example throws on existing — only use that if the AF4 code had a similar guard. For "create-or-update", read state from `entity` when non-null and from defaults (e.g. empty collections) when null.
+14. Migrate `@CreationPolicy` / `AggregateCreationPolicy` (remove imports + annotation) by reshaping the command handler. **Verify your choice against the test suite — the framework distinguishes creational vs instance handlers strictly:**
+    - **`CreationPolicy.ALWAYS`** (creation-only command) → make the `@CommandHandler` a **`static`** method. No entity injection needed; the framework calls it only when no entity exists yet, and throws `EntityAlreadyExistsForCreationalCommandHandlerException` if the entity already exists.
+    - **`CreationPolicy.CREATE_IF_MISSING`** → **prefer keeping the handler instance-level (NOT static)** combined with a no-arg `@EntityCreator`. The framework materializes an empty entity on first invocation, so the same instance handler runs whether the entity is new or pre-existing — exactly matching AF4's create-or-update semantics. Do **not** use `static` + `@InjectEntity` here: a static handler is treated as creational-only and will throw on existing entities.
     - **`CreationPolicy.NEVER`** (update command) → instance-level `@CommandHandler` (no `static`). Default behavior; nothing else to do.
 15. Move to Path A or Path B based on the framework used in this project.
 
@@ -80,3 +87,45 @@ A.2. Configure the `@EventSourced` annotation:
 ### Path B: Axon Framework Native Configuration
 
 Not supported right now. Keep it for later.
+
+## Test fixture migration
+
+After migrating the entity, migrate the tests. AF4's `AggregateTestFixture` is replaced by AF5's `AxonTestFixture`, which is built from an `ApplicationConfigurer` so test and production share the same configuration. See [`test-fixtures.adoc`](../../../../docs/reference-guide/modules/migration/pages/paths/test-fixtures.adoc) for full coverage.
+
+T.1. **Locate the test classes.** Find the test class for the migrated aggregate (typically `<Aggregate>Test`) and any subclasses (`grep -rln "extends <Aggregate>Test"`). Migrate the base class first.
+
+T.2. **Replace `AggregateTestFixture` with `AxonTestFixture`** in the base test class:
+- Replace the import `org.axonframework.test.aggregate.AggregateTestFixture` with `org.axonframework.test.fixture.AxonTestFixture`.
+- Replace the field type `AggregateTestFixture<?>` with `AxonTestFixture`.
+- In `@BeforeEach`, replace `new AggregateTestFixture<>(<Aggregate>.class)` with `AxonTestFixture.with(<configurer>)`.
+- The minimal first-step configurer for a single entity is:
+  ```java
+  EventSourcingConfigurer.create()
+                         .registerEntity(EventSourcedEntityModule.autodetected(<IdType>.class, <Aggregate>.class))
+  ```
+  By default, the fixture's `Customization(integrationEnabled=false)` already disables Axon Server / Postgres enhancers, so a plain `AxonTestFixture.with(configurer)` is enough for unit tests.
+- Add an `@AfterEach tearDown() { fixture.stop(); }` to release the configuration.
+
+T.3. **Convert each test method to the fluent given/when/then API.** Mapping (see [test-fixtures.adoc](../../../../docs/reference-guide/modules/migration/pages/paths/test-fixtures.adoc) for the full list):
+
+| AF4 | AF5 |
+|---|---|
+| `fixture.given(events…)` | `fixture.given().events(events…)` (or `.event(e)` for single) |
+| `fixture.given(List<?> events)` | `fixture.given().events(list)` |
+| `fixture.givenCommands(c…)` | `fixture.given().command(c)` |
+| `fixture.givenNoPriorActivity()` | `fixture.given().noPriorActivity()` |
+| `.when(cmd)` | `.when().command(cmd)` |
+| `.when(cmd, metadata)` | `.when().command(cmd, metadata)` |
+| `.expectEvents(events…)` | `.then().events(events…)` |
+| `.expectNoEvents()` | `.then().noEvents()` |
+| `.expectException(Cls.class)` | `.then().exception(Cls.class)` |
+| `.expectException(Cls.class).expectExceptionMessage(msg)` | `.then().exception(Cls.class, msg)` |
+| `.expectSuccessfulHandlerExecution()` | `.then().success()` |
+| `.expectResultMessagePayload(p)` | `.then().resultMessagePayload(p)` |
+| `.expectEventsMatching(matcher)` | `.then().eventsSatisfy(consumer)` or `.eventsMatch(predicate)` |
+
+T.4. **Adjust behavioral assertions for AF5 semantics.** Several AF4 fixture errors no longer exist in AF5:
+- `AggregateNotFoundException` is **not** thrown for instance handlers in AF5. With a no-arg `@EntityCreator`, the framework always materializes an empty entity, so the handler runs and any domain rule against empty state surfaces instead. Update such tests to expect the actual domain exception (e.g. a domain-rule violation message) and add a comment noting the semantic shift.
+- Static (creational) handlers throw `EntityAlreadyExistsForCreationalCommandHandlerException` (`org.axonframework.modelling.entity`) when the entity already exists. If you see this in a test that should succeed on existing entities, the handler shouldn't be `static` — re-check step 14.
+
+T.5. **Run the tests.** Compile the touched main and test sources and run them. If the surrounding project doesn't fully build (common during incremental migration), compile the migrated subset directly with `javac`/`java` against the Maven-resolved classpath rather than via `mvn test` for the whole module. Confirm all tests pass before moving on. If tests fail, do not declare success — re-check steps 14 and T.4 for handler shape and exception expectations.
