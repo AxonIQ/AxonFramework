@@ -122,25 +122,35 @@ Use this for every step below — never guess imports.
 
 #### AF4 (remove these)
 
-| Element | FQN |
-|---|---|
-| `@ProcessingGroup` | `org.axonframework.config.ProcessingGroup` |
-| `@EventHandler` | `org.axonframework.eventhandling.EventHandler` |
-| `@DisallowReplay` | `org.axonframework.eventhandling.DisallowReplay` |
-| `@MetaDataValue` | `org.axonframework.messaging.annotation.MetaDataValue` |
+| Element                         | FQN |
+|---------------------------------|---|
+| `@ProcessingGroup`              | `org.axonframework.config.ProcessingGroup` |
+| `@EventHandler`                 | `org.axonframework.eventhandling.EventHandler` |
+| `@DisallowReplay`               | `org.axonframework.eventhandling.DisallowReplay` |
+| `@ResetHandler`                 | `org.axonframework.eventhandling.ResetHandler` |
+| `@MetaDataValue`                | `org.axonframework.messaging.annotation.MetaDataValue` |
 | `CommandGateway` (AF4 location) | `org.axonframework.commandhandling.gateway.CommandGateway` |
 
 #### AF5 (add these)
 
-| Element | FQN |
-|---|---|
-| `@Namespace` | `org.axonframework.messaging.core.annotation.Namespace` |
-| `@EventHandler` | `org.axonframework.messaging.eventhandling.annotation.EventHandler` |
-| `@DisallowReplay` | `org.axonframework.messaging.eventhandling.replay.annotation.DisallowReplay` |
-| `@MetadataValue` | `org.axonframework.messaging.core.annotation.MetadataValue` |
-| `CommandDispatcher` | `org.axonframework.messaging.commandhandling.gateway.CommandDispatcher` |
+| Element                                               | FQN |
+|-------------------------------------------------------|---|
+| `@Namespace`                                          | `org.axonframework.messaging.core.annotation.Namespace` |
+| `@EventHandler`                                       | `org.axonframework.messaging.eventhandling.annotation.EventHandler` |
+| `@DisallowReplay`                                     | `org.axonframework.messaging.eventhandling.replay.annotation.DisallowReplay` |
+| `@ResetHandler`                                       | `org.axonframework.messaging.eventhandling.replay.annotation.ResetHandler` |
+| `@MetadataValue`                                      | `org.axonframework.messaging.core.annotation.MetadataValue` |
+| `CommandDispatcher`                                   | `org.axonframework.messaging.commandhandling.gateway.CommandDispatcher` |
 | `CommandGateway` (AF5 location, only when keeping it) | `org.axonframework.messaging.commandhandling.gateway.CommandGateway` |
-| `Metadata` (only if you handle the type directly) | `org.axonframework.messaging.core.Metadata` |
+| `Metadata` (only if you handle the type directly)     | `org.axonframework.messaging.core.Metadata` |
+| `@SequencingPolicy`                                   | `org.axonframework.messaging.core.annotation.SequencingPolicy` |
+| `SequentialPerAggregatePolicy` (AF5 location)         | `org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy` |
+| `SequentialPolicy`                                    | `org.axonframework.messaging.core.sequencing.SequentialPolicy` |
+| `MetadataSequencingPolicy`                            | `org.axonframework.messaging.core.sequencing.MetadataSequencingPolicy` |
+| `PropertySequencingPolicy`                            | `org.axonframework.messaging.core.sequencing.PropertySequencingPolicy` |
+| `RoutingKeySequencingPolicy`                          | `org.axonframework.messaging.core.sequencing.RoutingKeySequencingPolicy` |
+| `HierarchicalSequencingPolicy`                        | `org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy` |
+| `NoOpSequencingPolicy`                                | `org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy` |
 
 ### 2. Class-level annotations
 
@@ -248,7 +258,87 @@ fails to compile because the helper still returns the AF4
 `org.axonframework.messaging.MetaData`, flag it for the user as a
 follow-up rather than editing the helper here.
 
-### 8. Tests
+### 8. Sequencing policy — move from external config to `@SequencingPolicy` on the class
+
+In AF4, sequencing policies were typically configured **outside** the
+event-handling class — either in Spring Boot YAML
+(`axon.eventhandling.processors.<name>.sequencing-policy`) or via a
+`@Bean`-defined policy in a configuration class registered against the
+processing group name. AF5 keeps the same policy *types* but lets you
+attach them directly to the handling component with the `@SequencingPolicy`
+annotation, so the ordering rule lives next to the code it governs.
+
+This is **not always required** — if AF4 relied on the default
+(`SequentialPerAggregatePolicy` on aggregate-based event stores), AF5's
+default still resolves to the same behaviour for that case (the AF5
+default is `HierarchicalSequencingPolicy(SequentialPerAggregatePolicy →
+SequentialPolicy)`, which is identical for aggregate-based stores). Apply
+this step only when AF4 had an **explicit** override for this processor.
+
+How to detect the AF4 override:
+
+- **YAML / properties.** Search application config for the processor's
+  AF4 group name (the string from `@ProcessingGroup("...")` — now the
+  argument of `@Namespace("...")`). Look for keys like
+  `axon.eventhandling.processors.<group>.sequencing-policy` or any
+  custom binding under the same group key.
+- **Java config.** Search Spring configuration classes (e.g.
+  `AxonConfiguration`, `GameConfiguration`) for a method or `@Bean` that
+  registers a `SequencingPolicy` against the processor name — typically
+  `EventProcessingConfigurer#registerSequencingPolicy(group, factory)`
+  in AF4, or a bean returning a `SequencingPolicy<?>` that the AF4
+  auto-config wires by name.
+- **Custom `SequencingPolicy` implementation.** A class implementing
+  AF4's `org.axonframework.eventhandling.async.SequencingPolicy` —
+  these have to be migrated separately (signature change + package
+  move); see `paths/sequencing-policies.adoc`.
+
+How to apply:
+
+1. **Pick the AF5 policy class** for the AF4 setting:
+
+   | AF4 setting / bean | AF5 policy class |
+   |---|---|
+   | `SequentialPerAggregatePolicy` (default, explicit) | `SequentialPerAggregatePolicy` |
+   | `SequentialPolicy` (full serial) | `SequentialPolicy` |
+   | `FullConcurrencyPolicy` (no ordering) | `NoOpSequencingPolicy` |
+   | "by metadata key" — keyed on a metadata field | `MetadataSequencingPolicy` (`parameters = "<metadataKey>"`) |
+   | "by event property" — keyed on a payload property | `PropertySequencingPolicy` (`parameters = "<propertyName>"`) |
+   | "by routing key" — `@RoutingKey` on the message | `RoutingKeySequencingPolicy` |
+   | hierarchical / fallback chain | `HierarchicalSequencingPolicy` |
+   | custom implementation | migrate per `paths/sequencing-policies.adoc`, then point `type = ...` at the new class |
+
+2. **Annotate the event-processor class** (or a single `@EventHandler`
+   method when the policy applies to just one handler — method-level
+   wins over class-level):
+
+   ```java
+   @Namespace("...")
+   @SequencingPolicy(type = MetadataSequencingPolicy.class, parameters = "<metadataKey>")
+   class MyProcessor { ... }
+   ```
+
+   Notes:
+   - `parameters` is `String[]`. A single string literal is fine; for
+     multiple values use `parameters = {"a", "b"}`.
+   - Constants like `GameMetaData.GAME_ID_KEY` work because they resolve
+     to compile-time `String` constants — annotation-legal.
+   - `type` must be `Class<? extends SequencingPolicy>` from
+     `org.axonframework.messaging.core.sequencing.*`.
+
+3. **Delete the AF4 configuration source** so it can't drift:
+   - Remove the YAML / properties key.
+   - Remove the `@Bean` / `registerSequencingPolicy(...)` from the Java
+     configuration class.
+
+4. **Flag for the user** if the policy was a custom AF4
+   `SequencingPolicy<EventMessage<?>>` implementation. The annotation
+   change here is mechanical, but the implementation class itself must
+   migrate (package move + signature change to
+   `Optional<Object> sequenceIdentifierFor(M, ProcessingContext)`). This
+   is **out of scope** for the per-processor skill.
+
+### 9. Tests
 
 Tests for event-handling components are typically written as Spring
 integration tests with a `RecordingCommandBus` (or equivalent). The
@@ -262,6 +352,7 @@ The migration-path .adoc(s) this skill is grounded in:
 
 - `/Users/mateusznowak/GitRepos/AxonFramework/AxonFramework5/docs/reference-guide/modules/migration/pages/paths/projectors-event-processors.adoc`
 - `/Users/mateusznowak/GitRepos/AxonFramework/AxonFramework5/docs/reference-guide/modules/migration/pages/paths/index.adoc` (import & package changes table)
+- `/Users/mateusznowak/GitRepos/AxonFramework/AxonFramework5/docs/reference-guide/modules/migration/pages/paths/sequencing-policies.adoc` (sequencing-policy migration — annotation form, default change, custom-policy migration)
 
 Key excerpts kept locally in `references/migration-paths.md`.
 
