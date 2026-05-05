@@ -23,11 +23,14 @@ displayName: Apply Axon Framework 5 event-sourcing module renames
 description: >-
   Relocates the `@EventSourcingHandler` annotation into
   `eventsourcing.annotation`, relocates `Snapshotter` into the new
-  `eventsourcing.snapshot.api` API package, and ensures the
+  `eventsourcing.snapshot.api` API package, ensures the
   `org.axonframework:axon-eventsourcing` dependency is present when the app
   uses event-sourcing types (the AF5 Spring Boot starter no longer pulls
   it transitively, so apps not using the BOM need it added explicitly —
-  it transitively brings `axon-modelling` and `axon-messaging`).
+  it transitively brings `axon-modelling` and `axon-messaging`), and
+  applies the source-level aggregate→entity rewrites — annotating no-arg
+  constructors with the now-mandatory `@EntityCreator` and replacing
+  `AggregateLifecycle.apply(...)` with an injected `EventAppender#append(...)`.
 recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.eventsourcing.EventSourcingHandler
@@ -47,3 +50,17 @@ recipeList:
       # the LST as parsed (with AF4 types on classpath), so the AF5
       # post-rename name would never match.
       onlyIfUsing: org.axonframework.eventsourcing.EventSourcingHandler
+
+  # ── Aggregate → Entity source-level rewrites ────────────────────────────
+  # Annotates existing no-arg constructors of `@EventSourcedEntity` /
+  # Spring `@EventSourced` classes with the now-mandatory `@EntityCreator`.
+  # Idempotent — skips constructors already annotated. The two more
+  # advanced `@EntityCreator` patterns (identifier-only and creation-from-
+  # origin-event constructors) require semantic decisions and remain a
+  # manual step.
+  - org.axonframework.migration.AddEntityCreatorAnnotation
+  # Replaces `AggregateLifecycle.apply(...)` calls with an injected
+  # `EventAppender#append(...)` — adds the `EventAppender eventAppender`
+  # parameter to the enclosing method when one is not already declared,
+  # and removes the `import static AggregateLifecycle.apply;`.
+  - org.axonframework.migration.ReplaceAggregateLifecycleApply

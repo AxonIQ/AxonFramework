@@ -64,4 +64,63 @@ class Axon4ToAxon5ModellingTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void removesAggregateIdentifierAnnotation() {
+        // The AF4 `@AggregateIdentifier` field annotation has no AF5 successor
+        // (id resolution moved onto commands via `@TargetEntityId`). The field
+        // itself is preserved.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private String cardId;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        class GiftCard {
+                            private String cardId;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void removesCreationPolicyAnnotation() {
+        // `@CreationPolicy(...)` has no AF5 replacement; the recipe strips it
+        // unconditionally. Translating CREATE_IF_MISSING / NEVER semantics
+        // remains a manual step (see migration guide). The
+        // `AggregateCreationPolicy` enum import is dropped automatically since
+        // its only reference disappeared with the annotation.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.modelling.command.AggregateCreationPolicy;
+                        import org.axonframework.modelling.command.CreationPolicy;
+
+                        class GiftCard {
+                            @CreationPolicy(AggregateCreationPolicy.CREATE_IF_MISSING)
+                            void handle(Object cmd) {}
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        class GiftCard {
+                            void handle(Object cmd) {}
+                        }
+                        """
+                )
+        );
+    }
 }

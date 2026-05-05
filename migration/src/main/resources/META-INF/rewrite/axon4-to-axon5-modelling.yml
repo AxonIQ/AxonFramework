@@ -26,6 +26,11 @@ description: >-
   `org.axonframework.modelling.entity`, renames `TargetAggregateIdentifier` to
   `TargetEntityId`, `AggregateMember` to `EntityMember`, `Repository` into
   `modelling.repository`, and `CommandTargetResolver` to `EntityIdResolver`.
+  Strips AF4-only modelling annotations (`@AggregateIdentifier`,
+  `@CreationPolicy`) that have no AF5 successor — id resolution moved onto
+  commands via `@TargetEntityId`, and the AF4 creation-policy semantics map
+  onto static command handlers in AF5 (a manual rewrite the recipe cannot
+  infer beyond removing the annotation itself).
 recipeList:
   # ── Package-prefix move: modelling.command → modelling.entity ───────────
   - org.openrewrite.java.ChangePackage:
@@ -51,6 +56,20 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.modelling.MetaDataAssociationResolver
       newFullyQualifiedTypeName: org.axonframework.modelling.MetadataAssociationResolver
+
+  # ── Strip AF4-only annotations with no AF5 successor ────────────────────
+  # `@AggregateIdentifier` (post-`ChangePackage` FQN). The class is gone in
+  # AF5 — id resolution moved onto commands via `@TargetEntityId`, so the
+  # field annotation has no replacement. The field itself is preserved.
+  - org.openrewrite.java.RemoveAnnotation:
+      annotationPattern: "@org.axonframework.modelling.entity.AggregateIdentifier"
+  # `@CreationPolicy(...)`. The `ALWAYS` flow becomes implicit (static
+  # command handlers create entities). `CREATE_IF_MISSING` and `NEVER`
+  # semantics need a manual rewrite — see the migration guide; the
+  # annotation is unconditionally removed because it does not exist in AF5
+  # and would cause a compile error.
+  - org.openrewrite.java.RemoveAnnotation:
+      annotationPattern: "@org.axonframework.modelling.entity.CreationPolicy"
 
   # ── Add axon-modelling dep when modelling types are in use ──────────────
   # Like axon-eventsourcing, axon-modelling is no longer transitive from
