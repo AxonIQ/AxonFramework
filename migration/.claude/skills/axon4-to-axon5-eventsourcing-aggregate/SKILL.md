@@ -130,7 +130,7 @@ T.4. **Adjust behavioral assertions for AF5 semantics.** Several AF4 fixture err
 
 T.5. **Run just the migrated tests.** Confirm all tests pass before moving on. If tests fail, do not declare success — re-check steps 14 and T.4 for handler shape and exception expectations. The test run is also the smoke test for step 14: a wrong static-vs-instance `CreationPolicy` choice has no compile-time signal — only the test run surfaces `EntityAlreadyExistsForCreationalCommandHandlerException`.
 
-If the project's other modules / sub-packages still use AF4 APIs and the surrounding `mvn compile` is broken, run the `axon4-to-axon5-prepare-migration` skill **once** to add a `migration` Maven profile that limits compilation and test scope. Then verify with:
+If the project's other modules / sub-packages still use AF4 APIs and the surrounding `mvn compile` is broken, run the `axon4-to-axon5-prepare-migration` skill to add (or extend) a `migration` Maven profile that scopes compilation and tests to the files currently being migrated. Re-run that skill any time the working diff grows beyond the existing include list. Then verify with:
 
 ```bash
 ./mvnw test -Pmigration -Dtest='<FQTestClass1>,<FQTestClass2>' -DfailIfNoTests=false
