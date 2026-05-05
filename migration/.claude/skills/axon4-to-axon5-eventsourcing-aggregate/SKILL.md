@@ -128,97 +128,27 @@ T.4. **Adjust behavioral assertions for AF5 semantics.** Several AF4 fixture err
 - `AggregateNotFoundException` is **not** thrown for instance handlers in AF5. With a no-arg `@EntityCreator`, the framework always materializes an empty entity, so the handler runs and any domain rule against empty state surfaces instead. Update such tests to expect the actual domain exception (e.g. a domain-rule violation message) and add a comment noting the semantic shift.
 - Static (creational) handlers throw `EntityAlreadyExistsForCreationalCommandHandlerException` (`org.axonframework.modelling.entity`) when the entity already exists. If you see this in a test that should succeed on existing entities, the handler shouldn't be `static` — re-check step 14.
 
-T.5. **Run the tests** — follow the [Verification path](#verification--compile-and-run-just-the-migrated-classes) below. Confirm all tests pass before moving on. If tests fail, do not declare success — re-check steps 14 and T.4 for handler shape and exception expectations.
+T.5. **Run just the migrated tests** — follow the [Verification path](#verification--run-just-the-migrated-tests) below. Confirm all tests pass before moving on. If tests fail, do not declare success — re-check steps 14 and T.4 for handler shape and exception expectations.
 
-## Verification — compile and run just the migrated classes
+## Verification — run just the migrated tests
 
-When the surrounding project doesn't fully build (common during incremental migration), don't try `mvn test` on the whole module — Maven compiles **all** main sources first, and unrelated AF4-using files will fail compilation before your tests can run. Instead, compile only the touched sources with `javac` against the Maven-resolved classpath, then run via the JUnit Platform Launcher API.
+The verification run is also the smoke test for step 14: a wrong static-vs-instance `CreationPolicy` migration has no compile-time signal — only the test run surfaces `EntityAlreadyExistsForCreationalCommandHandlerException`.
 
-This recipe also confirms the `CreationPolicy` migration choice (step 14): a wrong static-vs-instance choice has no compile-time signal — only the test run surfaces `EntityAlreadyExistsForCreationalCommandHandlerException`.
-
-### V.1. Capture the full Maven test classpath
+### V.1. Maven Surefire `-Dtest=` (default path)
 
 ```bash
-./mvnw -q dependency:build-classpath \
-  -Dmdep.outputFile=/tmp/cp.txt \
-  -Dmdep.includeScope=test
+./mvnw test -Dtest='<FQTestClass1>,<FQTestClass2>' -DfailIfNoTests=false
 ```
 
-### V.2. Compile only the touched main sources
+For a multi-module build, scope to the relevant module with `-pl <module>`. This is the standard approach and works whenever the module's main sources still compile.
 
-Pass an explicit source-file list. **Do not glob `src/main/java/.../shared/`** — sibling files in `shared/` may still reference AF4 APIs (e.g. `org.axonframework.messaging.MetaData`) and break the build. Include only the migrated entity, its commands, events, helpers, and the minimal `shared/` files actually imported by them.
+### V.2. Fallback when other main sources don't compile
 
-```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v <required-version>)
-OUT=/tmp/<project>-build
-mkdir -p "$OUT/main" "$OUT/test"
+If unrelated files in the same module still use AF4 APIs and break `mvn compile` before the tests can run, bypass Maven's main-compile step. Compile and run only the touched sources directly:
 
-cat > /tmp/main-srcs.txt <<'EOF'
-src/main/java/.../<Aggregate>.java
-src/main/java/.../<Command>.java
-src/main/java/.../<Event>.java
-src/main/java/.../<used-shared>.java
-EOF
+1. Capture the test classpath: `./mvnw -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt -Dmdep.includeScope=test`.
+2. List the migrated main sources explicitly (entity, its commands, events, helpers, and the `shared/` files transitively used) — don't glob, sibling files may still be broken — and `javac` them with `-cp "$(cat /tmp/cp.txt)"` into a temp dir.
+3. Same for the migrated test sources, with the temp main dir on the classpath.
+4. Run the JUnit tests via a tiny `RunTests.java` that calls `LauncherFactory.create()` and selects the test classes by `DiscoverySelectors.selectClass(...)` — `junit-platform-console-launcher` is not reliably published for every minor version (e.g. 1.12.x is missing on Maven Central), but `junit-platform-launcher` is almost always present transitively via JUnit Jupiter.
 
-"$JAVA_HOME/bin/javac" --release <N> -d "$OUT/main" \
-  -cp "$(cat /tmp/cp.txt)" @/tmp/main-srcs.txt
-```
-
-### V.3. Compile the migrated test sources
-
-```bash
-cat > /tmp/test-srcs.txt <<'EOF'
-src/test/java/.../<test-utils>.java
-src/test/java/.../<AggregateTest>.java
-src/test/java/.../<TestSubclasses>.java
-EOF
-
-"$JAVA_HOME/bin/javac" --release <N> -d "$OUT/test" \
-  -cp "$OUT/main:$(cat /tmp/cp.txt)" @/tmp/test-srcs.txt
-```
-
-### V.4. Run via a tiny JUnit Platform Launcher
-
-`junit-platform-console-launcher` is not always published / cached for every minor version (e.g. 1.12.x is missing on Maven Central). Skip it — write a small runner that calls `LauncherFactory` directly. `junit-platform-launcher` is almost always present transitively via JUnit Jupiter.
-
-```java
-// /tmp/<project>-build/RunTests.java
-import org.junit.platform.engine.discovery.DiscoverySelectors;
-import org.junit.platform.launcher.Launcher;
-import org.junit.platform.launcher.LauncherDiscoveryRequest;
-import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
-import org.junit.platform.launcher.core.LauncherFactory;
-import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
-import org.junit.platform.launcher.listeners.TestExecutionSummary;
-import java.io.PrintWriter;
-
-public class RunTests {
-    public static void main(String[] args) {
-        LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
-                .selectors(
-                    DiscoverySelectors.selectClass("<FQ.TestClass1>"),
-                    DiscoverySelectors.selectClass("<FQ.TestClass2>")
-                ).build();
-        Launcher launcher = LauncherFactory.create();
-        SummaryGeneratingListener listener = new SummaryGeneratingListener();
-        launcher.registerTestExecutionListeners(listener);
-        launcher.execute(request);
-        TestExecutionSummary summary = listener.getSummary();
-        PrintWriter pw = new PrintWriter(System.out);
-        summary.printTo(pw);
-        summary.printFailuresTo(pw);
-        pw.flush();
-        if (summary.getTotalFailureCount() > 0) System.exit(1);
-    }
-}
-```
-
-```bash
-LAUNCHER=~/.m2/repository/org/junit/platform/junit-platform-launcher/<version>/junit-platform-launcher-<version>.jar
-CP="$(cat /tmp/cp.txt):$LAUNCHER"
-
-"$JAVA_HOME/bin/javac" --release <N> -d "$OUT/runner" -cp "$CP" "$OUT/RunTests.java"
-"$JAVA_HOME/bin/java"  -cp "$OUT/runner:$OUT/test:$OUT/main:$CP" RunTests
-```
-
-A green run looks like `[ N tests successful ]` with `[ 0 tests failed ]`. If a `NoClassDefFoundError` appears for a transitive dependency, the project's BOM/dependency versions are misaligned for AF5 — fix the BOM rather than papering over with classpath prepends.
+A green run looks like `[ N tests successful ]` with `[ 0 tests failed ]`. If a `NoClassDefFoundError` appears for a transitive dependency, the project's BOM/dependency versions are misaligned for AF5 — fix the BOM rather than papering over the classpath.
