@@ -38,10 +38,12 @@ recipeList:
   - org.axonframework.migration.UpgradeJava
 
   # ── 2. Bump dependency versions ─────────────────────────────────────────
+  # Pinned to an explicit AF5 release so the migration is reproducible across
+  # recipe builds (independent of the recipe project's own ${project.version}).
   - org.openrewrite.maven.UpgradeDependencyVersion:
       groupId: org.axonframework
       artifactId: "*"
-      newVersion: ${project.version}
+      newVersion: 5.1.0
 
   # ── 3. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
   - org.axonframework.migration.Axon4ToAxon5Bom

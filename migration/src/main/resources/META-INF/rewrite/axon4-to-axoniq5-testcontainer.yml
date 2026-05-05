@@ -60,6 +60,8 @@ recipeList:
   - org.openrewrite.maven.AddDependency:
       groupId: io.axoniq.framework
       artifactId: axoniq-testcontainer
-      version: latest.release
+      version: 5.1.0
       scope: test
-      onlyIfUsing: io.axoniq.framework.testcontainer.AxonServerContainer
+      # Use the AF4 FQN — `onlyIfUsing` resolves against the LST as parsed,
+      # so the post-rename Axoniq name would never match.
+      onlyIfUsing: org.axonframework.test.server.AxonServerContainer

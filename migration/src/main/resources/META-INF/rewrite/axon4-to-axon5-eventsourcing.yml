@@ -22,8 +22,12 @@ name: org.axonframework.migration.Axon4ToAxon5EventSourcing
 displayName: Apply Axon Framework 5 event-sourcing module renames
 description: >-
   Relocates the `@EventSourcingHandler` annotation into
-  `eventsourcing.annotation`, and `Snapshotter` into the new
-  `eventsourcing.snapshot.api` API package.
+  `eventsourcing.annotation`, relocates `Snapshotter` into the new
+  `eventsourcing.snapshot.api` API package, and ensures the
+  `org.axonframework:axon-eventsourcing` dependency is present when the app
+  uses event-sourcing types (the AF5 Spring Boot starter no longer pulls
+  it transitively, so apps not using the BOM need it added explicitly —
+  it transitively brings `axon-modelling` and `axon-messaging`).
 recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.eventsourcing.EventSourcingHandler
@@ -31,3 +35,15 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.eventsourcing.Snapshotter
       newFullyQualifiedTypeName: org.axonframework.eventsourcing.snapshot.api.Snapshotter
+  # ── Add axon-eventsourcing dep when eventsourcing types are in use ──────
+  # Apps that don't import the AF5 BOM and depend only on the Spring Boot
+  # starter won't get axon-eventsourcing transitively. Adding it pulls in
+  # axon-modelling and axon-messaging too.
+  - org.openrewrite.maven.AddDependency:
+      groupId: org.axonframework
+      artifactId: axon-eventsourcing
+      version: 5.1.0
+      # Match the AF4 fully-qualified name — `onlyIfUsing` resolves against
+      # the LST as parsed (with AF4 types on classpath), so the AF5
+      # post-rename name would never match.
+      onlyIfUsing: org.axonframework.eventsourcing.EventSourcingHandler

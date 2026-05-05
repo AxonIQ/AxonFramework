@@ -56,3 +56,12 @@ recipeList:
 
   # ── 5. Testing utilities ────────────────────────────────────────────────
   - org.axonframework.migration.Axon4ToAxoniq5Testcontainer
+
+  # ── 6. Pin Axoniq commercial artifact versions ──────────────────────────
+  # Coordinate moves above (BOM swap, starter swap, connector move) leave
+  # `<version>` placeholders pointing at the AF4 version. Pin them to the
+  # current Axoniq Framework 5 release so the resulting POM resolves.
+  - org.openrewrite.maven.UpgradeDependencyVersion:
+      groupId: io.axoniq.framework
+      artifactId: "*"
+      newVersion: 5.1.0

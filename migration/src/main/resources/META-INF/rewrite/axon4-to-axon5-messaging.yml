@@ -26,8 +26,13 @@ description: >-
   `org.axonframework.{command,event,query}handling` into the
   `org.axonframework.messaging.*` namespace, relocates handler & interceptor
   annotations into their `.annotation.*` subpackages, renames `EventBus` to
-  `EventSink`, fixes `MetaData` casing to `Metadata`, and moves `UnitOfWork`
-  into `messaging.core.unitofwork`.
+  `EventSink`, fixes `MetaData` casing to `Metadata`, relocates the
+  top-level messaging API (`Message`, `Metadata`, `UnitOfWork`,
+  `MessageHandlerInterceptor`, `MessageHandlerInterceptorChain`,
+  `correlation.*`) into `messaging.core.*`, moves the sequencing policy
+  package out of `eventhandling.async` into `messaging.core.sequencing`,
+  relocates `tokenstore` and the replay/reset annotations under their AF5
+  subpackages, and moves `QueryGateway` into its own gateway subpackage.
 recipeList:
   # ── Package-prefix moves: bus/gateway/exception classes shift wholesale ──
   - org.openrewrite.java.ChangePackage:
@@ -78,10 +83,44 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.PropagatingErrorHandler
       newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler
 
+  # ── Replay / reset annotations relocated under .replay.annotation ───────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.DisallowReplay
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.replay.annotation.DisallowReplay
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.ResetHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.replay.annotation.ResetHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.ReplayToken
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken
+
+  # ── Token store relocated under processing.streaming.token.store ────────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.eventhandling.tokenstore
+      newPackageName: org.axonframework.messaging.eventhandling.processing.streaming.token.store
+      recursive: true
+
+  # ── Sequencing policy moved out of `eventhandling.async` into core ──────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.eventhandling.async
+      newPackageName: org.axonframework.messaging.core.sequencing
+      recursive: true
+
+  # ── Query gateway moved into its own gateway subpackage ─────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryGateway
+      newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.gateway.QueryGateway
+
+  # ── Correlation providers moved under messaging.core.correlation ────────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.correlation
+      newPackageName: org.axonframework.messaging.core.correlation
+      recursive: true
+
   # ── MetaData casing fix and core relocations ────────────────────────────
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.MetaData
-      newFullyQualifiedTypeName: org.axonframework.messaging.Metadata
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.Metadata
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.annotation.MetaDataValue
       newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.MetadataValue
@@ -90,4 +129,12 @@ recipeList:
       newFullyQualifiedTypeName: org.axonframework.messaging.core.unitofwork.UnitOfWork
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.InterceptorChain
-      newFullyQualifiedTypeName: org.axonframework.messaging.MessageHandlerInterceptorChain
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageHandlerInterceptorChain
+
+  # ── Top-level messaging API types moved into `core` ─────────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.Message
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.Message
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.MessageHandlerInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageHandlerInterceptor
