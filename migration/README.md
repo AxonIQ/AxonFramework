@@ -184,3 +184,8 @@ mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
 ```
 
 Each per-module recipe is independently runnable.
+
+
+## Migration Prerequisites
+- Java 21+
+- Spring Boot 3.5.14+ (jackson etc.)
