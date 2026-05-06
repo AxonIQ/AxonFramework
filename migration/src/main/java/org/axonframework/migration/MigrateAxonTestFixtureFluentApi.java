@@ -168,32 +168,70 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 templateArgs.add(select);
                 templateArgs.addAll(args);
 
-                J.MethodInvocation rewritten = JavaTemplate.builder(template.toString())
-                        .contextSensitive()
-                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
-                        .build()
-                        .apply(getCursor(), mi.getCoordinates().replace(), templateArgs.toArray());
-
-                // The template flattens whitespace. In a fluent chain like
-                //   fixture.given(...)
-                //          .when(...)
-                //          .expectEvents(...);
-                // the whitespace before the `.` of `.when` / `.expectEvents` is stored as the
-                // *right-padding of the parent's `select`* (`getPadding().getSelect().getAfter()`).
-                // After rewrite, the structure is `((origSelect).phase()).newName(args)`. We want
-                // the phase call (`.given()` / `.when()` / `.then()`) to land on a new line with
-                // the same indent the old call had, so transplant the original `select` right-padding
-                // onto the inner phase-call's `select` right-padding.
-                if (rewritten.getSelect() instanceof J.MethodInvocation phaseCall
-                        && mi.getPadding().getSelect() != null
-                        && phaseCall.getPadding().getSelect() != null) {
-                    org.openrewrite.java.tree.JRightPadded<Expression> phaseSelect = phaseCall.getPadding().getSelect();
-                    org.openrewrite.java.tree.JRightPadded<Expression> rewrittenPhaseSelect = phaseSelect.withAfter(
-                            mi.getPadding().getSelect().getAfter());
-                    return rewritten.withSelect(
-                            phaseCall.getPadding().withSelect(rewrittenPhaseSelect));
-                }
-                return rewritten;
+                // Build the new chain manually so we can preserve the original whitespace before the
+                // dot of the rewritten call. JavaTemplate normalizes chain whitespace, which collapses
+                // multi-line fluent builders onto a single line.
+                //
+                // Layout of `<select>.phase().newName(args)`:
+                //   outer = MethodInvocation(select=phaseCall, name=newName, args=[args...])
+                //   phaseCall = MethodInvocation(select=originalSelect, name=phase, args=[])
+                //
+                // Whitespace mapping:
+                //   - phaseCall's prefix = mi's prefix (often empty for chain elements)
+                //   - phaseCall's select right-padding (whitespace before the dot of `.phase`)
+                //     = mi's original select right-padding (the newline+indent before `.<oldName>`)
+                //   - outer's select right-padding (whitespace between `.phase()` and `.newName(`) = empty
+                //   - outer's name prefix = empty
+                org.openrewrite.java.tree.Space dotBeforePhase = mi.getPadding().getSelect() != null
+                        ? mi.getPadding().getSelect().getAfter()
+                        : org.openrewrite.java.tree.Space.EMPTY;
+                org.openrewrite.java.tree.JRightPadded<Expression> selectForPhase =
+                        org.openrewrite.java.tree.JRightPadded.<Expression>build(select)
+                                .withAfter(dotBeforePhase);
+                J.Identifier phaseName = new J.Identifier(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        java.util.Collections.emptyList(),
+                        phase,
+                        null,
+                        null);
+                J.MethodInvocation phaseCall = new J.MethodInvocation(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        selectForPhase,
+                        null,
+                        phaseName,
+                        org.openrewrite.java.tree.JContainer.empty(),
+                        null);
+                org.openrewrite.java.tree.JRightPadded<Expression> selectForOuter =
+                        org.openrewrite.java.tree.JRightPadded.<Expression>build(phaseCall);
+                J.Identifier outerName = new J.Identifier(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        java.util.Collections.emptyList(),
+                        newName,
+                        null,
+                        null);
+                org.openrewrite.java.tree.JContainer<Expression> argContainer = args.isEmpty()
+                        ? org.openrewrite.java.tree.JContainer.empty()
+                        : org.openrewrite.java.tree.JContainer.build(
+                                org.openrewrite.java.tree.Space.EMPTY,
+                                args.stream()
+                                        .map(org.openrewrite.java.tree.JRightPadded::<Expression>build)
+                                        .toList(),
+                                org.openrewrite.marker.Markers.EMPTY);
+                return new J.MethodInvocation(
+                        org.openrewrite.Tree.randomId(),
+                        mi.getPrefix(),
+                        org.openrewrite.marker.Markers.EMPTY,
+                        selectForOuter,
+                        null,
+                        outerName,
+                        argContainer,
+                        null);
             }
 
             /**
