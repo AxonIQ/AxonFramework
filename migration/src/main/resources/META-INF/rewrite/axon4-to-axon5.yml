@@ -37,7 +37,14 @@ recipeList:
   # ── 1. Java compiler-target bump ────────────────────────────────────────
   - org.axonframework.migration.UpgradeJava
 
-  # ── 2. Bump dependency versions ─────────────────────────────────────────
+  # ── 2. Spring Boot upgrade (2.x → 3.5.x) ───────────────────────────────
+  # Bumps spring-boot-starter-parent (or spring-boot-dependencies BOM) to the
+  # latest 3.5.x patch, migrates javax → jakarta, and applies all incremental
+  # Spring Boot 3.x API changes. Running this before the Axon renames keeps
+  # the javax→jakarta rewrite from clashing with the Axon package moves.
+  - org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5
+
+  # ── 3. Bump dependency versions ─────────────────────────────────────────
   # Pinned to an explicit AF5 release so the migration is reproducible across
   # recipe builds (independent of the recipe project's own ${project.version}).
   - org.openrewrite.maven.UpgradeDependencyVersion:
@@ -45,10 +52,10 @@ recipeList:
       artifactId: "*"
       newVersion: 5.1.0
 
-  # ── 3. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
+  # ── 4. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
   - org.axonframework.migration.Axon4ToAxon5Bom
 
-  # ── 4. Core framework module migrations ─────────────────────────────────
+  # ── 5. Core framework module migrations ─────────────────────────────────
   - org.axonframework.migration.Axon4ToAxon5Common
   - org.axonframework.migration.Axon4ToAxon5Conversion
   - org.axonframework.migration.Axon4ToAxon5Messaging
@@ -56,7 +63,7 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5EventSourcing
   - org.axonframework.migration.Axon4ToAxon5Test
 
-  # ── 5. Active extension migrations ──────────────────────────────────────
+  # ── 6. Active extension migrations ──────────────────────────────────────
   - org.axonframework.migration.Axon4ToAxon5SpringExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
