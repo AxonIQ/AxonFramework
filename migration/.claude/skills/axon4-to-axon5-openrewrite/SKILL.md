@@ -120,6 +120,49 @@ ls <target>/pom.xml <target>/build.gradle <target>/build.gradle.kts 2>/dev/null
 - Both present → ask the user which to drive (Maven is preferred when
   available; the recipes were primarily exercised through it).
 
+### 3.5. Verify `JAVA_HOME` can compile the target
+
+The `rewrite-maven-plugin:run` goal binds to `process-test-classes`,
+which means **the project must compile under the active `JAVA_HOME`
+before the recipe runs**. The recipe will *also* bump the project's
+`<java.version>` (currently to 25 — see `UpgradeJavaVersion` in the
+composition), so future invocations need an even-newer JDK. Both ends
+need to be checked.
+
+```bash
+# Project's current source/target.
+grep -E '<java\.version>|<release>|<source>|<target>|<maven\.compiler\.' <target>/pom.xml
+
+# Active JDK that would run the build.
+echo "$JAVA_HOME"; java -version 2>&1
+```
+
+Decision rules:
+
+- If `java -version` reports a major version **lower than** the
+  project's `<java.version>` → the build will fail with
+  `release version N not supported` before the recipe gets to run.
+  Surface this to the user with `AskUserQuestion` and offer to:
+  1. Pick an installed JDK that's high enough (run
+     `/usr/libexec/java_home -V` on macOS, `update-alternatives`-equivalent
+     on Linux), then re-invoke with `JAVA_HOME=<picked>` prefixing the
+     `mvn` call. *(Recommended)*
+  2. Install a newer JDK first; pause the skill until they're ready.
+- If active JDK is high enough today but lower than what
+  `UpgradeJavaVersion` will bump to (the recipe targets the latest
+  stable LTS / current — at the time of writing, **JDK 25**) → warn
+  the user that *post-recipe* `./mvnw` invocations will need that
+  newer JDK on `JAVA_HOME` too. Don't block; just record it for
+  surfacing in step 8.
+- If `JAVA_HOME` is unset → the JDK that resolves via the user's
+  shell (`java -version`) is what Maven will pick up. Same checks
+  apply.
+
+This step exists because the failure mode is **silent and
+misleading**: the OpenRewrite plugin reports a Maven compile failure
+that looks like a project bug, when in fact `JAVA_HOME` is the
+culprit.
+
 ### 4. Inspect the target for free-vs-commercial signals
 
 Before asking the user which top-level recipe to run, look at the
@@ -187,13 +230,17 @@ Maven invocation template:
 mvn -U -f <target>/pom.xml \
     org.openrewrite.maven:rewrite-maven-plugin:run \
     -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:LATEST \
-    -DactiveRecipes=<recipe1>,<recipe2>,...
+    -Drewrite.activeRecipes=<recipe1>,<recipe2>,...
 ```
 
 - `-U` forces a fresh resolution of the recipe artifact (the migration
   JAR ships frequent fixes). Keep it.
-- `-DactiveRecipes` is comma-separated; for a top-level run there's
-  exactly one entry. For a per-module subset there are several.
+- `-Drewrite.activeRecipes` is comma-separated; for a top-level run
+  there's exactly one entry. For a per-module subset there are several.
+  **Pitfall:** the legacy unprefixed form (`-DactiveRecipes=...`) is
+  silently ignored on `rewrite-maven-plugin` 6.x — the build returns
+  `BUILD SUCCESS` with `Using active recipe(s) []` in the log and
+  rewrites nothing. Always use the `rewrite.` prefix.
 - Use `LATEST` for `recipeArtifactCoordinates` unless the user pinned a
   version — the recipes are reproducible and bug fixes land continually.
   Mention the resolved version in your post-run summary so the user
@@ -213,7 +260,7 @@ the target if the user is working from a different directory.
 mvn -U -f <target>/pom.xml \
     org.openrewrite.maven:rewrite-maven-plugin:run \
     -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:LATEST \
-    -DactiveRecipes=org.axonframework.migration.UpgradeAxon4ToAxoniq5
+    -Drewrite.activeRecipes=org.axonframework.migration.UpgradeAxon4ToAxoniq5
 ```
 
 If the run fails to resolve the recipe artifact, fall back to the
