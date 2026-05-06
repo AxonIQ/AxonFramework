@@ -55,7 +55,7 @@ recipeList:
       artifactId: "*"
       newVersion: 5.1.0
 
-  # ── 4. BOM rename (axon-bom → axon-framework-bom) ───────────────────────
+  # ── 4. BOM rename (axon-bom → axon-framework-bom, version → 5.1.0) ──────
   - org.axonframework.migration.Axon4ToAxon5Bom
 
   # ── 5. Core framework module migrations ─────────────────────────────────

@@ -18,7 +18,10 @@
 # bill-of-materials artifact changed:
 #   AF4: org.axonframework:axon-bom
 #   AF5: org.axonframework:axon-framework-bom
-# The groupId is unchanged; only the artifactId moves.
+# The groupId is unchanged; only the artifactId moves. The recipe also pins
+# the imported BOM to the AF5 line — `UpgradeDependencyVersion` doesn't lift
+# the version after the rename because the renamed coordinate didn't exist
+# at the AF4 line, leaving the managed import at `4.x` otherwise.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -26,7 +29,8 @@ name: org.axonframework.migration.Axon4ToAxon5Bom
 displayName: Migrate the Axon Framework BOM coordinates
 description: >-
   Renames the imported `org.axonframework:axon-bom` BOM in
-  `<dependencyManagement>` to `org.axonframework:axon-framework-bom`. The BOM
+  `<dependencyManagement>` to `org.axonframework:axon-framework-bom` and pins
+  the imported version to the current Axon Framework 5 release. The BOM
   artifactId changed between Axon Framework 4 and Axon Framework 5; the
   groupId is unchanged.
 recipeList:
@@ -35,3 +39,4 @@ recipeList:
       oldArtifactId: axon-bom
       newGroupId: org.axonframework
       newArtifactId: axon-framework-bom
+      newVersion: 5.1.0

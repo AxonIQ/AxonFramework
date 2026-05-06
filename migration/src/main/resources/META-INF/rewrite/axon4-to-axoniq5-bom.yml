@@ -37,8 +37,10 @@ recipeList:
       oldArtifactId: axon-bom
       newGroupId: io.axoniq.framework
       newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0
   - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
       oldGroupId: org.axonframework
       oldArtifactId: axon-framework-bom
       newGroupId: io.axoniq.framework
       newArtifactId: axoniq-framework-bom
+      newVersion: 5.1.0
