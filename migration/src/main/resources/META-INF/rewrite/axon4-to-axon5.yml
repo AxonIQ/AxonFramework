@@ -37,11 +37,14 @@ recipeList:
   # ── 1. Java compiler-target bump ────────────────────────────────────────
   - org.axonframework.migration.UpgradeJava
 
-  # ── 2. Spring Boot upgrade (2.x → 3.5.x) ───────────────────────────────
+  # ── 2. Spring Boot upgrade (2.x / 3.x → 3.5.x) ────────────────────────
   # Bumps spring-boot-starter-parent (or spring-boot-dependencies BOM) to the
   # latest 3.5.x patch, migrates javax → jakarta, and applies all incremental
-  # Spring Boot 3.x API changes. Running this before the Axon renames keeps
-  # the javax→jakarta rewrite from clashing with the Axon package moves.
+  # Spring Boot 3.x API changes. Safe on projects already at 3.5.x or later
+  # (including Spring Boot 4.x) — OpenRewrite never downgrades version numbers,
+  # and the source-level sub-recipes are idempotent against already-migrated code.
+  # Running this before the Axon renames keeps the javax→jakarta rewrite from
+  # clashing with the Axon package moves.
   - org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5
 
   # ── 3. Bump dependency versions ─────────────────────────────────────────

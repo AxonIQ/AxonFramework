@@ -240,8 +240,12 @@ Use this for every step below — never guess imports.
 | `EventProcessorDefinition`             | `org.axonframework.extension.spring.config.EventProcessorDefinition` |
 | `EventHandlerSelector`                 | `org.axonframework.extension.spring.config.EventHandlerSelector` |
 | `EventProcessorSettings`               | `org.axonframework.extension.spring.config.EventProcessorSettings` |
+| `EventProcessorModule`                 | `org.axonframework.messaging.eventhandling.configuration.EventProcessorModule` |
+| `EventProcessorConfiguration`          | `org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration` |
 | `PooledStreamingEventProcessorConfiguration` | `org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration` |
 | `SubscribingEventProcessorConfiguration`     | `org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration` |
+| `ErrorHandler` (event-processing)      | `org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler` |
+| `SequencedDeadLetterQueueFactory`      | `io.axoniq.framework.messaging.eventhandling.deadletter.SequencedDeadLetterQueueFactory` *(commercial flavour — `org.axonframework.*` for the free flavour; confirm via fallback)* |
 
 ### 2. `@Bean ConfigurerModule` → `@Bean ConfigurationEnhancer`
 
@@ -383,10 +387,12 @@ Method-mapping cheat sheet:
 | `registerTrackingEventProcessor(name, ...)`              | **Removed in AF5.** Switch to `pooledStreaming(name)` — see `paths/projectors-event-processors.adoc` |
 | `assignHandlerTypesMatching(group, predicate)`           | merged into `assigningHandlers(EventHandlerSelector)` on the same processor's `EventProcessorDefinition` |
 | `byDefaultAssignTo(group)`                               | the receiving `EventProcessorDefinition` becomes the default sink — typically by giving it an `EventHandlerSelector` that matches everything not claimed by the others, or by relying on a `pooledStreamingMatching(name)` that auto-selects by `@Namespace(name)` |
-| `registerSequencingPolicy(group, factory)`               | **Out of scope here** — moves to `@SequencingPolicy` on the handler class (see `axon4-to-axon5-eventprocessor`) |
-| `registerListenerInvocationErrorHandler(group, factory)` | flagged for the user — AF5 surface differs; consult `paths/projectors-event-processors.adoc` and source |
-| `registerErrorHandler(group, factory)`                   | flagged for the user — same |
-| `registerDeadLetterQueueProvider(group, factory)`        | flagged for the user — DLQ migration is a separate path (`paths/dlq.adoc`) |
+| `registerSequencingPolicy(group, factory)`               | **Delete it.** Sequencing policy moved to `@SequencingPolicy` on the handler class (handled by `axon4-to-axon5-eventprocessor`). See step 4a below — when running this skill, the per-handler skill has typically already moved the policy onto the class, so the `@Bean`/`registerSequencingPolicy(...)` site here is dead config and must be removed. |
+| `registerErrorHandler(group, factory)`                   | merge into the same processor's `EventProcessorDefinition.customized(...)` — see step 4b |
+| `registerDefaultErrorHandler(factory)`                   | apply to every `EventProcessorDefinition` in this class (no AF5 default-only registration knob today) — see step 4b |
+| `registerListenerInvocationErrorHandler(group, factory)` | **Removed in AF5** — the listener-invocation hook is gone; the single per-processor `ErrorHandler` (above) is now the only seam. See step 4b. |
+| `registerDeadLetterQueue(group, factory)`                | merge into the same processor's `EventProcessorDefinition.customized(config -> config.deadLetterQueue(dlq -> dlq.enabled()))`. See step 4c. |
+| `registerDeadLetterQueueProvider(provider)`              | merge into one shared `.customized(config -> config.deadLetterQueue(dlq -> dlq.factory(...)))` step on every affected `EventProcessorDefinition`. See step 4c. |
 
 Notes:
 
@@ -411,6 +417,226 @@ Notes:
   the same way Spring Boot did in AF4. `EventProcessorDefinition`
   beans coexist with properties; explicit
   `.customized(...)` overrides the properties.
+
+### 4a. `registerSequencingPolicy(...)` — delete from this class
+
+Sequencing policy is a **handler-side** concern in AF5: the
+`@SequencingPolicy(type = ..., parameters = ...)` annotation lives on
+the handler class (or a single `@EventHandler` method). The
+per-handler skill `axon4-to-axon5-eventprocessor` (step 8) is
+responsible for adding the annotation; this skill is responsible for
+deleting the now-dead external registration so the two cannot drift.
+
+```java
+// AF4 — delete the entire registration
+processingConfigurer.registerSequencingPolicy(
+        "my-processor",
+        config -> new MetadataSequencingPolicy("aggregateId"));
+```
+
+Apply the deletion **even when** the per-handler skill has not yet
+been run on the matching handler class. Note in the diff summary
+which group(s) had a `registerSequencingPolicy(...)` site so the user
+knows where the annotation must land. Never inline the policy into
+`EventProcessorDefinition.customized(...)` — that path does not exist
+in AF5.
+
+### 4b. `registerErrorHandler(...)` / `registerListenerInvocationErrorHandler(...)` — fold into `EventProcessorDefinition.customized(...)`
+
+AF4 had two error-handling seams per processing group:
+`registerErrorHandler(group, factory)` (the **processor** error
+handler — invoked when the processor's outer loop fails) and
+`registerListenerInvocationErrorHandler(group, factory)` (the
+**listener-invocation** error handler — invoked when a single
+`@EventHandler` method throws).
+
+AF5 collapses these into **one** seam: a single
+`ErrorHandler` configured per processor via
+`EventProcessorConfiguration.errorHandler(ErrorHandler)`. The
+`ListenerInvocationErrorHandler` concept does **not exist** in AF5 —
+the same `ErrorHandler` covers both cases.
+
+```java
+// AF4
+return configurer -> {
+    EventProcessingConfigurer p = configurer.eventProcessing();
+    p.registerErrorHandler(
+            "my-processor",
+            config -> PropagatingErrorHandler.instance());
+    p.registerListenerInvocationErrorHandler(
+            "my-processor",
+            config -> new LoggingListenerInvocationErrorHandler());
+};
+
+// AF5 — both fold into the same .customized(...) step
+@Bean
+public EventProcessorDefinition myProcessorDefinition() {
+    return EventProcessorDefinition.pooledStreaming("my-processor")
+            .assigningHandlers(/* ... */)
+            .customized(config -> config
+                    .errorHandler(myErrorHandler()));
+}
+```
+
+Steps:
+
+1. **Pick the AF5 `ErrorHandler`** for the AF4 setting:
+   - `PropagatingErrorHandler.instance()` keeps its name and behaviour
+     — re-import from
+     `org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler`.
+   - Custom AF4 `ErrorHandler` implementations need their own
+     migration (signature change — confirm via
+     `references/source-access.md`); the *registration* rewrite here
+     is mechanical.
+   - **`ListenerInvocationErrorHandler` implementations are
+     orphaned.** AF5 has no equivalent interface. Two options:
+     (a) fold the listener-invocation logic into the processor's
+     single `ErrorHandler` (typical when both AF4 handlers shared
+     similar concerns); (b) delete it if it was a thin logging
+     wrapper that AF5 covers with default behaviour. Flag this for
+     the user — do not silently drop a custom implementation.
+
+2. **Merge into the matching `EventProcessorDefinition`** by adding
+   `.errorHandler(...)` inside its `.customized(config -> ...)`. If
+   the processor previously had no customisation, switch
+   `.notCustomized()` → `.customized(config -> config.errorHandler(...))`.
+   Other customisations (segments, batch size, DLQ — see 4c) are
+   chained on the same `config`.
+
+3. **`registerDefaultErrorHandler(factory)`** (the AF4 catch-all
+   default) has no AF5 default-only knob today. Apply the resolved
+   `ErrorHandler` to **every** `EventProcessorDefinition` declared in
+   this class. Flag any other configuration class in the project
+   that defines `EventProcessorDefinition` beans — they need the same
+   treatment, but that is a separate run.
+
+4. **Delete** the AF4 `registerErrorHandler(...)` /
+   `registerListenerInvocationErrorHandler(...)` /
+   `registerDefaultErrorHandler(...)` call(s) once the equivalent
+   `.errorHandler(...)` has landed on the `EventProcessorDefinition`.
+
+### 4c. `registerDeadLetterQueue(...)` / `registerDeadLetterQueueProvider(...)` — fold into `.customized(config -> config.deadLetterQueue(...))`
+
+DLQ configuration moves out of the configurer-level
+`registerDeadLetterQueue*` calls and onto the processor's
+`PooledStreamingEventProcessorConfiguration` via the fluent
+`.deadLetterQueue(dlq -> ...)` builder.
+
+#### Per-processor DLQ (`registerDeadLetterQueue`)
+
+```java
+// AF4
+@Bean
+public ConfigurerModule deadLetterQueueConfigurerModule() {
+    return configurer -> configurer.eventProcessing().registerDeadLetterQueue(
+            "my-processor",
+            config -> JpaSequencedDeadLetterQueue.builder()
+                    .processingGroup("my-processor")
+                    .maxSequences(256)
+                    .maxSequenceSize(256)
+                    .entityManagerProvider(config.getComponent(EntityManagerProvider.class))
+                    .transactionManager(config.getComponent(TransactionManager.class))
+                    .serializer(config.serializer())
+                    .build());
+}
+
+// AF5 — folded into the processor's EventProcessorDefinition
+@Bean
+public EventProcessorDefinition myProcessorDefinition() {
+    return EventProcessorDefinition.pooledStreaming("my-processor")
+            .assigningHandlers(/* ... */)
+            .customized(config -> config
+                    .deadLetterQueue(dlq -> dlq
+                            .enabled()
+                            .cacheMaxSize(2048)));
+}
+```
+
+Notes:
+
+- AF5 picks the DLQ **implementation** from a Spring-managed
+  `SequencedDeadLetterQueueFactory` bean (or framework defaults). The
+  `EntityManagerProvider` / `TransactionManager` / `Serializer` no
+  longer need to be threaded through the registration call — they are
+  resolved from the configuration when the factory builds the DLQ.
+- The fluent `.deadLetterQueue(dlq -> ...)` builder accepts settings
+  like `.enabled()`, `.cacheMaxSize(n)`, `.factory(...)`. Translate
+  AF4 `JpaSequencedDeadLetterQueue.builder().maxSequences(...)` /
+  `.maxSequenceSize(...)` calls into the equivalent fluent calls; the
+  AF5 surface is documented in `paths/dlq.adoc` and confirmed via
+  `references/source-access.md` if needed.
+- The Spring Boot property
+  `axon.eventhandling.processors.<name>.dlq.enabled=true` survives
+  unchanged. Prefer leaving the property in place if it was the only
+  signal AF4 needed — `.deadLetterQueue(dlq -> dlq.enabled())` is
+  redundant but not harmful when both are present.
+
+#### Provider-style DLQ (`registerDeadLetterQueueProvider`)
+
+```java
+// AF4
+return configurer -> configurer.eventProcessing().registerDeadLetterQueueProvider(
+        processingGroup -> dlqEnabledGroups.contains(processingGroup)
+                ? config -> JpaSequencedDeadLetterQueue.builder()
+                        .processingGroup(processingGroup)
+                        .entityManagerProvider(config.getComponent(EntityManagerProvider.class))
+                        .transactionManager(config.getComponent(TransactionManager.class))
+                        .serializer(config.serializer())
+                        .build()
+                : null);
+
+// AF5 — supply a SequencedDeadLetterQueueFactory inside .factory(...)
+@Bean
+public EventProcessorDefinition myProcessorDefinition() {
+    return EventProcessorDefinition.pooledStreaming("my-processor")
+            .assigningHandlers(/* ... */)
+            .customized(config -> config
+                    .deadLetterQueue(dlq -> dlq
+                            .enabled()
+                            .factory((name, cfg) -> dlqEnabledGroups.contains(name)
+                                    ? c -> InMemorySequencedDeadLetterQueue.builder()
+                                            .maxSequences(256)
+                                            .maxSequenceSize(256)
+                                            .build()
+                                    : null)));
+}
+```
+
+Notes:
+
+- The AF4 provider is a `Function<String, Function<Configuration, SequencedDeadLetterQueue>>`;
+  the AF5 `.factory((name, cfg) -> ...)` callback collapses both
+  arguments into a single lambda and lets you return `null` to opt
+  out for a given processor — same conditional shape, less nesting.
+- **Repeat per processor.** AF4's provider was registered once on the
+  configurer and applied to every group. AF5 has no
+  configurer-level equivalent; copy the same `.deadLetterQueue(...)`
+  block to every `EventProcessorDefinition` bean in this class. If a
+  shared helper method makes the duplication readable, introduce one
+  inside this class (do not extract to a new file — atomic scope).
+- The AF5 DLQ factory may be expressed instead as a top-level
+  `@Bean SequencedDeadLetterQueueFactory` (per `paths/dlq.adoc`).
+  Prefer the in-line `.factory(...)` form when the AF4 provider was
+  also expressed inline; prefer the `@Bean` form when the AF4 site
+  was already extracted into a named bean.
+
+#### What to delete
+
+After the rewrite, remove from this class:
+
+- The `@Bean ConfigurerModule` / `ConfigurationEnhancer` method
+  whose body was *only* the DLQ registration. If the bean had other
+  responsibilities, leave the bean and delete just the DLQ lines.
+- AF4 imports: `JpaSequencedDeadLetterQueue` (AF4 location),
+  `SequencedDeadLetterQueueProviderConfigurerModule`, etc.
+- Now-unused private helpers (e.g. a builder method that returned
+  the AF4 DLQ).
+
+Cross-reference: per-DLQ-implementation migration (`JpaSequencedDeadLetterQueue`
+→ AF5 location, schema changes, `MongoSequencedDeadLetterQueue`
+removal) is documented in `paths/dlq.adoc` and is **out of scope
+here** — this skill only rewrites the **registration shape** in the
+configuration class.
 
 ### 5. Non-Spring `EventProcessingConfigurer` → `MessagingConfigurer#eventProcessing(...)`
 
@@ -578,20 +804,33 @@ components — that part of the file is **out of scope** here. Leave
 the read-side calls untouched, mention them in the diff summary, and
 point the user at `axon4-to-axon5-readconfiguration` as the follow-up.
 
-### 11. Out-of-scope: per-processor concerns
+### 11. Out-of-scope: per-handler-class edits
 
 The following AF4 → AF5 changes affect the **handler** classes, not
 this configuration class. If the candidate references them, **flag**
 them but don't edit cross-class:
 
 - `@ProcessingGroup` → `@Namespace` on the handler class.
-- `SequencingPolicy` registration → `@SequencingPolicy` annotation on
-  the handler class.
+- `@SequencingPolicy` annotation **placement** on the handler class
+  — note that **deletion** of the AF4 registration site here is
+  in-scope (step 4a), but **adding** the new annotation lives with
+  the per-handler skill.
 - `CommandGateway` field → method-parameter `CommandDispatcher`.
 - `@EventHandler` / `@QueryHandler` import moves.
 
 These are handled by `axon4-to-axon5-eventprocessor` and
 `axon4-to-axon5-queryhandler` respectively.
+
+### 12. Out-of-scope: DLQ implementation migration
+
+DLQ **registration shape** is in scope here (step 4c). DLQ
+**implementation** migration — JPA / JDBC schema changes, removal of
+`MongoSequencedDeadLetterQueue`, migration of *queries* against the
+DLQ — is documented in `paths/dlq.adoc` and is a separate concern.
+Flag any `MongoSequencedDeadLetterQueue` reference for the user
+explicitly: it is removed in AF5 and must be replaced with
+`JpaSequencedDeadLetterQueue` or `JdbcSequencedDeadLetterQueue`
+*before* this rewrite makes sense.
 
 ## Reference docs
 

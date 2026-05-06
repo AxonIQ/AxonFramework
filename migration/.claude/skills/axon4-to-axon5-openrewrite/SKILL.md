@@ -37,8 +37,15 @@ that compose into them:
 
 | Recipe | Scope | When to pick |
 |---|---|---|
-| `org.axonframework.migration.UpgradeAxon4ToAxon5` | Free AF5 (Apache 2.0). Renames packages/classes inside `org.axonframework.*`, bumps Maven coordinates, swaps the BOM, bumps Java compiler target. | Target app does **not** use Axon Server, the sequenced DLQ, or `DistributedCommandBus`. Those features were dropped from free AF5. |
-| `org.axonframework.migration.UpgradeAxon4ToAxoniq5` | Commercial Axoniq AF5 (`io.axoniq.framework.*`). Composes the free leg first, then layers commercial-only rewrites: Axon Server connector, DLQ, distributed messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`. | Target app uses **any** of: Axon Server connector, sequenced DLQ, `DistributedCommandBus`. Recommended default if unsure — the free recipe alone leaves those projects non-compiling. |
+| `org.axonframework.migration.UpgradeAxon4ToAxon5` | Free AF5 (Apache 2.0). Bumps Java compiler target, upgrades Spring Boot to 3.5.x, renames packages/classes inside `org.axonframework.*`, bumps Maven coordinates, swaps the BOM. | Target app does **not** use Axon Server, the sequenced DLQ, or `DistributedCommandBus`. Those features were dropped from free AF5. |
+| `org.axonframework.migration.UpgradeAxon4ToAxoniq5` | Commercial Axoniq AF5 (`io.axoniq.framework.*`). Composes the free leg first (including Spring Boot upgrade), then layers commercial-only rewrites: Axon Server connector, DLQ, distributed messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`. | Target app uses **any** of: Axon Server connector, sequenced DLQ, `DistributedCommandBus`. Recommended default if unsure — the free recipe alone leaves those projects non-compiling. |
+
+Both top-level recipes include `org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_5`,
+which bumps `spring-boot-starter-parent` (or `spring-boot-dependencies` BOM) to the
+latest 3.5.x patch and applies all Spring Boot 3.x source changes (most notably
+`javax` → `jakarta`). **Projects already at Spring Boot 3.5.x or later (including
+Spring Boot 4.x) are unaffected** — OpenRewrite never downgrades version numbers, and
+the source-level sub-recipes are idempotent against already-migrated code.
 
 Per-module recipes (runnable independently when the user wants only one
 slice — e.g. just messaging, or just the Spring Boot starter) are listed
@@ -244,6 +251,10 @@ when ready. If the user stashed in step 2, remind them about
 - **Free vs commercial is a license choice, not a version bump.** The
   two top-level recipes target the same release line; picking one
   doesn't lock the user into a different upgrade cadence later.
+- **Spring Boot upgrade is safe on already-modern projects.** The
+  `UpgradeSpringBoot_3_5` step is a no-op when the project is already
+  on Spring Boot 3.5.x or newer (including Spring Boot 4.x). OpenRewrite
+  will not downgrade the version.
 - **Compile failures after the recipe are normal.** The skill name is
   intentionally about *running OpenRewrite*, not about leaving a
   green build behind. The per-construct migration skills (and possibly

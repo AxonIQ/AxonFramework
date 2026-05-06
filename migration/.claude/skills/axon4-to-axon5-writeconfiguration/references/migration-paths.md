@@ -193,6 +193,120 @@ Relevant for write-side migration when AF4 called
 `EventProcessingConfigurer.registerTrackingEventProcessor(name, …)`.
 The AF5 replacement is `EventProcessorDefinition.pooledStreaming(name)`.
 
+## dlq.adoc — DLQ registration moves onto `EventProcessorDefinition`
+
+> Axon Framework 4::
+> +
+> [source,java]
+> ----
+> @Bean
+> public ConfigurerModule deadLetterQueueConfigurerModule() {
+>     return configurer -> configurer.eventProcessing().registerDeadLetterQueue(
+>             "my-processor",
+>             config -> JpaSequencedDeadLetterQueue.builder()
+>                     .processingGroup("my-processor")
+>                     .maxSequences(256)
+>                     .maxSequenceSize(256)
+>                     .entityManagerProvider(config.getComponent(EntityManagerProvider.class))
+>                     .transactionManager(config.getComponent(TransactionManager.class))
+>                     .serializer(config.serializer())
+>                     .build());
+> }
+> ----
+>
+> Axon Framework 5::
+> +
+> [source,java]
+> ----
+> @Bean
+> EventProcessorDefinition orderProcessor() {
+>     return EventProcessorDefinition.pooledStreaming("order-processor")
+>             .assigningHandlers(descriptor ->
+>                     descriptor.beanName().startsWith("order"))
+>             .customized(config -> config
+>                     .deadLetterQueue(dlq -> dlq
+>                             .enabled()
+>                             .cacheMaxSize(2048)));
+> }
+> ----
+
+> Key changes:
+>
+> * Configured via the fluent `deadLetterQueue(dlq -> ...)` builder on
+>   `PooledStreamingEventProcessorConfiguration`
+> * No need to explicitly supply `TransactionManager`, `Serializer`, or
+>   `EntityManagerProvider`
+> * One queue per Event Handling Component within the processor
+
+## dlq.adoc — provider-style DLQ → `.deadLetterQueue(dlq -> dlq.factory(...))`
+
+> Axon Framework 4::
+> +
+> [source,java]
+> ----
+> processingConfigurer.registerDeadLetterQueueProvider(
+>         processingGroup -> {
+>             if (dlqEnabledGroups.contains(processingGroup)) {
+>                 return config -> JpaSequencedDeadLetterQueue.builder()
+>                                                      .processingGroup(processingGroup)
+>                                                      .entityManagerProvider(config.getComponent(EntityManagerProvider.class))
+>                                                      .transactionManager(config.getComponent(TransactionManager.class))
+>                                                      .serializer(config.serializer())
+>                                                      .build();
+>             } else {
+>                 return null;
+>             }
+>         });
+> ----
+>
+> Axon Framework 5::
+> +
+> [source,java]
+> ----
+> .customized((cfg, processorConfig) -> processorConfig
+>         .deadLetterQueue(dlq -> dlq
+>                 .enabled()
+>                 .factory((name, config) -> {
+>                     if (dlqEnabledGroups.contains(name)) {
+>                         return conf -> InMemorySequencedDeadLetterQueue.builder()
+>                                 .maxSequences(256)
+>                                 .maxSequenceSize(256)
+>                                 .build();
+>                     } else {
+>                         return null;
+>                     }
+>                 })))
+> ----
+
+> Key changes:
+>
+> * Configuration of the factory is done via the fluent API on the
+>   `DeadLetterQueueConfiguration`
+> * Axon Framework 5 provides an explicit
+>   `SequencedDeadLetterQueueFactory` interface to define a DLQ factory.
+
+## AF5 source — `EventProcessorConfiguration.errorHandler(ErrorHandler)`
+
+`registerErrorHandler(group, factory)` and
+`registerListenerInvocationErrorHandler(group, factory)` collapse into
+**one** AF5 seam — `EventProcessorConfiguration.errorHandler(ErrorHandler)`
+— exposed on both `PooledStreamingEventProcessorConfiguration` and
+`SubscribingEventProcessorConfiguration`. AF5 has **no**
+`ListenerInvocationErrorHandler` interface; the listener-invocation
+hook from AF4 is removed.
+
+Verified by reading:
+
+- `messaging/src/main/java/org/axonframework/messaging/eventhandling/configuration/EventProcessorConfiguration.java`
+  — `errorHandler(ErrorHandler)` declared.
+- `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/PooledStreamingEventProcessorConfiguration.java`
+  — overrides `errorHandler(...)` returning the pooled config type.
+- `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/subscribing/SubscribingEventProcessorConfiguration.java`
+  — overrides `errorHandler(...)` returning the subscribing config
+  type.
+- Repository-wide grep for `ListenerInvocationErrorHandler` returns
+  zero hits in AF5 source.
+
 ## projectors-event-processors.adoc — `@ProcessingGroup` removal
 
 > The `@ProcessingGroup` annotation has been removed in Axon
