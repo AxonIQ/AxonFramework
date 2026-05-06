@@ -99,7 +99,7 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
                 String gatewayFieldName = findCommandGatewayField(classDecl);
-                if (gatewayFieldName == null) {
+                if (gatewayFieldName == null || !classHasEventHandlerCallingGateway(classDecl, gatewayFieldName)) {
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
                 getCursor().putMessage("axon.gatewayFieldName", gatewayFieldName);
@@ -113,6 +113,41 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
                     maybeRemoveImport(COMMAND_GATEWAY_AF5_FQN);
                 }
                 return cd;
+            }
+
+            /**
+             * Pre-flight check: only engage when at least one `@EventHandler` method in the class actually
+             * dispatches through the gateway field. Otherwise this recipe must be a no-op so it does not
+             * disturb classes that hold a {@code CommandGateway} for a non-handler reason (REST controllers,
+             * runners, etc.).
+             */
+            private boolean classHasEventHandlerCallingGateway(J.ClassDeclaration cd, String gatewayName) {
+                for (Statement s : cd.getBody().getStatements()) {
+                    if (!(s instanceof J.MethodDeclaration)) {
+                        continue;
+                    }
+                    J.MethodDeclaration m = (J.MethodDeclaration) s;
+                    if (!isAnnotatedAsEventHandler(m) || m.getBody() == null) {
+                        continue;
+                    }
+                    boolean[] found = {false};
+                    new JavaIsoVisitor<ExecutionContext>() {
+                        @Override
+                        public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi,
+                                                                        ExecutionContext c) {
+                            if (isGatewayCall(mi, gatewayName)
+                                    && ("send".equals(mi.getSimpleName())
+                                            || "sendAndWait".equals(mi.getSimpleName()))) {
+                                found[0] = true;
+                            }
+                            return super.visitMethodInvocation(mi, c);
+                        }
+                    }.visit(m.getBody(), new org.openrewrite.InMemoryExecutionContext());
+                    if (found[0]) {
+                        return true;
+                    }
+                }
+                return false;
             }
 
             @Override

@@ -472,7 +472,6 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
                         """,
                         """
                         package com.example;
-
                         import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
                         import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
