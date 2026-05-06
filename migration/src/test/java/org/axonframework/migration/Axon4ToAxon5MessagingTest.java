@@ -525,6 +525,64 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     }
 
     @Test
+    void migratesHeroesProcessorTryCatchWithMixedAlreadyMigratedState() {
+        // Mid-migration state of Heroes' WhenCreatureRecruitedThenAddToArmyProcessor:
+        // annotations and the CommandDispatcher parameter were migrated by a prior per-class skill;
+        // only the gateway-call rewrite + return-type widen + field cleanup are still pending.
+        // The recipe must finish the migration without re-touching the AF5-shaped pieces.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        class Reactor {
+                            private final CommandGateway commandGateway;
+                            Reactor(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+                            @EventHandler
+                            void react(Object event, CommandDispatcher commandDispatcher) {
+                                try {
+                                    var cmd = "Add";
+                                    commandGateway.sendAndWait(cmd, "md");
+                                } catch (Exception e) {
+                                    var compensating = "Compensate";
+                                    commandGateway.sendAndWait(compensating, "md");
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        import java.util.concurrent.CompletableFuture;
+
+                        class Reactor {
+                            @EventHandler
+                            CompletableFuture<?> react(Object event, CommandDispatcher commandDispatcher) {
+                                try {
+                                    var cmd = "Add";
+                                    return commandDispatcher.send(cmd, "md").getResultMessage();
+                                } catch (Exception e) {
+                                    var compensating = "Compensate";
+                                    return commandDispatcher.send(compensating, "md").getResultMessage();
+                                }
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void leavesNonEventHandlerCallSiteAlone() {
         // CommandGateway used outside any handler (REST controller / scheduler / runner) must keep the
         // class-level field — only the AF4 → AF5 import move applies. The recipe must not touch a

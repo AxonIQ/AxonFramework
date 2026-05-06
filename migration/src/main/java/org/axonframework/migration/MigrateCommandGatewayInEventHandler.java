@@ -218,12 +218,18 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
                         continue;
                     }
                     J.VariableDeclarations vd = (J.VariableDeclarations) s;
-                    if (vd.getTypeExpression() == null) {
+                    if (vd.getTypeExpression() == null || vd.getVariables().isEmpty()) {
                         continue;
                     }
                     JavaType.FullyQualified type = TypeUtils.asFullyQualified(vd.getTypeExpression().getType());
-                    if (type != null && COMMAND_GATEWAY_AF5_FQN.equals(type.getFullyQualifiedName())
-                            && !vd.getVariables().isEmpty()) {
+                    if (type != null && COMMAND_GATEWAY_AF5_FQN.equals(type.getFullyQualifiedName())) {
+                        return vd.getVariables().get(0).getSimpleName();
+                    }
+                    // Fallback: type binding is missing (typical on test inputs without classpath)
+                    // — fall back to the simple type name. Both `CommandGateway` and the AF5 FQN form
+                    // are accepted.
+                    String typeText = vd.getTypeExpression().toString();
+                    if ("CommandGateway".equals(typeText) || COMMAND_GATEWAY_AF5_FQN.equals(typeText)) {
                         return vd.getVariables().get(0).getSimpleName();
                     }
                 }
