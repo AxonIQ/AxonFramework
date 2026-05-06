@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
 
@@ -42,6 +43,7 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
     @Test
     void renamesAggregateStereotypeToEventSourced() {
         rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(
                         """
                         package com.example;
