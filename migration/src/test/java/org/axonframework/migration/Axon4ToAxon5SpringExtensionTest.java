@@ -101,6 +101,46 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
     }
 
     @Test
+    void emitsTodoCommentWhenSnapshotTriggerDefinitionIsDropped() {
+        // AF4 `@Aggregate(snapshotTriggerDefinition = "...")` rewrites to
+        // `@EventSourced(...)`, but AF5's `@EventSourced` has no
+        // `snapshotTriggerDefinition` attribute. The recipe must NOT silently drop the
+        // configuration — instead, it surfaces a `// TODO #LLM` comment above the
+        // annotation so a reviewer (human or LLM) can rewire the snapshot trigger
+        // through AF5's configuration APIs.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate(snapshotTriggerDefinition = "dwellingSnapshotTrigger")
+                        class Dwelling {
+                            @AggregateIdentifier
+                            private String dwellingId;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+
+                        // TODO #LLM: reconfigure snapshot trigger (AF4 had snapshotTriggerDefinition = "dwellingSnapshotTrigger")
+                        @EventSourced(tagKey = "Dwelling", idType = String.class)
+                        class Dwelling {
+                            @AggregateIdentifier
+                            private String dwellingId;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void deducesIdTypeFromAggregateIdentifierFieldOfNonJavaLangType() {
         // For non-`java.lang` types (here `java.util.UUID`) the recipe must add an
         // import alongside `idType = UUID.class`.

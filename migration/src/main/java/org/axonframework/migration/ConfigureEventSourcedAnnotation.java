@@ -19,12 +19,17 @@ package org.axonframework.migration;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.ScanningRecipe;
 import org.openrewrite.TreeVisitor;
+import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.Space;
+import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.marker.Markers;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -145,6 +150,13 @@ public class ConfigureEventSourcedAnnotation
                     return ann;
                 }
 
+                // AF4 `@Aggregate(snapshotTriggerDefinition = "…")` survives the
+                // `ChangeType` rename as `@EventSourced(snapshotTriggerDefinition = "…")`,
+                // but AF5 `@EventSourced` has no such attribute. The replace below would
+                // silently drop it; capture the value so we can emit a TODO comment that
+                // preserves the intent for a human reviewer.
+                String snapshotTriggerSource = findArgumentSource(ann, "snapshotTriggerDefinition");
+
                 J.ClassDeclaration cd = getCursor().firstEnclosing(J.ClassDeclaration.class);
                 if (cd == null) {
                     return ann;
@@ -196,9 +208,70 @@ public class ConfigureEventSourcedAnnotation
                 if (idTypeImport != null) {
                     maybeAddImport(idTypeImport);
                 }
+                if (snapshotTriggerSource != null) {
+                    result = prependLineComment(result,
+                                                " TODO #LLM: reconfigure snapshot trigger "
+                                                        + "(AF4 had snapshotTriggerDefinition = "
+                                                        + snapshotTriggerSource + ")");
+                }
                 return result;
             }
         };
+    }
+
+    /**
+     * Find the source-code form of the value assigned to attribute {@code name} on
+     * {@code ann}, e.g. for {@code @Foo(bar = "baz")} and {@code name = "bar"} returns the
+     * literal {@code "baz"} (with quotes). Returns {@code null} when the attribute is absent.
+     */
+    private static @Nullable String findArgumentSource(J.Annotation ann, String name) {
+        if (ann.getArguments() == null) {
+            return null;
+        }
+        for (J arg : ann.getArguments()) {
+            if (!(arg instanceof J.Assignment)) {
+                continue;
+            }
+            J.Assignment a = (J.Assignment) arg;
+            if (a.getVariable() instanceof J.Identifier
+                    && name.equals(((J.Identifier) a.getVariable()).getSimpleName())) {
+                J value = a.getAssignment();
+                if (value instanceof J.Literal) {
+                    String src = ((J.Literal) value).getValueSource();
+                    if (src != null) {
+                        return src;
+                    }
+                }
+                return value.toString().trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Prepend a {@code //}-style line comment to {@code ann}, placed on its own line above
+     * the annotation at the same indent level.
+     * <p>
+     * The annotation's own {@link Space#getWhitespace() prefix whitespace} is typically
+     * empty — the leading newlines and indent that visually appear above the annotation
+     * actually live on the parent (e.g. the enclosing {@code J.ClassDeclaration}'s prefix).
+     * We therefore do not modify the prefix whitespace; instead we attach the comment with
+     * a suffix of {@code "\n" + indent}, which terminates the comment line and re-establishes
+     * the indent for the {@code @} symbol that follows.
+     */
+    private static J.Annotation prependLineComment(J.Annotation ann, String text) {
+        Space prefix = ann.getPrefix();
+        String leading = prefix.getWhitespace();
+        // Indent is whatever sits after the last newline in the available whitespace context.
+        // When the annotation's own whitespace is empty we have no signal here; falling back
+        // to "" yields a column-0 anchor for the @ symbol, which is correct for top-level
+        // class annotations (the only place AF4 `@Aggregate` is allowed).
+        String indent = leading.contains("\n")
+                ? leading.substring(leading.lastIndexOf('\n') + 1)
+                : "";
+        String suffix = "\n" + indent;
+        TextComment todo = new TextComment(false, text, suffix, Markers.EMPTY);
+        return ann.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), todo)));
     }
 
     private static boolean hasAggregateIdentifier(J.VariableDeclarations vd) {
