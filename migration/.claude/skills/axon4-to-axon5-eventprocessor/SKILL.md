@@ -186,6 +186,30 @@ Use this for every step below — never guess imports.
 
 - Replace `@ProcessingGroup("X")` with `@Namespace("X")` — same string
   argument. Update the import accordingly.
+- **No `@ProcessingGroup` in AF4 → still add `@Namespace` in AF5 when
+  external config references the handler.** AF4 implicitly defaulted
+  the processing-group name to the handler's **package name** when the
+  annotation was absent. AF5 does **not** auto-derive a `@Namespace`
+  from the package — a missing `@Namespace` means the handler has no
+  namespace at all, and `EventProcessorDefinition.pooledStreamingMatching("<name>")`
+  / `subscribingMatching("<name>")` will silently fail to claim it.
+  When the external sweep in step 2 of the procedure surfaces a
+  processor-name reference (Spring property key
+  `axon.eventhandling.processors.<name>.*` or a
+  `pooledStreamingMatching("<name>")` / `subscribingMatching("<name>")`
+  call in a `@Bean EventProcessorDefinition`), add `@Namespace("<name>")`
+  to this class — using the same string. The conventional value is the
+  handler's fully-qualified package name when AF4 had no
+  `@ProcessingGroup`, but match whatever the config side actually uses.
+- **Binding rule:** the string in `@Namespace("<name>")` on the
+  handler class **must equal** the name string used by every external
+  reference to its processor — Spring properties, `pooledStreaming(name)`
+  / `pooledStreamingMatching(name)`, `subscribing(name)` /
+  `subscribingMatching(name)`, programmatic registration. A mismatch
+  compiles fine but produces a silent no-op (no events delivered to
+  the handler). When you must change one side (e.g. you renamed the
+  processor in `EventProcessorDefinition`), update the other in the
+  same commit.
 - Keep `@DisallowReplay` and `@ResetHandler` (and any framework-agnostic
   stereotypes such as Spring's `@Component`); just update their imports
   to the AF5 FQNs. Both replay annotations move from
