@@ -367,31 +367,32 @@ bean. Without one, AF5 falls back to the default converter, which may
 not round-trip events serialized by a customized AF4 Jackson serializer.
 Surface this to the user.
 
-### B.5. Verifying what the connector autoconfig registers
+### B.5. How the Axoniq Framework wires the storage engine
 
-When you can't trust a SKILL claim about "the autoconfig handles it",
-verify directly against the JAR. The Axoniq connector is closed-source
-but the registration code is in the disassembly:
+Axon Server's storage-engine wiring lives in the
+`io.axoniq.framework:axon-server-connector` JAR (the same JAR pulled
+in transitively by `axoniq-spring-boot-starter`). It is registered via
+the `ConfigurationEnhancer` ServiceLoader SPI:
 
-```bash
-# Find the connector JAR Spring resolves at runtime.
-ls ~/.m2/repository/io/axoniq/framework/axon-server-connector/<version>/
+- `META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer`
+  → `io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer`
+- `AxonServerConfigurationEnhancer.enhance(ComponentRegistry)` calls
+  `registry.registerIfNotPresent(eventStorageEngineDefinition(), ...)`.
+- `eventStorageEngineDefinition()` returns a
+  `ComponentDefinition<EventStorageEngine>` whose builder calls
+  `AxonServerEventStorageEngineFactory.constructForContext(context, configuration)`.
+- That factory pulls `AxonServerConnectionManager` and `EventConverter`
+  from the configuration and constructs **`AxonServerEventStorageEngine`**
+  (the DCB-flat engine).
+- `AggregateBasedAxonServerEventStorageEngine` ships in the same JAR
+  (`io.axoniq.framework.axonserver.connector.event`), but the connector
+  has no factory or enhancer that registers it. It is intended for
+  callers that want to preserve aggregate-keyed event-log semantics
+  and is therefore opt-in.
 
-# 1. Confirm it ships an enhancer (ServiceLoader SPI).
-unzip -p <jar> META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer
-
-# 2. Decompile the enhancer's bytecode to see what it registers as
-#    EventStorageEngine.
-unzip -j <jar> 'io/axoniq/framework/axonserver/connector/configuration/AxonServerConfigurationEnhancer*.class' -d /tmp/inspect
-javap -p -c /tmp/inspect/AxonServerConfigurationEnhancer.class | \
-    grep -E 'EventStorageEngine|AggregateBased|registerIfNotPresent|registerComponent'
-```
-
-Look for the `eventStorageEngineDefinition()` method and which
-`*StorageEngine` class its lambda constructs. If it constructs
-`AxonServerEventStorageEngine` and there's no factory or enhancer for
-the aggregate-based variant, the explicit `@Bean` from B-aggregate.1
-is required.
+Because the connector uses `registerIfNotPresent`, a Spring `@Bean
+EventStorageEngine` declared in user code wins — that is the
+intended override path for aggregate preservation (B-aggregate.1).
 
 ## Path C — No Spring (programmatic Configuration API)
 
