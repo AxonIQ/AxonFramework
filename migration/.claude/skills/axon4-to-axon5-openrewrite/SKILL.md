@@ -249,6 +249,7 @@ Report to the user:
   `axon4-to-axon5-maven-migration-profile` to scope iterative
   verification to the migrated subset while the rest of the codebase
   is still mid-migration.
+- IMPORTANT: Look for potential changes in behavior – like removed parameters etc. Tell the user about everything that may need their attention.
 
 ### 9. Stop and let the user verify
 
