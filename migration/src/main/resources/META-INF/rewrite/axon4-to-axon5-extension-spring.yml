@@ -86,30 +86,25 @@ recipeList:
       oldArtifactId: axon-spring-boot-autoconfigure
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-autoconfigure
-  # Spring Boot configuration property renames. AF4's `SerializerProperties`
+  # Spring Boot configuration property rename. AF4's `SerializerProperties`
   # (`@ConfigurationProperties("axon.serializer")`) is replaced in AF5 by
   # `ConverterProperties` (`@ConfigurationProperties("axon.converter")`),
-  # reflecting the framework-wide rename of `Serializer` → `Converter`.
-  # The three sub-properties (`general`, `messages`, `events`) keep the
-  # same names, so each is a straight key rename.
+  # reflecting the framework-wide rename of `Serializer` → `Converter`. The
+  # three sub-properties (`general`, `messages`, `events`) keep the same
+  # names, so renaming the parent prefix carries them along.
   #
-  # `ChangeSpringPropertyKey` covers both `application.properties` and
-  # `application.yaml` / `application.yml`, including profile-specific files
-  # and YAML key flattening.
+  # `ChangeSpringPropertyKey` covers `application.properties`,
+  # `application.yaml` / `application.yml` (including profile-specific files),
+  # and `@Value` / `@ConditionalOnProperty` references. Renaming the parent
+  # prefix (rather than each child key) keeps the nested YAML shape intact.
   #
   # Note: AF4's `SerializerType` enum had `XSTREAM` and `JAVA` values which
-  # do not exist in AF5's `ConverterType`. The values themselves are left
-  # untouched here so the resulting startup failure surfaces the choice to
-  # the developer instead of silently swapping converters.
+  # do not exist in AF5's `ConverterType`. The values are left untouched so
+  # the resulting startup failure surfaces the choice to the developer
+  # instead of silently swapping converters.
   - org.openrewrite.java.spring.ChangeSpringPropertyKey:
-      oldPropertyKey: axon.serializer.general
-      newPropertyKey: axon.converter.general
-  - org.openrewrite.java.spring.ChangeSpringPropertyKey:
-      oldPropertyKey: axon.serializer.messages
-      newPropertyKey: axon.converter.messages
-  - org.openrewrite.java.spring.ChangeSpringPropertyKey:
-      oldPropertyKey: axon.serializer.events
-      newPropertyKey: axon.converter.events
+      oldPropertyKey: axon.serializer
+      newPropertyKey: axon.converter
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
