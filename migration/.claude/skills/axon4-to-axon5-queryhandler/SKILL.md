@@ -57,15 +57,28 @@ annotated `@QueryHandler` — typically a Spring `@Component` /
 
 ## Selection rule
 
-If the user names a target (class, file path), use it. Otherwise:
-pick the **first** candidate in lexical order by file path among
-classes that match the "From" shape above. Never migrate more than
-one per run.
+If the user names a target (class, file path), use it — even if the
+file is already on AF5 imports. The orchestrator (or a human caller)
+hands targets explicitly because *something* about the class belongs
+to phase 6; the skill's job is to verify that and close the unit of
+work, even when the verification ends in "nothing to change". See
+"Pre-flight: recipe-pre-migrated no-op close" below.
 
-A class is **not** a candidate for this skill if its only
-query-handling import is already the AF5 one (already migrated), or
-if it carries AF4 `@CommandHandler` / `@EventHandler` annotations as
-well — let those be handled by their dedicated skills first.
+If no target is named: pick the **first** candidate in lexical order
+by file path among classes that match the "From" shape above. Never
+migrate more than one per run.
+
+A class **without an explicit target** is not picked autonomously if
+its only query-handling import is already the AF5 one — there is no
+work for the skill to do, and an autonomous run would just produce a
+no-op. With an explicit target it is still a legitimate (no-op) run.
+
+A class that **also** carries AF4 `@CommandHandler` / `@EventHandler`
+annotations is normally out of scope — let those be handled by their
+dedicated skills first. **Exception:** if every other annotation on
+the class is *already* on its AF5 import (recipe-pre-migrated),
+there is nothing for the sibling skills to do either; the class is
+effectively a no-op for this skill, log it as such, and move on.
 
 ## Procedure
 
@@ -104,6 +117,38 @@ well — let those be handled by their dedicated skills first.
 > `reflect` afterwards so the missing knowledge folds back into the
 > transformation instructions and the fallback isn't needed next
 > time.
+
+## Pre-flight: recipe-pre-migrated no-op close
+
+Before any rewrite, check whether the target file is already on AF5
+imports. The OpenRewrite recipe (`UpgradeAxon4ToAxon5` /
+`UpgradeAxon4ToAxoniq5`) covers the `@QueryHandler` import move
+mechanically, so when the orchestrator hands you a target after
+phase 1 has run, the most common outcome is "nothing to do".
+
+Pre-flight checklist:
+
+1. The class imports `@QueryHandler` from
+   `org.axonframework.messaging.queryhandling.annotation` (AF5 FQN),
+   not `org.axonframework.queryhandling` (AF4 FQN).
+2. No remaining sibling AF4 imports under
+   `org.axonframework.queryhandling.*`.
+3. No `Metadata` parameter still pointing at
+   `org.axonframework.messaging.MetaData` (AF4) instead of
+   `org.axonframework.messaging.core.Metadata` (AF5).
+4. If the class also carries `@EventHandler` / `@CommandHandler` /
+   `@Namespace` / `@MetadataValue`, all of those are *already* at
+   their AF5 locations too (sibling skills have nothing to do
+   either).
+
+If all four hold: the file is recipe-pre-migrated. Record as a
+**no-op close** — no diff, no edit. Verify scoped compilation
+(typically `mvn -Pmigration test-compile`), tell the orchestrator
+the class is done, and stop. This is a normal, expected outcome and
+does not require a fallback investigation.
+
+If any item fails: proceed to the transformation instructions below
+to address the gap.
 
 ## Transformation instructions
 
@@ -213,6 +258,14 @@ editing the existing ones.
   Spring `@Component` with one `@QueryHandler` method that delegates
   to a read-model repository. Simplest possible case: import-only
   change, body untouched.
+- `references/examples/02-heroes-getalldwellings-dual-natured.md` —
+  Spring `@Component` carrying `@QueryHandler` AND `@EventHandler`
+  (read-model query handler with an in-memory cache it evolves from
+  events) AND `@Namespace` AND `@MetadataValue`. After phase-1
+  OpenRewrite all four annotations are already at their AF5
+  locations, so the skill closes as a no-op even though the class
+  would normally route to the event-handler skill first. Documents
+  the recipe-pre-migrated dual-natured pattern.
 
 ## Variants
 
@@ -226,8 +279,12 @@ editing the existing ones.
   methods needs only one import change; all methods are migrated by
   the single import switch.
 - **Mixed-message class** (also has `@CommandHandler` /
-  `@EventHandler`) — out of scope; route to the dedicated skill for
-  the other annotation first.
+  `@EventHandler`) — normally out of scope; route to the dedicated
+  skill for the other annotation first. **However**, if every
+  annotation on the class is already at its AF5 location
+  (recipe-pre-migrated), there is no work left for either skill —
+  close as a no-op and move on. See
+  `references/examples/02-heroes-getalldwellings-dual-natured.md`.
 
 ## Notes for the human
 

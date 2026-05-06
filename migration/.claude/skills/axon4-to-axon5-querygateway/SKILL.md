@@ -129,6 +129,55 @@ pass.
 > `reflect` afterwards so the missing knowledge folds back into the
 > transformation instructions and the fallback isn't needed next time.
 
+## Pre-flight: recipe-pre-migrated no-op close
+
+Before any rewrite, check whether the target file is already on AF5
+shape. The OpenRewrite recipe (`UpgradeAxon4ToAxon5` /
+`UpgradeAxon4ToAxoniq5`) covers the `QueryGateway` import move and
+the simple `query(q, R.class)` form mechanically. When the
+orchestrator hands you a target after phase 1 has run, the file is
+often already AF5-shaped at the dispatch site — the per-construct
+skill's only contribution is verifying nothing else (`ResponseType`
+wrappers, bare `.get()` / `.join()`, scatter-gather, subscription
+shape) needs adapting.
+
+Pre-flight checklist:
+
+1. The class imports `QueryGateway` from
+   `org.axonframework.messaging.queryhandling.gateway` (AF5 FQN),
+   not `org.axonframework.queryhandling` (AF4 FQN).
+2. No imports of `org.axonframework.messaging.responsetypes.*`
+   (`ResponseType` / `ResponseTypes` SPI removed in AF5).
+3. No call sites wrapping the response in `instanceOf(...)`,
+   `multipleInstancesOf(...)`, `optionalInstanceOf(...)`, or
+   referencing `ResponseTypes` statically.
+4. No call sites using `queryGateway.scatterGather(...)` (removed in
+   AF5; if present, this is **not** a no-op — flag for the user).
+5. Subscription-query call sites — if any — already pass plain
+   `Class<I>` / `Class<U>` instead of `ResponseType` wrappers, and
+   any caller that expected an AF4 `Mono<I>` initial result has
+   already adapted to the AF5 `Flux<I>` shape.
+6. **No bare blocking calls without a timeout.** If the surrounding
+   code is a synchronous boundary (CLI runner, test, framework
+   callback that requires a synchronous return — see the
+   "Synchronous framework callback" variant below), `.get()` /
+   `.join()` without `.orTimeout(...)` is a real fix the skill
+   should apply. This is *not* a no-op condition — it is the most
+   common diff this skill produces post-recipe.
+
+If items 1–5 hold AND item 6 holds (no bare blocking call): the
+file is recipe-pre-migrated and the skill closes as a **no-op**.
+Verify scoped compilation, tell the orchestrator the class is done,
+and stop.
+
+If item 6 fails (any bare `.get()` / `.join()` without a timeout),
+that's a real diff — apply the "Blocking caller" / "Synchronous
+framework callback" rewrite from section 4 below, *then* close.
+
+If items 1–5 fail in non-trivial ways (scatter-gather present,
+subscription shape mismatch, custom `ResponseType` subclass), the
+skill is not a no-op — apply the transformation instructions below.
+
 ## Transformation instructions
 
 ### 1. FQN cheat sheet
@@ -192,7 +241,7 @@ Notes:
 
 ### 4. Adapt the surrounding method's return type
 
-Top-of-chain callers usually have one of three shapes. Pick the
+Top-of-chain callers usually have one of four shapes. Pick the
 rewrite that matches:
 
 - **Spring MVC controller** (`@RestController` / `@Controller`
@@ -221,6 +270,45 @@ rewrite that matches:
   `query(...)` already returns `CompletableFuture<R>`. Block at the
   call site with `future.orTimeout(...).join()` — never bare
   `.join()` / `.get()`.
+
+- **Synchronous framework callback** — an MCP resource handler, a
+  Kafka `@KafkaListener`, a JMS `@JmsListener`, a Camel route step,
+  or any other framework integration whose **callback signature is
+  synchronous** and therefore the surrounding method must return a
+  concrete value (not a `CompletableFuture`). Same rewrite as the
+  blocking caller — bridge with
+  `future.orTimeout(<duration>, <unit>).join()` — but motivated by
+  the framework's signature, not by being "blocking code by
+  choice".
+
+  ```java
+  // AF5 — synchronous framework callback (e.g. MCP resource handler)
+  (exchange, request) -> {
+      try {
+          var query = GetAllDwellings.query(extractGameId(request.uri()));
+          var result = queryGateway.query(query, GetAllDwellings.Result.class)
+                                   .orTimeout(30, TimeUnit.SECONDS)
+                                   .join();
+          return new McpSchema.ReadResourceResult(/* ... format result ... */);
+      } catch (Exception e) {
+          // CompletionException from .join() is unchecked — the existing
+          // catch (Exception) still matches; callers reading e.getMessage()
+          // see the underlying cause's message.
+          return errorResult(e);
+      }
+  }
+  ```
+
+  Pick the timeout consciously. 30 seconds matches the project-wide
+  default in `.claude/rules/completablefuture-blocking.md`; pick a
+  shorter value when the surrounding framework has its own request
+  budget. Add `import java.util.concurrent.TimeUnit;` if not already
+  present. This pattern also satisfies item 6 of the pre-flight
+  checklist — without the timeout, the file is **not** a no-op,
+  even when the import was already AF5.
+
+  See `references/examples/02-heroes-getalldwellings-mcp-sync-callback.md`
+  for a real example.
 
 ### 5. Out-of-scope
 
@@ -282,6 +370,13 @@ editing the existing ones.
   Spring `@RestController` with one `GET` endpoint and a
   `query(query, R.class)` call. Simplest possible case: import-only
   change, body untouched.
+- `references/examples/02-heroes-getalldwellings-mcp-sync-callback.md`
+  — Spring `@Component` exposing a Model Context Protocol (MCP)
+  resource via a synchronous `(exchange, request) -> McpSchema.ReadResourceResult`
+  lambda. The recipe already migrated the import; the diff is the
+  bridge from `CompletableFuture<R>` to a synchronous return:
+  bare `.get()` → `.orTimeout(30, TimeUnit.SECONDS).join()`. Documents
+  the "Synchronous framework callback" variant.
 
 ## Variants
 
@@ -298,6 +393,17 @@ editing the existing ones.
   scatter-gather support**. The rewrite is callsite-specific.
 - **Custom `ResponseType` subclass** — flag for the user; SPI removed
   in AF5.
+- **Synchronous framework callback** (MCP resource handler, Kafka
+  `@KafkaListener`, JMS `@JmsListener`, Camel route step). The
+  surrounding callback signature requires a synchronous return, so
+  the `CompletableFuture<R>` from `query(...)` must be unwrapped at
+  the call site. Always with a timeout —
+  `.orTimeout(<duration>, <unit>).join()` — never bare `.get()` /
+  `.join()`. This is often the **only** diff post-recipe (the
+  import was already moved); see the pre-flight checklist item 6.
+- **Recipe-pre-migrated no-op** — every item in the pre-flight
+  checklist passes. Close the unit of work without a diff. Common
+  outcome when the orchestrator sequences this skill after phase 1.
 
 ## Notes for the human
 
