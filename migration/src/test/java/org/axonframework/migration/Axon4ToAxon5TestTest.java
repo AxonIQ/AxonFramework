@@ -302,9 +302,9 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         """,
                         """
                         package com.example;
+                        import org.axonframework.test.fixture.AxonTestFixture;
 
                         import java.util.List;
-                        import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
                             AxonTestFixture<Object> fixture;

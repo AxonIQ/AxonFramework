@@ -112,9 +112,19 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         if (select instanceof J.MethodInvocation
                                 && "exception".equals(((J.MethodInvocation) select).getSimpleName())) {
                             J.MethodInvocation prior = (J.MethodInvocation) select;
-                            List<Expression> merged = new ArrayList<>(realArgs(prior.getArguments()));
-                            merged.addAll(args);
-                            return prior.withArguments(merged);
+                            List<Expression> existing = realArgs(prior.getArguments());
+                            List<Expression> merged = new ArrayList<>(existing);
+                            // Re-prefix the appended message argument with `" "` so it renders as
+                            // `exception(cls, msg)` rather than `exception(cls,msg)` after the comma
+                            // separator that JContainer inserts between arguments.
+                            for (Expression added : args) {
+                                merged.add(added.withPrefix(
+                                        org.openrewrite.java.tree.Space.format(" ")));
+                            }
+                            // Lift the outer invocation's prefix onto the merged call so the chain
+                            // line that used to host `.expectExceptionMessage(...)` retains the
+                            // expression-statement's original leading newline+indent.
+                            return prior.withArguments(merged).withPrefix(mi.getPrefix());
                         }
                         return mi;
                     case "givenNoPriorActivity":
