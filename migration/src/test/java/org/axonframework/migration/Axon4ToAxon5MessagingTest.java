@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
 
@@ -394,6 +395,168 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
 
                         class Foo {
                             Instant when(EventMessage e) { return e.timestamp(); }
+                        }
+                        """
+                )
+        );
+    }
+
+    // ── @EventHandler: class-level CommandGateway → method-param CommandDispatcher ──
+
+    @Test
+    void swapsCommandGatewayForCommandDispatcherInSingleStatementEventHandler() {
+        // Single-statement handler: `commandGateway.sendAndWait(cmd, md);` becomes
+        // `return commandDispatcher.send(cmd, md).getResultMessage();`, return type widened to
+        // `CompletableFuture<?>`, and the now-orphan field/constructor are removed.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.eventhandling.EventHandler;
+                        class Reactor {
+                            private final CommandGateway commandGateway;
+                            Reactor(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+                            @EventHandler
+                            void on(Object event) {
+                                commandGateway.sendAndWait(event);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        import java.util.concurrent.CompletableFuture;
+
+                        class Reactor {
+                            @EventHandler
+                            CompletableFuture<?> on(Object event, CommandDispatcher commandDispatcher) {
+                                return commandDispatcher.send(event).getResultMessage();
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void swapsCommandGatewayForCommandDispatcherInTryCatchEventHandler() {
+        // Try/catch with one dispatch per branch: each branch's last expression-statement is wrapped
+        // in `return ... .getResultMessage();`, return type widened to `CompletableFuture<?>`.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.eventhandling.EventHandler;
+                        class Reactor {
+                            private final CommandGateway commandGateway;
+                            Reactor(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+                            @EventHandler
+                            void on(Object event) {
+                                try {
+                                    commandGateway.sendAndWait(event);
+                                } catch (Exception e) {
+                                    commandGateway.sendAndWait("compensate");
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        import java.util.concurrent.CompletableFuture;
+
+                        class Reactor {
+                            @EventHandler
+                            CompletableFuture<?> on(Object event, CommandDispatcher commandDispatcher) {
+                                try {
+                                    return commandDispatcher.send(event).getResultMessage();
+                                } catch (Exception e) {
+                                    return commandDispatcher.send("compensate").getResultMessage();
+                                }
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesProjectorWithoutCommandGatewayUntouched() {
+        // Pure projector (no CommandGateway field) — recipe should be a no-op.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.EventHandler;
+                        class Projection {
+                            @EventHandler
+                            void on(Object event) {
+                                System.out.println(event);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        class Projection {
+                            @EventHandler
+                            void on(Object event) {
+                                System.out.println(event);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesNonEventHandlerCallSiteAlone() {
+        // CommandGateway used outside any handler (REST controller / scheduler / runner) must keep the
+        // class-level field — only the AF4 → AF5 import move applies. The recipe must not touch a
+        // method without `@EventHandler`.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        class RestController {
+                            private final CommandGateway commandGateway;
+                            RestController(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+                            void handle(Object cmd) {
+                                commandGateway.sendAndWait(cmd);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+                        class RestController {
+                            private final CommandGateway commandGateway;
+                            RestController(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+                            void handle(Object cmd) {
+                                commandGateway.sendAndWait(cmd);
+                            }
                         }
                         """
                 )

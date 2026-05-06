@@ -297,3 +297,9 @@ recipeList:
       methodPattern: org.axonframework.messaging.eventhandling.EventMessage getTimestamp()
       newMethodName: timestamp
       matchOverrides: true
+
+  # ── Inside @EventHandler methods, swap class-level CommandGateway for method-param CommandDispatcher ─
+  # Runs after the package renames so that the recipe sees the AF5 FQNs of `@EventHandler` and
+  # `CommandGateway`. Anything outside the supported body shapes (single dispatch / try/catch with one
+  # dispatch per branch) is left untouched so the build still surfaces those call sites for the human.
+  - org.axonframework.migration.MigrateCommandGatewayInEventHandler
