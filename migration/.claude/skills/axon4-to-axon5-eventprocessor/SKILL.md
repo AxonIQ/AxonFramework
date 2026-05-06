@@ -94,13 +94,19 @@ the "From" shape above. Never migrate more than one per run.
    `@ProcessingGroup("...")`. Look in:
    - `application.yml` / `application.properties` /
      `application-*.{yml,properties}` (typical key shape:
-     `axon.eventhandling.processors.<group>.*`)
+     `axon.eventhandling.processors.<group>.*`, including
+     `…<group>.dlq.enabled` / `…<group>.dlq.*` for dead-letter queue
+     settings)
    - `@Configuration` / `@Component` classes that declare `@Bean`
      methods returning `SequencingPolicy`, `ErrorHandler`,
-     `ListenerInvocationErrorHandler`, etc., or that call
+     `ListenerInvocationErrorHandler`, `SequencedDeadLetterQueue`,
+     `EnqueuePolicy`, etc., or that call
      `EventProcessingConfigurer#registerSequencingPolicy(group, ...)` /
      `#registerListenerInvocationErrorHandler(group, ...)` /
-     `#registerErrorHandler(group, ...)` against this group name.
+     `#registerErrorHandler(group, ...)` /
+     `#registerDeadLetterQueue(group, ...)` /
+     `#registerDeadLetterQueueProvider(...)` /
+     `#registerEnqueuePolicy(group, ...)` against this group name.
 
    ```bash
    grep -rln --include='*.yml' --include='*.yaml' --include='*.properties' \
@@ -109,13 +115,18 @@ the "From" shape above. Never migrate more than one per run.
      -e '<group-name>' \
      -e 'registerSequencingPolicy' \
      -e 'registerListenerInvocationErrorHandler' \
+     -e 'registerDeadLetterQueue' \
+     -e 'SequencedDeadLetterQueue' \
+     -e 'EnqueuePolicy' \
      <source roots>
    ```
 
    Note what the sweep finds. Some of it (sequencing policy) becomes a
-   class-level annotation in transformation step 8; the rest may need
+   class-level annotation in transformation step 8; DLQ usage triggers
+   the dependency change in transformation step 9; the rest may need
    to be **deleted** as part of this migration so dead config does not
-   linger. If nothing turns up, skip step 8 — the AF5 defaults apply.
+   linger. If nothing turns up, skip steps 8 and 9 — the AF5 defaults
+   apply.
 
 3. **Read the canonical migration-path doc** before transforming
    anything: `docs/reference-guide/modules/migration/pages/paths/projectors-event-processors.adoc`.
@@ -127,7 +138,8 @@ the "From" shape above. Never migrate more than one per run.
 
 5. **Show the diff** and summarize what changed (annotations swapped,
    imports moved, gateway → dispatcher, return type changes, external
-   config deleted).
+   config deleted, `axoniq-dead-letter` dependency added if the
+   processor uses a DLQ).
 
 6. **Stop and ask the human to verify.** Do **not** rely on `mvn compile`
    passing — peer constructs are typically still on the old API and the
@@ -443,7 +455,74 @@ How to apply:
    `Optional<Object> sequenceIdentifierFor(M, ProcessingContext)`). This
    is **out of scope** for the per-processor skill.
 
-### 9. Tests
+### 9. Dead-letter queue (DLQ) — add the AxonIQ dependency
+
+In AF5, the sequenced dead-letter queue lives in a **separate, commercially
+licensed module**: `io.axoniq.framework:axoniq-dead-letter`. The core
+`org.axonframework:*` modules no longer ship a DLQ implementation. If this
+processor uses (or used) a DLQ in AF4, the project must depend on this
+new module — otherwise the DLQ types fail to resolve at compile time and
+the AF4 properties / Java config become silent no-ops.
+
+**Apply this step only when** the sweep in procedure step 2 surfaced any
+of the following for this processor's group name:
+
+- A Spring property under
+  `axon.eventhandling.processors.<group>.dlq.*` — most commonly
+  `…dlq.enabled=true`, but also `…dlq.cache-size`, `…dlq.claim-duration`,
+  `…dlq.max-retries`, `…dlq.max-sequences`, etc.
+- A Java configuration touching this group via
+  `EventProcessingConfigurer#registerDeadLetterQueue(group, …)`,
+  `#registerDeadLetterQueueProvider(...)`, or
+  `#registerEnqueuePolicy(group, …)`.
+- A `@Bean` returning
+  `SequencedDeadLetterQueue<EventMessage<?>>` (any AF4 implementation —
+  in-memory, JPA, JDBC) that the auto-config wires by name.
+- A custom `EnqueuePolicy<EventMessage<?>>` `@Bean` registered against
+  this group.
+
+How to apply:
+
+1. **Add the dependency** to the module that owns this event-handling
+   class. Maven:
+
+   ```xml
+   <dependency>
+       <groupId>io.axoniq.framework</groupId>
+       <artifactId>axoniq-dead-letter</artifactId>
+   </dependency>
+   ```
+
+   Gradle:
+
+   ```kotlin
+   implementation("io.axoniq.framework:axoniq-dead-letter")
+   ```
+
+   Use the same `${revision}` / version property the project already uses
+   for its other `io.axoniq.framework:*` modules. If the project does not
+   yet pull anything from `io.axoniq.framework`, declare the version
+   explicitly in `<dependencyManagement>` (or your Gradle catalog) and
+   pin it to the AxonIQ Framework 5.x release line the rest of the
+   migration is targeting — never `LATEST`, never a 4.x coordinate.
+
+   The artifact's source of truth on this machine is
+   `/Users/mateusznowak/GitRepos/AxonIQ/AxoniqFramework/messaging/axoniq-dead-letter`
+   — its `pom.xml` lists the canonical `groupId` /  `artifactId`.
+
+2. **Flag for the user** that:
+   - This module ships under the **AxonIQ Terms of Service** (commercial
+     after the evaluation period), unlike the Apache-licensed
+     `org.axonframework:*` core. They must confirm the project is allowed
+     to consume it.
+   - Migrating the DLQ wiring itself (Spring properties → AF5 bean
+     definitions, custom `EnqueuePolicy` migration, JPA/JDBC schema
+     changes for the persisted variants) is **out of scope for this
+     skill**. This step only ensures the dependency is on the classpath
+     so subsequent DLQ-focused work compiles. Do not delete the AF4 DLQ
+     properties or beans here.
+
+### 10. Tests
 
 Tests for event-handling components are typically written as Spring
 integration tests with a `RecordingCommandBus` (or equivalent). The
