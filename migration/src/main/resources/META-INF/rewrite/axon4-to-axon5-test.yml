@@ -30,6 +30,14 @@ description: >-
   (constructor → `AxonTestFixture.with(configurer)`, `@AfterEach stop()`)
   and Hamcrest matcher conversions remain manual.
 recipeList:
+  # Aggregate-fixture *setup* rewrite — must run BEFORE the
+  # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
+  # type is still on the constructor expression and so SagaTestFixture
+  # constructor sites stay untouched (they share the renamed AF5 type after
+  # ChangeType, but only the AF4 AggregateTestFixture FQN is matched here).
+  # Reads the aggregate-id type from the cross-recipe map populated by
+  # `AddEventTagAnnotation` while `@AggregateIdentifier` is still on the source.
+  - org.axonframework.migration.MigrateAggregateTestFixtureSetup
   # Type rename — must run BEFORE the fluent-API rewrite so subsequent matchers
   # see the new `AxonTestFixture` type, and so the import is updated in one
   # cycle even when the call-chain rewrite doesn't fire.

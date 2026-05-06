@@ -320,6 +320,150 @@ class Axon4ToAxon5TestTest implements RewriteTest {
     }
 
     @Test
+    void rewritesAggregateTestFixtureSetupWithFallbackIdType() {
+        // No `@AggregateIdentifier` field is visible to the recipe (the
+        // aggregate class isn't part of the rewritten source set), so the
+        // id type falls back to `Object.class` with a TODO #LLM marker.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.test.aggregate.AggregateTestFixture;
+                        class FooTest {
+                            AggregateTestFixture<Foo> fixture;
+                            void setUp() {
+                                fixture = new AggregateTestFixture<>(Foo.class);
+                            }
+                        }
+                        class Foo {}
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
+                        import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+                        import org.axonframework.test.fixture.AxonTestFixture;
+
+                        class FooTest {
+                            AxonTestFixture fixture;
+                            void setUp() {
+                                fixture = AxonTestFixture.with(EventSourcingConfigurer.create().registerEntity(EventSourcedEntityModule.autodetected(Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */, Foo.class)));
+                            }
+                        }
+                        class Foo {}
+                        """
+                )
+        );
+    }
+
+    @Test
+    void rewritesAggregateTestFixtureSetupDeducingIdTypeFromAggregateIdentifierField() {
+        // End-to-end: the aggregate has an `@AggregateIdentifier` field of
+        // type `UUID`. `AddEventTagAnnotation`'s scanner publishes that to
+        // the shared `ExecutionContext`, and `MigrateAggregateTestFixtureSetup`
+        // reads it to emit `EventSourcedEntityModule.autodetected(UUID.class, Astrologers.class)`.
+        rewriteRun(
+                spec -> spec.recipe(Environment.builder()
+                                            .scanRuntimeClasspath("org.axonframework.migration")
+                                            .build()
+                                            .activateRecipes(
+                                                    "org.axonframework.migration.UpgradeAxon4ToAxon5"))
+                        .typeValidationOptions(TypeValidation.none())
+                        .expectedCyclesThatMakeChanges(1),
+                java(
+                        """
+                        package com.example;
+                        import java.util.UUID;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+                        @Aggregate
+                        class Astrologers {
+                            @AggregateIdentifier
+                            private UUID astrologersId;
+                            Astrologers() { }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import java.util.UUID;
+
+                        import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+
+                        @EventSourced(tagKey = "Astrologers", idType = UUID.class)
+                        class Astrologers {
+                            private UUID astrologersId;
+
+                            @EntityCreator
+                            Astrologers() { }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.test.aggregate.AggregateTestFixture;
+                        class AstrologersTest {
+                            AggregateTestFixture<Astrologers> fixture;
+                            void setUp() {
+                                fixture = new AggregateTestFixture<>(Astrologers.class);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
+                        import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+                        import org.axonframework.test.fixture.AxonTestFixture;
+
+                        import java.util.UUID;
+
+                        class AstrologersTest {
+                            AxonTestFixture fixture;
+                            void setUp() {
+                                fixture = AxonTestFixture.with(EventSourcingConfigurer.create().registerEntity(EventSourcedEntityModule.autodetected(UUID.class, Astrologers.class)));
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesSagaTestFixtureSetupAlone() {
+        // The new setup recipe matches the AF4 AggregateTestFixture FQN only,
+        // so SagaTestFixture constructors are left untouched (only the type
+        // rename runs against them).
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.test.saga.SagaTestFixture;
+                        class FooSagaTest {
+                            SagaTestFixture<FooSaga> fixture;
+                            void setUp() {
+                                fixture = new SagaTestFixture<>(FooSaga.class);
+                            }
+                        }
+                        class FooSaga {}
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.fixture.AxonTestFixture;
+
+                        class FooSagaTest {
+                            AxonTestFixture fixture;
+                            void setUp() {
+                                fixture = new AxonTestFixture(FooSaga.class);
+                            }
+                        }
+                        class FooSaga {}
+                        """
+                )
+        );
+    }
+
+    @Test
     void leavesAlreadyMigratedFluentChainAlone() {
         // Running the recipe on AF5-shaped code should be idempotent: `given()` / `when()`
         // with no arguments are the new phase entry points and must not be rewritten.
