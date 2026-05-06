@@ -16,6 +16,7 @@
 
 package org.axonframework.migration;
 
+import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.ScanningRecipe;
 import org.openrewrite.TreeVisitor;
@@ -24,6 +25,7 @@ import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
@@ -36,13 +38,17 @@ import java.util.Set;
  * Scans for methods annotated with {@code @CommandHandler} and annotates their command parameter
  * types with {@code @Command}.
  * <p>
- * If the command class had a field annotated with {@code @RoutingKey}, that annotation is removed
- * and replaced with {@code @Command(routingKey = "fieldName")} on the class, matching the AF5
+ * If the command class had a field — or, for Kotlin {@code data class} payloads, a primary
+ * constructor parameter — annotated with {@code @RoutingKey}, that annotation is removed and
+ * replaced with {@code @Command(routingKey = "fieldName")} on the class, matching the AF5
  * routing-key contract where the routing key is declared on the command class itself.
  * <p>
  * Both AF4 ({@code org.axonframework.commandhandling.CommandHandler}) and AF5
  * ({@code org.axonframework.messaging.commandhandling.annotation.CommandHandler}) FQNs are matched
- * so the recipe is safe to run before or after {@code Axon4ToAxon5Messaging}.
+ * so the recipe is safe to run before or after {@code Axon4ToAxon5Messaging}. Kotlin sources are
+ * supported because {@code JavaIsoVisitor} traverses Kotlin LSTs (every Kotlin {@code K.*} node
+ * wraps an underlying {@code J.*} node, including primary constructor parameters as
+ * {@code J.VariableDeclarations}).
  *
  * @author Axon Framework Team
  * @since 5.2.0
@@ -54,6 +60,7 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
     private static final String COMMAND_FQN = "org.axonframework.messaging.commandhandling.annotation.Command";
     private static final String ROUTING_KEY_AF4 = "org.axonframework.commandhandling.RoutingKey";
     private static final String ROUTING_KEY_AF5 = "org.axonframework.messaging.commandhandling.RoutingKey";
+    private static final String ROUTING_KEY_FIELD_MESSAGE = "axon4to5.routingKeyField";
 
     public static class Accumulator {
 
@@ -124,11 +131,15 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
 
-                // Capture routing key field name BEFORE super visits children — visitVariableDeclarations
-                // will remove @RoutingKey during the super call, so we must read the name first.
-                String routingKeyField = findRoutingKeyFieldName(classDecl);
-
+                // Capture the routing-key field/parameter name DURING super traversal:
+                // `visitVariableDeclarations` writes the captured name onto this cursor's
+                // message bus while it removes `@RoutingKey` from the field. This works
+                // for both Java fields (which sit in the class body) and Kotlin primary
+                // constructor parameters (which the Kotlin parser exposes as
+                // `J.VariableDeclarations` reachable through the same traversal but
+                // not via `cd.getBody().getStatements()`).
                 J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
+                String routingKeyField = getCursor().getMessage(ROUTING_KEY_FIELD_MESSAGE);
 
                 String annotationText = routingKeyField != null
                         ? "@Command(routingKey = \"" + routingKeyField + "\")"
@@ -168,7 +179,31 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
                         remaining.add(ann);
                     }
                 }
-                return removed ? vd.withLeadingAnnotations(remaining) : vd;
+                if (!removed) {
+                    return vd;
+                }
+                if (!vd.getVariables().isEmpty()) {
+                    String name = vd.getVariables().get(0).getSimpleName();
+                    Cursor enclosingClassCursor = getCursor()
+                            .dropParentUntil(it -> it instanceof J.ClassDeclaration);
+                    enclosingClassCursor.putMessage(ROUTING_KEY_FIELD_MESSAGE, name);
+                }
+                J.VariableDeclarations result = vd.withLeadingAnnotations(remaining);
+                // When the removed annotation was the only one, the whitespace
+                // between it and the next sibling (modifier or type) stays attached
+                // to that sibling; clear it so we don't leave a stray space behind.
+                if (remaining.isEmpty()) {
+                    if (!result.getModifiers().isEmpty()) {
+                        result = result.withModifiers(Space.formatFirstPrefix(
+                                result.getModifiers(),
+                                Space.firstPrefix(result.getModifiers()).withWhitespace("")));
+                    } else if (result.getTypeExpression() != null) {
+                        result = result.withTypeExpression(
+                                result.getTypeExpression().withPrefix(
+                                        result.getTypeExpression().getPrefix().withWhitespace("")));
+                    }
+                }
+                return result;
             }
 
             private boolean isRoutingKey(J.Annotation ann) {
@@ -200,26 +235,4 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
         return false;
     }
 
-    private static String findRoutingKeyFieldName(J.ClassDeclaration cd) {
-        if (cd.getBody() == null) {
-            return null;
-        }
-        for (Statement stmt : cd.getBody().getStatements()) {
-            if (!(stmt instanceof J.VariableDeclarations)) {
-                continue;
-            }
-            J.VariableDeclarations vd = (J.VariableDeclarations) stmt;
-            for (J.Annotation ann : vd.getLeadingAnnotations()) {
-                boolean isRoutingKey = TypeUtils.isOfClassType(ann.getType(), ROUTING_KEY_AF4)
-                        || TypeUtils.isOfClassType(ann.getType(), ROUTING_KEY_AF5)
-                        || (ann.getAnnotationType() instanceof J.Identifier
-                                && "RoutingKey".equals(
-                                        ((J.Identifier) ann.getAnnotationType()).getSimpleName()));
-                if (isRoutingKey && !vd.getVariables().isEmpty()) {
-                    return vd.getVariables().get(0).getSimpleName();
-                }
-            }
-        }
-        return null;
-    }
 }
