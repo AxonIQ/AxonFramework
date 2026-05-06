@@ -84,6 +84,15 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
     private static final String EVENT_TAG_FQN =
             "org.axonframework.eventsourcing.annotation.EventTag";
 
+    /**
+     * {@link ExecutionContext} key under which this recipe publishes a
+     * {@code Map<entityClassFqn, idTypeFqn>} for downstream recipes (notably
+     * {@link ConfigureEventSourcedAnnotation}) to consume after this recipe's
+     * scan has run while {@code @AggregateIdentifier} is still on the source.
+     */
+    static final String SHARED_ID_TYPES_KEY =
+            "axon.migration.aggregateIdentifierFieldTypes";
+
     /** Maps event-class FQN → scan result needed to place {@code @EventTag}. */
     public static class Accumulator {
 
@@ -133,6 +142,23 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 String idFieldName = findAggregateIdFieldName(classDecl);
                 if (idFieldName == null) {
                     return super.visitClassDeclaration(classDecl, ctx);
+                }
+
+                // Publish the @AggregateIdentifier field's declared type so
+                // ConfigureEventSourcedAnnotation can populate @EventSourced(idType=...)
+                // even when it runs after RemoveAnnotation has stripped @AggregateIdentifier.
+                if (classDecl.getType() != null) {
+                    String idTypeFqn = findAggregateIdFieldTypeFqn(classDecl);
+                    if (idTypeFqn != null) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, String> shared =
+                                (Map<String, String>) ctx.getMessage(SHARED_ID_TYPES_KEY);
+                        if (shared == null) {
+                            shared = new HashMap<>();
+                            ctx.putMessage(SHARED_ID_TYPES_KEY, shared);
+                        }
+                        shared.put(classDecl.getType().getFullyQualifiedName(), idTypeFqn);
+                    }
                 }
 
                 // Collect event types from all @EventSourcingHandler methods
@@ -402,6 +428,45 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
         for (J.Annotation ann : method.getLeadingAnnotations()) {
             if (TypeUtils.isOfClassType(ann.getType(), ESH_AF4)
                     || TypeUtils.isOfClassType(ann.getType(), ESH_AF5)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns the FQN of the declared type of the {@code @AggregateIdentifier} field,
+     * or {@code null} when no annotated field is found or its type cannot be resolved
+     * to a fully-qualified type (e.g. primitives, unresolved type bindings).
+     */
+    private static @Nullable String findAggregateIdFieldTypeFqn(J.ClassDeclaration cd) {
+        if (cd.getBody() == null) {
+            return null;
+        }
+        for (Statement stmt : cd.getBody().getStatements()) {
+            if (!(stmt instanceof J.VariableDeclarations)) {
+                continue;
+            }
+            J.VariableDeclarations vd = (J.VariableDeclarations) stmt;
+            if (!isAggregateIdentifierField(vd) || vd.getTypeExpression() == null) {
+                continue;
+            }
+            JavaType.FullyQualified ft =
+                    TypeUtils.asFullyQualified(vd.getTypeExpression().getType());
+            if (ft != null) {
+                return ft.getFullyQualifiedName();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isAggregateIdentifierField(J.VariableDeclarations vd) {
+        for (J.Annotation ann : vd.getLeadingAnnotations()) {
+            if (TypeUtils.isOfClassType(ann.getType(), AGGREGATE_IDENTIFIER_AF4)
+                    || TypeUtils.isOfClassType(ann.getType(), AGGREGATE_IDENTIFIER_AF5)
+                    || (ann.getAnnotationType() instanceof J.Identifier
+                            && "AggregateIdentifier".equals(
+                                    ((J.Identifier) ann.getAnnotationType()).getSimpleName()))) {
                 return true;
             }
         }

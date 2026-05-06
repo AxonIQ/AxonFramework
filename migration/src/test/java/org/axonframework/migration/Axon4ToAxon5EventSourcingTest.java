@@ -175,6 +175,56 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
     }
 
     @Test
+    void deducesEventSourcedIdTypeFromAggregateIdentifierField() {
+        // End-to-end: when the AF4 source has an `@AggregateIdentifier` field,
+        // the umbrella must produce `@EventSourced(... idType = <Type>.class)`
+        // instead of the `Object.class` TODO placeholder. The two recipes
+        // involved (`AddEventTagAnnotation` in modelling, then
+        // `ConfigureEventSourcedAnnotation` in spring-extension) communicate
+        // through the shared `ExecutionContext` so the type captured before
+        // `@AggregateIdentifier` is removed survives until the placeholder is
+        // generated.
+        rewriteRun(
+                spec -> spec.recipe(Environment.builder()
+                                            .scanRuntimeClasspath("org.axonframework.migration")
+                                            .build()
+                                            .activateRecipes(
+                                                    "org.axonframework.migration.UpgradeAxon4ToAxon5"))
+                        .typeValidationOptions(TypeValidation.none())
+                        .expectedCyclesThatMakeChanges(1),
+                java(
+                        """
+                        package com.example;
+                        import java.util.UUID;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private UUID cardId;
+                            GiftCard() { }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import java.util.UUID;
+
+                        import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+
+                        @EventSourced(tagKey = "GiftCard", idType = UUID.class)
+                        class GiftCard {
+                            private UUID cardId;
+
+                            @EntityCreator
+                            GiftCard() { }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void replacesAggregateLifecycleApplyWithInjectedEventAppender() {
         // AF4-style aggregate using the static `AggregateLifecycle.apply`
         // import — after the full migration, the call resolves to an

@@ -41,7 +41,9 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
     }
 
     @Test
-    void renamesAggregateStereotypeToEventSourced() {
+    void renamesAggregateStereotypeToEventSourcedAndFallsBackWhenNoIdField() {
+        // No `@AggregateIdentifier` field is present, so the recipe can't deduce the
+        // identifier type and emits the `Object.class` placeholder with a TODO comment.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(
@@ -58,6 +60,79 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
 
                         @EventSourced(tagKey = "Order", idType = Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */)
                         class Order {}
+                        """
+                )
+        );
+    }
+
+    @Test
+    void deducesIdTypeFromAggregateIdentifierFieldOfJavaLangType() {
+        // The aggregate's `@AggregateIdentifier` field is a `String`, so the recipe
+        // emits `idType = String.class` — no extra import needed for `java.lang` types.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class Order {
+                            @AggregateIdentifier
+                            private String orderId;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+
+                        @EventSourced(tagKey = "Order", idType = String.class)
+                        class Order {
+                            @AggregateIdentifier
+                            private String orderId;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void deducesIdTypeFromAggregateIdentifierFieldOfNonJavaLangType() {
+        // For non-`java.lang` types (here `java.util.UUID`) the recipe must add an
+        // import alongside `idType = UUID.class`.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import java.util.UUID;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class Order {
+                            @AggregateIdentifier
+                            private UUID orderId;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.util.UUID;
+
+                        import org.axonframework.extension.spring.stereotype.EventSourced;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+
+                        @EventSourced(tagKey = "Order", idType = UUID.class)
+                        class Order {
+                            @AggregateIdentifier
+                            private UUID orderId;
+                        }
                         """
                 )
         );
