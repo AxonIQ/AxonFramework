@@ -24,18 +24,128 @@ atomic per-construct skills in the correct phase order, pausing for human
 confirmation between phases, and persisting progress so the migration can be
 interrupted and resumed without losing context.
 
-> **This skill does not itself rewrite code.** Every concrete code change is
-> delegated to a sibling skill (`axon4-to-axon5-openrewrite`,
-> `axon4-to-axon5-eventsourcing-aggregate`,
-> `axon4-to-axon5-eventprocessor`,
-> `axon4-to-axon5-commandgateway`,
-> `axon4-to-axon5-querygateway`,
-> `axon4-to-axon5-queryhandler`,
-> `axon4-to-axon5-readconfiguration`,
-> `axon4-to-axon5-writeconfiguration`,
-> `axon4-to-axon5-aggregate-eventstorage-engine`,
-> `axon4-to-axon5-maven-migration-profile`). The orchestrator's job is sequencing,
-> scope discovery, verification, progress tracking, and human checkpoints.
+## The goal of the migration
+
+> **A fully compiling, green-test codebase on Axon Framework 5, preserving
+> the same architecture as the AF4 version.** Same aggregates, same events,
+> same projections, same handlers — just on AF5 APIs.
+
+Concretely the end state is:
+
+- **No DCB.** The project keeps its existing aggregate-centric model.
+  Dynamic Consistency Boundaries are a new AF5 capability and are **not
+  introduced** by this migration.
+- **No new patterns.** Sagas stay sagas, projections stay projections,
+  command/event/query types are unchanged in shape and intent. We
+  rewrite *how* the framework is invoked, not *what* the application
+  models.
+- **Legacy event storage preserved.** Existing events in the event
+  store remain the source of truth. The `AggregateBasedJpaEventStorageEngine`
+  / `AggregateBasedAxonServerEventStorageEngine` are picked precisely
+  because they read the existing aggregate-keyed event log, not because
+  they offer a new shape. The phase-9 SQL migration is a column / table
+  rename — not a data rewrite.
+- **`./mvnw clean verify` is green at the end of phase 10.** Every test
+  that was green on AF4 is green on AF5, modulo behavior changes the
+  user has explicitly accepted.
+
+This is the **final** goal — the state at the end of phase 10. It is
+**not** the state after each intermediate phase. Between phases:
+
+- After phase 1 (OpenRewrite), the project is **expected to be
+  non-compiling**. Mechanical rewrites only cover what the recipes
+  encode; per-construct skills fill in the rest.
+- During phases 2–8, the codebase is in a mixed state: some
+  classes on AF5 APIs, others still on AF4. The Maven `migration`
+  profile (`axon4-to-axon5-maven-migration-profile`) keeps verification
+  scoped to the migrated subset so the user can move forward with
+  confidence even though the full build would fail.
+- Phase 9 changes the storage-engine wiring but doesn't run the SQL —
+  the database is still on the AF4 schema until the user applies it.
+- Phase 10 is where everything converges and the goal is asserted by
+  running the full build.
+
+If you are tempted to "fix" intermediate compile errors outside the
+phase that owns them, **don't** — they're expected and will resolve as
+the right phase runs.
+
+## The orchestrator's role
+
+> **This skill is a state-keeper and a delegator. It does not itself
+> rewrite code.** Every concrete code change is delegated to a sibling
+> skill. The orchestrator's job is the four things sibling skills don't
+> do for themselves:
+>
+> 1. **Sequencing** — running phases in the order that minimizes
+>    rework (aggregates and handlers first, configuration last).
+> 2. **Scope discovery** — enumerating the work for each phase up
+>    front so the per-construct skill receives one specific class per
+>    invocation.
+> 3. **State persistence** — every unit of progress is committed with a
+>    self-contained `progress.md`, so the user can `/clear` between
+>    units and a fresh session resumes from one file read.
+> 4. **Human checkpoints** — pausing between phases (and between items)
+>    for the user to review, redirect, or pause the run.
+
+The sibling skills delegated to:
+
+- `axon4-to-axon5-openrewrite` — phase 1 mechanical rewrites
+- `axon4-to-axon5-eventsourcing-aggregate` — phase 2
+- `axon4-to-axon5-eventprocessor` — phase 3
+- `axon4-to-axon5-commandgateway` — phase 4
+- `axon4-to-axon5-querygateway` — phase 5
+- `axon4-to-axon5-queryhandler` — phase 6
+- `axon4-to-axon5-readconfiguration` — phase 7
+- `axon4-to-axon5-writeconfiguration` — phase 8
+- `axon4-to-axon5-aggregate-eventstorage-engine` — phase 9
+- `axon4-to-axon5-maven-migration-profile` — supporting skill,
+  invoked at the start of phase 2 and re-invoked when the migrated
+  subset grows so scoped verification keeps working
+
+If a per-construct skill exists for the work in front of you, **delegate
+to it**. Don't reimplement its logic in the orchestrator. The
+orchestrator's job is to know *which* skill applies, *which* class to
+hand it, and *what* to record afterwards — not to do the rewrite.
+
+## When delegation isn't enough — manual work is sometimes unavoidable
+
+Every project is different. The per-construct skills cover the patterns
+the framework team has seen often enough to mechanize, but real
+codebases regularly contain:
+
+- **Out-of-scope features** — sagas, snapshotting, the Mongo extension,
+  the Kafka extension, and other areas where AF5 has no clear migration
+  path yet (see [`references/out-of-scope.md`](references/out-of-scope.md)).
+  These will not compile on AF5 after migration. Step 0a warns the user
+  before phase 1 runs; the user decides whether to proceed knowing the
+  gap exists.
+- **Custom subclasses of framework types** — a project that extends
+  `JpaEventStorageEngine`, subclasses `AbstractAggregateFactory`, or
+  ships a custom `Serializer` cannot be mechanically rewritten. The
+  per-construct skill will surface the case and stop; the user owns
+  the redesign.
+- **Bespoke configuration** — multi-datasource setups, unusual Spring
+  Boot autoconfig overrides, custom `ConfigurerModule` chains that
+  don't fit the standard shape. Phase 8 (`axon4-to-axon5-writeconfiguration`)
+  handles common shapes; the unusual ones land in stabilization.
+- **Behavior changes the recipes flag** — the OpenRewrite recipes can
+  warn about removed parameters or changed defaults but cannot decide
+  what the project *should* do instead.
+
+**For these, the orchestrator's job is to keep the state honest.**
+When a per-construct skill stops short, the orchestrator records the
+item as `blocked` or `deferred-to-phase-10` in `progress.md`, surfaces
+the situation to the user, and either pauses the run or moves on
+deliberately. Manual fixes by the user are a normal part of phase 10
+stabilization — and sometimes earlier, when a blocker has to be
+resolved before later phases can proceed.
+
+The migration goal stated above does not assume zero manual work. It
+assumes that what cannot be delegated will be done by the user with
+the orchestrator tracking what's left. If a project is heavy on
+out-of-scope features, the realistic end state may be "AF5 for the
+parts the orchestrator could migrate; AF4-shaped or removed for the
+rest, with the user's explicit sign-off." That is still success.
 
 > **Keep this skill generic.** It runs across any consumer project. All
 > project-specific knowledge — surprises, recipe choices, manual fixes —

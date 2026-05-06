@@ -11,6 +11,31 @@
 > **Update protocol:** rewrite the relevant section, then commit.
 > Never split "did the work" and "wrote progress.md" across commits.
 
+## Goal of this migration
+
+A fully compiling, green-test codebase on Axon Framework 5, **preserving
+the same architecture as the AF4 version**:
+
+- No DCB. Existing aggregate-centric model retained.
+- No new patterns. Sagas stay sagas, projections stay projections,
+  message types unchanged.
+- Legacy event storage preserved — `AggregateBased…EventStorageEngine`
+  reads the existing aggregate-keyed event log; phase 9 SQL is a
+  rename, not a data rewrite.
+- `./mvnw clean verify` green at the end of phase 10.
+
+This is the **final** state. Intermediate phases will leave the
+project non-compiling in places — that is by design. The Maven
+`migration` profile keeps scoped verification working through phases
+2–8.
+
+> **Manual work is sometimes unavoidable.** Out-of-scope features
+> (sagas, snapshotting, Mongo / Kafka extensions), custom framework
+> subclasses, bespoke configuration, and recipe-flagged behavior
+> changes may all need user judgment. The orchestrator records what's
+> left as `blocked` / `deferred-to-phase-10` and keeps moving — it
+> doesn't pretend it can finish what it can't.
+
 ---
 
 ## ▶︎ RESUME HERE — read this first

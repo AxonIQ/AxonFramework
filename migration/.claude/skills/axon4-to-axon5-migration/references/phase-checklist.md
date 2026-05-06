@@ -3,6 +3,27 @@
 A condensed cheat sheet for jumping into any phase. Use this when resuming a
 mid-migration and you want a one-page reminder of the loop shape.
 
+## Goal (final state — phase 10)
+
+Fully compiling, green-test AF5 codebase, **same architecture as AF4**:
+no DCB, no new patterns, legacy event storage preserved
+(`AggregateBased…EventStorageEngine` over the existing event log).
+`./mvnw clean verify` green at the end.
+
+Intermediate phases may leave the project non-compiling — that is by
+design. Don't chase compile errors outside the phase that owns them.
+
+## What this orchestrator does (and doesn't)
+
+- **Does:** sequence phases, enumerate scope, persist state in
+  `progress.md`, run human checkpoints, commit per unit of progress.
+- **Does not:** rewrite code itself. Every code change is delegated to
+  the matching per-construct skill (`axon4-to-axon5-*`).
+- **Sometimes can't:** out-of-scope features (sagas, snapshotting,
+  Mongo / Kafka extensions), custom framework subclasses, and bespoke
+  configuration may need manual user fixes. The orchestrator records
+  these as `blocked` / `deferred-to-phase-10` and keeps moving.
+
 ## Resuming from a fresh `/clear` (most common case)
 
 The orchestrator is **designed for context resets between units of
