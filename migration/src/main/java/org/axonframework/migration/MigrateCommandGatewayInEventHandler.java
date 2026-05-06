@@ -99,15 +99,20 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
                 String gatewayFieldName = findCommandGatewayField(classDecl);
-                if (gatewayFieldName == null || !classHasEventHandlerCallingGateway(classDecl, gatewayFieldName)) {
+                boolean hasGatewayWork = gatewayFieldName != null
+                        && classHasEventHandlerCallingGateway(classDecl, gatewayFieldName);
+                boolean hasDispatcherOnlyWork = classHasVoidEventHandlerWithDispatcher(classDecl);
+                if (!hasGatewayWork && !hasDispatcherOnlyWork) {
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
-                getCursor().putMessage("axon.gatewayFieldName", gatewayFieldName);
+                if (hasGatewayWork) {
+                    getCursor().putMessage("axon.gatewayFieldName", gatewayFieldName);
+                }
 
                 J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
 
                 // After visiting all methods, drop the now-orphan gateway field, ctor parameter, assignment.
-                if (!isFieldStillReferenced(cd, gatewayFieldName)) {
+                if (hasGatewayWork && !isFieldStillReferenced(cd, gatewayFieldName)) {
                     cd = removeGatewayField(cd, gatewayFieldName);
                     cd = removeGatewayFromConstructors(cd, gatewayFieldName);
                     maybeRemoveImport(COMMAND_GATEWAY_AF5_FQN);
@@ -150,54 +155,106 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
                 return false;
             }
 
+            /**
+             * Detects the second supported migration shape: a `@EventHandler` method that already declares a
+             * {@code CommandDispatcher} method-parameter (typically because a per-class skill ran first), but
+             * still returns {@code void} — so the dispatcher result is silently discarded. This recipe should
+             * widen the return type to {@code CompletableFuture<?>} and surface the dispatch result.
+             */
+            private boolean classHasVoidEventHandlerWithDispatcher(J.ClassDeclaration cd) {
+                for (Statement s : cd.getBody().getStatements()) {
+                    if (!(s instanceof J.MethodDeclaration)) {
+                        continue;
+                    }
+                    J.MethodDeclaration m = (J.MethodDeclaration) s;
+                    if (!isAnnotatedAsEventHandler(m) || m.getBody() == null) {
+                        continue;
+                    }
+                    String dispatcherParam = existingDispatcherParameterName(m);
+                    if (dispatcherParam == null || !isVoidReturn(m)) {
+                        continue;
+                    }
+                    if (methodHasDispatchCall(m, dispatcherParam)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            private boolean methodHasDispatchCall(J.MethodDeclaration md, String dispatcherName) {
+                boolean[] found = {false};
+                new JavaIsoVisitor<ExecutionContext>() {
+                    @Override
+                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi,
+                                                                    ExecutionContext c) {
+                        if ("send".equals(mi.getSimpleName())
+                                && mi.getSelect() instanceof J.Identifier
+                                && ((J.Identifier) mi.getSelect()).getSimpleName().equals(dispatcherName)) {
+                            found[0] = true;
+                        }
+                        return super.visitMethodInvocation(mi, c);
+                    }
+                }.visit(md.getBody(), new org.openrewrite.InMemoryExecutionContext());
+                return found[0];
+            }
+
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                String gatewayFieldName = getCursor().getNearestMessage("axon.gatewayFieldName");
-                if (gatewayFieldName == null || !isAnnotatedAsEventHandler(method)) {
+                if (!isAnnotatedAsEventHandler(method)) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
-                if (!methodReferencesIdentifier(method, gatewayFieldName)) {
+                String gatewayFieldName = getCursor().getNearestMessage("axon.gatewayFieldName");
+                String dispatcherParamName = existingDispatcherParameterName(method);
+
+                boolean callsGateway = gatewayFieldName != null
+                        && methodReferencesIdentifier(method, gatewayFieldName);
+                boolean dispatcherOnlyVoid = !callsGateway
+                        && dispatcherParamName != null
+                        && isVoidReturn(method)
+                        && methodHasDispatchCall(method, dispatcherParamName);
+                if (!callsGateway && !dispatcherOnlyVoid) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
 
-                String dispatcherParamName = existingDispatcherParameterName(method);
                 final String paramName = dispatcherParamName != null ? dispatcherParamName : DISPATCHER_PARAM_NAME;
 
                 J.MethodDeclaration md = method;
-                if (dispatcherParamName == null) {
+                if (callsGateway && dispatcherParamName == null) {
                     md = addCommandDispatcherParameter(md, ctx);
                 }
 
-                // Rewrite the call sites: <gatewayField>.send / sendAndWait(...) → commandDispatcher.send(...)
-                final String gatewayName = gatewayFieldName;
-                md = (J.MethodDeclaration) new JavaIsoVisitor<ExecutionContext>() {
-                    @Override
-                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, ExecutionContext c) {
-                        J.MethodInvocation invocation = super.visitMethodInvocation(mi, c);
-                        if (!isGatewayCall(invocation, gatewayName)) {
-                            return invocation;
+                if (callsGateway) {
+                    // Rewrite the call sites: <gatewayField>.send / sendAndWait(...) → commandDispatcher.send(...)
+                    final String gatewayName = gatewayFieldName;
+                    md = (J.MethodDeclaration) new JavaIsoVisitor<ExecutionContext>() {
+                        @Override
+                        public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, ExecutionContext c) {
+                            J.MethodInvocation invocation = super.visitMethodInvocation(mi, c);
+                            if (!isGatewayCall(invocation, gatewayName)) {
+                                return invocation;
+                            }
+                            String name = invocation.getSimpleName();
+                            if (!"send".equals(name) && !"sendAndWait".equals(name)) {
+                                return invocation;
+                            }
+                            return invocation
+                                    .withSelect(
+                                            new J.Identifier(
+                                                    org.openrewrite.Tree.randomId(),
+                                                    invocation.getSelect() == null
+                                                            ? org.openrewrite.java.tree.Space.EMPTY
+                                                            : invocation.getSelect().getPrefix(),
+                                                    org.openrewrite.marker.Markers.EMPTY,
+                                                    java.util.Collections.emptyList(),
+                                                    paramName,
+                                                    null,
+                                                    null
+                                            )
+                                    )
+                                    .withName(invocation.getName().withSimpleName("send"));
                         }
-                        String name = invocation.getSimpleName();
-                        if (!"send".equals(name) && !"sendAndWait".equals(name)) {
-                            return invocation;
-                        }
-                        return invocation
-                                .withSelect(
-                                        new J.Identifier(
-                                                org.openrewrite.Tree.randomId(),
-                                                invocation.getSelect() == null
-                                                        ? org.openrewrite.java.tree.Space.EMPTY
-                                                        : invocation.getSelect().getPrefix(),
-                                                org.openrewrite.marker.Markers.EMPTY,
-                                                java.util.Collections.emptyList(),
-                                                paramName,
-                                                null,
-                                                null
-                                        )
-                                )
-                                .withName(invocation.getName().withSimpleName("send"));
-                    }
-                }.visitNonNull(md, ctx, getCursor().getParentOrThrow());
+                    }.visitNonNull(md, ctx, getCursor().getParentOrThrow());
+                }
 
                 // For void handlers with a supported body shape, widen return type and convert dispatch to a return.
                 if (isVoidReturn(md) && bodyShapeIsConvertible(md, paramName)) {
@@ -206,7 +263,9 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
                     maybeAddImport(COMPLETABLE_FUTURE_FQN, false);
                 }
 
-                maybeAddImport(COMMAND_DISPATCHER_FQN, false);
+                if (callsGateway) {
+                    maybeAddImport(COMMAND_DISPATCHER_FQN, false);
+                }
                 return md;
             }
 
@@ -344,21 +403,52 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
             }
 
             /**
-             * Returns true when the method body is one of the two supported shapes for return-wrap conversion:
-             * (a) a single expression-statement that is a dispatch call, or
-             * (b) a single try-statement whose try-block ends in a dispatch expression-statement, and every
-             *     catch-block also ends in one.
+             * Returns true when the method body is one of the supported shapes for return-wrap conversion:
+             * (a) the last statement is a dispatch expression-statement, or
+             * (b) the body is a single try-statement whose try-block ends in a dispatch expression-statement,
+             *     and every catch-block also ends in one, or
+             * (c) the last statement is a guard {@code if (cond) { ...dispatch }} with no else (or empty else),
+             *     where the then-block ends in a dispatch — converted to {@code return}-the-dispatch plus a
+             *     trailing {@code return CompletableFuture.completedFuture(null);}.
              */
             private boolean bodyShapeIsConvertible(J.MethodDeclaration md, String dispatcherName) {
                 if (md.getBody() == null) {
                     return false;
                 }
                 List<Statement> stmts = md.getBody().getStatements();
+                if (stmts.isEmpty()) {
+                    return false;
+                }
                 if (stmts.size() == 1 && stmts.get(0) instanceof J.Try) {
                     return tryShapeIsConvertible((J.Try) stmts.get(0), dispatcherName);
                 }
-                return isDispatchExpressionStatement(stmts.get(stmts.size() - 1), dispatcherName)
-                        || (stmts.size() == 1 && isDispatchExpressionStatement(stmts.get(0), dispatcherName));
+                Statement last = stmts.get(stmts.size() - 1);
+                if (isDispatchExpressionStatement(last, dispatcherName)) {
+                    return true;
+                }
+                if (last instanceof J.If) {
+                    return ifShapeIsConvertible((J.If) last, dispatcherName);
+                }
+                return false;
+            }
+
+            private boolean ifShapeIsConvertible(J.If ifStmt, String dispatcherName) {
+                if (ifStmt.getElsePart() != null) {
+                    Statement elseBody = ifStmt.getElsePart().getBody();
+                    if (elseBody instanceof J.Block && !((J.Block) elseBody).getStatements().isEmpty()) {
+                        return false;
+                    }
+                    if (!(elseBody instanceof J.Block)) {
+                        return false;
+                    }
+                }
+                Statement thenPart = ifStmt.getThenPart();
+                if (!(thenPart instanceof J.Block)) {
+                    return false;
+                }
+                List<Statement> thenStmts = ((J.Block) thenPart).getStatements();
+                return !thenStmts.isEmpty()
+                        && isDispatchExpressionStatement(thenStmts.get(thenStmts.size() - 1), dispatcherName);
             }
 
             private boolean tryShapeIsConvertible(J.Try tryStmt, String dispatcherName) {
@@ -445,7 +535,11 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
 
             /**
              * Replaces every dispatch expression-statement that lives at the tail of an applicable block
-             * (method body, try-block, catch-block) with a {@code return <expr>.getResultMessage();} statement.
+             * (method body, try-block, catch-block, then-block of a guard {@code if}) with a
+             * {@code return <expr>.getResultMessage();} statement. If the body's last statement is a
+             * guard-{@code if} whose then-block now ends in a return, the visitor also appends a
+             * {@code return CompletableFuture.completedFuture(null);} so the void-returning false branch
+             * still produces a future.
              */
             private J.MethodDeclaration wrapDispatchesInReturn(J.MethodDeclaration md, String dispatcherName,
                                                                 ExecutionContext ctx) {
@@ -491,7 +585,91 @@ public class MigrateCommandGatewayInEventHandler extends Recipe {
                         updated.set(updated.size() - 1, ret);
                         return b.withStatements(updated);
                     }
+
+                    @Override
+                    public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration meth,
+                                                                      ExecutionContext c) {
+                        J.MethodDeclaration m = super.visitMethodDeclaration(meth, c);
+                        if (m.getBody() == null) {
+                            return m;
+                        }
+                        List<Statement> bodyStmts = m.getBody().getStatements();
+                        if (bodyStmts.isEmpty() || !(bodyStmts.get(bodyStmts.size() - 1) instanceof J.If)) {
+                            return m;
+                        }
+                        J.If guardIf = (J.If) bodyStmts.get(bodyStmts.size() - 1);
+                        if (!(guardIf.getThenPart() instanceof J.Block)) {
+                            return m;
+                        }
+                        List<Statement> thenStmts = ((J.Block) guardIf.getThenPart()).getStatements();
+                        if (thenStmts.isEmpty() || !(thenStmts.get(thenStmts.size() - 1) instanceof J.Return)) {
+                            return m;
+                        }
+                        // The dispatch in the then-branch was just wrapped in `return`. The else-less false
+                        // branch now falls off the end without producing a future. Append a synthetic
+                        // `return CompletableFuture.completedFuture(null);` so the widened return type is
+                        // fully covered.
+                        List<Statement> appended = new ArrayList<>(bodyStmts);
+                        appended.add(buildCompletedFutureReturn(guardIf.getPrefix()));
+                        return m.withBody(m.getBody().withStatements(appended));
+                    }
                 }.visitNonNull(md, ctx, getCursor().getParentOrThrow());
+            }
+
+            /**
+             * Hand-builds {@code return CompletableFuture.completedFuture(null);}. Going through
+             * {@link JavaTemplate} here drops the freshly-widened return-type expression — the apply
+             * works against the original (cursor-bound) method declaration, not the in-flight {@code md}
+             * variable. Constructing the J.Return directly preserves whatever return-type rewrite the
+             * caller has already applied. The supplied {@code prefix} is the leading whitespace from the
+             * preceding guard-{@code if}, which keeps the new return aligned with the rest of the body.
+             */
+            private J.Return buildCompletedFutureReturn(org.openrewrite.java.tree.Space prefix) {
+                JavaType.Class cfType = JavaType.ShallowClass.build(COMPLETABLE_FUTURE_FQN);
+                J.Identifier cfIdentifier = new J.Identifier(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        java.util.Collections.emptyList(),
+                        "CompletableFuture",
+                        cfType,
+                        null);
+                J.Identifier completedFutureName = new J.Identifier(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        java.util.Collections.emptyList(),
+                        "completedFuture",
+                        null,
+                        null);
+                J.Literal nullLiteral = new J.Literal(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.EMPTY,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        null,
+                        "null",
+                        null,
+                        JavaType.Primitive.Null);
+                org.openrewrite.java.tree.JContainer<Expression> args =
+                        org.openrewrite.java.tree.JContainer.build(
+                                org.openrewrite.java.tree.Space.EMPTY,
+                                java.util.Collections.singletonList(
+                                        org.openrewrite.java.tree.JRightPadded.<Expression>build(nullLiteral)),
+                                org.openrewrite.marker.Markers.EMPTY);
+                J.MethodInvocation call = new J.MethodInvocation(
+                        org.openrewrite.Tree.randomId(),
+                        org.openrewrite.java.tree.Space.format(" "),
+                        org.openrewrite.marker.Markers.EMPTY,
+                        org.openrewrite.java.tree.JRightPadded.<Expression>build(cfIdentifier),
+                        null,
+                        completedFutureName,
+                        args,
+                        null);
+                return new J.Return(
+                        org.openrewrite.Tree.randomId(),
+                        prefix,
+                        org.openrewrite.marker.Markers.EMPTY,
+                        call);
             }
 
             // ── Class-level cleanup of the now-unused gateway field ──────────────

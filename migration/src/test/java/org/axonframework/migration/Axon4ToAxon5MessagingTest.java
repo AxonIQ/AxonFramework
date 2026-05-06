@@ -583,6 +583,58 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     }
 
     @Test
+    void widensReturnTypeForGuardIfHandlerAlreadyOnCommandDispatcher() {
+        // Mid-migration shape from Heroes' WhenWeekStartedThenProclaimWeekSymbolProcessor: the per-class
+        // skill already moved the handler onto CommandDispatcher (no CommandGateway field, no field-cleanup
+        // needed), but the method still returns void so the dispatcher result is silently discarded. The
+        // recipe must:
+        //   * widen `void` → `CompletableFuture<?>`,
+        //   * `return commandDispatcher.send(...).getResultMessage()` from the if-then branch,
+        //   * append `return CompletableFuture.completedFuture(null);` after the if for the no-op false
+        //     branch.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        class Reactor {
+                            @EventHandler
+                            void react(Object event, CommandDispatcher commandDispatcher) {
+                                if (event != null) {
+                                    var command = "Add";
+                                    commandDispatcher.send(command);
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+
+                        import java.util.concurrent.CompletableFuture;
+
+                        class Reactor {
+                            @EventHandler
+                            CompletableFuture<?> react(Object event, CommandDispatcher commandDispatcher) {
+                                if (event != null) {
+                                    var command = "Add";
+                                    return commandDispatcher.send(command).getResultMessage();
+                                }
+                                return CompletableFuture.completedFuture(null);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void leavesNonEventHandlerCallSiteAlone() {
         // CommandGateway used outside any handler (REST controller / scheduler / runner) must keep the
         // class-level field — only the AF4 → AF5 import move applies. The recipe must not touch a
