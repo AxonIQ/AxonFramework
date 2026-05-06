@@ -70,6 +70,7 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5SpringExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootExtension
   - org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
+  - org.axonframework.migration.Axon4ToAxon5SpringAotExtension
   - org.axonframework.migration.Axon4ToAxon5MetricsDropwizardExtension
   - org.axonframework.migration.Axon4ToAxon5MetricsMicrometerExtension
   - org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
