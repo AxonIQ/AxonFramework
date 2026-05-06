@@ -9,6 +9,9 @@
 - **Started:** `<YYYY-MM-DD>`
 - **Last updated:** `<YYYY-MM-DD>`
 - **Active branch:** `<branch-name-at-start>`
+- **Out-of-scope features detected:** _none / list (see `learnings.md` for matched files)_
+- **User decision on out-of-scope features:** _continue / paused / n/a_
+- **Commit cadence:** _per-item (default) / per-phase (squashed) / no automatic commits_
 
 ## Phase status
 
@@ -24,7 +27,8 @@ Legend: `pending` · `in-progress` · `complete` · `paused` · `skipped`
 | 6 | Query handlers (`axon4-to-axon5-queryhandler`) | pending | |
 | 7 | Configuration readers (`axon4-to-axon5-readconfiguration`) | pending | |
 | 8 | Configuration writers (`axon4-to-axon5-writeconfiguration`) | pending | |
-| 9 | Stabilization (full `./mvnw clean verify`) | pending | |
+| 9 | Aggregate `EventStorageEngine` wiring (`axon4-to-axon5-aggregate-eventstorage-engine`) | pending | |
+| 10 | Stabilization (full `./mvnw clean verify`) | pending | |
 
 ## Phase 1 — OpenRewrite
 
@@ -65,7 +69,16 @@ Tick each item as the per-class skill finishes and verification passes.
 
 - [ ] `<FQ.ConfigClass>`
 
-## Phase 9 — Stabilization
+## Phase 9 — Aggregate `EventStorageEngine` wiring
+
+- **Path chosen:** _A (JPA) / B (Axon Server) / C (non-Spring)_
+- **Evidence:** _AF4 beans observed + dependencies (axon-spring-boot-starter / axon-server-connector / axoniq-spring-boot-starter)_
+- **Configuration class touched:** _FQ class — bean(s) deleted/replaced_
+- **SQL migration script:** _path under `.axon4-to-axon5-migration/sql/` or under the project's Flyway/Liquibase dir; "n/a" for paths B and C_
+- **SQL run against production / staging?** _no — pending user_
+- **Custom `Serializer` → `Converter` ports flagged:** _list_
+
+## Phase 10 — Stabilization
 
 - **`./mvnw clean verify` first run:** _PASS / FAIL — module(s) failing_
 - **Outstanding compile errors:** _list with FQ class + one-line cause_

@@ -72,15 +72,61 @@ no items left ─▶ update progress.md ─▶ AskUserQuestion checkpoint
 - Discover: classes with `@Bean` returning `Configurer` / `ConfigurerModule`, or direct `DefaultConfigurer.defaultConfiguration()`.
 - Per-item gotcha: `ConfigurerModule` becomes `ConfigurationEnhancer`; lifecycle hooks move from `Configurer.onStart/onShutdown` to `lifecycleRegistry`.
 
-### Phase 9 — Stabilization
+### Phase 9 — Aggregate `EventStorageEngine` wiring
+
+- Driver: `axon4-to-axon5-aggregate-eventstorage-engine`
+- One-shot phase (not a per-class loop). At most one storage engine per
+  project.
+- Inspection: `grep -RnE 'JpaEventStorageEngine|JdbcEventStorageEngine|EmbeddedEventStore|AxonServerEventStore' --include='*.java' src` plus `grep -nE 'axon-server-connector|axoniq-spring-boot-starter|axon-spring-boot-starter' pom.xml */pom.xml`.
+- Three paths the sub-skill picks between: A (JPA — code change + SQL),
+  B (Axon Server — delete AF4 bean, autoconfig wins, no SQL), C (non-Spring
+  — register on `EventSourcingConfigurer.componentRegistry`).
+- **Per-item gotcha — JPA path only:** The sub-skill emits a SQL script
+  (`domain_event_entry` → `aggregate_event_entry` rename plus column
+  renames + sequence + nullability). The orchestrator does not run it —
+  the user does, on a controlled environment. Do not advance to phase 10
+  until they confirm the SQL has run against the build's database.
+- Verify: `./mvnw -Pmigration test-compile -DfailIfNoTests=false` —
+  runtime verification of the storage engine belongs to phase 10.
+
+### Phase 10 — Stabilization
 
 - No driver skill — judgment-driven manual fixes.
+- **Pre-flight:** confirm phase-9 SQL has been applied to the database
+  the build will hit. Otherwise integration tests against the event
+  store fail in misleading ways.
 - Drop the `migration` profile scope; run `./mvnw clean verify`.
 - Triage: compile errors, test failures, behavior changes (recipe-flagged).
 - Reference material:
   - `docs/reference-guide/modules/migration/pages/paths/` (in AxonFramework5 repo)
-  - `examples/university-java-springboot4/` (Spring-on-AF5 reference)
+  - `examples/university-java-springboot-4/` (Spring-on-AF5 reference)
+  - `axon-5/api-changes/10-stored-format-changes.md` (schema column reference)
   - framework sources for changed APIs
+
+## Out-of-scope features
+
+Before phase 1 — and on every resume — sweep the target for AF4
+features the orchestrator does NOT migrate. Full list and detection
+commands: [`out-of-scope.md`](out-of-scope.md). Current set:
+**Sagas**, **aggregate snapshotting**, **MongoDB extension**, **Kafka
+extension**. If any are detected, warn the user and ask whether to
+continue or pause. Record the decision in `learnings.md`.
+
+## Commit cadence (default)
+
+- Phase 1: one commit for the OpenRewrite diff.
+- Phases 2–8: one commit per migrated item (one aggregate, one handler,
+  one configuration class, etc.).
+- Phase 9: one commit for the storage-engine wiring (include the SQL
+  script in the same commit on Path A).
+- Phase 10: one commit per logical fix (don't bundle compile fixes,
+  test fixes, and behavior-change fixes together).
+- Always include the matching `progress.md` / `learnings.md` /
+  `plan.md` / `sql/*` updates in the same commit. Stage explicit paths,
+  never `git add -A`. Never push, never amend, never `--no-verify`.
+
+User can opt out at step 0b — record the choice in
+`progress.md` and `learnings.md`.
 
 ## Anti-patterns (don't do these)
 
