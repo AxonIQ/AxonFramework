@@ -29,9 +29,10 @@ recipeList:
       oldPackageName: org.axonframework.micrometer
       newPackageName: org.axonframework.extension.metrics.micrometer
       recursive: true
-  # Maven coordinate move: org.axonframework:axon-micrometer →
-  # org.axonframework.extensions.metrics:axon-metrics-micrometer.
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  # Build-tool coordinate move: org.axonframework:axon-micrometer →
+  # org.axonframework.extensions.metrics:axon-metrics-micrometer. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven and Gradle.
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-micrometer
       newGroupId: org.axonframework.extensions.metrics

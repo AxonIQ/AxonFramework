@@ -61,7 +61,7 @@ recipeList:
   # Coordinate moves above (BOM swap, starter swap, connector move) leave
   # `<version>` placeholders pointing at the AF4 version. Pin them to the
   # current Axoniq Framework 5 release so the resulting POM resolves.
-  - org.openrewrite.maven.UpgradeDependencyVersion:
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
       groupId: io.axoniq.framework
       artifactId: "*"
       newVersion: 5.1.0

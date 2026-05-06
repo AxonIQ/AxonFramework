@@ -30,9 +30,10 @@ recipeList:
       oldPackageName: org.axonframework.metrics
       newPackageName: org.axonframework.extension.metrics.dropwizard
       recursive: true
-  # Maven coordinate move: org.axonframework:axon-metrics →
-  # org.axonframework.extensions.metrics:axon-metrics-dropwizard.
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  # Build-tool coordinate move: org.axonframework:axon-metrics →
+  # org.axonframework.extensions.metrics:axon-metrics-dropwizard. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven and Gradle.
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-metrics
       newGroupId: org.axonframework.extensions.metrics

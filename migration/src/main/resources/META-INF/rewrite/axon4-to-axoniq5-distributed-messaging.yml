@@ -53,9 +53,9 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.messaging.commandhandling.distributed.CommandBusConnector
       newFullyQualifiedTypeName: io.axoniq.framework.messaging.commandhandling.distributed.CommandBusConnector
 
-  # Maven dep add: pull in the Axoniq distributed-messaging jar when
-  # DistributedCommandBus is in use.
-  - org.openrewrite.maven.AddDependency:
+  # Build-tool dep add: pull in the Axoniq distributed-messaging jar when
+  # DistributedCommandBus is in use. Unified recipe covers both Maven and Gradle.
+  - org.openrewrite.java.dependencies.AddDependency:
       groupId: io.axoniq.framework
       artifactId: axoniq-distributed-messaging
       version: latest.release

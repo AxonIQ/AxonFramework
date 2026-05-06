@@ -49,9 +49,11 @@ recipeList:
   # to every @EventSourced annotation that has no tagKey yet, so developers
   # and LLM post-processors can see and verify the configuration.
   - org.axonframework.migration.ConfigureEventSourcedAnnotation
-  # Maven coordinate move: axon-spring artifact moves from groupId
-  # `org.axonframework` to `org.axonframework.extensions.spring`.
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  # Build-tool coordinate move: axon-spring artifact moves from groupId
+  # `org.axonframework` to `org.axonframework.extensions.spring`. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven
+  # (`pom.xml`) and Gradle (`build.gradle` / `build.gradle.kts`) projects.
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring
       newGroupId: org.axonframework.extensions.spring
@@ -73,15 +75,17 @@ recipeList:
       oldPackageName: org.axonframework.springboot
       newPackageName: org.axonframework.extension.springboot
       recursive: true
-  # Maven coordinate moves for the Spring Boot artifacts: groupId
+  # Build-tool coordinate moves for the Spring Boot artifacts: groupId
   # `org.axonframework` → `org.axonframework.extensions.spring`. ArtifactIds
-  # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are unchanged.
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are
+  # unchanged. The unified `java.dependencies.ChangeDependency` recipe
+  # applies to both Maven and Gradle projects.
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring-boot-starter
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-starter
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring-boot-autoconfigure
       newGroupId: org.axonframework.extensions.spring

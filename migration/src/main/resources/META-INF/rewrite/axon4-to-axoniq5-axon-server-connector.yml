@@ -36,10 +36,11 @@ recipeList:
       oldPackageName: org.axonframework.axonserver
       newPackageName: io.axoniq.framework.axonserver
       recursive: true
-  # Maven coordinate move: org.axonframework:axon-server-connector →
+  # Build-tool coordinate move: org.axonframework:axon-server-connector →
   # io.axoniq.framework:axon-server-connector. ArtifactId unchanged; only
-  # the groupId moves to the Axoniq commercial namespace.
-  - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
+  # the groupId moves to the Axoniq commercial namespace. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven and Gradle.
+  - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-server-connector
       newGroupId: io.axoniq.framework

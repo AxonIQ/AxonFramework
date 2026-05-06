@@ -30,6 +30,6 @@ description: >-
   AF5 must reintroduce equivalent functionality manually — there is no
   drop-in replacement.
 recipeList:
-  - org.openrewrite.maven.RemoveDependency:
+  - org.openrewrite.java.dependencies.RemoveDependency:
       groupId: org.axonframework.extensions.spring-aot
       artifactId: axon-spring-aot

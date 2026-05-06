@@ -50,7 +50,7 @@ recipeList:
   # Apps that don't import the AF5 BOM and depend only on the Spring Boot
   # starter won't get axon-eventsourcing transitively. Adding it pulls in
   # axon-modelling and axon-messaging too.
-  - org.openrewrite.maven.AddDependency:
+  - org.openrewrite.java.dependencies.AddDependency:
       groupId: org.axonframework
       artifactId: axon-eventsourcing
       version: 5.1.0

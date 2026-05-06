@@ -59,8 +59,9 @@ recipeList:
       oldPackageName: org.axonframework.messaging.eventhandling.deadletter
       newPackageName: io.axoniq.framework.messaging.eventhandling.deadletter
       recursive: true
-  # Maven dep add: when DLQ types are detected, pull in the Axoniq DLQ jar.
-  - org.openrewrite.maven.AddDependency:
+  # Build-tool dep add: when DLQ types are detected, pull in the Axoniq DLQ jar.
+  # Unified recipe covers both Maven and Gradle.
+  - org.openrewrite.java.dependencies.AddDependency:
       groupId: io.axoniq.framework
       artifactId: axoniq-dead-letter
       version: latest.release

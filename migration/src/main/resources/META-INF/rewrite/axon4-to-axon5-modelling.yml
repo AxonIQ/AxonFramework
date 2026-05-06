@@ -83,7 +83,7 @@ recipeList:
   # the AF5 Spring Boot starter. Apps that use modelling but not event
   # sourcing still need it. (Apps that DO use event sourcing get it
   # transitively from axon-eventsourcing — Maven dedupes either way.)
-  - org.openrewrite.maven.AddDependency:
+  - org.openrewrite.java.dependencies.AddDependency:
       groupId: org.axonframework
       artifactId: axon-modelling
       version: 5.1.0

@@ -50,7 +50,7 @@ recipeList:
   # ── 3. Bump dependency versions ─────────────────────────────────────────
   # Pinned to an explicit AF5 release so the migration is reproducible across
   # recipe builds (independent of the recipe project's own ${project.version}).
-  - org.openrewrite.maven.UpgradeDependencyVersion:
+  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
       groupId: org.axonframework
       artifactId: "*"
       newVersion: 5.1.0

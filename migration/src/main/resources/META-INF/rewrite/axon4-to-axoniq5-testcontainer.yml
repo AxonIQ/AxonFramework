@@ -54,10 +54,11 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.test.server.AxonServerSEContainer
       newFullyQualifiedTypeName: io.axoniq.framework.testcontainer.AxonServerContainer
-  # Maven dep add: when testcontainer types are detected, pull in the
+  # Build-tool dep add: when testcontainer types are detected, pull in the
   # Axoniq testcontainer jar at test scope. `axon-test` stays — it still
-  # contains AxonTestFixture and other test utilities.
-  - org.openrewrite.maven.AddDependency:
+  # contains AxonTestFixture and other test utilities. Unified recipe covers
+  # both Maven (`<scope>test</scope>`) and Gradle (mapped to `testImplementation`).
+  - org.openrewrite.java.dependencies.AddDependency:
       groupId: io.axoniq.framework
       artifactId: axoniq-testcontainer
       version: 5.1.0
