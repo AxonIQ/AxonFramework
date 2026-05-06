@@ -152,6 +152,8 @@ T.3. **Convert each test method to the fluent given/when/then API.** Mapping (se
 | `.expectResultMessagePayload(p)` | `.then().resultMessagePayload(p)` |
 | `.expectEventsMatching(matcher)` | `.then().eventsSatisfy(consumer)` or `.eventsMatch(predicate)` |
 
+> ⚠️ **`EventMessage` accessors are record-style in AF5.** Inside `eventsSatisfy(events -> { ... })` lambdas (or any other place that handles a raw `EventMessage`), use `events.get(0).payload()` and `events.get(0).metaData()` — **NOT** AF4's JavaBean-style `getPayload()` / `getMetaData()`. The AF4 names do not exist on the AF5 `EventMessage` interface and produce `cannot find symbol: method getPayload()` compile errors.
+
 T.4. **Adjust behavioral assertions for AF5 semantics.** Several AF4 fixture errors no longer exist in AF5:
 - `AggregateNotFoundException` is **not** thrown for instance handlers in AF5. With a no-arg `@EntityCreator`, the framework always materializes an empty entity, so the handler runs and any domain rule against empty state surfaces instead. Update such tests to expect the actual domain exception (e.g. a domain-rule violation message) and add a comment noting the semantic shift.
   - **Watch out for NPE as the "actual exception"**: if the `@CommandHandler` body calls a method on a null entity-state field (e.g. `null.equals(...)` when a field that is only set by an `@EventSourcingHandler` was never initialised), it throws `NullPointerException` rather than a meaningful domain exception. In that case, use `Exception.class` as the expected type and add a `// TODO` comment that the domain model should add an explicit "entity not yet initialised" guard before operating on those fields.
@@ -166,7 +168,9 @@ If the project's other modules / sub-packages still use AF4 APIs and the surroun
 Then verify with:
 
 ```bash
-./mvnw test -Pmigration -Dtest='<FQTestClass1>,<FQTestClass2>' -DfailIfNoTests=false
+./mvnw test -Pmigration -Dtest='<FQTestClass1>,<FQTestClass2>' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-For a clean project where the surrounding code compiles, drop `-Pmigration` — plain `./mvnw test -Dtest=…` is enough.
+> ⚠️ **Multi-module reactor (`-pl <a>,<b>`) needs the surefire flag too.** When `-pl` includes modules that don't contain a class matching the `-Dtest=…` pattern (e.g. you scope to `core-api,rental` but the test only lives in `rental`), surefire fails the build with `No tests matching pattern "…" were executed!` for the empty modules. Always pass **both** `-DfailIfNoTests=false` (for plain `surefire:test`) **and** `-Dsurefire.failIfNoSpecifiedTests=false` (for the explicit `-Dtest=…` filter). The two flags suppress different surefire failure paths.
+
+For a clean project where the surrounding code compiles, drop `-Pmigration` — plain `./mvnw test -Dtest=…` is enough (still keep both flags when running across multiple modules).
