@@ -97,7 +97,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                         import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
                         import org.axonframework.extension.spring.stereotype.EventSourced;
 
-                        @EventSourced
+                        @EventSourced(tagKey = "GiftCard", idType = Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */)
                         class GiftCard {
                             @EntityCreator
                             GiftCard() { }
@@ -142,7 +142,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                         import org.axonframework.extension.spring.stereotype.EventSourced;
                         import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 
-                        @EventSourced
+                        @EventSourced(tagKey = "Order", idType = Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */)
                         class Order {
                             @CommandHandler
                             void handle(Object cmd) {}
@@ -207,7 +207,7 @@ class Axon4ToAxon5EventSourcingTest implements RewriteTest {
                         import org.axonframework.extension.spring.stereotype.EventSourced;
                         import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
-                        @EventSourced
+                        @EventSourced(tagKey = "GiftCard", idType = Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */)
                         class GiftCard {
                             @EntityCreator
                             GiftCard() { }

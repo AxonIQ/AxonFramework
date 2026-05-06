@@ -140,6 +140,11 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
              * Rewrites {@code chain.oldName(args)} to {@code chain.phase().newName(args)}.
              * Builds a JavaTemplate string with one {@code #{any()}} placeholder per argument plus
              * one for the receiver chain, then applies it at the position of the original invocation.
+             * <p>
+             * The template flattens whitespace, so we re-apply the original invocation's
+             * {@linkplain J#getPrefix() prefix} on the result. That keeps multi-line fluent chains
+             * — {@code .given(...)} on its own line, {@code .when(...)} on the next, etc. — readable
+             * after the rewrite instead of collapsing everything onto a single line.
              */
             private J.MethodInvocation wrapWithPhase(J.MethodInvocation mi,
                                                     String phase,
@@ -163,11 +168,32 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 templateArgs.add(select);
                 templateArgs.addAll(args);
 
-                return JavaTemplate.builder(template.toString())
+                J.MethodInvocation rewritten = JavaTemplate.builder(template.toString())
                         .contextSensitive()
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
                         .apply(getCursor(), mi.getCoordinates().replace(), templateArgs.toArray());
+
+                // The template flattens whitespace. In a fluent chain like
+                //   fixture.given(...)
+                //          .when(...)
+                //          .expectEvents(...);
+                // the whitespace before the `.` of `.when` / `.expectEvents` is stored as the
+                // *right-padding of the parent's `select`* (`getPadding().getSelect().getAfter()`).
+                // After rewrite, the structure is `((origSelect).phase()).newName(args)`. We want
+                // the phase call (`.given()` / `.when()` / `.then()`) to land on a new line with
+                // the same indent the old call had, so transplant the original `select` right-padding
+                // onto the inner phase-call's `select` right-padding.
+                if (rewritten.getSelect() instanceof J.MethodInvocation phaseCall
+                        && mi.getPadding().getSelect() != null
+                        && phaseCall.getPadding().getSelect() != null) {
+                    org.openrewrite.java.tree.JRightPadded<Expression> phaseSelect = phaseCall.getPadding().getSelect();
+                    org.openrewrite.java.tree.JRightPadded<Expression> rewrittenPhaseSelect = phaseSelect.withAfter(
+                            mi.getPadding().getSelect().getAfter());
+                    return rewritten.withSelect(
+                            phaseCall.getPadding().withSelect(rewrittenPhaseSelect));
+                }
+                return rewritten;
             }
 
             /**
