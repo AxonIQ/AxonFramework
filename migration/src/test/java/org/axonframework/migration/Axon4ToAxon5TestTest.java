@@ -64,7 +64,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                         }
                         """
                 )
@@ -93,7 +93,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().events(new Object())
                                        .when().command(new Object())
@@ -127,7 +127,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().noPriorActivity()
                                        .when().command(new Object())
@@ -162,7 +162,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().command(new Object())
                                        .when().command(new Object())
@@ -197,7 +197,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().commands(new Object(), new Object())
                                        .when().command(new Object())
@@ -235,7 +235,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().events(new Object())
                                        .when().command(new Object())
@@ -269,7 +269,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import org.axonframework.test.fixture.AxonTestFixture;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().noPriorActivity()
                                        .when().command(new Object())
@@ -307,7 +307,7 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         import java.util.List;
 
                         class FooTest {
-                            AxonTestFixture<Object> fixture;
+                            AxonTestFixture fixture;
                             void test() {
                                 fixture.given().events(List.of(new Object(), new Object()))
                                        .when().command(new Object())

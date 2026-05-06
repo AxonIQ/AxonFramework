@@ -54,7 +54,7 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
 
                         import org.axonframework.extension.spring.stereotype.EventSourced;
 
-                        @EventSourced
+                        @EventSourced(tagKey = "Order", idType = Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */)
                         class Order {}
                         """
                 )

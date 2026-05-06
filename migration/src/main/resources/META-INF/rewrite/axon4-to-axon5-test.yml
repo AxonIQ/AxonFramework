@@ -45,6 +45,11 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.FixtureConfiguration
       newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  # AF5's AxonTestFixture is non-generic — drop the `<T>` payload parameter that
+  # AF4 used on AggregateTestFixture / SagaTestFixture / FixtureConfiguration so
+  # call sites like `AxonTestFixture<Order>` collapse to a raw `AxonTestFixture`.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
   # Fluent-API rewrite — handles the call-chain shape change documented in
   # `paths/test-fixtures.adoc`. Leaves Hamcrest-matcher methods alone.
   - org.axonframework.migration.MigrateAxonTestFixtureFluentApi
