@@ -93,26 +93,53 @@ Validate the path exists, contains `pom.xml` / `build.gradle*`, and is a git
 repository. Refuse if it points at the AxonFramework repo itself — same rule as
 `axon4-to-axon5-openrewrite` step 1.
 
-Then, *before doing anything else*:
+Then read `progress.md` if it exists. **The mode of the run is decided by
+this file:**
 
 ```bash
-test -f <target>/.axon4-to-axon5-migration/progress.md && cat <target>/.axon4-to-axon5-migration/progress.md
+test -f <target>/.axon4-to-axon5-migration/progress.md
 ```
 
-- If `progress.md` exists, **read it fully** and tell the user where the
-  previous run left off ("Last completed phase: 2. In-flight: aggregates 3 of 7
-  migrated."). Confirm whether to resume from that point or restart a phase.
-- If it does not exist, this is a fresh run. Create the directory:
-  ```bash
-  mkdir -p <target>/.axon4-to-axon5-migration
-  ```
-  and initialize `progress.md` from the template in
-  `references/progress-template.md` (substitute the target path, today's date,
-  and mark phase 1 as `in-progress`).
+#### Existing progress → resume mode
 
-Always update `progress.md` whenever the state changes — completing a phase,
-finishing one item inside a phase, recording a blocker. Treat it as the single
-source of truth a future session will rely on.
+If `progress.md` exists, you are in **resume mode**. This is the common
+case — the user `/clear`-ed between phases (or even between items),
+and your job is to honor the persisted state without re-deciding it.
+
+Follow the [Resume protocol](#resume-protocol--what-a-fresh-session-does)
+in the "Context-resumable design" section: read `progress.md`,
+sanity-check the working tree, read `learnings.md` selectively, confirm
+with the user, then jump straight to the action named in the
+**▶︎ RESUME HERE** block.
+
+Do NOT re-run step 0a (out-of-scope sweep) or step 0b (commit cadence)
+on resume — both were answered on the first run and pinned in the
+"Pinned user decisions" block of `progress.md`. If the pinned decisions
+are missing (older `progress.md`), ask the user once and update the
+pinned section in the same commit as your first action.
+
+#### No progress file → fresh-start mode
+
+If `progress.md` does not exist, this is a fresh run:
+
+```bash
+mkdir -p <target>/.axon4-to-axon5-migration
+```
+
+Initialize `progress.md` from `references/progress-template.md` —
+substitute the target path, today's date, and the active branch.
+Leave the `▶︎ RESUME HERE` block pointing at "Step 0a — out-of-scope
+sweep" so a `/clear` immediately after init still resumes correctly.
+
+Then run step 0a, step 0b, and proceed to phase 1 as usual.
+
+#### The persistence invariant
+
+Whatever mode you're in: every state change you make ends with
+**`progress.md` rewritten + a commit that includes it**. Never mutate
+the working tree without a corresponding `progress.md` update in the
+same commit. The "Recent activity log" section is where the persistent
+trail lives — append to it, don't replace.
 
 #### 0a. Out-of-scope sweep — warn the user before any code changes
 
@@ -492,19 +519,125 @@ and ask via `AskUserQuestion`:
 
 Don't silently sweep the user's WIP into a migration commit.
 
-## Resuming an interrupted run
+## Context-resumable design — the core contract
 
-A new conversation that invokes this skill against a target with an existing
-`.axon4-to-axon5-migration/progress.md` is the common case, not the exception.
-The resume protocol:
+A full AF4→AF5 migration of a real project will not fit in a single
+context window. The orchestrator is **explicitly designed** so the user
+can run `/clear` (or start a fresh session entirely) between phases —
+or even between individual items inside a phase — and the next session
+picks up exactly where the previous one stopped.
 
-1. Read `progress.md` end-to-end — every phase entry, every per-item line.
-2. Read `learnings.md` if it exists — past surprises shape current decisions.
-3. Tell the user, in two or three sentences: "You're at phase X. Last item
-   completed: Y. <N> items remain in this phase. Resume from there?" Use
-   `AskUserQuestion`.
-4. Trust `progress.md`. If the user says it's wrong, ask them what to update —
-   don't rewrite it from scratch.
+This works because of two invariants the orchestrator enforces on
+every step:
+
+1. **Every unit of progress ends with a commit that includes
+   `progress.md`.** A unit of progress is: a per-item migration in
+   phases 2–8, or the whole of phases 1, 9, and 10. After the commit,
+   the working tree is clean and `progress.md` reflects the new state.
+2. **`progress.md` is self-contained.** The "▶︎ RESUME HERE" block at
+   the top of the file names the next phase, the next item, the next
+   sub-skill to invoke, and the exact verification command. No prior
+   conversation is required to know what comes next.
+
+Because of (1) and (2), at any commit boundary the user may safely
+`/clear` and start a fresh session. The new session reads
+`progress.md`, executes one more unit of progress, commits, and the
+cycle continues.
+
+### Encourage `/clear` between units
+
+After every commit on a non-trivial unit (the whole of phase 1, or
+every 2–3 migrated aggregates / handlers, or anything that touched
+many files), proactively suggest:
+
+> "I've committed `<short-sha>`. Working tree is clean and
+> `progress.md` is updated. This is a safe point to `/clear` the
+> context if you'd like — when you come back, just invoke this skill
+> again and I'll resume from `progress.md`."
+
+Don't insist; the user decides. But surface the option, especially as
+the conversation grows. Long-running migrations that never `/clear`
+will eventually lose the focus and accuracy that short, targeted
+sessions deliver.
+
+### What the orchestrator writes to `progress.md`
+
+After each unit of progress, **before committing**:
+
+1. Update the **▶︎ RESUME HERE** block to point at the next unit:
+   - Set `Current phase` and `Phase status`.
+   - Set `Next action` to a one-sentence imperative.
+   - Set `Exact sub-skill to invoke` to the FQ skill name plus the
+     specific target (FQ class name for iterative phases).
+   - Set `Exact verification command` to the copy/paste-ready command
+     a fresh session will run after the next sub-skill returns.
+   - Set `Last commit recorded by orchestrator` to the SHA you are
+     about to write — get the SHA after the commit and amend the
+     resume block in a follow-up touch-up commit only if needed
+     (usually you already know the previous commit's SHA at the time
+     you're writing the new resume block).
+2. Update the matching row in the **Phase status** table
+   (`Items done / total`, `Last commit`).
+3. Update the matching item row in the per-phase plan table
+   (status `done` + commit SHA).
+4. Append a one-liner to **Recent activity log**.
+5. If a non-obvious lesson surfaced, append a dated entry to
+   `learnings.md` and link it from the per-phase section.
+
+Then commit (per the [Commit cadence](#commit-cadence) section). The
+working tree is now clean and the next session can resume.
+
+### Resume protocol — what a fresh session does
+
+The resume sequence runs **before** any other work, on every
+invocation of this skill against an existing target:
+
+1. **Read `progress.md` top-to-bottom.** The resume block tells you
+   exactly what to do next; the per-phase tables tell you what's done.
+2. **Sanity-check the working tree** against the recorded last commit:
+   ```bash
+   git -C <target> rev-parse --short HEAD
+   git -C <target> status --porcelain
+   ```
+   If `HEAD` matches the recorded last commit and the tree is clean,
+   the previous session left a tidy checkpoint — you may proceed.
+   If `HEAD` is ahead (the user committed manually), surface it but
+   trust their state.
+   If the tree is **dirty**, the previous session crashed mid-step.
+   Ask the user via `AskUserQuestion` whether to:
+   - Inspect the dirty diff together and decide,
+   - Reset to the recorded commit (only with explicit user OK — this
+     is destructive),
+   - Continue from the dirty state (treat the in-progress edits as
+     yours to finish).
+3. **Read `learnings.md` only if needed.** Skim the index; pull in
+   only the entries relevant to the next action. The full file may
+   not fit in context for a long-running migration — and it doesn't
+   need to. Read on demand.
+4. **Confirm with the user** in one or two sentences: "Resuming at
+   phase X. Next item: Y. Continuing?" — using `AskUserQuestion` so
+   the user has a chance to redirect.
+5. **Trust `progress.md`.** If the user says it's wrong, fix it
+   together first, commit the fix, and only then continue. Don't
+   rewrite progress from scratch — it's the historical record of a
+   multi-session effort.
+
+### What does NOT need to survive `/clear`
+
+These are deliberately *not* persisted to `progress.md`, because they
+either don't matter at resume time or are derivable on demand:
+
+- The full transcript of any previous sub-skill invocation.
+- Verbose tool outputs (Maven logs, OpenRewrite recipe stdout).
+- Reasoning chains the orchestrator went through to pick the next
+  item — the picked item is enough.
+- Every grep result. Discovery is re-runnable; the *enumerated plan*
+  in the per-phase table is what matters.
+
+If something here turns out to matter at resume time (e.g. a behavior
+change the openrewrite skill flagged), promote it to `learnings.md`
+or to the relevant phase section in `progress.md` — don't rely on
+ambient context.
 
 ## Subagents
 
