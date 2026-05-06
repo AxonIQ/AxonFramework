@@ -3,6 +3,32 @@
 A condensed cheat sheet for jumping into any phase. Use this when resuming a
 mid-migration and you want a one-page reminder of the loop shape.
 
+## Resuming from a fresh `/clear` (most common case)
+
+The orchestrator is **designed for context resets between units of
+progress.** When you invoke this skill against a target with an
+existing `progress.md`:
+
+1. Read `<target>/.axon4-to-axon5-migration/progress.md` — start with
+   the **▶︎ RESUME HERE** block at the top. It names the next phase,
+   the next sub-skill, and the next verification command.
+2. Sanity-check `git -C <target> rev-parse --short HEAD` against the
+   "Last commit recorded by orchestrator" line. If they match and the
+   tree is clean (`git status --porcelain` empty), proceed. If dirty,
+   investigate before continuing — the previous session may have
+   crashed mid-step.
+3. Read the **Pinned user decisions** block — license target,
+   commit cadence, storage-engine path, out-of-scope acceptance
+   are all already answered. Do **not** re-prompt.
+4. Read `learnings.md` only on demand — pull entries relevant to the
+   next action, not the whole file.
+5. Confirm in one sentence with the user, then execute the
+   **▶︎ RESUME HERE** action.
+
+After every successful unit of progress, suggest `/clear` to the user.
+Phase boundaries especially are zero-cost to clear and keep later
+phases sharp.
+
 ## Universal per-phase loop (phases 2–8)
 
 ```

@@ -5,14 +5,16 @@ description: >-
   by sequencing the atomic per-construct migration skills (OpenRewrite, event
   sourced aggregates, event processors, command gateway, query gateway, query
   handlers, read/write configuration, aggregate event-storage engine) in the
-  correct order, with human confirmation checkpoints between phases and
-  resumable progress tracking written to `.axon4-to-axon5-migration/progress.md`
-  inside the target project.
-  Use whenever the user asks to "migrate a project to Axon Framework 5",
-  "run the AF4→AF5 migration end to end", "drive the full migration",
-  "resume the migration", or names a target repo to upgrade from Axon 4 to
-  Axon 5 as a whole. Not for one-off, single-class rewrites — those go to the
-  per-construct skills directly.
+  correct order, with human confirmation checkpoints between phases. Designed
+  for **context resets between units of progress** — every per-item migration
+  ends with a commit that includes a self-contained
+  `.axon4-to-axon5-migration/progress.md` with a "▶︎ RESUME HERE" block, so
+  the user can `/clear` between phases (or even between items) and a fresh
+  session resumes from a single file read. Use whenever the user asks to
+  "migrate a project to Axon Framework 5", "run the AF4→AF5 migration end to
+  end", "drive the full migration", "resume the migration", or names a target
+  repo to upgrade from Axon 4 to Axon 5 as a whole. Not for one-off,
+  single-class rewrites — those go to the per-construct skills directly.
 ---
 
 # AF4 → AF5: full-project migration orchestrator
@@ -227,7 +229,7 @@ Phase 2–8 all share the same shape: discover items, set up scoped verification
 migrate one item at a time, verify, log, repeat. The pattern is described once
 here and referenced by phases 3–8.
 
-#### 2a. Discover the scope
+#### 2a. Discover the scope and persist the plan
 
 Find every AF4 aggregate still in the project. Run inside the target:
 
@@ -238,11 +240,23 @@ grep -RlE 'org\.axonframework\.eventsourcing\.EventSourcingHandler' \
      --include='*.java' --include='*.kt' <target>/src 2>/dev/null
 ```
 
-Combine and deduplicate. Each unique class is one invocation of the
-sub-skill. Record the list in `plan.md` under a `## Phase 2 — Aggregates`
-heading with an unchecked checkbox per class.
+Combine and deduplicate, then **filter out** any file matched by the
+out-of-scope sweep (step 0a) — sagas, snapshotters, etc. don't go to
+the per-construct skills.
 
-If the list is empty, mark phase 2 complete in `progress.md` and skip to step 3.
+Persist the resulting list as the **enumerated plan** in
+`progress.md` → `## Phase 2 — Event-sourced aggregates`. One row per
+aggregate, with FQ class, FQ test class, status `pending`, commit
+column blank. Set the **▶︎ RESUME HERE** block to point at the first
+item, then commit that planning step (`chore(af5-migration): plan
+phase 2`).
+
+This planning commit is what makes a `/clear` immediately after
+discovery safe — without it, a new session would re-run the grep and
+risk picking up files that have moved during phase 1.
+
+If the list is empty, mark phase 2 `complete` in `progress.md`, update
+**▶︎ RESUME HERE** to "Phase 3 discovery", commit, and skip to step 3.
 
 #### 2b. Set up scoped verification
 
@@ -262,19 +276,49 @@ For each unmigrated aggregate in `plan.md`:
    ```bash
    ./mvnw test -Pmigration -Dtest='<FQTestClass>' -DfailIfNoTests=false
    ```
-4. If green: tick the checkbox in `plan.md`, append a one-liner to
-   `progress.md` ("Phase 2: migrated `<FQClass>` ✓"), **commit the
-   per-item diff** (see [Commit cadence](#commit-cadence) — one commit
-   per migrated item, on the current branch, no push), and continue to
-   the next aggregate.
-5. If red: stop the loop, record the failure context in `learnings.md`
-   (failing test name, root cause, fix applied), and ask the user how to
-   proceed:
-   - `Fix manually now` — pause for the user to edit, then re-run verification.
-   - `Skip this aggregate for now` — mark it `[blocked]` in plan.md and move
-     on; revisit in phase 10 (stabilization).
-   - `Stop the migration here` — exit cleanly; the next session resumes from
-     the marked spot.
+4. If green: **before committing**, rewrite `progress.md` to reflect
+   the new state — this is the single most important step for
+   context-resumability:
+   - Update the item's row in the Phase-2 table: status → `done`,
+     commit column → the SHA you're about to create (you can fill
+     this in just after `git commit` and amend the same file via a
+     follow-up edit + `git commit -a --no-edit`-style touch-up — but
+     it's simpler to commit twice if needed: once for the migration,
+     once for the SHA back-fill; or write a placeholder like
+     `<pending>` and back-fill on the next item's commit).
+   - Update the Phase-status row's `Items done / total`.
+   - **Rewrite the ▶︎ RESUME HERE block** to point at the *next*
+     unmigrated item: new "Next action", new "Exact sub-skill to
+     invoke" with the next FQ class, new "Exact verification command"
+     with the next test class. If this was the last item, point it at
+     the phase-2 → phase-3 user checkpoint.
+   - Append a one-liner to "Recent activity log".
+   Then commit per [Commit cadence](#commit-cadence).
+5. After every 2–3 successful items (or after any item that touched
+   many files), proactively suggest a `/clear`:
+   > "Working tree is clean, `progress.md` is up to date, last commit
+   > is `<sha>`. Safe point to `/clear` if you'd like — when you
+   > resume, just invoke this skill again."
+
+   The user decides. Don't push.
+6. If red: do **not** commit a half-migrated item. Instead:
+   - Update `progress.md` → set the item's status to
+     `blocked: <one-line reason>`, leave the ▶︎ RESUME HERE block
+     pointing at *this* item with a "Next action" of "investigate
+     blocker".
+   - Append a learnings entry (failing test name, root cause if known)
+     and link it from the item row.
+   - Commit `progress.md` and `learnings.md` only (no half-migrated
+     code) so the next session can see the blocker without inheriting
+     a broken working tree:
+     `chore(af5-migration): record blocker on <FQ class>`
+   - Then ask the user via `AskUserQuestion`:
+     - `Fix manually now` — pause, let them edit, re-run verification, pick up at the same item.
+     - `Skip this aggregate for now` — flip the status to
+       `deferred-to-phase-10` in `progress.md`, update RESUME HERE to
+       the next item, commit, continue.
+     - `Stop the migration here` — already safe; the blocker commit
+       is the resume point.
 
 When every aggregate is checked off (or explicitly blocked-and-deferred), mark
 phase 2 complete in `progress.md` and stop for the human checkpoint:
@@ -286,6 +330,16 @@ Continue to phase 3 (event processors)? [yes / iterate phase 2 / pause]
 ```
 
 Use `AskUserQuestion`. Don't auto-advance.
+
+> **Recommend `/clear` at every phase boundary.** Phase boundaries are
+> the natural cut points — `progress.md` is fully up-to-date, the
+> working tree is clean, the next phase has its own discovery sweep.
+> A `/clear` here costs nothing and keeps later phases sharp. Suggest
+> it explicitly:
+>
+> > "Phase X is committed and `progress.md` reflects the new state.
+> > This is a great moment to `/clear` before phase X+1 — when you
+> > come back, just invoke this skill and I'll resume."
 
 ### Steps 3–8. Phases 3–8 — same shape, different sub-skill
 
@@ -461,6 +515,30 @@ and **never pushes**. The user controls the remote.
 Always include the matching `progress.md` / `learnings.md` / `plan.md`
 update in the same commit as the code change it documents — the journal
 and the work belong together.
+
+### Persistence checklist (run before every commit)
+
+This is the contract that makes `/clear` between phases (or items)
+safe. Before every `git commit`, verify each item below. If any is
+missing, update `progress.md` first, then commit.
+
+- [ ] **▶︎ RESUME HERE block** points at the *next* unit of progress
+      (not the one just finished). Includes a one-sentence Next
+      action, the exact sub-skill, and the exact verification
+      command.
+- [ ] **Phase status table** row for the current phase has updated
+      `Items done / total` and `Last commit`.
+- [ ] **Per-phase plan table** row for the just-finished item shows
+      status `done` (or `blocked: <reason>` / `deferred-to-phase-10`)
+      and a commit SHA (or `<pending>` placeholder if you'll
+      back-fill).
+- [ ] **Recent activity log** has one new line for this commit.
+- [ ] If a non-obvious lesson surfaced, **`learnings.md`** has a new
+      dated entry, linked from the relevant phase section.
+
+A fresh session reading `progress.md` after this commit must be able
+to pick up the next action without asking you any clarifying
+questions about state.
 
 ### Always include the migration journal
 
