@@ -26,6 +26,15 @@ is left to the per-construct migration skills (`axon4-to-axon5-eventprocessor`,
 `axon4-to-axon5-querygateway`, `axon4-to-axon5-queryhandler`,
 `axon4-to-axon5-readconfiguration`, `axon4-to-axon5-writeconfiguration`).
 
+> **The post-run state is expected to be non-compiling.** OpenRewrite
+> runs the *first* mechanical step of the migration. The remaining
+> AF4→AF5 surface (handler shapes, async dispatch, configuration model,
+> aggregate model, …) is judgment-driven and lives in the per-construct
+> skills above. Do not treat compile errors after this skill as a
+> failure of the recipe run — they are the work the per-construct
+> skills exist to do, scoped iteratively via
+> `axon4-to-axon5-maven-migration-profile`.
+
 > **Keep this skill generic.** It is invoked across many target projects.
 > All project-specific knowledge — recipe choices that worked, surprises
 > in a given codebase — lives in `references/examples/` only.
@@ -226,11 +235,20 @@ Report to the user:
 - File-count summary (added / modified) from `git diff --stat`.
 - Hot spots: the modules with the most changes (inspect the diff stats
   and surface the top 3 paths).
+- **Set the expectation explicitly: the project is not expected to
+  compile yet.** OpenRewrite is the first step; per-construct rewrites
+  (handler shapes, async dispatch, configuration model, aggregate
+  model) are next. Don't run `mvn compile` or the test suite to "verify"
+  the recipe — those will fail by design until the per-construct skills
+  finish their passes.
 - A reminder that mechanical rewrites only cover what the recipes
   encode — the per-construct migration skills (listed at the top of
   this file) handle the human-judgment-required leftovers
   (`CommandGateway` calls inside handlers, `@EventSourcingHandler`
-  reorganization, configuration enhancers, etc.).
+  reorganization, configuration enhancers, etc.). Use
+  `axon4-to-axon5-maven-migration-profile` to scope iterative
+  verification to the migrated subset while the rest of the codebase
+  is still mid-migration.
 
 ### 9. Stop and let the user verify
 
@@ -255,11 +273,16 @@ when ready. If the user stashed in step 2, remind them about
   `UpgradeSpringBoot_3_5` step is a no-op when the project is already
   on Spring Boot 3.5.x or newer (including Spring Boot 4.x). OpenRewrite
   will not downgrade the version.
-- **Compile failures after the recipe are normal.** The skill name is
-  intentionally about *running OpenRewrite*, not about leaving a
-  green build behind. The per-construct migration skills (and possibly
-  `axon4-to-axon5-maven-migration-profile` for scoped iterative
-  verification) take it from here.
+- **Compile failures after the recipe are the expected outcome, not a
+  problem to chase.** This skill runs *only the first mechanical step*
+  of an AF4→AF5 migration. Async-everywhere handler shapes, the new
+  configuration model, the new aggregate model, and most other
+  judgment-driven rewrites are intentionally out of scope here and
+  will leave the project non-compiling until the per-construct skills
+  run. Don't attempt `mvn compile` / `mvn test` to verify the recipe.
+  Hand off to the per-construct migration skills (and use
+  `axon4-to-axon5-maven-migration-profile` to scope verification to
+  the migrated subset as you go).
 - **Gradle targets are out of scope today.** Step 3 hands off to the
   user with instructions rather than emitting a partial Gradle config.
 
