@@ -19,13 +19,16 @@ package org.axonframework.migration;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.ScanningRecipe;
 import org.openrewrite.TreeVisitor;
+import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -188,7 +191,14 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                                                                      ExecutionContext ctx) {
                 J.VariableDeclarations vd = super.visitVariableDeclarations(multiVar, ctx);
 
-                // Only act on fields of event classes, not on local variables or method params.
+                // Only act on fields and record components of event classes — never on
+                // method parameters or local variables. A method parameter inside a static
+                // factory (e.g. `event(Id id)`) shares the enclosing class with the record
+                // header, so we additionally check that no method declaration sits between
+                // us and the class.
+                if (getCursor().firstEnclosing(J.MethodDeclaration.class) != null) {
+                    return vd;
+                }
                 J.ClassDeclaration enclosingClass = getCursor().firstEnclosing(J.ClassDeclaration.class);
                 if (enclosingClass == null || enclosingClass.getType() == null) {
                     return vd;
@@ -237,7 +247,103 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         .build()
                         .apply(getCursor(), vd.getCoordinates().addAnnotation((a, b) -> 0));
                 maybeAddImport(EVENT_TAG_FQN, null, false);
-                return annotated;
+                return forceAnnotationOnOwnLine(annotated);
+            }
+
+            /**
+             * For record headers the components live on a single (or comma-separated) line, so
+             * {@link JavaTemplate#apply} inlines the freshly added annotation as
+             * {@code @EventTag(...) String id}. We push the type/modifier onto its own line by
+             * reusing a newline+indent prefix sourced from this declaration, its annotation, or
+             * a sibling record component, so the result reads
+             * <pre>{@code
+             * @EventTag(key = "Foo")
+             * String id
+             * }</pre>
+             * For regular class fields the annotation is already on its own line and this method
+             * is a no-op.
+             */
+            private J.VariableDeclarations forceAnnotationOnOwnLine(J.VariableDeclarations vd) {
+                if (vd.getLeadingAnnotations().isEmpty()) {
+                    return vd;
+                }
+                Space indent = resolveIndent(vd);
+                if (indent == null) {
+                    return vd;
+                }
+                // Promote the VariableDeclarations' own prefix to a full indent when it only
+                // carries a bare newline; this happens for the first record component, whose
+                // leading whitespace is held by the enclosing JContainer rather than the VD.
+                if (!hasIndent(vd.getPrefix()) && vd.getPrefix().getWhitespace().contains("\n")) {
+                    vd = vd.withPrefix(indent);
+                }
+                if (!vd.getModifiers().isEmpty()) {
+                    J.Modifier first = vd.getModifiers().get(0);
+                    if (first.getPrefix().getWhitespace().contains("\n")) {
+                        return vd;
+                    }
+                    Space finalIndent = indent;
+                    return vd.withModifiers(ListUtils.mapFirst(vd.getModifiers(),
+                                                                m -> m.withPrefix(finalIndent)));
+                }
+                if (vd.getTypeExpression() != null
+                        && !vd.getTypeExpression().getPrefix().getWhitespace().contains("\n")) {
+                    return vd.withTypeExpression(vd.getTypeExpression().withPrefix(indent));
+                }
+                return vd;
+            }
+
+            /**
+             * Resolve a newline + indent {@link Space} for {@code vd}, checking — in order — the
+             * trailing annotation, the variable declaration itself, and any sibling record
+             * component / class field. The first record component's indent often lives on the
+             * enclosing {@code JContainer} (so its own prefix is just {@code "\n"} with no
+             * spaces), making siblings the only reliable source of a usable indent for it.
+             */
+            private @Nullable Space resolveIndent(J.VariableDeclarations vd) {
+                Space candidate = vd.getLeadingAnnotations()
+                                     .get(vd.getLeadingAnnotations().size() - 1)
+                                     .getPrefix();
+                if (hasIndent(candidate)) {
+                    return candidate;
+                }
+                if (hasIndent(vd.getPrefix())) {
+                    return vd.getPrefix();
+                }
+                J.ClassDeclaration clazz = getCursor().firstEnclosing(J.ClassDeclaration.class);
+                if (clazz == null) {
+                    return null;
+                }
+                if (clazz.getPadding().getPrimaryConstructor() != null) {
+                    for (Statement s : clazz.getPadding().getPrimaryConstructor().getElements()) {
+                        if (s == vd || !(s instanceof J.VariableDeclarations)) {
+                            continue;
+                        }
+                        Space siblingPrefix = ((J.VariableDeclarations) s).getPrefix();
+                        if (hasIndent(siblingPrefix)) {
+                            return siblingPrefix;
+                        }
+                    }
+                }
+                if (clazz.getBody() != null) {
+                    for (Statement s : clazz.getBody().getStatements()) {
+                        if (s == vd || !(s instanceof J.VariableDeclarations)) {
+                            continue;
+                        }
+                        Space siblingPrefix = ((J.VariableDeclarations) s).getPrefix();
+                        if (hasIndent(siblingPrefix)) {
+                            return siblingPrefix;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            /** A {@link Space} is a usable indent only if it has indent chars after a newline. */
+            private static boolean hasIndent(Space space) {
+                String ws = space.getWhitespace();
+                int nl = ws.lastIndexOf('\n');
+                return nl >= 0 && nl < ws.length() - 1;
             }
 
             private boolean hasEventTag(J.VariableDeclarations vd) {

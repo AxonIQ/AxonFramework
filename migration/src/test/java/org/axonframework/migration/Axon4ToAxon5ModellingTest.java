@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
 
@@ -87,6 +88,88 @@ class Axon4ToAxon5ModellingTest implements RewriteTest {
 
                         class GiftCard {
                             private String cardId;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void addsEventTagToRecordComponentButNotToStaticFactoryParameter() {
+        // The record header carries the event payload, so its component matching the
+        // entity id field is the right place for `@EventTag`. A parameter on a static
+        // factory that happens to share the same name (e.g. `event(...)`) must NOT be
+        // tagged — otherwise `@EventTag` lands in two places, and the factory-parameter
+        // version is meaningless at runtime.
+        // Formatting check: the annotation must sit on its own line above the field
+        // (annotation, then component on the next line at the same indent), matching
+        // the convention used elsewhere in the AF5 codebase.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class ResourcesPool {
+                            @AggregateIdentifier
+                            private String resourcesPoolId;
+
+                            @EventSourcingHandler
+                            void on(ResourcesWithdrawn event) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class ResourcesPool {
+                            private String resourcesPoolId;
+
+                            @EventSourcingHandler
+                            void on(ResourcesWithdrawn event) {
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.util.Map;
+
+                        public record ResourcesWithdrawn(
+                                String resourcesPoolId,
+                                Map<String, Integer> resources
+                        ) {
+                            public static ResourcesWithdrawn event(String resourcesPoolId, int amount) {
+                                return new ResourcesWithdrawn(resourcesPoolId, Map.of("gold", amount));
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.annotation.EventTag;
+
+                        import java.util.Map;
+
+                        public record ResourcesWithdrawn(
+                                @EventTag(key = "ResourcesPool")
+                                String resourcesPoolId,
+                                Map<String, Integer> resources
+                        ) {
+                            public static ResourcesWithdrawn event(String resourcesPoolId, int amount) {
+                                return new ResourcesWithdrawn(resourcesPoolId, Map.of("gold", amount));
+                            }
                         }
                         """
                 )
