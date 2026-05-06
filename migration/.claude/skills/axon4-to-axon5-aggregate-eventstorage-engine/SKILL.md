@@ -6,12 +6,14 @@ description: >-
   based on what AF4 used — `AggregateBasedJpaEventStorageEngine` (which also
   needs a SQL table migration: `domain_event_entry` →
   `aggregate_event_entry`, plus column renames) for JPA projects, or
-  `AggregateBasedAxonServerEventStorageEngine` (auto-registered by the
-  Axoniq Spring Boot starter — no code change needed when Spring is present)
-  for Axon Server projects. Without Spring Boot, wires the engine via
-  `EventSourcingConfigurer.create().componentRegistry(...)`. Atomic — one
-  storage-engine wiring per run, with the matching schema migration (or an
-  explicit "schema migration deferred to ops" hand-off) emitted alongside.
+  `AggregateBasedAxonServerEventStorageEngine` for Axon Server projects
+  (the Axoniq starter's autoconfig registers `AxonServerEventStorageEngine` —
+  the new DCB-flat engine — so the aggregate-based variant must be wired
+  explicitly via a `@Bean EventStorageEngine`). Without Spring Boot, wires
+  the engine via `EventSourcingConfigurer.create().componentRegistry(...)`.
+  Atomic — one storage-engine wiring per run, with the matching schema
+  migration (or an explicit "schema migration deferred to ops" hand-off)
+  emitted alongside.
 ---
 
 # AF4 → AF5: aggregate-centric `EventStorageEngine` configuration
@@ -45,7 +47,7 @@ Inspect the AF4 wiring before changing anything. The mapping is:
 | AF4 wiring observed | AF5 target | Notes |
 |---|---|---|
 | `JpaEventStorageEngine.builder()…build()` (often inside `EmbeddedEventStore`) | `AggregateBasedJpaEventStorageEngine` | **Schema migration required** — see Path A. |
-| `AxonServerEventStore` / `AxonServer*EventStore` autoconfigured by `axon-spring-boot-starter` | `AggregateBasedAxonServerEventStorageEngine` | Auto-registered by `axoniq-spring-boot-starter`'s `AxonServerAutoConfiguration`. **Just remove the AF4 bean** — see Path B. |
+| `AxonServerEventStore` / `AxonServer*EventStore` autoconfigured by `axon-spring-boot-starter` | `AggregateBasedAxonServerEventStorageEngine` | The Axoniq connector's `AxonServerConfigurationEnhancer` auto-registers `AxonServerEventStorageEngine` (DCB-flat), **not** the aggregate-based variant. To preserve aggregate-keyed event-log semantics, declare an explicit `@Bean EventStorageEngine` returning `new AggregateBasedAxonServerEventStorageEngine(...)` — see Path B. |
 | `JdbcEventStorageEngine.builder()…build()` | *No drop-in equivalent in AF5 yet* | Stop, surface to the user. Options: (1) move to Axon Server (Path B), (2) move to JPA + Hibernate over the same DB (Path A), (3) defer until AF5 ships a JDBC equivalent. |
 | Custom `EventStorageEngine` subclass | Reimplement on top of `AggregateBasedJpaEventStorageEngine` or `AggregateBasedAxonServerEventStorageEngine` | Out of scope for one atomic invocation — open a follow-up issue. |
 
@@ -265,13 +267,81 @@ to that list.
 Use when the AF4 project depended on `axon-server-connector` (free) or
 `axoniq-spring-boot-starter` (commercial AF5).
 
-### B.1. Remove the AF4 storage-engine wiring
+### B.0. What the autoconfig actually does
+
+Verified on `axon-server-connector:5.1.0` by disassembling
+`AxonServerConfigurationEnhancer` (a `META-INF/services`-discovered
+`ConfigurationEnhancer`):
+
+- `eventStorageEngineDefinition()` registers `EventStorageEngine` via
+  `AxonServerEventStorageEngineFactory.constructForContext(context, configuration)`,
+  which constructs **`AxonServerEventStorageEngine`** — the new
+  DCB-flat engine.
+- `AggregateBasedAxonServerEventStorageEngine` ships in the same JAR
+  but has **no factory** and is **not auto-registered**. To use it,
+  the user must register it themselves.
+- The connector calls `registerIfNotPresent`, so any earlier-registered
+  or Spring-bean-registered `EventStorageEngine` wins.
+
+Choose your path **based on the migration goal**, not just on whether
+Axon Server is on the classpath:
+
+| Goal                                                     | Storage engine                                | What to do |
+|----------------------------------------------------------|-----------------------------------------------|---|
+| Preserve the AF4 aggregate-keyed event log on AF5 ("legacy storage preserved" — the orchestrator's default) | `AggregateBasedAxonServerEventStorageEngine` | **B-aggregate** — declare an explicit `@Bean EventStorageEngine`. |
+| Migrate to AF5 DCB semantics (flat event log, no aggregate routing) | `AxonServerEventStorageEngine`               | **B-DCB** — let the connector autoconfig win, delete any AF4 `@Bean`. |
+
+If unsure, ask the user. Aggregate preservation is the safe default —
+DCB migration is a separate, larger initiative.
+
+### B-aggregate.1. Declare the explicit `@Bean EventStorageEngine`
+
+The simplest way to override the connector's autoconfig is a plain
+Spring `@Bean` of type `EventStorageEngine`. Spring registers it as a
+component before the connector's enhancer runs `registerIfNotPresent`,
+so the aggregate-based engine wins:
+
+```java
+@Bean
+public EventStorageEngine storageEngine(AxonServerConnectionManager connectionManager,
+                                        EventConverter eventConverter) {
+    // AxonServerConnectionManager#getConnection() returns a connection to the
+    // default context. Use AxonServerConnectionManager#getConnection(String)
+    // to retrieve a connection for a non-default context.
+    return new AggregateBasedAxonServerEventStorageEngine(
+            connectionManager.getConnection(),
+            eventConverter
+    );
+}
+```
+
+Imports:
+
+```java
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+```
+
+Place the bean in the project's existing Axon `@Configuration` class
+(typically the same one the writeconfiguration skill touched). No
+`ConfigurationEnhancer` boilerplate is needed — the framework's
+Spring bridge resolves Spring beans of registered types as already-present
+components.
+
+If the project also declared an AF4 `@Bean EventStore` / `@Bean EventStorageEngine`,
+delete those — leaving them produces two `EventStorageEngine` beans and
+a startup failure.
+
+### B-DCB.1. Remove the AF4 storage-engine wiring
 
 If the project declared its own `EventStore` / `EventStorageEngine`
-`@Bean`, **delete those bean methods.** The Axoniq Spring Boot starter's
-`AxonServerAutoConfiguration` registers
-`AggregateBasedAxonServerEventStorageEngine` automatically. Adding your
-own bean prevents autoconfig from winning.
+`@Bean`, **delete those bean methods.** With no Spring bean of that
+type, the connector's `AxonServerConfigurationEnhancer` (registered
+via `META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer`)
+auto-registers `AxonServerEventStorageEngine` (DCB-flat). Adding your
+own bean prevents that autoconfig from winning.
 
 ### B.2. Confirm the connector dependency is in place
 
@@ -296,6 +366,32 @@ to the storage engine, port that to a `Converter` / `EventConverter`
 bean. Without one, AF5 falls back to the default converter, which may
 not round-trip events serialized by a customized AF4 Jackson serializer.
 Surface this to the user.
+
+### B.5. Verifying what the connector autoconfig registers
+
+When you can't trust a SKILL claim about "the autoconfig handles it",
+verify directly against the JAR. The Axoniq connector is closed-source
+but the registration code is in the disassembly:
+
+```bash
+# Find the connector JAR Spring resolves at runtime.
+ls ~/.m2/repository/io/axoniq/framework/axon-server-connector/<version>/
+
+# 1. Confirm it ships an enhancer (ServiceLoader SPI).
+unzip -p <jar> META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer
+
+# 2. Decompile the enhancer's bytecode to see what it registers as
+#    EventStorageEngine.
+unzip -j <jar> 'io/axoniq/framework/axonserver/connector/configuration/AxonServerConfigurationEnhancer*.class' -d /tmp/inspect
+javap -p -c /tmp/inspect/AxonServerConfigurationEnhancer.class | \
+    grep -E 'EventStorageEngine|AggregateBased|registerIfNotPresent|registerComponent'
+```
+
+Look for the `eventStorageEngineDefinition()` method and which
+`*StorageEngine` class its lambda constructs. If it constructs
+`AxonServerEventStorageEngine` and there's no factory or enhancer for
+the aggregate-based variant, the explicit `@Bean` from B-aggregate.1
+is required.
 
 ## Path C — No Spring (programmatic Configuration API)
 
