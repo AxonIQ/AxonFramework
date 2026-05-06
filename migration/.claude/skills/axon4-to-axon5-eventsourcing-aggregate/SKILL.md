@@ -52,6 +52,32 @@ Use this table for every step below — never guess imports.
 
 ## Instructions
 
+### Step 0: Pre-flight fast-path (ALWAYS run first)
+
+Before doing any transformation work, check whether the aggregate is already migrated:
+
+0.1. **Check for compilation problems in the aggregate file** (and its associated test fixture file). Use `mcp__ide__getDiagnostics` / `mcp__jetbrains__get_file_problems` if available, otherwise run a scoped `./mvnw compile` (with `-Pmigration` if a migration profile is configured).
+
+0.2. **If there are zero compilation problems**, run the tests for the corresponding test fixture (the `*Test` class for this aggregate). Use the same command shape as step T.5 below:
+
+```bash
+./mvnw test -Pmigration -Dtest='<FQTestClass>' -DfailIfNoTests=false
+```
+
+(Drop `-Pmigration` if the surrounding code already compiles cleanly.)
+
+0.3. **If the tests are green**, the aggregate is most likely already migrated. STOP and ask the user via `AskUserQuestion`:
+
+> "The aggregate `<Name>` compiles cleanly and its tests pass. How should I proceed?
+> - **Skip** — treat as already migrated and move on.
+> - **Deep verify** — diff the current AF5 source against the AF4 baseline (`git log` / `git show` on the pre-migration revision) and walk steps 1–14 + T.1–T.5 below to confirm nothing was silently lost (e.g. dropped `snapshotTriggerDefinition`, missing `@EventTag`, lost `@CreationPolicy` semantics)."
+
+Only proceed to step 1 if the user picks **Deep verify**, or if step 0.1/0.2 reported failures.
+
+> ⚠️ Do not skip step 0. A "skip" answer here is the most efficient outcome when the aggregate was already migrated by an earlier pass (OpenRewrite, a prior session, etc.) — running steps 1–14 against an already-migrated class wastes context and risks double-edits.
+
+### Step 1+: Full migration
+
 1. Work on the class given while invoking this skill or find the first class that is annotated with `@Aggregate` and has methods annotated with `@EventSourcingHandler`. This is the Aggregate that we will be working on. It's possible that some work is already done on this class — like changed annotations. Then continue work and make sure that it compiles and the corresponding tests are green.
 2. Identify all classes for commands handled by this Aggregate — first parameter of the methods annotated with `@CommandHandler`.
 3. Identify all classes for events handled by this Aggregate — first parameter of the methods annotated with `@EventSourcingHandler`.
