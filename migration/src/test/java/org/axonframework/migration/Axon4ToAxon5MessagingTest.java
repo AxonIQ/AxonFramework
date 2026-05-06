@@ -66,6 +66,31 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     }
 
     @Test
+    void renamesCommandGatewayIntoMessagingNamespace() {
+        // CommandGateway is reached by the recursive `ChangePackage` rule from
+        // `org.axonframework.commandhandling` → `org.axonframework.messaging.commandhandling`,
+        // which preserves the `gateway` subpackage. No dedicated rule needed.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        class Foo {
+                            CommandGateway gateway;
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+                        class Foo {
+                            CommandGateway gateway;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void renamesEventBusToEventSink() {
         rewriteRun(
                 java(

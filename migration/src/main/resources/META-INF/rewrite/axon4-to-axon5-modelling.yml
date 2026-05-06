@@ -57,6 +57,13 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.modelling.MetaDataAssociationResolver
       newFullyQualifiedTypeName: org.axonframework.modelling.MetadataAssociationResolver
 
+  # ── Annotate aggregate-identifier fields in event classes ───────────────
+  # MUST run BEFORE @AggregateIdentifier is removed below; scans entity
+  # classes for the @AggregateIdentifier field name and entity simple name,
+  # then adds @EventTag(key = "<EntitySimpleName>") to the corresponding
+  # field in each event class that appears in an @EventSourcingHandler method.
+  - org.axonframework.migration.AddEventTagAnnotation
+
   # ── Strip AF4-only annotations with no AF5 successor ────────────────────
   # `@AggregateIdentifier` (post-`ChangePackage` FQN). The class is gone in
   # AF5 — id resolution moved onto commands via `@TargetEntityId`, so the

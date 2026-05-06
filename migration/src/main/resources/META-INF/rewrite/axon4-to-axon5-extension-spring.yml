@@ -44,6 +44,11 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.Aggregate
       newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced
+  # Runs after the @Aggregate → @EventSourced rename above. Adds explicit
+  # tagKey = "<EntitySimpleName>" and idType = Object.class (placeholder)
+  # to every @EventSourced annotation that has no tagKey yet, so developers
+  # and LLM post-processors can see and verify the configuration.
+  - org.axonframework.migration.ConfigureEventSourcedAnnotation
   # Maven coordinate move: axon-spring artifact moves from groupId
   # `org.axonframework` to `org.axonframework.extensions.spring`.
   - org.openrewrite.maven.ChangeDependencyGroupIdAndArtifactId:
