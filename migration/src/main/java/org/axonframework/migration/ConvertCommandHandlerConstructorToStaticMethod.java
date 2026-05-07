@@ -18,6 +18,7 @@ package org.axonframework.migration;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -86,6 +87,15 @@ public class ConvertCommandHandlerConstructorToStaticMethod extends Recipe {
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         return new JavaIsoVisitor<>() {
+
+            @Override
+            public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
+                // Java-only. Kotlin sources need a different output shape (companion object +
+                // @JvmStatic — there is no `static` modifier in Kotlin) and are handled by the
+                // dedicated ConvertCommandHandlerConstructorToCompanionObject recipe.
+                return sourceFile instanceof J.CompilationUnit;
+            }
+
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method,
                                                               ExecutionContext ctx) {

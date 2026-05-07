@@ -35,7 +35,12 @@ recipeList:
   # ── AF4 @CommandHandler constructors → AF5 static handle methods ───────────
   # Must run BEFORE AddCommandAnnotation so the converted method's parameter is
   # what AddCommandAnnotation sees and registers as a command type.
+  # Java sources get a `public static void handle(...)` rewrite; Kotlin sources
+  # get a `companion object { @JvmStatic @CommandHandler fun handle(...) }`
+  # — both shapes are statically reachable on the JVM, which is what AF5's
+  # command-creates-entity discovery requires.
   - org.axonframework.migration.ConvertCommandHandlerConstructorToStaticMethod
+  - org.axonframework.migration.ConvertCommandHandlerConstructorToCompanionObject
 
   # ── Annotate command and event payload classes with @Command / @Event ──────
   # Scans @CommandHandler methods and adds @Command to their payload types;

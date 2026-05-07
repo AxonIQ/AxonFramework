@@ -19,6 +19,7 @@ package org.axonframework.migration;
 import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
@@ -26,6 +27,7 @@ import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.Space;
+import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -93,7 +95,11 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 if (select == null) {
                     return mi;
                 }
-                String name = mi.getSimpleName();
+                // Kotlin source can carry a method name backtick-escaped to dodge keyword
+                // collisions (e.g. `` `when` `` for the AF5 phase entrypoint). The recipe's
+                // dispatch and idempotency checks are language-agnostic, so strip backticks
+                // before comparing to AF4/AF5 names.
+                String name = unescapeBackticks(mi.getSimpleName());
                 List<Expression> args = realArgs(mi.getArguments());
 
                 switch (name) {
@@ -112,7 +118,8 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         // message argument into that single `exception(cls, msg)` call so users get
                         // the AF5 two-arg form rather than chained `.exception(cls).expectExceptionMessage(msg)`.
                         if (select instanceof J.MethodInvocation
-                                && "exception".equals(((J.MethodInvocation) select).getSimpleName())) {
+                                && "exception".equals(unescapeBackticks(
+                                        ((J.MethodInvocation) select).getSimpleName()))) {
                             J.MethodInvocation prior = (J.MethodInvocation) select;
                             List<Expression> existing = realArgs(prior.getArguments());
                             List<Expression> merged = new ArrayList<>(existing);
@@ -179,7 +186,7 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 Expression current = select;
                 while (current instanceof J.MethodInvocation) {
                     J.MethodInvocation invocation = (J.MethodInvocation) current;
-                    if (phase.equals(invocation.getSimpleName())
+                    if (phase.equals(unescapeBackticks(invocation.getSimpleName()))
                             && realArgs(invocation.getArguments()).isEmpty()) {
                         return true;
                     }
@@ -260,12 +267,20 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 org.openrewrite.java.tree.JRightPadded<Expression> selectForPhase =
                         org.openrewrite.java.tree.JRightPadded.<Expression>build(select)
                                 .withAfter(dotBeforePhase);
+                // `when` is a Kotlin hard keyword — to call it as a method name in a Kotlin
+                // source, the identifier must be backtick-escaped (`` `when` ``). The Kotlin
+                // printer renders the identifier's simpleName verbatim, so the escape lives in
+                // the LST. The leaf-method names (`events`, `command`, `noEvents`, …) are not
+                // Kotlin keywords, so only the phase identifier needs the treatment.
+                String phaseSimpleName = (isKotlinSource() && "when".equals(phase))
+                        ? "`when`"
+                        : phase;
                 J.Identifier phaseName = new J.Identifier(
                         org.openrewrite.Tree.randomId(),
                         Space.EMPTY,
                         org.openrewrite.marker.Markers.EMPTY,
                         java.util.Collections.emptyList(),
-                        phase,
+                        phaseSimpleName,
                         null,
                         null);
                 J.MethodInvocation phaseCall = new J.MethodInvocation(
@@ -353,6 +368,25 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                     return List.of();
                 }
                 return args;
+            }
+
+            /**
+             * Strips the leading and trailing backtick from a Kotlin-escaped identifier
+             * (e.g. {@code `when`} → {@code when}). Returns the input unchanged for
+             * regular identifiers. Used so name-based dispatch and idempotency checks
+             * treat the escaped and unescaped forms as equivalent — the recipe's
+             * semantic identity is the bare keyword.
+             */
+            private String unescapeBackticks(String name) {
+                if (name.length() >= 2 && name.charAt(0) == '`'
+                        && name.charAt(name.length() - 1) == '`') {
+                    return name.substring(1, name.length() - 1);
+                }
+                return name;
+            }
+
+            private boolean isKotlinSource() {
+                return getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
             }
         };
     }

@@ -18,6 +18,7 @@ package org.axonframework.migration;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
@@ -26,6 +27,8 @@ import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.KotlinTemplate;
+import org.openrewrite.kotlin.tree.K;
 
 import java.util.Map;
 
@@ -74,8 +77,10 @@ public class MigrateAggregateTestFixtureSetup extends Recipe {
     private static final String AF5_EVENT_SOURCED_ENTITY_MODULE =
             "org.axonframework.eventsourcing.configuration.EventSourcedEntityModule";
 
-    private static final String TODO_ID_TYPE =
-            "Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */";
+    private static final String TODO_COMMENT =
+            " /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */";
+    private static final String TODO_ID_TYPE_JAVA = "Object.class" + TODO_COMMENT;
+    private static final String TODO_ID_TYPE_KOTLIN = "Object::class.java" + TODO_COMMENT;
 
     @Override
     public String getDisplayName() {
@@ -128,33 +133,35 @@ public class MigrateAggregateTestFixtureSetup extends Recipe {
                         .getMessage(AddEventTagAnnotation.SHARED_ID_TYPES_KEY);
                 String idTypeFqn = shared != null ? shared.get(aggregateFqn) : null;
 
+                // Kotlin sources need `X::class.java` instead of `X.class` for class-literal
+                // arguments — and the resulting tree has to come from the Kotlin parser, so the
+                // surrounding multi-line builder chain renders with Kotlin idioms (no `;`,
+                // explicit method-reference shape). JavaTemplate would either fail to compile
+                // the placeholder or emit Java-shaped class literals that don't compile in
+                // Kotlin. Detect the source language once and dispatch to the right template
+                // engine; everything else (imports, TODO comment, idempotency) is shared.
+                boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
+
                 String idTypeExpr;
                 String idTypeImport;
                 if (idTypeFqn == null) {
-                    idTypeExpr = TODO_ID_TYPE;
+                    idTypeExpr = kotlin ? TODO_ID_TYPE_KOTLIN : TODO_ID_TYPE_JAVA;
                     idTypeImport = null;
                 } else {
                     String simpleName = idTypeFqn.substring(idTypeFqn.lastIndexOf('.') + 1);
-                    idTypeExpr = simpleName + ".class";
+                    idTypeExpr = simpleName + (kotlin ? "::class.java" : ".class");
                     idTypeImport = idTypeFqn.startsWith("java.lang.") ? null : idTypeFqn;
                 }
+                String aggregateExpr = aggregateSimple + (kotlin ? "::class.java" : ".class");
 
                 String template = "AxonTestFixture.with("
                         + "EventSourcingConfigurer.create()"
                         + ".registerEntity(EventSourcedEntityModule.autodetected("
-                        + idTypeExpr + ", " + aggregateSimple + ".class)))";
+                        + idTypeExpr + ", " + aggregateExpr + ")))";
 
-                JavaTemplate.Builder builder = JavaTemplate.builder(template)
-                        .imports(AF5_AXON_TEST_FIXTURE,
-                                 AF5_EVENT_SOURCING_CONFIGURER,
-                                 AF5_EVENT_SOURCED_ENTITY_MODULE)
-                        .javaParser(JavaParser.fromJavaVersion()
-                                              .classpath(JavaParser.runtimeClasspath()));
-                if (idTypeImport != null) {
-                    builder = builder.imports(idTypeImport);
-                }
-
-                J replaced = builder.build().apply(getCursor(), newClass.getCoordinates().replace());
+                J replaced = kotlin
+                        ? applyKotlinTemplate(template, idTypeImport, newClass)
+                        : applyJavaTemplate(template, idTypeImport, newClass);
 
                 // Force-add the imports rather than relying on the
                 // "only-if-referenced" heuristic: in test scope the AF5 jars
@@ -170,19 +177,60 @@ public class MigrateAggregateTestFixtureSetup extends Recipe {
             }
 
             /**
-             * Returns the FQN of {@code X} in {@code X.class}, or {@code null}
-             * when the argument is not a direct class literal whose target type
-             * resolves to a fully-qualified type.
+             * Returns the FQN of {@code X} from a class-literal argument shaped like
+             * {@code X.class} (Java) or {@code X::class.java} (Kotlin). Each language has its
+             * own LST shape; matching by shape rather than relying on a fully-resolved
+             * {@code Class<X>} type keeps the recipe working in test scope where AF5 types
+             * are unresolved. Returns {@code null} when neither shape matches.
              */
             private JavaType.FullyQualified extractClassLiteralType(Expression arg) {
-                if (!(arg instanceof J.FieldAccess)) {
-                    return null;
+                // Java: `Foo.class` is a J.FieldAccess(target=Foo, simpleName="class").
+                if (arg instanceof J.FieldAccess) {
+                    J.FieldAccess fa = (J.FieldAccess) arg;
+                    if ("class".equals(fa.getSimpleName())) {
+                        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(fa.getTarget().getType());
+                        if (fq != null) {
+                            return fq;
+                        }
+                    }
+                    // Kotlin: `Foo::class.java` is a J.FieldAccess(target=<Foo::class>, simpleName="java").
+                    // The KClass member reference's target type carries Foo's type info.
+                    if ("java".equals(fa.getSimpleName()) && fa.getTarget() instanceof J.MemberReference) {
+                        J.MemberReference mr = (J.MemberReference) fa.getTarget();
+                        if ("class".equals(mr.getReference().getSimpleName())) {
+                            JavaType.FullyQualified fq =
+                                    TypeUtils.asFullyQualified(mr.getContaining().getType());
+                            if (fq != null) {
+                                return fq;
+                            }
+                        }
+                    }
                 }
-                J.FieldAccess fa = (J.FieldAccess) arg;
-                if (!"class".equals(fa.getSimpleName())) {
-                    return null;
+                return null;
+            }
+
+            private J applyJavaTemplate(String template, String idTypeImport, J.NewClass target) {
+                JavaTemplate.Builder builder = JavaTemplate.builder(template)
+                        .imports(AF5_AXON_TEST_FIXTURE,
+                                 AF5_EVENT_SOURCING_CONFIGURER,
+                                 AF5_EVENT_SOURCED_ENTITY_MODULE)
+                        .javaParser(JavaParser.fromJavaVersion()
+                                              .classpath(JavaParser.runtimeClasspath()));
+                if (idTypeImport != null) {
+                    builder = builder.imports(idTypeImport);
                 }
-                return TypeUtils.asFullyQualified(fa.getTarget().getType());
+                return builder.build().apply(getCursor(), target.getCoordinates().replace());
+            }
+
+            private J applyKotlinTemplate(String template, String idTypeImport, J.NewClass target) {
+                KotlinTemplate.Builder builder = KotlinTemplate.builder(template)
+                        .imports(AF5_AXON_TEST_FIXTURE,
+                                 AF5_EVENT_SOURCING_CONFIGURER,
+                                 AF5_EVENT_SOURCED_ENTITY_MODULE);
+                if (idTypeImport != null) {
+                    builder = builder.imports(idTypeImport);
+                }
+                return builder.build().apply(getCursor(), target.getCoordinates().replace());
             }
         };
     }

@@ -18,6 +18,7 @@ package org.axonframework.migration;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.ScanningRecipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -28,6 +29,8 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.KotlinTemplate;
+import org.openrewrite.kotlin.tree.K;
 import org.openrewrite.marker.Markers;
 import org.jspecify.annotations.Nullable;
 
@@ -78,8 +81,10 @@ public class ConfigureEventSourcedAnnotation
     private static final String AGGREGATE_IDENTIFIER_AF5 =
             "org.axonframework.modelling.entity.AggregateIdentifier";
 
-    private static final String TODO_FALLBACK =
-            "Object.class /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */";
+    private static final String TODO_COMMENT =
+            " /* TODO #LLM: set to actual id type, e.g. String.class or UUID.class */";
+    private static final String TODO_FALLBACK = "Object.class" + TODO_COMMENT;
+    private static final String TODO_FALLBACK_KOTLIN = "Object::class.java" + TODO_COMMENT;
 
     /** Records {@code enclosingClassFqn → idTypeFqn} for every {@code @AggregateIdentifier} field. */
     public static class Accumulator {
@@ -180,14 +185,21 @@ public class ConfigureEventSourcedAnnotation
                     }
                 }
 
+                // Kotlin sources need `X::class.java` rather than Java's `X.class` for class
+                // literals. Detect the source language so the same recipe can emit either
+                // syntax — both routes flow through their language-native template engine
+                // (JavaTemplate / KotlinTemplate) so the resulting LST is properly typed.
+                boolean kotlin = getCursor().firstEnclosing(SourceFile.class)
+                        instanceof K.CompilationUnit;
+
                 String idTypeExpr;
                 String idTypeImport;
                 if (idTypeFqn == null) {
-                    idTypeExpr = TODO_FALLBACK;
+                    idTypeExpr = kotlin ? TODO_FALLBACK_KOTLIN : TODO_FALLBACK;
                     idTypeImport = null;
                 } else {
                     String simpleName = idTypeFqn.substring(idTypeFqn.lastIndexOf('.') + 1);
-                    idTypeExpr = simpleName + ".class";
+                    idTypeExpr = simpleName + (kotlin ? "::class.java" : ".class");
                     // java.lang types are auto-imported.
                     idTypeImport = idTypeFqn.startsWith("java.lang.") ? null : idTypeFqn;
                 }
@@ -195,15 +207,9 @@ public class ConfigureEventSourcedAnnotation
                 String newAnnotationText = "@EventSourced(tagKey = \"" + tagKey
                         + "\", idType = " + idTypeExpr + ")";
 
-                JavaTemplate.Builder builder = JavaTemplate.builder(newAnnotationText)
-                        .imports(EVENT_SOURCED_AF5)
-                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()));
-                if (idTypeImport != null) {
-                    builder = builder.imports(idTypeImport);
-                }
-
-                J.Annotation result = builder.build()
-                        .apply(getCursor(), ann.getCoordinates().replace());
+                J.Annotation result = kotlin
+                        ? applyKotlinTemplate(newAnnotationText, idTypeImport, ann)
+                        : applyJavaTemplate(newAnnotationText, idTypeImport, ann);
 
                 if (idTypeImport != null) {
                     maybeAddImport(idTypeImport);
@@ -215,6 +221,29 @@ public class ConfigureEventSourcedAnnotation
                                                         + snapshotTriggerSource + ")");
                 }
                 return result;
+            }
+
+            private J.Annotation applyJavaTemplate(String annotationText,
+                                                    @Nullable String idTypeImport,
+                                                    J.Annotation target) {
+                JavaTemplate.Builder builder = JavaTemplate.builder(annotationText)
+                        .imports(EVENT_SOURCED_AF5)
+                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()));
+                if (idTypeImport != null) {
+                    builder = builder.imports(idTypeImport);
+                }
+                return builder.build().apply(getCursor(), target.getCoordinates().replace());
+            }
+
+            private J.Annotation applyKotlinTemplate(String annotationText,
+                                                      @Nullable String idTypeImport,
+                                                      J.Annotation target) {
+                KotlinTemplate.Builder builder = KotlinTemplate.builder(annotationText)
+                        .imports(EVENT_SOURCED_AF5);
+                if (idTypeImport != null) {
+                    builder = builder.imports(idTypeImport);
+                }
+                return builder.build().apply(getCursor(), target.getCoordinates().replace());
             }
         };
     }

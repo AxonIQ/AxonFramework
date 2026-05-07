@@ -18,6 +18,8 @@ package org.axonframework.migration;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.ScanningRecipe;
+import org.openrewrite.SourceFile;
+import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -28,9 +30,13 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.marker.PrimaryConstructor;
+import org.openrewrite.kotlin.tree.K;
+import org.openrewrite.marker.Markers;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
+import java.util.Collections;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -217,12 +223,19 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                                                                      ExecutionContext ctx) {
                 J.VariableDeclarations vd = super.visitVariableDeclarations(multiVar, ctx);
 
-                // Only act on fields and record components of event classes — never on
-                // method parameters or local variables. A method parameter inside a static
-                // factory (e.g. `event(Id id)`) shares the enclosing class with the record
-                // header, so we additionally check that no method declaration sits between
-                // us and the class.
-                if (getCursor().firstEnclosing(J.MethodDeclaration.class) != null) {
+                // Only act on fields and record components of event classes — never on regular
+                // method parameters or local variables. The check has two carve-outs:
+                // - Java records: a method parameter inside a static factory (e.g.
+                //   `event(Id id)`) shares the enclosing class with the record header, so a
+                //   plain "skip everything inside a method" rule would still leave the record
+                //   components handled correctly because they live directly under the class.
+                // - Kotlin data classes: primary-constructor parameters surface as
+                //   J.VariableDeclarations whose enclosing J.MethodDeclaration carries a
+                //   {@link PrimaryConstructor} marker. Those ARE the class's properties — they
+                //   need the @EventTag treatment, so we explicitly let them through.
+                J.MethodDeclaration enclosingMethod =
+                        getCursor().firstEnclosing(J.MethodDeclaration.class);
+                if (enclosingMethod != null && !isKotlinPrimaryConstructor(enclosingMethod)) {
                     return vd;
                 }
                 J.ClassDeclaration enclosingClass = getCursor().firstEnclosing(J.ClassDeclaration.class);
@@ -266,6 +279,18 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             private J.VariableDeclarations annotateWithEventTag(J.VariableDeclarations vd,
                                                                  String tagKey,
                                                                  @SuppressWarnings("unused") String todoComment) {
+                if (isKotlinSource()) {
+                    // Kotlin path — JavaTemplate.addAnnotation produces inconsistent layout on
+                    // data class primary-constructor params (annotation lost or pushed to a
+                    // weird indent). Build the J.Annotation directly from LST primitives and
+                    // prepend it to the leading-annotation list, with an explicit newline+indent
+                    // prefix between the annotation and the val/var keyword so it lands on its
+                    // own line above the field.
+                    J.Annotation tag = buildEventTagAnnotation(tagKey);
+                    J.VariableDeclarations annotated = prependAnnotationOnNewLine(vd, tag);
+                    maybeAddImport(EVENT_TAG_FQN, null, false);
+                    return annotated;
+                }
                 J.VariableDeclarations annotated = JavaTemplate.builder(
                                 "@EventTag(key = \"" + tagKey + "\")")
                         .imports(EVENT_TAG_FQN)
@@ -274,6 +299,112 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         .apply(getCursor(), vd.getCoordinates().addAnnotation((a, b) -> 0));
                 maybeAddImport(EVENT_TAG_FQN, null, false);
                 return forceAnnotationOnOwnLine(annotated);
+            }
+
+            private boolean isKotlinSource() {
+                return getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
+            }
+
+            /**
+             * Construct an {@code @EventTag(key = "...")} annotation as a synthetic
+             * {@link J.Annotation}. Building the annotation through LST primitives skips
+             * {@link JavaTemplate}'s parsing pipeline entirely — that pipeline cannot render
+             * Kotlin's {@code val}/{@code var}-shaped {@link J.VariableDeclarations} nodes
+             * back through a Java placeholder, which is why the template-driven path produces
+             * lopsided output on data class primary-constructor params.
+             */
+            private J.Annotation buildEventTagAnnotation(String tagKey) {
+                J.Identifier name = new J.Identifier(
+                        Tree.randomId(),
+                        Space.EMPTY,
+                        Markers.EMPTY,
+                        Collections.emptyList(),
+                        "EventTag",
+                        JavaType.ShallowClass.build(EVENT_TAG_FQN),
+                        null);
+                J.Identifier keyIdent = new J.Identifier(
+                        Tree.randomId(),
+                        Space.EMPTY,
+                        Markers.EMPTY,
+                        Collections.emptyList(),
+                        "key",
+                        null,
+                        null);
+                // The value's leading space renders between `=` and the literal — pairing it
+                // with the JLeftPadded's `before` (which renders BEFORE `=`) yields the
+                // canonical `key = "value"` shape.
+                J.Literal keyValue = new J.Literal(
+                        Tree.randomId(),
+                        Space.format(" "),
+                        Markers.EMPTY,
+                        tagKey,
+                        "\"" + tagKey + "\"",
+                        null,
+                        JavaType.Primitive.String);
+                J.Assignment assignment = new J.Assignment(
+                        Tree.randomId(),
+                        Space.EMPTY,
+                        Markers.EMPTY,
+                        keyIdent,
+                        new org.openrewrite.java.tree.JLeftPadded<>(
+                                Space.format(" "),
+                                keyValue,
+                                Markers.EMPTY),
+                        null);
+                org.openrewrite.java.tree.JContainer<org.openrewrite.java.tree.Expression> args =
+                        org.openrewrite.java.tree.JContainer.build(
+                                Space.EMPTY,
+                                Collections.singletonList(
+                                        new org.openrewrite.java.tree.JRightPadded<org.openrewrite.java.tree.Expression>(
+                                                assignment, Space.EMPTY, Markers.EMPTY)),
+                                Markers.EMPTY);
+                return new J.Annotation(
+                        Tree.randomId(),
+                        Space.EMPTY,
+                        Markers.EMPTY,
+                        name,
+                        args);
+            }
+
+            /**
+             * Prepends {@code annotation} to {@code vd}'s leading annotations and pushes the
+             * declaration's modifiers (or the type expression / first variable) onto the line
+             * below. The new annotation inherits the slot's existing leading whitespace
+             * (preserving the outer indent), and a fresh {@code "\n" + indent} prefix is
+             * spliced between the annotation and whatever previously held that whitespace.
+             */
+            private J.VariableDeclarations prependAnnotationOnNewLine(J.VariableDeclarations vd,
+                                                                       J.Annotation annotation) {
+                String indent = trailingIndent(vd.getPrefix().getWhitespace());
+                Space newlineIndent = Space.format("\n" + indent);
+                J.VariableDeclarations withAnnotation = vd.withLeadingAnnotations(
+                        ListUtils.concat(annotation, vd.getLeadingAnnotations()));
+                if (vd.getLeadingAnnotations().isEmpty()) {
+                    // First annotation — re-flow the declaration's downstream nodes so the
+                    // annotation block sits on its own line above the val/var keyword.
+                    if (!withAnnotation.getModifiers().isEmpty()) {
+                        return withAnnotation.withModifiers(
+                                ListUtils.mapFirst(withAnnotation.getModifiers(),
+                                        m -> m.withPrefix(newlineIndent)));
+                    }
+                    if (withAnnotation.getTypeExpression() != null) {
+                        return withAnnotation.withTypeExpression(
+                                withAnnotation.getTypeExpression().withPrefix(newlineIndent));
+                    }
+                    return withAnnotation;
+                }
+                // Existing annotations: bump the previous first annotation onto a new line.
+                J.Annotation oldFirst = vd.getLeadingAnnotations().get(0);
+                Space oldFirstPrefix = oldFirst.getPrefix();
+                return vd.withLeadingAnnotations(ListUtils.concat(
+                        annotation.withPrefix(oldFirstPrefix),
+                        ListUtils.mapFirst(vd.getLeadingAnnotations(),
+                                first -> first.withPrefix(newlineIndent))));
+            }
+
+            private String trailingIndent(String whitespace) {
+                int idx = whitespace.lastIndexOf('\n');
+                return idx < 0 ? whitespace : whitespace.substring(idx + 1);
             }
 
             /**
@@ -386,27 +517,74 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 return false;
             }
 
+            /**
+             * Returns the {@link J.VariableDeclarations} fields that belong to {@code classDecl}
+             * in source-declaration order, walking three places:
+             * <ol>
+             *   <li>{@link J.ClassDeclaration#getPrimaryConstructor()} — Java records and
+             *   anything else that exposes its primary-constructor params explicitly;</li>
+             *   <li>any {@link J.MethodDeclaration} in the body marked with the Kotlin
+             *   {@link PrimaryConstructor} marker — Kotlin data classes embed primary-constructor
+             *   params here rather than in {@code getPrimaryConstructor()};</li>
+             *   <li>the class body itself — regular Java fields and Kotlin {@code val}/{@code var}
+             *   class members (the latter wrapped in {@link K.Property}).</li>
+             * </ol>
+             */
+            private List<J.VariableDeclarations> classFields(J.ClassDeclaration classDecl) {
+                List<J.VariableDeclarations> fields = new java.util.ArrayList<>();
+                if (classDecl.getPrimaryConstructor() != null) {
+                    for (Statement stmt : classDecl.getPrimaryConstructor()) {
+                        J.VariableDeclarations field = unwrapVariableDeclarations(stmt);
+                        if (field != null) {
+                            fields.add(field);
+                        }
+                    }
+                }
+                if (classDecl.getBody() != null) {
+                    for (Statement stmt : classDecl.getBody().getStatements()) {
+                        if (stmt instanceof J.MethodDeclaration
+                                && isKotlinPrimaryConstructor((J.MethodDeclaration) stmt)) {
+                            for (Statement p : ((J.MethodDeclaration) stmt).getParameters()) {
+                                J.VariableDeclarations param = unwrapVariableDeclarations(p);
+                                if (param != null) {
+                                    fields.add(param);
+                                }
+                            }
+                            continue;
+                        }
+                        J.VariableDeclarations field = unwrapVariableDeclarations(stmt);
+                        if (field != null) {
+                            fields.add(field);
+                        }
+                    }
+                }
+                return fields;
+            }
+
+            /**
+             * Compare LST ids rather than references — {@code super.visitVariableDeclarations}
+             * can return a new wrapper even when nothing changed semantically, so the visitor's
+             * {@code vd} and the class declaration's stored field may diverge by reference
+             * while pointing at the same source-level declaration.
+             */
             private boolean isFirstFieldInClass(J.ClassDeclaration classDecl,
                                                 J.VariableDeclarations vd) {
-                for (Statement stmt : classDecl.getBody().getStatements()) {
-                    if (stmt instanceof J.VariableDeclarations) {
-                        return stmt == vd;
+                List<J.VariableDeclarations> fields = classFields(classDecl);
+                return !fields.isEmpty() && fields.get(0).getId().equals(vd.getId());
+            }
+
+            private boolean hasExactFieldByName(J.ClassDeclaration classDecl, String fieldName) {
+                for (J.VariableDeclarations field : classFields(classDecl)) {
+                    if (!field.getVariables().isEmpty()
+                            && fieldName.equals(field.getVariables().get(0).getSimpleName())) {
+                        return true;
                     }
                 }
                 return false;
             }
 
-            private boolean hasExactFieldByName(J.ClassDeclaration classDecl, String fieldName) {
-                for (Statement stmt : classDecl.getBody().getStatements()) {
-                    if (stmt instanceof J.VariableDeclarations) {
-                        J.VariableDeclarations f = (J.VariableDeclarations) stmt;
-                        if (!f.getVariables().isEmpty()
-                                && fieldName.equals(f.getVariables().get(0).getSimpleName())) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
+            private boolean isKotlinPrimaryConstructor(J.MethodDeclaration md) {
+                return md.getMarkers().findFirst(PrimaryConstructor.class).isPresent();
             }
         };
     }
@@ -420,6 +598,16 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     || TypeUtils.isOfClassType(ann.getType(), EVENT_SOURCED_ENTITY_AF5)) {
                 return true;
             }
+            // Simple-name fallback: in Kotlin sources the parser may not bind the AF4 stub
+            // type, so the FQN match above silently misses entity classes that are obviously
+            // entities. Match on the annotation's identifier name as a safety net.
+            if (ann.getAnnotationType() instanceof J.Identifier) {
+                String name = ((J.Identifier) ann.getAnnotationType()).getSimpleName();
+                if ("Aggregate".equals(name) || "EventSourced".equals(name)
+                        || "EventSourcedEntity".equals(name)) {
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -428,6 +616,12 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
         for (J.Annotation ann : method.getLeadingAnnotations()) {
             if (TypeUtils.isOfClassType(ann.getType(), ESH_AF4)
                     || TypeUtils.isOfClassType(ann.getType(), ESH_AF5)) {
+                return true;
+            }
+            // Same reason as in {@link #isEntityClass}: simple-name fallback for unbound types.
+            if (ann.getAnnotationType() instanceof J.Identifier
+                    && "EventSourcingHandler".equals(
+                            ((J.Identifier) ann.getAnnotationType()).getSimpleName())) {
                 return true;
             }
         }
@@ -444,11 +638,10 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             return null;
         }
         for (Statement stmt : cd.getBody().getStatements()) {
-            if (!(stmt instanceof J.VariableDeclarations)) {
-                continue;
-            }
-            J.VariableDeclarations vd = (J.VariableDeclarations) stmt;
-            if (!isAggregateIdentifierField(vd) || vd.getTypeExpression() == null) {
+            J.VariableDeclarations vd = unwrapVariableDeclarations(stmt);
+            if (vd == null
+                    || !isAggregateIdentifierField(vd)
+                    || vd.getTypeExpression() == null) {
                 continue;
             }
             JavaType.FullyQualified ft =
@@ -456,6 +649,24 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             if (ft != null) {
                 return ft.getFullyQualifiedName();
             }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the {@link J.VariableDeclarations} held by a class-body statement, or
+     * {@code null} when the statement is something else (a method, an inner class, ...).
+     * Kotlin {@code var}/{@code val} class members surface as {@link K.Property} wrapping
+     * a {@link J.VariableDeclarations}, while Java fields are bare
+     * {@link J.VariableDeclarations}; this helper hides that difference from callers
+     * that just want the underlying field.
+     */
+    private static J.@Nullable VariableDeclarations unwrapVariableDeclarations(Statement stmt) {
+        if (stmt instanceof J.VariableDeclarations) {
+            return (J.VariableDeclarations) stmt;
+        }
+        if (stmt instanceof K.Property) {
+            return ((K.Property) stmt).getVariableDeclarations();
         }
         return null;
     }
@@ -482,10 +693,10 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             return null;
         }
         for (Statement stmt : cd.getBody().getStatements()) {
-            if (!(stmt instanceof J.VariableDeclarations)) {
+            J.VariableDeclarations vd = unwrapVariableDeclarations(stmt);
+            if (vd == null) {
                 continue;
             }
-            J.VariableDeclarations vd = (J.VariableDeclarations) stmt;
             for (J.Annotation ann : vd.getLeadingAnnotations()) {
                 if (TypeUtils.isOfClassType(ann.getType(), AGGREGATE_IDENTIFIER_AF4)
                         || TypeUtils.isOfClassType(ann.getType(), AGGREGATE_IDENTIFIER_AF5)

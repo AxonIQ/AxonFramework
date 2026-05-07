@@ -70,6 +70,15 @@
             <groupId>org.openrewrite</groupId>
             <artifactId>rewrite-maven</artifactId>
         </dependency>
+        <!-- Pulls in `org.openrewrite.java.dependencies.UpgradeDependencyVersion`,
+             the multi-build-tool (Maven + Gradle) entrypoint we compose in
+             `UpgradeKotlin`. The artifact is on the runtime classpath via
+             `rewrite-maven`, but composing it from Java sources needs it at
+             compile scope. -->
+        <dependency>
+            <groupId>org.openrewrite.recipe</groupId>
+            <artifactId>rewrite-java-dependencies</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.openrewrite</groupId>
             <artifactId>rewrite-yaml</artifactId>
