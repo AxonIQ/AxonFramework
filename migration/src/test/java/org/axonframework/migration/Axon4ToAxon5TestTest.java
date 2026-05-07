@@ -485,6 +485,48 @@ class Axon4ToAxon5TestTest implements RewriteTest {
     }
 
     @Test
+    void coalescesChainedExpectCallsUnderSingleThen() {
+        // `.expectNoEvents().expectException(X)` are both `then`-phase calls, so the rewrite must
+        // produce a single shared `.then()` followed by both leaves — not two independent
+        // `.then().noEvents()` and `.then().exception(X)` chains stacked on top of each other.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.test.aggregate.AggregateTestFixture;
+                        class FooTest {
+                            AggregateTestFixture<Object> fixture;
+                            void test() {
+                                fixture.given(new Object())
+                                       .when(new Object())
+                                       .expectNoEvents()
+                                       .expectException(IllegalStateException.class);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.fixture.AxonTestFixture;
+
+                        class FooTest {
+                            AxonTestFixture fixture;
+                            void test() {
+                                fixture.given()
+                                       .events(new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .noEvents()
+                                       .exception(IllegalStateException.class);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void leavesAlreadyMigratedFluentChainAlone() {
         // Running the recipe on AF5-shaped code should be idempotent: `given()` / `when()`
         // with no arguments are the new phase entry points and must not be rewritten.

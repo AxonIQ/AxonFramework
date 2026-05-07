@@ -98,15 +98,15 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
 
                 switch (name) {
                     case "expectEvents":
-                        return wrapWithPhase(mi, "then", "events", select, args);
+                        return wrapOrRename(mi, "then", "events", select, args);
                     case "expectNoEvents":
-                        return wrapWithPhase(mi, "then", "noEvents", select, args);
+                        return wrapOrRename(mi, "then", "noEvents", select, args);
                     case "expectSuccessfulHandlerExecution":
-                        return wrapWithPhase(mi, "then", "success", select, args);
+                        return wrapOrRename(mi, "then", "success", select, args);
                     case "expectResultMessagePayload":
-                        return wrapWithPhase(mi, "then", "resultMessagePayload", select, args);
+                        return wrapOrRename(mi, "then", "resultMessagePayload", select, args);
                     case "expectException":
-                        return wrapWithPhase(mi, "then", "exception", select, args);
+                        return wrapOrRename(mi, "then", "exception", select, args);
                     case "expectExceptionMessage":
                         // The select was just rewritten to `chain.then().exception(cls)`. Merge the
                         // message argument into that single `exception(cls, msg)` call so users get
@@ -130,22 +130,62 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         }
                         return mi;
                     case "givenNoPriorActivity":
-                        return wrapWithPhase(mi, "given", "noPriorActivity", select, args);
+                        return wrapOrRename(mi, "given", "noPriorActivity", select, args);
                     case "givenCommands":
-                        return wrapWithPhase(mi, "given", args.size() == 1 ? "command" : "commands", select, args);
+                        return wrapOrRename(mi, "given", args.size() == 1 ? "command" : "commands", select, args);
                     case "given":
                         // AF5's `given()` is no-arg; only the AF4 form (with arguments) needs rewriting.
                         return args.isEmpty()
                                 ? mi
-                                : wrapWithPhase(mi, "given", "events", select, args);
+                                : wrapOrRename(mi, "given", "events", select, args);
                     case "when":
                         // Same disambiguation as `given`: AF5 `when()` is no-arg.
                         return args.isEmpty()
                                 ? mi
-                                : wrapWithPhase(mi, "when", "command", select, args);
+                                : wrapOrRename(mi, "when", "command", select, args);
                     default:
                         return mi;
                 }
+            }
+
+            /**
+             * Coalesces same-phase chains. AF4 lets you stack multiple {@code expect*} calls
+             * ({@code .expectNoEvents().expectException(X)}); rewriting each independently with
+             * {@link #wrapWithPhase} would emit a duplicate phase entrypoint
+             * ({@code .then().noEvents().then().exception(X)}). When the select chain already
+             * contains the target phase as a no-arg call, just rename the leaf in place — keeping
+             * a single {@code .then()} (or {@code .given()}/{@code .when()}) shared by all peers
+             * under it ({@code .then().noEvents().exception(X)}).
+             */
+            private J.MethodInvocation wrapOrRename(J.MethodInvocation mi,
+                                                    String phase,
+                                                    String newName,
+                                                    Expression select,
+                                                    List<Expression> args) {
+                if (phaseAlreadyInChain(select, phase)) {
+                    return mi.withName(mi.getName().withSimpleName(newName));
+                }
+                return wrapWithPhase(mi, phase, newName, select, args);
+            }
+
+            /**
+             * Walks the select chain looking for an AF5 phase entrypoint with the given name —
+             * a no-arg invocation of {@code given}/{@code when}/{@code then}. Returns true as soon
+             * as one is found; false if the walk reaches a non-MI receiver (typically the fixture
+             * identifier) without seeing the phase. Used to detect already-rewritten same-phase
+             * peers so we don't stack a redundant phase entrypoint on top of them.
+             */
+            private boolean phaseAlreadyInChain(Expression select, String phase) {
+                Expression current = select;
+                while (current instanceof J.MethodInvocation) {
+                    J.MethodInvocation invocation = (J.MethodInvocation) current;
+                    if (phase.equals(invocation.getSimpleName())
+                            && realArgs(invocation.getArguments()).isEmpty()) {
+                        return true;
+                    }
+                    current = invocation.getSelect();
+                }
+                return false;
             }
 
             /**
