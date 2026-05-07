@@ -131,6 +131,20 @@ recipeList:
   # which a recipe cannot synthesise).
   - org.axonframework.migration.Axon4ToAxon5QueryResponseTypes
 
+  # AF5 dropped the `org.axonframework.messaging.responsetypes` package outright;
+  # any import targeting it is dead code once references are gone. The Maven
+  # `rewrite-maven-plugin` does not currently expose `RemoveImport` (a visitor)
+  # as a declarative recipe, so we fall back to `RemoveUnusedImports` — it only
+  # removes imports that genuinely have no reference left in the file, so a
+  # 3-argument `query(String, Object, ResponseTypes.instanceOf(...))` AF4
+  # fingerprint (which the per-construct query-gateway skill must rewrite)
+  # keeps the import. Acts as a backstop to the inline `maybeRemoveImport`
+  # calls inside `Axon4ToAxon5QueryResponseTypes` so files where the unwrap
+  # doesn't fire (recipe ran in an earlier cycle, or an external rewrite
+  # dropped the last reference) still get cleaned up. Side benefit: prunes
+  # any other stale imports left over by sibling recipes in this composition.
+  - org.openrewrite.java.RemoveUnusedImports
+
   # ── EventProcessor lifecycle method rename: shutDown() → shutdown() ─────
   # AF5 normalised the `EventProcessor` lifecycle method names to camelCase. The
   # AF4 FQN form is listed first; the AF5 FQN form is listed second so the rename

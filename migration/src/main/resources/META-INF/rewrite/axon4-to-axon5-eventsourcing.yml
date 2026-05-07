@@ -32,6 +32,11 @@ description: >-
   constructors with the now-mandatory `@EntityCreator` and replacing
   `AggregateLifecycle.apply(...)` with an injected `EventAppender#append(...)`.
 recipeList:
+  # ── AF4 @CommandHandler constructors → AF5 static handle methods ───────────
+  # Must run BEFORE AddCommandAnnotation so the converted method's parameter is
+  # what AddCommandAnnotation sees and registers as a command type.
+  - org.axonframework.migration.ConvertCommandHandlerConstructorToStaticMethod
+
   # ── Annotate command and event payload classes with @Command / @Event ──────
   # Scans @CommandHandler methods and adds @Command to their payload types;
   # migrates @RoutingKey field → @Command(routingKey = "fieldName").

@@ -172,7 +172,10 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
 
     @Test
     void stripsBoundedWildcardTypeArgumentFromUnitOfWork() {
+        // Two cycles expected: cycle 1 strips the type argument, cycle 2 prunes the
+        // CommandMessage import that became unused as a result.
         rewriteRun(
+                spec -> spec.expectedCyclesThatMakeChanges(2),
                 java(
                         """
                         package com.example;
@@ -187,7 +190,6 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
                         """
                         package com.example;
 
-                        import org.axonframework.messaging.commandhandling.CommandMessage;
                         import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 
                         class Foo {
@@ -695,6 +697,57 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
 
                         class Foo {
                             MessageDispatchInterceptor<?> interceptor;
+                        }
+                        """
+                )
+        );
+    }
+
+    // ── ResponseTypes import cleanup (YAML-level RemoveImport backstop) ─────
+
+    @Test
+    void removesUnusedResponseTypesImportEvenWhenNoCallSiteIsRewritten() {
+        // The unwrap recipe leaves the file alone (no qualifying call site), but the import is
+        // dead — AF5 dropped the `responsetypes` package entirely. The `RemoveUnusedImports`
+        // backstop in `axon4-to-axon5-messaging.yml` should clean it up regardless.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.responsetypes.ResponseTypes;
+                        class Foo {
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        class Foo {
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void keepsResponseTypesImportWhenStillReferencedByThreeArgQuery() {
+        // The 3-argument `query(String, Object, ResponseType)` form is the LLM-driven skill's
+        // fingerprint and must NOT be touched. The import is still referenced via
+        // `ResponseTypes.instanceOf(...)` in the body, so `RemoveImport` (non-forced) leaves it.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+                        import org.axonframework.messaging.responsetypes.ResponseTypes;
+                        import java.util.concurrent.CompletableFuture;
+                        class Foo {
+                            private final QueryGateway gateway;
+                            Foo(QueryGateway gateway) { this.gateway = gateway; }
+                            CompletableFuture<String> findOne(Object payload) {
+                                return gateway.query("byId", payload, ResponseTypes.instanceOf(String.class));
+                            }
                         }
                         """
                 )
