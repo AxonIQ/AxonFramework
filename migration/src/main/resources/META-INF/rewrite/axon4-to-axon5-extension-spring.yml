@@ -53,11 +53,15 @@ recipeList:
   # `org.axonframework` to `org.axonframework.extensions.spring`. The unified
   # `java.dependencies.ChangeDependency` recipe applies to both Maven
   # (`pom.xml`) and Gradle (`build.gradle` / `build.gradle.kts`) projects.
+  # `newVersion` is set inline so the rename and version bump happen atomically;
+  # without it, ChangeDependency would validate the renamed coordinate against
+  # the pre-bump AF4 version (which doesn't exist at the new groupId).
   - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring
+      newVersion: 5.1.0
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -80,16 +84,21 @@ recipeList:
   # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are
   # unchanged. The unified `java.dependencies.ChangeDependency` recipe
   # applies to both Maven and Gradle projects.
+  # `newVersion` is set inline so the rename and version bump happen atomically;
+  # without it, ChangeDependency would validate the renamed coordinate against
+  # the pre-bump AF4 version (which doesn't exist at the new groupId).
   - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring-boot-starter
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-starter
+      newVersion: 5.1.0
   - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring-boot-autoconfigure
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-autoconfigure
+      newVersion: 5.1.0
   # Spring Boot configuration property rename. AF4's `SerializerProperties`
   # (`@ConfigurationProperties("axon.serializer")`) is replaced in AF5 by
   # `ConverterProperties` (`@ConfigurationProperties("axon.converter")`),
