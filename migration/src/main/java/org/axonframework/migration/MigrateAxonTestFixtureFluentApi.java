@@ -16,6 +16,7 @@
 
 package org.axonframework.migration;
 
+import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.TreeVisitor;
@@ -24,6 +25,7 @@ import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.Space;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -147,14 +149,30 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
             }
 
             /**
-             * Rewrites {@code chain.oldName(args)} to {@code chain.phase().newName(args)}.
-             * Builds a JavaTemplate string with one {@code #{any()}} placeholder per argument plus
-             * one for the receiver chain, then applies it at the position of the original invocation.
+             * Rewrites {@code chain.oldName(args)} to {@code chain.phase().newName(args)} while
+             * preserving — and extending — the source chain's line layout.
              * <p>
-             * The template flattens whitespace, so we re-apply the original invocation's
-             * {@linkplain J#getPrefix() prefix} on the result. That keeps multi-line fluent chains
-             * — {@code .given(...)} on its own line, {@code .when(...)} on the next, etc. — readable
-             * after the rewrite instead of collapsing everything onto a single line.
+             * Each AF4 leaf call (e.g. {@code .given(events)}, {@code .when(cmd)},
+             * {@code .expectEvents(out)}) is split into two AF5 calls: a no-arg phase entrypoint
+             * ({@code .given()}, {@code .when()}, {@code .then()}) followed by a typed leaf
+             * ({@code .events(...)}, {@code .command(...)}, etc.). To keep the result readable in
+             * multi-line chains we put each call on its own line at the chain's existing indent:
+             * <pre>{@code
+             * fixture.given()
+             *        .events(events)
+             *        .when()
+             *        .command(cmd)
+             *        .then()
+             *        .events(out);
+             * }</pre>
+             * <p>
+             * The phase call inherits {@code mi}'s original pre-dot whitespace (so {@code .given()}
+             * lands exactly where {@code .given(events)} used to be — typically inline with
+             * {@code fixture}, no leading newline). The leaf call uses the chain's indent: if
+             * {@code mi}'s own pre-dot whitespace contains a newline (i.e. it is itself on its own
+             * line), reuse that; otherwise walk up the cursor to find an enclosing chain MI that
+             * already sits on its own line and copy its indent. For pure single-line chains the
+             * fallback yields {@link Space#EMPTY} and the result stays single-line.
              */
             private J.MethodInvocation wrapWithPhase(J.MethodInvocation mi,
                                                     String phase,
@@ -190,17 +208,21 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 //   - phaseCall's prefix = mi's prefix (often empty for chain elements)
                 //   - phaseCall's select right-padding (whitespace before the dot of `.phase`)
                 //     = mi's original select right-padding (the newline+indent before `.<oldName>`)
-                //   - outer's select right-padding (whitespace between `.phase()` and `.newName(`) = empty
+                //   - outer's select right-padding (whitespace between `.phase()` and `.newName(`)
+                //     = chain indent — reuses mi's own pre-dot whitespace when it has a newline,
+                //       otherwise inherits from the nearest enclosing chain MI that lives on its
+                //       own line. Empty fallback preserves true single-line chains.
                 //   - outer's name prefix = empty
-                org.openrewrite.java.tree.Space dotBeforePhase = mi.getPadding().getSelect() != null
+                Space dotBeforePhase = mi.getPadding().getSelect() != null
                         ? mi.getPadding().getSelect().getAfter()
-                        : org.openrewrite.java.tree.Space.EMPTY;
+                        : Space.EMPTY;
+                Space dotBeforeLeaf = chainIndent(mi, dotBeforePhase);
                 org.openrewrite.java.tree.JRightPadded<Expression> selectForPhase =
                         org.openrewrite.java.tree.JRightPadded.<Expression>build(select)
                                 .withAfter(dotBeforePhase);
                 J.Identifier phaseName = new J.Identifier(
                         org.openrewrite.Tree.randomId(),
-                        org.openrewrite.java.tree.Space.EMPTY,
+                        Space.EMPTY,
                         org.openrewrite.marker.Markers.EMPTY,
                         java.util.Collections.emptyList(),
                         phase,
@@ -208,7 +230,7 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         null);
                 J.MethodInvocation phaseCall = new J.MethodInvocation(
                         org.openrewrite.Tree.randomId(),
-                        org.openrewrite.java.tree.Space.EMPTY,
+                        Space.EMPTY,
                         org.openrewrite.marker.Markers.EMPTY,
                         selectForPhase,
                         null,
@@ -216,10 +238,11 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         org.openrewrite.java.tree.JContainer.empty(),
                         null);
                 org.openrewrite.java.tree.JRightPadded<Expression> selectForOuter =
-                        org.openrewrite.java.tree.JRightPadded.<Expression>build(phaseCall);
+                        org.openrewrite.java.tree.JRightPadded.<Expression>build(phaseCall)
+                                .withAfter(dotBeforeLeaf);
                 J.Identifier outerName = new J.Identifier(
                         org.openrewrite.Tree.randomId(),
-                        org.openrewrite.java.tree.Space.EMPTY,
+                        Space.EMPTY,
                         org.openrewrite.marker.Markers.EMPTY,
                         java.util.Collections.emptyList(),
                         newName,
@@ -228,7 +251,7 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 org.openrewrite.java.tree.JContainer<Expression> argContainer = args.isEmpty()
                         ? org.openrewrite.java.tree.JContainer.empty()
                         : org.openrewrite.java.tree.JContainer.build(
-                                org.openrewrite.java.tree.Space.EMPTY,
+                                Space.EMPTY,
                                 args.stream()
                                         .map(org.openrewrite.java.tree.JRightPadded::<Expression>build)
                                         .toList(),
@@ -242,6 +265,43 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                         outerName,
                         argContainer,
                         null);
+            }
+
+            /**
+             * Resolves the whitespace to insert before the leaf-method dot in a rewritten chain.
+             * <p>
+             * Returns {@code own} when it already encodes a newline+indent — i.e. {@code mi} itself
+             * sits on its own line, so the same whitespace is the chain's indent and reusing it
+             * keeps the leaf aligned with peer chain calls. Otherwise walks up the cursor looking
+             * for an enclosing {@link J.MethodInvocation} whose pre-dot whitespace contains a
+             * newline; that ancestor is on its own line, and its indent is the chain's indent.
+             * Falls back to {@link Space#EMPTY} for genuinely single-line chains so nothing is
+             * forced onto a new line.
+             */
+            private Space chainIndent(J.MethodInvocation mi, Space own) {
+                if (containsNewline(own)) {
+                    return own;
+                }
+                Cursor c = getCursor().getParent();
+                while (c != null) {
+                    Object value = c.getValue();
+                    if (value instanceof J.MethodInvocation) {
+                        J.MethodInvocation enclosing = (J.MethodInvocation) value;
+                        Space candidate = enclosing.getPadding().getSelect() != null
+                                ? enclosing.getPadding().getSelect().getAfter()
+                                : Space.EMPTY;
+                        if (containsNewline(candidate)) {
+                            return candidate;
+                        }
+                    }
+                    c = c.getParent();
+                }
+                return Space.EMPTY;
+            }
+
+            private boolean containsNewline(Space space) {
+                String ws = space.getWhitespace();
+                return ws != null && ws.indexOf('\n') >= 0;
             }
 
             /**

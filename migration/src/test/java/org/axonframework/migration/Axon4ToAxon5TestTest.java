@@ -95,9 +95,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().events(new Object())
-                                       .when().command(new Object())
-                                       .then().events(new Object());
+                                fixture.given()
+                                       .events(new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .events(new Object());
                             }
                         }
                         """
@@ -129,9 +132,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().noPriorActivity()
-                                       .when().command(new Object())
-                                       .then().noEvents();
+                                fixture.given()
+                                       .noPriorActivity()
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .noEvents();
                             }
                         }
                         """
@@ -164,9 +170,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().command(new Object())
-                                       .when().command(new Object())
-                                       .then().success();
+                                fixture.given()
+                                       .command(new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .success();
                             }
                         }
                         """
@@ -199,9 +208,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().commands(new Object(), new Object())
-                                       .when().command(new Object())
-                                       .then().success();
+                                fixture.given()
+                                       .commands(new Object(), new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .success();
                             }
                         }
                         """
@@ -237,9 +249,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().events(new Object())
-                                       .when().command(new Object())
-                                       .then().exception(IllegalStateException.class, "boom");
+                                fixture.given()
+                                       .events(new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .exception(IllegalStateException.class, "boom");
                             }
                         }
                         """
@@ -271,9 +286,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().noPriorActivity()
-                                       .when().command(new Object())
-                                       .then().resultMessagePayload("ok");
+                                fixture.given()
+                                       .noPriorActivity()
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .resultMessagePayload("ok");
                             }
                         }
                         """
@@ -309,9 +327,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().events(List.of(new Object(), new Object()))
-                                       .when().command(new Object())
-                                       .then().success();
+                                fixture.given()
+                                       .events(List.of(new Object(), new Object()))
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .success();
                             }
                         }
                         """
@@ -475,9 +496,12 @@ class Axon4ToAxon5TestTest implements RewriteTest {
                         class FooTest {
                             AxonTestFixture fixture;
                             void test() {
-                                fixture.given().events(new Object())
-                                       .when().command(new Object())
-                                       .then().events(new Object());
+                                fixture.given()
+                                       .events(new Object())
+                                       .when()
+                                       .command(new Object())
+                                       .then()
+                                       .events(new Object());
                             }
                         }
                         """
