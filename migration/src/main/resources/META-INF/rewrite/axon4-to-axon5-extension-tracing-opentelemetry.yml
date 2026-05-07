@@ -39,4 +39,4 @@ recipeList:
       oldArtifactId: axon-tracing-opentelemetry
       newGroupId: org.axonframework.extensions.tracing
       newArtifactId: axon-tracing-opentelemetry
-      newVersion: 5.1.0
+      newVersion: ${project.version}

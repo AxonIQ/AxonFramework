@@ -58,7 +58,7 @@ recipeList:
   - org.openrewrite.java.dependencies.AddDependency:
       groupId: org.axonframework
       artifactId: axon-eventsourcing
-      version: 5.1.0
+      version: ${project.version}
       # Match the AF4 fully-qualified name — `onlyIfUsing` resolves against
       # the LST as parsed (with AF4 types on classpath), so the AF5
       # post-rename name would never match.

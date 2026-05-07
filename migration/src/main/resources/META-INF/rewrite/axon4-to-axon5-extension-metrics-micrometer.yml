@@ -40,4 +40,4 @@ recipeList:
       oldArtifactId: axon-micrometer
       newGroupId: org.axonframework.extensions.metrics
       newArtifactId: axon-metrics-micrometer
-      newVersion: 5.1.0
+      newVersion: ${project.version}
