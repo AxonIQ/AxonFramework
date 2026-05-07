@@ -54,6 +54,10 @@ public class AddEventAnnotation extends ScanningRecipe<AddEventAnnotation.Accumu
     private static final String ESH_AF5 = "org.axonframework.eventsourcing.annotation.EventSourcingHandler";
     private static final String EVENT_FQN = "org.axonframework.messaging.eventhandling.annotation.Event";
     private static final String REVISION_FQN = "org.axonframework.serialization.Revision";
+    // The Axon4ToAxon5Conversion recipe renames `org.axonframework.serialization.*` to
+    // `org.axonframework.conversion.*`. When it runs in the same cycle as this recipe, the
+    // @Revision import lives at the renamed path — so we must clear both potential locations.
+    private static final String REVISION_FQN_RENAMED = "org.axonframework.conversion.Revision";
 
     public static class Accumulator {
 
@@ -125,32 +129,27 @@ public class AddEventAnnotation extends ScanningRecipe<AddEventAnnotation.Accumu
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
 
-                // Capture @Revision value BEFORE super — we may want to remove it while adding @Event.
                 String revisionValue = findRevisionValue(classDecl);
-
-                // Remove @Revision from the class-level annotations (if present).
-                J.ClassDeclaration withoutRevision = revisionValue != null
-                        ? removeClassAnnotation(classDecl, REVISION_FQN)
-                        : classDecl;
-
-                // Let super visit children of the (possibly modified) class.
-                J.ClassDeclaration cd = super.visitClassDeclaration(withoutRevision, ctx);
-
-                // Add @Event (or @Event(version = "x")) to the class.
                 String annotationText = revisionValue != null
                         ? "@Event(version = \"" + revisionValue + "\")"
                         : "@Event";
 
+                // Add @Event FIRST. JavaTemplate.apply walks the visitor's cursor (which still
+                // references the un-modified `classDecl`), so removing @Revision beforehand
+                // would be silently discarded by the apply.
                 J.ClassDeclaration annotated = JavaTemplate.builder(annotationText)
                         .imports(EVENT_FQN)
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
-                        .apply(getCursor(), cd.getCoordinates().addAnnotation((a, b) -> 0));
+                        .apply(getCursor(), classDecl.getCoordinates().addAnnotation((a, b) -> 0));
                 maybeAddImport(EVENT_FQN, null, false);
+
                 if (revisionValue != null) {
+                    annotated = removeClassAnnotation(annotated, REVISION_FQN);
                     maybeRemoveImport(REVISION_FQN);
+                    maybeRemoveImport(REVISION_FQN_RENAMED);
                 }
-                return annotated;
+                return super.visitClassDeclaration(annotated, ctx);
             }
         };
     }
@@ -207,18 +206,35 @@ public class AddEventAnnotation extends ScanningRecipe<AddEventAnnotation.Accumu
     }
 
     private static J.ClassDeclaration removeClassAnnotation(J.ClassDeclaration cd, String fqn) {
+        List<J.Annotation> originals = cd.getLeadingAnnotations();
         List<J.Annotation> remaining = new ArrayList<>();
-        for (J.Annotation ann : cd.getLeadingAnnotations()) {
+        boolean firstWasRemoved = false;
+        org.openrewrite.java.tree.Space removedFirstPrefix = null;
+        for (int i = 0; i < originals.size(); i++) {
+            J.Annotation ann = originals.get(i);
             boolean matches = TypeUtils.isOfClassType(ann.getType(), fqn)
                     || (ann.getAnnotationType() instanceof J.Identifier
                             && fqn.endsWith("."
                                     + ((J.Identifier) ann.getAnnotationType()).getSimpleName()));
-            if (!matches) {
+            if (matches) {
+                if (i == 0) {
+                    firstWasRemoved = true;
+                    removedFirstPrefix = ann.getPrefix();
+                }
+            } else {
                 remaining.add(ann);
             }
         }
-        if (remaining.size() == cd.getLeadingAnnotations().size()) {
+        if (remaining.size() == originals.size()) {
             return cd;
+        }
+        // When the removed annotation was the first one, its prefix carried the leading blank
+        // line / indent used to separate the annotation block from the imports above. Transfer
+        // that prefix to whatever becomes the new first annotation so we don't leave an extra
+        // blank line behind.
+        if (firstWasRemoved && !remaining.isEmpty() && removedFirstPrefix != null) {
+            J.Annotation newFirst = remaining.get(0).withPrefix(removedFirstPrefix);
+            remaining.set(0, newFirst);
         }
         return cd.withLeadingAnnotations(remaining);
     }

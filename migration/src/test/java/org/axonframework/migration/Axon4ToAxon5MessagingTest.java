@@ -672,6 +672,35 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
         );
     }
 
+    // ── MessageDispatchInterceptor moves into messaging.core ────────────────
+
+    @Test
+    void relocatesMessageDispatchInterceptorIntoMessagingCore() {
+        // AF4 ships `MessageDispatchInterceptor` flat under `org.axonframework.messaging`;
+        // AF5 groups the dispatch/handle interception SPI under `org.axonframework.messaging.core`.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.MessageDispatchInterceptor;
+                        class Foo {
+                            MessageDispatchInterceptor<?> interceptor;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.core.MessageDispatchInterceptor;
+
+                        class Foo {
+                            MessageDispatchInterceptor<?> interceptor;
+                        }
+                        """
+                )
+        );
+    }
+
     // ── EventProcessor lifecycle method rename: shutDown() → shutdown() ─────
 
     @Test

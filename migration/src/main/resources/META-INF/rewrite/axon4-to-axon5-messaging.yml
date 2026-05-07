@@ -60,6 +60,12 @@ recipeList:
       newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.annotation.QueryHandler
 
   # ── Interceptor annotations & impls relocated under messaging.core.* ────
+  # MessageDispatchInterceptor (the interface) moves from the flat AF4
+  # `messaging` package into AF5's `messaging.core`, alongside the rest of
+  # the dispatch/handle interception SPI.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.MessageDispatchInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageDispatchInterceptor
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.interceptors.MessageHandlerInterceptor
       newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.interceptors.MessageHandlerInterceptor

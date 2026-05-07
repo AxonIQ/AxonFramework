@@ -43,20 +43,9 @@ class AddCommandAnnotationKotlinTest implements RewriteTest {
             .typeValidationOptions(TypeValidation.none());
     }
 
-    /**
-     * The lift of {@code @RoutingKey} onto a class-level
-     * {@code @Command(routingKey = "…")} takes two cycles for Kotlin sources:
-     * cycle 1 adds the class-level annotation and captures the parameter name;
-     * cycle 2 removes the now-orphaned {@code @RoutingKey} parameter
-     * annotation and its import. (Java sources collapse to one cycle because
-     * the field sits in {@code cd.getBody()}.)
-     */
-    private static final int LIFT_CYCLES = 2;
-
     @Test
     void liftsRoutingKeyFromKotlinDataClassPrimaryConstructorParameter() {
         rewriteRun(
-                spec -> spec.expectedCyclesThatMakeChanges(LIFT_CYCLES),
                 kotlin(
                         """
                         package com.example
@@ -92,7 +81,6 @@ class AddCommandAnnotationKotlinTest implements RewriteTest {
     @Test
     void liftsRoutingKeyFromMultiParamDataClassWhereRoutingKeyIsNotFirst() {
         rewriteRun(
-                spec -> spec.expectedCyclesThatMakeChanges(LIFT_CYCLES),
                 kotlin(
                         """
                         package com.example
