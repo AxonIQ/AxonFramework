@@ -168,7 +168,7 @@
                 <configuration>
                     <publishingServerId>central</publishingServerId>
                     <excludeArtifacts>
-                        axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-migration,axon-todo
+                        axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-todo
                     </excludeArtifacts>
                 </configuration>
             </plugin>
@@ -251,7 +251,7 @@
                         <configuration>
                             <doclint>none</doclint>
                             <legacyMode>true</legacyMode>
-                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-migration,axon-integrationtests</skippedModules>
+                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-integrationtests</skippedModules>
                             <!-- These parameters are in preparation for resolution of this issue: -->
                             <!-- https://bugs.openjdk.java.net/browse/JDK-8068562 -->
                             <tags>
