@@ -37,6 +37,15 @@ recipeList:
   # ── 1. Java compiler-target bump ────────────────────────────────────────
   - org.axonframework.migration.UpgradeJava
 
+  # ── 1b. Kotlin language line bump (→ 2.x) ──────────────────────────────
+  # Bumps the `org.jetbrains.kotlin:*` runtime dependencies and the
+  # `kotlin-maven-plugin` to the latest Kotlin 2.x line. AF5's Kotlin tests
+  # and recipes target Kotlin 2.x; AF4 codebases on Kotlin 1.x must move up
+  # before downstream rewrites parse them with the AF5 toolchain. No-op for
+  # projects already on a higher 2.x release (the underlying recipes never
+  # downgrade) and for projects without Kotlin sources at all.
+  - org.axonframework.migration.UpgradeKotlin
+
   # ── 2. Spring Boot upgrade (2.x / 3.x → 3.5.x) ────────────────────────
   # Bumps spring-boot-starter-parent (or spring-boot-dependencies BOM) to the
   # latest 3.5.x patch, migrates javax → jakarta, and applies all incremental

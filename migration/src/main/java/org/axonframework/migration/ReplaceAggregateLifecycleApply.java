@@ -18,6 +18,7 @@ package org.axonframework.migration;
 
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
@@ -27,6 +28,8 @@ import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.KotlinParser;
+import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +51,13 @@ import java.util.List;
  * </ol>
  * Idempotent: methods that no longer call {@code apply} are left alone, and the
  * static-import cleanup is handled by {@code maybeRemoveImport}.
+ * <p>
+ * Constructors are explicitly skipped. AF5 constructors are for entity instantiation; they
+ * have no associated command, so the framework provides no {@code EventAppender} for them
+ * to inject. AF4 constructors that emitted a creation event via {@code apply(...)} need a
+ * non-mechanical rewrite (the creation event belongs on the static factory method produced
+ * by {@code ConvertCommandHandlerConstructorToStaticMethod}, not on the constructor) — the
+ * leftover {@code apply(...)} call is left untouched so the developer can decide.
  *
  * @author Axon Framework Team
  * @since 5.2.0
@@ -84,6 +94,28 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
 
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+                // Constructors are never the right injection target. In AF5 the entity is being
+                // constructed — there is no command being handled, so the framework has no
+                // EventAppender to provide. Any AF4 constructor that emitted a creation event via
+                // `AggregateLifecycle.apply(...)` is a non-mechanical migration: the creation
+                // event belongs on the static command-handler that produces the entity (see
+                // ConvertCommandHandlerConstructorToStaticMethod / ToCompanionObject), not on the
+                // constructor itself. Leaving the constructor alone surfaces the leftover
+                // `apply(...)` call to the developer instead of producing a parameter list that
+                // the runtime can't satisfy — and it sidesteps the JavaTemplate.replaceParameters
+                // path that would otherwise try to render Kotlin parameter syntax (`name: Type`)
+                // as Java.
+                //
+                // J.MethodDeclaration#isConstructor() relies solely on a null return-type
+                // expression, which Kotlin functions without an explicit return type also
+                // satisfy. Pair the check with a class-name match so genuine Kotlin functions
+                // (e.g. `fun on(cmd: ...)`) still get the EventAppender injection.
+                J.ClassDeclaration enclosing = getCursor().firstEnclosing(J.ClassDeclaration.class);
+                if (method.isConstructor()
+                        && enclosing != null
+                        && method.getSimpleName().equals(enclosing.getSimpleName())) {
+                    return super.visitMethodDeclaration(method, ctx);
+                }
                 if (!containsApplyCall(method, ctx)) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
@@ -176,6 +208,9 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
             }
 
             private J.MethodDeclaration addEventAppenderParameter(J.MethodDeclaration md, ExecutionContext c) {
+                if (isKotlinSource()) {
+                    return addEventAppenderParameterKotlin(md);
+                }
                 List<Object> templateArgs = new ArrayList<>();
                 StringBuilder template = new StringBuilder();
                 List<Statement> existing = md.getParameters();
@@ -197,6 +232,64 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
                         .apply(getCursor(), md.getCoordinates().replaceParameters(), templateArgs.toArray());
+            }
+
+            /**
+             * Kotlin path for {@link #addEventAppenderParameter}. JavaTemplate's
+             * {@code replaceParameters} renders the existing parameters into a Java placeholder,
+             * which fails on Kotlin's {@code name: Type} syntax. To sidestep that we sub-parse a
+             * synthetic Kotlin function whose parameter list is the original one with
+             * {@code eventAppender: EventAppender} appended, then graft the parsed parameter list
+             * back onto the original method. The sub-parser produces correctly-shaped Kotlin LST
+             * nodes (with the right markers and {@code name: Type} ordering) without us having to
+             * synthesize them by hand.
+             */
+            private J.MethodDeclaration addEventAppenderParameterKotlin(J.MethodDeclaration md) {
+                List<Statement> existing = md.getParameters();
+                boolean hadExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
+                StringBuilder paramsSrc = new StringBuilder();
+                if (hadExisting) {
+                    for (int i = 0; i < existing.size(); i++) {
+                        if (i > 0) {
+                            paramsSrc.append(", ");
+                        }
+                        paramsSrc.append(existing.get(i).print(getCursor()).trim());
+                    }
+                    paramsSrc.append(", ");
+                }
+                // Reference EventAppender by its simple name and bring it in via a snippet
+                // import so the parsed parameter LST renders as `eventAppender: EventAppender`
+                // rather than fully qualified. The host file gets the same import added below
+                // via `maybeAddImport`.
+                paramsSrc.append("eventAppender: EventAppender");
+
+                String snippet = "package _temp\n\n"
+                        + "import " + EVENT_APPENDER_FQN + "\n\n"
+                        + "fun _f(" + paramsSrc + ") {}\n";
+                List<SourceFile> parsed;
+                try {
+                    parsed = KotlinParser.builder().build().parse(snippet)
+                            .filter(s -> s instanceof K.CompilationUnit)
+                            .toList();
+                } catch (RuntimeException ex) {
+                    return md;
+                }
+                if (parsed.isEmpty()) {
+                    return md;
+                }
+                K.CompilationUnit cu = (K.CompilationUnit) parsed.get(0);
+                for (Statement topLevel : cu.getStatements()) {
+                    if (topLevel instanceof J.MethodDeclaration) {
+                        J.MethodDeclaration parsedFun = (J.MethodDeclaration) topLevel;
+                        return md.getPadding().withParameters(
+                                parsedFun.getPadding().getParameters());
+                    }
+                }
+                return md;
+            }
+
+            private boolean isKotlinSource() {
+                return getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
             }
         };
     }
