@@ -61,7 +61,7 @@ recipeList:
       oldArtifactId: axon-spring
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring
-      newVersion: 5.1.0
+      newVersion: ${project.version}
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -92,13 +92,13 @@ recipeList:
       oldArtifactId: axon-spring-boot-starter
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-starter
-      newVersion: 5.1.0
+      newVersion: ${project.version}
   - org.openrewrite.java.dependencies.ChangeDependency:
       oldGroupId: org.axonframework
       oldArtifactId: axon-spring-boot-autoconfigure
       newGroupId: org.axonframework.extensions.spring
       newArtifactId: axon-spring-boot-autoconfigure
-      newVersion: 5.1.0
+      newVersion: ${project.version}
   # Spring Boot configuration property rename. AF4's `SerializerProperties`
   # (`@ConfigurationProperties("axon.serializer")`) is replaced in AF5 by
   # `ConverterProperties` (`@ConfigurationProperties("axon.converter")`),

@@ -42,7 +42,7 @@ recipeList:
       oldArtifactId: axon-bom
       newGroupId: org.axonframework
       newArtifactId: axon-framework-bom
-      newVersion: 5.1.0
+      newVersion: ${project.version}
   # Gradle leg: BOM is consumed via `implementation(platform("g:a:v"))`,
   # `api(platform(...))`, or the Spring DM plugin's `mavenBom("g:a:v")` —
   # `gradle.ChangeDependency` rewrites those calls.
@@ -51,4 +51,4 @@ recipeList:
       oldArtifactId: axon-bom
       newGroupId: org.axonframework
       newArtifactId: axon-framework-bom
-      newVersion: 5.1.0
+      newVersion: ${project.version}

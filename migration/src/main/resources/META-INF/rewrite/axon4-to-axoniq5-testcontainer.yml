@@ -61,7 +61,7 @@ recipeList:
   - org.openrewrite.java.dependencies.AddDependency:
       groupId: io.axoniq.framework
       artifactId: axoniq-testcontainer
-      version: 5.1.0
+      version: ${axoniq.version}
       scope: test
       # Use the AF4 FQN — `onlyIfUsing` resolves against the LST as parsed,
       # so the post-rename Axoniq name would never match.

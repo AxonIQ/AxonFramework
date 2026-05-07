@@ -43,7 +43,7 @@ recipeList:
   # ── 1. Run the free-AF5 migration first ─────────────────────────────────
   - org.axonframework.migration.UpgradeAxon4ToAxon5
 
-  # ── 2. Swap the BOM to the Axoniq commercial BOM (and pin to 5.1.0) ─────
+  # ── 2. Swap the BOM to the Axoniq commercial BOM (and pin to AF5 line) ──
   - org.axonframework.migration.Axon4ToAxoniq5Bom
 
   # ── 3. Commercial-only feature migrations (most foundational first) ─────
@@ -64,4 +64,4 @@ recipeList:
   - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
       groupId: io.axoniq.framework
       artifactId: "*"
-      newVersion: 5.1.0
+      newVersion: ${axoniq.version}
