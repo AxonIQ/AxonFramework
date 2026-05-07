@@ -116,6 +116,29 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryGateway
       newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.gateway.QueryGateway
 
+  # ── Unwrap ResponseTypes wrappers on AF5-shape `query(payload, ResponseType)` calls ─
+  # AF5 dropped the `ResponseType` SPI; the gateway accepts `Class<R>` directly and
+  # exposes `queryMany(...)` for multi-response queries. The recipe is deliberately
+  # narrow: it only fires on the two-argument typed-payload form, so 3-argument
+  # `query(String, Object, ResponseType)` AF4 sites are left intact for the
+  # per-construct skill to handle (those need new typed query message classes,
+  # which a recipe cannot synthesise).
+  - org.axonframework.migration.Axon4ToAxon5QueryResponseTypes
+
+  # ── EventProcessor lifecycle method rename: shutDown() → shutdown() ─────
+  # AF5 normalised the `EventProcessor` lifecycle method names to camelCase. The
+  # AF4 FQN form is listed first; the AF5 FQN form is listed second so the rename
+  # also fires on call sites whose receiver type binding has already been moved
+  # by the surrounding `ChangePackage` rules.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventProcessor shutDown()
+      newMethodName: shutdown
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventProcessor shutDown()
+      newMethodName: shutdown
+      matchOverrides: true
+
   # ── Correlation providers moved under messaging.core.correlation ────────
   - org.openrewrite.java.ChangePackage:
       oldPackageName: org.axonframework.messaging.correlation

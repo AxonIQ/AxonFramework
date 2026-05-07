@@ -110,6 +110,14 @@ recipeList:
       oldPropertyKey: axon.serializer
       newPropertyKey: axon.converter
 
+  # AF4's `axon.eventhandling.processors.<group>.sequencing-policy` property
+  # is obsoleted by AF5's `@SequencingPolicy` annotation on the handler class.
+  # Deleting the key here would race the per-construct skill that moves the
+  # configuration onto the source side; instead we insert an advisory
+  # `# TODO AF5 migration: ...` comment above each matching entry so both the
+  # developer and the next-running LLM-driven skill see it immediately.
+  - org.axonframework.migration.AnnotateObsoleteSequencingPolicyProperty
+
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
