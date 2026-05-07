@@ -71,7 +71,31 @@ official guidance lands).
        . 2>/dev/null
   ```
 
-### 4. Kafka extension (`axon-kafka`)
+### 4. DeadlineManager (`@DeadlineHandler`, `DeadlineManager`)
+
+- **AF4 surface:** `org.axonframework.deadline.*`,
+  `org.axonframework.deadline.DeadlineManager`,
+  `@DeadlineHandler`, `DeadlineMessage`,
+  `SimpleDeadlineManager`, `QuartzDeadlineManager`,
+  `axon-deadline-quartz-spring-boot-autoconfigure`.
+- **Why excluded:** `DeadlineManager` was used predominantly with sagas
+  to schedule timed callbacks into the same saga instance (timeouts,
+  retries, expirations). AF5 has no direct successor — long-running
+  temporal coordination is part of the saga / process-manager rework
+  that is itself out of scope (see item 1). Projects that used deadlines
+  outside sagas typically need to move to an external scheduler
+  (Quartz, Spring `@Scheduled`, a workflow engine) or model the timeout
+  as a domain event with a `EventScheduler`-style replacement once AF5
+  guidance lands.
+- **Detection:**
+  ```bash
+  grep -RlE '@DeadlineHandler|DeadlineManager|DeadlineMessage' \
+       --include='*.java' --include='*.kt' src 2>/dev/null
+  grep -RnE 'org\.axonframework\.deadline' \
+       --include='*.java' --include='*.kt' src 2>/dev/null
+  ```
+
+### 5. Kafka extension (`axon-kafka`)
 
 - **AF4 surface:** `org.axonframework.extensions.kafka.*`,
   `KafkaPublisher`, `StreamableKafkaMessageSource`, `KafkaProperties`,
