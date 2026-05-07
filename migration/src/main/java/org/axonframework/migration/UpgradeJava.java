@@ -32,7 +32,9 @@ import java.util.List;
  * Wraps {@link UpgradeJavaVersion} to:
  * <ul>
  *   <li>expose a single, well-named entrypoint with a sensible default
- *       ({@value #DEFAULT_TARGET_VERSION}, the current latest LTS);</li>
+ *       ({@value #DEFAULT_TARGET_VERSION}, the Axon Framework 5 minimum). Projects already on a
+ *       later Java release (23, 24, 25, …) are left untouched — {@link UpgradeJavaVersion} only
+ *       upgrades, never downgrades — so the default is conservative on purpose;</li>
  *   <li>reject targets below {@value #MINIMUM_TARGET_VERSION} so misconfigurations fail loudly
  *       rather than producing a build that cannot compile against Axon 5.</li>
  * </ul>
@@ -44,7 +46,7 @@ import java.util.List;
  * own wrapping recipe.
  * <p>
  * The {@link #targetVersion} option is overridable per invocation — see the module {@code README.md}
- * for instructions on switching between Java 25 (default) and Java 21.
+ * for instructions on raising the target above the default (e.g. Java 25).
  *
  * @author Axon Framework Team
  * @since 5.2.0
@@ -52,10 +54,11 @@ import java.util.List;
 public class UpgradeJava extends Recipe {
 
     /**
-     * Default target Java version when {@link #targetVersion} is unset. Equal to the latest released
-     * LTS (Java 25, released September 2025).
+     * Default target Java version when {@link #targetVersion} is unset. Equal to the Axon Framework 5
+     * minimum (Java 21). Chosen so that projects already on a higher Java release are left untouched,
+     * since {@link UpgradeJavaVersion} only upgrades and never downgrades.
      */
-    public static final int DEFAULT_TARGET_VERSION = 25;
+    public static final int DEFAULT_TARGET_VERSION = 21;
 
     /**
      * Minimum supported target. Axon Framework 5 requires Java 21+; lower targets are rejected at
@@ -65,10 +68,11 @@ public class UpgradeJava extends Recipe {
 
     @Option(displayName = "Target Java version",
             description = "Java LTS to target. Must be 21 or higher (Axon Framework 5 requires Java 21+). "
-                    + "Defaults to " + DEFAULT_TARGET_VERSION + " (latest LTS). "
-                    + "Updates the compiler target in build files only; source-level modernizations are "
-                    + "handled by the upstream UpgradeToJava21 recipe composed in axon-4to5.yml.",
-            example = "25",
+                    + "Defaults to " + DEFAULT_TARGET_VERSION + " (the Axon 5 minimum) so projects already "
+                    + "on a higher Java release are left untouched. Updates the compiler target in build "
+                    + "files only; source-level modernizations are handled by the upstream UpgradeToJava21 "
+                    + "recipe composed in axon-4to5.yml.",
+            example = "21",
             required = false)
     private final @Nullable Integer targetVersion;
 
@@ -93,7 +97,9 @@ public class UpgradeJava extends Recipe {
     @Override
     public String getDescription() {
         return "Bumps the Java compiler target in pom.xml/build.gradle to the configured LTS "
-                + "(defaults to " + DEFAULT_TARGET_VERSION + "). No-op for modules already at or above the target.";
+                + "(defaults to " + DEFAULT_TARGET_VERSION + ", the Axon Framework 5 minimum). "
+                + "No-op for modules already at or above the target — projects already on a higher Java "
+                + "release are left untouched.";
     }
 
     @Override

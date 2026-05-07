@@ -100,7 +100,7 @@ Run a top-level recipe against a target project with the Maven plugin:
 ```bash
 mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
   -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:LATEST \
-  -DactiveRecipes=org.axonframework.migration.UpgradeAxon4ToAxon5
+  -Drewrite.activeRecipes=org.axonframework.migration.UpgradeAxon4ToAxon5
 ```
 
 Replace the recipe name with `UpgradeAxon4ToAxoniq5` for the commercial path.
@@ -111,7 +111,10 @@ Both top-level recipes bump the Java compiler target as their first step, via
 **`org.axonframework.migration.UpgradeJava`** — a thin, validated wrapper around
 the upstream `UpgradeJavaVersion` recipe that:
 
-- defaults to **Java 25** (the latest LTS at the time of writing);
+- defaults to **Java 21** (the Axon Framework 5 minimum). Projects already on a higher Java
+  release (23, 24, 25, …) are left untouched, since `UpgradeJavaVersion` only upgrades and
+  never downgrades — picking the AF5 minimum as the default avoids forcing a JDK bump on
+  projects that already moved past 21;
 - rejects targets below 21 with a clear error, since Axon Framework 5 requires Java 21+;
 - is a no-op for modules already at or above the requested target.
 
@@ -123,20 +126,22 @@ wrapping recipe (see below).
 
 ### Choosing the target version
 
-Default behavior — running either top-level recipe upgrades the build to **Java 25**.
+Default behavior — running either top-level recipe bumps the build to **Java 21** if it is below
+that, and otherwise leaves the Java version alone. Projects already on Java 23, 24, 25, … are not
+forced down or up; the recipe only enforces the AF5 minimum.
 
-If you want to stay on Java 21 (or pin to any other LTS ≥ 21), wrap the upgrade in your own
-`rewrite.yml` placed at the root of the project being migrated:
+If you want to actively upgrade to a specific newer LTS (e.g. Java 25), wrap the upgrade in your
+own `rewrite.yml` placed at the root of the project being migrated:
 
 ```yaml
 # rewrite.yml in the project you are migrating
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: com.acme.UpgradeAxonForUs
-displayName: Upgrade to Axon 5, keep Java 21
+displayName: Upgrade to Axon 5, target Java 25
 recipeList:
   - org.axonframework.migration.UpgradeJava:
-      targetVersion: 21
+      targetVersion: 25
   # Optional: also apply source-level Java modernizations.
   # - org.openrewrite.java.migrate.UpgradeToJava21
   - org.openrewrite.maven.UpgradeDependencyVersion:
