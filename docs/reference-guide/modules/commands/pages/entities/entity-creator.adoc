@@ -1,0 +1,134 @@
+= Entity Creator
+:navtitle: Entity creator
+
+Every event-sourced entity needs a creator method: a constructor or static factory method that Axon calls before replaying the entity's events.
+Three creator forms are supported:
+
+. **No-argument creator**: Axon calls a no-arg constructor, then replays the entity's events.
+. **Identifier-based creator**: Axon passes the entity identifier at construction time.
+. **First-event-based creator**: Axon passes the first event in the entity's stream at construction time.
+
+The identifier-based and first-event-based forms are the foundation for **immutable entities**: by passing required state into the constructor, fields can be declared `final` and the entity's identity is fixed from the moment of creation.
+
+Each form is supported by both configuration styles:
+
+* **Declarative**: wire the creator with `EventSourcedEntityFactory`.
+See xref:commands:entities/event-sourced-entity.adoc#_declarative[Declarative] for the full registration call this slots into.
+* **Automated** (annotation-based): mark the constructor with `@EntityCreator`.
+Works identically with `@EventSourcedEntity` (non-Spring) and `@EventSourced` (Spring Boot).
+
+[NOTE]
+====
+The annotated examples below use `@EventSourcedEntity(tagKey = "courseId")`, the non-Spring annotation.
+In Spring Boot, replace `@EventSourcedEntity` with `@EventSourced`; the `@EntityCreator` patterns are identical.
+====
+
+== No-argument creator
+
+Suited for **mutable** entities.
+Axon creates the instance with the no-arg constructor and applies events through `@EventSourcingHandler` methods that mutate the entity's fields.
+
+=== Declarative
+
+[source,java]
+----
+.entityFactory(c -> EventSourcedEntityFactory.fromNoArgument(CourseEntity::new))
+----
+
+=== Autodetected
+
+Annotate the no-arg constructor with `@EntityCreator`:
+
+[source,java]
+----
+@EventSourcedEntity(tagKey = "courseId")
+public class CourseEntity {
+
+    // state fields, command handlers, event sourcing handlers...
+
+    @EntityCreator // <1>
+    protected CourseEntity() {
+    }
+}
+----
+
+<1> Axon invokes this constructor to create the initial instance, then replays all events to rebuild state.
+
+== Identifier-based creator
+
+Suited for entities where the identifier is **always** known at creation time and never changes.
+The identifier can be declared `final`, removing a piece of mutable state from the entity.
+
+=== Declarative
+
+[source,java]
+----
+.entityFactory(c -> EventSourcedEntityFactory.fromIdentifier(courseId -> new CourseEntity(courseId)))
+----
+
+=== Autodetected
+
+Use `@InjectEntityId` to mark the identifier parameter:
+
+[source,java]
+----
+@EventSourcedEntity(tagKey = "courseId")
+public class CourseEntity {
+
+    private final String courseId; // <1>
+    // other state fields, command handlers, event sourcing handlers...
+
+    @EntityCreator // <2>
+    protected CourseEntity(@InjectEntityId String courseId) {
+        this.courseId = courseId;
+    }
+}
+----
+
+<1> `courseId` is `final`: set once at construction, never mutated by event sourcing handlers.
+<2> Axon invokes this constructor with the entity identifier resolved from the incoming command.
+
+[IMPORTANT]
+====
+`@InjectEntityId` is required to disambiguate the identifier from an event payload.
+Without it, the first parameter is assumed to be the event payload (the first-event-based form below).
+====
+
+== First-event-based creator
+
+Suited for **fully immutable** entities: every field is `final`, set once when the entity is created from its creation event.
+Subsequent state changes produce a new instance returned from the `@EventSourcingHandler`.
+
+When this form is used, command handlers must be split into xref:commands:entities/event-sourced-entity.adoc#_entity_members[creational and instance command handlers]: a creational handler appends the creation event before the entity exists, and instance handlers operate on the already-created entity for subsequent commands.
+
+=== Declarative
+
+[source,java]
+----
+.entityFactory(c -> EventSourcedEntityFactory.fromEventMessage((id, firstEvent) -> {
+    CourseCreatedEvent created = firstEvent.payloadAs(CourseCreatedEvent.class);
+    return new CourseEntity(created.courseId(), created.capacity());
+}))
+----
+
+=== Autodetected
+
+[source,java]
+----
+@EventSourcedEntity(tagKey = "courseId")
+public class CourseEntity {
+
+    private final String courseId;
+    private final int initialCapacity;
+    // other final fields, command handlers, event sourcing handlers...
+
+    @EntityCreator // <1>
+    protected CourseEntity(CourseCreatedEvent event) {
+        this.courseId = event.courseId();
+        this.initialCapacity = event.capacity();
+    }
+}
+----
+
+<1> Axon invokes this constructor with the first event when sourcing the entity.
+Combine with an `@InjectEntityId`-annotated parameter when both the event and the identifier are needed at construction time.

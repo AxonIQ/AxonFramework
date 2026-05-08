@@ -456,7 +456,7 @@ For the `SubscribeStudentToCourse` handling, this is not enough, because, as you
 We need all `StudentSubscribedToCourse` events for the given `courseId` and also all `StudentSubscribedToCourse` events for the given `studentId`.
 The same applies to `StudentUnsubscribedFromCourse` events.
 
-Whereas, for example, with `StudentEnrolledInFaculty` - we care about just one event for the given `studentId`; other students are not involved while processing this command, and there are no business rules between them.
+Whereas, for example, with `StudentEnrolledInFaculty` - we care about just one event for the given `studentId`. Other students are not involved while processing this command, and there are no business rules between them.
 The subscription story is different, because we have a limit of students per course and also a limit of courses per student.
 
 Thanks to the Axon Framework's `EventCriteria` concept, we're able to define the events we'd like to load dynamically.
