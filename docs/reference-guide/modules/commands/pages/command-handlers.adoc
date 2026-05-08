@@ -18,7 +18,7 @@ An entity is an implementation choice, not an architectural requirement.
 A command handler that needs no prior state requires no entity.
 This is why entities are documented under commands: they exist to serve commands, not as a concept of their own.
 
-For full documentation on event-sourced entities, entity hierarchies, and polymorphism, see xref:commands:entities/index.adoc[Entities].
+For full documentation on event-sourced entities, state-stored entities, entity hierarchies, and polymorphism, see xref:commands:entities/index.adoc[Entities].
 
 [TIP]
 .Annotating command messages
@@ -206,7 +206,7 @@ This state was built up by replaying past events via the `@EventSourcingHandler`
 <6> The `@EntityCreator` constructor tells Axon how to create an empty entity instance before replaying events.
 See xref:commands:command-handlers.adoc#entity-creation-with-entitycreator[Entity creation with `@EntityCreator`] for all three creation patterns.
 
-For a full guide to event-sourced entities (including configuration, snapshots, and child entities), see xref:commands:entities/index.adoc[Entities].
+For a full guide to event-sourced and state-stored entities (including configuration, snapshots, and child entities), see xref:commands:entities/index.adoc[Entities].
 
 [#_command_centric_stateful_handlers]
 === Command-centric command handlers

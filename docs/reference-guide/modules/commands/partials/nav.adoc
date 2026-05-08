@@ -4,6 +4,7 @@
 ** xref:commands:command-dispatchers.adoc[]
 ** xref:commands:entities/index.adoc[]
 *** xref:commands:entities/event-sourced-entity.adoc[]
+*** xref:commands:entities/state-stored-entities.adoc[]
 *** xref:commands:entities/entity-hierarchies.adoc[]
 *** xref:commands:entities/entity-polymorphism.adoc[]
 

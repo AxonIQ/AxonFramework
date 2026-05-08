@@ -302,9 +302,7 @@ New entites are created when a command appends an event that can be routed to an
 
 For more information on the new modeling patterns, including how to use the `@EventCriteriaBuilder` and immutable entities, please refer to:
 
-- xref:commands:entities/event-sourced-entity.adoc[Event-Sourced Entities]: full reference for defining, configuring, and testing event-sourced entities in Axon Framework 5
-- xref:commands:entities/index.adoc[Entities]: overview of entity patterns (event-sourced, hierarchies, polymorphism)
 - xref:commands:command-handlers.adoc#stateful-command-handlers[Stateful Command Handlers]
 - xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Architecture Principles: Moving away from Aggregates]
 - xref:events:event-store-internals.adoc[Event Store Internals and DCB]
-- link:https://www.axoniq.io/blog/dcb-in-af-5[Dynamic Consistency Boundary Blog Post,role=external,window=_blank]
+- link:https://www.axoniq.io/blog/dcb-in-af-5[Dynamic Consistency Boundary Blog Post]

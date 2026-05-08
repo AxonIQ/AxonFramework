@@ -103,37 +103,6 @@ public class Transaction {
 
 
 
-== Event forwarding mode
-
-In Axon Framework 4, `@AggregateMember` had an `eventForwardingMode` attribute controlling how events were delivered to child entities:
-
-* `ForwardAll` (default): every event was forwarded to every child.
-* `ForwardMatchingInstances`: events were forwarded only to children whose `@EntityId` matched a field on the event.
-* `ForwardNone`: no events were forwarded automatically.
-
-In Axon Framework 5, this attribute does not exist.
-The default behaviour is equivalent to `ForwardAll`: every event is offered to every child's `@EventSourcingHandler`.
-
-To replicate `ForwardMatchingInstances`, configure `eventTargetMatcher` on `@EntityMember`:
-
-[source,java]
-----
-@EntityMember(
-    routingKey = "transactionId",
-    eventTargetMatcher = RoutingKeyEventTargetMatcherDefinition.class // <1>
-)
-private List<Transaction> transactions = new ArrayList<>();
-----
-
-<1> `RoutingKeyEventTargetMatcherDefinition` routes events only to the child whose routing key matches a field on the event payload, preventing every child from receiving every event.
-
-There is no direct replacement for `ForwardNone`.
-If you need to suppress event forwarding entirely, do not declare `@EventSourcingHandler` methods on the child entity; Axon will offer events but nothing will handle them.
-
-== See also
-
-- xref:commands:entities/entity-hierarchies.adoc[Entity Hierarchies]: full reference for `@EntityMember`, routing key configuration, and event routing in Axon Framework 5
-
 [IMPORTANT]
 .Maps are not supported
 ====

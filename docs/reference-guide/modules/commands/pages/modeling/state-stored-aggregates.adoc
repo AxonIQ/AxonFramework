@@ -1,0 +1,112 @@
+= State Stored Aggregates
+
+In the xref:modeling/aggregate.adoc[Aggregate] main page we have seen how to create an Aggregate backed by Event Sourcing.
+In other words, the storage method for an Event Sourced Aggregate is by replaying the events which constitute the changes on the Aggregate.
+
+An Aggregate can, however, be stored as-is too.
+When doing so, the `Repository` used to save and load the Aggregate, is the `GenericJpaRepository`.
+The structure of a state-stored Aggregate is a little different from an Event Sourced Aggregate:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.CommandHandler;
+import org.axonframework.messaging.eventhandling.EventHandler;
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateMember;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
+
+@Entity // <1>
+public class GiftCard {
+
+    @Id // <2>
+    @AggregateIdentifier
+    private String id;
+
+    // <3>
+    @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.ALL)
+    @JoinColumn(name = "giftCardId")
+    @AggregateMember
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    private int remainingValue;
+
+    @CommandHandler  // <4>
+    public GiftCard(IssueCardCommand cmd) {
+        if (cmd.getAmount() <= 0) {
+            throw new IllegalArgumentException("amount <= 0");
+        }
+        id = cmd.getCardId();
+        remainingValue = cmd.getAmount();
+
+         // <5>
+        apply(new CardIssuedEvent(cmd.getCardId(), cmd.getAmount()));
+    }
+
+    @CommandHandler
+    public void handle(RedeemCardCommand cmd) {
+         // <6>
+        if (cmd.getAmount() <= 0) {
+            throw new IllegalArgumentException("amount <= 0");
+        }
+        if (cmd.getAmount() > remainingValue) {
+            throw new IllegalStateException("amount > remaining value");
+        }
+        if (transactions.stream().map(GiftCardTransaction::getTransactionId).anyMatch(cmd.getTransactionId()::equals)) {
+            throw new IllegalStateException("TransactionId must be unique");
+        }
+
+         // <7>
+        remainingValue -= cmd.getAmount();
+        transactions.add(new GiftCardTransaction(id, cmd.getTransactionId(), cmd.getAmount()));
+
+        apply(new CardRedeemedEvent(id, cmd.getTransactionId(), cmd.getAmount()));
+    }
+
+    @EventHandler  // <8>
+    protected void on(CardReimbursedEvent event) {
+        this.remainingValue += event.getAmount();
+    }
+
+    protected GiftCard() { }  // <9>
+}
+----
+
+The above code shows a state-stored Aggregate from a 'Gift Card Service'.
+The numbered comments in the snippet point out Axon specifics which are explained here:
+
+<1> As the Aggregate is stored in a JPA repository, it is required to annotated the class with `@Entity`.
+<2> An Aggregate Root must declare a field that contains the Aggregate Identifier.
+This identifier must be initialized at the latest when the first event is published.
+This identifier field must be annotated by the `@AggregateIdentifier` annotation.
+When using JPA to store the Aggregate, Axon knows to use the `@Id` annotation provided by JPA.
+Since the Aggregate is an entity, the `@Id` annotation is a hard requirement.
+
+<3> This Aggregate has several 'xref:modeling/multi-entity-aggregates.adoc[Aggregate Members]'.
+Since the Aggregate is stored as is, the correct mapping of the entities should be taken into account.
+
+<4> A `@CommandHandler` annotated constructor, or differently put the 'command handling constructor'.
+This annotation tells the framework that the given constructor is capable of handling the `IssueCardCommand`.
+
+<5> The static `AggregateLifecycle#apply(Object...)` may be used to publish an Event Message.
+Upon calling this function the provided `Object`s will be published as `EventMessage`s within the scope of the Aggregate they are applied in.
+
+<6> The Command Handling method will first decide whether the incoming Command is valid to handle at this point.
+<7> After the business logic has been validated, the state of the Aggregate may be adjusted
+<8> Entities within an Aggregate can listen to the events the Aggregate publishes, by defining an `@EventHandler` annotated method.
+These methods will be invoked when an Event Message is published prior to being handled by any external handlers.
+
+<9> A no-arg constructor, which is required by JPA.
+Failure to provide this constructor will result in an exception when loading the Aggregate.
+
+[NOTE]
+.Adjusting state in Command Handlers
+====
+Differently from xref:modeling/aggregate.adoc[Event Sourced Aggregates], State-Stored Aggregates can pair the decission making logic and state changes in a Command Handler.
+There are no consequences for State-Stored Aggregates in following this paradigm as there are no Event Sourcing Handlers which drive it's state.
+====

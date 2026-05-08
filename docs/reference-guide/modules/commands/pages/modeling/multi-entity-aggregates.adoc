@@ -1,0 +1,236 @@
+= Multi-Entity Aggregates
+
+Complex business logic often requires more than what an Aggregate with only an Aggregate Root can provide. In that case, it is important that the complexity is spread over a number of 'Entities' within the aggregate. In this chapter we will discuss the specifics around creating entities in your aggregates and how they can handle message.
+
+[TIP]
+.State among Entities
+====
+A common misinterpretation of the rule that aggregates should not expose state, is that none of the entities should contain any property accessor methods. This is not the case. In fact, an aggregate will probably benefit a lot if the entities _within_ the aggregate expose state to the other entities in that same aggregate. However, is is recommended not to expose the state _outside_ the aggregate.
+====
+
+Within the 'Gift Card' domain, the `GiftCard` aggregate root was defined in xref:modeling/aggregate.adoc[this] section. Let's leverage this domain to introduce entities:
+
+[source,java]
+----
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateMember;
+import org.axonframework.modelling.command.EntityId;
+
+public class GiftCard {
+
+    @AggregateIdentifier
+    private String id;
+
+    @AggregateMember // <1>
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    private int remainingValue;
+
+    // omitted constructors, command and event sourcing handlers
+}
+
+public class GiftCardTransaction {
+
+    @EntityId // <2>
+    private String transactionId;
+
+    private int transactionValue;
+    private boolean reimbursed = false;
+
+    public GiftCardTransaction(String transactionId, int transactionValue) {
+        this.transactionId = transactionId;
+        this.transactionValue = transactionValue;
+    }
+
+    public String getTransactionId() {
+        return transactionId;
+    }
+
+    // omitted command handlers, event sourcing handlers and equals/hashCode
+}
+
+----
+
+Entities are, just like the aggregate root, simple objects, as is shown with the new `GiftCardTransaction` entity. The snippet above shows two important concepts of multi-entity aggregates:
+
+<1> The field that declares the child entity/entities must be annotated with `@AggregateMember`.
+ This annotation tells Axon that the annotated field contains a class that should be inspected for message handlers.
+ This example shows the annotation on an implementation of `Iterable`, but it can also be placed on a single Object or a `Map`.
+ In the latter case, the values of the `Map` are expected to contain the entities, while the key contains a value that is used as their reference.
+ Note that this annotation can be placed on a field and a method.
+
+<2> The `@EntityId` annotation specifying the identifying field of an Entity.
+ Required to be able to route a command (or <<Event Sourcing handlers in entities,event>>) message to the correct entity instance.
+ The property on the payload that will be used to find the entity that the message should be routed to, defaults to the name of the `@EntityId` annotated field.
+ For example, when annotating the field `transactionId`, the command must define a property with that same name, which means either a `transactionId` or a `getTransactionId()` method must be present.
+ If the name of the field and the routing property differ, you may provide a value explicitly using `@EntityId(routingKey = &quot;customRoutingProperty&quot;)`.
+ This annotation is *mandatory* on the Entity implementation if it will be part of a `Collection` or `Map` of child entities.
+ Note that this annotation can be placed on a field and a method.
+
+[NOTE]
+.Defining the Entity type
+====
+The field declaration for both the `Collection` or `Map` should contain proper generics to allow Axon to identify the type of Entity contained in the collection or map. If it is not possible to add the generics in the declaration (for example, because you're using a custom implementation which already defines generic types), you must specify the entity type by specifying the `type` field in the `@AggregateMember` annotation:
+
+`@AggregateMember(type = GiftCardTransaction.class)`
+====
+
+== Command handling in entities
+
+`@CommandHandler` annotations are not limited to the aggregate root. Placing all command handlers in the root will sometimes lead to a large number of methods on the aggregate root, while many of them simply forward the invocation to one of the underlying entities. If that is the case, you may place the `@CommandHandler` annotation on one of the underlying entities' methods. For Axon to find these annotated methods, the field declaring the entity in the aggregate root must be marked with `@AggregateMember`:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.CommandHandler;
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateMember;
+import org.axonframework.modelling.command.EntityId;
+
+import static org.axonframework.modelling.command.AggregateLifecycle.apply;
+
+public class GiftCard {
+
+    @AggregateIdentifier
+    private String id;
+
+    @AggregateMember
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    private int remainingValue;
+
+    // omitted constructors, command and event sourcing handlers
+
+}
+
+public class GiftCardTransaction {
+
+    @EntityId
+    private String transactionId;
+
+    private int transactionValue;
+    private boolean reimbursed = false;
+
+    public GiftCardTransaction(String transactionId, int transactionValue) {
+        this.transactionId = transactionId;
+        this.transactionValue = transactionValue;
+    }
+
+    @CommandHandler
+    public void handle(ReimburseCardCommand cmd) {
+        if (reimbursed) {
+            throw new IllegalStateException("Transaction already reimbursed");
+        }
+        apply(new CardReimbursedEvent(cmd.getCardId(), transactionId, transactionValue));
+    }
+
+    // omitted getter, event sourcing handler and equals/hashCode
+}
+----
+
+Note that only the declared type of the annotated field is inspected for command handlers. If a field value is null at the time an incoming command arrives for that entity, an exception is thrown. If there is a `Collection` or `Map` of child entities and none entity can be found which matches the routing key of the command, Axon throws an `IllegalStateException` as apparently the aggregate is not capable of processing the command at that point in time.
+
+[NOTE]
+.Command Handler considerations
+====
+Each command must have exactly one handler in the aggregate. This means that you cannot annotate multiple entities (either root nor not) with `@CommandHandler` which handle the same command type. In case you need to conditionally route a command to an entity, the parent of these entities should handle the command, and forward it based on the conditions that apply.
+
+The runtime type of the field does not have to be exactly the declared type. However, only the declared type of the `@AggregateMember` annotated field is inspected for `@CommandHandler` methods.
+====
+
+== Event Sourcing handlers in entities
+
+When using event sourcing as the mechanism to store the aggregates, not only the aggregate root needs to use events to trigger state transitions, but so does each of the entities within that aggregate. Axon provides support for event sourcing complex aggregate structures like these out of the box.
+
+When an entity (including the aggregate root) applies an event, it is handled by the aggregate root first, and then bubbles down through every `@AggregateMember` annotated field to *all* its containing child entities:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.CommandHandler;
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateMember;
+import org.axonframework.modelling.command.EntityId;
+
+import static org.axonframework.modelling.command.AggregateLifecycle.apply;
+
+public class GiftCard {
+
+    @AggregateIdentifier
+    private String id;
+    @AggregateMember
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    @CommandHandler
+    public void handle(RedeemCardCommand cmd) {
+        // Some decision making logic
+        apply(new CardRedeemedEvent(id, cmd.getTransactionId(), cmd.getAmount()));
+    }
+
+    @EventSourcingHandler
+    public void on(CardRedeemedEvent evt) {
+        // 1.
+        transactions.add(new GiftCardTransaction(evt.getTransactionId(), evt.getAmount()));
+    }
+
+    // omitted constructors, command and event sourcing handlers
+}
+
+public class GiftCardTransaction {
+
+    @EntityId
+    private String transactionId;
+
+    private int transactionValue;
+    private boolean reimbursed = false;
+
+    public GiftCardTransaction(String transactionId, int transactionValue) {
+        this.transactionId = transactionId;
+        this.transactionValue = transactionValue;
+    }
+
+    @CommandHandler
+    public void handle(ReimburseCardCommand cmd) {
+        if (reimbursed) {
+            throw new IllegalStateException("Transaction already reimbursed");
+        }
+        apply(new CardReimbursedEvent(cmd.getCardId(), transactionId, transactionValue));
+    }
+
+    @EventSourcingHandler
+    public void on(CardReimbursedEvent event) {
+        // 2.
+        if (transactionId.equals(event.getTransactionId())) {
+            reimbursed = true;
+        }
+    }
+
+    // omitted getter and equals/hashCode
+}
+----
+
+Two specifics are worth mentioning from the above snippet, pointed out with numbered Java comments:
+
+. The creation of the Entity takes place in an event sourcing handler of its parent.
+  It is thus not possible to have a 'command handling constructor' on the entity class as with the aggregate root.
+
+. The event sourcing handler in the entity performs a validation check whether the received event actually belongs to the entity.
+  This is necessary as events applied by one entity instance will also be handled by any other entity instance of the same type.
+  The situation described in bullet point two is customizable, by changing the `eventForwardingMode` on the `@AggregateMember` annotation:
+
+[source,java]
+----
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateMember;
+import org.axonframework.modelling.command.ForwardMatchingInstances;
+
+public class GiftCard {
+
+    @AggregateIdentifier
+    private String id;
+    @AggregateMember(eventForwardingMode = ForwardMatchingInstances.class)
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    // omitted constructors, command and event sourcing handlers
+}
+----
+
+By setting the `eventForwardingMode` to `ForwardMatchingInstances` an Event Message will only be forwarded if it contains a field/getter which matches the name of the `@EntityId` annotated field on the entity. This routing behaviour can be further specified with the `routingKey` field on the `@EntityId` annotation, mirroring that of <<Command handling in entities,routing commands in entities>>. Other forwarding modes which can be used are `ForwardAll` (the default) and `ForwardNone`, which respectively forward all events to all entities or no events at all.

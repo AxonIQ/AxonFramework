@@ -2,7 +2,7 @@
 :navtitle: Polymorphic Migration
 
 Polymorphic aggregates allow you to define a hierarchy where subtypes inherit command and event sourcing handlers from their superclasses.
-For a detailed guide on how to model these, please refer to the xref:commands:entities/entity-polymorphism.adoc[entity polymorphism reference].
+For a detailed guide on how to model these, please refer to the xref:commands:modeling/aggregate-polymorphism.adoc[modeling section].
 
 Let's take a look at the following example:
 
@@ -106,7 +106,3 @@ public class AxonConfig {
 --
 
 ====
-
-== See also
-
-- xref:commands:entities/entity-polymorphism.adoc[Polymorphic Entities]: full reference for `@EventSourcedEntity(concreteTypes = {...})`, the `@EntityCreator` factory pattern, and `PolymorphicEntityMetamodel` configuration in Axon Framework 5

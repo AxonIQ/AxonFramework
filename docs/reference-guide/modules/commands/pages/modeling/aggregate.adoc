@@ -1,0 +1,126 @@
+= Aggregates
+
+Aggregates are an important concept in link:https://www.axoniq.io/concepts/domain-driven-design[Domain-Driven Design].
+They are clusters of related entities and value objects acting as a single unit.
+They help maintain consistency and encapsulate domain logic within specific boundaries,
+ensuring changes to one part don’t mess up others.
+
+Aggregates are commonly used to model the core business entities in a system based on link:https://www.axoniq.io/concepts/domain-driven-design[Domain-Driven Design] and link:https://www.axoniq.io/concepts/cqrs-and-event-sourcing[CQRS].
+This chapter will cover the basics on how to implement one in Axon Framework.
+
+== Aggregate identifiers
+
+Each aggregate has an identifier that uniquely identifies it within the context.
+Events published from this aggregate will contain this identifier,
+so that Axon Framework can later load the aggregate from its event stream.
+
+Commands that target aggregates contain a reference to this identifier.
+Axon Framework will load the events for the aggregate with this identifier,
+replay the events on an empty instance, and invoke the command. This is how the aggregate's state is reconstructed to support Event-Sourcing.
+
+[TIP]
+====
+The aggregate identifier has to be globally unique in your event store.
+This means that events are loaded based only on the identifier, and nothing else.
+Henceforth, the aggregate's type does not influence uniqueness at all.
+This means that if you have two aggregate types with the same identifier, Axon will
+load the events for both aggregates when handling a command.
+Mixing these events might lead to unexpected behavior, so we strongly recommend to design
+your aggregate identifiers with uniqueness in mind.
+====
+
+Note that commands that construct a new aggregate (via a constructor) do not need an identifier.
+However, your `@AggregateIdentifier` field needs to have a value after the first command,
+or Axon Framework will not know which aggregate identifier to publish the events for.
+
+== Basic aggregate structure
+
+An Aggregate is a regular Java object, which contains state and methods to alter that state.
+When creating the Aggregate object, you are effectively creating the 'Aggregate Root', typically carrying the name of the entire Aggregate.
+For the purpose of this description the 'Gift Card' domain will be used, which brings us the `GiftCard` as the Aggregate (Root).
+By default, Axon will configure your Aggregate as an 'Event Sourced' Aggregate. You can read more about Event-Sourcing link:https://www.axoniq.io/concepts/cqrs-and-event-sourcing[here].
+Henceforth, our basic `GiftCard` Aggregate structure will focus on the Event Sourcing approach:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.CommandHandler;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.modelling.command.AggregateIdentifier;
+
+import static org.axonframework.modelling.command.AggregateLifecycle.apply;
+
+public class GiftCard {
+
+    @AggregateIdentifier // <1>
+    private String id;
+
+    @CommandHandler // <2>
+    public GiftCard(IssueCardCommand cmd) {
+        // <3>
+       apply(new CardIssuedEvent(cmd.getCardId(), cmd.getAmount()));
+    }
+
+    @EventSourcingHandler // <4>
+    public void on(CardIssuedEvent evt) {
+        id = evt.getCardId();
+    }
+
+    // <5>
+    protected GiftCard() {
+    }
+    // omitted command handlers and event sourcing handlers
+}
+----
+There are a couple of noteworthy concepts from the given code snippets, marked with numbered Java comments referring to the following bullets:
+
+<1> The `@AggregateIdentifier` is the external reference point to into the `GiftCard` Aggregate.
+This field is a hard requirement, as without it Axon will not know to which Aggregate a given Command is targeted.
+Note that this annotation can be placed on a field and a method.
+
+<2> A `@CommandHandler` annotated constructor, or differently put the 'command handling constructor'.
+This annotation tells the framework that the given constructor is capable of handling the `IssueCardCommand`.
+The `@CommandHandler` annotated functions are the place where you would put your _decision-making/business logic_.
+
+<3> The static `AggregateLifecycle#apply(Object...)` is what is used when an Event Message should be published.
+Upon calling this function the provided `Object`s will be published as `EventMessage`s within the scope of the Aggregate they are applied in.
+
+<4> Using the `@EventSourcingHandler` is what tells the framework that the annotated function should be called when the Aggregate is 'sourced from its events'.
+As all the Event Sourcing Handlers combined will form the Aggregate, this is where all the _state changes_ happen.
+Note that the Aggregate Identifier *must* be set in the `@EventSourcingHandler` of the  first Event published by the aggregate.
+This is usually the creation event.
+Lastly, `@EventSourcingHandler` annotated functions are resolved using specific rules.
+These rules are the same for the `@EventHandler` annotated methods, and are thoroughly explained in xref:events:event-handlers.adoc[Annotated Event Handler.]
+
+<5> A no-arg constructor, which is required by Axon.
+Axon Framework uses this constructor to create an empty aggregate instance before initializing it using past Events.
+Failure to provide this constructor will result in an exception when loading the Aggregate.
+
+[NOTE]
+.Modifiers for Message Handling functions
+====
+Event Handler methods may be private, as long as the security settings of the JVM allow the Axon Framework to change the accessibility of the method.
+This allows you to clearly separate the public API of your Aggregate, which exposes the methods that generate events, from the internal logic, which processes the events.
+
+Most IDE's have an option to ignore "unused private method" warnings for methods with a specific annotation.
+Alternatively, you can add an `@SuppressWarnings("UnusedDeclaration")` annotation to the method to make sure you do not accidentally delete an event handler method.
+====
+
+== Aggregate lifecycle operations
+
+There are a couple of operations which are desirable to be performed whilst in the life cycle of an Aggregate.
+To that end, the `AggregateLifecycle` class in Axon provides a couple of static functions:
+
+. `apply(Object)` and `apply(Object, MetaData)`: The `AggregateLifecycle#apply` will publish an Event message on an `EventBus` such that it is known to have originated from the Aggregate executing the operation.
+There is the possibility to provide just the Event `Object` or both the Event and some specific xref:messaging-concepts:anatomy-message.adoc#meta-data[MetaData].
+
+. `createNew(Class, Callable)`: Instantiate a new Aggregate as a result of handling a Command.
+Read xref:modeling/aggregate-creation-from-another-aggregate.adoc[this] for more details on this.
+
+. `isLive()`: Check to verify whether the Aggregate is in a 'live' state.
+An Aggregate is regarded to be 'live' if it has finished replaying historic events to recreate it's state.
+If the Aggregate is thus in the process of being event sourced, an `AggregateLifecycle.isLive()` call would return `false`.
+Using this `isLive()` method, you can perform activity that should only be done when handling newly generated events.
+
+. `markDeleted()`: Will mark the Aggregate instance calling the function as being 'deleted'.
+Useful if the domain specifies a given Aggregate can be removed/deleted/closed, after which it should no longer be allowed to handle any Commands.
+This function should be called from an `@EventSourcingHandler` annotated function to ensure that _being marked deleted_ is part of that Aggregate's state.
