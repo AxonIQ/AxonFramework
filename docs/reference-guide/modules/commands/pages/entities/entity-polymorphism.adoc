@@ -228,12 +228,11 @@ configurer.registerEntity(
 
 * Subtypes not listed in `concreteTypes` are silently ignored; their command and event handlers will not be registered and commands targeting them will fail at runtime.
 * Each command may have at most one handler anywhere in the hierarchy.
-  Axon throws `DuplicateCommandHandlerSubscriptionException` at startup if the same command appears in more than one class within the same entity type.
-  Creational command clashes between subtypes are caught separately and throw `IllegalArgumentException` at startup.
+  Axon throws `DuplicateCommandHandlerSubscriptionException` at startup if the same command is handled by more than one class.
+  This also applies to creational commands: no two subtypes may handle the same creational command.
 * `@EventSourcingHandler` methods can be declared on both the parent and subtypes; the parent's handler is called first, then the subtype's.
 * The concrete type is fixed at creation time; an entity cannot change its type at runtime.
-* Parent fields that subtypes assign in their constructors must be at least `protected`.
-  Subtype constructors assign parent fields with normal Java code (`this.courseId = event.courseId()`), not framework reflection, so `private` fields will not compile.
+* Parent fields accessed by subtypes must be `protected` (or use accessors); the framework does not bypass Java visibility rules when subtypes assign fields directly.
 
 == Further reading
 

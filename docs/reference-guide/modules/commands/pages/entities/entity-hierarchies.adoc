@@ -256,13 +256,6 @@ configurer.registerEntity(
 <1> The first argument is the identifier type; the second is the parent entity class.
 ====
 
-[NOTE]
-====
-`@EntityMember` supports `List` fields only.
-`Map<Key, Value>` fields are not supported.
-If you need entities identified by a key, use a `List` and manage the lookup within the entity or through a custom resolver.
-====
-
 == Single child entity
 
 `@EntityMember` can also annotate a single (non-collection) field.

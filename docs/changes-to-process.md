@@ -262,65 +262,81 @@ The following files in `axon-5/` describe the API changes:
 - Removed lengthy, implementation-focused content in favor of practical, user-centric documentation
 - All code examples use Axon 5 APIs (ProcessingContext, EventAppender, ApplicationConfigurer)
 
-### modules/axon-framework-commands/pages/entities/ (new directory)
-**Status:** ✅ COMPLETED
-**Note:** Replaced the old `modeling/` folder. New pages created from scratch with Axon 5 terminology and APIs.
-The old `modeling/` files and the `modeling/` directory have been deleted.
-**Changes applied:**
-- Created `entities/index.adoc` — overview of entities, storage strategies, comparison table, when to use each
-- Created `entities/event-sourced-entity.adoc` — full guide: `@EventSourcedEntity`/`@EventSourced`, `tagKey` (event stream filtering), routing via `@Command(routingKey)` / `@TargetEntityId`, separation of concerns, `EventAppender` metadata, snapshots, AF4 lifecycle migration notes (`markDeleted`, `isLive`, `@AggregateVersion` all removed)
-- Created `entities/entity-hierarchies.adoc` — `@EntityMember` (replaces `@AggregateMember`), routing key, `RoutingKeyEventTargetMatcherDefinition`, single vs collection child entities, command routing resolution
-  - Subsequent accuracy pass (this session): added Spring Boot / Plain Java tabs for parent entity definition and configuration; corrected event routing default (already `RoutingKeyEventTargetMatcherDefinition`—no "deliver to all" default exists); corrected exception to `ChildEntityNotFoundException` (not `IllegalStateException`); corrected single-child forwarding; added verified tests in `university-java-springboot-3` (`hierarchy/` package)
-- Created `entities/entity-polymorphism.adoc` — `@EventSourcedEntity(concreteTypes = {...})`, `@EntityCreator` static factory method, constraints
-  - Subsequent accuracy pass (this session): removed incorrect `@EventSourced` on subtypes guidance (real reason to avoid: unnecessary Spring prototype beans, not double-registration); added static `@CommandHandler` + `@EntityCreator` creation pattern table; fixed `event.typeData()` → proper typed fields (`event.platformUrl()` / `event.location()`) in subtype constructors; added Configuration section with Spring Boot / Plain Java tabs; corrected Constraints: unlisted subtypes silently ignored (no startup error), `DuplicateCommandHandlerSubscriptionException` for within-type duplicates vs `IllegalArgumentException` for creational clashes between subtypes, framework bypasses Java visibility via `setAccessible(true)` so `protected` is best practice not a hard requirement; verified all constraints against source code; added verified tests in `university-java-springboot-3` (`polymorphism/` package)
-- Updated `partials/nav.adoc` to wire in all new entity pages under `entities/index.adoc`
-- Added intro link and `CommandDispatcher` (replaces `AggregateLifecycle.createNew()`) section to `command-handlers.adoc`
-- Added `EventAppender.append(event, metadata)` documentation to `event-sourced-entity.adoc`
-- Added "Dispatching commands from within a command handler" section to `command-handlers.adoc`
+### modules/axon-framework-commands/pages/modeling/aggregate.adoc
+**RENAME TO:** `event-sourced-entity.adoc`
+**Status:** ⏸️ TEMPORARILY REMOVED FROM NAVIGATION
+**Note:** Commented out in nav.adoc - Development team to decide on reinstatement
+**Previous status:** Most core content now covered in command-handlers.adoc
+**Changes to apply if reinstated:**
+- Evaluate if this page is still needed or should be merged/removed
+- Most fundamental concepts now in command-handlers.adoc:
+  - @EntityCreator annotation (all patterns including polymorphic)
+  - EventAppender.append instead of AggregateLifecycle.apply
+  - Creational command handlers (static methods)
+  - @EventSourced annotation
+  - Entity-centric vs command-centric paradigms
+- If kept, focus on advanced entity modeling topics:
+  - EntityMetamodel details (if needed for advanced use cases)
+  - Detailed immutable entity patterns beyond basic examples
+  - Advanced declarative modeling features
+- Consider consolidating or creating advanced modeling guide instead
 
-**Changes to apply:**
-- ~~`entities/state-stored-entities.adoc`~~ — for now deleted; state-stored entities not yet available in AF5 (planned for a future release, issue #3426). Should be added when available
+### modules/axon-framework-commands/pages/modeling/aggregate-creation-from-another-aggregate.adoc
+**RENAME TO:** `entity-creation-from-another-entity.adoc` OR **CONSIDER REMOVAL**
+**Status:** ⏸️ TEMPORARILY REMOVED FROM NAVIGATION
+**Note:** Commented out in nav.adoc - Development team to decide on reinstatement
+**Previous status:** Likely obsolete with command-centric approach
+**Changes to apply if reinstated:**
+- Evaluate necessity: This pattern (entity creating another entity) may be an anti-pattern in command-centric design
+- Alternative: Commands should target specific entities, not have entities create other entities
+- If this represents a valid advanced pattern, update terminology and EventAppender usage
+- Otherwise, consider removing or consolidating into advanced patterns section
 
-### modules/axon-framework-commands/pages/modeling/ (deleted)
-**Status:** ✅ COMPLETED
-**Note:** All five files (`aggregate.adoc`, `multi-entity-aggregates.adoc`, `state-stored-aggregates.adoc`, `aggregate-polymorphism.adoc`, `aggregate-creation-from-another-aggregate.adoc`) and the `modeling/` directory have been deleted. All content is covered by the new `entities/` pages and the `CommandDispatcher` section in `command-handlers.adoc`.
+### modules/axon-framework-commands/pages/modeling/aggregate-polymorphism.adoc
+**RENAME TO:** `entity-polymorphism.adoc` OR **MERGE INTO command-handlers.adoc**
+**Status:** ⏸️ TEMPORARILY REMOVED FROM NAVIGATION
+**Note:** Commented out in nav.adoc - Development team to decide on reinstatement
+**Previous status:** Basic polymorphism already covered in command-handlers.adoc
+**Changes to apply if reinstated:**
+- Basic polymorphic @EntityCreator pattern already documented in command-handlers.adoc
+- Evaluate if advanced polymorphism details warrant separate page
+- If kept as separate page:
+  - Update terminology from aggregate to entity
+  - Document advanced polymorphic entity metamodel features
+  - Update code examples with EventAppender
+  - Focus on complex polymorphic scenarios not covered in basics
+- Consider merging into command-handlers.adoc or creating "Advanced Entity Patterns" page
 
----
+### modules/axon-framework-commands/pages/modeling/multi-entity-aggregates.adoc
+**RENAME TO:** `entity-hierarchies.adoc` or `child-entities.adoc`
+**Status:** ⏸️ TEMPORARILY REMOVED FROM NAVIGATION
+**Note:** Commented out in nav.adoc - Development team to decide on reinstatement
+**Previous status:** Advanced pattern - keep as separate page
+**Changes to apply if reinstated:**
+- This represents advanced state management (parent-child entity relationships)
+- NOT covered in command-handlers.adoc (appropriately kept separate)
+- Update terminology from aggregate to entity throughout
+- Document @EntityMember annotation changes:
+  - Multiple children of same type support
+  - Custom routing for child entities
+- Document event routing changes (no longer forwards to all children by default)
+- Update all code examples with EventAppender
+- Focus on when and why to use entity hierarchies vs separate entities
 
-## Migration Module
-
-### modules/migration/pages/paths/aggregates/configuration-migration.adoc
-**Status:** ✅ COMPLETED
-**Changes applied:**
-- Fixed wrong API: `configurer.modelling().registerEventSourcedEntity()` → `configurer.registerEntity()`
-- Fixed broken IMPORTANT block title (was bare `.`)
-- Added "See also" links to `entities/event-sourced-entity.adoc` and `entities/index.adoc`
-
-### modules/migration/pages/paths/aggregates/multi-entity-migration.adoc
-**Status:** ✅ COMPLETED
-**Changes applied:**
-- Added "Event forwarding mode" section mapping AF4 `@AggregateMember(eventForwardingMode)` (`ForwardAll`, `ForwardMatchingInstances`, `ForwardNone`) to AF5 `@EntityMember(eventTargetMatcher)`
-- Added "See also" link to `entities/entity-hierarchies.adoc`
-
-### modules/migration/pages/paths/aggregates/polymorphism-migration.adoc
-**Status:** ✅ COMPLETED
-**Changes applied:**
-- Fixed stale xref: `commands:modeling/aggregate-polymorphism.adoc` → `commands:entities/entity-polymorphism.adoc`
-- Added "See also" link to `entities/entity-polymorphism.adoc`
-
-### modules/migration/pages/paths/aggregates/index.adoc
-**Status:** ✅ COMPLETED
-**Changes applied:**
-- Added links to `entities/event-sourced-entity.adoc` and `entities/index.adoc` in "See also" section
-
----
-
-## Getting Started Guide
-
-### docs/getting-started/antora.yml
-**Status:** ✅ COMPLETED
-**Changes applied:**
-- Fixed incorrect nav path: `modules/nav.adoc` → `modules/ROOT/nav.adoc`
+### modules/axon-framework-commands/pages/modeling/state-stored-aggregates.adoc
+**RENAME TO:** `state-stored-entities.adoc`
+**Status:** ⏸️ TEMPORARILY REMOVED FROM NAVIGATION
+**Note:** Commented out in nav.adoc - Development team to decide on reinstatement
+**Previous status:** Alternative to event sourcing - keep as separate advanced page
+**Changes to apply if reinstated:**
+- This represents alternative state management strategy (state-stored vs event-sourced)
+- NOT covered in command-handlers.adoc (appropriately kept separate)
+- Update terminology from aggregate to entity throughout
+- Document state-stored entity configuration and when to use
+- Update Repository usage patterns (different from EventSourcedRepository)
+- Explain trade-offs: state-stored vs event-sourced entities
+- Update all code examples with modern Axon 5 APIs
+- Note: Most users should use event sourcing; this is for specific use cases
 
 ---
 

@@ -295,7 +295,7 @@ public static void handle(IssueGiftCard cmd,
 
 * *`CreationPolicy.NEVER`*
 +
-New entities are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
+New entites are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
 
 [#see-also]
 == See also
