@@ -18,9 +18,20 @@ package org.axonframework.eventhandling.deadletter.jdbc;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.serialization.TestSerializer;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.Instant;
+
+import static org.axonframework.common.DateTimeUtils.formatInstant;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Test class validating the {@link DefaultDeadLetterStatementFactory}.
@@ -66,5 +77,45 @@ class DefaultDeadLetterStatementFactoryTest {
                                                  .genericSerializer(TestSerializer.JACKSON.getSerializer());
 
         assertThrows(AxonConfigurationException.class, testBuilder::build);
+    }
+
+    @Test
+    void claimableSequencesStatementUsesSqlOffsetPagingOnOrderedSequenceHeads() throws Exception {
+        DefaultDeadLetterStatementFactory<?> testSubject = DefaultDeadLetterStatementFactory.builder()
+                .genericSerializer(TestSerializer.JACKSON.getSerializer())
+                .eventSerializer(TestSerializer.JACKSON.getSerializer())
+                .build();
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        when(connection.prepareStatement(anyString(), eq(ResultSet.TYPE_FORWARD_ONLY), eq(ResultSet.CONCUR_READ_ONLY)))
+                .thenReturn(statement);
+
+        Instant processingStartedLimit = Instant.parse("2026-05-08T00:00:00Z");
+        testSubject.claimableSequencesStatement(connection, "processing-group", processingStartedLimit, 20, 10);
+
+        String expectedSql = "SELECT * "
+                + "FROM DeadLetterEntry dl "
+                + "WHERE dl.processingGroup=? "
+                + "AND dl.sequenceIndex="
+                + "("
+                + "SELECT MIN(dl2.sequenceIndex) "
+                + "FROM DeadLetterEntry dl2 "
+                + "WHERE dl2.processingGroup=dl.processingGroup "
+                + "AND dl2.sequenceIdentifier=dl.sequenceIdentifier"
+                + ") "
+                + "AND ("
+                + "dl.processingStarted IS NULL "
+                + "OR dl.processingStarted<?"
+                + ") "
+                + "ORDER BY dl.lastTouched "
+                + "ASC "
+                + "LIMIT ? "
+                + "OFFSET ?";
+
+        verify(connection).prepareStatement(expectedSql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+        verify(statement).setString(1, "processing-group");
+        verify(statement).setString(2, formatInstant(processingStartedLimit));
+        verify(statement).setInt(3, 10);
+        verify(statement).setInt(4, 20);
     }
 }

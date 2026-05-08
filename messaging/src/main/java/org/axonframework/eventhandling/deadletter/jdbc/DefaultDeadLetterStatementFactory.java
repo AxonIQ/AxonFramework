@@ -341,7 +341,6 @@ public class DefaultDeadLetterStatementFactory<E extends EventMessage<?>> implem
         String sql = "SELECT * "
                 + "FROM " + schema.deadLetterTable() + " dl "
                 + "WHERE dl." + schema.processingGroupColumn() + "=? "
-                + "AND dl." + schema.sequenceIndexColumn() + ">=? "
                 + "AND dl." + schema.sequenceIndexColumn() + "="
                 + "("
                 + "SELECT MIN(dl2." + schema.sequenceIndexColumn() + ") "
@@ -355,15 +354,16 @@ public class DefaultDeadLetterStatementFactory<E extends EventMessage<?>> implem
                 + ") "
                 + "ORDER BY dl." + schema.lastTouchedColumn() + " "
                 + "ASC "
-                + "LIMIT ?";
+                + "LIMIT ? "
+                + "OFFSET ?";
 
         PreparedStatement statement =
                 connection.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 
         statement.setString(1, processingGroup);
-        statement.setInt(2, offset);
-        statement.setString(3, DateTimeUtils.formatInstant(processingStartedLimit));
-        statement.setInt(4, maxSize);
+        statement.setString(2, DateTimeUtils.formatInstant(processingStartedLimit));
+        statement.setInt(3, maxSize);
+        statement.setInt(4, offset);
         return statement;
     }
 
