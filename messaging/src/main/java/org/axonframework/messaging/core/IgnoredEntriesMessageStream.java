@@ -48,8 +48,8 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
 
         if (delegate.isCompleted()) {
             initialize(delegate.error()
-                               .map(FetchResult::<Entry<Message>>error)
-                               .orElse(FetchResult.completed())
+                .map(FetchResult::<Entry<Message>>error)
+                .orElse(FetchResult.completed())
             );
         }
     }
@@ -66,8 +66,8 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
     protected FetchResult<Entry<Message>> fetchNext() {
         if (delegate.isCompleted()) {
             return delegate.error()
-                           .map(FetchResult::<Entry<Message>>error)
-                           .orElse(FetchResult.completed());
+                .map(FetchResult::<Entry<Message>>error)
+                .orElse(FetchResult.completed());
         }
 
         return FetchResult.notReady();
@@ -82,14 +82,4 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
     protected String describeDelegates() {
         return delegate.toString();
     }
-
-    @Override
-    public MessageStream<Message> concatWith(MessageStream<? extends Message> other) {
-        // Empty.concatWith() short-circuits to 'return other', skipping any pending async
-        // work in the delegate (e.g. a CompletableFuture returned by an async interceptor).
-        // Always create a ConcatenatingMessageStream that waits for this stream to complete
-        // before switching to 'other'.
-        return new ConcatenatingMessageStream<>(this, other);
-    }
-
 }

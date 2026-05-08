@@ -77,11 +77,9 @@ public void registerMessageHandlerInterceptor(MessagingConfigurer configurer) {
 ----
 
 [TIP]
-.Component-level interceptors
+.Component-specific interceptors
 ====
-Besides registering interceptors on buses and processors, you can apply interceptors to a specific handling component.
-This lets you scope cross-cutting logic to a single component class using annotated methods or declarative module configuration.
-See xref:component-message-intercepting.adoc[Component message intercepting] for details.
+Besides being able to register interceptors for your buses and processors, you are able to register them for specific handling components. Please check xref:component-message-intercepting.adoc[this] chapter for more details on this.
 ====
 
 [[command-interceptors]]

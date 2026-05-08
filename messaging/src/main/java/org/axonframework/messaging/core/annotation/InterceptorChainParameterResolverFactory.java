@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.core.interception.annotation;
+package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.common.Priority;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.annotation.ParameterResolver;
-import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ResourceOverridingProcessingContext;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
@@ -42,8 +42,34 @@ import java.util.function.Function;
 public class InterceptorChainParameterResolverFactory
         implements ParameterResolverFactory, ParameterResolver<MessageHandlerInterceptorChain<?>> {
 
+    private static final ThreadLocal<MessageHandlerInterceptorChain<?>> CURRENT = new ThreadLocal<>();
     private static final ResourceKey<MessageHandlerInterceptorChain<?>> INTERCEPTOR_CHAIN_KEY =
             ResourceKey.withLabel("InterceptorChain");
+
+    /**
+     * Invoke the given {@code action} with the given {@code interceptorChain} being available for parameter injection.
+     * Because this parameter is not bound to a message, it is important to invoke handlers using this method.
+     *
+     * @param interceptorChain The InterceptorChain to consider for injection as parameter
+     * @param action           The action to invoke
+     * @param <R>              The type of response expected from the invocation
+     * @return The response from the invocation of given {@code action}
+     * @throws Exception any exception that occurs while invoking given {@code action}
+     */
+    public static <R> R callWithInterceptorChainSync(MessageHandlerInterceptorChain<?> interceptorChain,
+                                                     Callable<R> action) throws Exception {
+        MessageHandlerInterceptorChain<?> previous = CURRENT.get();
+        CURRENT.set(interceptorChain);
+        try {
+            return action.call();
+        } finally {
+            if (previous == null) {
+                CURRENT.remove();
+            } else {
+                CURRENT.set(previous);
+            }
+        }
+    }
 
     /**
      * Invoke the given {@code action} with the given {@code interceptorChain} being available for parameter injection.
@@ -60,42 +86,24 @@ public class InterceptorChainParameterResolverFactory
             MessageHandlerInterceptorChain<M> interceptorChain,
             Function<ProcessingContext, MessageStream<?>> action
     ) {
-        return action.apply(processingContext.withResource(INTERCEPTOR_CHAIN_KEY, interceptorChain));
+        ProcessingContext newProcessingContext = new ResourceOverridingProcessingContext<>(processingContext,
+                                                                                           INTERCEPTOR_CHAIN_KEY,
+                                                                                           interceptorChain);
+        return action.apply(newProcessingContext);
     }
 
     /**
-     * Creates a new {@link ProcessingContext} that carries the given {@code interceptorChain} as a resource, making it
-     * available for parameter injection via {@link #currentInterceptorChain(ProcessingContext)}.
-     * <p>
-     * Use this in synchronous code paths where the chain must be injected without going through the async
-     * {@link #callWithInterceptorChain(ProcessingContext, MessageHandlerInterceptorChain, java.util.function.Function)}
-     * wrapper.
+     * Returns the current interceptor chain registered for injection as a parameter. Will return the instance passed in
+     * {@link #callWithInterceptorChainSync(MessageHandlerInterceptorChain, Callable)}. When invoked outside the scope
+     * of that method, this will return {@code null}.
      *
-     * @param processingContext the base context to extend
-     * @param interceptorChain  the interceptor chain to register
-     * @param <M>               the message type
-     * @return a new context with the chain registered as a resource
-     * @deprecated use {@link #callWithInterceptorChain(ProcessingContext, MessageHandlerInterceptorChain, Function)} instead.
+     * @return the InterceptorChain instance passed in
+     * {@link #callWithInterceptorChainSync(MessageHandlerInterceptorChain, Callable)}
      */
-    @Deprecated(since = "5.2.0", forRemoval = true)
-    public static <M extends Message> ProcessingContext contextWithInterceptorChain(
-            ProcessingContext processingContext,
-            MessageHandlerInterceptorChain<M> interceptorChain
-    ) {
-        return processingContext.withResource(INTERCEPTOR_CHAIN_KEY, interceptorChain);
+    public static MessageHandlerInterceptorChain<?> currentInterceptorChain() {
+        return CURRENT.get();
     }
 
-    /**
-     * Returns the current interceptor chain registered in the given {@code processingContext}, or {@code null} if none
-     * is present. The chain is stored via
-     * {@link #callWithInterceptorChain(ProcessingContext, MessageHandlerInterceptorChain, Function)} and is available
-     * for the duration of that call.
-     *
-     * @param processingContext the processing context to retrieve the interceptor chain from
-     * @param <M>               the message type
-     * @return the interceptor chain registered in the context, or {@code null} if not present
-     */
-    @Nullable
     public static <M extends Message> MessageHandlerInterceptorChain<M> currentInterceptorChain(
             ProcessingContext processingContext
     ) {
@@ -105,7 +113,13 @@ public class InterceptorChainParameterResolverFactory
 
     @Override
     public CompletableFuture<MessageHandlerInterceptorChain<?>> resolveParameterValue(ProcessingContext context) {
-        MessageHandlerInterceptorChain<?> interceptorChain = context.getResource(INTERCEPTOR_CHAIN_KEY);
+        // TODO #3485 - The MessageHandlerInterceptorChain should be registered as a resource to the ProcessingContext
+        //  and retrieved from the given context here upon resolution i.o. using a thread local.
+        MessageHandlerInterceptorChain<?> interceptorChain =
+                (context == null)  ? null : context.getResource(INTERCEPTOR_CHAIN_KEY);
+        if (interceptorChain == null) {
+            interceptorChain = CURRENT.get();
+        }
         if (interceptorChain != null) {
             return CompletableFuture.completedFuture(interceptorChain);
         }
@@ -114,7 +128,8 @@ public class InterceptorChainParameterResolverFactory
 
     @Override
     public boolean matches(ProcessingContext context) {
-        return context.containsResource(INTERCEPTOR_CHAIN_KEY);
+        return CURRENT.get() != null
+                || (context != null && context.containsResource(INTERCEPTOR_CHAIN_KEY));
     }
 
     @Nullable

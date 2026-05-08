@@ -1,0 +1,14 @@
+= Annotated Exception Handling
+
+[WARNING]
+====
+Annotated exception handling support will be introduced in 5.2.0. As such, the description below is not complete nor finalized. For those curious, be sure to follow the link:https://github.com/AxonFramework/AxonFramework/issues/3062[issue] that will implement this functionality.
+====
+
+== `@ExceptionHandler` annotated methods
+
+Axon Framework allows the use of methods annotated with `@ExceptionHandler` to provide more fine-grained control on how to react to exceptions.
+More specifically, this is a type of xref:message-intercepting.adoc[message handler interceptor] dedicated to reacting to exceptional results.
+
+Note that an `@ExceptionHandler` will only handle exceptions thrown from message handling functions in the same class.
+For more specifics on how to use this annotation, check out xref:exception-handling.adoc[this] chapter.

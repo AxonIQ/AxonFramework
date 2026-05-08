@@ -21,7 +21,6 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.common.configuration.ModuleBuilder;
-import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -31,7 +30,6 @@ import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryHandler;
 import org.axonframework.messaging.queryhandling.QueryHandlingComponent;
-import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.annotation.AnnotatedQueryHandlingComponent;
 
 import java.util.function.Consumer;
@@ -182,17 +180,6 @@ public interface QueryHandlingModule extends Module, ModuleBuilder<QueryHandling
          */
         QueryHandlingModule.QueryHandlerPhase queryHandlingComponent(
                 ComponentBuilder<QueryHandlingComponent> handlingComponentBuilder
-        );
-
-        /**
-         * Registers an interceptor to be applied to the query handling component assembled by this module. Multiple
-         * calls accumulate interceptors in registration order.
-         *
-         * @param interceptorBuilder builder for the interceptor to apply
-         * @return the query handler phase of this builder, for a fluent API
-         */
-        QueryHandlerPhase intercepted(
-                ComponentBuilder<MessageHandlerInterceptor<? super QueryMessage>> interceptorBuilder
         );
 
         /**

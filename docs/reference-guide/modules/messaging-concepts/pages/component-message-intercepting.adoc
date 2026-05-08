@@ -1,343 +1,281 @@
 = Component Message Intercepting
 
-Component-level interceptors apply cross-cutting behavior within a single handling component instance.
-They complement bus-level interceptors, which apply globally to all messages on a bus, by targeting only the handlers within a specific component.
-Axon Framework supports two approaches: annotated interceptor methods placed directly on the component class, and declarative interceptors registered during module configuration.
+[WARNING]
+====
+Declarative and annotated interceptor support for Message Handling Components will be introduced in 5.2.0. As such, the description below is not complete nor finalized. For those curious, be sure to follow the link:https://github.com/AxonFramework/AxonFramework/issues/3485[issue] that will implement this functionality.
+====
 
 [[command-handler-interceptor-annotation]]
 == `@CommandHandlerInterceptor` annotation
 
-Annotated interceptors are methods placed on a handling component class and marked with one of the interceptor annotations.
-The framework invokes these methods around the regular handler methods on the same component instance.
-
-Two styles are supported:
-
-* **Before-interceptor**: a `void` method with no `MessageHandlerInterceptorChain` parameter.
-The framework runs the method before the handler and automatically proceeds the chain after the method returns normally.
-If the interceptor throws, the handler is not invoked.
-* **Surround-interceptor**: a method that returns `MessageStream<?>` and declares a `MessageHandlerInterceptorChain<M>` parameter.
-The method controls whether and when to call `chain.proceed(message, context)`.
-It can short-circuit processing entirely by returning without calling proceed, or by returning `MessageStream.failed(...)`.
-
-=== `@CommandHandlerInterceptor`
-
-The `@CommandHandlerInterceptor` annotation marks a method as an interceptor for command handlers on the same component.
-It is a specialization of `@MessageHandlerInterceptor` scoped to `CommandMessage`.
-
-*Before-interceptor (logging all commands):*
+You can add a handler interceptor as a `@CommandHandlerInterceptor` annotated method on the aggregate or entity.
+This allows you to make decisions based on the current state of the aggregate:
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlerInterceptor;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+public class GiftCard {
 
-public class OrderCommandHandler {
+    private String state;
 
     @CommandHandlerInterceptor
-    void logCommand(CommandMessage command) {
-        log.info("Handling command: {}", command.qualifiedName());
+    public void intercept(RedeemCardCommand command, InterceptorChain chain) {
+        if (this.state.equals(command.getState())) {
+            chain.proceed();
+        }
+        // Otherwise, don't proceed - command is blocked
     }
 
     @CommandHandler
-    void handle(PlaceOrderCommand command, ProcessingContext context) {
+    public void handle(RedeemCardCommand command) {
         // Handle the command
     }
 }
 ----
 
-*Surround-interceptor (authorization check):*
+Note that the `@CommandHandlerInterceptor` is essentially a more specific implementation of the `@MessageHandlerInterceptor` described <<annotated-MessageHandlerInterceptor,below>>.
+
+[[annotated-MessageHandlerInterceptor]]
+== Annotated `@MessageHandlerInterceptor`
+
+Alongside defining overall `MessageHandlerInterceptor` instances on the component handling a message, you can also define a handler interceptor for a specific component containing the handlers.
+This is achieved by adding a method with the `@MessageHandlerInterceptor` annotation.
+
+Several options are available:
+
+1. **InterceptorChain parameter**: The `InterceptorChain` is an _optional_ parameter which can be added to the intercepting method.
+In absence of this parameter, the framework will call `InterceptorChain#proceed` once the method exits.
+
+2. **Message type filtering**: You can define the type of `Message` the interceptor should deal with using the `messageType` parameter.
+
+3. **Payload type filtering**: For fine-grained control, specify the `payloadType` contained in the `Message`.
+
+*Simple `@MessageHandlerInterceptor` method:*
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class OrderCommandHandler {
-
-    @CommandHandlerInterceptor
-    MessageStream<?> authorize(
-            CommandMessage command,
-            MessageHandlerInterceptorChain<CommandMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!securityContext.isAuthorized(command)) {
-            return MessageStream.failed(new AccessDeniedException("Not authorized"));
-        }
-        return chain.proceed(command, context);
-    }
-
-    @CommandHandler
-    void handle(PlaceOrderCommand command, ProcessingContext context) {
-        // Handle the command
-    }
-}
-----
-
-=== `@EventHandlerInterceptor`
-
-The `@EventHandlerInterceptor` annotation marks a method as an interceptor for event handlers on the same component.
-It is a specialization of `@MessageHandlerInterceptor` scoped to `EventMessage`.
-
-*Before-interceptor (tracing):*
-
-[source,java]
-----
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-
-public class CardSummaryProjection {
-
-    @EventHandlerInterceptor
-    void trace(EventMessage event) {
-        tracer.startSpan(event.qualifiedName());
-    }
-
-    @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
-        // Handle event
-    }
-}
-----
-
-*Surround-interceptor (conditional processing):*
-
-[source,java]
-----
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class CardSummaryProjection {
-
-    @EventHandlerInterceptor
-    MessageStream<?> filterByTenant(
-            EventMessage event,
-            MessageHandlerInterceptorChain<EventMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!tenantId.equals(event.metadata().get("tenantId"))) {
-            return MessageStream.empty();
-        }
-        return chain.proceed(event, context);
-    }
-
-    @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
-        // Handle event
-    }
-}
-----
-
-=== `@QueryHandlerInterceptor`
-
-The `@QueryHandlerInterceptor` annotation marks a method as an interceptor for query handlers on the same component.
-It is a specialization of `@MessageHandlerInterceptor` scoped to `QueryMessage`.
-
-*Before-interceptor (access logging):*
-
-[source,java]
-----
-import org.axonframework.messaging.queryhandling.annotation.QueryHandlerInterceptor;
-import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-
-public class CourseQueryHandler {
-
-    @QueryHandlerInterceptor
-    void auditQuery(QueryMessage query) {
-        auditLog.record(query.qualifiedName(), securityContext.currentUser());
-    }
-
-    @QueryHandler
-    CourseView handle(FindCourseQuery query, ProcessingContext context) {
-        // Handle the query
-        return null;
-    }
-}
-----
-
-*Surround-interceptor (tenant authorization):*
-
-[source,java]
-----
-import org.axonframework.messaging.queryhandling.annotation.QueryHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class CourseQueryHandler {
-
-    @QueryHandlerInterceptor
-    MessageStream<?> checkTenant(
-            QueryMessage query,
-            MessageHandlerInterceptorChain<QueryMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!tenantId.equals(query.metadata().get("tenantId"))) {
-            return MessageStream.failed(new AccessDeniedException("Wrong tenant"));
-        }
-        return chain.proceed(query, context);
-    }
-
-    @QueryHandler
-    CourseView handle(FindCourseQuery query, ProcessingContext context) {
-        // Handle the query
-        return null;
-    }
-}
-----
-
-=== Generic `@MessageHandlerInterceptor`
-
-The base `@MessageHandlerInterceptor` annotation is available when you need to cover multiple message types or want to use the annotation directly.
-Specify the `messageType` attribute to limit the interceptor to a particular message type.
-Omitting `messageType` defaults to matching any `Message`.
-
-*Intercepting all messages on a component:*
-
-Omitting `messageType` matches any message, so the interceptor runs before every handler on the component, including event handlers and query handlers.
-This is useful for cross-cutting concerns such as logging or security checks that should apply regardless of the message type being processed.
-
-[source,java]
-----
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-
 public class CardSummaryProjection {
 
     @MessageHandlerInterceptor
-    void interceptAll(Message message) {
-        // Runs before every @EventHandler and @QueryHandler on this component
+    public void intercept(Message message) {
+        // Intercepts all messages to this component
     }
 
     @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
+    public void on(CardIssuedEvent event) {
         // Handle event
     }
+}
+----
 
-    @QueryHandler
-    CardSummaryView handle(FindCardSummaryQuery query, ProcessingContext context) {
-        // Handle query
+*Defining the message type:*
+
+[source,java]
+----
+public class CardSummaryProjection {
+
+    @MessageHandlerInterceptor(messageType = EventMessage.class)
+    public void intercept(EventMessage event) {
+        // Intercepts only event messages
     }
 }
 ----
 
-*Surround-interceptor using the base annotation:*
+*Defining message and payload type:*
 
 [source,java]
 ----
-import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.queryhandling.QueryMessage;
+public class CardSummaryProjection {
 
-public class CourseQueryHandler {
+    @MessageHandlerInterceptor(
+        messageType = EventMessage.class,
+        payloadType = CardRedeemedEvent.class
+    )
+    public void intercept(CardRedeemedEvent event) {
+        // Intercepts only CardRedeemedEvent messages
+    }
+}
+----
+
+*Using InterceptorChain for control:*
+
+[source,java]
+----
+public class CardSummaryProjection {
 
     @MessageHandlerInterceptor(messageType = QueryMessage.class)
-    MessageStream<?> intercept(
-            QueryMessage query,
-            MessageHandlerInterceptorChain<QueryMessage> chain,
-            ProcessingContext context
-    ) {
+    public void intercept(QueryMessage query, InterceptorChain chain) throws Exception {
         // Logic before handling
-        MessageStream<?> result = chain.proceed(query, context);
-        // Logic after handling (if needed, chain the stream)
-        return result;
+        chain.proceed();
+        // Logic after handling
     }
 }
 ----
 
-== Declarative interceptors
-
-Declarative interceptors are registered at module configuration time rather than by annotating methods on the component class.
-This is useful when an interceptor is implemented as a standalone class, when the same interceptor must apply uniformly across an entire module, or when you want to keep cross-cutting logic separate from handler classes.
-
-Each module configuration API provides an `intercepted` method that accepts a `ComponentBuilder` for the interceptor.
-Multiple calls to `intercepted` accumulate interceptors in registration order.
-
-=== Command interceptors
-
-Use `CommandHandlingModule.CommandHandlerPhase.intercepted()` to register an interceptor for the command handling component assembled by a module.
+*Hierarchy on aggregate member and root:*
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.messaging.core.MessageStream;
+public class GiftCard {
 
-CommandHandlingModule.named("orders")
-        .commandHandlers()
-        .autodetectedCommandHandlingComponent(cfg -> new OrderCommandHandler())
-        .intercepted(cfg -> (message, context, chain) -> {
-            log.info("Intercepting command: {}", message.qualifiedName());
-            return chain.proceed(message, context);
-        })
-        .build();
+    @AggregateIdentifier
+    private String id;
+
+    @AggregateMember
+    private List<GiftCardTransaction> transactions = new ArrayList<>();
+
+    @MessageHandlerInterceptor
+    public void intercept(Message message) {
+        // This interceptor will be invoked FIRST
+    }
+}
+
+public class GiftCardTransaction {
+
+    @EntityId
+    private String transactionId;
+
+    @MessageHandlerInterceptor
+    public void intercept(Message message) {
+        // This interceptor will be invoked SECOND
+    }
+}
 ----
 
-Multiple interceptors are applied in registration order:
+[NOTE]
+.`@MessageHandlerInterceptor` hierarchy for `@EventSourcingHandler`
+====
+`@MessageHandlerInterceptor` follows the aggregate hierarchy when applicable.
+If an aggregate root has an interceptor, as well as one or several entities, the interceptor chain will "move up" the hierarchy.
+
+However, this support **does not** exist for event sourcing handlers!
+Only the interceptors on that level of the hierarchy are invoked.
+In the example above, when the `GiftCardTransaction` is event sourced, only its interceptor is invoked, disregarding the one on the `GiftCard` class.
+
+This is a known discrepancy that cannot be easily adjusted in Axon's current structure.
+It is not recommended to rely on an invocation hierarchy for `@MessageHandlerInterceptor` annotated methods while sourcing an aggregate.
+====
+
+Next to the message, payload, and `InterceptorChain`, a `@MessageHandlerInterceptor` annotated method can resolve other parameters as well.
+Which parameters the framework can resolve depends on the type of `Message` being handled by the interceptor.
+For more specifics, see xref:supported-parameters-annotated-handlers.adoc[Supported Parameters].
+
+[[ExceptionHandler]]
+=== `@ExceptionHandler`
+
+The `@MessageHandlerInterceptor` also allows for a more specific version: an `@ExceptionHandler` annotated method.
+
+The framework invokes `@ExceptionHandler` annotated methods _only_ for exceptional results of message handling.
+This allows you to throw more domain-specific exceptions or translate technical exceptions to business errors.
+
+You can wire all xref:supported-parameters-annotated-handlers.adoc[default parameters] to an exception handler, similar to command, event, and query handlers.
+Hence, you can add the exception, payload, metadata, and other options.
+
+You can introduce `@ExceptionHandler` annotated methods in any message handling component, including sagas.
+You can choose to react to all exceptions or define specific exception/message combinations.
+
+*Aggregate exception handlers:*
 
 [source,java]
 ----
-CommandHandlingModule.named("orders")
-        .commandHandlers()
-        .autodetectedCommandHandlingComponent(cfg -> new OrderCommandHandler())
-        .intercepted(cfg -> new AuthorizationCommandInterceptor(cfg.getComponent(SecurityContext.class)))
-        .intercepted(cfg -> new AuditCommandInterceptor(cfg.getComponent(AuditLog.class)))
-        .build();
+class GiftCard {
+
+    // State, command handlers and event sourcing handlers omitted
+
+    @ExceptionHandler
+    public void handleAll(Exception exception) {
+        // Handles all exceptions thrown within this component
+    }
+
+    @ExceptionHandler
+    public void handleIssueCardExceptions(IssueCardCommand command) {
+        // Handles all exceptions from the IssueCardCommand handler
+    }
+
+    @ExceptionHandler(payloadType = IssueCardCommand.class)
+    public void handleIssueCardExceptions() {
+        // Handles all exceptions from the IssueCardCommand handler
+    }
+
+    @ExceptionHandler
+    public void handleIllegalStateExceptions(IllegalStateException exception) {
+        // Handles all IllegalStateExceptions thrown within this component
+    }
+
+    @ExceptionHandler(resultType = IllegalStateException.class)
+    public void handleIllegalStateExceptions(Exception exception) {
+        // Handles all IllegalStateExceptions thrown within this component
+    }
+
+    @ExceptionHandler
+    public void handleSpecificCase(IssueCardCommand command,
+                                   IllegalStateException exception) {
+        // Handles IllegalStateExceptions from IssueCardCommand handler
+    }
+
+    @ExceptionHandler(
+        resultType = IllegalStateException.class,
+        payloadType = IssueCardCommand.class
+    )
+    public void handleSpecificCase() {
+        // Handles IllegalStateExceptions from IssueCardCommand handler
+    }
+}
 ----
 
-=== Query interceptors
+[NOTE]
+.Exception Handling for Aggregate Constructors
+====
+The `@ExceptionHandler` annotated methods require an existing component instance to work.
+Because of this, exception handlers *do not* work for (command handling) constructors of an aggregate.
 
-Use `QueryHandlingModule.QueryHandlerPhase.intercepted()` to register an interceptor for the query handling component assembled by a module.
+If you expect exceptions on an aggregate's constructor that you need to handle differently, use Axon's xref:commands:command-handlers.adoc#_aggregate_command_handler_creation_policy[creation policy].
+====
+
+*Projector exception handlers:*
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
+class CardSummaryProjection {
 
-QueryHandlingModule.named("courses")
-        .queryHandlers()
-        .autodetectedQueryHandlingComponent(cfg -> new CourseQueryHandler())
-        .intercepted(cfg -> (message, context, chain) -> {
-            if (!securityContext.canQuery()) {
-                return MessageStream.failed(new AccessDeniedException("Query not permitted"));
-            }
-            return chain.proceed(message, context);
-        })
-        .build();
-----
+    // Event handlers and query handlers omitted
 
-=== Event interceptors
+    @ExceptionHandler
+    public void handleAll(Exception exception) {
+        // Handles all exceptions thrown within this component
+    }
 
-Use `EventHandlingComponentsConfigurer.CompletePhase.intercepted()` to register an interceptor for all event handling components in a processor.
-This method closes the component registration phase, so no further components may be added after calling it.
+    @ExceptionHandler
+    public void handleFindCardQueryExceptions(FindCardQuery query) {
+        // Handles all exceptions from the FindCardQuery handler
+    }
 
-[source,java]
-----
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
+    @ExceptionHandler(payloadType = FindCardQuery.class)
+    public void handleFindCardQueryExceptions() {
+        // Handles all exceptions from the FindCardQuery handler
+    }
 
-EventProcessorModule
-        .subscribing("card-summary")
-        .eventHandlingComponents(components -> components
-                .autodetected("card-summary-projection", cfg -> new CardSummaryProjection())
-                .intercepted(cfg -> (message, context, chain) -> {
-                    log.info("Handling event: {}", message.qualifiedName());
-                    return chain.proceed(message, context);
-                })
-        )
-        .notCustomized();
-----
+    @ExceptionHandler
+    public void handleIllegalArgumentExceptions(IllegalArgumentException exception) {
+        // Handles all IllegalArgumentExceptions within this component
+    }
 
-Multiple event interceptors are also accumulated in registration order:
+    @ExceptionHandler(resultType = IllegalArgumentException.class)
+    public void handleIllegalArgumentExceptions(Exception exception) {
+        // Handles all IllegalArgumentExceptions within this component
+    }
 
-[source,java]
-----
-EventProcessorModule
-        .pooledStreaming("card-summary")
-        .eventHandlingComponents(components -> components
-                .autodetected("card-summary-projection", cfg -> new CardSummaryProjection())
-                .intercepted(cfg -> new TracingEventInterceptor(cfg.getComponent(Tracer.class)))
-                .intercepted(cfg -> new TenantFilterEventInterceptor(tenantId))
-        )
-        .notCustomized();
+    @ExceptionHandler
+    public void handleSpecificCase(CardIssuedEvent event,
+                                   IllegalArgumentException exception) {
+        // Handles IllegalArgumentExceptions from CardIssuedEvent handler
+    }
+
+    @ExceptionHandler(
+        resultType = IllegalArgumentException.class,
+        payloadType = CardIssuedEvent.class
+    )
+    public void handleSpecificCase() {
+        // Handles IllegalArgumentExceptions from CardIssuedEvent handler
+    }
+}
 ----

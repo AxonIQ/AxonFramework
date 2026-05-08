@@ -18,13 +18,11 @@ package org.axonframework.messaging.eventhandling.configuration;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 
@@ -150,21 +148,6 @@ public interface EventHandlingComponentsConfigurer {
          */
         CompletePhase decorated(
                 BiFunction<Configuration, EventHandlingComponent, EventHandlingComponent> decorator
-        );
-
-        /**
-         * Registers an interceptor to be applied to all event handling components in this configurer. Multiple calls
-         * accumulate interceptors in registration order. The builder may access the {@link Configuration} and register
-         * lifecycle handlers.
-         * <p>
-         * Calling this method closes the component registration phase — no further components can be added after this
-         * call.
-         *
-         * @param interceptorBuilder builder for the interceptor to apply
-         * @return this phase for further interceptor or decorator registration
-         */
-        CompletePhase intercepted(
-                ComponentBuilder<MessageHandlerInterceptor<? super EventMessage>> interceptorBuilder
         );
 
         /**

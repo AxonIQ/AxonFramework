@@ -25,7 +25,6 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -525,21 +524,6 @@ public interface MessageStream<M extends Message> {
      */
     default MessageStream<M> concatWith(MessageStream<? extends M> other) {
         return new ConcatenatingMessageStream<>(this, other);
-    }
-
-    /**
-     * Returns a stream that concatenates this stream with a stream created lazily by the given {@code next} supplier,
-     * if this stream completes successfully.
-     * <p>
-     * The supplier is invoked at most once, and only when a consumer first requests messages from the continuation
-     * stream. If this stream completes with an error the supplier is never called.
-     *
-     * @param next a supplier producing the {@code MessageStream} to append; invoked lazily on first access
-     * @return a stream concatenating this stream with the lazily-created stream from {@code next}
-     * @throws UnsupportedOperationException if this stream is unbounded
-     */
-    default MessageStream<M> concatWith(Supplier<MessageStream<M>> next) {
-        return concatWith(new LazyMessageStream<>(next));
     }
 
     /**

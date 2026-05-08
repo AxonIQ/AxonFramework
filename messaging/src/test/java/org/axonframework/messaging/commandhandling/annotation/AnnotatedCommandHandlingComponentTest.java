@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -31,7 +32,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -39,9 +39,7 @@ import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
 import org.axonframework.messaging.commandhandling.interception.CommandMessageHandlerInterceptorChain;
-import org.axonframework.messaging.commandhandling.interception.annotation.CommandHandlerInterceptor;
 import org.axonframework.messaging.core.GenericMessage;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageStream.Entry;
 import org.axonframework.messaging.core.MessageType;
@@ -209,6 +207,37 @@ class AnnotatedCommandHandlingComponentTest {
                                      () -> testSubject.handle(command, mock(ProcessingContext.class)).first()
                                                       .asCompletableFuture().join());
         assertInstanceOf(NoHandlerForCommandException.class, exception.getCause());
+    }
+
+    @Disabled("Reintegrate as part of #3485")
+    @Test
+    void messageHandlerInterceptorAnnotatedMethodsAreSupportedForCommandHandlingComponents() {
+        CommandMessage testCommandMessage = new GenericCommandMessage(new MessageType(String.class), "");
+        List<CommandMessage> withInterceptor = new ArrayList<>();
+        List<CommandMessage> withoutInterceptor = new ArrayList<>();
+        annotatedCommandHandler =
+                new MyInterceptingCommandHandler(withoutInterceptor, withInterceptor, new ArrayList<>());
+        testSubject = new AnnotatedCommandHandlingComponent<>(
+                annotatedCommandHandler,
+                ClasspathParameterResolverFactory.forClass(annotatedCommandHandler.getClass()),
+                ClasspathHandlerDefinition.forClass(annotatedCommandHandler.getClass()),
+                new AnnotationMessageTypeResolver(),
+                new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
+        );
+
+        Object result = testSubject.handle(testCommandMessage, mock(ProcessingContext.class))
+                                   .first()
+                                   .asCompletableFuture()
+                                   .join()
+                                   .message()
+                                   .payload();
+
+        assertNull(result);
+        // TODO #3485 The interceptor chain is not yet implemented fully through the MessageStream.
+        //  Hence, this test does not end up in the message handler.
+//        assertEquals(1, annotatedCommandHandler.voidHandlerInvoked);
+        assertEquals(Collections.singletonList(testCommandMessage), withInterceptor);
+        assertEquals(Collections.singletonList(testCommandMessage), withoutInterceptor);
     }
 
     @Test
@@ -633,239 +662,6 @@ class AnnotatedCommandHandlingComponentTest {
                                         .isInstanceOf(NoHandlerForCommandException.class);
 
         assertThat(callCount.get()).isEqualTo(0);
-    }
-
-    @Nested
-    class AnnotatedInterceptorHandling {
-
-        private static AnnotatedCommandHandlingComponent<?> annotatedComponent(Object handler) {
-            return new AnnotatedCommandHandlingComponent<>(
-                    handler,
-                    ClasspathParameterResolverFactory.forClass(handler.getClass()),
-                    ClasspathHandlerDefinition.forClass(handler.getClass()),
-                    new AnnotationMessageTypeResolver(),
-                    new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
-            );
-        }
-
-        private static CommandMessage commandMessage(Object payload) {
-            return new GenericCommandMessage(new MessageType(payload.getClass()), payload);
-        }
-
-        @Test
-        void beforeInterceptorIsInvokedBeforeCommandHandler() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                void intercept() { log.add("interceptor"); }
-                @CommandHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedComponent(handler);
-            var command = commandMessage(42);
-
-            // when
-            component.handle(command, StubProcessingContext.forMessage(command))
-                     .first().asCompletableFuture().join();
-
-            // then
-            assertThat(log).containsExactly("interceptor", "handler");
-        }
-
-        @Test
-        void beforeInterceptorExceptionBreaksChain() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                void intercept() { throw new RuntimeException("interceptor failed"); }
-                @CommandHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedComponent(handler);
-            var command = commandMessage(42);
-
-            // when
-            var future = component.handle(command, StubProcessingContext.forMessage(command))
-                                  .first().asCompletableFuture();
-
-            // then - error propagated, handler never called
-            assertThatThrownBy(future::join).isInstanceOf(CompletionException.class);
-            assertThat(log).doesNotContain("handler");
-        }
-
-        @Test
-        void surroundInterceptorCanWrapHandling() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                @SuppressWarnings({"rawtypes", "unchecked"})
-                MessageStream<?> intercept(CommandMessage command,
-                                           MessageHandlerInterceptorChain chain,
-                                           ProcessingContext ctx) {
-                    log.add("before");
-                    MessageStream<?> result = chain.proceed(command, ctx);
-                    log.add("after");
-                    return result;
-                }
-                @CommandHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedComponent(handler);
-            var command = commandMessage(42);
-
-            // when
-            component.handle(command, StubProcessingContext.forMessage(command))
-                     .first().asCompletableFuture().join();
-
-            // then
-            assertThat(log).containsExactly("before", "handler", "after");
-        }
-
-        @Test
-        void interceptorCanShortCircuitHandling() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                MessageStream<?> intercept(MessageHandlerInterceptorChain<?> chain) {
-                    // deliberately skip chain.proceed() and return a failure instead
-                    return MessageStream.failed(new RuntimeException("access denied"));
-                }
-                @CommandHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedComponent(handler);
-            var command = commandMessage(42);
-
-            // when
-            var future = component.handle(command, StubProcessingContext.forMessage(command))
-                                  .first().asCompletableFuture();
-
-            // then - chain was not proceeded; handler was never called; interceptor failure propagates
-            assertThatThrownBy(future::join).isInstanceOf(CompletionException.class)
-                                            .cause().isInstanceOf(RuntimeException.class)
-                                            .hasMessage("access denied");
-            assertThat(log).doesNotContain("handler");
-        }
-
-        @Test
-        void multipleInterceptorsRunInOrder() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                void aFirstInterceptor() { log.add("first"); }
-                @CommandHandlerInterceptor
-                void bSecondInterceptor() { log.add("second"); }
-                @CommandHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedComponent(handler);
-            var command = commandMessage(42);
-
-            // when
-            component.handle(command, StubProcessingContext.forMessage(command))
-                     .first().asCompletableFuture().join();
-
-            // then
-            assertThat(log).containsExactly("first", "second", "handler");
-        }
-
-        @Nested
-        class GenericMessageHandlerInterceptor {
-
-            @Test
-            void interceptorWithoutMessageTypeRunsBeforeCommandHandler() {
-                // given - @MessageHandlerInterceptor with no messageType matches any message on the component
-                var log = new ArrayList<String>();
-                var handler = new Object() {
-                    @MessageHandlerInterceptor
-                    void intercept() { log.add("interceptor"); }
-                    @CommandHandler
-                    void handle(Integer payload) { log.add("handler"); }
-                };
-                var component = annotatedComponent(handler);
-                var command = commandMessage(42);
-
-                // when
-                component.handle(command, StubProcessingContext.forMessage(command))
-                         .first().asCompletableFuture().join();
-
-                // then
-                assertThat(log).containsExactly("interceptor", "handler");
-            }
-
-            @Test
-            void interceptorWithCommandMessageTypeRunsBeforeCommandHandler() {
-                // given - @MessageHandlerInterceptor(messageType = CommandMessage.class) acts like @CommandHandlerInterceptor
-                var log = new ArrayList<String>();
-                var handler = new Object() {
-                    @MessageHandlerInterceptor(messageType = CommandMessage.class)
-                    void intercept() { log.add("interceptor"); }
-                    @CommandHandler
-                    void handle(Integer payload) { log.add("handler"); }
-                };
-                var component = annotatedComponent(handler);
-                var command = commandMessage(42);
-
-                // when
-                component.handle(command, StubProcessingContext.forMessage(command))
-                         .first().asCompletableFuture().join();
-
-                // then
-                assertThat(log).containsExactly("interceptor", "handler");
-            }
-
-            @Test
-            void surroundInterceptorUsingBaseAnnotationCanWrapHandling() {
-                // given
-                var log = new ArrayList<String>();
-                var handler = new Object() {
-                    @MessageHandlerInterceptor(messageType = CommandMessage.class)
-                    @SuppressWarnings({"rawtypes", "unchecked"})
-                    MessageStream<?> intercept(CommandMessage command,
-                                               MessageHandlerInterceptorChain chain,
-                                               ProcessingContext ctx) {
-                        log.add("before");
-                        MessageStream<?> result = chain.proceed(command, ctx);
-                        log.add("after");
-                        return result;
-                    }
-                    @CommandHandler
-                    void handle(Integer payload) { log.add("handler"); }
-                };
-                var component = annotatedComponent(handler);
-                var command = commandMessage(42);
-
-                // when
-                component.handle(command, StubProcessingContext.forMessage(command))
-                         .first().asCompletableFuture().join();
-
-                // then
-                assertThat(log).containsExactly("before", "handler", "after");
-            }
-        }
-
-        @Test
-        void nonVoidInterceptorWithoutChainParamIsRejected() {
-            // given - @CommandHandlerInterceptor on a non-void method with no chain parameter
-            var handler = new Object() {
-                @CommandHandlerInterceptor
-                String intercept() { return "not void"; }
-                @CommandHandler
-                void handle(Integer payload) {
-                    // method implementation not relevant
-                }
-            };
-
-            // when / then
-            assertThatThrownBy(() -> annotatedComponent(handler))
-                    .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("declare a parameter of type InterceptorChain");
-        }
     }
 
     @SuppressWarnings("unused")

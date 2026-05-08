@@ -16,18 +16,15 @@
 
 package org.axonframework.messaging.eventhandling.annotation;
 
-import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
@@ -39,7 +36,6 @@ import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
-import org.axonframework.messaging.eventhandling.interception.annotation.EventHandlerInterceptor;
 import org.axonframework.messaging.eventhandling.replay.GenericReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
@@ -56,11 +52,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.core.sequencing.SequentialPolicy.FULL_SEQUENTIAL_POLICY;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -906,243 +900,6 @@ class AnnotatedEventHandlingComponentTest {
             assertThat(eventHandler.replayStatusChanges).hasSize(2);
             assertThat(eventHandler.replayStatusChanges.get(0).status()).isEqualTo(ReplayStatus.REPLAY);
             assertThat(eventHandler.replayStatusChanges.get(1).status()).isEqualTo(ReplayStatus.REGULAR);
-        }
-    }
-
-    @Nested
-    class AnnotatedInterceptorHandling {
-
-        private static ProcessingContext simpleContext(EventMessage event) {
-            return StubProcessingContext.withComponent(Converter.class, PassThroughConverter.INSTANCE)
-                                        .withMessage(event);
-        }
-
-        private static void drainStream(MessageStream.Empty<Message> stream) {
-            stream.reduce(null, (acc, e) -> null).join();
-        }
-
-        @Test
-        void beforeInterceptorIsInvokedBeforeEventHandler() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                void intercept() { log.add("interceptor"); }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            component.handle(event, simpleContext(event));
-
-            // then
-            assertThat(log).containsExactly("interceptor", "handler");
-        }
-
-        @Test
-        void beforeInterceptorExceptionBreaksChain() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                void intercept() { throw new RuntimeException("interceptor failed"); }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-
-            // then - error propagated, handler never called
-            assertThat(result.error()).isPresent();
-            assertThat(result.isCompleted()).isTrue();
-            assertThat(log).doesNotContain("handler");
-        }
-
-        @Test
-        void surroundInterceptorCanWrapHandling() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                @SuppressWarnings({"rawtypes", "unchecked"})
-                MessageStream<?> intercept(EventMessage event,
-                                           MessageHandlerInterceptorChain chain,
-                                           ProcessingContext ctx) {
-                    log.add("before");
-                    MessageStream<?> result = chain.proceed(event, ctx);
-                    log.add("after");
-                    return result;
-                }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when - surround interceptor runs handler synchronously during handle()
-            component.handle(event, simpleContext(event));
-
-            // then
-            assertThat(log).containsExactly("before", "handler", "after");
-        }
-
-        @Test
-        void interceptorCanShortCircuitHandling() {
-            // given
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                MessageStream<?> intercept(MessageHandlerInterceptorChain<?> chain) {
-                    return MessageStream.empty();
-                }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-
-            // then - chain was not proceeded; handler was never called
-            assertThat(result.isCompleted()).isTrue();
-            assertThat(result.error()).isEmpty();
-            assertThat(log).doesNotContain("handler");
-        }
-
-        @Test
-        void multipleInterceptorsRunInOrder() {
-            // given - two before-interceptors; alphabetical method name breaks the tie
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                void aFirstInterceptor() { log.add("first"); }
-                @EventHandlerInterceptor
-                void bSecondInterceptor() { log.add("second"); }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-            drainStream(result);
-
-            // then
-            assertThat(log).containsExactly("first", "second", "handler");
-        }
-
-        @Test
-        void nonVoidInterceptorWithoutChainParamIsRejected() {
-            // given - @EventHandlerInterceptor on a non-void method with no chain parameter
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                String intercept() { return "not void"; }
-                @EventHandler
-                void handle(Integer payload) {
-                    // no-op; component needs a handler but invocation is never tested
-                }
-            };
-
-            // when / then
-            assertThatThrownBy(() -> annotatedEventHandlingComponent(handler))
-                    .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("declare a parameter of type InterceptorChain");
-        }
-
-        @Test
-        void asyncBeforeInterceptorDefersProceedingChainUntilFutureCompletes() {
-            // given - before-interceptor that returns a pending CompletableFuture
-            var log = new ArrayList<String>();
-            var interceptorFuture = new CompletableFuture<Void>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                CompletableFuture<Void> intercept() { return interceptorFuture; }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-
-            // then - handler not yet called while future is pending
-            assertThat(log).isEmpty();
-
-            // when - future completes normally
-            interceptorFuture.complete(null);
-
-            // then - chain proceeds and handler is called once the stream is consumed
-            assertThat(result.reduce(null, (acc, e) -> null)).isDone();
-            assertThat(log).containsExactly("handler");
-        }
-
-        @Test
-        void asyncBeforeInterceptorExceptionPreventsHandlerFromBeingCalled() {
-            // given - before-interceptor that returns a pending CompletableFuture
-            var log = new ArrayList<String>();
-            var interceptorFuture = new CompletableFuture<Void>();
-            var handler = new Object() {
-                @EventHandlerInterceptor
-                CompletableFuture<Void> intercept() { return interceptorFuture; }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-
-            // then - handler not called while future is pending
-            assertThat(log).isEmpty();
-
-            // when - future completes with an error
-            interceptorFuture.completeExceptionally(new RuntimeException("interceptor failed"));
-
-            // then - the error propagates through the stream and the handler is never called
-            assertThat(result.reduce(null, (acc, e) -> null)).isCompletedExceptionally();
-            assertThat(log).isEmpty();
-        }
-
-        @Test
-        void beforeInterceptorInvokedWithoutInterceptorChainInContextReturnsFailedStream() {
-            // given - access the interceptor member directly, bypassing ChainedMessageHandlerInterceptorMember
-            // which normally injects the chain; this simulates invocation outside the proper call chain
-            var inspector = AnnotatedHandlerInspector.inspectType(BeforeInterceptorHandlerFixture.class);
-            var interceptorMember = inspector.getAllInterceptors()
-                                             .get(BeforeInterceptorHandlerFixture.class)
-                                             .first();
-            var event = eventMessage(0);
-
-            // when - context has no interceptor chain resource
-            var result = interceptorMember.handle(event, simpleContext(event), null);
-
-            // then
-            assertThat(result.isCompleted()).isTrue();
-            assertThat(result.error()).isPresent();
-            //noinspection OptionalGetWithoutIsPresent
-            assertThat(result.error().get())
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("No interceptor chain found in context for before-interceptor");
-        }
-
-        private static class BeforeInterceptorHandlerFixture {
-            @EventHandlerInterceptor
-            void intercept() {
-                // no-op; interceptor framework exits before the body runs when no chain is in context
-            }
-            @EventHandler
-            void handle(Integer payload) {
-                // no-op; handler is never invoked in this test
-            }
         }
     }
 }

@@ -30,11 +30,8 @@ import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.interception.InterceptingEventHandlingComponent;
 import org.junit.jupiter.api.*;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -137,124 +134,6 @@ class DefaultEventHandlingComponentsConfigurerTest {
                     .declarative("component", cfg -> SimpleEventHandlingComponent.create("other")))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("already registered");
-        }
-    }
-
-    @Nested
-    class InterceptedTest {
-
-        private final EventMessage sampleEvent = EventTestUtils.asEventMessage("payload");
-        private final MessagingConfigurer configurer = MessagingConfigurer.create();
-
-        @Test
-        void singleInterceptorIsInvokedBeforeHandler() {
-            // given
-            List<String> invocationLog = new ArrayList<>();
-            var component = SimpleEventHandlingComponent.create("comp");
-            component.subscribe(new QualifiedName(String.class),
-                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
-
-            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
-                    .declarative("comp", cfg -> component)
-                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return chain.proceed(msg, ctx); })
-                    .toMap()
-                    .get("comp")
-                    .build(configurer.build());
-
-            // when
-            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
-
-            // then
-            assertThat(invocationLog).containsExactly("interceptor", "handler");
-        }
-
-        @Test
-        void multipleInterceptorsAreInvokedInRegistrationOrder() {
-            // given
-            List<String> invocationLog = new ArrayList<>();
-            var component = SimpleEventHandlingComponent.create("comp");
-            component.subscribe(new QualifiedName(String.class),
-                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
-
-            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
-                    .declarative("comp", cfg -> component)
-                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("first"); return chain.proceed(msg, ctx); })
-                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("second"); return chain.proceed(msg, ctx); })
-                    .toMap()
-                    .get("comp")
-                    .build(configurer.build());
-
-            // when
-            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
-
-            // then
-            assertThat(invocationLog).containsExactly("first", "second", "handler");
-        }
-
-        @Test
-        void noWrappingWhenNoInterceptorsRegistered() {
-            // given
-            var component = SimpleEventHandlingComponent.create("comp");
-
-            // when
-            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
-                    .declarative("comp", cfg -> component)
-                    .toMap()
-                    .get("comp")
-                    .build(configurer.build());
-
-            // then
-            assertThat(builtComponent).isNotInstanceOf(InterceptingEventHandlingComponent.class);
-        }
-
-        @Test
-        void allRegisteredComponentsAreWrapped() {
-            // given
-            List<String> invocationLog = new ArrayList<>();
-            var comp1 = SimpleEventHandlingComponent.create("comp1");
-            comp1.subscribe(new QualifiedName(String.class),
-                            (e, c) -> { invocationLog.add("handler1"); return MessageStream.empty(); });
-            var comp2 = SimpleEventHandlingComponent.create("comp2");
-            comp2.subscribe(new QualifiedName(String.class),
-                            (e, c) -> { invocationLog.add("handler2"); return MessageStream.empty(); });
-
-            var built = new DefaultEventHandlingComponentsConfigurer()
-                    .declarative("comp1", cfg -> comp1)
-                    .declarative("comp2", cfg -> comp2)
-                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return chain.proceed(msg, ctx); })
-                    .toMap();
-            var cfg = configurer.build();
-
-            // when
-            built.get("comp1").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
-            built.get("comp2").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
-
-            // then
-            assertThat(invocationLog).containsExactly("interceptor", "handler1", "interceptor", "handler2");
-            assertThat(built.get("comp1").build(cfg)).isInstanceOf(InterceptingEventHandlingComponent.class);
-            assertThat(built.get("comp2").build(cfg)).isInstanceOf(InterceptingEventHandlingComponent.class);
-        }
-
-        @Test
-        void interceptorCanShortCircuitWithoutCallingChain() {
-            // given
-            List<String> invocationLog = new ArrayList<>();
-            var component = SimpleEventHandlingComponent.create("comp");
-            component.subscribe(new QualifiedName(String.class),
-                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
-
-            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
-                    .declarative("comp", cfg -> component)
-                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return MessageStream.empty(); })
-                    .toMap()
-                    .get("comp")
-                    .build(configurer.build());
-
-            // when
-            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
-
-            // then
-            assertThat(invocationLog).containsExactly("interceptor");
         }
     }
 

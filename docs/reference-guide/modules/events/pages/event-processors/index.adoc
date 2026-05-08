@@ -235,17 +235,12 @@ Since the Event Processor is the invoker of event handling methods, it is a spot
 Since Event Processors are dedicated to event handling, the `MessageHandlerInterceptor` is required to deal with an `EventMessage`.
 Differently put, an xref:messaging-concepts:message-intercepting.adoc#event-handler-interceptors[EventHandlerInterceptor] can be registered to Event Processors.
 
-There are several approaches to registering interceptors, each with a different scope.
+There are two approaches to registering interceptors with your event handling processes.
+Firstly, you can define default handling interceptors that will be attached to all Event Processors in your application.
+This can be achieved through the `MessagingConfigurer` and is explained in more detail xref:messaging-concepts:message-intercepting.adoc#event-handler-interceptors[here].
 
-==== Default interceptors for all processors
-
-Default handling interceptors can be attached to all Event Processors in your application through the `MessagingConfigurer`.
-This is explained in more detail xref:messaging-concepts:message-intercepting.adoc#event-handler-interceptors[here].
-
-==== Interceptors for a specific processor instance
-
-Interceptors can be registered for a specific Event Processor instance by name.
-Use the `withInterceptor(MessageHandlerInterceptor<? super EventMessage>)` operation as part of customizing a processor:
+Secondly, handler interceptor can be registered per specific Event Processor instance.
+For this you should use the `withInterceptr(MessageHandlerInterceptor<? super EventMessage>)` operation as part of customizing a processor based on its name as shown:
 
 [source,java]
 ----
@@ -258,125 +253,11 @@ public class AxonConfig {
         configurer.eventProcessing()
                   .subscribing()
                   .customize("my-processor", config -> config.withInterceptor(new CustomEventHandlerInterceptor()));
-        // For PooledStreamingEventProcessor:
+        // For PooledStreamEventProcessor:
         configurer.eventProcessing()
                   .pooledStreaming()
                   .customize("my-processor", config -> config.withInterceptor(new CustomEventHandlerInterceptor()));
     }
-}
-----
-
-==== Interceptors for specific event handling components
-
-Interceptors can be registered as part of the event handling component configuration itself, using `intercepted()` on the `EventHandlingComponentsConfigurer`.
-Calling `intercepted()` closes the component registration phase, so all components must be registered before calling it.
-Multiple `intercepted()` calls accumulate interceptors in registration order:
-
-[source,java]
-----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.subscribing(
-                this::configureSubscribingProcessor
-        ));
-    }
-
-    private SubscribingEventProcessorsConfigurer configureSubscribingProcessor(
-            SubscribingEventProcessorsConfigurer subscribingConfigurer
-    ) {
-        return subscribingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponents)
-                                .notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.CompletePhase configureHandlingComponents(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected("orderHandler", cfg -> new OrderEventHandler())
-                                  .autodetected("inventoryHandler", cfg -> new InventoryEventHandler())
-                                  .intercepted(cfg -> new AuditLoggingInterceptor())
-                                  .intercepted(cfg -> new TenantFilterInterceptor(tenantId));
-    }
-}
-----
-
-Component registration ends when the first `.intercepted(...)` is called.
-Additional interceptors can still be added with further `.intercepted(...)` calls and are applied in registration order.
-
-==== Annotated interceptors on the handler class
-
-Methods on the handler class itself can be annotated with `@EventHandlerInterceptor`.
-These methods are automatically discovered and run before every `@EventHandler` method on the same component instance, making them ideal for cross-cutting concerns that share the component's state (such as tenant filtering or component-level auditing).
-
-Two styles are supported:
-
-* A *before-interceptor* is a `void` method with no `MessageHandlerInterceptorChain` parameter.
-  It runs before the handler, and the chain automatically proceeds when the method returns normally.
-  If the method throws, the handler is not invoked.
-* A *surround-interceptor* declares a `MessageHandlerInterceptorChain` parameter and returns a `MessageStream`.
-  It controls whether the handler is invoked by calling `chain.proceed(event, ctx)`.
-  Returning without calling `proceed` short-circuits the chain.
-
-[source,java]
-----
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-
-// Before-interceptor: runs before every @EventHandler on this component
-public class AuditingEventHandler {
-
-    private final AuditLog auditLog;
-
-    @EventHandlerInterceptor
-    void audit(EventMessage event) {
-        auditLog.record(event.qualifiedName());
-        // chain proceeds automatically after this returns
-    }
-
-    @EventHandler
-    void on(OrderPlaced event) { ... }
-
-    @EventHandler
-    void on(OrderCancelled event) { ... }
-}
-----
-
-[source,java]
-----
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-
-// Surround-interceptor: short-circuit events intended for other tenants
-public class TenantScopedEventHandler {
-
-    private final TenantId tenantId;
-
-    @EventHandlerInterceptor
-    MessageStream<?> filterByTenant(
-            EventMessage event,
-            MessageHandlerInterceptorChain<EventMessage> chain,
-            ProcessingContext ctx
-    ) {
-        if (!tenantId.equals(event.metaData().get("tenantId"))) {
-            return MessageStream.empty(); // skip: not our tenant
-        }
-        return chain.proceed(event, ctx);
-    }
-
-    @EventHandler
-    void on(OrderPlaced event) { ... }
 }
 ----
 

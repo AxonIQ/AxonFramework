@@ -24,7 +24,7 @@ import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
+import org.axonframework.messaging.core.annotation.ChainedMessageHandlerInterceptorMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
@@ -143,7 +143,7 @@ public class ChildForwardingCommandHandlingMember<P, C> implements ForwardingCom
     private MessageHandlerInterceptorMemberChain<C> interceptorChain(Class<?> childType) {
         return childHandlingInterceptors.isEmpty()
                 ? NoMoreInterceptors.instance()
-                : new ChainedMessageHandlerInterceptorMember<>(childHandlingInterceptors.iterator());
+                : new ChainedMessageHandlerInterceptorMember<>(childType, childHandlingInterceptors.iterator());
     }
 
     @SuppressWarnings("unchecked")

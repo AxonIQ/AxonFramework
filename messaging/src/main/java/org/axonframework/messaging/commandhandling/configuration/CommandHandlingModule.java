@@ -24,9 +24,7 @@ import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
-import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
-import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -180,17 +178,6 @@ public interface CommandHandlingModule extends Module, ModuleBuilder<CommandHand
          */
         CommandHandlerPhase commandHandlingComponent(
                 ComponentBuilder<CommandHandlingComponent> handlingComponentBuilder
-        );
-
-        /**
-         * Registers an interceptor to be applied to the command handling component assembled by this module. Multiple
-         * calls accumulate interceptors in registration order.
-         *
-         * @param interceptorBuilder builder for the interceptor to apply
-         * @return the command handler phase of this builder, for a fluent API
-         */
-        CommandHandlerPhase intercepted(
-                ComponentBuilder<MessageHandlerInterceptor<? super CommandMessage>> interceptorBuilder
         );
 
         /**

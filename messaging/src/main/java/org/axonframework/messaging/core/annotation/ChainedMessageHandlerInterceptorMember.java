@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.core.interception.annotation;
+package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
+import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 import java.util.Iterator;
@@ -39,17 +39,20 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
     private final MessageHandlerInterceptorMemberChain<T> next;
 
     /**
-     * Constructs a chained message handling interceptor, building a chain from the given {@code iterator}.
+     * Constructs a chained message handling interceptor for the given {@code handlerType}, constructing a chain from
+     * the given {@code iterator}.
      * <p>
      * The {@code iterator} should <em>at least</em>> have a single {@link MessageHandlingMember}. If there are more
      * {@code MessageHandlingMembers} present in the given {@code iterator}, this constructor will be invoked again.
      *
-     * @param iterator the {@code MessageHandlingMembers} from which to construct the chain.
+     * @param handlerType The type for which to construct a message handler interceptor chain.
+     * @param iterator    The {@code MessageHandlingMembers} from which to construct the chain.
      */
-    public ChainedMessageHandlerInterceptorMember(Iterator<MessageHandlingMember<? super T>> iterator) {
+    public ChainedMessageHandlerInterceptorMember(Class<?> handlerType,
+                                                  Iterator<MessageHandlingMember<? super T>> iterator) {
         this.delegate = iterator.next();
         this.next = iterator.hasNext()
-                ? new ChainedMessageHandlerInterceptorMember<>(iterator)
+                ? new ChainedMessageHandlerInterceptorMember<>(handlerType, iterator)
                 : NoMoreInterceptors.instance();
     }
 
@@ -58,11 +61,20 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
                                    ProcessingContext context,
                                    T target,
                                    MessageHandlingMember<? super T> handler) {
-        MessageHandlerInterceptorChain<Message> chain =
-                (msg, ctx) -> next.handle(msg, ctx, target, handler);
+
+        // TODO #3485 - Implement this accordingly for annotated interception.
+        //  Or, fully replace this for MessageHandlingComponent decoration instead.
+        return doHandle(message, context, target, handler);
+        /*
+        Why is this called using an interceptor chain? Do handle effectively does the same!
+        Rewrite this code...
+
         return InterceptorChainParameterResolverFactory.callWithInterceptorChain(
-                context, chain, ctx -> doHandle(message, ctx, target, handler)
+                context,
+                (ctx) -> next.handle(message, ctx, target, handler),
+                (ctx) -> doHandle(message, ctx, target, handler)
         );
+         */
     }
 
     private MessageStream<?> doHandle(Message message,
@@ -74,19 +86,20 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
                 : next.handle(message, context, target, handler);
     }
 
-    /**
-     * @deprecated in favor of {@link #handle(Message, ProcessingContext, Object, MessageHandlingMember)}
-     */
     @Override
-    @Deprecated(forRemoval = true, since = "5.2.0")
     public Object handleSync(Message message,
                              ProcessingContext context,
                              T target,
                              MessageHandlingMember<? super T> handler) throws Exception {
-        MessageHandlerInterceptorChain<Message> chain = (msg, ctx) -> next.handle(msg, ctx, target, handler);
-        ProcessingContext contextWithChain =
-                InterceptorChainParameterResolverFactory.contextWithInterceptorChain(context, chain);
-        return doHandleSync(message, contextWithChain, target, handler);
+        // TODO #3485 - Implement this accordingly for annotated interception.
+        //  Or, fully replace this for MessageHandlingComponent decoration instead.
+        return doHandleSync(message, context, target, handler);
+        /*
+        return InterceptorChainParameterResolverFactory.callWithInterceptorChainSync(
+                (ctx) -> next.handleSync(message, ctx, target, handler),
+                () -> doHandleSync(message, context, target, handler)
+        );
+         */
     }
 
     private Object doHandleSync(Message message,
