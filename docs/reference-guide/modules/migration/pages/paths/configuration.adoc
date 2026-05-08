@@ -327,7 +327,7 @@ class AxonApp {
 ----
 ====
 
-Start and shutdown handlers are, however, in most cases tied to the component you want to configure.
+However, start and shutdown handlers are in most cases tied to the component you want to configure.
 You could configure this in Axon Framework 4 by having a component implement the `Lifecycle` interface.
 This interface no longer exists in Axon Framework 5. Instead, lifecycle handler registration is integrated into component registration:
 
