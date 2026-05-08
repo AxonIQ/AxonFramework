@@ -258,9 +258,9 @@ configurer.registerEntity(
 
 [NOTE]
 ====
-Only `List` fields are supported for collections of child entities.
-Using a `Map` field will not route commands to the map values.
-Use a `List` instead and manage key-based lookup within the entity.
+`@EntityMember` supports `List` fields only.
+`Map<Key, Value>` fields are not supported.
+If you need entities identified by a key, use a `List` and manage the lookup within the entity or through a custom resolver.
 ====
 
 == Single child entity
