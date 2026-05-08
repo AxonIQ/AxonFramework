@@ -1,0 +1,102 @@
+= Entities
+:navtitle: Entities
+
+Entities are a tool for implementing stateful command handling in Axon Framework.
+They maintain state across command invocations and use that state to enforce business rules.
+
+== When to use entities
+
+Use an entity when a command needs to validate against state that was established by earlier commands.
+
+Examples:
+
+* "A course cannot accept more students than its capacity": the handler needs to know how many students are already enrolled.
+* "A bank account cannot go below zero": the handler needs the current balance.
+* "An order can only be cancelled if it has not yet shipped": the handler needs the order's current status.
+
+In each case, the command cannot make a correct decision without reading state that persists between invocations.
+An entity provides that state.
+
+== When not to use entities
+
+Do not use an entity when the command can be validated and executed without reading any prior state.
+
+Examples:
+
+* Sending a notification: no prior state needed, just execute.
+* Creating a new resource with a client-supplied identifier: no existing state to check.
+* Forwarding a command to an external system: the external system owns the state.
+
+These are *stateless command handlers*.
+They are simpler and cheaper to run.
+When you find yourself adding an entity only to hold a flag that is set once and never changes, that is a signal the command may not need an entity at all.
+
+== What entities are
+
+An entity is a domain object that reconstructs its current state from past events (event-sourced) or from a persistent store (state-stored), then applies the incoming command against that state.
+
+Entities are an _implementation pattern_, not a core framework concept.
+A command handler that needs no persistent state requires no entity.
+A command handler that needs state from multiple independent streams can source several entities simultaneously.
+See xref:commands:command-handlers.adoc[Command Handlers] for the full picture.
+
+== Storage strategies
+
+Axon Framework supports two ways of storing entity state:
+
+* **Event-sourced entities** derive their current state by replaying a sequence of past events stored in an event store.
+State is never stored directly; instead, events act as the source of truth.
+This is the recommended approach in most cases and the natural fit for CQRS with Event Sourcing.
++
+xref:commands:entities/event-sourced-entity.adoc[Read more about event-sourced entities →]
+
+* **State-stored entities** store their current state directly in a database (for example via JPA).
+State is persisted after each command, without relying on an event log for reconstruction.
+This is useful when event history is not required or when integrating with existing databases.
++
+xref:commands:entities/state-stored-entities.adoc[Read more about state-stored entities →]
+
+== Advanced entity patterns
+
+Beyond the two basic storage strategies, Axon supports:
+
+* **Entity hierarchies**: parent entities that contain child entities, each capable of handling commands and events.
+Useful when business logic must be partitioned within a single entity boundary.
++
+xref:commands:entities/entity-hierarchies.adoc[Read more about entity hierarchies →]
+
+* **Polymorphic entities**: entity hierarchies where the concrete type is determined at runtime.
+Useful when multiple specializations of an entity share common behavior.
++
+xref:commands:entities/entity-polymorphism.adoc[Read more about polymorphic entities →]
+
+== Choosing a strategy
+
+[cols="1,2,2",options="header"]
+|===
+| Concern | Event-sourced | State-stored
+
+| Audit trail
+| Built-in: every state change is an event
+| Must be added separately
+
+| Temporal queries
+| Full event history is retained; past state can be reconstructed by replaying events up to a given position
+| No history by default; requires audit tables or snapshots to support temporal queries
+
+| Write performance
+| Append-only: generally fast
+| Update in place: may cause lock contention
+
+| Read current state
+| Requires replaying the event stream to reconstruct current state
+| Current state is stored directly; no replay needed
+
+| Complexity
+| Higher: requires event design
+| Lower: familiar ORM patterns
+
+|===
+
+When in doubt, prefer event sourcing.
+It gives you the full audit trail, temporal query capability, and clean separation between commands and state that Axon Framework is designed around.
