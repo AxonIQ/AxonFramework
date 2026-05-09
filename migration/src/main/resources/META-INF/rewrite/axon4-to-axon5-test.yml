@@ -26,9 +26,10 @@ description: >-
   flat fixture call chains (`fixture.given(...).when(...).expectEvents(...)`)
   to the AF5 fluent given/when/then API
   (`fixture.given().events(...).when().command(...).then().events(...)`).
-  Targets the `axon-test` Maven artifact. Fixture setup migration
-  (constructor → `AxonTestFixture.with(configurer)`, `@AfterEach stop()`)
-  and Hamcrest matcher conversions remain manual.
+  Also generates an `@AfterEach tearDown()` calling `fixture.stop()` on
+  test classes that declare an `AxonTestFixture` field but have no
+  existing `@AfterEach`. Targets the `axon-test` Maven artifact. Hamcrest
+  matcher conversions and Kotlin `@AfterEach` insertion remain manual.
 recipeList:
   # Aggregate-fixture *setup* rewrite — must run BEFORE the
   # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
@@ -61,3 +62,10 @@ recipeList:
   # Fluent-API rewrite — handles the call-chain shape change documented in
   # `paths/test-fixtures.adoc`. Leaves Hamcrest-matcher methods alone.
   - org.axonframework.migration.MigrateAxonTestFixtureFluentApi
+  # Tear-down generation — adds `@AfterEach tearDown() { fixture.stop(); }`
+  # to test classes that declare an `AxonTestFixture` field but have no
+  # existing `@AfterEach`. Must run AFTER the `ChangeType` passes above so
+  # the field already carries the AF5 FQN that this recipe matches.
+  # Conservative: skips classes that already have any `@AfterEach` or any
+  # method named `tearDown`. Java sources only.
+  - org.axonframework.migration.AddAxonTestFixtureTearDown
