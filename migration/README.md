@@ -15,10 +15,15 @@ hand. Concretely, the recipes do:
 - **Package and class renames**: moves handler annotations into `.annotation.*` subpackages, renames `EventBus` →
   `EventSink`, `ConfigurerModule` → `ConfigurationEnhancer`, and shifts extension packages
   (e.g. `org.axonframework.micrometer` → `org.axonframework.extension.metrics.micrometer`).
-- **Annotation rewrites**: `@Aggregate` → `@EventSourced` (with `tagKey` and `idType`), `@TargetAggregateIdentifier` →
-  `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` → `@Namespace`. Adds `@EntityCreator` to
-  no-arg constructors, lifts `@RoutingKey` from record/data-class parameters onto class-level `@Command`, and adds
-  `@EventTag` to record components matching entity id fields.
+- **Annotation rewrites**: `@Aggregate` → `@EventSourced` (with `tagKey` and `idType`), `@AggregateRoot` →
+  `@EventSourcedEntity`, `@AggregateIdentifier` removed (identity now flows through `tagKey` + `@EventTag`),
+  `@TargetAggregateIdentifier` → `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` →
+  `@Namespace`. **Removes `@CreationPolicy` and `AggregateCreationPolicy`** unconditionally and **adds `@EntityCreator`
+  to no-arg constructors** (creating one if missing). Together this preserves `CREATE_IF_MISSING` semantics for
+  instance command handlers without further work — AF5 materializes an empty entity via the no-arg `@EntityCreator`
+  and runs the handler. `ALWAYS` → `static` is the only `@CreationPolicy` value the recipe does not translate
+  automatically; reshape the handler manually after the run. Also lifts `@RoutingKey` from record/data-class
+  parameters onto class-level `@Command`, and adds `@EventTag` to record components matching entity id fields.
 - **Message API**: drops generic type arguments on message types, renames accessors (`getPayload()` → `payload()`,
   `getMetaData()` → `metadata()`, `getIdentifier()` → `identifier()`, …), rewrites two-arg `SequencingPolicy`
   lambdas to return `Optional`, and replaces static `AggregateLifecycle.apply(...)` with an injected
