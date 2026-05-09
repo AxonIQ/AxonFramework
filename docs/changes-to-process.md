@@ -5,7 +5,7 @@ This document tracks which API changes need to be applied to each reference guid
 ## API Changes Available
 
 The following files in `axon-5/` describe the API changes:
-- `api-changes.md` - Main API changes document
+- `api-changes/` - Main API changes documentation, split into focused per-topic files (see `api-changes/index.md` for the table of contents)
 - `getting-rid-of-aggregatelifecycle.md` - AggregateLifecycle removal
 - `getting-rid-of-messagehandlingmember.md` - MessageHandlingMember removal
 - `design-principles.md` - Design principles for Axon 5

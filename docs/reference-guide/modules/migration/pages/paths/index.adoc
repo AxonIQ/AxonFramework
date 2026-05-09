@@ -189,7 +189,7 @@ to
 |===
 ====
 
-For an exhaustive list of all class-level renames and moves, please refer to the https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes.md[`api-changes.md`] file in the root of the Axon Framework repository.
+For an exhaustive list of all class-level renames and moves, please refer to the https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes/11-class-reference.md[`11-class-reference.md`] file under `axon-5/api-changes/` in the Axon Framework repository.
 
 === Module restructuring
 
