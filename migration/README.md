@@ -38,6 +38,8 @@ hand. Concretely, the recipes do:
 
 ## Usage
 
+### Maven
+
 Run a top-level recipe against a target project with the Maven plugin:
 
 ```bash
@@ -48,8 +50,38 @@ mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
 
 Replace the recipe name with `UpgradeAxon4ToAxon5` for the free path.
 
-For Gradle it requires a
-custom [Gradle init script](https://docs.openrewrite.org/running-recipes/running-rewrite-on-a-gradle-project-without-modifying-the-build).
+### Gradle
+
+Gradle projects don't carry the OpenRewrite plugin by default, so the
+recipes are applied via the [init script](init.gradle) shipped in this
+module. Copy `migration/init.gradle` into your target project (or
+reference it by absolute path) and run:
+
+```bash
+gradle rewriteRun --init-script init.gradle \
+  -Drewrite.activeRecipe=org.axonframework.migration.UpgradeAxon4ToAxoniq5
+```
+
+Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxon5`
+for the free path. Override the recipe artifact version (default
+`5.2.0-SNAPSHOT`) with `-Drewrite.axonMigrationVersion=<version>` if you
+need a different release. The script also wires Sonatype Snapshots and
+Maven Local so `-SNAPSHOT` coordinates resolve without extra
+configuration.
+
+> Do **not** combine the init script with a `rewrite { }` block in
+> `build.gradle(.kts)` -- pick one or the other (an OpenRewrite
+> constraint).
+
+> Run Gradle on **JDK 21**. Gradle 8.x ships Groovy 3, which fails to
+> parse the init script on JDK 25 with `Unsupported class file major
+> version 69`. If `./gradlew --version` reports a Launcher JVM newer
+> than 21, prefix the command with
+> `JAVA_HOME=/path/to/jdk-21` (or set `org.gradle.java.home` in
+> `gradle.properties`).
+
+For background, see the upstream guide on
+[running rewrite on a Gradle project without modifying the build](https://docs.openrewrite.org/running-recipes/running-rewrite-on-a-gradle-project-without-modifying-the-build).
 
 ### Two top-level recipes
 

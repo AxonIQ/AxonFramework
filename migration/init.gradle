@@ -1,0 +1,46 @@
+// Gradle init script for running the axon-migration OpenRewrite recipes
+// against a Gradle project without modifying its build files.
+//
+// Usage:
+//   gradle rewriteRun --init-script init.gradle \
+//     -Drewrite.activeRecipe=org.axonframework.migration.UpgradeAxon4ToAxoniq5
+//
+// Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxon5`
+// for the free path. Override the recipe artifact version with
+// `-Drewrite.axonMigrationVersion=<version>` if you need a different release.
+//
+// IMPORTANT: do NOT also configure a `rewrite { }` block in your build.gradle
+// while using this init script -- pick one or the other.
+
+initscript {
+    repositories {
+        maven { url "https://plugins.gradle.org/m2" }
+    }
+    dependencies {
+        classpath("org.openrewrite:plugin:latest.release")
+    }
+}
+
+rootProject {
+    plugins.apply(org.openrewrite.gradle.RewritePlugin)
+
+    def axonMigrationVersion = System.getProperty("rewrite.axonMigrationVersion", "5.2.0-SNAPSHOT")
+
+    dependencies {
+        rewrite("org.axonframework:axon-migration:${axonMigrationVersion}")
+    }
+
+    afterEvaluate {
+        if (repositories.isEmpty()) {
+            repositories {
+                mavenCentral()
+            }
+        }
+        // SNAPSHOT recipe artifacts live in Sonatype's snapshots repo; add it
+        // unconditionally so `-SNAPSHOT` coordinates resolve out of the box.
+        repositories {
+            maven { url "https://central.sonatype.com/repository/maven-snapshots/" }
+            mavenLocal()
+        }
+    }
+}
