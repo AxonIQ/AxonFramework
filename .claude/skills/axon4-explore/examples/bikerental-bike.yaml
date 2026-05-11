@@ -1,0 +1,40 @@
+component_type: aggregate
+class_name: Bike
+package: io.axoniq.demo.bikerental.rental.command
+fqn: io.axoniq.demo.bikerental.rental.command.Bike
+language: java
+file_path: rental/src/main/java/io/axoniq/demo/bikerental/rental/command/Bike.java
+discovery:
+  - "@Aggregate"
+config_style: spring
+persistence: event-sourcing
+features:
+  multi_entity: false
+  deadline: false
+  create_new: false
+  polymorphic: false
+  polymorphic_role: null
+  polymorphic_parent: null
+  has_snapshot_trigger: true
+  has_cache: false
+  has_revision: false
+  has_aggregate_version: false
+  has_creation_policy: true
+  jpa_entity: false
+commands:
+  - io.axoniq.demo.bikerental.coreapi.rental.RegisterBikeCommand
+  - io.axoniq.demo.bikerental.coreapi.rental.RequestBikeCommand
+  - io.axoniq.demo.bikerental.coreapi.rental.ApproveRequestCommand
+  - io.axoniq.demo.bikerental.coreapi.rental.RejectRequestCommand
+  - io.axoniq.demo.bikerental.coreapi.rental.ReturnBikeCommand
+events:
+  - io.axoniq.demo.bikerental.coreapi.rental.BikeRegisteredEvent
+  - io.axoniq.demo.bikerental.coreapi.rental.BikeReturnedEvent
+  - io.axoniq.demo.bikerental.coreapi.rental.BikeRequestedEvent
+  - io.axoniq.demo.bikerental.coreapi.rental.RequestRejectedEvent
+  - io.axoniq.demo.bikerental.coreapi.rental.BikeInUseEvent
+imports:
+  - org.axonframework.commandhandling.CommandHandler
+  - org.axonframework.eventsourcing.EventSourcingHandler
+  - org.axonframework.spring.stereotype.Aggregate
+notes: []

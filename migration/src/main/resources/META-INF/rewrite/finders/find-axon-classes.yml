@@ -1,0 +1,41 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Finders catalog: search-only recipes that emit data tables (and, where
+# applicable, generated documents) describing Axon constructs in a codebase.
+# None of these modify source files. They are bundled here as a separate
+# composite so users can run an Axon inventory without invoking the AF4-to-AF5
+# rewriting recipes.
+#
+# Run a single finder by its fully-qualified Java class name, e.g.
+#   -Drewrite.activeRecipes=org.axonframework.migration.find.ExploreAxon4Aggregates
+# Or run the whole catalog with the composite name below.
+#
+# Maven plugin reminder: data tables and generated YAML files are only written
+# to disk when `-Drewrite.exportDatatables=true` is passed AND the goal is
+# `:run` (not `:dryRun`).
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.find.AxonInventory
+displayName: Inventory Axon constructs in a codebase
+description: >-
+  Runs every search-only finder in the migration module against the project
+  and emits per-component YAML documents and CSV data tables. Does not modify
+  any source files. Useful as a pre-migration assessment or as standalone
+  tooling for discovering Axon usage across Java and Kotlin sources.
+recipeList:
+  - org.axonframework.migration.find.ExploreAxon4Aggregates
