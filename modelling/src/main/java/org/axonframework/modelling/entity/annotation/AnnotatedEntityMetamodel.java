@@ -18,17 +18,16 @@ package org.axonframework.modelling.entity.annotation;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
-import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.commandhandling.CommandResultMessage;
-import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.conversion.ConversionException;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
+import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -38,13 +37,14 @@ import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.entity.ConcreteEntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.PolymorphicEntityMetamodel;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
-import org.axonframework.conversion.ConversionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +60,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.StreamSupport.stream;
@@ -251,11 +252,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected
     ) {
         LinkedList<QualifiedName> registeredCommands = new LinkedList<>();
-        inspected.getHandlers(entityType).stream()
-                 .filter(h -> h.canHandleMessageType(CommandMessage.class)
-                         || h.canHandleMessageType(EventMessage.class))
-                 .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
-                 .forEach(handler -> {
+        Stream.concat(inspected.getUniqueHandlers(entityType, CommandMessage.class).stream(),
+                      inspected.getUniqueHandlers(entityType, EventMessage.class).stream())
+              .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
+              .forEach(handler -> {
                      QualifiedName qualifiedName = messageTypeResolver.resolveOrThrow(handler.payloadType())
                                                                       .qualifiedName();
                      if (commandsToSkip.contains(qualifiedName)) {
