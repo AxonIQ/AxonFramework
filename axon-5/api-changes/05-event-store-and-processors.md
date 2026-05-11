@@ -42,7 +42,7 @@ to find the "active" aggregate model, providing the `apply` operation knowledge 
 sequence number.
 
 To append events in Axon Framework 5, users first need to start an `EventStoreTransaction` with an active
-`ProcessingContext` (see [Unit of Work](#unit-of-work) for more on the `ProcessingContext`).
+`ProcessingContext` (see [Unit of Work](02-processing-context.md#unit-of-work) for more on the `ProcessingContext`).
 From there, to append, you would use the `EventStoreTransaction#appendEvent(EventMessage)` operation. To make it so that
 appending events are part of an aggregate / consistency boundary that's active, users would first invoke
 `EventStoreTransaction#source(SourcingCondition)` (as further explained [here](#sourcing-events)). It is the act of
@@ -59,7 +59,7 @@ public void appendEvents(EventStore eventStore,
 }
 ```
 
-As stated in [Unit of Work](#unit-of-work), the `ProcessingContext` is propagated throughout Axon Framework. As such, it
+As stated in [Unit of Work](02-processing-context.md#unit-of-work), the `ProcessingContext` is propagated throughout Axon Framework. As such, it
 is **always** available in message handling functions.
 
 Note that above is the technical solution, applicable only to those interacting with the `EventStore` directly. To
@@ -168,9 +168,9 @@ described shortly [here](#generic-eventstorageengine-changes).
 We have introduced an entirely new JPA entry for the `AggregateBasedJpaEventStorageEngine`, called the
 `AggregateBasedJpaEntry`. This entry has numerous difference compared to the `DomainEventEntry` used by the
 `JpaEventStorageEngine`. For one, the layering of the `DomainEventEntry`, which had four abstract classes and two
-interfaces (marked for removal [here](#removed-classes)) and will not return for the `AggregateBasedJpaEntry`.
+interfaces (marked for removal [here](11-class-reference.md#removed-classes)) and will not return for the `AggregateBasedJpaEntry`.
 Furthermore, next to the class name, resolution in a table rename, several columns have been renamed. Please see
-the [Stored Format Changes](#stored-format-changes) section for more details on the actual changes.
+the [Stored Format Changes](10-stored-format-changes.md#stored-format-changes) section for more details on the actual changes.
 
 Besides the entry, the construction of the storage engine changed slightly as well.
 The previously used builder-pattern now only remains for the customizable fields, whereas the necessary fields are

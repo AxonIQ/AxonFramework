@@ -25,8 +25,8 @@ we deemed it unwise to keep support for XStream. For those using an XML-based fo
 `JacksonConverter` with an `XmlMapper` (from artifact `jackson-dataformat-xml`).
 
 This `Serializer`-to-`Converter` shift goes hand-in-hand with the `Metadata` value switch to `String` (as
-described [here](#metadata-with-string-values)) and the conversion support on the `Message` directly (as
-described [here](#message-conversion--serialization)). The changes on the `Message` directly are more apparent to the
+described [here](03-messages-and-stream.md#metadata-with-string-values)) and the conversion support on the `Message` directly (as
+described [here](03-messages-and-stream.md#message-conversion--serialization)). The changes on the `Message` directly are more apparent to the
 user and worthwhile to be aware of.
 
 ### Converter types
@@ -47,7 +47,7 @@ the `EventStorageEngines` expect an `EventConverter`.
 
 As of Axon Framework 5, the `RevisionResolver`, it's implementations, and `@Revision` annotation have been removed.
 The `RevisionResolver` used to be an integral part of the `Serializers` in Axon Framework since 2.0. With the shift
-towards a [Message Type](#message-type-and-qualified-name) carrying the `version`, defining the version is no longer
+towards a [Message Type](03-messages-and-stream.md#message-type-and-qualified-name) carrying the `version`, defining the version is no longer
 just a `Serializer` concern. Instead, it's a concern for any `Message` implementation, at all times.
 
 Due to this shift, the `RevisionResolver` has been replaced by the `MessageTypeResolver`. Furthermore, the `@Revision`
@@ -64,12 +64,12 @@ Axon Framework's message interceptor supports is split in two main parts:
 
 Support for these are covered by the `MessageDispatchInterceptor` and `MessageHandlerInterceptor`.
 
-As many parts of Axon Framework, these too are inclined to align with the [async native API](#async-native-apis) switch.
+As many parts of Axon Framework, these too are inclined to align with the [async native API](03-messages-and-stream.md#async-native-apis) switch.
 
 ### Interceptor Interfaces
 
 This means that interceptors as of Axon Framework 5 take in a `ProcessingContext` as the second parameter. This replaces
-the old [Unit of Work](#unit-of-work), most clearly on the `MessageHandlerInterceptor` as the old implementation had a
+the old [Unit of Work](02-processing-context.md#unit-of-work), most clearly on the `MessageHandlerInterceptor` as the old implementation had a
 `UnitOfWork` parameter. For `MessageDispatchInterceptors`, implementations that validated if there was an active
 `UnitOfWork` through the old thread local support should now validate the **nullable** `ProcessingContext` parameter
 that is passed on intercepting.
@@ -82,7 +82,7 @@ dispatch interceptor to execute tasks before **and** after intercepting.
 Additionally, the interceptor chain provides a means to deal with the **result** of invoking the next step in the chain.
 This is a new feature for the `MessageDispatchInterceptor`, as it allows dispatch interceptor to deal with the result of
 dispatching as well. This paradigm shift becomes further apparent with the expected return type of the handler and
-dispatch interceptor, which is a `MessageStream` (as described [here](#message-stream) in detail).
+dispatch interceptor, which is a `MessageStream` (as described [here](03-messages-and-stream.md#message-stream) in detail).
 
 For those that interacted with the `InterceptorChain`, note this chain is now specific for `MessageHandlerInterceptors`.
 As such, it has been renamed to the `MessageHandlerInterceptorChain`. Furthermore, it now expects the `Message` and
@@ -115,7 +115,7 @@ you needed to be sure the `CommandBus` was constructed first.
 
 We felt this solution to be suboptimal and not in line with the overall configuration experience in Axon Framework.
 As such, interceptors should now be registered with
-the [ApplicationConfigurer](#applicationconfigurer-and-configuration). As interceptors are a general messaging concern,
+the [ApplicationConfigurer](06-configuration.md#applicationconfigurer-and-configuration). As interceptors are a general messaging concern,
 the operations for registration are present on the `MessagingConfigurer`. Down below is a snippet configuring dispatch
 and handler interceptors, both generically and for specific `Message` types:
 
@@ -145,7 +145,7 @@ public static void main(String[] args) {
 As shown, there is no need to interact with the specific message dispatching or handling infrastructure components
 anymore to register interceptors.
 If you would still require this, we recommend to use
-the [decorator](#decorating-components-with-the-componentdecorator-interface) support within the configuration API to
+the [decorator](06-configuration.md#decorating-components-with-the-componentdecorator-interface) support within the configuration API to
 decorate the specific component.
 
 Lastly, if you are in a Spring Boot environment, you can simply provide your interceptors as beans to the Application

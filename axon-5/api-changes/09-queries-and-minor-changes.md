@@ -11,9 +11,7 @@
 ## Query Dispatching and Handling
 
 This section describes numerous changes around Query Dispatching and Handling. For a reintroduction to the `QueryBus`
-and `QueryGateway`, check [this](#query-bus) and [this](#query-gateway-and-response-types) section respectively. For the
-newly **recommended** approach to dispatch queries from within another message handling function, please check
-the [Query Dispatcher](#query-dispatcher) section.
+and `QueryGateway`, check [this](#query-bus) and [this](#query-gateway-and-response-types) section respectively.
 
 > Notice - Scatter-Gather has been removed!
 >
@@ -25,13 +23,13 @@ the [Query Dispatcher](#query-dispatcher) section.
 
 ### Query Bus
 
-The `QueryBus` has undergone some API changes to align with the [Async Native API](#async-native-apis) and ease
+The `QueryBus` has undergone some API changes to align with the [Async Native API](03-messages-and-stream.md#async-native-apis) and ease
 of configuration. The alignment with the Async Native API shows itself in being able to provide the `ProcessingContext`.
 Giving the active `ProcessingContext` is **paramount** if a query should be dispatched as part of a running message
 handling task. For example, if an event handler should dispatch a query (e.g., as with process automations), it is
 strongly advised to provide the active `ProcessingContext` as part of the dispatch operation.
 
-The dispatch operations now align with the newly introduced [Message Stream](#message-stream). This, for example,
+The dispatch operations now align with the newly introduced [Message Stream](03-messages-and-stream.md#message-stream). This, for example,
 adjusts the `QueryBus#query` method to return a `MessageStream` of the `QueryResponseMessage` instead of a
 `CompletableFuture`. As the `MessageStream` supports 0, 1, or N responses, this shifts lets the `QueryBus#query` method
 align with whatever query result coming back from query handlers.
@@ -44,7 +42,7 @@ described [here](#subscription-queries-and-the-query-update-emitter).
 #### Subscribing Query Handlers
 
 Subscribing query handlers has been adjusted to allow easier registration of query handling lambdas. This shift was
-combined with the new `QualifiedName` (as described [here](#message-type-and-qualified-name)) replacing the previous
+combined with the new `QualifiedName` (as described [here](03-messages-and-stream.md#message-type-and-qualified-name)) replacing the previous
 `String queryName` parameter. Lastly, the old subscribe operation enforced providing a `Type`, which has been replaced
 by a `QualifiedName` for the query response. Both the query name and the response name are combined in a
 `QueryHandlerName` object. This makes it so that subscribe looks like
@@ -76,7 +74,7 @@ hear your use case to deduce the best way forward.
 
 ### Query Gateway and Response Types
 
-The `QueryGateway` has undergone some minor API changes to align with the [Async Native API](#async-native-apis).
+The `QueryGateway` has undergone some minor API changes to align with the [Async Native API](03-messages-and-stream.md#async-native-apis).
 This alignment shows itself in being able to provide the `ProcessingContext`. Giving the active `ProcessingContext` is *
 *paramount** if a query should be dispatched as part of a running message handling task. For example, if an event
 handler should dispatch a query (e.g., as with process automations), it is strongly advised to provide the active
@@ -148,7 +146,7 @@ implementations; it is simply no longer a part of the API.
 
 #### Query Update Emitter method move to the Query Bus
 
-Due to our move towards an [Async Native API](#async-native-apis), the `ProcessingContext` (the renewed `UnitOfWork`)
+Due to our move towards an [Async Native API](03-messages-and-stream.md#async-native-apis), the `ProcessingContext` (the renewed `UnitOfWork`)
 has taken a very important spot within the framework.
 The `SimpleQueryUpdateEmitter` interacted with the old `UnitOfWork`, allowing users to emit updates, complete
 subscriptions, and complete subscriptions exceptionally within a `UnitOfWork` or outside a `UnitOfWork`. Whether these
@@ -173,7 +171,7 @@ public class MyEmittingProjector {
 ```
 
 Besides the "old" emit method filtering based on the concrete type, we added filter support (for `emit`, `complete`, and
-`completeExceptionally`) based on the [qualified name](#message-type-and-qualified-name) of the subscription query.
+`completeExceptionally`) based on the [qualified name](03-messages-and-stream.md#message-type-and-qualified-name) of the subscription query.
 Furthermore, you can now provide a `Supplier` of the update, ensuring the update object is **not** created whenever
 there are no matching subscription queries to emit the update to.
 
@@ -226,7 +224,7 @@ while still allowing multiple handlers of equal specificity to run.
 Minor API Changes
 =================
 
-* The `Repository`, just as other components, has been made [async native](#async-native-apis). This means methods
+* The `Repository`, just as other components, has been made [async native](03-messages-and-stream.md#async-native-apis). This means methods
   return a `CompletableFuture` instead of the loaded `Aggregate`. Furthermore, the notion of aggregate was removed from
   the `Repository`, in favor of talking about `ManagedEntity` instances. This makes the `Repository` applicable for
   non-aggregate solutions too.
@@ -242,8 +240,8 @@ Minor API Changes
 * To append events within an aggregate / entity, use the `EventAppender#append` instead of the
   `AggregateLifecycle#apply` method.
 * The `EventStorageEngine` uses append, source, and streaming conditions, for appending, sourcing, and streaming events,
-  as described in the [Event Store](#event-store) section. Furthermore, operations have been made "async-native," as
-  described [here](#async-native-apis). This is marked as a minor API changes since the `EventStorageEngine` should not
+  as described in the [Event Store](05-event-store-and-processors.md#event-store) section. Furthermore, operations have been made "async-native," as
+  described [here](03-messages-and-stream.md#async-native-apis). This is marked as a minor API changes since the `EventStorageEngine` should not
   be used directly.
 * The `RollbackConfiguration` interface and the `rollbackConfiguration()` builder method have been removed from all
   EventProcessor builders. Exceptions need to be handled by an interceptor, or otherwise they are always considered an
@@ -251,13 +249,13 @@ Minor API Changes
 * The `Lifecycle` interface has been removed, as component lifecycle management is done on component registration. This
   allows component construction to be lazy instead of eager, since we do not require an active instance anymore (as was
   the case with the `Lifecycle` interface). Please read
-  the [Component Lifecycle Management](#component-lifecycle-management) section for more details on this.
+  the [Component Lifecycle Management](06-configuration.md#component-lifecycle-management) section for more details on this.
 * The `SequencingPolicy` interface no longer uses generics and now operates directly on `EventMessage<?>`. This
   simplifies its usage and implementation, as many implementations do not depend on the payload type and can ignore it
   entirely.
 * The `MessageHandlerInterceptor` and `MessageDispatchInterceptor` have undergone some minor changes to align with
-  the [Async Native API](#async-native-apis) of Axon Framework 5. For more details, please check
-  the [interceptors section](#message-handler-interceptors-and-dispatch-interceptors).
+  the [Async Native API](03-messages-and-stream.md#async-native-apis) of Axon Framework 5. For more details, please check
+  the [interceptors section](08-serialization-and-interceptors.md#message-handler-interceptors-and-dispatch-interceptors).
 * The annotation logic of all modules is moved to a separate `annotations` package.
 * All reflection logic is moved to a dedicated "reflection" package per module.
 * The `MessageOriginaProvider` adjusted its use of `correlationId` and `traceId` to align with the current industry

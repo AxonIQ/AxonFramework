@@ -15,7 +15,7 @@ the [Command Dispatcher](#command-dispatcher) section.
 
 ### Command Bus
 
-The `CommandBus` has undergone some minor API changes to align with the [Async Native API](#async-native-apis) and ease
+The `CommandBus` has undergone some minor API changes to align with the [Async Native API](03-messages-and-stream.md#async-native-apis) and ease
 of configuration. The alignment with the Async Native API shows itself in being able to provide the `ProcessingContext`.
 Giving the active `ProcessingContext` is **paramount** if a command should be dispatched as part of a running message
 handling task. For example, if an event handler should dispatch a command (e.g., as with process automations), it is
@@ -27,7 +27,7 @@ dispatching. This means that the `CommandCallback` and all its implementations h
 the `CompletableFuture` as the means to deal with success or failures of command handling.
 
 Subscribing command handlers was adjusted to allow easier registration of command handling lambdas. This shift was
-combined with the new `QualifiedName` (as described [here](#message-type-and-qualified-name)) replacing the previous
+combined with the new `QualifiedName` (as described [here](03-messages-and-stream.md#message-type-and-qualified-name)) replacing the previous
 `String commandName` parameter. This makes it so that subscribe looks like
 `CommandBus#subscribe(QualifiedName, CommandHandler)` i.o. `CommandBus#subscribe(String, MessageHandler<?>)`. On top of
 that, it is now possible to register a single handler for multiple names, through
@@ -46,7 +46,7 @@ open [an issue](https://github.com/AxonFramework/AxonFramework/issues) for this.
 
 ### Command Gateway
 
-The `CommandGateway` has undergone some minor API changes to align with the [Async Native API](#async-native-apis).
+The `CommandGateway` has undergone some minor API changes to align with the [Async Native API](03-messages-and-stream.md#async-native-apis).
 This alignment shows itself in being able to provide the `ProcessingContext`. Giving the active `ProcessingContext` is *
 *paramount** if a command should be dispatched as part of a running message handling task. For example, if an event
 handler should dispatch a command (e.g., as with process automations), it is strongly advised to provide the active
@@ -77,7 +77,7 @@ Where the `CommandBus` is the lowest level means to dispatch `CommandMessages`, 
 point between other services to automatically wrap a user's command into a `CommandMessage`. To achieve this, the
 `CommandGateway` uses a `CommandBus` to add the command wrapping and response unwrapping.
 
-From there, the `CommandDispatcher` is the [processing context](#unit-of-work)-aware command dispatcher. To that end, is
+From there, the `CommandDispatcher` is the [processing context](02-processing-context.md#unit-of-work)-aware command dispatcher. To that end, is
 uses a `CommandGateway`, automatically passing the active `ProcessingContext` for the handler it's invoked in. Due to
 this knowledge, it is the recommended approach to dispatch commands when **inside** another message handling function.
 

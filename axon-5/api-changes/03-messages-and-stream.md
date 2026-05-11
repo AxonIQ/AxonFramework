@@ -137,7 +137,7 @@ originate from an aggregate-based event store (thus a pre-Dynamic Consistency Bo
 
 ## Async Native APIs
 
-The changes incurred by the new [Unit of Work](#unit-of-work) and [Message Stream](#message-stream) combined form the
+The changes incurred by the new [Unit of Work](02-processing-context.md#unit-of-work) and [Message Stream](#message-stream) combined form the
 basis to make Axon Framework what we have dubbed "Async Native." In other words, it is intended to make Axon Framework
 fully asynchronous, top to bottom, without requiring people to deal with asynchronous programming details (e.g.
 `CompletableFuture` / `Mono`) at each and every turn.
@@ -149,13 +149,13 @@ Nonetheless, if you **do** use these operations, it is good to know they've chan
 
 The following classes have undergone changes to accompany this shift:
 
-* The `CommandBus` - Read [here](#command-dispatching-and-handling) for more details.
-* The `CommandGateway` - Read [here](#command-dispatching-and-handling) for more details.
-* The `EventStorageEngine` - Read [here](#event-storage) for more details.
-* The `EventStore` - Read [here](#event-store) for more details.
-* The `EventProcessors` - Read [here](#event-processors) for more details.
+* The `CommandBus` - Read [here](04-commands.md#command-dispatching-and-handling) for more details.
+* The `CommandGateway` - Read [here](04-commands.md#command-dispatching-and-handling) for more details.
+* The `EventStorageEngine` - Read [here](05-event-store-and-processors.md#event-storage) for more details.
+* The `EventStore` - Read [here](05-event-store-and-processors.md#event-store) for more details.
+* The `EventProcessors` - Read [here](05-event-store-and-processors.md#event-processors) for more details.
 * The `Repository`
 * The `StreamableMessageSource`
-* The `QueryBus` - Read [here](#query-dispatching-and-handling) for more details.
-* The `QueryGateway` - Read [here](#query-dispatching-and-handling) for more details.
+* The `QueryBus` - Read [here](09-queries-and-minor-changes.md#query-dispatching-and-handling) for more details.
+* The `QueryGateway` - Read [here](09-queries-and-minor-changes.md#query-dispatching-and-handling) for more details.
 

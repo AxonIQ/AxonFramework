@@ -59,7 +59,7 @@ To conclude, here is a list of changes to take into account concerning the `Unit
    components will pass along the current context by containing the `ProcessingContext` as a parameter throughout.
 
 Note that the rewrite of the `UnitOfWork` has caused _a lot_ of API changes and numerous removals. For an exhaustive
-list of the latter, please check [here](#removed-classes).
+list of the latter, please check [here](11-class-reference.md#removed-classes).
 
 ## Legacy components
 

@@ -10,7 +10,7 @@
 ## Aggregates to Entities
 
 Axon Framework 5 elevates the concept of Entities to the top level, as aggregate no longer accurately
-describes the concept. With the introduction of [DCB](#event-store), more fluid boundaries of entities are possible.
+describes the concept. With the introduction of [DCB](05-event-store-and-processors.md#event-store), more fluid boundaries of entities are possible.
 
 This section has been written in a way that is easy to follow if you read the sections in order. However, if you
 are already familiar with the changes, you can jump to the relevant section using the links below:
