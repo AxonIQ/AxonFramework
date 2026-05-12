@@ -297,6 +297,34 @@ public static void handle(IssueGiftCard cmd,
 +
 New entites are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
 
+[#aggregate-not-found-exception]
+=== `AggregateNotFoundException` is no longer thrown for instance handlers
+
+With a no-arg `@EntityCreator`, Axon Framework 5 always materialises an empty entity before invoking an instance `@CommandHandler`. The handler runs against default-initialised state (`null`, `0`, `false`) instead of failing with `AggregateNotFoundException` (which lived in the now-legacy `org.axonframework.modelling.command` package).
+
+Two consequences to handle:
+
+* **Production code** — if your Axon Framework 4 handler relied on the implicit "aggregate does not exist" guard, add an explicit domain-level guard at the top of the handler so a meaningful domain exception is thrown instead of a `NullPointerException` from the first call against a `null` field.
++
+[source,java]
+----
+@CommandHandler
+public void handle(RedeemCardCommand cmd, EventAppender eventAppender) {
+    if (this.cardId == null) { // <1>
+        throw new IllegalStateException("Card does not exist");
+    }
+    if (cmd.amount() > remainingValue) {
+        throw new IllegalStateException("Insufficient funds");
+    }
+    eventAppender.append(new CardRedeemedEvent(cardId, cmd.amount()));
+}
+----
+<1> Domain-level guard replaces the implicit `AggregateNotFoundException` that Axon Framework 4 threw for instance handlers against missing aggregates.
+
+* **Tests** — assertions on `AggregateNotFoundException` must be updated to expect the new domain exception. See the xref:migration:paths/test-fixtures.adoc#aggregate-not-found[corresponding test fixture migration note].
+
+The static-creational counterpart is `org.axonframework.modelling.entity.EntityAlreadyExistsForCreationalCommandHandlerException`, which is thrown by a `static` `@CommandHandler` when the entity already exists. Seeing it in a test that should succeed on an existing entity usually means the handler should not be `static` — use an instance handler with a no-arg `@EntityCreator` for create-or-update flows.
+
 [#see-also]
 == See also
 

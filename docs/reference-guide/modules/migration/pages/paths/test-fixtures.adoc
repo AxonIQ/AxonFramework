@@ -744,3 +744,49 @@ This approach gives you full flexibility to use any assertion library you prefer
 * Hamcrest (`assertThat(events, hasSize(1))`)
 * Google Truth (`assertThat(events).hasSize(1)`)
 ====
+
+== `AggregateTestFixture` migration notes
+
+Notes specific to migrating tests that previously used `AggregateTestFixture`, where the underlying entity behaviour in Axon Framework 5 changes what the test should assert.
+
+[#aggregate-not-found]
+=== `AggregateNotFoundException` assertions
+
+Axon Framework 4 threw `AggregateNotFoundException` when an instance `@CommandHandler` was invoked against a non-existent aggregate.
+Axon Framework 5 always materialises an empty entity first (see the xref:migration:paths/aggregates/index.adoc#aggregate-not-found-exception[behavioural shift note in the aggregate migration guide]), so this exception is never thrown by the framework.
+
+Tests that asserted `AggregateNotFoundException` must be updated to expect the actual domain exception thrown by the handler:
+
+[tabs]
+====
+Axon Framework 4::
++
+[source,java]
+----
+@Test
+void cannotRedeemNonExistentCard() {
+    fixture.givenNoPriorActivity()
+           .when(new RedeemCardCommand("card-1", 100))
+           .expectException(AggregateNotFoundException.class);
+}
+----
+
+Axon Framework 5::
++
+[source,java]
+----
+@Test
+void cannotRedeemNonExistentCard() {
+    fixture.given().noPriorActivity()
+           .when().command(new RedeemCardCommand("card-1", 100))
+           .then().exception(IllegalStateException.class, "Card does not exist"); // <1>
+}
+----
+<1> Expect the domain exception thrown by the handler's guard. Add the guard in the handler itself — see the xref:migration:paths/aggregates/index.adoc#aggregate-not-found-exception[aggregate migration note] for the production-side change.
+====
+
+[TIP]
+====
+Seeing `EntityAlreadyExistsForCreationalCommandHandlerException` (`org.axonframework.modelling.entity`) in a test that should succeed against an existing entity usually means the production handler is wrongly declared `static`.
+Use an instance handler with a no-arg `@EntityCreator` for create-or-update flows.
+====
