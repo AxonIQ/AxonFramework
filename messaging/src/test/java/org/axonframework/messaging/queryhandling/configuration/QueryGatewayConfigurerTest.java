@@ -60,8 +60,8 @@ class QueryGatewayConfigurerTest {
             QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
 
             // then: plain DefaultQueryGateway, not wrapped
-            assertThat(gateway).isInstanceOf(DefaultQueryGateway.class);
-            assertThat(gateway).isNotInstanceOf(ShutdownTrackingQueryGateway.class);
+            assertThat(gateway).isInstanceOf(DefaultQueryGateway.class)
+                               .isNotInstanceOf(ShutdownTrackingQueryGateway.class);
         }
     }
 
