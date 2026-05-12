@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.queryhandling.configuration;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -75,6 +76,7 @@ public class QueryGatewayConfigurer {
      *
      * @param name the name under which the produced {@link QueryGateway} is registered
      */
+    @Internal
     public QueryGatewayConfigurer(String name) {
         this.name = Objects.requireNonNull(name, "name must not be null");
     }

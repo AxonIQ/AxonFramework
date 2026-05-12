@@ -58,16 +58,9 @@ import java.util.concurrent.TimeUnit;
  *     after shutdown begins.</li>
  * </ul>
  * <p>
- * In a <b>Spring Boot</b> application, the simplest integration is to declare a {@code @Bean} of
- * type {@code QueryShutdownManager}. Axon's auto-configuration detects it and calls
- * {@link #shutdown()} at the correct lifecycle phase. To also apply gateway-level tracking,
- * configure a named {@link org.axonframework.messaging.queryhandling.gateway.QueryGateway}
- * using
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)}.
- * <p>
- * In a <b>plain Java</b> (non-Spring) application, use
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)}
- * for gateway-level tracking, where the manager is wired into Axon's lifecycle automatically:
+ * For gateway-level tracking, use
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)},
+ * which wires the manager into Axon's lifecycle automatically:
  * <pre>{@code
  * MessagingConfigurer.create()
  *     .queryGateway("sse", g -> g
@@ -83,15 +76,10 @@ import java.util.concurrent.TimeUnit;
  * When call-site tracking is needed, for example when multiple managers are defined or when
  * using the query bus directly, wrap results explicitly with {@link #track}:
  * <pre>{@code
- * @Autowired QueryShutdownManager shutdownManager;
- *
  * // Via query gateway (returns Publisher<T>):
- * @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
- * public Publisher<MyDto> stream() {
- *     return shutdownManager.track(
- *         queryGateway.subscriptionQuery(new MyQuery(), MyDto.class)
- *     );
- * }
+ * Publisher<MyDto> stream = shutdownManager.track(
+ *     queryGateway.subscriptionQuery(new MyQuery(), MyDto.class)
+ * );
  *
  * // Via query bus directly (returns MessageStream<T>):
  * MessageStream<QueryResponseMessage> stream = shutdownManager.track(
@@ -234,7 +222,7 @@ public class QueryShutdownManager {
                            .toArray(CompletableFuture[]::new)
         );
         return allDone.orTimeout(gracePeriod.toMillis(), TimeUnit.MILLISECONDS)
-                      .exceptionally(e -> null)
+                      .exceptionally(e -> null) // grace period expired; proceed to force-close
                       .thenRun(this::closeAll);
     }
 

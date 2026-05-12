@@ -39,7 +39,7 @@ import java.util.function.Function;
  * It is the gateway layer of a layered API: configure it once on the gateway and every dispatched
  * subscription or streaming query is tracked automatically, with no changes needed at call sites.
  * <p>
- * In a plain Java application, the recommended way to register this decorator is through
+ * The recommended way to register this decorator is through
  * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)},
  * which creates a named {@link QueryGateway} with shutdown tracking applied:
  * <pre>{@code
@@ -48,17 +48,10 @@ import java.util.function.Function;
  *         .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately())
  *     );
  * }</pre>
- * In a Spring Boot application, declare a named {@code @Bean} of type {@link QueryGateway} instead.
- * Axon's Spring integration bridges it into the component registry automatically:
- * <pre>{@code
- * @Bean
- * public QueryGateway sseGateway(QueryBus queryBus, MessageTypeResolver resolver,
- *                                QueryPriorityCalculator calculator, MessageConverter converter,
- *                                QueryShutdownManager shutdownManager) {
- *     DefaultQueryGateway base = new DefaultQueryGateway(queryBus, resolver, calculator, converter);
- *     return new ShutdownTrackingQueryGateway(base, shutdownManager, shutdownManager);
- * }
- * }</pre>
+ * When using a dependency injection framework, a {@code ShutdownTrackingQueryGateway} can also be
+ * registered as a named component by constructing it directly with a delegate gateway and the
+ * desired {@link QueryShutdownManager} instances.
+ * <p>
  * When call-site tracking is preferred over gateway-level tracking, wrap individual results with
  * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track} instead.
  *
