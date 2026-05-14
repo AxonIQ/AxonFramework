@@ -443,6 +443,32 @@ With Spring Boot, the `AggregateBasedJpaEventStorageEngine` is automatically con
 axon.axonserver.enabled=false
 ----
 
+If you declare your own `@Bean EventStorageEngine` while using JPA event storage, Spring Boot may skip the
+auto-configuration that registers Axon Framework's JPA entities.
+In that case, explicitly include your application package and the Axon Framework packages in `@EntityScan`:
+
+[source,java]
+----
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+
+@SpringBootApplication
+@EntityScan(basePackages = {
+        "com.example.myapplication",
+        "org.axonframework",
+        "io.axoniq.framework"
+})
+public class MyApplication {
+}
+----
+
+[IMPORTANT]
+====
+If your application already uses `@EntityScan`, make sure it includes all application and Axon Framework entity packages.
+A partial `@EntityScan` replaces Spring Boot's default package discovery and can hide framework entities such as event
+store, token store, or dead-letter queue entries.
+====
+
 If you had customized the `JpaEventStorageEngine` in Axon Framework 4 to, for example, have a different gap cleaning threshold, you can now move that customization to the properties file:
 
 [source,properties]
