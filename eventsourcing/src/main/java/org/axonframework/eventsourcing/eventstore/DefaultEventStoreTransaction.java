@@ -202,17 +202,6 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
      * {@link #overrideAppendCondition(UnaryOperator) override}.
      */
     private AppendCondition resolveAppendCondition(ProcessingContext context) {
-//        // we need to update the condition with the marker that we may have updated during reading
-//        AppendCondition appendCondition =
-//                context.updateResource(appendConditionKey, current -> {
-//                    if (current == null || AppendCondition.none().equals(current)) {
-//                        return AppendCondition.none();
-//                    }
-//                    return current.withMarker(getOrDefault(context.getResource(appendPositionKey),
-//                                                           current.consistencyMarker()));
-//                });
-
-
         AppendCondition resolved = context.updateResource(appendConditionKey, current -> {
             if (current == null || AppendCondition.none().equals(current)) {
                 return AppendCondition.none();
