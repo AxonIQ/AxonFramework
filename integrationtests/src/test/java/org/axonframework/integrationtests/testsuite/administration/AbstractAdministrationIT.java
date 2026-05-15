@@ -153,12 +153,16 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         try {
             runnable.run();
         } catch (CompletionException e) {
-            Assertions.assertTrue(e.getCause().getMessage().toLowerCase().contains(expectedMessage.toLowerCase()),
-                                  () -> "Expected message to contain: " + expectedMessage + ", but got: " + e.getCause()
-                                                                                                             .getMessage()
-                                          + "\n" + Arrays.stream(
-                                                                 e.getCause().getStackTrace()).map(StackTraceElement::toString)
-                                                         .collect(Collectors.joining("\n")));
+            Throwable cause = e.getCause();
+            String matchTarget = cause.getClass().getSimpleName() + ": " + cause.getMessage();
+            Assertions.assertTrue(
+                    matchTarget.toLowerCase().contains(expectedMessage.toLowerCase()),
+                    () -> "Expected message to contain: " + expectedMessage
+                            + ", but got: " + matchTarget + "\n"
+                            + Arrays.stream(cause.getStackTrace())
+                                    .map(StackTraceElement::toString)
+                                    .collect(Collectors.joining("\n"))
+            );
             return;
         } catch (Exception e) {
             Assertions.fail("Expected CompletionException, but got: " + e.getClass().getSimpleName());
