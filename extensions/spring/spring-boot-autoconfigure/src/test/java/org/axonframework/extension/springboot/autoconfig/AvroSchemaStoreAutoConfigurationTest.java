@@ -21,6 +21,7 @@ import org.apache.avro.message.SchemaStore;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
 import org.axonframework.conversion.avro.AvroConverter;
 import org.axonframework.conversion.avro.AvroUtil;
 import org.axonframework.conversion.jackson.JacksonConverter;
@@ -57,10 +58,8 @@ class AvroSchemaStoreAutoConfigurationTest {
 
     @BeforeEach
     void setUp() {
-        testApplicationContext = new ApplicationContextRunner().withPropertyValues(
-                "axon.axonserver.enabled=false",
-                "axon.eventstorage.jpa.polling-interval=0"
-        );
+        testApplicationContext = new ApplicationContextRunner()
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0");
     }
 
     @Test
@@ -240,7 +239,10 @@ class AvroSchemaStoreAutoConfigurationTest {
 
                     Map<String, Converter> converters = context.getBeansOfType(Converter.class);
                     assertThat(converters).hasSize(3);
-                    assertThat(converters.get("converter")).isInstanceOf(JacksonConverter.class);
+                    assertThat(converters.get("converter")).isInstanceOf(DelegatingGeneralConverter.class);
+                    DelegatingGeneralConverter generalConverter =
+                            (DelegatingGeneralConverter) converters.get("converter");
+                    assertThat(generalConverter.delegate()).isInstanceOf(JacksonConverter.class);
 
                     assertThat(converters.get("messageConverter")).isInstanceOf(DelegatingMessageConverter.class);
                     DelegatingMessageConverter messageConverter = (DelegatingMessageConverter) converters.get("messageConverter");
@@ -268,7 +270,10 @@ class AvroSchemaStoreAutoConfigurationTest {
 
                     Map<String, Converter> converters = context.getBeansOfType(Converter.class);
                     assertThat(converters).hasSize(3);
-                    assertThat(converters.get("converter")).isInstanceOf(JacksonConverter.class);
+
+                    assertThat(converters.get("converter")).isInstanceOf(DelegatingGeneralConverter.class);
+                    DelegatingGeneralConverter converter = (DelegatingGeneralConverter) converters.get("converter");
+                    assertThat(converter.delegate()).isInstanceOf(JacksonConverter.class);
 
                     assertThat(converters.get("messageConverter")).isInstanceOf(DelegatingMessageConverter.class);
                     DelegatingMessageConverter messageConverter = (DelegatingMessageConverter) converters.get("messageConverter");

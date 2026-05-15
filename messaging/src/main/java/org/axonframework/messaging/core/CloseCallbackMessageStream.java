@@ -17,7 +17,6 @@
 package org.axonframework.messaging.core;
 
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -28,12 +27,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * close handler may never be invoked, even though the stream is completed.
  *
  * @param <M> The type of Message handled by this MessageStream.
+ * @author John Hendrikx
+ * @since 5.0.0
  */
-public class CloseCallbackMessageStream<M extends Message> extends DelegatingMessageStream<M, M> {
+public class CloseCallbackMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
     private final Runnable closeHandler;
     private final AtomicBoolean invoked = new AtomicBoolean(false);
-    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final MessageStream<M> delegate;
 
     /**
      * Creates an instance of the CloseCallbackMessageStream, calling the given {@code closeHandler} once this
@@ -43,8 +44,14 @@ public class CloseCallbackMessageStream<M extends Message> extends DelegatingMes
      * @param closeHandler The handler to invoke when the stream is closed or completed
      */
     public CloseCallbackMessageStream(MessageStream<M> delegate, Runnable closeHandler) {
-        super(delegate);
+        this.delegate = delegate;
         this.closeHandler = Objects.requireNonNull(closeHandler, "Close handler may not be null.");
+
+        if (delegate.isCompleted()) {
+            initialize(delegate.error().map(FetchResult::<Entry<M>>error).orElse(FetchResult.completed()));
+        }
+
+        delegate.setCallback(this::signalProgress);
     }
 
     /**
@@ -65,48 +72,24 @@ public class CloseCallbackMessageStream<M extends Message> extends DelegatingMes
      * @param delegate     The MessageStream to wrap with the close handler invocation logic
      * @param closeHandler The handler to invoke when the stream is closed or completed
      */
-
     static <M extends Message> MessageStream.Empty<M> empty(Empty<M> delegate, Runnable closeHandler) {
         return new CloseCallbackMessageStream<>(delegate, closeHandler).ignoreEntries();
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        Optional<Entry<M>> next = delegate().next();
-        invokeCloseHandlerIfClosed();
-        return next;
+    protected FetchResult<Entry<M>> fetchNext() {
+        return FetchResult.of(delegate);
     }
 
-    private void invokeCloseHandlerIfClosed() {
-        if ((closed.get() || isCompleted()) && !invoked.getAndSet(true)) {
+    @Override
+    protected void onCompleted() {
+        if (!invoked.getAndSet(true)) {
             closeHandler.run();
         }
     }
 
     @Override
-    public Optional<Entry<M>> peek() {
-        invokeCloseHandlerIfClosed();
-        return delegate().peek();
-    }
-
-    @Override
-    public void setCallback(Runnable callback) {
-        super.setCallback(() -> {
-            callback.run();
-            invokeCloseHandlerIfClosed();
-        });
-    }
-
-    @Override
-    public void close() {
-        closed.set(true);
-        super.close();
-        invokeCloseHandlerIfClosed();
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        invokeCloseHandlerIfClosed();
-        return super.hasNextAvailable();
+    public String describeDelegates() {
+        return delegate.toString();
     }
 }

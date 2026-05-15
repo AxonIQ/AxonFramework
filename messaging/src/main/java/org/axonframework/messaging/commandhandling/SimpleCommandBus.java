@@ -16,12 +16,12 @@
 
 package org.axonframework.messaging.commandhandling;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

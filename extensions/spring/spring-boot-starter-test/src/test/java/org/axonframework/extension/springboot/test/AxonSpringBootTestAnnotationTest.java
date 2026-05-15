@@ -100,7 +100,7 @@ class AxonSpringBootTestAnnotationTest {
         customizationField.setAccessible(true);
         var customization = (AxonTestFixture.Customization) customizationField.get(fixture);
 
-        assertFalse(customization.axonServerEnabled(),
+        assertFalse(customization.integrationEnabled(),
                     "Axon Server should be disabled in the default Customization when axon.axonserver.enabled=false");
     }
 

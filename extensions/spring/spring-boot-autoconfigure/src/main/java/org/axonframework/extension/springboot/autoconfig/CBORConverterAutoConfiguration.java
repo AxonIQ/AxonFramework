@@ -18,6 +18,8 @@ package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.conversion.ChainingContentTypeConverter;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.extension.springboot.ConverterProperties;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
@@ -53,32 +55,32 @@ public class CBORConverterAutoConfiguration implements BeanClassLoaderAware {
     private ClassLoader classLoader;
 
     /**
-     * Bean creation method constructing a CBOR based {@link JacksonConverter} as the "general" {@link Converter} to be
+     * Bean creation method constructing a CBOR based {@link JacksonConverter} as the {@link GeneralConverter} to be
      * used by Axon Framework.
      *
      * @param cborMapper the {@link CBORMapper} to be used
-     * @return the "general" {@link Converter} to be used by Axon Framework
+     * @return the {@link GeneralConverter} to be used by Axon Framework
      */
     @Bean
     @Primary
     @ConditionalOnMissingBean(ignored = {MessageConverter.class, EventConverter.class})
     @ConditionalOnProperty(name = "axon.converter.general", havingValue = "cbor")
-    public Converter converter(CBORMapper cborMapper) {
-        return buildConverter(cborMapper);
+    public GeneralConverter converter(CBORMapper cborMapper) {
+        return new DelegatingGeneralConverter(buildConverter(cborMapper));
     }
 
     /**
-     * Bean creation method constructing a {@link MessageConverter} delegating to the "general" {@link Converter} in
-     * case both use {@code cbor}.
+     * Bean creation method constructing a {@link MessageConverter} delegating to the {@link GeneralConverter} in case
+     * both use {@code cbor}.
      *
-     * @param generalConverter the "general" {@link Converter}, used to construct the {@link MessageConverter} in case
-     *                         both use {@code cbor}
+     * @param generalConverter the {@link GeneralConverter}, used to construct the {@link MessageConverter} in case both
+     *                         use {@code cbor}
      * @return the {@link MessageConverter} to be used by Axon Framework
      */
     @Bean(name = "messageConverter")
     @ConditionalOnMissingBean
     @ConditionalOnExpression("'${axon.converter.messages}' == 'cbor' && '${axon.converter.general}' == 'cbor'")
-    public MessageConverter delegatingMessageConverter(Converter generalConverter) {
+    public MessageConverter delegatingMessageConverter(GeneralConverter generalConverter) {
         return new DelegatingMessageConverter(generalConverter);
     }
 

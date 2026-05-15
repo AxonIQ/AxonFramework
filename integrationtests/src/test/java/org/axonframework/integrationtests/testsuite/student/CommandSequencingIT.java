@@ -53,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Jakob Hatzl
  */
-class CommandSequencingIT extends AbstractCommandHandlingStudentIT {
+public abstract class CommandSequencingIT extends AbstractCommandHandlingStudentIT {
 
     public static final String ROUTING_KEY_METADATA_KEY = "CommandSequencingIT#routingKey";
 

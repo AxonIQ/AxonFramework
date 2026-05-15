@@ -1,0 +1,240 @@
+// TODO this is currently not referenced, but should be restructured to accompany the snapshotting docs
+// we include in Axoniq Framework. See https://github.com/AxonIQ/AxonFramework/pull/4420#discussion_r3100143396
+= Snapshots
+
+== Snapshotting
+
+Event-sourced entities reconstruct their state by replaying events from the event store.
+For entities that change frequently or exist for a long time, the number of events can grow significantly.
+Replaying all events each time an entity is loaded may eventually impact performance.
+
+A snapshot captures the state of an entity at a specific position in the event stream.
+When the entity is loaded later, the snapshot can be used as the starting point for reconstruction.
+Only the events that occurred after the snapshot need to be applied to rebuild the current state.
+
+Snapshots are therefore a performance optimization.
+They do not replace events and are not required to reconstruct the entity's state.
+If no snapshot is available, or if a snapshot cannot be used, the entity can always be reconstructed by replaying the full event stream.
+
+[TIP]
+.To measure it to know!
+====
+xref:axoniq-platform-reference:ROOT:features/metrics.adoc#aggregate_metrics[Axoniq Platform] can measure the number of events that were loaded during command handling, so you know if you need to create snapshots or not.
+It's also able to track many more interesting metrics, such as the load time of the aggregate, and the time it took to store the events.
+====
+
+=== Why use snapshots
+
+Snapshots can significantly reduce the number of events that must be replayed when sourcing an entity.
+This can improve the performance of loading entities whose event streams have grown large over time.
+
+For example, consider an entity representing an inventory item.
+Each sale decreases the stock level and produces an event, while restocking increases the stock level and produces another event.
+If hundreds or thousands of these events accumulate, reconstructing the entity requires replaying each one to determine the current stock level.
+
+By storing a snapshot of the entity state at regular intervals, the system can restore the entity directly from that snapshot and only apply the events that occurred afterwards.
+This greatly reduces the work required to reconstruct the current state.
+
+=== Snapshot lifecycle
+
+Snapshotting takes place during the sourcing of an event-sourced entity and is activated by configuring a `SnapshotPolicy` on the repository.
+
+When an entity is loaded, the underlying event store may first provide a snapshot for that entity.
+If a snapshot is available and can be used, the entity is initialized from that snapshot.
+Any events that occurred after the snapshot's position are then applied to bring the entity up to date.
+
+As events are applied during sourcing, the configured `SnapshotPolicy` is invoked for each event.
+This allows the policy to detect whether a snapshot should be triggered based on the events being processed.
+
+After sourcing has completed, the policy is evaluated based on the full evolution of the entity.
+If the policy indicates that a snapshot should be created—either based on the overall evolution (such as event count or sourcing time) or because a triggering event was observed—a new snapshot is created and stored.
+
+This snapshot can then be used the next time the entity is loaded, reducing the number of events that need to be replayed.
+
+=== Snapshot policies
+
+Snapshot creation is driven by a `SnapshotPolicy`, which determines whether a snapshot should be created after an entity has been sourced.
+A policy is configured on the repository and evaluated during sourcing.
+
+A `SnapshotPolicy` can influence snapshot creation in two ways:
+
+* *During event application* - The `shouldSnapshot(EventMessage event)` method is invoked for each event.
+If it returns `true` for any event, a snapshot will be created when sourcing completes.
+* *After sourcing completes* - The policy is evaluated using an evolution result, a record which contains the number of events applied and the total time sourcing took, allowing decisions based on these factors.
+
+Axon Framework provides a set of standard snapshot policies:
+
+* *After a fixed number of events* - Triggers a snapshot once the entity has evolved through a configurable number of events.
+* *Based on sourcing time* - Triggers a snapshot when the time to source an entity exceeds a configured threshold.
+* *When an event matches a predicate* - Triggers a snapshot when a specific event is encountered during sourcing, using `whenEventMatches(Predicate<EventMessage>)`.
+This allows snapshots to be forced for domain-specific events, such as when an entity reaches a terminal state.
+
+These policies can be combined to form more advanced strategies.
+
+Custom policies may also be implemented.
+Implementations should be thread-safe and side-effect free, and may use both the individual events and the overall evolution result to determine whether a snapshot should be created.
+
+To create a policy which snapshots after 5 events or if sourcing time exceeds 500 milliseconds:
+
+[source,java]
+----
+SnapshotPolicy snapshotPolicy =
+        SnapshotPolicy.afterEvents(5)
+                      .or(SnapshotPolicy.whenSourcingTimeExceeds(
+                          Duration.millis(500)
+                      ));
+----
+
+=== Snapshot storage
+
+Snapshots are persisted using a `SnapshotStore`, which abstracts the underlying storage mechanism.
+Note that `SnapshotStore` is currently a tentative API and may eventually be rolled into the `EventStore`.
+When using Axon Server, an `AxonServerSnapshotStore` is automatically provided.
+
+Current implementations include:
+
+* *`InMemorySnapshotStore`* - Useful for testing or ephemeral scenarios.
+* *`AxonServerSnapshotStore`* - Stores snapshots in Axon Server with thread-safe, concurrent access.
+
+Each snapshot contains the entity identifier, payload, position, version, timestamp, and optional metadata.
+By default, only a single snapshot per entity is retained; new snapshots overwrite the previous one.
+Future versions of the framework may allow storing multiple snapshots per entity, enabling scenarios such as rollbacks or retaining older snapshot versions.
+
+A suitable `SnapshotStore` is typically registered automatically by Axon Framework, but may be overridden when required.
+For example, to register a custom Axon Server-based snapshot store:
+
+[source,java]
+----
+registry.registerComponent(SnapshotStore.class, c -> {
+    AxonServerConnectionManager connectionManager =
+            c.getComponent(AxonServerConnectionManager.class);
+
+    return new AxonServerSnapshotStore(
+            connectionManager.getConnection(),
+            c.getComponent(Converter.class)
+    );
+});
+----
+
+For testing or simple setups, an in-memory store can be used instead:
+
+[source,java]
+----
+registry.registerComponent(
+        SnapshotStore.class,
+        c -> new InMemorySnapshotStore()
+);
+----
+
+=== Configuring snapshotting
+
+Snapshotting is enabled by providing a `SnapshotPolicy` for an event-sourced entity.
+When a policy is configured, the repository automatically handles the creation and application of snapshots during sourcing.
+If no policy is provided, snapshotting is disabled, and the entity is always reconstructed from the event stream.
+
+The `SnapshotPolicy` is configured as part of the entity registration.
+The example below shows how to configure snapshotting for an event-sourced entity:
+
+[source,java]
+----
+SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(5)
+        .or(SnapshotPolicy.whenEventMatches(
+                msg -> msg.type().qualifiedName().equals(
+                        new QualifiedName(AccountClosed.class)
+                )
+        ));
+
+EventSourcedEntityModule<String, Account> accountModule =
+        EventSourcedEntityModule.declarative(String.class, Account.class)
+                                // other entity configuration omitted
+                                .snapshotPolicy(c -> snapshotPolicy)
+                                .build();
+----
+
+In this configuration:
+
+* A `SnapshotPolicy` determines when a snapshot should be created.
+In the example, a snapshot is created after more than five events have been applied or when a matching event is encountered during sourcing.
+* Snapshotting is activated automatically when a `SnapshotPolicy` is configured.
+If no policy is provided, snapshotting is not used and the entity is always sourced from events only.
+* The repository requires several supporting components to be present when snapshotting is enabled:
+** A `Converter` to serialize and deserialize snapshot payloads.
+** A `MessageTypeResolver` capable of resolving a `MessageType` for the entity type.
+This type is used to identify the snapshot and its version.
+** A `SnapshotStore` to persist snapshots (this requirement will change in future versions as snapshotting becomes more tightly integrated with the event store).
+
+If any of these components are missing, configuration will fail when snapshotting is enabled.
+
+Custom snapshot behavior can be achieved by using `whenEventMatches` for domain-specific triggers, as shown in the example, or by implementing the `SnapshotPolicy` interface directly.
+
+=== Entity conversion for snapshots
+
+When a snapshot is created, the configured `Converter` must be able to serialize the entity into a storable format.
+This is similar to how events are converted, but now applies to the entity itself.
+
+Modern best practices favor immutable entities that provide a constructor capable of reconstructing the full state.
+Most JSON-based converters (such as Jackson, when compiled with parameter names and properly configured) can use the constructor directly without requiring annotations like `@JsonCreator` or `@JsonProperty`:
+
+[source,java]
+----
+public class Account {
+    private final String accountId;
+    private final int balance;
+
+    public Account(String accountId, int balance) {
+        this.accountId = accountId;
+        this.balance = balance;
+    }
+
+    public String getAccountId() { return accountId; }
+    public int getBalance() { return balance; }
+}
+----
+
+Or using a `record`:
+
+[source,java]
+----
+public record Account(String accountId, int balance) {}
+----
+
+While setters and default constructors can still be used if necessary, the constructor-based approach ensures immutability and aligns with modern Java development practices.
+
+Ensuring the entity is properly serializable guarantees that snapshots can be persisted and later restored correctly.
+If the converter cannot handle the entity, a warning will be logged, and snapshot loading will fall back to full event replay.
+
+=== Entity conversion for snapshots
+
+Snapshots store a representation of an event-sourced entity at a specific point in time.
+To persist this representation, the framework uses the configured `Converter` to serialize the entity into a storable format.
+
+Because the default behavior is to serialize the entity object itself, the entity must be compatible with the converter being used.
+For example, when using a JSON-based converter such as Jackson, this may require:
+
+* Ensuring the entity has accessible getters and a suitable constructor (or setters).
+* Adding annotations like `@JsonGetter` and `@JsonSetter` to guide serialization and deserialization.
+* Providing a default constructor if needed for deserialization.
+
+When a snapshot is loaded, the converter reconstructs the entity in the same state it would have after sourcing all preceding events.
+This ensures that snapshots provide a safe caching mechanism while still allowing full reconstruction from the event stream if needed.
+
+Users should verify that their entities are compatible with the configured converter, especially when using complex or custom types.
+Proper configuration prevents runtime errors during snapshot creation or loading.
+
+=== Snapshot compatibility and fallback behavior
+
+Snapshots are a performance optimization and act as a cache of an entity's state at a specific position in the event stream.
+Because they are not required to reconstruct the entity, the framework always provides a safe fallback: if a snapshot cannot be used, the entity is reconstructed by replaying events from the event store.
+
+When a snapshot is loaded, the framework verifies that it can be used.
+For example, the snapshot version may no longer match the current version expected by the application, or the snapshot payload may not be convertible to the expected entity representation.
+In such cases, the snapshot is ignored and sourcing continues from the beginning of the event stream.
+
+This behavior ensures that incompatible or corrupted snapshots do not affect correctness.
+The entity state is always derived from the event stream if a snapshot cannot be applied.
+
+When a snapshot is successfully loaded, sourcing resumes from the snapshot's position.
+Only the events that occurred after that position are applied to bring the entity to its current state.
+
+If a snapshot cannot be used, the full event stream is replayed and a new snapshot may be created after sourcing completes, depending on the configured `SnapshotPolicy`.
+This new snapshot replaces the previous one according to the current storage behavior.

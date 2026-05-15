@@ -20,13 +20,12 @@
 
     <groupId>org.axonframework</groupId>
     <artifactId>axon</artifactId>
-    <version>5.1.0-SNAPSHOT</version>
+    <version>${revision}</version>
 
     <modules>
         <module>build/parent</module>
         <module>axon-framework-bom</module>
 
-        <module>axon-server-connector</module>
         <module>common</module>
         <module>conversion</module>
         <module>extensions</module>
@@ -70,6 +69,7 @@
     </organization>
 
     <properties>
+        <revision>5.1.1-SNAPSHOT</revision>
         <java.version>21</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -168,11 +168,40 @@
                 <configuration>
                     <publishingServerId>central</publishingServerId>
                     <excludeArtifacts>
-                        axon-integrationtests,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-migration,axon-todo
+                        axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-migration,axon-todo
                     </excludeArtifacts>
                 </configuration>
             </plugin>
 
+            <!--
+                Flattens the effective POM before deployment so that CI-friendly version placeholders
+                (such as ${revision}) are resolved to concrete values.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.5.0</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -243,6 +272,41 @@
                                 </tag>
                             </tags>
                         </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>integration-test</id>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-failsafe-plugin</artifactId>
+                            <version>${maven-failsafe.version}</version>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-integration-tests</id>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>verify-integration-tests</id>
+                                <goals>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>

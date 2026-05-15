@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
-public class AxonFrameworkExtensionTest {
+class AxonFrameworkExtensionTest {
 
     private static final AxonTestFixture mockedFixture = mock(AxonTestFixture.class);
 
@@ -50,7 +50,7 @@ public class AxonFrameworkExtensionTest {
 
         @ProvidedAxonTestFixture
         AxonTestFixtureProvider fixtureProvider = () -> AxonTestFixture.with(CourseEntity.configurer(),
-                                                                             Customization::disableAxonServer);
+                                                                             Customization::asIntegrationTest);
 
         @Test
         void creatingNewCourseIssuesEvent(@NonNull AxonTestFixture fixture) {
@@ -127,7 +127,7 @@ public class AxonFrameworkExtensionTest {
 
         @BeforeEach
         void setUp() {
-            fixture = AxonTestFixture.with(CourseEntity.configurer(), Customization::disableAxonServer);
+            fixture = AxonTestFixture.with(CourseEntity.configurer(), Customization::asIntegrationTest);
         }
 
         @AfterEach

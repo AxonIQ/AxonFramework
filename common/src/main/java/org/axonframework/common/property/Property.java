@@ -16,6 +16,8 @@
 
 package org.axonframework.common.property;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Interface describing a mechanism that can read a predefined property from a given instance.
  *
@@ -34,5 +36,5 @@ public interface Property<T> {
      * @param <V>    The type of value expected
      * @return the property value on {@code target}
      */
-    <V> V getValue(T target);
+    <V> @Nullable V getValue(T target);
 }

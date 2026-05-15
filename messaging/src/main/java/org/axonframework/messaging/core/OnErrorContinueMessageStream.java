@@ -16,11 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import org.jspecify.annotations.Nullable;
-
-
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK;
@@ -32,13 +27,15 @@ import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
-class OnErrorContinueMessageStream<M extends Message> extends DelegatingMessageStream<M, M> {
+class OnErrorContinueMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
-    private final AtomicReference<@Nullable MessageStream<M>> onErrorStream = new AtomicReference<>();
-    private final Function<Throwable, MessageStream<M>> onError;
-    private final AtomicReference<Runnable> callback = new AtomicReference<>(NO_OP_CALLBACK);
+    private final Function<Throwable, MessageStream<? extends M>> onError;
+
+    private MessageStream<M> current;
+    private boolean switchedToContinuation;
 
     /**
      * Construct an {@link MessageStream stream} that will proceed on the resulting {@code MessageStream} from the given
@@ -50,63 +47,51 @@ class OnErrorContinueMessageStream<M extends Message> extends DelegatingMessageS
      *                 given {@code delegate} completes exceptionally.
      */
     OnErrorContinueMessageStream(MessageStream<M> delegate,
-                                 Function<Throwable, MessageStream<M>> onError) {
-        super(delegate);
+                                 Function<Throwable, MessageStream<? extends M>> onError) {
         this.onError = onError;
+        this.current = delegate;
+
+        delegate.setCallback(this::signalProgress);
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        return resolveCurrentDelegate().next();
-    }
+    protected synchronized FetchResult<Entry<M>> fetchNext() {
+        do {
+            FetchResult<Entry<M>> result = FetchResult.of(current);
 
-    @Override
-    public void setCallback(Runnable callback) {
-        resolveCurrentDelegate().setCallback(callback);
-        this.callback.set(callback);
-    }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        return resolveCurrentDelegate().peek();
-    }
-
-    private MessageStream<M> resolveCurrentDelegate() {
-        if (!delegate().isCompleted() || delegate().error().isEmpty()) {
-            return delegate();
-        } else if (onErrorStream.get() != null) {
-            return onErrorStream.get();
-        } else {
-            synchronized (this) {
-                MessageStream<M> newMessageStream = onErrorStream.updateAndGet((c) -> {
-                    if (c == null) {
-                        return onError.apply(delegate().error().orElse(null));
-                    }
-                    return c;
-                });
-                newMessageStream.setCallback(callback.get());
-                return newMessageStream;
+            if (switchedToContinuation || !(result instanceof FetchResult.Error)) {
+                return result;
             }
-        }
+        } while (switchToContinuation());
+
+        return FetchResult.completed();
+    }
+
+    private boolean switchToContinuation() {
+        switchedToContinuation = true;
+
+        @SuppressWarnings("unchecked")
+        MessageStream<M> continuation = (MessageStream<M>) onError.apply(current.error().get());
+
+        current.setCallback(NO_OP_CALLBACK);
+        current = continuation;
+        current.setCallback(this::signalProgress);
+
+        return true;
     }
 
     @Override
-    public Optional<Throwable> error() {
-        return resolveCurrentDelegate().error();
+    protected synchronized void onCompleted() {
+        current.close();
     }
 
     @Override
-    public boolean isCompleted() {
-        return resolveCurrentDelegate().isCompleted();
+    protected String describeFlags() {
+        return switchedToContinuation ? "ALT" : null;
     }
 
     @Override
-    public boolean hasNextAvailable() {
-        return resolveCurrentDelegate().hasNextAvailable();
-    }
-
-    @Override
-    public void close() {
-        resolveCurrentDelegate().close();
+    protected String describeDelegates() {
+        return current.toString();
     }
 }

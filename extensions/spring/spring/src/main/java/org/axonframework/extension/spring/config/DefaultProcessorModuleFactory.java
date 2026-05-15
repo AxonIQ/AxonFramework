@@ -25,9 +25,12 @@ import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -61,18 +64,33 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
 
     private final List<EventProcessorDefinition> eventProcessorDefinitions;
     private final Map<String, EventProcessorSettings> allSettings;
+    private final List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations;
 
     /**
-     * Creates a new factory with the given processor definitions, settings, and Axon configuration.
+     * Creates a new factory with the given processor definitions and settings.
      *
      * @param eventProcessorDefinitions The list of processor definitions that define handler assignment rules.
-     * @param settings             The map of processor settings, keyed by processor name.
-     * @param axonConfiguration    The Axon configuration to retrieve components from.
+     * @param settings                  The map of processor settings, keyed by processor name.
      */
     public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
                                          Map<String, EventProcessorSettings> settings) {
+        this(eventProcessorDefinitions, settings, Collections.emptyList());
+    }
+
+    /**
+     * Creates a new factory with the given processor definitions, settings, and additional customizations.
+     *
+     * @param eventProcessorDefinitions The list of processor definitions that define handler assignment rules.
+     * @param settings                  The map of processor settings, keyed by processor name.
+     * @param extensionsCustomizations  Additional {@link PooledStreamingEventProcessorModule.Customization} beans
+     *                                  (e.g., DLQ configuration) to apply to each processor during module creation.
+     */
+    public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
+                                         Map<String, EventProcessorSettings> settings,
+                                         List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations) {
         this.eventProcessorDefinitions = eventProcessorDefinitions;
         this.allSettings = settings;
+        this.extensionsCustomizations = extensionsCustomizations;
     }
 
     /**
@@ -107,19 +125,29 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
                 return (EventHandlingComponentsConfigurer.CompletePhase) resultOfRegistration;
             };
 
-            var processorModuleName = "EventProcessor[" + processorName + "]";
-
             var settings = Optional.ofNullable(allSettings.get(processorName))
                                    .orElseGet(() -> allSettings.get(EventProcessorSettings.DEFAULT));
             var processorMode = definitionFor(processorName).map(EventProcessorDefinition::mode)
                                                             .orElse(settings.processorMode());
-            var module = switch (processorMode) {
+            EventProcessorModule module = switch (processorMode) {
                 case POOLED -> {
                     var moduleSettings = (EventProcessorSettings.PooledEventProcessorSettings) settings;
-                    var customization = SpringCustomizations.pooledStreamingCustomizations(processorName, moduleSettings)
-                                                            .andThen(customizeConfiguration(processorName));
+                    var baseCustomization = SpringCustomizations.pooledStreamingCustomizations(
+                            processorName, moduleSettings
+                    );
+                    UnaryOperator<PooledStreamingEventProcessorConfiguration> definitionCustomization =
+                            customizeConfiguration(processorName);
+                    PooledStreamingEventProcessorModule.Customization customization =
+                            (axonConfig, processorConfig) -> {
+                                var result = baseCustomization.apply(axonConfig, processorConfig);
+                                result = definitionCustomization.apply(result);
+                                for (var extension : extensionsCustomizations) {
+                                    result = extension.apply(axonConfig, result);
+                                }
+                                return result;
+                            };
                     yield EventProcessorModule
-                            .pooledStreaming(processorModuleName)
+                            .pooledStreaming(processorName)
                             .eventHandlingComponents(componentRegistration)
                             .customized(customization)
                             .build();
@@ -127,7 +155,7 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
                 case SUBSCRIBING -> {
                     var moduleSettings = (EventProcessorSettings.SubscribingEventProcessorSettings) settings;
                     yield EventProcessorModule
-                            .subscribing(processorModuleName)
+                            .subscribing(processorName)
                             .eventHandlingComponents(componentRegistration)
                             .customized(SpringCustomizations.subscribingCustomizations(processorName, moduleSettings)
                                                             .andThen(customizeConfiguration(processorName)))
@@ -219,11 +247,11 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
             return Optional.empty();
         }
         return AnnotationUtils.findAnnotationAttributesOnType(
-                                       type,
-                                       Namespace.class,
-                                       attrs -> !StringUtils.emptyOrNull((String) attrs.get("namespace"))
-                               )
-                               .map(attrs -> (String) attrs.get("namespace"));
+                                      type,
+                                      Namespace.class,
+                                      attrs -> !StringUtils.emptyOrNull((String) attrs.get("namespace"))
+                              )
+                              .map(attrs -> (String) attrs.get("namespace"));
     }
 
     /**

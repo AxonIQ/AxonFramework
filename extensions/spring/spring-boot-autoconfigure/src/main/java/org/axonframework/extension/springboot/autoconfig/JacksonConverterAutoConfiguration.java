@@ -18,6 +18,8 @@ package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.conversion.ChainingContentTypeConverter;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.extension.springboot.ConverterProperties;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
@@ -61,29 +63,29 @@ public class JacksonConverterAutoConfiguration implements BeanClassLoaderAware {
     private ClassLoader classLoader;
 
     /**
-     * Bean creation method constructing a {@link JacksonConverter} as the "general" {@link Converter} to be used by
-     * Axon Framework.
+     * Bean creation method constructing a {@link JacksonConverter} as the {@link GeneralConverter} to be used by Axon
+     * Framework.
      * <p>
      * This bean acts as fallback and gets created in case {@code axon.converter.general} is not set or set to
      * {@code default}.
      *
      * @param objectMapper the {@link ObjectMapper} to be used
-     * @return the "general" {@link Converter} to be used by Axon Framework
+     * @return the {@link GeneralConverter} to be used by Axon Framework
      */
     @Bean
     @Primary
     @ConditionalOnMissingBean(ignored = {MessageConverter.class, EventConverter.class})
     @ConditionalOnExpression("'${axon.converter.general}' == 'jackson' || '${axon.converter.general:default}' == 'default'")
-    public Converter converter(ObjectMapper objectMapper) {
-        return buildConverter(objectMapper);
+    public GeneralConverter converter(ObjectMapper objectMapper) {
+        return new DelegatingGeneralConverter(buildConverter(objectMapper));
     }
 
     /**
-     * Bean creation method constructing a {@link MessageConverter} delegating to the "general" {@link Converter} in
-     * case both use {@code jackson/default}.
+     * Bean creation method constructing a {@link MessageConverter} delegating to the {@link GeneralConverter} in case
+     * both use {@code jackson/default}.
      *
-     * @param generalConverter the "general" {@link Converter}, used to construct the {@link MessageConverter} in case
-     *                         both use {@code jackson/default}
+     * @param generalConverter the {@link GeneralConverter}, used to construct the {@link MessageConverter} in case both
+     *                         use {@code jackson/default}
      * @return the {@link MessageConverter} to be used by Axon Framework
      */
     @Bean(name = "messageConverter")
@@ -92,7 +94,7 @@ public class JacksonConverterAutoConfiguration implements BeanClassLoaderAware {
             '${axon.converter.messages}' == 'jackson'
             && ('${axon.converter.general}' == 'jackson' || '${axon.converter.general:default}' == 'default')
             """)
-    public MessageConverter delegatingMessageConverter(Converter generalConverter) {
+    public MessageConverter delegatingMessageConverter(GeneralConverter generalConverter) {
         return new DelegatingMessageConverter(generalConverter);
     }
 

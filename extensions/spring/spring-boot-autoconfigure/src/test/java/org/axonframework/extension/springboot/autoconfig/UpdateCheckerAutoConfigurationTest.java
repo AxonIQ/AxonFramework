@@ -43,8 +43,7 @@ class UpdateCheckerAutoConfigurationTest {
     @BeforeEach
     void setUp() {
         this.testContext = new ApplicationContextRunner()
-                .withUserConfiguration(DefaultContext.class)
-                .withPropertyValues("axon.axonserver.enabled:false");
+                .withUserConfiguration(DefaultContext.class);
     }
 
     @AfterEach

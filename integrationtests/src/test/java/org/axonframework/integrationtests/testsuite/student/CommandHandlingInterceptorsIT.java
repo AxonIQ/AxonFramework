@@ -46,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Mateusz Nowak
  */
-class CommandHandlingInterceptorsIT extends AbstractCommandHandlingStudentIT {
+public abstract class CommandHandlingInterceptorsIT extends AbstractCommandHandlingStudentIT {
 
     private final String student1 = createId("student-1");
 

@@ -20,7 +20,6 @@ import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.core.Message;
 import org.jspecify.annotations.Nullable;
 
-
 import java.util.Collection;
 import java.util.Map;
 import java.util.function.BiConsumer;

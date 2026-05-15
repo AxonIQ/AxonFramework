@@ -19,6 +19,7 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurationDefaults;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -62,7 +63,7 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
     void setUp() {
         testContext = new ApplicationContextRunner()
                 .withUserConfiguration(TestContext.class)
-                .withPropertyValues("axon.axonserver.enabled=false", "axon.eventstorage.jpa.polling-interval=0");
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0");
     }
 
     @Test
@@ -73,7 +74,8 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
             // The Converter, MessageConverter, and EventConverter all are Converter implementations, hence three.
             Map<String, Converter> beansOfType = context.getBeansOfType(Converter.class);
             assertThat(beansOfType.size()).isEqualTo(3);
-            assertThat(context).hasBean(Converter.class.getName());
+            assertThat(context).hasSingleBean(GeneralConverter.class);
+            assertThat(context).hasBean(GeneralConverter.class.getName());
             assertThat(context).hasSingleBean(MessageConverter.class);
             assertThat(context).hasBean(MessageConverter.class.getName());
             assertThat(context).hasSingleBean(EventConverter.class);
@@ -130,8 +132,6 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
     }
 
     // Excludes the ConverterAutoConfiguration to validate the MessagingConfigurationDefaults on its own.
-    // Also excludes JpaDeadLetterQueueAutoConfiguration and JdbcDeadLetterQueueAutoConfiguration because
-    // its Converter parameter cannot be resolved when the ConverterAutoConfiguration (which provides the @Primary Converter) is excluded.
     @Configuration
     @EnableAutoConfiguration(
             exclude = {
@@ -139,9 +139,7 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
                     AvroConverterAutoConfiguration.class,
                     CBORConverterAutoConfiguration.class,
                     JacksonConverterAutoConfiguration.class,
-                    Jackson2ConverterAutoConfiguration.class,
-                    JpaDeadLetterQueueAutoConfiguration.class,
-                    JdbcDeadLetterQueueAutoConfiguration.class
+                    Jackson2ConverterAutoConfiguration.class
             }
     )
     public static class TestContext {
@@ -164,8 +162,6 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
     }
 
     // Excludes the ConverterAutoConfiguration to validate the MessagingConfigurationDefaults on its own.
-    // Also excludes JpaDeadLetterQueueAutoConfiguration and JdbcDeadLetterQueueAutoConfiguration because its Converter parameter cannot be resolved
-    // when multiple custom Converter beans are registered without @Primary.
     @Configuration
     @EnableAutoConfiguration(
             exclude = {
@@ -173,9 +169,7 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
                     AvroConverterAutoConfiguration.class,
                     CBORConverterAutoConfiguration.class,
                     JacksonConverterAutoConfiguration.class,
-                    Jackson2ConverterAutoConfiguration.class,
-                    JpaDeadLetterQueueAutoConfiguration.class,
-                    JdbcDeadLetterQueueAutoConfiguration.class
+                    Jackson2ConverterAutoConfiguration.class
             }
     )
     public static class CustomContext {
@@ -186,8 +180,8 @@ class MessagingConfigurationDefaultsAutoConfigurationTest {
         }
 
         @Bean
-        public Converter customConverter() {
-            return mock(Converter.class);
+        public GeneralConverter customConverter() {
+            return mock(GeneralConverter.class);
         }
 
         @Bean

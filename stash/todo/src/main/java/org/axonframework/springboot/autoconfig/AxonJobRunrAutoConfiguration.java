@@ -16,18 +16,17 @@
 
 package org.axonframework.springboot.autoconfig;
 
-import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
-import org.axonframework.config.ConfigurationScopeAwareProvider;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.config.ConfigurationScopeAwareProvider;
+import org.axonframework.conversion.Serializer;
 import org.axonframework.deadline.DeadlineManager;
 import org.axonframework.deadline.DeadlineManagerSpanFactory;
 import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+import org.axonframework.messaging.core.ScopeAwareProvider;
+import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.scheduling.EventScheduler;
 import org.axonframework.messaging.eventhandling.scheduling.jobrunr.JobRunrEventScheduler;
-import org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration;
-import org.axonframework.messaging.core.ScopeAwareProvider;
-import org.axonframework.conversion.Serializer;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -44,8 +43,10 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @ConditionalOnBean(JobScheduler.class)
-@AutoConfigureAfter(value = {AxonServerAutoConfiguration.class, AxonTracingAutoConfiguration.class},
-        name = {"org.jobrunr.spring.autoconfigure.JobRunrAutoConfiguration"})
+@AutoConfigureAfter(
+        value = {AxonTracingAutoConfiguration.class},
+        name = {"org.jobrunr.spring.autoconfigure.JobRunrAutoConfiguration"}
+)
 public class AxonJobRunrAutoConfiguration {
 
     @Bean

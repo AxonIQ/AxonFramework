@@ -169,7 +169,7 @@ Inject it as a bean into your test for realistic integration testing:
 ----
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.test.fixture.AxonTestFixture;
-import org.axonframework.test.server.AxonServerContainer;
+import io.axoniq.framework.testcontainer.AxonServerContainer;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

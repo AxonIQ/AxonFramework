@@ -16,8 +16,8 @@
 
 package org.axonframework.messaging.eventstreaming;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.util.Arrays;
 import java.util.Collection;

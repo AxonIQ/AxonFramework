@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework.extensions.reactor</groupId>
         <artifactId>axon-reactor-extension</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>axon-reactor</artifactId>

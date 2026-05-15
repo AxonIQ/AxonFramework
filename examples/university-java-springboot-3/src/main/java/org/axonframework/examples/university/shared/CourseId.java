@@ -19,7 +19,6 @@ package org.axonframework.examples.university.shared;
 import jakarta.validation.constraints.NotNull;
 import org.jspecify.annotations.NonNull;
 
-
 import java.util.UUID;
 
 /**

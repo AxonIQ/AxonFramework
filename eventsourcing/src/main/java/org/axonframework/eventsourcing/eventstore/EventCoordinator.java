@@ -76,7 +76,8 @@ public interface EventCoordinator {
         void onEventsAppended(List<TaggedEventMessage<?>> events);
 
         /**
-         * Terminates this coordination instance, releasing any resources or threads used internally.
+         * Terminates this coordination instance, releasing any resources or threads used internally. Blocks
+         * until termination completes.
          * <p>
          * After termination, the handle should not be used again.
          */

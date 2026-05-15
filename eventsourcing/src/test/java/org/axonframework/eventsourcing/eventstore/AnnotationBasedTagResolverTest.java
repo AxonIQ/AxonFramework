@@ -16,13 +16,13 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.jspecify.annotations.NonNull;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.EventTags;
-import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventstreaming.Tag;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 import java.util.Arrays;

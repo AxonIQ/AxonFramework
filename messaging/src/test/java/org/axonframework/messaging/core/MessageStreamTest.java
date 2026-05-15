@@ -147,6 +147,8 @@ public abstract class MessageStreamTest<M extends Message> {
 
     @Test
     void shouldInvokeSetCallbackCallbackWhenStreamIsCompleted() {
+        Assumptions.assumeTrue(isBoundedStream());
+
         MessageStream<M> testSubject = completedTestSubject(List.of());
 
         AtomicBoolean invoked = new AtomicBoolean(false);
@@ -186,6 +188,18 @@ public abstract class MessageStreamTest<M extends Message> {
 
     @Test
     void shouldCloseStreamWithErrorIfCallbackFails() {
+        M msg = createRandomMessage();
+        MessageStream<M> testSubject = completedTestSubject(List.of(msg));
+        RuntimeException e = new RuntimeException("Callback failed");
+
+        testSubject.setCallback(() -> { throw e; });
+
+        assertThat(testSubject.error()).containsSame(e);
+        assertThat(testSubject.isCompleted()).isTrue();
+    }
+
+    @Test
+    void shouldCloseStreamWithErrorIfCallbackFails_Flux() {
         M msg = createRandomMessage();
         MessageStream<M> testSubject = completedTestSubject(List.of(msg));
 
@@ -238,7 +252,7 @@ public abstract class MessageStreamTest<M extends Message> {
     }
 
     @Test
-    void shouldInvokeCompletionCallbackOnceAllMessagesHaveBeenConsumed() {
+    void shouldInvokeCompletionCallbackAfterHasNextAvailableInteractionOnceAllMessagesHaveBeenConsumed() {
         CompletableFuture<Void> completionMarker = new CompletableFuture<>();
         AtomicBoolean invoked = new AtomicBoolean(false);
 
@@ -259,6 +273,48 @@ public abstract class MessageStreamTest<M extends Message> {
     }
 
     @Test
+    void shouldInvokeCompletionCallbackAfterPeekInteractionOnceAllMessagesHaveBeenConsumed() {
+        CompletableFuture<Void> completionMarker = new CompletableFuture<>();
+        AtomicBoolean invoked = new AtomicBoolean(false);
+
+        MessageStream<M> testSubject = uncompletedTestSubject(List.of(createRandomMessage()), completionMarker)
+                .onComplete(() -> invoked.set(true));
+
+        completionMarker.complete(null);
+        // streams _must not_ have notified their listeners at this point
+        assertFalse(invoked.get());
+
+        testSubject.next();
+        // consuming the last message must not trigger the completion callback. The next interaction with the stream will.
+
+        assertFalse(invoked.get());
+
+        assertThat(testSubject.peek()).isEmpty();
+        assertTrue(invoked.get());
+    }
+
+    @Test
+    void shouldInvokeCompletionCallbackAfterNextInteractionOnceAllMessagesHaveBeenConsumed() {
+        CompletableFuture<Void> completionMarker = new CompletableFuture<>();
+        AtomicBoolean invoked = new AtomicBoolean(false);
+
+        MessageStream<M> testSubject = uncompletedTestSubject(List.of(createRandomMessage()), completionMarker)
+                .onComplete(() -> invoked.set(true));
+
+        completionMarker.complete(null);
+        // streams _must not_ have notified their listeners at this point
+        assertFalse(invoked.get());
+
+        testSubject.next();
+        // consuming the last message must not trigger the completion callback. The next interaction with the stream will.
+
+        assertFalse(invoked.get());
+
+        assertThat(testSubject.next()).isEmpty();
+        assertTrue(invoked.get());
+    }
+
+    @Test
     void shouldInvokeCompletionCallbackImmediatelyOnCompletedEmptyStream() {
         AtomicBoolean invoked = new AtomicBoolean(false);
 
@@ -272,10 +328,14 @@ public abstract class MessageStreamTest<M extends Message> {
         AtomicBoolean invoked = new AtomicBoolean(false);
 
         CompletableFuture<Void> completionMarker = new CompletableFuture<>();
-        uncompletedTestSubject(List.of(), completionMarker).onComplete(() -> invoked.set(true));
+        MessageStream<M> stream = uncompletedTestSubject(List.of(), completionMarker).onComplete(() -> invoked.set(true));
 
+        assertFalse(stream.hasNextAvailable());
         assertFalse(invoked.get());
+
         completionMarker.complete(null);
+
+        assertFalse(stream.hasNextAvailable());
         assertTrue(invoked.get());
     }
 
@@ -491,6 +551,19 @@ public abstract class MessageStreamTest<M extends Message> {
                 .expectNextMatches(entry -> entry.message().equals(out1))
                 .expectNextMatches(entry -> entry.message().equals(out2))
         );
+    }
+
+    @Test
+    void shouldMapEntriesUntilFailure() {
+        M in = createRandomMessage();
+        M out = createRandomMessage();
+
+        MessageStream<M> testSubject = failingTestSubject(List.of(in), new MockException())
+                .map(entry -> entry.map(input -> out));
+
+        assertThat(testSubject.next()).map(Entry::message).contains(out);
+        assertThat(testSubject.next()).isEmpty();
+        assertThat(testSubject.error()).containsInstanceOf(MockException.class);
     }
 
     @Test
@@ -1125,6 +1198,27 @@ public abstract class MessageStreamTest<M extends Message> {
 
     @Test
     void shouldNotChangeStreamContentWithOnComplete() {
+        Assumptions.assumeTrue(isBoundedStream());
+
+        List<M> originalMessages = List.of(createRandomMessage(), createRandomMessage(), createRandomMessage());
+        AtomicBoolean callbackExecuted = new AtomicBoolean(false);
+
+        MessageStream<M> original = completedTestSubject(originalMessages);
+        MessageStream<M> withCallback = original.onComplete(() -> callbackExecuted.set(true));
+
+        assertThat(withCallback.next()).map(Entry::message).contains(originalMessages.get(0));
+        assertFalse(callbackExecuted.get());
+        assertThat(withCallback.next()).map(Entry::message).contains(originalMessages.get(1));
+        assertFalse(callbackExecuted.get());
+        assertThat(withCallback.next()).map(Entry::message).contains(originalMessages.get(2));
+        assertFalse(callbackExecuted.get());
+        assertThat(withCallback.next()).isEmpty();
+
+        assertTrue(callbackExecuted.get());
+    }
+
+    @Test
+    void shouldNotChangeStreamContentWithOnComplete_Flux() {
         Assumptions.assumeTrue(isBoundedStream());
 
         List<M> originalMessages = List.of(createRandomMessage(), createRandomMessage(), createRandomMessage());

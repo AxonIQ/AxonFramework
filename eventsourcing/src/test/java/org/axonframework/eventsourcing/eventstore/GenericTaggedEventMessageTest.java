@@ -16,10 +16,10 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventstreaming.Tag;
-import org.axonframework.messaging.core.Metadata;
 import org.junit.jupiter.api.*;
 
 import java.util.HashSet;

@@ -20,6 +20,10 @@ import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.ConfigurationExtension;
+import org.axonframework.common.configuration.ConfigurationExtensions;
+import org.axonframework.common.configuration.ExtendedConfiguration;
+import org.axonframework.common.configuration.ExtensibleConfigurer;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -37,11 +41,11 @@ import org.axonframework.messaging.monitoring.NoOpMessageMonitor;
 import org.axonframework.messaging.monitoring.configuration.MessageMonitorRegistry;
 import org.jspecify.annotations.Nullable;
 
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
@@ -54,7 +58,7 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * @author Mateusz Nowak
  * @since 5.0.0
  */
-public class EventProcessorConfiguration implements DescribableComponent {
+public class EventProcessorConfiguration implements ExtendedConfiguration, ExtensibleConfigurer, DescribableComponent {
 
     protected final String processorName;
     protected ErrorHandler errorHandler = PropagatingErrorHandler.INSTANCE;
@@ -64,6 +68,7 @@ public class EventProcessorConfiguration implements DescribableComponent {
             (processorType, name) -> new ArrayList<>();
     protected BiFunction<Class<? extends EventProcessor>, String, MessageMonitor<? super EventMessage>> monitorBuilder =
             (processorType, name) -> NoOpMessageMonitor.INSTANCE;
+    private final ConfigurationExtensions extensions = new ConfigurationExtensions(this);
 
     /**
      * Constructs a new {@code EventProcessorConfiguration} with default values and retrieve global default values.
@@ -102,6 +107,7 @@ public class EventProcessorConfiguration implements DescribableComponent {
         this.interceptors = new ArrayList<>(base.interceptors);
         this.interceptorBuilder = base.interceptorBuilder;
         this.monitorBuilder = base.monitorBuilder;
+        this.extensions.extendFrom(base.extensions);
     }
 
     /**
@@ -138,6 +144,16 @@ public class EventProcessorConfiguration implements DescribableComponent {
      */
     protected void validate() throws AxonConfigurationException {
         assertNonNull(unitOfWorkFactory, "The UnitOfWorkFactory is a hard requirement and should be provided");
+        extensions.validate();
+    }
+
+    /**
+     * Returns the name of the processor this configuration is for.
+     *
+     * @return The processor name.
+     */
+    public String processorName() {
+        return processorName;
     }
 
     /**
@@ -168,9 +184,24 @@ public class EventProcessorConfiguration implements DescribableComponent {
     }
 
     @Override
+    public <T extends ConfigurationExtension<?>> @Nullable T extension(Class<T> extensionType) {
+        return extensions.extension(extensionType);
+    }
+
+    @Override
+    public <T extends ConfigurationExtension<?>> EventProcessorConfiguration extend(
+            Class<T> extensionType,
+            Supplier<T> factory
+    ) {
+        extensions.extend(extensionType, factory);
+        return this;
+    }
+
+    @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("errorHandler", errorHandler);
         descriptor.describeProperty("unitOfWorkFactory", unitOfWorkFactory);
         descriptor.describeProperty("interceptors", interceptors);
+        extensions.describeTo(descriptor);
     }
 }

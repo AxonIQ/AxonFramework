@@ -19,7 +19,7 @@ package org.axonframework.integrationtests.testsuite.course;
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.AbstractAxonServerIT;
+import org.axonframework.integrationtests.testsuite.AbstractIT;
 import org.axonframework.integrationtests.testsuite.course.commands.CreateCourse;
 import org.axonframework.integrationtests.testsuite.course.commands.PublishCourse;
 import org.axonframework.integrationtests.testsuite.course.module.SealedClassCourseCommandHandlers;
@@ -32,12 +32,12 @@ import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class SealedClassCourseIT extends AbstractAxonServerIT {
+public abstract class SealedClassCourseIT extends AbstractIT {
 
     protected UnitOfWorkFactory unitOfWorkFactory;
 
     @Override
-    protected ApplicationConfigurer createConfigurer() {
+    protected ApplicationConfigurer applicationConfigurer() {
         // configuration example see https://github.com/holixon/emn-kotlin/blob/8de05d6f3601df5de3d17e23066b2c7cef836d86/examples/university/src/main/kotlin/faculty/write/renamecoursepolymorph/RenameCoursePolymorphConfiguration.kt
         final var configurer = EventSourcingConfigurer.create();
         final var courseEntity = EventSourcedEntityModule.autodetected(String.class,

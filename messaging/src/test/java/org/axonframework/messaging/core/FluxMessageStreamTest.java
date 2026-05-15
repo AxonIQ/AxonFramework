@@ -19,12 +19,16 @@ package org.axonframework.messaging.core;
 import org.junit.jupiter.api.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -32,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  */
 class FluxMessageStreamTest extends MessageStreamTest<Message> {
 
@@ -91,5 +96,34 @@ class FluxMessageStreamTest extends MessageStreamTest<Message> {
         assertFalse(invoked.get());
         testSubject.close();
         assertTrue(invoked.get());
+    }
+
+    @Test
+    void whenFluxErrorsWhileConsumerIsAwaitingThenCallbackFires() throws InterruptedException {
+        // A sink lets us emit errors on demand from the test thread
+        Sinks.Many<Message> sink = Sinks.many().unicast().onBackpressureBuffer();
+        MessageStream<Message> testSubject = FluxUtils.asMessageStream(sink.asFlux());
+
+        // consumer calls next() on an empty flux -> NotReady -> awaitingData=true
+        assertThat(testSubject.next()).isEmpty();
+        assertThat(testSubject.isCompleted()).isFalse();
+
+        CountDownLatch callbackFired = new CountDownLatch(1);
+
+        testSubject.setCallback(callbackFired::countDown);
+
+        // error arrives asynchronously from the producer side
+        RuntimeException error = new RuntimeException("async flux error");
+
+        sink.tryEmitError(error);
+
+        // without signalProgress() in onError(), this times out
+        assertThat(callbackFired.await(5, TimeUnit.SECONDS))
+            .as("callback must fire when Flux errors while consumer is awaiting")
+            .isTrue();
+
+        // consuming the error completes the stream exceptionally
+        assertThat(testSubject.next()).isEmpty();
+        assertThat(testSubject.error()).contains(error);
     }
 }

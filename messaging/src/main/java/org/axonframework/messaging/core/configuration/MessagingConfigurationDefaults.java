@@ -20,6 +20,8 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -84,7 +86,6 @@ import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.interception.InterceptingQueryBus;
-
 
 import java.util.List;
 
@@ -165,7 +166,7 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
     private static void registerComponents(ComponentRegistry registry) {
         registry.registerIfNotPresent(MessageTypeResolver.class,
                                       MessagingConfigurationDefaults::defaultMessageTypeResolver)
-                .registerIfNotPresent(Converter.class, c -> new JacksonConverter())
+                .registerIfNotPresent(GeneralConverter.class, c -> defaultGeneralConverter())
                 .registerIfNotPresent(MessageConverter.class, MessagingConfigurationDefaults::defaultMessageConverter)
                 .registerIfNotPresent(EventConverter.class, MessagingConfigurationDefaults::defaultEventConverter)
                 .registerIfNotPresent(UnitOfWorkFactory.class, MessagingConfigurationDefaults::defaultUnitOfWorkFactory)
@@ -200,14 +201,18 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
         return new AnnotationMessageTypeResolver();
     }
 
+    private static DelegatingGeneralConverter defaultGeneralConverter() {
+        return new DelegatingGeneralConverter(new JacksonConverter());
+    }
+
     private static DelegatingMessageConverter defaultMessageConverter(Configuration c) {
-        return new DelegatingMessageConverter(c.getComponent(Converter.class));
+        return new DelegatingMessageConverter(c.getComponent(GeneralConverter.class));
     }
 
     private static DelegatingEventConverter defaultEventConverter(Configuration c) {
         return c.getOptionalComponent(MessageConverter.class)
                 .map(DelegatingEventConverter::new)
-                .orElse(new DelegatingEventConverter(c.getComponent(Converter.class)));
+                .orElse(new DelegatingEventConverter(c.getComponent(GeneralConverter.class)));
     }
 
     private static UnitOfWorkFactory defaultUnitOfWorkFactory(Configuration config) {

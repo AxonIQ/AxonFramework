@@ -28,7 +28,7 @@ import java.nio.file.Files;
 import java.util.Properties;
 
 /**
- * A {@link UsagePropertyProvider} that reads the AxonIQ Data Collection properties from a file located at
+ * A {@link UsagePropertyProvider} that reads the Axoniq Data Collection properties from a file located at
  * {@code ~/.axoniq/update-checker.properties}.
  * <p>
  * If the file does not exist, it creates a default file with the default telemetry endpoint and opt-out settings, using
@@ -87,7 +87,7 @@ public class PropertyFileUsagePropertyProvider implements UsagePropertyProvider 
             this.telemetryEndpoint = properties.getProperty(TELEMETRY_URL_FIELD_NAME);
             this.disabled = Boolean.valueOf(properties.getProperty(DISABLED_PROPERTY_NAME));
         } catch (Exception e) {
-            logger.debug("Failed to load AxonIQ properties from file: {}. Skipping property provider from file.",
+            logger.debug("Failed to load Axoniq properties from file: {}. Skipping property provider from file.",
                          getFile() != null ? getFile().getAbsolutePath() : "unknown", e);
         }
     }
@@ -103,7 +103,7 @@ public class PropertyFileUsagePropertyProvider implements UsagePropertyProvider 
             logger.debug("Could not determine user home directory. Skipping creation of default properties file.");
             return;
         }
-        logger.info("Creating default AxonIQ Data Collection properties file at: {}", file.getAbsolutePath());
+        logger.info("Creating default Axoniq Data Collection properties file at: {}", file.getAbsolutePath());
         Properties properties = new Properties();
         properties.setProperty(TELEMETRY_URL_FIELD_NAME, DefaultUsagePropertyProvider.INSTANCE.getUrl());
         properties.setProperty(DISABLED_PROPERTY_NAME,
@@ -114,7 +114,7 @@ public class PropertyFileUsagePropertyProvider implements UsagePropertyProvider 
             throw new IOException("Failed to create parent directory: " + parentDir.getAbsolutePath());
         }
         try (OutputStream out = Files.newOutputStream(file.toPath())) {
-            properties.store(out, "AxonIQ Anonymous Usage Reporting");
+            properties.store(out, "Axoniq Anonymous Usage Reporting");
         }
     }
 

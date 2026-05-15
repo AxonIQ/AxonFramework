@@ -17,8 +17,6 @@
 package org.axonframework.examples.university.read.coursestats.projection;
 
 import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -26,11 +24,6 @@ import org.springframework.context.annotation.Configuration;
 public class CoursesStatsProjectionConfiguration {
 
     public static String PROCESSOR_NAME = "courses-processor";
-
-    @Bean
-    TokenStore tokenStore() {
-        return new InMemoryTokenStore();
-    }
 
     @Bean
     CourseStatsRepository courseStatsRepository() {

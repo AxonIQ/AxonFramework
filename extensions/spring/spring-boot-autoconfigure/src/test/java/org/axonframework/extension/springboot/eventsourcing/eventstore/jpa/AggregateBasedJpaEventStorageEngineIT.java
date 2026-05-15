@@ -110,6 +110,13 @@ class AggregateBasedJpaEventStorageEngineIT
 
     private AggregateBasedJpaEventStorageEngine engine;
 
+    @AfterEach
+    void afterEach() {
+        if (testSubject != null) {
+            testSubject.close();
+        }
+    }
+
     @Override
     protected AggregateBasedJpaEventStorageEngine buildStorageEngine() {
         transactionManager = new SpringTransactionManager(platformTransactionManager, entityManagerProvider, null);
@@ -134,14 +141,6 @@ class AggregateBasedJpaEventStorageEngineIT
         );
 
         return engine;
-    }
-
-    @AfterEach
-    void afterEach() {
-        if (engine != null) {
-            engine.close();
-            engine = null;
-        }
     }
 
     @Override
@@ -185,7 +184,7 @@ class AggregateBasedJpaEventStorageEngineIT
 
         stream.close();
 
-        assertThat(stream.isCompleted()).isFalse();  // only closed, not completed
+        assertThat(stream.isCompleted()).isTrue();
         assertThat(stream.hasNextAvailable()).isFalse();
         assertThat(stream.next()).isEmpty();
         assertThat(stream.peek()).isEmpty();
@@ -193,7 +192,7 @@ class AggregateBasedJpaEventStorageEngineIT
 
         stream.close();  // test whether closing again is a no-op
 
-        assertThat(stream.isCompleted()).isFalse();  // only closed, not completed
+        assertThat(stream.isCompleted()).isTrue();
         assertThat(stream.hasNextAvailable()).isFalse();
         assertThat(stream.next()).isEmpty();
         assertThat(stream.peek()).isEmpty();
@@ -215,10 +214,7 @@ class AggregateBasedJpaEventStorageEngineIT
         assertThat(stream.hasNextAvailable()).isFalse();
         assertThat(stream.isCompleted()).isFalse();
         assertThat(stream.error()).isEmpty();
-        assertThat(called).isTrue();  // callback is always called initially
-
-        // Reset callback flag:
-        called.set(false);
+        assertThat(called).isFalse();  // callback NOT called because there is no element available, and it is not completed either
 
         // Ensure that callback isn't just called randomly, but only when something is appended:
         await().during(Duration.ofSeconds(1)).untilAsserted(() -> assertThat(called).isFalse());
@@ -430,14 +426,6 @@ class AggregateBasedJpaEventStorageEngineIT
                                 }
                             })
             );
-        }
-
-        @AfterEach
-        void tearDown() {
-            if (localEngine != null) {
-                localEngine.close();
-                localEngine = null;
-            }
         }
 
         @Test

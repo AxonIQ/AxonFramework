@@ -1,0 +1,29 @@
+include::migration:partial$nav.adoc[]
+
+include::messaging-concepts:partial$nav.adoc[]
+
+include::commands:partial$nav.adoc[]
+
+include::events:partial$nav.adoc[]
+
+include::queries:partial$nav.adoc[]
+
+include::testing:partial$nav.adoc[]
+
+* xref:ROOT:conversion.adoc[]
+
+ifdef::data-protection[]
+include::data-protection:partial$nav.adoc[]
+endif::[]
+
+include::tuning:partial$nav.adoc[]
+
+include::monitoring:partial$nav.adoc[]
+
+* xref:ROOT:spring-boot-integration.adoc[]
+
+* xref:ROOT:modules.adoc[]
+
+include::release-notes:partial$nav.adoc[]
+
+* xref:ROOT:known-issues-and-workarounds.adoc[]

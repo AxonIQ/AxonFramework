@@ -62,12 +62,13 @@ class MultiMessageMonitorTest {
 
     @Test
     void onMessageIngested_MultipleMessageMonitors(
-        @Mock MessageMonitor<Message> messageMonitorMock1,
-        @Mock MessageMonitor<Message> messageMonitorMock2
+            @Mock MessageMonitor<Message> messageMonitorMock1,
+            @Mock MessageMonitor<Message> messageMonitorMock2
     ) {
         MessageMonitor.MonitorCallback callback1 = mock(MessageMonitor.MonitorCallback.class);
         MessageMonitor.MonitorCallback callback2 = mock(MessageMonitor.MonitorCallback.class);
-        MultiMessageMonitor<Message> multiMessageMonitor = new MultiMessageMonitor<>(Arrays.asList(messageMonitorMock1, messageMonitorMock2));
+        MultiMessageMonitor<Message> multiMessageMonitor = new MultiMessageMonitor<>(Arrays.asList(messageMonitorMock1,
+                                                                                                   messageMonitorMock2));
         Message messageMock = mock(Message.class);
         Mockito.when(messageMonitorMock1.onMessageIngested(messageMock)).thenReturn(callback1);
         Mockito.when(messageMonitorMock2.onMessageIngested(messageMock)).thenReturn(callback2);

@@ -36,3 +36,4 @@ docs/_playbook/build
 
 # just - console helper
 .justfile
+.flattened-pom.xml

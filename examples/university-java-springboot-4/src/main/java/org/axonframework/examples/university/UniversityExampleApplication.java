@@ -18,11 +18,16 @@ package org.axonframework.examples.university;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
 
 /**
  * Main application class.
  */
 @SpringBootApplication
+@EntityScan(basePackages = {
+        "org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa",
+        "org.axonframework.eventsourcing.eventstore.jpa"
+})
 public class UniversityExampleApplication {
 
     /**

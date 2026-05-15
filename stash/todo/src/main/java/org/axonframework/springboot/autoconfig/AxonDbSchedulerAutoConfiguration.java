@@ -18,21 +18,20 @@ package org.axonframework.springboot.autoconfig;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.task.Task;
-import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
-import org.axonframework.config.ConfigurationScopeAwareProvider;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.config.ConfigurationScopeAwareProvider;
+import org.axonframework.conversion.Serializer;
 import org.axonframework.deadline.DeadlineManager;
 import org.axonframework.deadline.DeadlineManagerSpanFactory;
 import org.axonframework.deadline.dbscheduler.DbSchedulerBinaryDeadlineDetails;
 import org.axonframework.deadline.dbscheduler.DbSchedulerDeadlineManager;
+import org.axonframework.extension.springboot.util.ConditionalOnMissingQualifiedBean;
+import org.axonframework.messaging.core.ScopeAwareProvider;
+import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.scheduling.EventScheduler;
 import org.axonframework.messaging.eventhandling.scheduling.dbscheduler.DbSchedulerBinaryEventData;
 import org.axonframework.messaging.eventhandling.scheduling.dbscheduler.DbSchedulerEventScheduler;
-import org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration;
-import org.axonframework.messaging.core.ScopeAwareProvider;
-import org.axonframework.conversion.Serializer;
-import org.axonframework.extension.springboot.util.ConditionalOnMissingQualifiedBean;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -49,8 +48,13 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @ConditionalOnBean(Scheduler.class)
-@AutoConfigureAfter(value = {AxonServerAutoConfiguration.class, AxonTracingAutoConfiguration.class},
-        name = {"com.github.kagkarlsson.scheduler.boot.autoconfigure.DbSchedulerAutoConfiguration"})
+@AutoConfigureAfter(
+        value = {AxonTracingAutoConfiguration.class},
+        name = {
+                "com.github.kagkarlsson.scheduler.boot.autoconfigure.DbSchedulerAutoConfiguration",
+                "io.axoniq.framework.springboot.autoconfig.AxonServerAutoConfiguration"
+        }
+)
 public class AxonDbSchedulerAutoConfiguration {
 
     @Bean

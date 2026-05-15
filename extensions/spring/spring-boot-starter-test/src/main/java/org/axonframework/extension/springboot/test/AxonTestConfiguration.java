@@ -36,10 +36,11 @@ import org.springframework.core.env.Environment;
  *     {@link AxonConfiguration}.</li>
  * </ul>
  * <p>
- * The fixture's {@link AxonTestFixture.Customization} can be overridden by declaring a bean of that type in the
- * test class (e.g. in an inner {@code @TestConfiguration} class). When no such bean is present, a default
+ * The fixture's {@link AxonTestFixture.Customization} can be overridden by declaring a bean of that type in the test
+ * class (e.g. in an inner {@code @TestConfiguration} class). When no such bean is present, a default
  * {@code Customization} is derived from the Spring {@link org.springframework.core.env.Environment}: the
- * {@code axon.axonserver.enabled} property controls whether Axon Server is enabled in the fixture.
+ * {@code axon.axonserver.enabled} property controls whether
+ * {@link AxonTestFixture.Customization#integrationEnabled() integration is enabled} in the fixture.
  *
  * @author Mateusz Nowak
  * @since 5.1.0
@@ -63,19 +64,19 @@ class AxonTestConfiguration {
      * Registers an {@link AxonTestFixture} wired with the Spring-managed {@link AxonConfiguration}.
      * <p>
      * If the test context contains a {@link AxonTestFixture.Customization} bean (e.g. declared in an inner
-     * {@code @TestConfiguration} class), it is used to configure the fixture. Otherwise a default
-     * {@code Customization} is built by reading the {@code axon.axonserver.enabled} property from the
-     * Spring {@link Environment}:
+     * {@code @TestConfiguration} class), it is used to configure the fixture. Otherwise, a default
+     * {@code Customization} is built by reading the {@code axon.axonserver.enabled} property from the Spring
+     * {@link Environment}:
      * <ul>
-     *     <li>When the property is {@code false}, Axon Server is disabled via
-     *     {@link AxonTestFixture.Customization#disableAxonServer()}.</li>
-     *     <li>When the property is {@code true} or absent, Axon Server remains enabled (the default).</li>
+     *     <li>When the property is {@code true}, we mark the test as an
+     *     {@link AxonTestFixture.Customization#asIntegrationTest() integration test}.</li>
+     *     <li>When the property is {@code false} or absent, we keep the fixture as a regular test (the default).</li>
      * </ul>
      * A custom {@link AxonTestFixture.Customization} bean always takes full precedence over this default.
      *
-     * @param configuration  the Axon application configuration provided by the Spring context
-     * @param customization  optional provider for a {@link AxonTestFixture.Customization} bean
-     * @param environment    the Spring environment used to resolve the {@code axon.axonserver.enabled} property
+     * @param configuration the Axon application configuration provided by the Spring context
+     * @param customization optional provider for a {@link AxonTestFixture.Customization} bean
+     * @param environment   the Spring environment used to resolve the {@code axon.axonserver.enabled} property
      * @return a ready-to-use {@link AxonTestFixture}
      */
     @Bean(destroyMethod = "stop")
@@ -91,8 +92,8 @@ class AxonTestConfiguration {
     }
 
     private static AxonTestFixture.Customization defaultCustomization(Environment environment) {
-        boolean axonServerEnabled = environment.getProperty("axon.axonserver.enabled", Boolean.class, true);
+        boolean axonServerEnabled = environment.getProperty("axon.axonserver.enabled", Boolean.class, false);
         var customization = new AxonTestFixture.Customization();
-        return axonServerEnabled ? customization : customization.disableAxonServer();
+        return axonServerEnabled ? customization.asIntegrationTest() : customization;
     }
 }

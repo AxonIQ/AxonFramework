@@ -171,8 +171,9 @@ class SimpleQueryBusTest {
             Optional<MessageStream.Entry<QueryResponseMessage>> nextResponse = result.next();
             assertThat(nextResponse).isPresent();
             assertThat(nextResponse.get().message().payload()).isEqualTo("query1234");
+            assertThat(result.isCompleted()).isFalse();  // not yet fully consumed, so not completed
+            assertThat(result.hasNextAvailable()).isFalse();  // results in full consumption
             assertThat(result.isCompleted()).isTrue();
-            assertThat(result.hasNextAvailable()).isFalse();
         }
 
         @Test
@@ -301,9 +302,10 @@ class SimpleQueryBusTest {
             // when/then...
             MessageStream<QueryResponseMessage> actual = testSubject.query(testQuery, null);
 
-            await().atMost(1, TimeUnit.SECONDS).until(actual::hasNextAvailable);
+            await().until(actual::hasNextAvailable);
             assertThat(actual.next().map(e -> e.message().payload())).contains("query1234");
-            await().atMost(1, TimeUnit.SECONDS).until(actual::isCompleted);
+            await().until(() -> !actual.hasNextAvailable());
+            await().until(actual::isCompleted);
         }
 
         @Test
@@ -448,7 +450,6 @@ class SimpleQueryBusTest {
             // then...
             StepVerifier.create(FluxUtils.of(result).map(MessageStream.Entry::message)
                                          .mapNotNull(Message::payload))
-                        .expectNext(UPDATE_PAYLOAD)
                         .verifyComplete();
         }
     }

@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../../build/parent/pom.xml</relativePath>
     </parent>
 
@@ -48,11 +48,6 @@
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-eventsourcing</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-server-connector</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -168,6 +163,10 @@
             <groupId>org.dom4j</groupId>
             <artifactId>dom4j</artifactId>
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
         </dependency>
         <!-- Database -->
         <dependency>

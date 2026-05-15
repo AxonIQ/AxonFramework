@@ -1,5 +1,6 @@
 package org.axonframework.examples.demo.university;
 
+import io.axoniq.framework.testcontainer.AxonServerContainerUtils;
 import org.axonframework.examples.demo.university.faculty.FacultyModuleConfiguration;
 import org.assertj.core.api.Assertions;
 import org.axonframework.common.configuration.AxonConfiguration;
@@ -10,7 +11,6 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.test.fixture.MessagesRecordingConfigurationEnhancer;
 import org.axonframework.test.fixture.RecordingComponentsRegistry;
-import org.axonframework.test.server.AxonServerContainerUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 

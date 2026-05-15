@@ -1,6 +1,5 @@
 site:
   title: Axon Framework docs PREVIEW
-  start_page: axon-framework-reference::index.adoc
 
 content:
   sources:
@@ -40,3 +39,4 @@ runtime:
 ui:
   bundle:
     url: https://github.com/AxonIQ/axoniq-library-ui/releases/latest/download/ui-bundle.zip
+    snapshot: true # forces Antora to skip the cache for the ui-bundle

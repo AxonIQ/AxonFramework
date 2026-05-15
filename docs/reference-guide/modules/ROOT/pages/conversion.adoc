@@ -15,7 +15,7 @@ Axon Framework uses a flexible approach to message identification and conversion
 
 === Message type vs Java class
 
-Messages in Axon Framework are identified by their `MessageType` (as described in the xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
+Messages in Axon Framework are identified by their `MessageType` (as described in the xref:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
 
 * A `QualifiedName` - The fully qualified business name of the message, consisting of:
 ** A `namespace` (defaults to the package name of the message class)
@@ -28,7 +28,7 @@ This approach means that:
 * Different handlers can receive the same message in different Java types
 * The Java class is one possible representation of a message, not its sole identifier
 
-For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
+For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
 
 === Payload conversion at handling time
 
@@ -122,16 +122,16 @@ This ensures all downstream code like command handlers, event processors, dead-l
 [#converter_types]
 == Converter types
 
-Axon Framework uses a hierarchy of converters to handle different conversion needs. The lowest level is the so-called <<general_converter,general converter>>. From there, it moves to the more specific <<message_converter,message converter>>, and ends with the <<event_converter,event converter>>.
+Axon Framework provides a basic `Converter` interface that defines the contract for converting between types.
+Based on that interface, Axon Framework uses a hierarchy of converters to handle different conversion needs.
+The lowest level is the so-called <<general_converter,general converter>>.
+From there, it moves to the more specific <<message_converter,message converter>>, and ends with the <<event_converter,event converter>>.
 
 [#general_converter]
 === General converter
 
-The `Converter` interface is the foundation for all conversion in Axon Framework.
-It provides methods to:
-
-* Check if conversion between two types is possible (`canConvert`)
-* Convert an object from one type to another (`convert`)
+The `GeneralConverter` interface is the foundation for all conversion in Axon Framework.
+It provides a single method to convert an object from one type to another (`convert`).
 
 Implementations as described in more detail in the <<converter_implementations,Converter implementations>> section handle the actual conversion logic. We call this instance the general converter, is it is generally used for all non-`Message` components.
 
@@ -162,7 +162,7 @@ This converter is used by the event store and event processors.
 
 Axon Framework allows you to configure converters at three levels:
 
-1. **general** - Used for everything that needs to be converted, unless specified by other levels.
+1. **general** - Used for everything that needs to be converted, unless specified by other levels (uses `GeneralConverter`).
 2. **messages** - Used to convert all command and query messages (uses `MessageConverter`).
 3. **events** - Used to convert all event messages (uses `EventConverter`).
 
@@ -225,6 +225,16 @@ public Converter customJacksonConverter() {
 ----
 
 TIP: If you have not migrated to Jackson 3 yet, Axon Framework also provides a `Jackson2Converter` in the `org.axonframework.conversion.jackson2` package. This converter uses the Jackson 2 library (`com.fasterxml.jackson`) and works identically to the `JacksonConverter`.
+
+[#jackson3_converter_final_fields_note]
+[IMPORTANT]
+====
+Jackson 3 changed the default deserializing `final` fields (see https://github.com/FasterXML/jackson-databind/issues/4552[the original Jackson GitHub issue] for details).
+This prevents `final` fields from being deserialized, which—for example—might affect usages of Kotlin `val` properties for message payloads (because they are `final` by default).
+
+When upgrading to Jackson 3, be sure to check if any of your payloads that get serialized using the `JacksonConverter` (that is using Jackson 3 under the hood) are affected by this change.
+If so, you can either set the Jackson 3 feature `ALLOW_FINAL_FIELDS_AS_MUTATORS` to `true`, or adjust your payload representation in code as necessary.
+====
 
 ==== XML support
 
@@ -317,7 +327,8 @@ To configure converters, use the `MessagingConfigurer` and register components t
 
 [source,java]
 ----
-import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
@@ -328,30 +339,32 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 class AxonConfig {
 
     public void converterConfiguration(MessagingConfigurer configurer) {
-        // Register the base converter
-        configurer.componentRegistry(cr -> cr.registerComponent(
-                          Converter.class,
-                          config -> new JacksonConverter()
-                  ))
-                  // Register the message converter (wraps the base converter)
-                  .componentRegistry(cr -> cr.registerComponent(
-                          MessageConverter.class,
-                          config -> new DelegatingMessageConverter(config.getComponent(Converter.class))
-                  ))
-                  // Register the event converter (wraps the message converter)
-                  .componentRegistry(cr -> cr.registerComponent(
-                          EventConverter.class,
-                          config -> new DelegatingEventConverter(config.getComponent(MessageConverter.class))
-                  ));
+
+        configurer
+                // Register the general converter
+                .componentRegistry(cr -> cr.registerComponent(
+                        GeneralConverter.class,
+                        config -> new DelegatingGeneralConverter(new JacksonConverter())
+                ))
+                // Register the message converter (wraps the general converter)
+                .componentRegistry(cr -> cr.registerComponent(
+                        MessageConverter.class,
+                        config -> new DelegatingMessageConverter(config.getComponent(GeneralConverter.class))
+                ))
+                // Register the event converter (wraps the message converter)
+                .componentRegistry(cr -> cr.registerComponent(
+                        EventConverter.class,
+                        config -> new DelegatingEventConverter(config.getComponent(MessageConverter.class))
+                ));
     }
 }
 ----
 
 **Note:** If you don't explicitly configure converters, Axon Framework automatically registers:
 
-* A `JacksonConverter` as the default `Converter`
-* A `DelegatingMessageConverter` wrapping the `Converter`
-* A `DelegatingEventConverter` wrapping the `MessageConverter`
+* A `DelegatingGeneralConverter` wrapping a `JacksonConverter` as the **general** converter
+* A `DelegatingMessageConverter` wrapping the `GeneralConverter` as the **message** converter
+* A `DelegatingEventConverter` wrapping the `MessageConverter` as the **event** converter
 
 === Spring Boot configuration
 
@@ -365,8 +378,8 @@ In Spring environments, there are a number of ways to configure Axon's `Converte
 public class ConverterConfiguration {
 
    @Bean
-   public Converter converter() {
-      return new JacksonConverter();
+   public GeneralConverter converter() {
+       return new DelegatingGeneralConverter(new JacksonConverter());
    }
 
    @Bean
@@ -458,10 +471,12 @@ Both `JacksonConverter` and `AvroConverter` support lenient deserialization.
 ----
 public class ConverterConfiguration {
 
-    public Converter buildConverter() {
-        return new JacksonConverter(new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            .findAndRegisterModules());
+    public GeneralConverter buildConverter() {
+        return new DelegatingGeneralConverter(
+                new JacksonConverter(new ObjectMapper()
+                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .findAndRegisterModules())
+            );
     }
 }
 ----
@@ -549,10 +564,10 @@ Register your custom content type converter with your main converter:
 
 [source,java]
 ----
-public Converter converterWithCustomContentTypeConverter() {
+public GeneralConverter converterWithCustomContentTypeConverter() {
     ChainingContentTypeConverter contentTypeConverter = new ChainingContentTypeConverter();
     contentTypeConverter.registerConverter(new MyContentTypeConverter());
 
-    return new JacksonConverter(new ObjectMapper(), contentTypeConverter);
+    return new DelegatingGeneralConverter(new JacksonConverter(new ObjectMapper(), contentTypeConverter));
 }
 ----

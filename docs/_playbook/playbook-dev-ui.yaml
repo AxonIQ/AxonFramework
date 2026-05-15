@@ -1,11 +1,10 @@
 site:
   title: Axon Framework docs PREVIEW
-  start_page: axon-framework-reference::index.adoc
 
 content:
   sources:
   - url: ../..
-    start_paths: ['docs/*', '!docs/_*', '!docs/ref*']
+    start_paths: ['docs/*', '!docs/_*', '!docs/reference/*']
 
 asciidoc:
   attributes:
@@ -40,3 +39,4 @@ runtime:
 ui:
   bundle:
     url: localLinks/axoniq-library-ui/build/ui-bundle.zip
+    snapshot: true

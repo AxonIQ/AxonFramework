@@ -16,16 +16,15 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.DescribableComponent;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
 import org.axonframework.messaging.eventstreaming.Tag;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.List;
@@ -107,7 +106,7 @@ public interface EventStorageEngine extends DescribableComponent {
      * {@link #appendEvents(AppendCondition, ProcessingContext, List) appending events}.
      * <p>
      * The {@code condition} dictates the sequence to load based on the {@link SourcingCondition#criteria()}.
-     * Additionally, an optional {@link SourcingCondition#start()} position may be provided.
+     * Additionally, an optional {@link SourcingCondition#strategy()} may be provided.
      * <p>
      * The returned stream is finite, i.e. it should not block to wait for further events if the end of the event stream
      * of the aggregate is reached.

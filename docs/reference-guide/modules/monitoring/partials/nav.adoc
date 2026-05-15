@@ -1,5 +1,7 @@
 * xref:monitoring:index.adoc[]
-** xref:monitoring:tracing.adoc[]
+ifdef::advanced-framework[]
+** xref:tracing:index.adoc[]
+endif::[]
 ** xref:monitoring:metrics.adoc[]
 ** xref:monitoring:health.adoc[]
 ** xref:monitoring:processors.adoc[]

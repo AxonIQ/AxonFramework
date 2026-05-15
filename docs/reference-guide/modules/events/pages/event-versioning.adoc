@@ -27,8 +27,8 @@ For example, consider an event stored with this structure:
 ----
 @Event(name = "OrderPlaced", version = "1.0.0")
 public record OrderPlacedEvent(
-    String orderId, 
-    String customerId, 
+    String orderId,
+    String customerId,
     List<String> productIds
 ) {
 }
@@ -230,7 +230,7 @@ As upcasters work on a stream of events, all that can ever belong to the context
 
 However, this "stream of events" is not identical at all times.
 For example, when an entity is event-sourced, the event stream consists of entity instance-specific events.
-Furthermore, the stream of events starts from the xref:event-processors/streaming.adoc#tracking-tokens[tracking token's] position for a xref:event-processors/streaming.adoc[streaming event processor].
+Furthermore, the stream of events starts from the xref:event-processors/streaming.adoc#tracking_tokens[tracking token's] position for a xref:event-processors/streaming.adoc[streaming event processor].
 Hence, the context contains different states depending on what's included in the event stream.
 ====
 
@@ -256,8 +256,8 @@ New version of the event:
 ----
 @Event(name = "Complaint", version = "2.0")
 public record ComplaintEvent(
-    String id, 
-    String companyName, 
+    String id,
+    String companyName,
     String description
 ) {
 }
@@ -324,7 +324,7 @@ public class ComplaintEvent1_to_2Upcaster extends SingleEventUpcaster {
       return intermediateRepresentation.upcastPayload(
               new SimpleSerializedType(TARGET_TYPE.getName(), "2.0"),
               com.fasterxml.jackson.databind.JsonNode.class,
-              event -> { 
+              event -> {
                   ((ObjectNode) event).put("description", "no complaint description");
                   return event;
               }
@@ -404,7 +404,7 @@ public class AxonConfig {
     public SingleEventUpcaster complaintEventUpcasterOne() {
         return new ComplaintEvent0_to_1Upcaster();
     }
- 
+
     @Bean
     @Order(1)
     public SingleEventUpcaster complaintEventUpcasterTwo() {
@@ -435,51 +435,4 @@ public class AxonConfig {
 }
 ----
 --
-====
-
-[#upcasting_snapshots]
-=== Upcasting snapshots
-
-Although the description above leans towards event upcasting, note that all the given constructs can be used to upcast a xref:tuning:event-snapshots.adoc[snapshot].
-
-From the `abstract` upcaster implementations shared xref:provided_abstract_upcaster_implementations[earlier], the only feasible upcaster is the `SingleEventUpcaster`. We can logically deduce that a multi-upcaster would be incorrect, as only the last returned snapshot is used to load an entity. Furthermore, context-aware upcasters aren't necessary either, as any context-specific information in a snapshot is generated during event sourcing. Hence, if any data should carry over, simply reconstruct the snapshot instead.
-
-When upcasting events, the *type* to upcaster equals the fully qualified class name of the event itself. When upcasting snapshots, the type is the fully qualified class name of the *entity*. Knowing this detail, let's look at an example of a snapshot upcaster for the `GiftCard` entity (as exemplified xref:commands:modeling/aggregate.adoc[here]):
-
-[source,java]
-----
-public class GiftCardSnapshotNull_to_1Upcaster extends SingleEventUpcaster {
-
-   private static final SimpleSerializedType TARGET_TYPE =
-           new SimpleSerializedType(GiftCard.class.getTypeName(), null);
-
-   @Override
-   protected boolean canUpcast(IntermediateEventRepresentation intermediateRepresentation) {
-      return intermediateRepresentation.getType().equals(TARGET_TYPE);
-   }
-
-   @Override
-   protected IntermediateEventRepresentation doUpcast(
-           IntermediateEventRepresentation intermediateRepresentation
-   ) {
-      return intermediateRepresentation.upcastPayload(
-              new SimpleSerializedType(TARGET_TYPE.getName(), "1"),
-              org.dom4j.Document.class,
-                            com.fasterxml.jackson.databind.JsonNode.class,
-              event -> {
-                  ((ObjectNode) event).put("owner", "[owner-id]");
-                  return event;
-              }
-      );
-   }
-}
-----
-
-[WARNING]
-====
-Whenever constructing a snapshot upcaster, be mindful of xref:tuning:event-snapshots.adoc#_filtering_snapshot_events[`SnapshotFilters`].
-When using the `@Event` annotation's version field on your Entity, a `VersionSnapshotFilter` may be constructed by default.
-This filter can prevent snapshot events from reaching your upcaster.
-
-As such, it is advised to override the `SnapshotFilter` of an Entity to a no-op entry when you prefer to upcast your snapshots.
 ====

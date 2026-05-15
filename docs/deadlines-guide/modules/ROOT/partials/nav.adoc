@@ -1,4 +1,0 @@
-* xref::deciding.adoc[]
-* xref::implementing.adoc[]
-* xref::testing.adoc[]
-* xref::advanced.adoc[]

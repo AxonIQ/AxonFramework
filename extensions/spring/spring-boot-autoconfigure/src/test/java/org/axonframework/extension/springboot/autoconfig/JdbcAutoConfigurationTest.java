@@ -53,8 +53,7 @@ class JdbcAutoConfigurationTest {
     @BeforeEach
     void setUp() {
         testContext = new ApplicationContextRunner()
-                .withUserConfiguration(TestContext.class)
-                .withPropertyValues("axon.axonserver.enabled=false");
+                .withUserConfiguration(TestContext.class);
     }
 
     @Test

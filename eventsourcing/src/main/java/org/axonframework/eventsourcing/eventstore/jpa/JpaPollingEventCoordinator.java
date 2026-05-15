@@ -139,6 +139,13 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
             public void terminate() {
                 terminated.set(true);
                 pollingThread.interrupt();
+
+                try {
+                    pollingThread.join();
+                } catch (InterruptedException e) {
+                    // Best effort, tried waiting, but got interrupted, restore flag and ignore:
+                    Thread.currentThread().interrupt();
+                }
             }
         };
     }

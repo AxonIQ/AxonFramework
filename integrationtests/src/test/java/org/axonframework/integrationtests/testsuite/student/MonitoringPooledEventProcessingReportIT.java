@@ -38,7 +38,7 @@ import static org.awaitility.Awaitility.await;
  * This tests uses a {@link RecordingMessageMonitor} to verify that successfully processed events and ignored events are
  * reported correctly.
  */
-public class MonitoringPooledEventProcessingReportIT extends AbstractStudentIT {
+public abstract class MonitoringPooledEventProcessingReportIT extends AbstractStudentIT {
 
     private static final String NAME = MonitoringPooledEventProcessingReportIT.class.getSimpleName();
 
@@ -107,7 +107,7 @@ public class MonitoringPooledEventProcessingReportIT extends AbstractStudentIT {
     @Override
     protected EventSourcingConfigurer testSuiteConfigurer(EventSourcingConfigurer configurer) {
         // purge events to restart with an empty eventstore and avoid processing historic events
-        purgeEventStorage();
+        purgeData();
 
         // a noop setup that allows verification of ignored event
         configurer.messaging(mc -> mc

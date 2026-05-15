@@ -23,9 +23,11 @@ import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
+import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
@@ -35,6 +37,7 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A {@link ConfigurationEnhancer} registering the default components of the {@link EventSourcingConfigurer}.
@@ -50,6 +53,8 @@ import java.util.List;
  * </ul>
  * Furthermore, this enhancer will decorate the:
  * <ul>
+ *     <li>The {@link EventStorageEngine} in a {@link SnapshotCapableEventStorageEngine} <b>if</b> a
+ *     {@link SnapshotStore} is present and the engine does not already implement snapshot support.</li>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  * </ul>
@@ -78,6 +83,16 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
                 .registerIfNotPresent(EventStorageEngine.class,
                                       EventSourcingConfigurationDefaults::defaultEventStorageEngine)
                 .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore);
+        registry.registerDecorator(
+                EventStorageEngine.class,
+                SnapshotCapableEventStorageEngine.DECORATION_ORDER,
+                (config, name, engine) -> {
+                    Optional<SnapshotStore> snapshotStore = config.getOptionalComponent(SnapshotStore.class);
+                    return snapshotStore.isEmpty() || engine instanceof SnapshotStore
+                            ? engine
+                            : new SnapshotCapableEventStorageEngine(engine, snapshotStore.orElseThrow());
+                }
+        );
         registry.registerDecorator(
                 EventStore.class,
                 InterceptingEventStore.DECORATION_ORDER,

@@ -19,7 +19,6 @@ package org.axonframework.examples.university.shared;
 import jakarta.validation.constraints.NotNull;
 import org.jspecify.annotations.NonNull;
 
-
 import java.util.UUID;
 
 /**
@@ -38,20 +37,20 @@ public record CourseId(@NotNull String raw) {
         raw = withType(raw);
     }
 
-    public static CourseId of(String raw) {
+    public static CourseId of (String raw){
         return new CourseId(raw);
     }
 
-    public static CourseId random() {
+    public static CourseId random () {
         return new CourseId(UUID.randomUUID().toString());
     }
 
     @Override
-    public @NonNull String toString() {
+    public @NonNull String toString () {
         return raw;
     }
 
-    private static String withType(String id) {
+    private static String withType (String id){
         return id.startsWith(ENTITY_TYPE + ":") ? id : ENTITY_TYPE + ":" + id;
     }
 }

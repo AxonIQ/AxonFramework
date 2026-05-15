@@ -21,14 +21,10 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 
-import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 /**
  * A {@link MessageStream} implementation using a {@link Flux} as the source for {@link Entry entries}.
@@ -36,15 +32,21 @@ import java.util.function.Function;
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
     private final Flux<Entry<M>> source;
-    private final BlockingQueue<Entry<M>> peeked = new LinkedBlockingQueue<>(5);
-    private final AtomicBoolean sourceSubscribed = new AtomicBoolean();
+    private final BlockingQueue<FetchResult<Entry<M>>> peeked = new LinkedBlockingQueue<>(5);
     private final AtomicReference<@Nullable Subscription> subscription = new AtomicReference<>();
-    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicBoolean subscribed = new AtomicBoolean(false);
+
+    /**
+     * Indicates that the producer side will no longer produce new elements. The
+     * consumer side may still consume elements that are buffered.
+     */
+    private final AtomicBoolean sealed = new AtomicBoolean(false);
 
     /**
      * Constructs a {@link MessageStream stream} using the given {@code source} to provide the {@link Entry entries}.
@@ -56,100 +58,82 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
     }
 
     @Override
-    public <RM extends Message> MessageStream<RM> map(Function<Entry<M>, Entry<RM>> mapper) {
-        return new FluxMessageStream<>(source.map(mapper));
-    }
-
-    @Override
-    public <R> CompletableFuture<R> reduce(R identity,
-                                           BiFunction<R, Entry<M>, R> accumulator) {
-        return source.reduce(identity, accumulator).toFuture();
-    }
-
-    @Override
-    public Optional<Entry<M>> next() {
-        subscribeToSource();
-        Entry<M> poll = peeked.poll();
-        if (poll != null && peeked.isEmpty()) {
-            if (!closed.get()) {
-                subscription.get().request(1);
-            }
+    protected FetchResult<Entry<M>> fetchNext() {
+        if (subscribed.compareAndSet(false, true)) {
+            subscribeToSource();
         }
-        return Optional.ofNullable(poll);
+
+        FetchResult<Entry<M>> next = peeked.poll();
+
+        if (next == null) {
+            return sealed.get() ? FetchResult.completed() : FetchResult.notReady();
+        }
+
+        if (next instanceof FetchResult.Value) {
+            subscription.get().request(1);
+        }
+
+        return next;
     }
 
     @Override
-    public boolean isCompleted() {
-        // Consider the stream completed when the source has completed AND
-        // - there is no data left to consume
-        // - or an error occurred (in which case we want immediate completion)
-        return super.isCompleted() && (peeked.isEmpty() || super.error().isPresent());
+    protected final void onCompleted() {
+        seal();
     }
 
-    @Override
-    public boolean hasNextAvailable() {
-        subscribeToSource();
-        return !peeked.isEmpty();
+    private void subscribeToSource() {
+        source.subscribe(new Subscriber<>() {
+
+            @Override
+            public void onSubscribe(Subscription s) {
+                subscription.set(s);
+                s.request(1);
+            }
+
+            @Override
+            public void onNext(Entry<M> entry) {
+                peeked.add(FetchResult.of(entry));
+
+                signalProgress();
+
+                // If the signal triggered an error (in the callback), clear buffered entries to ensure immediate error propagation
+                if (error().isPresent()) {
+                    peeked.clear();
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                peeked.add(FetchResult.error(t));
+
+                seal();
+                signalProgress();
+            }
+
+            @Override
+            public void onComplete() {
+
+                /*
+                 * When the producer completes, do not close the stream directly (this is a consumer
+                 * decision). Instead only seal the stream, which effectively allows the consumer
+                 * to consume any remaining buffered elements before the stream transitions to
+                 * completed.
+                 *
+                 * Progress is signaled as the stream may have been awaiting data when the producer
+                 * completion signal arrived.
+                 */
+
+                seal();
+                signalProgress();
+            }
+        });
     }
 
-    @Override
-    public void close() {
-        closed.set(true);
+    private void seal() {
+        sealed.set(true);
         Subscription s = subscription.get();
         if (s != null) {
             s.cancel();
         }
     }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        subscribeToSource();
-        return Optional.ofNullable(peeked.peek());
-    }
-
-    @Override
-    public void setCallback(Runnable callback) {
-        super.setCallback(callback);
-        subscribeToSource();
-    }
-
-    private void subscribeToSource() {
-        if (!sourceSubscribed.getAndSet(true)) {
-            //noinspection ReactiveStreamsSubscriberImplementation
-            source.subscribe(new Subscriber<>() {
-
-                @Override
-                public void onSubscribe(Subscription s) {
-                    subscription.set(s);
-                    s.request(1);
-                }
-
-                @Override
-                public void onNext(Entry<M> mEntry) {
-                    peeked.add(mEntry);
-                    invokeCallbackSafely();
-                    // If the callback failed, clear buffered entries to ensure immediate error propagation
-                    if (error().isPresent()) {
-                        peeked.clear();
-                    }
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    completeExceptionally(t);
-                }
-
-                @Override
-                public void onComplete() {
-                    complete();
-                }
-            });
-        }
-    }
-
-    @Override
-    public MessageStream<M> onErrorContinue(Function<Throwable, MessageStream<M>> onError) {
-        return new FluxMessageStream<>(source.onErrorResume(exception -> FluxUtils.of(onError.apply(exception))));
-    }
-
 }

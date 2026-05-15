@@ -87,8 +87,7 @@ class SpringBeanResolverFactoryTest {
         COUNTER.set(0);
         processingContext = new StubProcessingContext().withMessage(EVENT_MESSAGE);
 
-        testApplicationContext = new ApplicationContextRunner().withPropertyValues("axon.axonserver.enabled=false")
-                                                               .withUserConfiguration(TestContext.class);
+        testApplicationContext = new ApplicationContextRunner().withUserConfiguration(TestContext.class);
     }
 
     @Test

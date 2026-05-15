@@ -51,7 +51,7 @@ Instead of a monolithic configuration class, you now compose modular configurers
 [source,java]
 ----
 import io.axoniq.axonserver.connector.AxonServerConnection;
-import org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
@@ -229,7 +229,7 @@ This breadth of responsibility made it difficult to reason about serialization a
 
 Axon Framework 5 breaks this into focused, composable pieces and replaces `Serializer` with a three-level `Converter` hierarchy with concrete types:
 
-1. **General Converter**: Used for all conversions unless a more specific converter is provided
+1. **GeneralConverter**: Used for all conversions unless a more specific converter is provided
 2. **MessageConverter**: Specifically handles conversion of `Message` implementations
 3. **EventConverter**: Specifically handles conversion of `EventMessage` implementations
 
@@ -237,8 +237,8 @@ Infrastructure components now enforce the use of the appropriate converter due t
 
 [source,java]
 ----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.springframework.context.annotation.Bean;

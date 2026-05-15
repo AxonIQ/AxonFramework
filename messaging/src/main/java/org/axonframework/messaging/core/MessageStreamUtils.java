@@ -16,7 +16,9 @@
 
 package org.axonframework.messaging.core;
 
-import java.util.Optional;
+import org.axonframework.common.annotation.Internal;
+import org.jspecify.annotations.Nullable;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -28,6 +30,7 @@ import java.util.function.BiFunction;
  * @author Allard Buijze
  * @since 5.0.0
  */
+@Internal
 public abstract class MessageStreamUtils {
 
     private MessageStreamUtils() {
@@ -68,57 +71,31 @@ public abstract class MessageStreamUtils {
      * @param <R>         The type of result expected from the reduction operation.
      * @return A {@code CompletableFuture} that completes with the result of the reduction operation.
      */
-    public static <M extends Message, R> CompletableFuture<R> reduce(MessageStream<M> source,
-                                                                     R identity,
-                                                                     BiFunction<R, MessageStream.Entry<M>, R> accumulator) {
-        Reducer<M, R> reducer = new Reducer<>(source, identity, accumulator);
+    public static <M extends Message, R> CompletableFuture<@Nullable R> reduce(MessageStream<M> source,
+                                                                               @Nullable R identity,
+                                                                               BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator) {
+        var reducer = new Reducer<>(source, identity, accumulator);
         source.setCallback(reducer::process);
         return reducer.result();
     }
 
-    /**
-     * Returns a {@code CompletableFuture} that completes with the first {@link MessageStream.Entry entry} from the
-     * given {@code source}.
-     * <p>
-     * If the given source has completed without producing any entries, the returned {@code CompletableFuture} will
-     * either complete with a {@code null} result if the source completed normally, or exceptionally if the source
-     * completed with an error.
-     * <p>
-     * Once the first entry is read from the source, it is automatically closed, and any subsequent entries in the
-     * {@code source} are ignored.
-     *
-     * @param source The source to read the first {@link MessageStream.Entry entry} from.
-     * @param <M>    The type of {@link Message} produced by the stream.
-     * @return A {@code CompletableFuture} that completes with the first {@link MessageStream.Entry entry} from the
-     * stream.
-     */
-    public static <M extends Message> CompletableFuture<MessageStream.Entry<M>> asCompletableFuture(
-            MessageStream<M> source
-    ) {
-        FirstResult<M> firstResult = new FirstResult<>(source);
-        source.setCallback(firstResult::process);
-        return firstResult.result();
-    }
-
     private static class Reducer<M extends Message, R> {
 
-
-        private final CompletableFuture<R> result;
+        private final CompletableFuture<@Nullable R> result = new CompletableFuture<>();
         private final MessageStream<M> source;
-        private final BiFunction<R, MessageStream.Entry<M>, R> accumulator;
+        private final BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator;
         private final AtomicBoolean processingGate = new AtomicBoolean(false);
 
-        private final AtomicReference<R> intermediateResult;
+        private final AtomicReference<@Nullable R> intermediateResult;
 
-        public Reducer(MessageStream<M> source, R identity,
-                       BiFunction<R, MessageStream.Entry<M>, R> accumulator) {
+        public Reducer(MessageStream<M> source, @Nullable R identity,
+                       BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator) {
             this.source = source;
             this.intermediateResult = new AtomicReference<>(identity);
             this.accumulator = accumulator;
-            this.result = new CompletableFuture<>();
         }
 
-        public CompletableFuture<R> result() {
+        public CompletableFuture<@Nullable R> result() {
             return result;
         }
 
@@ -127,8 +104,7 @@ public abstract class MessageStreamUtils {
             while (continueOnCurrentThread && !processingGate.getAndSet(true)) {
                 try {
                     while (source.hasNextAvailable()) {
-                        Optional<MessageStream.Entry<M>> nextItem = source.next();
-                        nextItem.ifPresent(e -> intermediateResult.updateAndGet(i -> accumulator.apply(i, e)));
+                        source.next().ifPresent(e -> intermediateResult.updateAndGet(i -> accumulator.apply(i, e)));
                     }
                     if (source.isCompleted()) {
                         source.error().ifPresentOrElse(result::completeExceptionally,
@@ -143,37 +119,6 @@ public abstract class MessageStreamUtils {
                 continueOnCurrentThread =
                         !result.isDone() && (source.hasNextAvailable() || source.isCompleted());
             }
-        }
-    }
-
-    private static class FirstResult<M extends Message> {
-
-        private final MessageStream<M> source;
-        private final AtomicBoolean processingGate = new AtomicBoolean(false);
-        private final CompletableFuture<MessageStream.Entry<M>> result = new CompletableFuture<>();
-
-        public FirstResult(MessageStream<M> source) {
-            this.source = source;
-        }
-
-        public void process() {
-            if (!processingGate.getAndSet(true)) {
-                try {
-                    if (!result.isDone() && source.hasNextAvailable()) {
-                        source.next().ifPresent(result::complete);
-                    }
-                    if (source.isCompleted() && !result.isDone()) {
-                        source.error().ifPresentOrElse(result::completeExceptionally,
-                                                       () -> result.complete(null));
-                    }
-                } finally {
-                    processingGate.set(false);
-                }
-            }
-        }
-
-        public CompletableFuture<MessageStream.Entry<M>> result() {
-            return result;
         }
     }
 }

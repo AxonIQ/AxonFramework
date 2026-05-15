@@ -16,7 +16,7 @@
 
 package org.axonframework.extension.springboot.autoconfig;
 
-import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.extension.springboot.ConverterProperties;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
@@ -42,17 +42,17 @@ import org.springframework.context.annotation.Bean;
 public class ConverterAutoConfiguration {
 
     /**
-     * Bean creation method constructing a {@link MessageConverter} delegating to the "general" {@link Converter} in
+     * Bean creation method constructing a {@link MessageConverter} delegating to the {@link GeneralConverter} in
      * case it uses {@code default}.
      *
-     * @param generalConverter the "general" {@link Converter}, used to construct the {@link MessageConverter} in case
+     * @param generalConverter the {@link GeneralConverter}, used to construct the {@link MessageConverter} in case
      *                         it uses {@code default}
      * @return the {@link MessageConverter} to be used by Axon Framework
      */
     @Bean(name = "messageConverter")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(name = "axon.converter.messages", havingValue = "default", matchIfMissing = true)
-    public MessageConverter delegatingMessageConverter(Converter generalConverter) {
+    public MessageConverter delegatingMessageConverter(GeneralConverter generalConverter) {
         return new DelegatingMessageConverter(generalConverter);
     }
 

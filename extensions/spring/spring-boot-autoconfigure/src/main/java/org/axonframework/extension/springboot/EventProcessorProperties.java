@@ -17,15 +17,15 @@
 package org.axonframework.extension.springboot;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.extension.spring.config.EventProcessorSettings;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
-import org.axonframework.extension.spring.config.EventProcessorSettings;
-import org.axonframework.messaging.core.sequencing.SequencingPolicy;
-import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -161,12 +161,6 @@ public class EventProcessorProperties {
          * from different Aggregate instances may be processed concurrently.
          */
         private String sequencingPolicy;
-
-        /**
-         * The {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue} settings that will be used for
-         * this processing group.
-         */
-        private Dlq dlq = new Dlq();
 
         /**
          * Returns the name of the bean that should be used as source for Event Messages. If not provided, the
@@ -376,124 +370,5 @@ public class EventProcessorProperties {
             this.sequencingPolicy = sequencingPolicy;
         }
 
-        /**
-         * Retrieves the AutoConfiguration settings for the sequenced dead letter queue settings.
-         *
-         * @return the AutoConfiguration settings for the sequenced dead letter queue settings.
-         */
-        public Dlq getDlq() {
-            return dlq;
-        }
-
-        /**
-         * Defines the AutoConfiguration settings for the sequenced dead letter queue.
-         *
-         * @param dlq the sequenced dead letter queue settings for the sequenced dead letter queue.
-         */
-        public void setDlq(Dlq dlq) {
-            this.dlq = dlq;
-        }
-
-        @Override
-        public EventProcessorSettings.DlqSettings dlq() {
-            return new EventProcessorSettings.DlqSettings() {
-                @Override
-                public boolean enabled() {
-                    return dlq.isEnabled();
-                }
-
-                @Override
-                public CacheSettings cache() {
-                    return () -> dlq.getCache().getSize();
-                }
-            };
-        }
-    }
-
-    /**
-     * Configuration for the Dead-letter-queue (DLQ).
-     */
-    public static class Dlq {
-
-        /**
-         * Enables creation and configuring a {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue}.
-         * Will be used to configure the {@code registerDeadLetterQueueProvider} such that only groups set to enabled
-         * will have a sequenced dead letter queue. Defaults to "false".
-         */
-        private boolean enabled = false;
-
-        /**
-         * The {@link DlqCache} settings that will be used for this dlq.
-         */
-        private DlqCache cache = new DlqCache();
-
-        /**
-         * Indicates whether creating and configuring a
-         * {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue} is enabled.
-         *
-         * @return true if creating the queue is enabled, false if otherwise
-         */
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        /**
-         * Enables (if {@code true}, default) or disables (if {@code false}) creating a
-         * {@link org.axonframework.messaging.deadletter.SequencedDeadLetterQueue}.
-         *
-         * @param enabled whether to enable token store creation.
-         */
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        /**
-         * Retrieves the cache settings for the sequenced dead letter queue.
-         *
-         * @return the cache settings.
-         */
-        public DlqCache getCache() {
-            return cache;
-        }
-
-        /**
-         * Defines the cache settings for the sequenced dead letter queue.
-         *
-         * @param cache the cache settings.
-         */
-        public void setCache(DlqCache cache) {
-            this.cache = cache;
-        }
-    }
-
-    /**
-     * Configuration for the Dead-Letter-Queue cache.
-     */
-    public static class DlqCache {
-
-        /**
-         * The maximum number of sequence identifiers to keep in memory per segment.
-         * Setting this to {@code 0} disables the caching wrapper entirely. Defaults to {@code 1024}.
-         */
-        private int size = 1024;
-
-        /**
-         * Returns the maximum number of sequence identifiers to keep in memory per segment.
-         *
-         * @return the cache size, or {@code 0} if caching is disabled.
-         */
-        public int getSize() {
-            return size;
-        }
-
-        /**
-         * Sets the maximum number of sequence identifiers to keep in memory per segment.
-         * Setting this to {@code 0} disables the caching wrapper entirely.
-         *
-         * @param size the maximum cache size per segment.
-         */
-        public void setSize(int size) {
-            this.size = size;
-        }
     }
 }

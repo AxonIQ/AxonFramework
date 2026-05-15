@@ -19,6 +19,7 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.JdbcSQLErrorCodesResolver;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.extension.spring.jdbc.SpringDataSourceConnectionProvider;
 import org.axonframework.extension.springboot.TokenStoreProperties;
@@ -33,7 +34,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import tools.jackson.databind.ObjectMapper;
 
 import javax.sql.DataSource;
 
@@ -51,7 +51,13 @@ import javax.sql.DataSource;
  * @author Allard Buijze
  * @since 3.1
  */
-@AutoConfiguration(after = JpaAutoConfiguration.class)
+@AutoConfiguration(
+        after = JpaAutoConfiguration.class,
+        afterName = {
+                "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration",
+                "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"
+        }
+)
 @ConditionalOnBean(DataSource.class)
 @ConditionalOnClass(SpringDataSourceConnectionProvider.class)
 @EnableConfigurationProperties(TokenStoreProperties.class)
@@ -105,18 +111,17 @@ public class JdbcAutoConfiguration {
      *
      * @param dataSource              the data source used to execute token store queries
      * @param tokenSchema             the schema describing the token store table layout
-     * @param defaultAxonObjectMapper the object mapper used to serialize tokens
+     * @param converter               the converter to use for converting tokens
      * @return a configured {@link JdbcTokenStore}
      */
     @Bean
     @ConditionalOnMissingBean(TokenStore.class)
     public TokenStore tokenStore(DataSource dataSource,
                                  TokenSchema tokenSchema,
-                                 ObjectMapper defaultAxonObjectMapper) {
+                                 GeneralConverter converter) {
         var config = JdbcTokenStoreConfiguration.DEFAULT
                 .schema(tokenSchema)
                 .claimTimeout(tokenStoreProperties.getClaimTimeout());
-        var converter = new JacksonConverter(defaultAxonObjectMapper);
         return new JdbcTokenStore(new JdbcTransactionalExecutorProvider(dataSource), converter, config);
     }
 

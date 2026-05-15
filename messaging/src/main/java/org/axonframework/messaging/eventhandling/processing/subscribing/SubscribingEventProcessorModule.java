@@ -79,7 +79,7 @@ public class SubscribingEventProcessorModule extends BaseModule<SubscribingEvent
      * @param processorName The unique name for the subscribing event processor.
      */
     public SubscribingEventProcessorModule(String processorName) {
-        super(processorName);
+        super("EventProcessor[" + processorName + "]");
         this.processorName = processorName;
     }
 
@@ -142,12 +142,12 @@ public class SubscribingEventProcessorModule extends BaseModule<SubscribingEvent
 
     private List<EventHandlingComponent> getEventHandlingComponents(Configuration configuration) {
         return eventHandlingComponentBuilders.keySet()
-                        .stream()
-                        .map(componentName -> configuration.getComponent(
-                                EventHandlingComponent.class,
-                                processorEventHandlingComponentName(componentName)
-                        ))
-                        .toList();
+                                             .stream()
+                                             .map(componentName -> configuration.getComponent(
+                                                     EventHandlingComponent.class,
+                                                     processorEventHandlingComponentName(componentName)
+                                             ))
+                                             .toList();
     }
 
     private String processorEventHandlingComponentName(String componentName) {

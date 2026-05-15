@@ -1,3 +1,0 @@
-* xref:deadlines:index.adoc[]
-** xref:deadlines:deadline-managers.adoc[]
-** xref:deadlines:event-schedulers.adoc[]

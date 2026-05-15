@@ -54,7 +54,7 @@ import static java.lang.String.format;
 /**
  * Runs the administration test suite using the builders of {@link EntityMetamodel} and related classes.
  */
-public class ImmutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
+public abstract class ImmutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
 
     EntityMetamodel<ImmutablePerson> buildEntityMetamodel(Configuration configuration,
                                                           EntityMetamodelBuilder<ImmutablePerson> builder) {

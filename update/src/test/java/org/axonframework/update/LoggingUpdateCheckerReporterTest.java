@@ -88,7 +88,7 @@ class LoggingUpdateCheckerReporterTest {
 
         reporter.report(sampleRequest, updateCheckResponse);
 
-        verify(mockLogger).info("AxonIQ has found the following dependency upgrade(s):");
+        verify(mockLogger).info("Axoniq has found the following dependency upgrade(s):");
         verify(mockLogger).info("{} {} -> {}",
                                 "org.axonframework:axon-framework........................",
                                 "5.0.1 ",
@@ -126,7 +126,7 @@ class LoggingUpdateCheckerReporterTest {
 
         reporter.report(sampleRequest, updateCheckResponse);
 
-        verify(mockLogger).error("AxonIQ has found the following vulnerabilities in your Axon libraries:");
+        verify(mockLogger).error("Axoniq has found the following vulnerabilities in your Axon libraries:");
         verify(mockLogger).error("[{}] {} [Fixed in: {}] Description: {}",
                                  "HIGH    ",
                                  "org.axonframework:axon-framework........................",
@@ -159,14 +159,14 @@ class LoggingUpdateCheckerReporterTest {
 
         reporter.report(sampleRequest, updateCheckResponse);
 
-        verify(mockLogger).error("AxonIQ has found the following vulnerabilities in your Axon libraries:");
+        verify(mockLogger).error("Axoniq has found the following vulnerabilities in your Axon libraries:");
         verify(mockLogger).error(
                 "[{}] {} [Fixed in: {}] Description: {}",
                 "HIGH",
                 "org.axonframework:axon-framework..",
                 "5.0.1",
                 "CVE-2025-1234: Security vulnerability in message handling");
-        verify(mockLogger).info("Additionally, AxonIQ has found an upgrade(s) for your Axon libraries:");
+        verify(mockLogger).info("Additionally, Axoniq has found an upgrade(s) for your Axon libraries:");
         verify(mockLogger).info(
                 "{} {} -> {}",
                 "org.axonframework:axon-framework........................",

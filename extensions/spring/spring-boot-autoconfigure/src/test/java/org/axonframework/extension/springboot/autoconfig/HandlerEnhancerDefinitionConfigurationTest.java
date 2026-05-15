@@ -52,7 +52,7 @@ class HandlerEnhancerDefinitionConfigurationTest {
     void handlerEnhancerDefinitionWrapsEventHandler() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ContextWithHandlers.class)
-                .withPropertyValues("axon.axonserver.enabled=false", "axon.eventstorage.jpa.polling-interval=0")
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0")
                 .run(context -> {
                     assertThat(context).hasSingleBean(CustomHandlerEnhancerDefinition.class);
                     assertThat(context).hasSingleBean(MyEventHandlingComponent.class);
@@ -65,7 +65,7 @@ class HandlerEnhancerDefinitionConfigurationTest {
     void handlerEnhancerDefinitionDoesNotWrapInAbsenceOfMessageHandlers() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ContextWithoutHandlers.class)
-                .withPropertyValues("axon.axonserver.enabled=false", "axon.eventstorage.jpa.polling-interval=0")
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0")
                 .run(context -> {
                     assertThat(context).hasSingleBean(CustomHandlerEnhancerDefinition.class);
 

@@ -34,7 +34,7 @@ import java.util.Optional;
 
 
 /**
- * Client for checking for update and sending anonymous usage data to the AxonIQ servers. This client uses the
+ * Client for checking for update and sending anonymous usage data to the Axoniq servers. This client uses the
  * {@link UsagePropertyProvider} to determine the URL to send the data to.
  *
  * @author Mitchell Herrijgers
@@ -62,7 +62,7 @@ public class UpdateCheckerHttpClient {
     }
 
     /**
-     * Sends a usage request to the AxonIQ servers. If {@code firstRequest} is true, it will send a POST request,
+     * Sends a usage request to the Axoniq servers. If {@code firstRequest} is true, it will send a POST request,
      * otherwise it will send a PUT request.
      *
      * @param updateCheckRequest The {@link UpdateCheckRequest} to send.
@@ -74,7 +74,7 @@ public class UpdateCheckerHttpClient {
         String url = userProperties.getUrl() + "?" + updateCheckRequest.toQueryString();
 
         try {
-            logger.debug("Reporting anonymous usage data to AxonIQ servers at: {}", url);
+            logger.debug("Reporting anonymous usage data to Axoniq servers at: {}", url);
             HttpRequest request = HttpRequest
                     .newBuilder()
                     .uri(URI.create(url))

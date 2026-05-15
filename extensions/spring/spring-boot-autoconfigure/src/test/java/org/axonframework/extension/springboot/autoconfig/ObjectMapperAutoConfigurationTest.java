@@ -45,8 +45,7 @@ class ObjectMapperAutoConfigurationTest {
 
     @BeforeEach
     void setUp() {
-        testContext = new ApplicationContextRunner().withPropertyValues("axon.axonserver.enabled=false")
-                                                    .withUserConfiguration(TestContext.class);
+        testContext = new ApplicationContextRunner().withUserConfiguration(TestContext.class);
     }
 
     @Test

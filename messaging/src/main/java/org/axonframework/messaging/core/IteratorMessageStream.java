@@ -17,7 +17,7 @@
 package org.axonframework.messaging.core;
 
 import java.util.Iterator;
-import java.util.Optional;
+import java.util.List;
 
 /**
  * A {@link MessageStream} implementation using an {@link Iterator} as the source for {@link Entry entries}.
@@ -25,65 +25,31 @@ import java.util.Optional;
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 class IteratorMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
-    private final Iterator<? extends Entry<M>> source;
-    private Entry<M> peeked = null;
+    private Iterator<Entry<M>> source;
 
     /**
      * Constructs a {@link MessageStream stream} using the given {@code source} to provide the {@link Entry entries}.
      *
      * @param source The {@link Iterator} providing the {@link Entry entries} for this {@link MessageStream stream}.
      */
-    IteratorMessageStream(Iterator<? extends Entry<M>> source) {
+    IteratorMessageStream(Iterator<Entry<M>> source) {
         this.source = source;
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        if (error().isPresent()) {
-            return Optional.empty();
-        }
-        if (peeked != null) {
-            Entry<M> result = peeked;
-            peeked = null;
-            return Optional.of(result);
-        }
-        if (source.hasNext()) {
-            return Optional.of(source.next());
-        } else {
-            complete();
-            return Optional.empty();
-        }
+    protected FetchResult<Entry<M>> fetchNext() {
+        return source.hasNext() ? FetchResult.of(source.next()) : FetchResult.completed();
     }
 
     @Override
-    public Optional<Entry<M>> peek() {
-        if (error().isPresent()) {
-            return Optional.empty();
-        }
-        if (peeked != null) {
-            return Optional.of(peeked);
-        }
-        if (source.hasNext()) {
-            peeked = source.next();
-            return Optional.of(peeked);
-        }
-        return Optional.empty();
-    }
+    protected final void onCompleted() {
+        this.source = List.<Entry<M>>of().iterator();
 
-    @Override
-    public boolean hasNextAvailable() {
-        boolean hasNext = error().isEmpty() && (peeked != null || source.hasNext());
-        if (!hasNext && error().isEmpty()) {
-            complete();
-        }
-        return hasNext;
-    }
-
-    @Override
-    public void close() {
+        signalProgress();
     }
 }

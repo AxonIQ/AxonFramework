@@ -5,7 +5,7 @@ This document tracks which API changes need to be applied to each reference guid
 ## API Changes Available
 
 The following files in `axon-5/` describe the API changes:
-- `api-changes.md` - Main API changes document
+- `api-changes/` - Main API changes documentation, split into focused per-topic files (see `api-changes/index.md` for the table of contents)
 - `getting-rid-of-aggregatelifecycle.md` - AggregateLifecycle removal
 - `getting-rid-of-messagehandlingmember.md` - MessageHandlingMember removal
 - `design-principles.md` - Design principles for Axon 5
@@ -1055,42 +1055,40 @@ The following files in `axon-5/` describe the API changes:
 ## Tuning Module
 
 ### modules/tuning/pages/index.adoc
-**Changes to apply:**
-- Update performance tuning overview for async-native architecture
-- Document PooledStreamingEventProcessor tuning
-- Update terminology from aggregates to entities
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Reframed the tuning overview around Axon Framework 5 command sequencing, pooled streaming processors, snapshotting, and relational tuning
+- Updated terminology from aggregates to entities
+- Added direct links to the tuning subsections covered by this rewrite
 
 ### modules/tuning/pages/command-processing.adoc
-**Changes to apply:**
-- Remove DisruptorCommandBus tuning (removed from framework)
-- Update entity loading and caching strategies
-- Document Repository tuning
-- Update async command processing patterns
-- Update terminology from aggregate to entity
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Removed outdated command bus and Disruptor-oriented guidance
+- Rewrote the section around `CommandSequencingInterceptor` and `SequencingPolicy`
+- Updated examples to use `RoutingKeySequencingPolicy`, custom sequencing policies, and `NoOpSequencingPolicy`
+- Replaced aggregate language with entity language
 
 ### modules/tuning/pages/event-processing.adoc
-**Changes to apply:**
-- Remove TrackingEventProcessor tuning entirely
-- Document PooledStreamingEventProcessor tuning (thread pools, batch sizes)
-- Document SequencingPolicy impact on performance
-- Update token store considerations
-- Document DCB impact on event sourcing performance
-- Update streaming optimizations
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Removed Tracking Event Processor tuning guidance
+- Rewrote the page around `PooledStreamingEventProcessor` and its configuration knobs
+- Documented batching, segment sizing, claim refresh, and executor sizing
+- Added operational guidance for durable token stores and multi-instance processing
 
-### modules/tuning/pages/event-snapshots.adoc
-**Changes to apply:**
-- Update snapshotting for entities (not aggregates)
-- Document snapshot triggering and creation changes
-- Update converter/serialization for snapshots
-- Document snapshot validation in test fixtures
-- Update snapshot format considerations
+### modules/tuning/pages/snapshotting.adoc
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Updated snapshotting terminology from aggregates to entities
+- Rewrote snapshot policy guidance around the AF5 `SnapshotPolicy` API
+- Simplified snapshot storage discussion to focus on framework-managed snapshot handling
+- Updated serialization guidance and fallback behavior for incompatible snapshots
 
 ### modules/tuning/pages/rdbms-tuning.adoc
-**Changes to apply:**
-- Update table schemas (aggregate_event_entry, etc.) for JPA
-- Document global index sequence tuning
-- Update JPA configuration (remains in core framework)
-- Remove JDBC configuration references (moved to external extension)
-- Document aggregate-based vs DCB-based storage performance
-- Update connection pool recommendations
-
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Updated the JPA event store guidance to use `AggregateEventEntry` and its current sequence/index structure
+- Kept the JPA tuning guidance in the core framework context and removed JDBC-specific references
+- Added guidance for global index sequencing, DCB versus aggregate-based storage, and connection pool sizing
+- Refreshed the database index and timestamp recommendations for the current schema

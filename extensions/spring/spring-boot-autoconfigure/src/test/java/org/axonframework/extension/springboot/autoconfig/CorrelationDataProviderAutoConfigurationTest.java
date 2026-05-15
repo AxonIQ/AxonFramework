@@ -42,7 +42,7 @@ class CorrelationDataProviderAutoConfigurationTest {
     @BeforeEach
     void setUp() {
         testContext = new ApplicationContextRunner()
-                .withPropertyValues("axon.axonserver.enabled=false", "axon.eventstorage.jpa.polling-interval=0")
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0")
                 .withUserConfiguration(TestContext.class);
     }
 

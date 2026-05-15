@@ -57,7 +57,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author Mateusz Nowak
  * @since 5.0.0
  */
-public class EventProcessingAnnotatedEventSourcedPooledStreamingIT extends AbstractStudentIT {
+public abstract class EventProcessingAnnotatedEventSourcedPooledStreamingIT extends AbstractStudentIT {
 
     @Test
     void whenStudentEnrolled3CoursesThenSendNotificationTest() {

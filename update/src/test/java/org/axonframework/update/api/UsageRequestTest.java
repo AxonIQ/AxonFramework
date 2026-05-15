@@ -79,6 +79,6 @@ class UpdateCheckRequestTest {
         );
 
         String userAgent = request.toUserAgent();
-        assertEquals("AxonIQ UpdateChecker/5.0.1 (Java 17.0.2 AdoptOpenJDK; Linux; 6.11.0-26-generic; amd64)", userAgent);
+        assertEquals("Axoniq UpdateChecker/5.0.1 (Java 17.0.2 AdoptOpenJDK; Linux; 6.11.0-26-generic; amd64)", userAgent);
     }
 }

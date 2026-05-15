@@ -41,10 +41,7 @@ class DropwizardMetricsAutoConfigurationTest {
 
     @Test
     void defaultMetricAutoConfigSetsMetricRegistryBeanForEnhancer() {
-        testContext.withPropertyValues(
-                           "axon.axonserver.enabled=false",
-                           "axon.metrics.enabled=true"
-                   )
+        testContext.withPropertyValues("axon.metrics.enabled=true")
                    .run(context -> {
                        assertThat(context).hasSingleBean(MetricRegistry.class);
                        assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
@@ -53,11 +50,8 @@ class DropwizardMetricsAutoConfigurationTest {
 
     @Test
     void defaultMetricAutoConfigSetsMetricRegistryBeanForEnhancerWorkWithoutProperty() {
-        testContext.withPropertyValues(
-                           "axon.axonserver.enabled=false"
-                           // Deliberately not included "axon.metrics.enabled=true" per test!
-                   )
-                   .run(context -> {
+        // Deliberately not included "axon.metrics.enabled=true" per test!
+        testContext.run(context -> {
                        assertThat(context).hasSingleBean(MetricRegistry.class);
                        assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
                    });
@@ -65,10 +59,7 @@ class DropwizardMetricsAutoConfigurationTest {
 
     @Test
     void disabledMetricsDisablesMetricRegistryAndMetricsConfigurationEnhancer() {
-        testContext.withPropertyValues(
-                           "axon.axonserver.enabled=false",
-                           "axon.metrics.enabled=false"
-                   )
+        testContext.withPropertyValues("axon.metrics.enabled=false")
                    .run(context -> {
                        assertThat(context).doesNotHaveBean(MetricRegistry.class);
                        assertThat(context).doesNotHaveBean(MetricsConfigurationEnhancer.class);

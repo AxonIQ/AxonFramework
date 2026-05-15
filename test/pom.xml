@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../build/parent/pom.xml</relativePath>
     </parent>
 
@@ -56,23 +56,6 @@
             <artifactId>awaitility</artifactId>
             <scope>compile</scope>
         </dependency>
-
-        <!-- Axon Server Container testing -->
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-            <scope>compile</scope>
-        </dependency>
-
         <!-- Database -->
         <dependency>
             <groupId>jakarta.persistence</groupId>
@@ -112,6 +95,12 @@
             <version>${project.version}</version>
             <type>test-jar</type>
             <scope>test</scope>
+        </dependency>
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 

@@ -20,7 +20,8 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
 import org.axonframework.common.util.MockException;
-import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.TestConverter;
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Message;
@@ -116,7 +117,7 @@ class PooledStreamingEventProcessorTest {
     private ScheduledExecutorService workerExecutor;
     private SimpleEventHandlingComponent simpleEhc;
     private RecordingEventHandlingComponent defaultEventHandlingComponent;
-    private Converter converter;
+    private GeneralConverter converter;
 
     @BeforeEach
     void setUp() {
@@ -130,7 +131,7 @@ class PooledStreamingEventProcessorTest {
         simpleEhc = SimpleEventHandlingComponent.create("test");
         simpleEhc.subscribe(new QualifiedName(Integer.class), (event, ctx) -> MessageStream.empty());
         defaultEventHandlingComponent = spy(new RecordingEventHandlingComponent(simpleEhc));
-        converter = TestConverter.JACKSON.getConverter();
+        converter = new DelegatingGeneralConverter(TestConverter.JACKSON.getConverter());
         withTestSubject(List.of()); // default always applied
     }
 
@@ -153,7 +154,7 @@ class PooledStreamingEventProcessorTest {
         componentsWithDefault.add(defaultEventHandlingComponent);
 
         TestApplicationContext testApplicationContext = new TestApplicationContext();
-        testApplicationContext.addComponent(Converter.class, null, converter);
+        testApplicationContext.addComponent(GeneralConverter.class, null, converter);
         EventProcessorConfiguration baseConfig = new EventProcessorConfiguration(PROCESSOR_NAME, null);
         var testDefaultConfiguration = new PooledStreamingEventProcessorConfiguration(baseConfig)
                 .eventSource(stubMessageSource)
@@ -1088,6 +1089,224 @@ class PooledStreamingEventProcessorTest {
 
             // then - verify no events processed during replay
             assertThat(recordedEvents).isEmpty();
+        }
+
+        @Test
+        void replayBlockingEventHandlingComponentCorrectlySkipsEventsWithBatchSizeGreaterThanOne() {
+            // given
+            List<EventMessage> recordedEvents = new CopyOnWriteArrayList<>();
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                recordedEvents.add(event);
+                return MessageStream.empty();
+            });
+            var replayBlockingComponent = new ReplayBlockingEventHandlingComponent<>(innerComponent);
+
+            // do not clear event source after close
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(replayBlockingComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // when - publish 5 events and process normally (not during replay)
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedEvents).containsOnly(event1, event2, event3, event4, event5));
+
+            joinAndUnwrap(testSubject.shutdown());
+            recordedEvents.clear();
+
+            // Reset tokens to trigger a replay from the beginning
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // when - restart; with batchSize=5 all 5 replay events land in a single batch
+            startEventProcessor();
+
+            // then - wait for the processor to catch up to position 5
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> {
+                       long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
+                       assertThat(currentPosition).isEqualTo(5);
+                   });
+
+            // then - replay-blocking component must have skipped all events: each event in the batch must have
+            // had isReplaying=true (i.e. its per-event ReplayToken was correctly injected, not the plain
+            // batch-end GlobalSequenceTrackingToken)
+            assertThat(recordedEvents).isEmpty();
+        }
+
+        @Test
+        void perEventTokenIsCorrectWhenBatchCrossesReplayBoundaryInMiddle() {
+            // given
+            // batchSize=5, 3 events processed before reset (tokenAtReset=3), then 5 more events added.
+            // Batch 1 (full, size 5): tokens 1-3 are replay, tokens 4-5 are post-replay — boundary in middle.
+            // Batch 2 (partial, size 3): tokens 6-8 are post-replay.
+            // The batch-end of batch 1 is the plain GST(5).
+            Map<EventMessage, TrackingToken> recordedTokens = Collections.synchronizedMap(new HashMap<>());
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                TrackingToken.fromContext(ctx).ifPresent(t -> recordedTokens.put(event, t));
+                return MessageStream.empty();
+            });
+            innerComponent.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(innerComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // publish 3 events (tokens 1-3) — these will become replay events
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens).containsKeys(event1, event2, event3));
+            joinAndUnwrap(testSubject.shutdown());
+            recordedTokens.clear();
+
+            // reset to replay from the start; tokenAtReset = GST(3)
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // publish 5 more events (tokens 4-8) — tokens 4-5 land in batch 1 (post-replay), tokens 6-8 in batch 2
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            EventMessage event6 = EventTestUtils.asEventMessage("event-6");
+            EventMessage event7 = EventTestUtils.asEventMessage("event-7");
+            EventMessage event8 = EventTestUtils.asEventMessage("event-8");
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+            stubMessageSource.publishMessage(event6);
+            stubMessageSource.publishMessage(event7);
+            stubMessageSource.publishMessage(event8);
+
+            // when - restart
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5, event6, event7, event8));
+
+            // then — each event must carry its own per-event token
+            TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(3);
+
+            // events 1-2: replay, not concluding
+            assertPerEventReplayToken(recordedTokens.get(event1), tokenAtReset, new GlobalSequenceTrackingToken(1), false);
+            assertPerEventReplayToken(recordedTokens.get(event2), tokenAtReset, new GlobalSequenceTrackingToken(2), false);
+            // event3: replay boundary — still a ReplayToken, concludesReplay = true
+            assertPerEventReplayToken(recordedTokens.get(event3), tokenAtReset, new GlobalSequenceTrackingToken(3), true);
+
+            // events 4-8: post-replay — plain GlobalSequenceTrackingToken
+            assertEquals(new GlobalSequenceTrackingToken(4), recordedTokens.get(event4));
+            assertEquals(new GlobalSequenceTrackingToken(5), recordedTokens.get(event5));
+            assertEquals(new GlobalSequenceTrackingToken(6), recordedTokens.get(event6));
+            assertEquals(new GlobalSequenceTrackingToken(7), recordedTokens.get(event7));
+            assertEquals(new GlobalSequenceTrackingToken(8), recordedTokens.get(event8));
+        }
+
+        @Test
+        void perEventTokenIsCorrectWhenReplayEndsAtBatchBoundary() {
+            // given
+            // batchSize=5, 5 events processed before reset (tokenAtReset=5), then 3 more events added.
+            // Batch 1 (full, size 5): tokens 1-5 are all replay — boundary falls at the very end of the batch.
+            // Batch 2 (partial, size 3): tokens 6-8 are post-replay.
+            // The batch-end of batch 1 is ReplayToken(current=5, atReset=5) — still a ReplayToken.
+            Map<EventMessage, TrackingToken> recordedTokens = Collections.synchronizedMap(new HashMap<>());
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                TrackingToken.fromContext(ctx).ifPresent(t -> recordedTokens.put(event, t));
+                return MessageStream.empty();
+            });
+            innerComponent.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(innerComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // publish 5 events (tokens 1-5) — these will become replay events
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5));
+            joinAndUnwrap(testSubject.shutdown());
+            recordedTokens.clear();
+
+            // reset to replay from the start; tokenAtReset = GST(5)
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // publish 3 more events (tokens 6-8) — these land in batch 2 (post-replay)
+            EventMessage event6 = EventTestUtils.asEventMessage("event-6");
+            EventMessage event7 = EventTestUtils.asEventMessage("event-7");
+            EventMessage event8 = EventTestUtils.asEventMessage("event-8");
+            stubMessageSource.publishMessage(event6);
+            stubMessageSource.publishMessage(event7);
+            stubMessageSource.publishMessage(event8);
+
+            // when - restart
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5, event6, event7, event8));
+
+            // then — each event must carry its own per-event token
+            TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(5);
+
+            // events 1-4: replay, not concluding — before the fix all saw ReplayToken(current=5, atReset=5)
+            assertPerEventReplayToken(recordedTokens.get(event1), tokenAtReset, new GlobalSequenceTrackingToken(1), false);
+            assertPerEventReplayToken(recordedTokens.get(event2), tokenAtReset, new GlobalSequenceTrackingToken(2), false);
+            assertPerEventReplayToken(recordedTokens.get(event3), tokenAtReset, new GlobalSequenceTrackingToken(3), false);
+            assertPerEventReplayToken(recordedTokens.get(event4), tokenAtReset, new GlobalSequenceTrackingToken(4), false);
+            // event5: replay boundary — still a ReplayToken, concludesReplay = true
+            assertPerEventReplayToken(recordedTokens.get(event5), tokenAtReset, new GlobalSequenceTrackingToken(5), true);
+
+            // events 6-8: post-replay — plain GlobalSequenceTrackingToken
+            assertEquals(new GlobalSequenceTrackingToken(6), recordedTokens.get(event6));
+            assertEquals(new GlobalSequenceTrackingToken(7), recordedTokens.get(event7));
+            assertEquals(new GlobalSequenceTrackingToken(8), recordedTokens.get(event8));
+        }
+
+        private void assertPerEventReplayToken(TrackingToken token,
+                                               TrackingToken expectedAtReset,
+                                               TrackingToken expectedCurrent,
+                                               boolean expectedConcludesReplay) {
+            assertInstanceOf(ReplayToken.class, token);
+            ReplayToken replayToken = (ReplayToken) token;
+            assertEquals(expectedCurrent, replayToken.getCurrentToken());
+            assertEquals(expectedAtReset, replayToken.getTokenAtReset());
+            assertTrue(ReplayToken.isReplay(token));
+            assertEquals(expectedConcludesReplay, ReplayToken.concludesReplay(token));
         }
     }
 

@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.queryhandling.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.util.ClasspathResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
@@ -26,6 +25,7 @@ import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.queryhandling.QueryMessage;
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

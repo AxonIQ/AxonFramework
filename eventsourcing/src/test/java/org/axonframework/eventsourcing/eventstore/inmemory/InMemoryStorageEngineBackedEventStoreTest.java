@@ -16,7 +16,6 @@
 
 package org.axonframework.eventsourcing.eventstore.inmemory;
 
-import org.jspecify.annotations.NonNull;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStoreTestSuite;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -24,6 +23,7 @@ import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 /**

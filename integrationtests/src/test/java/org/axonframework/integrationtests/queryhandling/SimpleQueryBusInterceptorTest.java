@@ -16,12 +16,11 @@
 
 package org.axonframework.integrationtests.queryhandling;
 
-import org.axonframework.axonserver.connector.AxonServerConfigurationEnhancer;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.SimpleQueryBus;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.*;
 
 /**
  * An {@link AbstractQueryInterceptorTestSuite} implementation validating query interceptor functionality with the
@@ -41,9 +40,7 @@ public class SimpleQueryBusInterceptorTest extends AbstractQueryInterceptorTestS
 
     @Override
     protected MessagingConfigurer createMessagingConfigurer() {
-        return MessagingConfigurer.create()
-                .componentRegistry(cr -> cr.disableEnhancer(
-                        AxonServerConfigurationEnhancer.class));
+        return MessagingConfigurer.create();
     }
 
     @AfterEach

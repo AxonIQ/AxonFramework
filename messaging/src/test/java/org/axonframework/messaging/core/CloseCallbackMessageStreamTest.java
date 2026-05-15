@@ -24,6 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CloseCallbackMessageStreamTest extends MessageStreamTest<Message> {
@@ -110,18 +111,25 @@ class CloseCallbackMessageStreamTest extends MessageStreamTest<Message> {
         assertEquals(0, invoked.get());
         assertTrue(testSubject.next().isPresent());
         assertEquals(0, invoked.get());
+
+        /*
+         * The consumer is calling close, means the stream will complete,
+         * any remaining elements will be discarded and next, peek and
+         * hasNextAvailable will no longer indicate the presence of
+         * elements.
+         */
+
         testSubject.close();
+
         assertEquals(1, invoked.get());
-        assertFalse(testSubject.isCompleted());
+        assertTrue(testSubject.isCompleted());
+        assertFalse(testSubject.hasNextAvailable());
+        assertThat(testSubject.next()).isEmpty();
+        assertThat(testSubject.peek()).isEmpty();
 
         // closing the stream again should not invoke the close handler again
         testSubject.close();
-        assertEquals(1, invoked.get());
 
-        // reading until completion should not invoke the close handler again
-        assertTrue(testSubject.next().isPresent());
-        assertFalse(testSubject.next().isPresent());
         assertEquals(1, invoked.get());
-        assertTrue(testSubject.isCompleted());
     }
 }

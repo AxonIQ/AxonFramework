@@ -392,6 +392,7 @@ public class UnitOfWork implements ProcessingLifecycle {
 
         private CompletableFuture<Void> runErrorHandlers(Throwable e) {
             status.set(Status.COMPLETED_ERROR);
+            errorCause.compareAndSet(null, new CauseAndPhase(currentPhase.get(), e)); // fallback in case the error did not come from a phase handler
             CauseAndPhase recordedCause = errorCause.get();
 
             while (!errorHandlers.isEmpty()) {

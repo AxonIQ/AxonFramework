@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -37,45 +36,29 @@ class FailedMessageStream<M extends Message> extends AbstractMessageStream<M> im
      * @param error The {@link Throwable} that caused this {@link MessageStream stream} to complete exceptionally.
      */
     FailedMessageStream(Throwable error) {
-        completeExceptionally(error);
+        initialize(FetchResult.error(error));
     }
 
     @Override
     public CompletableFuture<Entry<M>> asCompletableFuture() {
-        //noinspection OptionalGetWithoutIsPresent
-        return CompletableFuture.failedFuture(error().get());
+        return CompletableFuture.failedFuture(error().orElseThrow());
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        return Optional.empty();
+    protected FetchResult<Entry<M>> fetchNext() {
+        throw new UnsupportedOperationException();
     }
 
-    @Override
-    public boolean isCompleted() {
-        return true;
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        return false;
-    }
-
-    @Override
-    public void close() {
-    }
-
+    @SuppressWarnings("unchecked")
     @Override
     public <RM extends Message> Empty<RM> map(Function<Entry<M>, Entry<RM>> mapper) {
-        //noinspection unchecked
         return (FailedMessageStream<RM>) this;
     }
 
     @Override
     public <R> CompletableFuture<R> reduce(R identity,
-                                           BiFunction<R, Entry<M>, R> accumulator) {
-        //noinspection OptionalGetWithoutIsPresent
-        return CompletableFuture.failedFuture(error().get());
+                                           BiFunction<R, ? super Entry<M>, R> accumulator) {
+        return CompletableFuture.failedFuture(error().orElseThrow());
     }
 
     @Override
@@ -84,12 +67,7 @@ class FailedMessageStream<M extends Message> extends AbstractMessageStream<M> im
     }
 
     @Override
-    public MessageStream<M> concatWith(MessageStream<M> other) {
+    public MessageStream<M> concatWith(MessageStream<? extends M> other) {
         return this;
-    }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        return Optional.empty();
     }
 }

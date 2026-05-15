@@ -16,20 +16,20 @@
 
 package org.axonframework.eventsourcing.annotation;
 
-import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.annotation.reflection.AnnotationBasedEventSourcedEntityFactoryDefinition;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolver;
-import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.EntityCommandHandler;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityIdResolverDefinition;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;

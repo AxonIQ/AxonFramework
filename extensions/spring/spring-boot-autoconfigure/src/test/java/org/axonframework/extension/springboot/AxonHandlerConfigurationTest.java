@@ -18,10 +18,8 @@ package org.axonframework.extension.springboot;
 
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-import org.axonframework.extension.springboot.autoconfig.AxonServerActuatorAutoConfiguration;
-import org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration;
+import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,9 +43,7 @@ import static org.junit.jupiter.api.Assertions.*;
         JmxAutoConfiguration.class,
         WebClientAutoConfiguration.class,
         HibernateJpaAutoConfiguration.class,
-        DataSourceAutoConfiguration.class,
-        AxonServerAutoConfiguration.class,
-        AxonServerActuatorAutoConfiguration.class
+        DataSourceAutoConfiguration.class
 })
 @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
 @Disabled("TODO #3498")
@@ -77,7 +73,6 @@ public class AxonHandlerConfigurationTest {
         public String query(String query) {
             return "Query: " + query;
         }
-
     }
 
     @Configuration

@@ -30,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,8 +116,8 @@ class InterceptingEventSinkTest {
         EventMessage thirdEvent = new GenericEventMessage(TEST_EVENT_TYPE, "third");
         EventMessage fourthEvent = new GenericEventMessage(TEST_EVENT_TYPE, "fourth");
 
-        testSubject.publish(null, firstEvent, secondEvent).get();
-        testSubject.publish(null, thirdEvent, fourthEvent).get();
+        testSubject.publish(null, firstEvent, secondEvent).get(5, TimeUnit.SECONDS);
+        testSubject.publish(null, thirdEvent, fourthEvent).get(5, TimeUnit.SECONDS);
 
         assertThat(interceptorCounterOne.get()).isEqualTo(4);
         assertThat(interceptorCounterTwo.get()).isEqualTo(4);

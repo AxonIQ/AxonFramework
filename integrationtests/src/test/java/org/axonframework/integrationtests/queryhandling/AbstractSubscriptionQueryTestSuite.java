@@ -21,6 +21,7 @@ import org.awaitility.Awaitility;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.FluxUtils;
+import org.axonframework.messaging.core.GenericResultMessage;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
@@ -60,7 +61,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
@@ -365,7 +365,7 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                   .untilAsserted(() -> {
                       assertEquals(TEST_QUERY_PAYLOAD,
                                    result.next().map(e -> e.message().payloadAs(String.class)).orElse(null));
-                      assertTrue(result.isCompleted() && result.error().isPresent());
+                      assertTrue(!result.hasNextAvailable() && result.isCompleted() && result.error().isPresent());
                   });
     }
 
@@ -437,6 +437,8 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                .untilAsserted(() -> assertEquals(expectedUpdates, updateList));
         assertTrue(result.isCompleted() && result.error().isEmpty());
     }
+
+    // TODO #4422 this test was/is flakey sometimes, will hang indefinitely, needs further investigation
 
     @Test
     void orderingOfOperationOnUpdateHandler() {
@@ -575,23 +577,39 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
         Predicate<QueryMessage> testFilter =
                 message -> CHAT_MESSAGES_QUERY_TYPE.equals(message.type())
                         && TEST_QUERY_PAYLOAD.equals(message.payloadAs(String.class));
-        SubscriptionQueryUpdateMessage testUpdateOne =
+        SubscriptionQueryUpdateMessage testUpdate =
                 new GenericSubscriptionQueryUpdateMessage(TEST_UPDATE_PAYLOAD_TYPE, "Update1", String.class);
-        SubscriptionQueryUpdateMessage testUpdateTwo =
-                new GenericSubscriptionQueryUpdateMessage(TEST_UPDATE_PAYLOAD_TYPE, "Update2", String.class);
         ProcessingContext testContext = null;
         MessageStream<QueryResponseMessage> result = queryBus.subscriptionQuery(queryMessage, null, 50);
+
         // when...
-        scheduleAfterDelay(() -> queryBus.emitUpdate(testFilter, () -> testUpdateOne, testContext));
-        scheduleAfterDelay(() -> { // we give the update a time to be processed before disposing the subscription...
-            result.close();
-            queryBus.emitUpdate(testFilter, () -> testUpdateTwo, testContext);
-        });
-        // then...
-        StepVerifier.create(FluxUtils.of(result).map(MessageStream.Entry::message)
-                                     .filter(SubscriptionQueryUpdateMessage.class::isInstance)
-                                     .mapNotNull(m -> m.payloadAs(String.class)))
-                    .expectNext("Update1")
+        scheduleAfterDelay(() -> queryBus.emitUpdate(testFilter, () -> testUpdate, testContext));
+
+        /*
+         * Skip three GenericResultMessage messages, then proof that a query update message is available:
+         */
+
+        assertThat(result.next()).map(MessageStream.Entry::message).containsInstanceOf(GenericResultMessage.class);
+        assertThat(result.next()).map(MessageStream.Entry::message).containsInstanceOf(GenericResultMessage.class);
+        assertThat(result.next()).map(MessageStream.Entry::message).containsInstanceOf(GenericResultMessage.class);
+
+        // Don't consume next element:
+        await().untilAsserted(() -> assertThat(result.hasNextAvailable()).isTrue());
+        assertThat(result.peek())
+            .map(MessageStream.Entry::message)
+            .map(GenericSubscriptionQueryUpdateMessage.class::cast)
+            .map(m -> m.payloadAs(String.class))
+            .contains("Update1");
+
+        result.close();
+
+        /*
+         * Subscription was closed from user side (unlike queryBus#completeSubscriptions), so
+         * expect everything to be discarded if it wasn't read yet, including the element that
+         * was proven to exist:
+         */
+
+        StepVerifier.create(FluxUtils.of(result))
                     .verifyComplete();
     }
 

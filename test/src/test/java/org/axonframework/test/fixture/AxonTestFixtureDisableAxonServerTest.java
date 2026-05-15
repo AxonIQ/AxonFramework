@@ -16,25 +16,25 @@
 
 package org.axonframework.test.fixture;
 
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AxonTestFixtureDisableAxonServerTest {
+class AxonTestFixtureIntegrationTestCustomizationTest {
 
     @Test
-    void disablesAxonServerForMessagingConfigurerNeverThrows() {
+    void customizingAsIntegrationTestForMessagingConfigurerNeverThrows() {
         var configurer = MessagingConfigurer.create();
 
-        assertDoesNotThrow(() -> AxonTestFixture.with(configurer, AxonTestFixture.Customization::disableAxonServer));
+        assertDoesNotThrow(() -> AxonTestFixture.with(configurer, AxonTestFixture.Customization::asIntegrationTest));
     }
 
     @Test
-    void disablesAxonServerForEventSourcingConfigurerNeverThrows() {
+    void customizingAsIntegrationTestForEventSourcingConfigurerNeverThrows() {
         var configurer = EventSourcingConfigurer.create();
 
-        assertDoesNotThrow(() -> AxonTestFixture.with(configurer, AxonTestFixture.Customization::disableAxonServer));
+        assertDoesNotThrow(() -> AxonTestFixture.with(configurer, AxonTestFixture.Customization::asIntegrationTest));
     }
 }

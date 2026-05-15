@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework.extensions.spring</groupId>
         <artifactId>axon-spring-extension</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>axon-spring-boot-autoconfigure</artifactId>
@@ -32,13 +32,6 @@
 
     <dependencies>
         <!-- Axon dependencies -->
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-server-connector</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
-        </dependency>
-
         <dependency>
             <groupId>org.axonframework.extensions.spring</groupId>
             <artifactId>axon-spring</artifactId>
@@ -198,6 +191,13 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Serializer dependencies -->
         <dependency>
             <groupId>org.apache.avro</groupId>
@@ -293,15 +293,6 @@
                             <Automatic-Module-Name>org.axonframework.extension.springboot</Automatic-Module-Name>
                         </manifestEntries>
                     </archive>
-                </configuration>
-            </plugin>
-
-            <!-- Silence the AS download message -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>-Daxon.axonserver.suppressDownloadMessage=true</argLine>
                 </configuration>
             </plugin>
         </plugins>

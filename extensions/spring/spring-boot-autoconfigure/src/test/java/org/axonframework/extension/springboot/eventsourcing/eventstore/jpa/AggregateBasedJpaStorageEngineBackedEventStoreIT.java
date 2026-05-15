@@ -16,7 +16,6 @@
 
 package org.axonframework.extension.springboot.eventsourcing.eventstore.jpa;
 
-import org.jspecify.annotations.NonNull;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceContext;
@@ -27,7 +26,6 @@ import org.axonframework.common.jpa.SimpleEntityManagerProvider;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStoreTestSuite;
 import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.jpa.JpaPollingEventCoordinator;
-import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
 import org.axonframework.extension.spring.messaging.unitofwork.SpringTransactionManager;
 import org.axonframework.extension.springboot.autoconfig.JpaTransactionAutoConfiguration;
 import org.axonframework.extension.springboot.eventsourcing.eventstore.jpa.AggregateBasedJpaStorageEngineBackedEventStoreIT.TestConfig;
@@ -35,8 +33,9 @@ import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.junit.jupiter.api.*;
+import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -58,7 +57,8 @@ import javax.sql.DataSource;
  */
 @SpringBootTest(classes = TestConfig.class)
 @ImportAutoConfiguration(JpaTransactionAutoConfiguration.class)
-class AggregateBasedJpaStorageEngineBackedEventStoreIT extends StorageEngineBackedEventStoreTestSuite<AggregateBasedJpaEventStorageEngine> {
+class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
+        StorageEngineBackedEventStoreTestSuite<AggregateBasedJpaEventStorageEngine> {
 
     private static AggregateBasedJpaEventStorageEngine engine;
 
@@ -67,14 +67,6 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends StorageEngineBack
 
     @Autowired
     private SpringTransactionManager springTransactionManager;
-
-    @AfterAll
-    static void afterAll() {
-        if (engine != null) {
-            engine.close();
-            engine = null;
-        }
-    }
 
     @NonNull
     @Override

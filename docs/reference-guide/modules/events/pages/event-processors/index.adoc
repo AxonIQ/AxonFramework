@@ -218,26 +218,9 @@ public interface ErrorHandler {
 
 Based on the provided `ErrorContext` object, you can decide to ignore the error, schedule retries, or rethrow the exception.
 
-[[dead-letter-queue]]
-=== Dead-letter queue
-
-[WARNING]
-.Dead-Letter Queue not available in Axon Framework 5.0
-====
-The Dead-Letter Queue feature is not yet available in Axon Framework 5.0.
-It will be reintroduced in Axon Framework 5.1.
-The documentation below describes the Dead-Letter Queue concepts for reference and future use.
-====
-
-Although configuring an <<error-handling,Error Handler>> helps you to deal with exceptions when processing events, event handling will typically still stop entirely.
-When you only log the error and allow processing to proceed, you will most likely end up with missing data until you fix the predicament and xref:event-processors/streaming.adoc#replaying-events[replay]
-past events.
-If you instead propagate the exception so the event processor keeps retrying, the event processor will stall entirely when the cause is consistent.
-
-Although this behavior is sufficient on many occasions, sometimes it is beneficial if we can unblock event handling by parking the problematic event.
-This is where the dead-letter queue comes in.
-It is a mechanism to park events until they can be processed successfully.
-You can find more information in the xref:axon-framework-reference:events:event-processors/dead-letter-queue.adoc[] section.
+ifdef::advanced-framework[]
+include::dead-letter-queue:partial$event-processors-dlq.adoc[]
+endif::[]
 
 [[general_processor_configuration]]
 == General processor configuration

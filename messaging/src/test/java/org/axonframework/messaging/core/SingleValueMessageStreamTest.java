@@ -23,6 +23,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -46,8 +48,7 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
 
     @Override
     protected MessageStream.Empty<Message> completedEmptyStreamTestSubject() {
-        Assumptions.abort("DelayedMessageStream does not support empty streams");
-        return null;
+        return (MessageStream.Empty<Message>) MessageStream.fromFuture(CompletableFuture.completedFuture(null));
     }
 
     @Override
@@ -131,6 +132,21 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
     }
 
     @Test
+    void shouldInvokeSetCallbackWhenFutureFails() {
+        CompletableFuture<MessageStream.Entry<Message>> future = new CompletableFuture<>();
+        SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(future);
+        AtomicBoolean invoked = new AtomicBoolean(false);
+
+        testSubject.setCallback(() -> invoked.set(true));
+
+        assertFalse(invoked.get());
+
+        future.completeExceptionally(new RuntimeException("Expected"));
+
+        assertTrue(invoked.get());
+    }
+
+    @Test
     void closeCancelsTheCompletableFuture() {
         CompletableFuture<MessageStream.Entry<Message>> future = new CompletableFuture<>();
         SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(future);
@@ -138,5 +154,70 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
         testSubject.close();
 
         assertTrue(future.isCancelled());
+    }
+
+    @Nested
+    class NullEntryHandling {
+
+        @Test
+        void entryConstructorRejectsNullEntry() {
+            // when / then
+            assertThatThrownBy(() -> new SingleValueMessageStream<>((MessageStream.Entry<Message>) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        void futureConstructorCompletingWithNullPutsStreamInErrorState() {
+            // given
+            CompletableFuture<MessageStream.Entry<Message>> future = new CompletableFuture<>();
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(future);
+
+            // when
+            future.complete(null);
+
+            // then
+            assertThat(testSubject.hasNextAvailable()).isFalse();
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.error()).isPresent();
+            assertThat(testSubject.error().get()).isInstanceOf(NullPointerException.class);
+        }
+    }
+
+    @Nested
+    class WhenAllElementsConsumed {
+        SingleValueMessageStream<Message> ms = new SingleValueMessageStream<>(new SimpleEntry<>(createRandomMessage()));
+
+        @BeforeEach
+        void beforeEach() {
+            assertThat(ms.hasNextAvailable()).isTrue();
+            assertThat(ms.peek()).isNotEmpty();
+            assertThat(ms.next()).isNotEmpty();
+
+            /*
+             * Expect that the stream has not completed at this point. Streams
+             * should never complete before returning their last element, even
+             * if they know it was the last element.
+             */
+
+            assertThat(ms.isCompleted()).isFalse();
+        }
+
+        @Test
+        void ensureStreamCompletesAfterHasNextAvailableCall() {
+            assertThat(ms.hasNextAvailable()).isFalse();
+            assertThat(ms.isCompleted()).isTrue();
+        }
+
+        @Test
+        void ensureStreamCompletesAfterNextCall() {
+            assertThat(ms.next()).isEmpty();
+            assertThat(ms.isCompleted()).isTrue();
+        }
+
+        @Test
+        void ensureStreamCompletesAfterPeekCall() {
+            assertThat(ms.peek()).isEmpty();
+            assertThat(ms.isCompleted()).isTrue();
+        }
     }
 }

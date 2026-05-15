@@ -134,7 +134,7 @@ public class AxonTestFixtureMonitoringTest {
         final var courseId = UUID.randomUUID().toString();
         final var fixture = AxonTestFixture.with(
                 configurer(report, false),
-                Customization::disableAxonServer
+                Customization::asIntegrationTest
         );
 
         fixture

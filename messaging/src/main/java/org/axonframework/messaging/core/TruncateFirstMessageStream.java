@@ -16,9 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 /**
  * Implementation of the {@link MessageStream} that truncates all {@link Entry entries} of the {@code delegate} stream
  * except for the first entry.
@@ -28,13 +25,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @param <M> The type of {@link Message} contained in the singular {@link Entry} of this stream.
  * @author Allard Buijze
+ * @author John Hendrikx
  * @since 5.0.0
  */
 class TruncateFirstMessageStream<M extends Message>
-        extends DelegatingMessageStream<M, M>
+        extends AbstractMessageStream<M>
         implements MessageStream.Single<M> {
 
-    private final AtomicBoolean consumed = new AtomicBoolean(false);
+    private final MessageStream<M> delegate;
+
+    private boolean consumed;
 
     /**
      * Constructs the DelegatingMessageStream with given {@code delegate} to receive calls.
@@ -42,48 +42,33 @@ class TruncateFirstMessageStream<M extends Message>
      * @param delegate The instance to delegate calls to.
      */
     public TruncateFirstMessageStream(MessageStream<M> delegate) {
-        super(delegate);
+        this.delegate = delegate;
+
+        delegate.setCallback(this::signalProgress);
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        Optional<Entry<M>> next = delegate().next();
-        if (next.isPresent() && consumed.compareAndSet(false, true)) {
-            close();
-            return next;
+    protected synchronized FetchResult<Entry<M>> fetchNext() {
+        if (consumed) {
+            return FetchResult.completed();
         }
-        return Optional.empty();
-    }
 
-    @Override
-    public void setCallback(Runnable callback) {
-        super.setCallback(() -> {
-            if (!consumed.get()) {
-                callback.run();
-            }
-        });
-    }
+        FetchResult<Entry<M>> result = FetchResult.of(delegate);
 
-    @Override
-    public Optional<Throwable> error() {
-        return consumed.get() ? Optional.empty() : super.error();
-    }
-
-    @Override
-    public boolean isCompleted() {
-        return consumed.get() || super.isCompleted();
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        return !consumed.get() && super.hasNextAvailable();
-    }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        if (!consumed.get()) {
-            return delegate().peek();
+        if (result instanceof FetchResult.Value) {
+            consumed = true;
         }
-        return Optional.empty();
+
+        return result;
+    }
+
+    @Override
+    protected void onCompleted() {
+        delegate.close();
+    }
+
+    @Override
+    protected String describeDelegates() {
+        return delegate.toString();
     }
 }

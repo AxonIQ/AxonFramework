@@ -41,7 +41,7 @@ class InfrastructureAutoConfigurationTest {
     void setUp() {
         testApplicationContext = new ApplicationContextRunner()
                 .withUserConfiguration(DefaultContext.class)
-                .withPropertyValues("axon.axonserver.enabled:false", "axon.eventstorage.jpa.polling-interval:0");
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval:0");
     }
 
     @Test

@@ -52,8 +52,7 @@ class AggregatePolymorphismAutoConfigurationTest {
 
     @BeforeEach
     void setUp() {
-        testApplicationContext = new ApplicationContextRunner().withUserConfiguration(DefaultContext.class)
-                                                               .withPropertyValues("axon.axonserver.enabled:false");
+        testApplicationContext = new ApplicationContextRunner().withUserConfiguration(DefaultContext.class);
     }
 
     @Test

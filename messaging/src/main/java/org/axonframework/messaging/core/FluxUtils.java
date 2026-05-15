@@ -47,7 +47,7 @@ public final class FluxUtils {
      * @param <M>    The type of Message returned by the source.
      * @return A Flux with the elements provided by the source.
      */
-    public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<M> source) {
+    public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<? extends M> source) {
         return Flux.create(emitter -> {
             FluxStreamAdapter<M> fluxTask = new FluxStreamAdapter<>(source, emitter);
             emitter.onRequest(i -> fluxTask.process());
@@ -107,8 +107,9 @@ public final class FluxUtils {
         private final MessageStream<M> source;
         private final FluxSink<MessageStream.Entry<M>> emitter;
 
-        public FluxStreamAdapter(MessageStream<M> source, FluxSink<MessageStream.Entry<M>> emitter) {
-            this.source = source;
+        @SuppressWarnings("unchecked")
+        public FluxStreamAdapter(MessageStream<? extends M> source, FluxSink<MessageStream.Entry<M>> emitter) {
+            this.source = (MessageStream<M>) source;
             this.emitter = emitter;
         }
 

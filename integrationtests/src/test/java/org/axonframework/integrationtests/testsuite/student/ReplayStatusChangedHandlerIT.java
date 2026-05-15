@@ -55,7 +55,7 @@ import static org.awaitility.Awaitility.await;
  * @author Steven van Beelen
  * @since 5.1.0
  */
-class ReplayStatusChangedHandlerIT extends AbstractStudentIT {
+public abstract class ReplayStatusChangedHandlerIT extends AbstractStudentIT {
 
     private static final String PSEP_NAME = "replayStatusChangeHandler";
 
@@ -70,7 +70,7 @@ class ReplayStatusChangedHandlerIT extends AbstractStudentIT {
         resetHandlerInvoked = new AtomicBoolean(false);
         replayStatusReference = new AtomicReference<>(null);
         statusChangedInvoked = new CountDownLatch(0);
-        purgeEventStorage();
+        purgeData();
     }
 
     @Test
@@ -162,7 +162,7 @@ class ReplayStatusChangedHandlerIT extends AbstractStudentIT {
                 ))
                 .customized(
                         (config, psep) -> psep.initialSegmentCount(2)
-                                              .batchSize(1)
+                                              .batchSize(3)
                 );
         return configurer.messaging(
                 messaging -> messaging.eventProcessing(

@@ -16,149 +16,178 @@
 
 package org.axonframework.messaging.core;
 
-import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK;
-
-import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TransferQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * MessageStream implementation that uses a Queue to make elements available to a consumer.
+ * A {@link MessageStream} implementation backed by a {@link BlockingQueue}.
+ * <p>
+ * This stream acts as a bridge between a producer and a consumer:
+ * {@link MessageStream.Entry entries} are {@link #offer(Message, Context) offered} into an
+ * internal queue and consumed via the {@link MessageStream} API.
+ * <p>
+ * The stream supports both finite and dynamically produced sequences:
+ * <ul>
+ *     <li>While open, the stream may temporarily have no elements available,
+ *     in which case consumption methods may indicate a "not ready" state.</li>
+ *     <li>Once {@link #seal()} or {@link #sealExceptionally(Throwable)} is invoked,
+ *     no further elements are accepted. Remaining buffered elements can still
+ *     be consumed.</li>
+ *     <li>After the queue is drained, the stream completes normally or
+ *     exceptionally depending on how it was sealed.</li>
+ * </ul>
+ * <p>
+ * If a callback is registered via {@link #setCallback(Runnable)}, it is invoked
+ * when new elements become available. If the callback throws an exception, the
+ * stream transitions to an error state immediately and any buffered elements
+ * are discarded.
  *
- * @param <M> The type of Message managed by this stream.
+ * @param <M> The type of {@link Message} contained in this stream.
  * @author Allard Buijze
+ * @author John Hendrikx
  * @since 5.0.0
  */
 public class QueueMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
+    /**
+     * Represents the current state of the producing side of this message stream.
+     * <p>
+     * There are three possible states:
+     * <ul>
+     *     <li>Open - the producer can add new elements at any time</li>
+     *     <li>Sealed - the producer has finished producing elements; no more
+     *     elements can be added. Once all elements are consumed, the stream becomes
+     *     completed</li>
+     *     <li>Sealed with exception - the producer encountered an error; no
+     *     more elements can be added. Once all elements that were buffered are
+     *     consumed, the stream will complete with the exception.</li>
+     * </ul>
+     *
+     * @param sealed {@code true} if the no more elements can be added by the
+     *               producer, otherwise {@code false}
+     * @param error  if {@code sealed} is {@code true} this indicates whether
+     *               the stream was sealed with or without an error
+     */
+    record State(boolean sealed, Throwable error) {}
+
+    private static final State OPEN = new State(false, null);
+
+    private final AtomicReference<State> state = new AtomicReference<>(OPEN);
     private final BlockingQueue<Entry<M>> queue;
-    private final AtomicReference<Runnable> onConsumeCallback = new AtomicReference<>(NO_OP_CALLBACK);
 
     /**
-     * Constructs an instance with an unbounded queue. Offering {@link MessageStream.Entry entries} will always be possible, as long
-     * as memory permits.
+     * Constructs a {@link QueueMessageStream} backed by an unbounded queue.
+     * <p>
+     * Offering elements will succeed as long as sufficient memory is available.
      */
     public QueueMessageStream() {
         this(new LinkedBlockingQueue<>());
     }
 
     /**
-     * Construct an instance with given {@code queue} as the underlying queue. Offering and consuming
-     * {@link MessageStream.Entry entries} will depend on the semantics of the implementation of the queue.
+     * Constructs a {@link QueueMessageStream} using the given {@code queue}
+     * as its underlying buffer.
      * <p>
-     * Note that delivery and consumption of entries is done through {@link BlockingQueue#offer(Object)} and
-     * {@link BlockingQueue#poll()}, respectively. This means that a queue must be available to buffer elements.
-     * Implementations of a {@link TransferQueue} typically don't have this, and will therefore not
-     * work.
+     * Both production and consumption semantics depend on the provided queue
+     * implementation. Elements are added using {@link BlockingQueue#offer(Object)}
+     * and consumed using {@link BlockingQueue#poll()}.
+     * <p>
+     * The queue must support buffering of elements. Implementations such as
+     * {@link TransferQueue} that rely on direct handoff without internal storage
+     * are not suitable.
      *
-     * @param queue The queue to use to store {@link MessageStream.Entry entries} in transit from producer to consumer.
+     * @param queue The queue used to buffer {@link MessageStream.Entry entries} between
+     *              producer and consumer.
      */
     public QueueMessageStream(BlockingQueue<Entry<M>> queue) {
         this.queue = queue;
     }
 
+    @Override
+    protected FetchResult<Entry<M>> fetchNext() {
+        Entry<M> next = queue.poll();
+
+        if (next != null) {
+            return FetchResult.of(next);
+        }
+
+        return switch(state.get()) {
+            case State(boolean sealed, Throwable error) when sealed && error == null -> FetchResult.completed();
+            case State(boolean sealed, Throwable error) when sealed -> FetchResult.error(error);
+            default -> FetchResult.notReady();
+        };
+    }
+
     /**
-     * Add the given {@code message} and accompanying {@code context} available for reading by a consumer. Any callback
-     * that has been registered will be notified of the availability of a new {@link MessageStream.Entry entry}.
+     * Attempts to add the given {@code message} and {@code context} to this stream.
      * <p>
-     * If the underling buffer has insufficient space to store the offered element, or if the stream has been closed,
-     * the method returns {@code false}.
+     * If successful, the element becomes available for consumption and any
+     * registered callback is invoked to signal its availability.
+     * <p>
+     * If the callback throws an exception, the stream transitions to an error
+     * state immediately. In that case, any buffered elements are discarded and
+     * further interaction with the stream will reflect the error.
+     * <p>
+     * This method returns {@code false} if:
+     * <ul>
+     *     <li>the stream has been {@link #seal() sealed} or
+     *     {@link #sealExceptionally(Throwable) sealed exceptionally},</li>
+     *     <li>the underlying queue cannot accept the element (e.g. bounded queue is full), or</li>
+     *     <li>the stream has been {@link #close() closed} by the consumer.</li>
+     * </ul>
      *
-     * @param message The message to add to the queue.
-     * @param context The context to accompany the message.
-     * @return {@code true} if the message was successfully buffered. Otherwise {@code false}.
+     * @param message the message to add
+     * @param context the context associated with the message
+     * @return {@code true} if the element was accepted, otherwise {@code false}.
      */
     public boolean offer(M message, Context context) {
-        if (!isClosed() && queue.offer(new SimpleEntry<>(message, context))) {
-            Throwable before = error().orElse(null);
-            invokeCallbackSafely();
-            if (error().isPresent() && before == null) {
-                queue.clear();
-            }
+        if (state.get().equals(OPEN) && queue.offer(new SimpleEntry<>(message, context))) {
+            signalProgress();
+
             return true;
         }
+
         return false;
     }
 
     /**
-     * Marks the queue as completed, indicating to any consumer that no more {@link MessageStream.Entry entries} will become
-     * available.
+     * Seals this queue, preventing any further elements from being added.
+     * The queue may still contain elements; once these have been consumed,
+     * the stream completes.
      * <p>
-     * Note that there is no validation on offering items whether the stream is completed. It is the caller's
-     * responsibility to ensure no {@link Message Messages} are {@link #offer(Message, Context) offered} after
-     * completion.
+     * Any {@link Message Messages} {@link #offer(Message, Context) offered} after sealing
+     * will be rejected.
      */
-    @Override
-    public void complete() {
-        super.complete();
-    }
-
-    @Override
-    public void completeExceptionally(Throwable error) {
-        super.completeExceptionally(error);
+    public void seal() {
+        if (state.compareAndSet(OPEN, new State(true, null))) {
+            signalProgress();
+        }
     }
 
     /**
-     * Registers given {@code callback} to be invoked when {@link MessageStream.Entry entries} have been consumed from the underlying
-     * queue. Any previously registered callback will be replaced.
+     * Seals this queue exceptionally, indicating that no further elements will be added
+     * and that an error has occurred during production.
      * <p>
-     * The given {@code callback} is also notified when the consumer has requested to {@link #close()} this stream.
+     * Any {@link Message Messages} {@link #offer(Message, Context) offered} after this method
+     * is invoked will be rejected.
+     * <p>
+     * Already buffered elements may still be consumed via {@link #next()} or {@link #peek()}.
+     * Once the queue is empty, the stream will complete and {@link #error()} will report
+     * the provided {@link Throwable}.
      *
-     * @param callback The callback to invoke when {@link MessageStream.Entry entries} are consumed.
+     * @param error the {@link Throwable} representing the error that caused the stream to fail
      */
-    public void onConsumeCallback(Runnable callback) {
-        this.onConsumeCallback.set(callback);
-    }
-
-    @Override
-    public void setCallback(Runnable callback) {
-        Throwable before = error().orElse(null);
-        super.setCallback(callback);
-        if (error().isPresent() && before == null) {
-            queue.clear();
+    public void sealExceptionally(Throwable error) {
+        if (state.compareAndSet(OPEN, new State(true, error))) {
+            signalProgress();
         }
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        Entry<M> poll = queue.poll();
-        if (poll != null) {
-            onConsumeCallback.get().run();
-        }
-        return Optional.ofNullable(poll);
-    }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        return Optional.ofNullable(queue.peek());
-    }
-
-    @Override
-    public boolean isCompleted() {
-        return queue.isEmpty() && super.isCompleted();
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        return !queue.isEmpty();
-    }
-
-    @Override
-    public void close() {
-        complete();
-        onConsumeCallback.get().run();
-    }
-
-    /**
-     * Indicates whether this stream has been closed, either by completion or by explicit closing from the consumer.
-     * <p>
-     * Unlike {@link #isCompleted()}, this may also return {@code true} when there are still messages to consume
-     *
-     * @return {@code true} when closed or completed, otherwise {@code false}
-     */
-    public boolean isClosed() {
-        return super.isCompleted();
+    protected final void onCompleted() {
+        queue.clear();
+        seal();
     }
 }

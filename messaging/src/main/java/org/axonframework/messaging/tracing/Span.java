@@ -19,7 +19,6 @@ package org.axonframework.messaging.tracing;
 import org.axonframework.common.FutureUtils;
 import org.jspecify.annotations.Nullable;
 
-
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;

@@ -32,7 +32,6 @@ class SecurityAutoConfigurationTest {
     void handlerEnhancerDefinitionIsRegistered() {
         new ApplicationContextRunner()
                 .withUserConfiguration(Context.class)
-                .withPropertyValues("axon.axonserver.enabled=false")
                 .run(context -> {
                     assertNotNull(context);
 

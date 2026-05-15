@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <groupId>org.axonframework.examples</groupId>
@@ -32,15 +32,17 @@
     <description>Collection of examples used for demonstration and test purposes.</description>
 
     <properties>
-        <lombok.version>1.18.44</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- The axoniq-bom provides the framework-bom plus -->
+            <!-- additional components needed to run examples against axon-server -->
             <dependency>
-                <groupId>org.axonframework</groupId>
-                <artifactId>axon-framework-bom</artifactId>
-                <version>${project.version}</version>
+                <groupId>io.axoniq.framework</groupId>
+                <artifactId>axoniq-framework-bom</artifactId>
+                <version>5.1.1-SNAPSHOT</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
@@ -52,9 +54,24 @@
         <module>university-java</module>
         <module>university-java-springboot-3</module>
         <module>university-java-springboot-4</module>
+        <module>university-demo-kotlin</module>
     </modules>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

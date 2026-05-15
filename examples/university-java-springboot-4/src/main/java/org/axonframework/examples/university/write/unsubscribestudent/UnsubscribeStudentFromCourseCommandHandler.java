@@ -16,7 +16,6 @@
 
 package org.axonframework.examples.university.write.unsubscribestudent;
 
-import org.jspecify.annotations.NonNull;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
@@ -33,6 +32,7 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

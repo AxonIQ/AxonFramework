@@ -3,6 +3,202 @@
 
 All the enhancements and features which have been introduced to our major releases of the Axon Framework are noted here.
 
+[#release_5_1]
+== Release 5.1
+
+This release marks the first release wherein the split between Axon Framework and Axoniq Framework is apparent.
+As such, the feature-specific sections are split between Axon Framework and Axoniq Framework features, enhancements, fixes, documentation, and dependency changes.
+For those looking for a quick overview of "what is Axon and what is Axoniq Framework", the following components have been ported to Axoniq Framework are:
+
+1. The `axon-server-connector` module.
+2. All Axon Server Spring integration.
+3. The `AxonServerContainer` for Testcontainer support
+4. The `DistributedCommandBus` and `CommandBusConnector`. In line with the move of the `axon-server-connector`
+5. The `DistributedQueryBus` and `QueryBusConnector`. In line with the move of the `axon-server-connector`
+6. The `SequencedDeadLetterQueue`, `SequencedDeadLetterQueue` integration into Event Handling Components, and the JPA/JDBC/InMemory storage solutions for the `SequencedDeadLetterQueue`
+7. The `MultiStreamableEventSource`
+
+=== Features
+
+- [#3105] Revise Snapshotting logic
+- [#3105] Reintroduce Snapshotting by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4204[#4204]
+- [#3105] Set AxonServerSnapshotStore in the AxonServerConfigurationEnhancer by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4307[#4307]
+- Snapshotting rework to allow snapshots to be part of event stream by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4335[#4335]
+- [#3514] First-class Spring support for AxonTestFixture
+- feat(extensions): init axon-spring-boot-starter-test with AxonTestFixture bean support by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4213[#4213]
+- [#3618] Last-minute Message#payload conversion
+- [#3618] Introduce conversion awareness to the GenericMessage by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4312[#4312]
+- [#3618] Make lastminute/inline payload conversion available for command handling by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4314[#4314]
+- [#3618] Make lastminute/inline payload conversion available for event handling by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4313[#4313]
+- [#3618] Make lastminute/inline payload conversion available for query handling by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4315[#4315]
+- [#3879] Provide Kotlin extension for 5.0
+- [#3879] Introduce Kotlin extension by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4432[#4432]
+- [#3886] Support Spring Data Page through the JacksonConverter
+- [#3886] Add Jackson module for Spring Data Page deserialization by @theoema in link:https://github.com/AxonIQ/AxonFramework/pull/3937[#3937]
+- [#3891] Introduce @Namespace annotation and use for Event Processor naming
+- [#3891] Introduce and use the @Namespace annotation by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4226[#4226]
+- [#3923] Filter events while streaming with given EventCriteria for aggregate-based storage solutions
+- [#3923] Filter events while streaming with given EventCriteria for aggregate-based storage solutions by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4005[#4005]
+- [#4111] Enable decorator pattern for EventProcessors (register as interface type)
+- [#4111] Register event processors as interface types for decorator support by @theoema in link:https://github.com/AxonIQ/AxonFramework/pull/4113[#4113]
+- [#4182] Reintroduce JdbcAutoConfiguration
+- [#4384] Introduce configuration section functionality
+- [#4384] feat: introduce extensible configuration + adjust DLQ to use the approach by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4385[#4385]
+- Introduce ReplayStatusChangedHandler by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4297[#4297]
+- Port Reactor Extension to Axon Framework 5 by @theoema in link:https://github.com/AxonIQ/AxonFramework/pull/4245[#4245]
+- Introduce dedicated examples for Spring Boot 3 and 4 by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4367[#4367]
+- feat(integrationtests): base AbstractIntegrationTest class decoupled from Axon Server by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4413[#4413]
+
+=== Enhancements
+
+- [#3149] Allow queries with a local handler to shortcut to the local segment
+- [#3194] DbScheduler 15+ incompatible with Axon Framework 4.10.2
+- [#3304] Integrate event replay logic into Event Handling Component
+- [#3304] Support resets for the PooledStreamingEventProcessor resulting in EventHandlingComponent replays by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/3957[#3957]
+- [#3304] Deserialize ReplayToken#context with the Converter by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/3979[#3979]
+- [#3577] Modules should inherit ConfigurationEnhancer settings from the parent
+- [#3577] Module registry inheritance by @zambrovski in link:https://github.com/AxonIQ/AxonFramework/pull/4090[#4090]
+- [#3816] Adopt JSpecify nullability annotations
+- [#3816] Adopt JSpecify nullability annotations by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4233[#4233]
+- [#3816] Adopt JSpecify nullability annotations - Nullmarked by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4251[#4251]
+- [#3952] Transactional resources should be managed by resource executors as part of the processing context
+- [#3962] Validate necessity of SpringLazyCreatingModule
+- [#3962] LazyInitializedModule is still required, but can be slightly improved by @zambrovski in link:https://github.com/AxonIQ/AxonFramework/pull/4033[#4033]
+- [#3998] Allow SimpleUnitOfWorkFactory to augment its work units with enhancers
+- Allow SimpleUnitOfWorkFactory to augment its work units with enhancers by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/3999[#3999]
+- Show failed message handler in logs by @Sam-Kruglov in link:https://github.com/AxonIQ/AxonFramework/pull/3913[#3913]
+- Default to the AnnotationMessageTypeResolver in annotation-specific components by @Sam-Kruglov in link:https://github.com/AxonIQ/AxonFramework/pull/3894[#3894]
+- Refactor JPA Spring Boot auto configuration and slight SpringComponentRegistry tweak by @Sam-Kruglov in link:https://github.com/AxonIQ/AxonFramework/pull/3892[#3892]
+- Some codestyle improvements by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3951[#3951]
+- Event Storage Engine Test Suite improvements - Add stream-sees-appended-events tests and make methods protected by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/3956[#3956]
+- feat(test-fixture): AxonTestThenCommand - resultMessagePayload - convert payload before executing the check by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/3995[#3995]
+- Introduce ArchUnit into commons module by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4015[#4015]
+- Add new integration test using event store and unit of work by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4014[#4014]
+- [#3517] feat(eventhandling): PooledStreamingEventProcessor - introduce SegmentChangeListener by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4183[#4183]
+- EntityManagerTransactionManager - supports JPA transactions without Spring by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4232[#4232]
+- EventProcessors - enforce explicitly named event components by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4265[#4265]
+- Make Property#get method return nullable value by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4358[#4358]
+- Enhancement/university java springboot3 setup by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4374[#4374]
+- Refactor AbstractMessageStream and implementations by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4396[#4396]
+- Replace AxonTestFixture setting axonServerEnabled for integrationEnabled by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4445[#4445]
+- Replace AxonIQ references with Axoniq by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4471[#4471]
+- Provide default ResetHandler#handle(ResetContext, ProcessingContext) for EventHandlingComponent by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4350[#4350]
+- Fix javadocs / warnings in EventSourcing module by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4360[#4360]
+- Fix warnings in messaging by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4368[#4368]
+- Add test case for appending multiple events with append condition set by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4478[#4478]
+- fix(test): disable PostgresqlConfigurationEnhancer in AxonTestFixture to prevent using Postgres db in non-integration tests by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4480[#4480]
+- Remove unused imports by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4235[#4235]
+- Update copyright notice for 2026 by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4066[#4066]
+
+=== Bug fixes
+
+- [#3784] Polymorphic @EventSourcedEntity - doesn't evolve immutable entities
+- [#3784] Support Polymorphic Sealed Interface Entity Evolution by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/3975[#3975]
+- [#3853] Setting a callback on a MessageStream which throws an error during callback should result in the stream completing with that error
+- [#3853] Fix exceptions on callback should report error and close MessageStream by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4072[#4072]
+- [#3855] When a sourcing completes, the callback should be called per MessageStream contract
+- [#3855] Re-Enable callback test on AggregateBasedStorageEngineTestSuite by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4352[#4352]
+- Make initial callback execution for InMemory engine unconditional by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4176[#4176]
+- [#3982] fix(test): Event events(@Nonnull List<?>... events) - invalid usage of varargs by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/3984[#3984]
+- Fix toString in GenericEventMessage by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4000[#4000]
+- [#4006] AggregateBasedJpaEventStorageEngine should return the max (or latest) token when tokenAt is called with a date in the future
+- Feature/fix token at future date by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4007[#4007]
+- [#4012] Resolve MessageType for query handlers based on MessageTypeResolver
+- Resolve MessageType for query handlers based on MessageTypeResolver by @CodeDrivenMitch in link:https://github.com/AxonIQ/AxonFramework/pull/4012[#4012]
+- [#4200] DefaultEventStoreTransaction can under some circumstances return a sourced stream without filtering the consistency marker
+- [#4203] When snapshot loading fails (for any reason), fallback to normal loading
+- [#4220] When using EventStore::publish with multiple events, no processing context, and with the default interceptor, events can be published in different order
+- [#4288] Fix token advancement in AggregateBasedJpaEventStorageEngine by @markuseckstein in link:https://github.com/AxonIQ/AxonFramework/pull/4290[#4290]
+- [#4339] AF 5.1.0-RC1 regression: JpaTransactionAutoConfiguration and JdbcTransactionAutoConfiguration break on Spring Boot 4 due to hard class references
+- [#4339] fix(extensions/spring-boot): Spring Boot 4.x support - use afterName in AutoConfiguration classes by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4344[#4344]
+- [#4340] AF 5.1.0-RC1 regression: circular dependency BoundConfigurationProperties / AxonServerConfiguration on Spring Boot 4
+- [#4340] Break cyclic dependencies in spring autoconfiguration by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4354[#4354]
+- [#4340] fix(extensions/spring-boot): defer SpringComponentRegistry initialization for infrastructure beans to prevent BoundConfigurationProperties cycle by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4365[#4365]
+- fix(messaging): prevent StackOverflowError from double LocalConfiguration in module parent chain by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4351[#4351]
+- [#4355] ConcatenatingMessageStream should ensure it interacts with its first stream before calling isCompleted as this flag may otherwise be out of date
+- [#4355] ConcatenatingMessageStream ensures it interacts with its first stream before calling isCompleted by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4357[#4357]
+- [#4356] QueueMessageStream should only return true for isCompleted when actually completed
+- [#4366] JpaPollingEventCoordinator daemon thread races against EntityManagerFactory.close() during Spring context shutdown
+- Wait for polling thread to terminate for JPA event storage engine by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4372[#4372]
+- [#4377] Remove hard dependency on Jackson 3 from autoconfigured JpaTokenStore and JdbcTokenStore
+- Bug/4377/tokenstore autoconfig jackson3 dependency by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4380[#4380]
+- [#4392] Event Processors Spring Boot properties are not applied
+- [#4392] fix(messaging): consistent EventProcessor module naming by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4393[#4393]
+- fix(extensions/spring-boot): do not ignore @Namespace annotation on @Component with @EventHandler annotations if the matching EventProcessorDefinition is not present by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4369[#4369]
+- test(messaging): fix command-threads property test using wrong prefix and weak assertion by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4381[#4381]
+- Fix test isolation for the ReplayStatusChangedHandlerIT by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4321[#4321]
+- [#4427] Re-enable Examples build
+- [#4427] Re-enable Examples build by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4447[#4447]
+- [#4437] Fix consistency marker when sourcing an empty stream in the AggregateBasedJpaEventStorageEngine by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4454[#4454]
+- [#4455] NullPointerException in `AbstractMessageStream.next()` - `FetchResult.Value(@Nullable)` + `Optional.of()` crash PooledStreamingEventProcessors
+- [#4455] Support a null `MessageStream.Entry` on the `AbstractMessageStream.FetchResult` by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4457[#4457]
+- [#4450] Order JdbcAutoConfiguration correctly for Datasource by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4451[#4451]
+- Ensure UnitOfWork recorded cause on runErrorHandlers is set by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4435[#4435]
+- Fix flakey test in AbstractSubscriptionQueryTestSuite by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4433[#4433]
+- Possible fix for CI flakyness problem by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4481[#4481]
+- Reintroduce Getting Started AI-specific files by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4268[#4268]
+
+=== Documentation
+
+- [#3311] Construct a migration guide for Axon Framework 5
+- [#3961] Rework Documentation to align with AF5 API
+- [#3961] Rework Documentation to align with AF5 API by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4074[#4074]
+- [#4030] Add documentation explaining application startup event
+- Add documentation explaining application startup event by @corradom in link:https://github.com/AxonIQ/AxonFramework/pull/4284[#4284]
+- [#4059] Explain use of @EventTag annotation in event-dispatchers.adoc
+- [#4059] Reference DCB/EventTag in for event dispatchers by @jangalinski in link:https://github.com/AxonIQ/AxonFramework/pull/4064[#4064]
+- [#4092] Migration path - Configuration and Configurer Modules in AF5
+- [#4092] Introduce Configuration migration path by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4353[#4353]
+- [#4095] Rewrite Tuning section to comply with AF5 API
+- [#4325] Migration path - Snapshotting
+- [#4414] Add note on Converter/Serializer Documentation
+- Updated documentation for dispatching of Commands, Events and Queries by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3939[#3939]
+- Documentation for command handlers by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3946[#3946]
+- Migrated documentation for query handlers by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3963[#3963]
+- Migrated messaging concepts section to Axon 5 style by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3967[#3967]
+- Migrated event handling documentation by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3974[#3974]
+- docs: update modules structure and platform branding by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3960[#3960]
+- Doc/doc migration conversion by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3954[#3954]
+- Rewrote documentation about test fixtures by @abuijze in link:https://github.com/AxonIQ/AxonFramework/pull/3991[#3991]
+- Fix documentation for EventStoreTransaction methods by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/3983[#3983]
+- docs(af5-getting-started): Update Axon Framework version to 5.0.1 by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/3987[#3987]
+- docs(messaging): clarify that @Timestamp annotation is required to inject event timestamp in @EventHandler and @EventSourcingHandler annotations by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4106[#4106]
+- [#3517] docs(reference-guide): update DLQ docs for Axon Framework 5 by @MateuszNaKodach in link:https://github.com/AxonIQ/AxonFramework/pull/4292[#4292]
+- Introduce the base migration guide by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4075[#4075]
+- Mark documentation as pre-release for development branch by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4103[#4103]
+- [#3105] Add snapshot documentation by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4298[#4298]
+- Add reference documentation for inline message payload conversion by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4316[#4316]
+- Improvements for queries documentation in the reference guide by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4322[#4322]
+- Improve Javadoc on QueryUpdateEmitter by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4327[#4327]
+- Doc typo - refer to Event schedulers instead of Deadlines by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4310[#4310]
+- Add missing author and since tags by @hjohn in link:https://github.com/AxonIQ/AxonFramework/pull/4371[#4371]
+- Add a module overview diagram to the Axon Framework Documentation by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4386[#4386]
+- Color-code the module overview in the reference by @hatzlj in link:https://github.com/AxonIQ/AxonFramework/pull/4387[#4387]
+- Repository Transfer notice by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4415[#4415]
+- Remove image link about AxonIQ Console by @smcvb in link:https://github.com/AxonIQ/AxonFramework/pull/4421[#4421]
+
+=== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/corradom[@corradom]
+- link:https://github.com/dilgerma[@dilgerma]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/jangalinski[@jangalinski]
+- link:https://github.com/Kirboyyy[@Kirboyyy]
+- link:https://github.com/markuseckstein[@markuseckstein]
+- link:https://github.com/masaha03[@masaha03]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/Sam-Kruglov[@Sam-Kruglov]
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/stefanmirkovic[@stefanmirkovic]
+- link:https://github.com/theoema[@theoema]
+- link:https://github.com/vcanuel[@vcanuel]
+- link:https://github.com/zambrovski[@zambrovski]
+
 [#release_5_0]
 == Release 5.0
 
@@ -11,8 +207,8 @@ The list below contains all the features, enhancements, bugs, and documentation 
 
 For those looking to start with Axon Framework 5, we recommend you go through the [Getting Started](https://docs.axoniq.io/axon-framework-5-getting-started/) section of Axoniq Docs.
 If you have an Axon Framework 4 background, for example because you are looking to migrate an Axon Framework 4 application to Axon Framework 5, note that thorough migration tooling will follow in release 5.1.0 (please follow [this issue](https://github.com/AxonFramework/AxonFramework/issues/3195) when curious).
-If you want to give a manual migration a go, we strongly recommend that you check out the `/axon-5/api-changes.md` [file](https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes.md) present in the Axon Framework project.
-Although the `api-changes.md` is not strictly the migration guide, we will use it as the basis to form our future migration guide and documentation.
+If you want to give a manual migration a go, we strongly recommend that you check out the `/axon-5/api-changes/` link:https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes/index.md[directory] present in the Axon Framework project.
+Although the `api-changes/` files are not strictly the migration guide, we will use them as the basis to form our future migration guide and documentation.
 
 Given the shear amount of changes, we recommend checking out the full change list link:https://github.com/AxonFramework/AxonFramework/releases/tag/axon-5.0.0[here].
 

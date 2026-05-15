@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Send release notification data to Slack workflow
         id: slack
-        uses: slackapi/slack-github-action@v3.0.1
+        uses: slackapi/slack-github-action@v3.0.2
         with:
           webhook-type: webhook-trigger
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}

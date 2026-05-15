@@ -18,19 +18,18 @@ package org.axonframework.common.property;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 
 class PropertyAccessStrategyTest {
 
-    private PropertyAccessStrategy mock1 = new StubPropertyAccessStrategy(1000, "mock1");
-    private PropertyAccessStrategy mock2 = new StubPropertyAccessStrategy(1200, "mock2");
-    private PropertyAccessStrategy mock3 = new StubPropertyAccessStrategy(1000, "mock3");
-    private PropertyAccessStrategy mock4 = new StubPropertyAccessStrategy(1000, "mock4");
-    private TestPropertyAccessStrategy testPropertyAccessStrategy = new TestPropertyAccessStrategy();
+    private final PropertyAccessStrategy mock1 = new StubPropertyAccessStrategy(1000, "mock1");
+    private final PropertyAccessStrategy mock2 = new StubPropertyAccessStrategy(1200, "mock2");
+    private final PropertyAccessStrategy mock3 = new StubPropertyAccessStrategy(1000, "mock3");
+    private final PropertyAccessStrategy mock4 = new StubPropertyAccessStrategy(1000, "mock4");
+    private final TestPropertyAccessStrategy testPropertyAccessStrategy = new TestPropertyAccessStrategy();
 
     @AfterEach
     void setUp() {
@@ -43,29 +42,37 @@ class PropertyAccessStrategyTest {
 
     @Test
     void beanPropertyAccess() {
-        assertEquals("beanProperty", PropertyAccessStrategy.getProperty(Bean.class, "beanProperty")
-                                                           .getValue(new Bean()));
+        Property<Bean> beanProperty = PropertyAccessStrategy.getProperty(Bean.class, "beanProperty");
+
+        assertNotNull(beanProperty);
+        assertEquals("beanProperty", beanProperty.getValue(new Bean()));
     }
 
     @Test
     void uniformPropertyAccess() {
-        assertEquals("uniformProperty", PropertyAccessStrategy.getProperty(Bean.class, "uniformProperty").getValue(
-                new Bean()));
+        Property<Bean> beanProperty = PropertyAccessStrategy.getProperty(Bean.class, "uniformProperty");
+        assertNotNull(beanProperty);
+        assertEquals("uniformProperty", beanProperty.getValue(new Bean()));
     }
 
     @Test
     void register() {
         PropertyAccessStrategy.register(testPropertyAccessStrategy);
-        assertEquals("testGetterInvoked",
-                     PropertyAccessStrategy.getProperty(Bean.class, "testProperty").getValue(new Bean()));
+        Property<Bean> beanProperty = PropertyAccessStrategy.getProperty(Bean.class, "testProperty");
+
+        assertNotNull(beanProperty);
+        assertEquals("testGetterInvoked", beanProperty.getValue(new Bean()));
     }
 
     @Test
     void invocationOrdering() {
         PropertyAccessStrategy.register(mock1);
         PropertyAccessStrategy.register(mock2);
-        assertEquals("mock2",
-                     PropertyAccessStrategy.getProperty(Bean.class, "testProperty").getValue(new Bean()));
+
+        Property<Bean> beanProperty = PropertyAccessStrategy.getProperty(Bean.class, "testProperty");
+
+        assertNotNull(beanProperty);
+        assertEquals("mock2", beanProperty.getValue(new Bean()));
     }
 
     @Test
@@ -74,6 +81,13 @@ class PropertyAccessStrategyTest {
         PropertyAccessStrategy.register(mock4);
         assertEquals("mock3",
                      PropertyAccessStrategy.getProperty(Bean.class, "testProperty").getValue(new Bean()));
+    }
+
+    @Test
+    void propertyValueCanBeNull() {
+        PropertyAccessStrategy strategy = new StubPropertyAccessStrategy(1000, null);
+        assertNull(strategy.propertyFor(Bean.class, "testProperty").getValue(new Bean(null, null)));
+
     }
 
     static class TestPropertyAccessStrategy extends PropertyAccessStrategy {
@@ -105,10 +119,20 @@ class PropertyAccessStrategyTest {
         }
     }
 
+
     static class Bean {
 
-        private String beanProperty = "beanProperty";
-        private String uniformProperty = "uniformProperty";
+        private final String beanProperty;
+        private final String uniformProperty;
+
+        Bean() {
+            this("beanProperty", "uniformProperty");
+        }
+
+        Bean(String beanProperty, String uniformProperty) {
+            this.beanProperty = beanProperty;
+            this.uniformProperty = uniformProperty;
+        }
 
         public String getBeanProperty() {
             return beanProperty;

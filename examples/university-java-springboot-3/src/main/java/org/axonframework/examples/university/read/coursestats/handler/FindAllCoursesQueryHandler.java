@@ -16,9 +16,9 @@
 
 package org.axonframework.examples.university.read.coursestats.handler;
 
+import org.axonframework.examples.university.read.coursestats.api.CoursesQueryResult;
 import org.axonframework.examples.university.read.coursestats.api.FindAllCourses;
 import org.axonframework.examples.university.read.coursestats.projection.CourseStatsRepository;
-import org.axonframework.examples.university.read.coursestats.api.CoursesQueryResult;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.springframework.stereotype.Component;
 

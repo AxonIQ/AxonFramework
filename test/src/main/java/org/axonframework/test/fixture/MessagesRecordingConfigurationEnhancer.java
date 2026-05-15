@@ -17,16 +17,14 @@
 package org.axonframework.test.fixture;
 
 import org.axonframework.common.annotation.Internal;
-import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-
+import org.axonframework.messaging.commandhandling.CommandBus;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
+import org.axonframework.messaging.eventhandling.EventBus;
 
 import java.util.Objects;
-
-import static org.axonframework.messaging.commandhandling.distributed.DistributedCommandBusConfigurationEnhancer.DISTRIBUTED_COMMAND_BUS_ORDER;
 
 /**
  * ConfigurationEnhancer that registers {@link RecordingEventStore}, {@link RecordingEventSink} and
@@ -52,11 +50,10 @@ public class MessagesRecordingConfigurationEnhancer implements ConfigurationEnha
     private static final int EVENTS_RECORDER_DECORATION_ORDER = Integer.MIN_VALUE;
 
     /**
-     * Decoration order for the command bus recorder. Placed just outside the
-     * {@link org.axonframework.messaging.commandhandling.distributed.DistributedCommandBus} so that commands are
-     * recorded with their original, non-serialized payloads before they reach the distributed bus.
+     * Decoration order for the command bus recorder. Placed just outside the {@code DistributedCommandBus} so that
+     * commands are recorded with their original, non-serialized payloads before they reach the distributed bus.
      */
-    private static final int COMMANDS_RECORDER_DECORATION_ORDER = DISTRIBUTED_COMMAND_BUS_ORDER + 1;
+    private static final int COMMANDS_RECORDER_DECORATION_ORDER = InterceptingCommandBus.DECORATION_ORDER - 49;
 
     @Override
     public void enhance(ComponentRegistry registry) {

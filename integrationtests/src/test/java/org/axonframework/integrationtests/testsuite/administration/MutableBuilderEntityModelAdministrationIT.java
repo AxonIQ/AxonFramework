@@ -51,7 +51,7 @@ import java.util.Objects;
 /**
  * Runs the administration test suite using the builders of {@link EntityMetamodel} and related classes.
  */
-public class MutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
+public abstract class MutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
 
     EntityMetamodel<MutablePerson> buildEntityMetamodel(Configuration configuration,
                                                         EntityMetamodelBuilder<MutablePerson> builder) {

@@ -1,5 +1,7 @@
 package org.axonframework.examples.demo.university;
 
+import io.axoniq.framework.axonserver.connector.api.AxonServerConfiguration;
+import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
 import org.axonframework.examples.demo.university.faculty.FacultyModuleConfiguration;
 import org.axonframework.examples.demo.university.faculty.write.enrollstudent.EnrollStudentInFaculty;
 import org.axonframework.examples.demo.university.faculty.write.subscribestudent.SubscribeStudentToCourse;
@@ -7,8 +9,6 @@ import org.axonframework.examples.demo.university.shared.ids.CourseId;
 import org.axonframework.examples.demo.university.faculty.write.createcourseplain.CreateCourse;
 import org.axonframework.examples.demo.university.faculty.write.renamecourse.RenameCourse;
 import org.axonframework.examples.demo.university.shared.ids.StudentId;
-import org.axonframework.axonserver.connector.AxonServerConfiguration;
-import org.axonframework.axonserver.connector.AxonServerConfigurationEnhancer;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.common.infra.FilesystemStyleComponentDescriptor;

@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.axonframework.examples</groupId>
         <artifactId>axon-framework-examples</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>university-java-springboot-3</artifactId>
@@ -30,10 +30,10 @@
     <description>Spring Boot Example application for demo and integration testing.</description>
 
     <properties>
-        <spring.boot.version>3.5.12</spring.boot.version>
-        <springdoc-openapi.version>2.8.16</springdoc-openapi.version>
-        <testcontainers.version>2.0.3</testcontainers.version>
-        <jackson.version>3.1.0</jackson.version>
+        <spring.boot.version>3.5.14</spring.boot.version>
+        <springdoc-openapi.version>2.8.17</springdoc-openapi.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <jackson.version>3.1.2</jackson.version>
     </properties>
 
     <dependencyManagement>
@@ -79,6 +79,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -100,8 +104,12 @@
 
         <!-- Axon -->
         <dependency>
-            <groupId>org.axonframework.extensions.spring</groupId>
-            <artifactId>axon-spring-boot-starter</artifactId>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
         </dependency>
         <dependency>
             <groupId>org.axonframework</groupId>
@@ -111,6 +119,23 @@
             <groupId>org.axonframework.extensions.spring</groupId>
             <artifactId>axon-spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-testcontainer</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>3.1.2</version>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
         </dependency>
 
         <!-- Testing -->

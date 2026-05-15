@@ -77,12 +77,9 @@ For detailed information on event store configuration, Dynamic Consistency Bound
 The `EventStorageEngine` is the interface responsible for the actual storage and retrieval of events.
 Axon Framework provides several implementations, each suited to different use cases and deployment scenarios:
 
-* **`AxonServerEventStorageEngine`** - The default storage engine when using Axon Server.
-Provides full DCB support with event tagging and criteria-based querying.
-Recommended for production use.
-* **`AggregateBasedAxonServerEventStorageEngine`** - Uses Axon Server's aggregate-oriented APIs.
-Compatible with Axon Server versions that do not support DCB.
-Events are organized by aggregate identifier and sequence number.
+ifdef::advanced-framework[]
+include::connector:partial$event-storage-engines-listing.adoc[]
+endif::[]
 * **`AggregateBasedJpaEventStorageEngine`** - Stores events in a JPA-compatible database.
 Organizes events by aggregate identifier and sequence number.
 Useful when Axon Server is not available.
@@ -90,129 +87,9 @@ Useful when Axon Server is not available.
 Ideal for testing and short-lived tools.
 Not suitable for production use.
 
-==== `AxonServerEventStorageEngine`
-
-The `AxonServerEventStorageEngine` connects to link:https://www.axoniq.io/products/axon-server[Axon Server,window=_blank,role=external], fully supporting a Dynamic Consistency Boundaries where events may have several tags.
-This is the default storage engine when using Axon Server with DCB support.
-As such, configuration is rather straightforward:
-
-[tabs]
-======
-Configuration API::
-+
---
-
-Declare dependencies:
-
-[source,xml]
-----
-<!--somewhere in the POM file-->
-<dependency>
-    <groupId>org.axonframework</groupId>
-    <artifactId>axon-server-connector</artifactId>
-    <version>${axon.version}</version>
-</dependency>
-<dependency>
-    <groupId>org.axonframework</groupId>
-    <artifactId>axon-eventsourcing</artifactId>
-    <version>${axon.version}</version>
-</dependency>
-
-----
-
---
-
-Spring Boot::
-+
---
-
-Declare dependencies:
-
-[source,xml]
-----
-<!--somewhere in the POM file-->
-<dependency>
-    <groupId>org.axonframework</groupId>
-    <artifactId>axon-spring-boot-starter</artifactId>
-    <version>${axon.version}</version>
-</dependency>
-----
-
-[NOTE]
-.Disable Axon Server default
-====
-If you want to disable Axon Server as the default `EventStorageEngine`, you have two options:
-
-1. Set the `axon.axonserver.enabled` property to `false`.
-2. Exclude the `axon-server-connector` dependency from the `axon-spring-boot-starter` dependency.
-====
-
---
-======
-
-==== `AggregateBasedAxonServerEventStorageEngine`
-
-The `AggregateBasedAxonServerEventStorageEngine` uses Axon Server's API before we supported the Dynamic Consistency Boundary.
-This makes it **the** `EventStorageEngine` to use when your stored events have not yet been migrated to a DCB-supporting storage solution.
-Although Axon Server is the default, the `AggregateBasedAxonServerEventStorageEngine` should be configured consciously:
-
-[tabs]
-====
-Configuration API::
-+
---
-[source,java]
-----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(EventSourcingConfigurer configurer) {
-        configurer.registerEventStorageEngine(config -> {
-            AxonServerConnectionManager connectionManager = config.getComponent(AxonServerConnectionManager.class);
-            // AxonServerConnectionManager#getConnection returns a connection to the default context.
-            // Use AxonServerConnectionManager#getConnection(String) to retrieve a connection to another context.
-            return new AggregateBasedAxonServerEventStorageEngine(
-                    connectionManager.getConnection(),
-                    config.getComponent(EventConverter.class)
-            );
-        });
-    }
-}
-----
---
-
-Spring Boot::
-+
---
-[source,java]
-----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.springframework.context.annotation.Bean;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public EventStorageEngine storageEngine(AxonServerConnectionManager connectionManager,
-                                            EventConverter eventConverter) {
-        // AxonServerConnectionManager#getConnection returns a connection to the default context.
-        // Use AxonServerConnectionManager#getConnection(String) to retrieve a connection to another context.
-        return new AggregateBasedAxonServerEventStorageEngine(
-                connectionManager.getConnection(),
-                eventConverter
-        );
-    }
-}
-----
---
-====
+ifdef::advanced-framework[]
+include::connector:partial$event-storage-engines.adoc[]
+endif::[]
 
 [#aggregatebasedjpaeventstorageengine]
 ==== `AggregateBasedJpaEventStorageEngine`
@@ -464,48 +341,7 @@ The `JacksonConverter` creates compact JSON output that is suitable for long-ter
 If no explicit `EventConverter` is configured, events are converted using the message converter that has been configured (which defaults to the `JacksonConverter`).
 For more details on different converter options and layers, see xref:ROOT:conversion.adoc#converter_configuration_levels[here]
 
-[#distributing_events]
-== Distributing events
+ifdef::advanced-framework[]
+include::connector:partial$distributing-events.adoc[]
+endif::[]
 
-To distribute events between applications, it is important to know whether the applications belong to the same bounded context.
-If you don't recognize this concept, we recommend reading the link:https://www.axoniq.io/concepts/domain-driven-design[Bounded Context] section first.
-Applications within the same context "speak the same language."
-In other words, they communicate using the same set of messages, and thus events.
-
-As such, we can share the `EventStore's` data source between these applications.
-We may thus achieve distribution by utilizing the source itself.
-
-However, sharing the entire event API is not recommended whenever the applications do not belong to the same context.
-Instead, we should protect the boundary of the contexts, except for some clearly defined cross-boundary messages.
-Since accessing the same source isn't an option, we require a different solution to share events.
-
-To distribute events between bounded contexts, you can use Axon Server's xref:axon-server-reference:ROOT:axon-server/administration/multi-context.adoc[] solution, for example.
-The multi-context support requires application registration to specific contexts.
-Axon's configuration API has the `ComponentFactory` to allow construction of specific infrastructure components.
-The `AxonServerEventStorageEngineFactory` is provided out of the box, which gives users the ability to request a component of type `EventStorageEngine` with name `storageEngine@{context-name}`:
-
-[source,java]
-----
-import org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine;
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-
-public class AxonConfig {
-
-    public EventStorageEngine contextSpecificStorageEngine(Configuration configuration,
-                                                           String context) {
-        return configuration.getComponent(AxonServerEventStorageEngine.class, "storageEngine@" + context);
-    }
-}
-----
-
-The context-specific engine can, for example, be configured as the message source for a xref:event-processors/streaming.adoc[Streaming Processor] to start reading from.
-
-Alternatively, you can use a message broker to distribute events between contexts.
-
-Although this allows further event distribution, we still recommend consciously sharing _the correct_ events.
-Ideally, we add a form of context mapping, like an anti-corruption layer, between the contexts.
-In other words, we recommend using a separate component that maps the events from the local context to a shared language right before distribution.
-
-For example, this mapper would publish the messages on the AMQP queue or Kafka topic.
-When it comes to Axon Server, we could, for example, use a distinct shared/global context to contain the shared language.

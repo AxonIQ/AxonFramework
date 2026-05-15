@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../build/parent/pom.xml</relativePath>
     </parent>
 
@@ -53,13 +53,6 @@
             <artifactId>axon-common</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-server-connector</artifactId>
-            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -212,14 +205,6 @@
                 </executions>
             </plugin>
 
-            <!-- Silence the AS download message -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>-Daxon.axonserver.suppressDownloadMessage=true</argLine>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 </project>

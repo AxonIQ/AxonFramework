@@ -160,7 +160,7 @@ public class DelayedMessageStream<M extends Message> implements MessageStream<M>
     }
 
     @Override
-    public <R> CompletableFuture<R> reduce(R identity, BiFunction<R, Entry<M>, R> accumulator) {
+    public <R> CompletableFuture<R> reduce(R identity, BiFunction<R, ? super Entry<M>, R> accumulator) {
         return delegate.thenCompose(delegateStream -> delegateStream.reduce(identity, accumulator));
     }
 

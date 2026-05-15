@@ -28,8 +28,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
 
-import static org.axonframework.common.BuilderUtils.assertNonBlank;
 import static java.util.Objects.requireNonNull;
+import static org.axonframework.common.BuilderUtils.assertNonBlank;
 
 /**
  * Default implementation of {@link EventHandlingComponentsConfigurer} providing {@link EventHandlingComponent}s`

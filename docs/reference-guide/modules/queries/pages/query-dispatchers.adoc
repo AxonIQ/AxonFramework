@@ -292,7 +292,7 @@ Axon Framework uses Project Reactor internally to build the `Publisher` for subs
 [TIP]
 .Reactive query gateway
 ====
-Since subscription queries already require `reactor-core`, consider using the xref:axon-framework-reference:ROOT:modules.adoc#axon-reactor[Reactor extension]'s `ReactorQueryGateway`.
+Since subscription queries already require `reactor-core`, consider using the xref:ROOT:modules.adoc#axon-reactor[Reactor extension]'s `ReactorQueryGateway`.
 It returns `Flux<R>` for subscription queries natively and provides reactor dispatch interceptors with access to Reactor context (for example, `ReactiveSecurityContextHolder` in Spring WebFlux applications).
 ====
 
@@ -413,7 +413,7 @@ However, it is a compile time dependency and is not required for other Axon feat
 [TIP]
 .Reactive query gateway
 ====
-Since streaming queries already require `reactor-core`, consider using the xref:axon-framework-reference:ROOT:modules.adoc#axon-reactor[Reactor extension]'s `ReactorQueryGateway`.
+Since streaming queries already require `reactor-core`, consider using the xref:ROOT:modules.adoc#axon-reactor[Reactor extension]'s `ReactorQueryGateway`.
 It provides `streamingQuery()` returning `Flux<R>` directly, along with `query()` returning `Mono<R>` for point-to-point queries.
 Reactor dispatch interceptors enable access to Reactor context at the gateway boundary.
 ====

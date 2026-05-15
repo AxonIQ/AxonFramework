@@ -45,8 +45,7 @@ class UpcasterOrderingTest {
 
     @BeforeEach
     void setUp() {
-        testApplicationContext = new ApplicationContextRunner().withPropertyValues("axon.axonserver.enabled:false")
-                                                               .withUserConfiguration(
+        testApplicationContext = new ApplicationContextRunner().withUserConfiguration(
                                                                        DefaultContext.class, OtherContext.class
                                                                );
     }

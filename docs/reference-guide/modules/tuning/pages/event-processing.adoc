@@ -1,90 +1,123 @@
 = Event Processing
 
-Typically, application components contain one or more xref:events:event-processors/index.adoc[Event Processors] which are responsible for processing incoming events. Tracking Event Processors have configuration aspects that can be changed at runtime to accommodate for changes in the system topology.
+Event processing in Axon Framework is centered around `PooledStreamingEventProcessor`.
+That processor is the main tuning surface when you want to increase throughput, control batching, or adapt to multiple application instances.
 
-== Increasing and decreasing segment counts
+== Pooled streaming processors
 
-Tracking Event Processors that handle events in multiple threads use segments to separate the events in the stream across these threads in a reliable way. However, especially when these threads are spread across multiple instances of a component, and the number of instances changes, it may be useful to scale the number of segments accordingly.
+Pooled streaming event processors process events asynchronously and claim segments from a token store.
+They are a good fit when you want higher throughput than subscribing processors and when event handling can be parallelized across segments.
 
-To this end, Axon Framework provides a xref:events:event-processors/streaming.adoc#splitting-and-merging-segments[split and merge API]. This API can be utilized directly via a client configuration or through Axon Server, where the latter takes required coordination into account.
+The main tuning knobs are:
 
-=== Segment tuning through Axon Framework
+* `initialSegmentCount(int)` to decide how many segments are created when the token store is empty
+* `batchSize(int)` to decide how many events are handled in one transaction
+* `tokenClaimInterval(long)` to control how often the coordinator retries token claims
+* `claimExtensionThreshold(long)` to decide when a running work package refreshes its claim
+* `maxClaimedSegments(int)` or `maxSegmentProvider(...)` to limit how much work one instance can own
+* `enableCoordinatorClaimExtension()` when work packages spend a long time handling batches
 
-The Tracking Event Processors in Axon Framework provide methods to increase or decrease the number of segments for that particular instance. When using this API, one must provide the ID of the segment to increase/decrease. Additionally, the instance on which the method is invoked, must be actively processing that segment.
+In practice, most tuning starts with `batchSize`, `initialSegmentCount`, and the executor sizing.
+The defaults are conservative and work well for small systems, but high-throughput installations usually need larger batches and more careful claim management.
 
-First, the instance of the Tracking Event Processor must be obtained. This can be done using Axon's Configuration API like so:
+=== Configuration
+
+Use the `EventProcessingConfigurer` to register pooled streaming processors and apply shared defaults:
 
 [source,java]
 ----
-// The `Configuration` was returned through the `Configurer` or is available as a bean in the Spring Application Context
-public TrackingEventProcessor retrieveTrackingProcessor(org.axonframework.config.Configuration axonConfig,
-                                                        String processorName) {
-    return axonConfig.eventProcessingConfiguration()
-                     .eventProcessor(processorName) // This call returns an Optional
-                     .filter(eventProcessor -> eventProcessor instanceof TrackingEventProcessor)
-                     .map(eventProcessor -> (TrackingEventProcessor) eventProcessor)
-                     .orElseThrow(() -> new IllegalStateException(
-                             "No Tracking Event Processor found with name " + processorName
-                     ));
+public void configureEventProcessing(MessagingConfigurer configurer) {
+
+    configurer.eventProcessing(eventProcessing -> eventProcessing
+                           .pooledStreaming(pooled -> pooled
+                                  .defaults((configuration, processorConfig) -> processorConfig
+                                           .initialSegmentCount(8)
+                                           .batchSize(50)
+                                           .tokenClaimInterval(5000)
+                                           .claimExtensionThreshold(5000))
+                                   .defaultProcessor("order-processor", components ->
+                                           components.declarative("OrderUpdated", cfg -> orderProjection))));
 }
-
 ----
 
-Using the above snippet, a split or merge can be called as follows:
+Spring Boot users typically configure pooled streaming processors by declaring an `EventProcessorDefinition` bean.
+
+For example:
 
 [source,java]
 ----
-int segmentId;
-TrackingEventProcessor trackingProcessor = retrieveTrackingProcessor(axonConfig, processorName);
+@Configuration
+public class NotificationAutomationConfiguration {
 
-// Split...
-CompletableFuture<Boolean> futureResult = trackingProcessor.splitSegment(segmentId);
-
-// Merge...
-CompletableFuture<Boolean> futureResult = trackingProcessor.mergeSegment(segmentId);
-
+    @Bean
+    EventProcessorDefinition notificationProcessor() {
+        return EventProcessorDefinition
+                .pooledStreaming("notification-processor")
+                .assigningHandlers(descriptor -> descriptor.beanName().endsWith("Notification")
+                        && descriptor.beanType().getPackageName().endsWith("automation"))
+                .customized(config -> config
+                        .initialSegmentCount(4)
+                        .batchSize(100)
+                );
+    }
+}
 ----
 
-____
+This Spring Boot style keeps the processor definition explicit while still allowing the framework to bind the rest of the configuration from properties and defaults.
 
-*Multi instance set up*
+== Sequencing policy
 
-If you have several instances of a given Axon application, that regularly means you have duplicated your Tracking Event Processors. Such a set up is a regular scenario to require segment tuning.
+`PooledStreamingEventProcessor` does not serialize all events globally.
+It groups work according to the configured `SequencingPolicy`.
+When two events resolve to the same sequence identifier, they are handled sequentially relative to each other.
+When they resolve to different identifiers, they can still be processed in parallel by different work packages.
 
-Note that, especially, in such a setup you would need to delegate said split or merge to the correct instance. The "correct instance", in this case, is the instance owning the segment you want to split and merge.
+By default, Axon configures a `HierarchicalSequencingPolicy`.
+It first applies `SequentialPerAggregatePolicy` and falls back to `SequentialPolicy` when no aggregate identifier is available in the `ProcessingContext`.
+In that fallback case, events are processed sequentially within a single segment, so parallelism is effectively disabled.
+For the full sequencing behavior and configuration options, see xref:events:event-processors/streaming.adoc#sequential_processing[Sequential processing].
 
-____
+That means your sequencing policy directly affects throughput:
 
-== Blacklisting events
-In a heterogeneously distributed application landscape your event handling components might receive events they do not have actual event handling members for. That this occurs is completely fine; the chances of a single application handling the entirety of all existing events is really small. This fact however does open up the possibility for optimization by _blacklisting_ events.
+* narrow sequence identifiers preserve concurrency
+* broad sequence identifiers reduce parallelism
+* `Optional.empty()` leaves the event unsequenced and available for concurrent processing
 
-To this end Axon has to option to automatically blacklist events it cannot handle. The Tracking Event Processor takes the lead in actual blacklisting, which it does by signaling the utilized event stream when none of its handlers can handle the event in question. The event stream provided by the Axon Server connection in turn implements the functionality to notify an Axon Server node that certain events cannot be handled by it.
+If you migrate toward Dynamic Consistency Boundaries, revisit any event sequencing policy that still assumes aggregate identifiers are the concurrency boundary.
+The right policy is the one that matches the actual consistency boundary you want to preserve.
 
-By default, blacklisting is turned for an Axon client connected to Axon Server. To disable blacklisting, the `disableEventBlacklisting` property can be adjusted as follows:
+For a deeper discussion of sequencing policy options and defaults, see xref:migration:paths/sequencing-policies.adoc[Sequencing Policy Migration].
 
-==== Axon Configuration API
+== Token store
 
-[source,java]
-----
-AxonServerConfiguration axonServerConfig = new AxonServerConfiguration();
-axonServerConfig.setDisableEventBlacklisting(true);
+Pooled streaming processors rely on a durable `TokenStore` to remember progress and coordinate segment ownership across instances.
+If no token store is configured, Axon Framework falls back to an `InMemoryTokenStore`, which is fine for tests and demos but not for production.
 
-Configurer configurer = 
-    DefaultConfigurer.defaultConfiguration()
-        .registerComponent(AxonServerConfiguration.class, c -> axonServerConfig);
-----
+The practical rule is simple:
 
-==== Spring Boot auto configuration
+* use a durable token store in production
+* keep the token store close to the data that your event handlers update
+* size connection pooling so that token claims and event handling do not contend for connections
 
-[source,text]
-----
-axon.axonserver.disableEventBlacklisting=true
-----
+For the full token store configuration options, see xref:events:event-processors/streaming.adoc#token_store[Token store].
 
-____
+== DCB impact
 
-*Retrying Blacklisted Events*
+Dynamic Consistency Boundaries change the shape of the event stream that a processor sees.
+In an aggregate-based store, the sequencing and token management is still centered on aggregate-oriented ordering.
+With DCB support, the concurrency boundary is defined by tags and criteria instead, so event handler sequencing and processor parallelism need to be chosen with that model in mind.
 
-The topology of Event Handlers might change in the lifecycle of a given application. This thus means that once blacklisted events might at a later stage do have Event Handler members present. To cover this scenario, Axon Server will periodically send over blacklisted events to refresh the blacklisted set.
+In other words, the same tuning knobs still exist, but the right values depend on the storage model:
 
-____
+* aggregate-based stores usually follow the classic per-aggregate ordering assumptions
+* DCB-based stores require an explicit policy that matches the business boundary you want to preserve
+* if you use DCB, revisit both sequencing and segment sizing instead of assuming aggregate-style defaults will carry over
+
+== Operating guidance
+
+* Increase `batchSize` when event handling is fast and transactional rollback is acceptable.
+* Keep `batchSize` small when the handler performs slow I/O or when rollback would be expensive.
+* Increase `initialSegmentCount` when you expect multiple application instances to share the load.
+* Use a durable `TokenStore`; the in-memory store is only appropriate for tests and simple demos.
+* Set the executor sizes so coordinator and worker threads do not starve each other.
+* Enable coordinator claim extension when workers process large batches and token claims need to be refreshed more aggressively. See xref:events:event-processors/streaming.adoc#token_claim_config[token claim configuration].

@@ -26,7 +26,7 @@ import org.axonframework.modelling.entity.EntityMetamodel;
  * Runs the administration test suite using as many reflection components of the {@link EntityMetamodel} and related
  * classes as possible. As reflection-based components are added, this test may change to use more of them.
  */
-public class SealedReflectionEntityModelAdministrationIT extends AbstractAdministrationIT {
+public abstract class SealedReflectionEntityModelAdministrationIT extends AbstractAdministrationIT {
 
     @Override
     protected EventSourcingConfigurer testSuiteConfigurer(EventSourcingConfigurer configurer) {

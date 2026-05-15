@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework.extensions.metrics</groupId>
         <artifactId>axon-metrics-extension</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>axon-metrics-micrometer</artifactId>

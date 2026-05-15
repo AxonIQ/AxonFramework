@@ -743,7 +743,7 @@ public class AxonConfig {
 
     @Bean
     public TokenStore customTokenStore(EntityManagerFactory entityManagerFactory,
-                                       Converter converter) {
+                                       GeneralConverter converter) {
         return new JpaTokenStore(new JpaTransactionalExecutorProvider(entityManagerFactory), converter, JpaTokenStoreConfiguration.DEFAULT);
     }
 }

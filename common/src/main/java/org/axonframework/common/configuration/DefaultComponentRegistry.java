@@ -16,13 +16,13 @@
 
 package org.axonframework.common.configuration;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Assert;
+import org.axonframework.common.TypeReference;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
-import org.axonframework.common.TypeReference;
 import org.axonframework.common.configuration.Component.Identifier;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

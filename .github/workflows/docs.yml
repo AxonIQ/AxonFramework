@@ -44,7 +44,7 @@ jobs:
 
       - name: Notify AxonIQ Library (if a push to a tracked branch)
         if: ${{ github.event_name == 'push'}}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.LIBRARY_DEVBOT_TOKEN }}
           script: |

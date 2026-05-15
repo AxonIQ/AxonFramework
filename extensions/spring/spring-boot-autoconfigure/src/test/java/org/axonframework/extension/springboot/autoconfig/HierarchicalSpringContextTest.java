@@ -64,8 +64,7 @@ public class HierarchicalSpringContextTest {
 
         testContext = new ApplicationContextRunner()
                 .withUserConfiguration(ChildContext.class)
-                .withParent(parentContext)
-                .withPropertyValues("axon.axonserver.enabled=false");
+                .withParent(parentContext);
     }
 
     @Test

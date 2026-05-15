@@ -16,9 +16,12 @@
 
 package org.axonframework.messaging.core;
 
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
+import org.axonframework.messaging.core.MessageStream.Entry;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Implementation of the {@link MessageStream} that concatenates two {@code MessageStreams}.
@@ -29,12 +32,35 @@ import java.util.function.BiFunction;
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
-class ConcatenatingMessageStream<M extends Message> implements MessageStream<M> {
+class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
-    private final MessageStream<M> first;
-    private final MessageStream<M> second;
+    /*
+     * Concurrency model:
+     *
+     * This class assumes concurrent interaction between:
+     * - a consumer thread invoking fetchNext() and other message stream methods
+     * - callback threads from the currently active stream invoking signalProgress() indirectly
+     *
+     * All mutable state (streams, active, and stream lifecycle transitions) is guarded by
+     * this instance's monitor (using synchronized methods).
+     *
+     * Key properties:
+     * - Stream switching (closing the previous stream, selecting the next, and registering a callback)
+     *   is performed atomically under the same lock.
+     * - The active stream and streams collection are always consistent with each other.
+     * - Callbacks may arrive concurrently, but any interaction with state is serialized through
+     *   the same monitor.
+     *
+     * Given the expected low contention and short critical sections, synchronized provides a
+     * simple and reliable way to enforce these guarantees.
+     */
+
+    private final List<MessageStream<M>> streams;  // only access under synchronization
+
+    private MessageStream<M> active;  // only access under synchronization
 
     /**
      * Construct a {@link MessageStream stream} that initially consume from the {@code first MessageStream}, followed by
@@ -44,72 +70,54 @@ class ConcatenatingMessageStream<M extends Message> implements MessageStream<M> 
      * @param second The second {@link MessageStream stream} to start consuming from once the {@code first} stream
      *               completes successfully.
      */
-    ConcatenatingMessageStream(MessageStream<M> first,
-                               MessageStream<M> second) {
-        this.first = first;
-        this.second = second;
+    @SuppressWarnings("unchecked")
+    ConcatenatingMessageStream(MessageStream<? extends M> first,
+                               MessageStream<? extends M> second) {
+        this.streams = new ArrayList<>(List.of(
+            (MessageStream<M>) first,
+            (MessageStream<M>) second
+        ));
+
+        switchStream();
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        if (!first.hasNextAvailable()  // this may trigger a completition state change, so call **before** isCompleted
-                && first.isCompleted() && first.error().isEmpty()) {
-            return second.next();
-        }
-        return first.next();
-    }
-
-    @Override
-    public void setCallback(Runnable callback) {
-        first.setCallback(() -> {
-            if (!(first.isCompleted() && first.error().isEmpty()) || second.hasNextAvailable()
-                    || second.isCompleted()) {
-                if (first.error().isPresent()) {
-                    second.close();
-                }
-                callback.run();
+    protected synchronized FetchResult<Entry<M>> fetchNext() {
+        do {
+            switch (FetchResult.of(active)) {
+                case FetchResult.Completed(): continue;
+                case FetchResult<Entry<M>> result: return result;
             }
-        });
-        second.setCallback(() -> {
-            if (first.isCompleted() && first.error().isEmpty()) {
-                callback.run();
-            }
-        });
+        } while(switchStream());
+
+        return FetchResult.completed();
     }
 
-    @Override
-    public Optional<Throwable> error() {
-        return first.isCompleted() ? first.error().or(second::error) : first.error();
-    }
-
-    @Override
-    public boolean isCompleted() {
-        return first.isCompleted() && (second.isCompleted() || first.error().isPresent());
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        return first.isCompleted() && first.error().isEmpty() ? second.hasNextAvailable() : first.hasNextAvailable();
-    }
-
-    @Override
-    public void close() {
-        first.close();
-        second.close();
-    }
-
-    @Override
-    public <R> CompletableFuture<R> reduce(R identity,
-                                           BiFunction<R, Entry<M>, R> accumulator) {
-        return first.reduce(identity, accumulator)
-                    .thenCompose(intermediate -> second.reduce(intermediate, accumulator));
-    }
-
-    @Override
-    public Optional<Entry<M>> peek() {
-        if (first.isCompleted() && first.error().isEmpty()) {
-            return second.peek();
+    private boolean switchStream() {
+        if (active != null) {
+            active.setCallback(() -> {});
+            active.close();
         }
-        return first.peek();
+
+        if (streams.isEmpty()) {
+            return false;
+        }
+
+        this.active = streams.removeFirst();
+
+        active.setCallback(this::signalProgress);
+
+        return true;
+    }
+
+    @Override
+    protected synchronized void onCompleted() {
+        active.close();
+        streams.forEach(MessageStream::close);
+    }
+
+    @Override
+    protected String describeDelegates() {
+        return Stream.concat(Stream.of(active), streams.stream()).map(Object::toString).collect(Collectors.joining(", ", "*", ""));
     }
 }

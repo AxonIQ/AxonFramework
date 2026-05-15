@@ -78,8 +78,8 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 
@@ -102,8 +102,8 @@ If you need to connect to another context, you should adjust the `connectionMana
 
 [source,java]
 ----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 
@@ -129,8 +129,8 @@ Spring Boot::
 --
 [source,java]
 ----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.springframework.context.annotation.Bean;
@@ -154,8 +154,8 @@ If you need to connect to another context, you should adjust the `connectionMana
 
 [source,java]
 ----
-import org.axonframework.axonserver.connector.AxonServerConnectionManager;
-import org.axonframework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.springframework.beans.factory.annotation.Value;
@@ -463,6 +463,7 @@ axon.eventstorage.jpa.polling-interval=1000
 --
 ====
 
+[.axoniq-feature]
 == PostgreSQL event storage migration
 
 If you are using PostgreSQL as your database for event storage—whether through the `JpaEventStorageEngine` or `JdbcEventStorageEngine` in Axon Framework 4—you would benefit from migrating to the dedicated `PostgresqlEventStorageEngine`.

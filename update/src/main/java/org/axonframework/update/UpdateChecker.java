@@ -34,8 +34,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * The UpdateChecker reports Anonymous usage data to AxonIQ periodically. In return, it receives information about
- * available upgrades and vulnerabilities in the AxonIQ libraries used. These upgrades and vulnerabilities are reported
+ * The UpdateChecker reports Anonymous usage data to Axoniq periodically. In return, it receives information about
+ * available upgrades and vulnerabilities in the Axoniq libraries used. These upgrades and vulnerabilities are reported
  * to the configured {@code UpdateCheckerReporter}.
  * <p>
  * The task will not run if the user has opted out of anonymous usage reporting. There are three ways to disable the
@@ -94,16 +94,16 @@ public class UpdateChecker implements Runnable {
     public void start() {
         try {
             if (!started.compareAndSet(false, true)) {
-                logger.debug("The AxonIQ UpdateChecker was already started.");
+                logger.debug("The Axoniq UpdateChecker was already started.");
                 return;
             }
             if (ObjectUtils.getOrDefault(usagePropertyProvider.getDisabled(), false)) {
                 logger.info(
-                        "You have opted out of the AxonIQ UpdateChecker. No update or vulnerabilities will be checked. See https://www.axoniq.io/update-check for more information.");
+                        "You have opted out of the Axoniq UpdateChecker. No update or vulnerabilities will be checked. See https://www.axoniq.io/update-check for more information.");
                 return;
             }
             logger.info(
-                    "Your AxonIQ libraries will be checked for update periodically. See https://www.axoniq.io/update-check for more information.");
+                    "Your Axoniq libraries will be checked for update periodically. See https://www.axoniq.io/update-check for more information.");
 
             delayedTask = DelayedTask.of(this, 1000);
         } catch (Exception e) {
@@ -127,13 +127,13 @@ public class UpdateChecker implements Runnable {
             UpdateCheckResponse updateCheckResponse = response.get();
             reporter.report(requestBody, updateCheckResponse);
 
-            logger.debug("AxonIQ will check library update and vulnerabilities again in {} seconds.",
+            logger.debug("Axoniq will check library update and vulnerabilities again in {} seconds.",
                          updateCheckResponse);
             delayedTask = DelayedTask.of(this, updateCheckResponse.checkInterval() * 1000L);
             errorRetryBackoffFactor = 1; // Reset backoff factor on a successful report
             firstRequest = false;
         } catch (Exception e) {
-            logger.warn("The AxonIQ UpdateChecker failed to fetch update and vulnerabilities.", e);
+            logger.warn("The Axoniq UpdateChecker failed to fetch update and vulnerabilities.", e);
             scheduleErrorRetry();
         }
     }
@@ -144,7 +144,7 @@ public class UpdateChecker implements Runnable {
      */
     public void stop() {
         if (started.compareAndSet(true, false)) {
-            logger.debug("Stopped the AxonIQ UpdateChecker. No further update will be checked.");
+            logger.debug("Stopped the Axoniq UpdateChecker. No further update will be checked.");
             if (this.delayedTask != null) {
                 delayedTask.cancel();
                 delayedTask = null;

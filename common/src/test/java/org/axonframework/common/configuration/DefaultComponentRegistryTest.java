@@ -16,9 +16,9 @@
 
 package org.axonframework.common.configuration;
 
-import org.jspecify.annotations.NonNull;
 import org.axonframework.common.TypeReference;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 

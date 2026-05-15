@@ -27,12 +27,13 @@ import java.util.function.Predicate;
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
-class FilteringMessageStream<M extends Message> extends DelegatingMessageStream<M,M> {
+class FilteringMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
     private final Predicate<Entry<M>> filter;
-    private Entry<M> peeked = null;
+    private final MessageStream<M> delegate;
 
     /**
      * Construct a {@link MessageStream stream} that invokes the given {@code filter} {@link Predicate} each time a new
@@ -43,50 +44,34 @@ class FilteringMessageStream<M extends Message> extends DelegatingMessageStream<
      * @param filter   The {@link MessageStream.Entry entry} filter that will validate if the {@link #next()} invocation
      *                 should return the entry, yes or no.
      */
-    FilteringMessageStream(MessageStream<M> delegate,
-                           Predicate<Entry<M>> filter) {
-        super(delegate);
+    FilteringMessageStream(MessageStream<M> delegate, Predicate<Entry<M>> filter) {
+        this.delegate = delegate;
         this.filter = filter;
+
+        initialize(delegate.error().map(FetchResult::<Entry<M>>error).orElse(FetchResult.notReady()));
+
+        delegate.setCallback(this::signalProgress);
     }
 
     @Override
-    public Optional<Entry<M>> next() {
-        if (peeked != null) {
-            Entry<M> result = peeked;
-            peeked = null;
-            return Optional.of(result);
-        }
-        Optional<Entry<M>> result = delegate().next();
+    protected FetchResult<Entry<M>> fetchNext() {
+        Optional<Entry<M>> result = delegate.next();
+
         while (result.isPresent() && !filter.test(result.get())) {
-            result = delegate().next();
+            result = delegate.next();
         }
-        return result;
+
+        if (delegate.error().isPresent()) {
+            return FetchResult.error(delegate.error().orElseThrow());
+        }
+
+        return result.map(FetchResult::of)
+            .orElseGet(() -> delegate.isCompleted() ? FetchResult.completed() : FetchResult.notReady());
     }
 
     @Override
-    public Optional<Entry<M>> peek() {
-        if (peeked != null) {
-            return Optional.of(peeked);
-        }
-        Optional<Entry<M>> result = delegate().next();
-        while (result.isPresent() && !filter.test(result.get())) {
-            result = delegate().next();
-        }
-        if (result.isPresent()) {
-            peeked = result.get();
-            return Optional.of(peeked);
-        }
-        return Optional.empty();
-    }
-
-    @Override
-    public boolean isCompleted() {
-        return delegate().isCompleted() && peeked == null;
-    }
-
-    @Override
-    public boolean hasNextAvailable() {
-        return peeked != null || peek().isPresent();
+    protected final void onCompleted() {
+        delegate.close();
     }
 
     /**
@@ -108,5 +93,10 @@ class FilteringMessageStream<M extends Message> extends DelegatingMessageStream<
         Single(MessageStream.Single<M> delegate, Predicate<Entry<M>> filter) {
             super(delegate, filter);
         }
+    }
+
+    @Override
+    protected String describeDelegates() {
+        return delegate.toString();
     }
 }

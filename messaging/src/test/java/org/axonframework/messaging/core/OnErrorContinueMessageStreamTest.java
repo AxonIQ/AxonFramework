@@ -16,10 +16,13 @@
 
 package org.axonframework.messaging.core;
 
+import org.axonframework.messaging.core.MessageStream.Entry;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test class validating the {@link OnErrorContinueMessageStream} through the {@link MessageStreamTest} suite.
@@ -66,5 +69,33 @@ class OnErrorContinueMessageStreamTest extends MessageStreamTest<Message> {
     @Override
     void shouldResultInFailedStreamWhenCompletionCallbackThrowsAnException_asFlux() {
 
+    }
+
+    @Nested
+    class OnNext {
+
+        @Test
+        void shouldNotReturnSpuriousEmptyWhenErrorIsDiscoveredDuringNextCall() {
+            // given
+            // A stream of items followed by a failure, with an error continuation
+            Message first = createRandomMessage();
+            Message second = createRandomMessage();
+            Message continuation = createRandomMessage();
+
+            MessageStream<Message> subject = new OnErrorContinueMessageStream<>(
+                    MessageStream.fromItems(first, second)
+                                 .concatWith(MessageStream.failed(new RuntimeException("oops"))),
+                    error -> MessageStream.just(continuation)
+            );
+
+            // when / then
+            // Items before the error are returned normally
+            assertThat(subject.next()).map(Entry::message).contains(first);
+            assertThat(subject.next()).map(Entry::message).contains(second);
+            // The call that discovers the error should return the continuation's first item,
+            // not an empty Optional followed by the continuation item on the next call
+            assertThat(subject.next()).map(Entry::message).contains(continuation);
+            assertThat(subject.next()).isEmpty();
+        }
     }
 }

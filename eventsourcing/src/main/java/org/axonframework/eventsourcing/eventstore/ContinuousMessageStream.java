@@ -18,12 +18,12 @@ package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.Registration;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.core.AbstractMessageStream;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -47,19 +47,17 @@ import java.util.function.Supplier;
  * @since 5.0.0
  */
 @Internal
-public final class ContinuousMessageStream<E> implements MessageStream<EventMessage> {
+public final class ContinuousMessageStream<E> extends AbstractMessageStream<EventMessage> {
 
     private final Supplier<List<E>> fetcher;
     private final BiFunction<ContinuousMessageStream<?>, Runnable, Registration> callbackTracker;
     private final Function<E, Entry<EventMessage>> converter;
 
     private List<E> data = List.of();
-    private Entry<EventMessage> nextEntry;
     private Throwable error;
     private int position;  // position within data
     private Registration callbackRegistration;
-    private Runnable callback;
-    private boolean closed;
+    private boolean sealed;
 
     /**
      * Creates a new {@code ContinuousMessageStream} instance configured with the given strategies.
@@ -83,101 +81,57 @@ public final class ContinuousMessageStream<E> implements MessageStream<EventMess
     }
 
     @Override
-    public synchronized void setCallback(Runnable callback) {
-        if (!closed) {
-            this.callback = callback;
+    protected synchronized void onCompleted() {
+        seal();
+    }
 
-            if (callback == null) {
-                callbackRegistration.cancel();
-                callbackRegistration = null;
-            } else if (callbackRegistration == null) {
-                this.callbackRegistration = callbackTracker.apply(this, this::invokeCallback);
+    @Override
+    protected synchronized FetchResult<Entry<EventMessage>> fetchNext() {
+        if (callbackRegistration == null) {
+            this.callbackRegistration = callbackTracker.apply(this, this::signalProgress);
+        }
+
+        if (position >= data.size()) {
+            fetchMore();  // TODO #3854 - ContinuousMessageStream may block in its MessageStream::peek call (and methods that rely on it) which is not allowed
+
+            if (sealed) {  // can happen if closed explicitely or because there was an error
+                return error == null ? FetchResult.completed() : FetchResult.error(error);
             }
 
-            invokeCallback();  // safe, it checks for null
-        }
-    }
-
-    @Override
-    public synchronized Optional<Entry<EventMessage>> next() {
-        try {
-            return peek();
-        } finally {
-            nextEntry = null;
-        }
-    }
-
-    @Override
-    public synchronized Optional<Entry<EventMessage>> peek() {
-        if (closed) {
-            return Optional.empty();
-        }
-
-        if (nextEntry == null) {
-            if (position >= data.size()) {
-                fetchMore();  // TODO #3854 - ContinuousMessageStream may block in its MessageStream::peek call (and methods that rely on it) which is not allowed
-
-                if (closed || data.isEmpty()) {  // closed may happen here if fetch had an error
-                    return Optional.empty();
-                }
-            }
-
-            E element = data.get(position++);
-
-            nextEntry = converter.apply(element);
-        }
-
-        return Optional.of(nextEntry);
-    }
-
-    @Override
-    public synchronized Optional<Throwable> error() {
-        return Optional.ofNullable(error);
-    }
-
-    @Override
-    public synchronized boolean isCompleted() {
-        return error != null;  // an infinite stream only completes when an error occurred
-    }
-
-    @Override
-    public synchronized boolean hasNextAvailable() {
-        return peek().isPresent();
-    }
-
-    @Override
-    public synchronized void close() {
-        if (!closed) {
-            closed = true;
-            data = null;
-
-            if (callbackRegistration != null) {
-                invokeCallback();
-
-                callback = null;
-                callbackRegistration.cancel();
+            if (data.isEmpty()) {
+                return FetchResult.notReady();
             }
         }
-    }
 
-    private void invokeCallback() {
-        try {
-            if (callback != null) {
-                callback.run();
-            }
-        } catch (Exception e) {
-            error = e;
-            close();
-        }
+        E element = data.get(position++);
+
+        Entry<EventMessage> nextEntry = converter.apply(element);
+
+        return FetchResult.of(nextEntry);
     }
 
     private void fetchMore() {
-        try {
-            this.data = fetcher.get();
-            this.position = 0;
-        } catch (Exception e) {
-            error = e;
-            close();
+        if (!sealed) {
+            try {
+                this.data = fetcher.get();
+                this.position = 0;
+            }
+            catch (Exception e) {
+                error = e;
+
+                seal();
+                signalProgress();
+            }
+        }
+    }
+
+    private void seal() {
+        if (!sealed) {
+            sealed = true;
+
+            if (callbackRegistration != null) {
+                callbackRegistration.cancel();
+            }
         }
     }
 }

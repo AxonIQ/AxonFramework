@@ -25,16 +25,17 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.LifecycleRegistry;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.handler.SimpleSourcingHandler;
-import org.axonframework.eventsourcing.handler.SnapshottingSourcingHandler;
-import org.axonframework.eventsourcing.handler.SourcingHandler;
+import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
+import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
+import org.axonframework.eventsourcing.handler.SimpleEntityLifecycleHandler;
+import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
-import org.axonframework.eventsourcing.snapshot.store.StoreBackedSnapshotter;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.core.MessageType;
@@ -184,13 +185,19 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                     CriteriaResolver<ID> criteriaResolver = config.getComponent(CriteriaResolver.class, entityName());
                     EventStore eventStore = config.getComponent(EventStore.class);
                     SnapshotPolicy snapshotPolicy = config.getOptionalComponent(SnapshotPolicy.class, entityName()).orElse(null);
-                    SourcingHandler<ID, E> sourcingHandler;
+                    EntityLifecycleHandler<ID, E> entityLifecycleHandler;
+
+                    @SuppressWarnings("unchecked")
+                    InitializingEntityEvolver<ID, E> evolver = new InitializingEntityEvolver<ID, E>(
+                        config.getComponent(EventSourcedEntityFactory.class, entityName()),
+                        config.getComponent(EntityMetamodel.class, entityName())
+                    );
 
                     if (snapshotPolicy == null) {
-                        sourcingHandler = new SimpleSourcingHandler<>(eventStore, criteriaResolver);
+                        entityLifecycleHandler = new SimpleEntityLifecycleHandler<>(eventStore, criteriaResolver, evolver);
                     }
                     else {
-                        Converter converter = config.getOptionalComponent(Converter.class)
+                        Converter converter = config.getOptionalComponent(GeneralConverter.class)
                             .orElseThrow(() -> new IllegalStateException("A Converter must be configured to use snapshotting."));
                         SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class)
                             .orElseThrow(() -> new IllegalStateException("A SnapshotStore must be configured to use snapshotting."));
@@ -198,31 +205,23 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                             .flatMap(mtr -> mtr.resolve(entityType))
                             .orElseThrow(() -> new IllegalStateException("A MessageTypeResolver capable of resolving " + entityType + " must be configured to use snapshotting."));
 
-                        sourcingHandler = new SnapshottingSourcingHandler<>(
+                        entityLifecycleHandler = new SnapshottingEntityLifecycleHandler<>(
                             eventStore,
                             criteriaResolver,
-                            messageType,
+                            evolver,
                             snapshotPolicy,
-                            new StoreBackedSnapshotter<>(
-                                snapshotStore,
-                                messageType,
-                                converter,
-                                entityType
-                            )
+                            messageType,
+                            converter,
+                            entityType,
+                            snapshotStore
                         );
                     }
 
-                    @SuppressWarnings("unchecked")
-                    var repository = new EventSourcingRepository<ID, E>(
+                    return new EventSourcingRepository<>(
                         idType,
                         entityType,
-                        eventStore,
-                        config.getComponent(EventSourcedEntityFactory.class, entityName()),
-                        config.getComponent(EntityMetamodel.class, entityName()),
-                        sourcingHandler
+                        entityLifecycleHandler
                     );
-
-                    return repository;
                 })
                 .onStart(Phase.LOCAL_MESSAGE_HANDLER_REGISTRATIONS,
                          (config, component) -> {

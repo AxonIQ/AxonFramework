@@ -16,8 +16,6 @@
 
 package org.axonframework.extension.spring.config;
 
-import org.axonframework.messaging.eventhandling.deadletter.SequencedDeadLetterQueueFactory;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.configuration.Configuration;
@@ -29,6 +27,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorModule;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -153,7 +152,7 @@ interface SpringCustomizations {
             require(unitOfWorkFactory != null,
                     "Could not find a mandatory UnitOfWorkFactory for event processor '" + name + "'.");
 
-            var config = eventProcessorConfiguration
+            return eventProcessorConfiguration
                     .workerExecutor(scheduledExecutorService)
                     .tokenClaimInterval(settings.tokenClaimIntervalInMillis())
                     .batchSize(settings.batchSize())
@@ -161,14 +160,6 @@ interface SpringCustomizations {
                     .eventSource(eventStore)
                     .tokenStore(tokenStore)
                     .unitOfWorkFactory(unitOfWorkFactory);
-            if (settings.dlq().enabled()) {
-                var dlqFactory = getComponent(configuration, SequencedDeadLetterQueueFactory.class, null, null);
-                require(dlqFactory != null,
-                        "DLQ is enabled for processor '" + name + "' but no SequencedDeadLetterQueueFactory bean is available.");
-                config = config.deadLetterQueue(dlq ->
-                        dlq.enabled().factory(dlqFactory).cacheMaxSize(settings.dlq().cache().size()));
-            }
-            return config;
         }
     }
 

@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core;
 
+import org.axonframework.messaging.core.MessageStream.Entry;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.junit.jupiter.api.*;
@@ -24,8 +25,8 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
@@ -34,7 +35,7 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
     protected MessageStream<EventMessage> completedTestSubject(List<EventMessage> messages) {
         QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
         messages.forEach(m -> testSubject.offer(m, Context.empty()));
-        testSubject.complete();
+        testSubject.seal();
         return testSubject;
     }
 
@@ -58,9 +59,9 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
 
         completionCallback.whenComplete((r, e) -> {
             if (e != null) {
-                testSubject.completeExceptionally(e);
+                testSubject.sealExceptionally(e);
             } else {
-                testSubject.complete();
+                testSubject.seal();
             }
         });
         return testSubject;
@@ -76,7 +77,7 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
     protected MessageStream<EventMessage> failingTestSubject(List<EventMessage> messages, RuntimeException failure) {
         QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
         messages.forEach(m -> testSubject.offer(m, Context.empty()));
-        testSubject.completeExceptionally(failure);
+        testSubject.sealExceptionally(failure);
         return testSubject;
     }
 
@@ -84,19 +85,6 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
     protected EventMessage createRandomMessage() {
         return new GenericEventMessage(new MessageType("message"),
                                          "test-" + ThreadLocalRandom.current().nextInt(10000));
-    }
-
-    @Test
-    void shouldInvokeConsumeCallbackWhenMessageIsConsumed() {
-        QueueMessageStream<EventMessage> testSubject = uncompletedTestSubject(List.of(createRandomMessage()),
-                                                                                      new CompletableFuture<>());
-
-        AtomicBoolean invoked = new AtomicBoolean(false);
-        testSubject.onConsumeCallback(() -> invoked.set(true));
-
-        assertFalse(invoked.get());
-        assertTrue(testSubject.next().isPresent());
-        assertTrue(invoked.get());
     }
 
     @Test
@@ -119,39 +107,56 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
     }
 
     @Test
-    void closePreventsNewElementsFromBeingAdded() {
+    void closeDiscardsElementsAndPreventsNewElementsFromBeingAdded() {
+        EventMessage msg1 = createRandomMessage();
+        EventMessage msg2 = createRandomMessage();
+        EventMessage msg3 = createRandomMessage();
         CompletableFuture<Void> completionCallback = new CompletableFuture<>();
-        QueueMessageStream<EventMessage> testSubject = uncompletedTestSubject(List.of(createRandomMessage()),
+        QueueMessageStream<EventMessage> testSubject = uncompletedTestSubject(List.of(msg1),
                                                                               completionCallback);
 
-        assertTrue(testSubject.offer(createRandomMessage(), Context.empty()));
+        assertTrue(testSubject.offer(msg2, Context.empty()));
+
+        /*
+         * The consumer is calling close, means the stream will complete,
+         * any remaining elements will be discarded and next, peek and
+         * hasNextAvailable will no longer indicate the presence of
+         * elements.
+         */
+
         testSubject.close();
-        testSubject.next();
-
-        // the stream is not completed because it still has elements.
-        assertFalse(testSubject.isCompleted());
-        assertFalse(testSubject.offer(createRandomMessage(), Context.empty()));
-
-        testSubject.next();
 
         assertTrue(testSubject.isCompleted());
+        assertFalse(testSubject.hasNextAvailable());
+        assertThat(testSubject.next()).isEmpty();
+        assertThat(testSubject.peek()).isEmpty();
+
+        assertFalse(testSubject.offer(msg3, Context.empty()));
     }
 
     @Test
     void consumingTheLastElementMarksTheStreamAsClosed() {
+        EventMessage msg1 = createRandomMessage();
+        EventMessage msg2 = createRandomMessage();
+        EventMessage msg3 = createRandomMessage();
         CompletableFuture<Void> completionCallback = new CompletableFuture<>();
-        QueueMessageStream<EventMessage> testSubject = uncompletedTestSubject(List.of(createRandomMessage()),
+        QueueMessageStream<EventMessage> testSubject = uncompletedTestSubject(List.of(msg1),
                                                                               completionCallback);
 
-        assertTrue(testSubject.offer(createRandomMessage(), Context.empty()));
-        testSubject.complete();
-        testSubject.next();
+        assertTrue(testSubject.offer(msg2, Context.empty()));
+        testSubject.seal();
+        assertThat(testSubject.next()).map(Entry::message).contains(msg1);
 
         // the stream is not completed because it still has elements.
         assertFalse(testSubject.isCompleted());
-        assertFalse(testSubject.offer(createRandomMessage(), Context.empty()));
+        assertFalse(testSubject.offer(msg3, Context.empty()));
 
-        testSubject.next();
+        assertThat(testSubject.next()).map(Entry::message).contains(msg2);
+        assertFalse(testSubject.isCompleted());  // not yet completed, because haven't gone past end yet
 
-        assertTrue(testSubject.isCompleted());    }
+        assertThat(testSubject.hasNextAvailable()).isFalse();
+        assertTrue(testSubject.isCompleted());  // completed as next element was attempted to be accessed
+
+        assertTrue(testSubject.isCompleted());
+    }
 }

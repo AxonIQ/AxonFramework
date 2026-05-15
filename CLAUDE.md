@@ -76,8 +76,8 @@ Maven wrapper is used (`./mvnw`). Key commands:
     - Do not add @DisplayName for test methods, try to make method names self-explanatory and add meaningful comments in given-when-then sections if needed
 
 Test naming conventions:
-- **Unit tests** (Surefire): `*Test.java`, `*Tests.java`, `*Test_*.java`, `*Tests_*.java`
-- **Integration tests** (Failsafe): `*IntegrationTest.java`, `*IntegrationTests.java`, `IT*.java`, `*IT.java`, `*ITCase.java`
+- **Unit tests** (Surefire): `*Test.java`, `*Tests.java`, `*TestCase.java`, `Test*.java`
+- **Integration tests** (Failsafe): `*IT.java`, `IT*.java`, `*ITCase.java`
 
 ## Module Dependency Hierarchy
 
@@ -272,27 +272,46 @@ BDD-style testing:
 
 **Core Writing Conventions:**
 1. **Original Style**: Always use original recommended javadoc style.
-2. **Comprehensive Coverage**: Document ALL public methods, constructors, and classes
-3. **Internal Methods**: Even `@Internal` constructors should be documented to explain why they're internal
+2. **Fragment Style for Tags**: `@param`, `@return`, and `@throws` tags use **fragment style** — start with a lowercase
+   letter, no trailing period. This applies even if surrounding existing code uses sentence style — new code must always
+   use fragment style. Class-level and method-level description paragraphs remain normal sentences (capitalized, with
+   periods).
+    ```java
+    // CORRECT — fragment style (lowercase, no period)
+    @param type          the extension class
+    @param <T>           the extension type
+    @return the extension instance, never {@code null}
+    @throws AxonConfigurationException if the extension cannot be created
+
+    // WRONG — sentence style (capitalized, with period)
+    @param type          The extension class.
+    @param <T>           The extension type.
+    @return The extension instance, never {@code null}.
+    @throws AxonConfigurationException If the extension cannot be created.
+    ```
+3. **Comprehensive Coverage**: Document ALL public methods, constructors, and classes
+4. **Internal Methods**: Even `@Internal` constructors should be documented to explain why they're internal
 
 **Linking and References:**
-4. **Always Use `@link` Tags**: When mentioning any class or interface, use `@link` tags
+
+5. **Always Use `@link` Tags**: When mentioning any class or interface, use `@link` tags
     - Example: `{@link org.axonframework.eventhandling.pooled.PooledStreamingEventProcessor}`
     - Use full qualified names for external packages
     - Can use short names for classes in same package: `{@link EventProcessorConfiguration}`
-5. **Method References**: Use `@link` for method references
+6. **Method References**: Use `@link` for method references
     - Example: `{@link #defaults(BiFunction)}`
     - External method: `{@link org.axonframework.configuration.MessagingConfigurer#eventProcessing(java.util.function.Consumer)}`
 
 **Documentation Structure:**
-6. **Class-Level Documentation Should Include**:
+
+7. **Class-Level Documentation Should Include**:
     - Purpose and main responsibility
     - Architectural role (composite, delegate, etc.)
     - Main benefits/use cases
     - Framework integration details (who creates it, when, how to access)
     - Complete usage example with proper API calls
     - `@author` and `@since` tags
-7. **Method Documentation Should Include**:
+8. **Method Documentation Should Include**:
     - Clear purpose statement
     - Parameter descriptions with types linked
     - Return value description
@@ -300,27 +319,33 @@ BDD-style testing:
     - Cross-references to related methods
 
 **Internal API Annotation:**
-8. **Mark Internal Code with `@Internal`**: Use `@Internal` (`org.axonframework.common.annotation.Internal`) on classes and methods that are not part of the public API. This applies to code extracted purely for internal organization (e.g., helper classes, implementation details split out for readability). Internal code is still usable but may introduce breaking changes in minor/patch releases. Always document *why* the element is internal in its Javadoc.
+
+9. **Mark Internal Code with `@Internal`**: Use `@Internal` (`org.axonframework.common.annotation.Internal`) on classes
+   and methods that are not part of the public API. This applies to code extracted purely for internal organization (
+   e.g., helper classes, implementation details split out for readability). Internal code is still usable but may
+   introduce breaking changes in minor/patch releases. Always document *why* the element is internal in its Javadoc.
 
 **Framework-Specific Guidelines:**
-9. **Emphasize Integration**: Explain how components fit into the framework
+
+10. **Emphasize Integration**: Explain how components fit into the framework
     - Who creates the component
     - How users should access it (don't instantiate directly)
     - Proper usage patterns through framework APIs
-10. **Focus on Purpose Over Implementation**:
+11. **Focus on Purpose Over Implementation**:
     - Emphasize the "why" (shared configuration, centralized management)
     - Don't focus on internal class relationships unless relevant to users
-11. **Examples Should Be Realistic**:
+12. **Examples Should Be Realistic**:
     - Use proper framework APIs (`MessagingConfigurer.create()`)
     - Show real-world configuration scenarios
     - Include method chaining patterns
 
 **Content Guidelines:**
-12. **Explain Defaults and Automation**:
+
+13. **Explain Defaults and Automation**:
     - Document automatic behaviors (transaction management setup)
     - Explain what the framework provides out-of-the-box
     - Clarify when manual configuration is needed
-13. **Cross-Reference Related Components**:
+14. **Cross-Reference Related Components**:
     - Link to sub-modules and delegated components
     - Reference configuration interfaces
     - Point to related framework classes

@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
@@ -46,17 +46,15 @@
             -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
         </mockito.agent.argLine>
 
-        <!-- Axon Server -->
-        <axonserver-connector-java.version>2026.0.0</axonserver-connector-java.version>
         <!-- Caching -->
-        <ehcache.version>3.11.1</ehcache.version>
+        <ehcache.version>3.12.0</ehcache.version>
         <javax.cache-api.version>1.1.1</javax.cache-api.version>
         <!-- Database -->
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.0.2</hikari.version>
         <hsqldb.version>2.7.2</hsqldb.version>
-        <hibernate-core.version>7.2.7.Final</hibernate-core.version>
-        <mysql-connector-java.version>9.6.0</mysql-connector-java.version>
+        <hibernate-core.version>7.3.2.Final</hibernate-core.version>
+        <mysql-connector-java.version>9.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.10</postgresql.version>
         <ojdbc.version>23.26.1.0.0</ojdbc.version>
         <!-- Jakarta -->
@@ -68,51 +66,51 @@
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <jspecify.version>1.0.0</jspecify.version>
         <!-- Logging -->
-        <log4j.version>2.25.3</log4j.version>
+        <log4j.version>2.25.4</log4j.version>
         <slf4j.version>2.0.17</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.6</dropwizard.metrics.version>
-        <micrometer.version>1.16.4</micrometer.version>
+        <micrometer.version>1.16.5</micrometer.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.7</byte-buddy.version>
-        <commons-io.version>2.21.0</commons-io.version>
+        <byte-buddy.version>1.18.8</byte-buddy.version>
+        <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
-        <javassist.version>3.30.2-GA</javassist.version>
+        <javassist.version>3.31.0-GA</javassist.version>
         <eaio-uuid.version>3.2</eaio-uuid.version>
-        <equalsverifier.version>4.4.1</equalsverifier.version>
+        <equalsverifier.version>4.5</equalsverifier.version>
         <!-- Reactive -->
-        <projectreactor.version>3.8.4</projectreactor.version>
+        <projectreactor.version>3.8.5</projectreactor.version>
         <reactive.streams.spec.version>1.0.4</reactive.streams.spec.version>
         <!-- Conversion -->
         <avro.version>1.12.1</avro.version>
         <dom4j.version>2.2.0</dom4j.version>
-        <gson.version>2.13.2</gson.version>
-        <jackson.version>3.1.0</jackson.version>
-        <jackson2.version>2.21.1</jackson2.version>
+        <gson.version>2.14.0</gson.version>
+        <jackson.version>3.1.2</jackson.version>
+        <jackson2.version>2.21.2</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.7.1</db-scheduler.version>
-        <jobrunr.version>8.5.1</jobrunr.version>
+        <jobrunr.version>8.5.2</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Spring -->
-        <spring.version>6.2.17</spring.version>
-        <spring.boot.version>3.5.11</spring.boot.version>
+        <spring.version>6.2.18</spring.version>
+        <spring.boot.version>3.5.14</spring.boot.version>
         <spring-data.version>2025.0.7</spring-data.version>
-        <spring-security.version>6.5.8</spring-security.version>
+        <spring-security.version>6.5.10</spring-security.version>
         <!-- Testing -->
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
         <junit.jupiter.version>6.0.3</junit.jupiter.version>
         <mockito.version>5.23.0</mockito.version>
-        <testcontainers.version>2.0.3</testcontainers.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <assertj.version>3.27.7</assertj.version>
-        <archunit.version>1.4.1</archunit.version>
+        <archunit.version>1.4.2</archunit.version>
         <!-- Validation -->
         <hibernate-validator.version>9.1.0.Final</hibernate-validator.version>
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>13.3.0</checkstyle.version>
+        <checkstyle.version>13.4.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
@@ -461,7 +459,7 @@
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core-test</artifactId>
-            <version>2.25.3</version>
+            <version>2.25.4</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -575,18 +573,7 @@
                         <log4j.version>${log4j.version}</log4j.version>
                         <test.forkNumber>$${surefire.forkNumber}</test.forkNumber>
                     </systemPropertyVariables>
-                    <includes>
-                        <include>**/*Test.java</include>
-                        <include>**/*Tests.java</include>
-                        <include>**/*Test_*.java</include>
-                        <include>**/*Tests_*.java</include>
-                    </includes>
-                    <excludes>
-                        <exclude>**/*IntegrationTest.java</exclude>
-                        <exclude>**/*IntegrationTests.java</exclude>
-                        <exclude>**/*IntegrationTest_*.java</exclude>
-                        <exclude>**/*IntegrationTests_*.java</exclude>
-                    </excludes>
+
                 </configuration>
             </plugin>
             <!-- package -->
@@ -707,22 +694,7 @@
                                     <systemPropertyVariables>
                                         <test.forkNumber>${surefire.forkNumber}</test.forkNumber>
                                     </systemPropertyVariables>
-                                    <includes>
-                                        <include>**/*IntegrationTest.java</include>
-                                        <include>**/*IntegrationTests.java</include>
-                                        <include>**/*IntegrationTest_*.java</include>
-                                        <include>**/*IntegrationTests_*.java</include>
-                                        <!-- these are the defaults -->
-                                        <include>**/IT*.java</include>
-                                        <include>**/*IT.java</include>
-                                        <include>**/*ITCase.java</include>
-                                    </includes>
-                                    <excludes>
-                                        <exclude>**/*Test.java</exclude>
-                                        <exclude>**/*Tests.java</exclude>
-                                        <exclude>**/*Test_*.java</exclude>
-                                        <exclude>**/*Tests_*.java</exclude>
-                                    </excludes>
+
                                 </configuration>
                             </execution>
 

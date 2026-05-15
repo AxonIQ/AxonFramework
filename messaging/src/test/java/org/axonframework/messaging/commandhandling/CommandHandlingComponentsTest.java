@@ -16,12 +16,12 @@
 
 package org.axonframework.messaging.commandhandling;
 
-import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
-import org.axonframework.messaging.commandhandling.retry.RetryingCommandBus;
-import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
 import org.axonframework.common.configuration.Component;
 import org.axonframework.common.configuration.Components;
 import org.axonframework.common.configuration.InstantiatedComponentDefinition;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
+import org.axonframework.messaging.commandhandling.retry.RetryingCommandBus;
+import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.junit.jupiter.*;

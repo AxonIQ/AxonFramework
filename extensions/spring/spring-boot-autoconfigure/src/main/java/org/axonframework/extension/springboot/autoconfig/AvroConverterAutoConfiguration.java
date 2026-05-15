@@ -20,6 +20,7 @@ import org.apache.avro.message.SchemaStore;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.ChainingContentTypeConverter;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.avro.AvroConverter;
 import org.axonframework.conversion.avro.AvroConverterConfiguration;
 import org.axonframework.conversion.avro.AvroConverterStrategy;
@@ -68,7 +69,7 @@ public class AvroConverterAutoConfiguration implements BeanClassLoaderAware {
     @Primary
     @ConditionalOnMissingBean(ignored = {MessageConverter.class, EventConverter.class})
     @ConditionalOnProperty(name = "axon.converter.general", havingValue = "avro")
-    public Converter converter() {
+    public GeneralConverter converter() {
         throw new AxonConfigurationException(format(
                 "Invalid converter type [%s] configured as general converter. "
                         + "The Avro Converter can be used as message or event converter only.",

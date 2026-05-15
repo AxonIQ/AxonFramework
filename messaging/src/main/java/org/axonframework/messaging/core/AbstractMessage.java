@@ -46,17 +46,17 @@ public abstract class AbstractMessage implements Message {
     }
 
     @Override
-        public String identifier() {
+    public String identifier() {
         return this.identifier;
     }
 
     @Override
-        public MessageType type() {
+    public MessageType type() {
         return this.type;
     }
 
     @Override
-        public Message withMetadata(Map<String, String> metadata) {
+    public Message withMetadata(Map<String, String> metadata) {
         if (metadata().equals(metadata)) {
             return this;
         }
@@ -64,7 +64,7 @@ public abstract class AbstractMessage implements Message {
     }
 
     @Override
-        public Message andMetadata(Map<String, @Nullable String> metadata) {
+    public Message andMetadata(Map<String, @Nullable String> metadata) {
         if (metadata.isEmpty()) {
             return this;
         }

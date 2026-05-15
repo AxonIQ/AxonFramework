@@ -16,9 +16,9 @@
 
 package org.axonframework.messaging.core.sequencing;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.util.Objects;
 import java.util.Optional;

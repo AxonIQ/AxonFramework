@@ -16,8 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.axonframework.common.AxonConfigurationException;
@@ -33,9 +31,10 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToInitializeTokenException;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToRetrieveIdentifierException;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;

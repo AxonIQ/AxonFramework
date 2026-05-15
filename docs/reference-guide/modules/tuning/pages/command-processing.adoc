@@ -1,39 +1,34 @@
 = Command Processing
 
-This page provides specifics around tuning the command processing within an Axon application.
+Command processing is usually tuned to keep writes for the same entity in order while preserving concurrency for unrelated commands.
+The default behavior in Axon Framework 5 already handles the common case, so most applications only need to customize sequencing when the default routing key is not the right boundary.
 
 [[command-sequencing]]
 == Command sequencing
 
-Command sequencing ensures that commands that aim to modify the same entities are processed sequentially, preventing optimistic locking in high-throughput applications. This feature is enabled by default in Axon Framework and operates transparently without requiring changes to existing command handlers.
+Command sequencing ensures that commands targeting the same entity are handled sequentially.
+This prevents optimistic locking conflicts when several commands arrive for the same entity at the same time.
 
-=== Why command sequencing?
+=== When sequencing matters
 
-In high-throughput applications, multiple commands may target the same entities concurrently. Without sequencing, concurrent state modifications on the entities will lead to optimistic locking failures with a high probability. When two commands attempt to update the same entities simultaneously, subsequent commands will fail to commit their modifications, requiring custom retry logic to be implemented.
+Use sequencing when:
 
-Command sequencing solves this problem by ensuring that commands targeting the same entities execute sequentially while maintaining full concurrency for commands targeting different entities. This eliminates conflicts without sacrificing overall system throughput.
-
-=== Default behavior
-
-Command sequencing is enabled by default in Axon Framework. The framework automatically configures a `CommandSequencingInterceptor` with the `RoutingKeySequencingPolicy`, which sequences commands based on their routing key.
-
-The default behavior provides an optimal balance between consistency and performance:
-
-* Commands with the **same routing key** (typically part of the targeted entity identifier) execute sequentially - one must complete before the next begins
-* Commands with **different routing keys** can execute concurrently - no waiting is required
-* Commands with **no routing key** or an **empty routing key** are not sequenced and can execute concurrently
-
-This means your application benefits from command sequencing immediately upon using Axon Framework, with no configuration required. The feature operates transparently at the handler interceptor level, after command routing has occurred.
+* several commands can target the same entity concurrently
+* the entity changes are not safe to apply in parallel
+* you want the framework to serialize conflicts before they reach the repository
 
 === How it works
 
-Command sequencing is implemented through the `CommandSequencingInterceptor`, a handler interceptor that manages execution order:
+Command sequencing is implemented by the `CommandSequencingInterceptor`.
+It is a handler interceptor, so it runs after routing and before the command handler executes.
 
-1. **Sequence identification**: When a command arrives, the interceptor consults the configured `SequencingPolicy` to extract a sequence identifier
-2. **Lock management**: The interceptor maintains a lock for each unique sequence identifier
-3. **Sequential execution**: Commands with the same sequence identifier wait for the previous command to complete before proceeding
+1. The interceptor asks the configured `SequencingPolicy` for a sequence identifier.
+2. Commands with the same identifier are processed sequentially relative to each other.
+3. Commands with different identifiers can still execute concurrently.
+4. Commands for which the policy returns `Optional.empty()` bypass sequencing entirely.
 
-Because sequencing happens at the handler interceptor level (after routing), it has no impact on command dispatch or routing logic. The sequencing is completely transparent to your command handlers - no code changes are required.
+The policy is applied at command handling time, so it does not change dispatching or routing behavior.
+That makes it a good fit for fine-grained control over concurrency without changing handlers.
 
 === The `SequencingPolicy` interface
 
@@ -43,39 +38,36 @@ The `SequencingPolicy` interface determines which commands should be sequenced t
 ----
 public interface SequencingPolicy {
 
-    Optional<Object> sequenceIdentifierFor(CommandMessage command,
-                                              ProcessingContext context);
+    Optional<Object> sequenceIdentifierFor(CommandMessage command, ProcessingContext context);
 }
 ----
 
-Axon Framework provides the following implementations:
+Axon Framework provides a few useful policies:
 
-* **`RoutingKeySequencingPolicy` (default)**: Sequences commands by their routing key, which typically corresponds to the entity identifier. Commands with null or empty routing keys are not sequenced and thus can execute concurrently. This is the default policy and works well for most applications.
+* **`RoutingKeySequencingPolicy` (default)** sequences commands by routing key. This is the default policy and matches the common entity identifier use case.
+* **`NoOpSequencingPolicy`** disables sequencing entirely and always returns an empty sequence identifier.
 
-* **`NoOpSequencingPolicy`**: Disables all command sequencing. Use this policy when you want to opt-out from command sequencing.
-
-You can implement the `SequencingPolicy` interface to create custom sequencing logic based on command metadata, payload properties, or any other criteria to set up your own sequencing logic.
+You can also implement a custom policy when the routing key is not the right boundary.
+Common alternatives are metadata-driven sequencing, tenant-based sequencing, or payload-property sequencing.
 
 === Configuration
 
 ==== Custom sequencing policy
 
-You can implement custom sequencing logic by implementing the `SequencingPolicy` interface. For example, to sequence commands by tenant ID from metadata:
+The following policy sequences commands by tenant identifier in metadata:
 
 [source,java]
 ----
 public class TenantBasedSequencingPolicy implements SequencingPolicy {
 
     @Override
-    public Optional<Object> sequenceIdentifierFor(CommandMessage command,
-                                                     ProcessingContext context) {
-        // Sequence commands by tenant ID from metadata
+    public Optional<Object> sequenceIdentifierFor(CommandMessage command, ProcessingContext context) {
         return Optional.ofNullable(command.metadata().get("tenantId"));
     }
 }
 ----
 
-Register your custom policy:
+Register the policy as the command sequencing policy:
 
 [tabs]
 ====
@@ -84,10 +76,11 @@ Axon Configuration API::
 --
 [source,java]
 ----
-public void registerCommandSequencingPolicy(MessagingConfigurer configurer) {
-    configurer.componentRegistry(cr -> cr.registerComponent(SequencingPolicy.class,
-            MessagingConfigurationDefaults.COMMAND_SEQUENCING_POLICY,
-            c -> new TenantBasedSequencingPolicy()));
+public void configureSequencingPolicy(MessagingConfigurer configurer) {
+    configurer.componentRegistry(cr -> cr.registerComponent(
+            SequencingPolicy.class,
+            c -> new TenantBasedSequencingPolicy())
+    );
 }
 ----
 --
@@ -98,7 +91,7 @@ Spring Boot auto configuration::
 [source,java]
 ----
 @Configuration
-public class AxonConfig {
+class MessagingConfiguration {
 
     @Bean
     public SequencingPolicy<? super CommandMessage> commandSequencingPolicy() {
@@ -109,65 +102,19 @@ public class AxonConfig {
 --
 ====
 
-You can also implement selective sequencing. For example, to skip certain command types:
+If a command does not need sequencing, return `Optional.empty()`.
+That lets the framework fall back to concurrent execution for those commands.
+
+==== Disabling sequencing
+
+If command handling is already serialized by another mechanism, register `NoOpSequencingPolicy.INSTANCE`.
 
 [source,java]
 ----
-public class SelectiveSequencingPolicy implements SequencingPolicy<CommandMessage> {
-
-    private final SequencingPolicy<? super CommandMessage> defaultPolicy;
-    private final List<String> skipTypes;
-
-    public SelectiveSequencingPolicy(SequencingPolicy<? super CommandMessage> defaultPolicy, List<String> skipTypes) {
-        this.defaultPolicy = defaultPolicy;
-        this.skipTypes = skipTypes;
-    }
-
-    @Override
-    public Optional<Object> sequenceIdentifierFor(CommandMessage command,
-                                                     ProcessingContext context) {
-        // Skip sequencing for read-only commands
-        if (skipTypes.contains(command.payloadType().getSimpleName())) {
-            return Optional.empty();
-        }
-        // Use default policy for other commands
-        return defaultPolicy.sequenceIdentifierFor(command, context);
-    }
+public void configureSequencingPolicy(MessagingConfigurer configurer) {
+    configurer.componentRegistry(cr -> cr.registerComponent(
+            SequencingPolicy.class,
+            c -> NoOpSequencingPolicy.INSTANCE)
+    );
 }
 ----
-
-==== Disabling command sequencing
-
-If you need to disable command sequencing entirely, register a `NoOpSequencingPolicy`:
-
-[tabs]
-====
-Axon Configuration API::
-+
---
-[source,java]
-----
-public void registerCommandSequencingPolicy(MessagingConfigurer configurer) {
-    configurer.componentRegistry(cr -> cr.registerComponent(SequencingPolicy.class,
-            MessagingConfigurationDefaults.COMMAND_SEQUENCING_POLICY,
-            c -> NoOpCommandSequencingPolicy.INSTANCE));
-}
-----
---
-
-Spring Boot auto configuration::
-+
---
-[source,java]
-----
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public SequencingPolicy<? super CommandMessage> commandSequencingPolicy() {
-        return NoOpSequencingPolicy.INSTANCE;
-    }
-}
-----
---
-====

@@ -66,8 +66,7 @@ public class FacultyInitializer implements ApplicationRunner {
     }
 
     private void waitUntilReady() {
-        var processor = axonConfiguration.getComponents(StreamingEventProcessor.class).get(
-                "EventProcessor[" + PROCESSOR_NAME + "]");
+        var processor = axonConfiguration.getComponents(StreamingEventProcessor.class).get(PROCESSOR_NAME);
         log.info("[FACULTY] Waiting for course statistics projection replay to finish...");
         executeUntilTrue(
                 () -> !processor.isReplaying(),

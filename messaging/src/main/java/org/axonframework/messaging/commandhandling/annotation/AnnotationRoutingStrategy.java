@@ -16,12 +16,12 @@
 
 package org.axonframework.messaging.commandhandling.annotation;
 
-import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.commandhandling.RoutingStrategy;
-import org.axonframework.messaging.commandhandling.distributed.DistributedCommandBus;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.RoutingStrategy;
+
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -39,7 +39,7 @@ import static org.axonframework.common.ReflectionUtils.methodsOf;
  * RoutingStrategy that expects an {@link Command} (meta-)annotation on the command message's payload. Commands are
  * routed based on an identifier annotated with the {@code Command}. This approach ensures that commands with the same
  * identifier, thus dealt with by the same target, are dispatched to the same node in a distributed Command Bus (e.g.
- * {@code AxonServerCommandBus} or {@link DistributedCommandBus}).
+ * {@code AxonServerCommandBus} or {@code DistributedCommandBus}).
  * <p>
  * An example would be the {@code TargetAggregateIdentifier} annotation, which is meta-annotated with
  * {@code RoutingKey}. See the AnnotationCommandTargetResolver for more details on this approach.

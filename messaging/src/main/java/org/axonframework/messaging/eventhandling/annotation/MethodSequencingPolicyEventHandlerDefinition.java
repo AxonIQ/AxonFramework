@@ -25,7 +25,6 @@ import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;

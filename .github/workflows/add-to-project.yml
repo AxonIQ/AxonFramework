@@ -13,6 +13,6 @@ jobs:
     steps:
       - uses: actions/add-to-project@main
         with:
-          project-url: https://github.com/orgs/AxonFramework/projects/2
+          project-url: https://github.com/orgs/AxonIQ/projects/25
           github-token: ${{ secrets.ADD_PROJECT_TOKEN }}
           labeled: 'Type: Dependency Upgrade'

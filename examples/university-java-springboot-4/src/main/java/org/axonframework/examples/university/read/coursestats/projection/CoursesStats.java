@@ -28,15 +28,15 @@ import org.axonframework.examples.university.shared.CourseId;
  */
 public record CoursesStats(CourseId courseId, String name, int capacity, int subscribedStudents) {
 
-    public CoursesStats name(String name) {
+    public CoursesStats name (String name){
         return new CoursesStats(courseId, name, capacity, subscribedStudents);
     }
 
-    public CoursesStats capacity(int capacity) {
+    public CoursesStats capacity ( int capacity){
         return new CoursesStats(courseId, name, capacity, subscribedStudents);
     }
 
-    public CoursesStats subscribedStudents(int subscribedStudents) {
+    public CoursesStats subscribedStudents ( int subscribedStudents){
         return new CoursesStats(courseId, name, capacity, subscribedStudents);
     }
 }

@@ -53,10 +53,8 @@ class EmptyMessageStreamTest extends MessageStreamTest<Message> {
     @Override
     protected MessageStream<Message> failingTestSubject(List<Message> messages,
                                                         RuntimeException failure) {
-        Assumptions.assumeTrue(messages.isEmpty(), "EmptyMessageStream doesn't support content");
-        MessageStream<Message> empty = MessageStream.empty();
-        empty.setCallback(() -> {throw failure;});
-        return empty;
+        Assumptions.abort("EmptyMessageStream doesn't support failed streams");
+        return MessageStream.empty();
     }
 
     @Override

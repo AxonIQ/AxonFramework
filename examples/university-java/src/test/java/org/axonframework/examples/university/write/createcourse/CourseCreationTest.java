@@ -33,8 +33,7 @@ class CourseCreationTest {
 
     @ProvidedAxonTestFixture
     AxonTestFixtureProvider fixtureProvider = () -> AxonTestFixture.with(
-            CreateCourseConfiguration.configure(EventSourcingConfigurer.create()),
-            Customization::disableAxonServer
+            CreateCourseConfiguration.configure(EventSourcingConfigurer.create())
     );
 
     @Test

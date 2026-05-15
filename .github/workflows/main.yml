@@ -56,8 +56,8 @@ jobs:
         if: matrix.sonar-enabled
         run: |
           ./mvnw -B -ntp -Dstyle.color=always org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -Dsonar.projectKey=AxonFramework_AxonFramework \
-          -Dsonar.organization=axonframework \
+          -Dsonar.projectKey=AxonIQ_AxonFramework \
+          -Dsonar.organization=axoniq \
           -Dsonar.host.url=https://sonarcloud.io \
           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
         env:
@@ -72,22 +72,9 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.SONATYPE_TOKEN_ID }}
           MAVEN_PASSWORD: ${{ secrets.SONATYPE_TOKEN_PASS }}
 
-      - name: Notify success to Slack
-        if: success()
+      - name: Notify run to Slack
+        uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-        uses: voxmedia/github-action-slack-notify-build@v2
-        with:
-          channel_id: CAGSEC92A
-          status: SUCCESS
-          color: good
-
-      - name: Notify failure to Slack
-        if: failure()
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-        uses: voxmedia/github-action-slack-notify-build@v2
-        with:
-          channel_id: CAGSEC92A
-          status: FAILED
-          color: danger
+          SLACK_CHANNEL: CAGSEC92A
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TOKEN:  ${{ secrets.SLACK_BOT_TOKEN }}

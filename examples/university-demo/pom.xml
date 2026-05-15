@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.axonframework.examples</groupId>
         <artifactId>axon-framework-examples</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>university-demo</artifactId>
@@ -35,19 +35,12 @@
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
         <junit.version>6.0.3</junit.version>
-        <jackson.version>2.21.1</jackson.version>
-        <log4j.version>2.25.3</log4j.version>
+        <jackson.version>2.21.2</jackson.version>
+        <log4j.version>2.25.4</log4j.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>org.axonframework</groupId>
-                <artifactId>axon-framework-bom</artifactId>
-                <version>${project.version}</version>
-                <scope>import</scope>
-                <type>pom</type>
-            </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
@@ -75,7 +68,7 @@
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
-            <version>4.34.0</version>
+            <version>4.34.1</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
@@ -87,7 +80,7 @@
         <!-- Event Store Dependencies -->
 
         <dependency>
-            <groupId>org.axonframework</groupId>
+            <groupId>io.axoniq.framework</groupId>
             <artifactId>axon-server-connector</artifactId>
         </dependency>
 
@@ -146,6 +139,12 @@
             <artifactId>axon-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-testcontainer</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>

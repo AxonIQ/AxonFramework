@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Priority;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
@@ -24,6 +23,7 @@ import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ResourceOverridingProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;

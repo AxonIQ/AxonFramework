@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>axon-framework-bom</artifactId>
@@ -34,12 +34,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>org.axonframework</groupId>
-                <artifactId>axon-server-connector</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <dependency>
                 <groupId>org.axonframework</groupId>
                 <artifactId>axon-common</artifactId>
@@ -81,6 +75,19 @@
                 <groupId>org.axonframework</groupId>
                 <artifactId>axon-update</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.axonframework.extensions.kotlin</groupId>
+                <artifactId>axon-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.axonframework.extensions.kotlin</groupId>
+                <artifactId>axon-kotlin-test</artifactId>
+                <version>${project.version}</version>
+                <scope>test</scope>
             </dependency>
 
             <dependency>

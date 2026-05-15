@@ -10,12 +10,12 @@ Query handling is fully async-native, with all query dispatching operations retu
 
 There are multiple types of queries that can be distinguished:
 
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#point-to-point-queries[Point-to-point queries]:
+. xref:queries:query-dispatchers.adoc#point-to-point-queries[Point-to-point queries]:
 These are routed to a single handler, which is expected to return a single result. This is the most common type of query.
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#subscription-queries[Subscription queries]: These request an initial result and then continue to receive updates as long as the subscription is active. The initial result and updates are combined in a single `Publisher` stream.
-. xref:axon-framework-reference:queries:query-dispatchers.adoc#streaming-queries[Streaming queries]: These queries are used to request a stream of results as a `Publisher`, which are returned as they become available. This is ideal for large result sets.
+. xref:queries:query-dispatchers.adoc#subscription-queries[Subscription queries]: These request an initial result and then continue to receive updates as long as the subscription is active. The initial result and updates are combined in a single `Publisher` stream.
+. xref:queries:query-dispatchers.adoc#streaming-queries[Streaming queries]: These queries are used to request a stream of results as a `Publisher`, which are returned as they become available. This is ideal for large result sets.
 
-You can find more about each type of query in the xref:axon-framework-reference:queries:query-dispatchers.adoc[Query dispatchers] section.
+You can find more about each type of query in the xref:queries:query-dispatchers.adoc[Query dispatchers] section.
 
 
 == Subsections

@@ -18,6 +18,16 @@ package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.Context;
+import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.LegacyResources;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.SimpleEntry;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -26,15 +36,6 @@ import org.axonframework.messaging.eventhandling.processing.streaming.segmenting
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.WrappedToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-import org.axonframework.messaging.core.Context;
-import org.axonframework.messaging.core.EmptyApplicationContext;
-import org.axonframework.messaging.core.LegacyResources;
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
-import org.axonframework.messaging.core.unitofwork.UnitOfWork;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -259,11 +260,11 @@ class WorkPackage {
      * a specialized {@link ProcessingContext} from the event entry to evaluate if the event should be processed by this
      * work package's {@link Segment}.
      * <p>
-     * The method extracts resources from the {@code eventEntry} that were set by the
-     * {@link StreamableEventSource} to make filtering decisions. Example: These
-     * resources include data like {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY}, which
-     * might be essential (while using the Aggreate based approach) for event sequencing since Axon Framework 5.0.0 no
-     * longer embeds aggregate identifiers directly in event messages.
+     * The method extracts resources from the {@code eventEntry} that were set by the {@link StreamableEventSource} to
+     * make filtering decisions. Example: These resources include data like
+     * {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY}, which might be essential (while using the Aggreate based
+     * approach) for event sequencing since Axon Framework 5.0.0 no longer embeds aggregate identifiers directly in
+     * event messages.
      * <p>
      * The temporary {@link EventSchedulingProcessingContext} created here has limitations - it cannot access
      * configuration components or register lifecycle hooks. Its sole purpose is to provide resource access during event
@@ -358,11 +359,11 @@ class WorkPackage {
     }
 
     private void processEvents() {
-        List<EventMessage> eventBatch = new ArrayList<>();
+        List<MessageStream.Entry<? extends EventMessage>> eventBatch = new ArrayList<>();
         while (!isAbortTriggered() && eventBatch.size() < batchSize && !processingQueue.isEmpty()) {
             ProcessingEntry entry = processingQueue.poll();
             lastConsumedToken = WrappedToken.advance(lastConsumedToken, entry.trackingToken());
-            entry.addToBatch(eventBatch);
+            entry.addToBatch(eventBatch, lastConsumedToken);
         }
 
         // Make sure all subsequent events with the same token (if non-null) as the last are added as well.
@@ -376,7 +377,7 @@ class WorkPackage {
                 var unitOfWork = unitOfWorkFactory.create();
                 unitOfWork.runOnPreInvocation(ctx -> {
                     ctx.putResource(Segment.RESOURCE_KEY, segment);
-                    ctx.putResource(TrackingToken.RESOURCE_KEY, lastConsumedToken);
+                    ctx.putResource(TrackingToken.BATCH_END_RESOURCE_KEY, lastConsumedToken);
                 });
 
                 unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
@@ -481,8 +482,8 @@ class WorkPackage {
      * Indicates whether an abort has been triggered for this {@code WorkPackage}. When {@code true}, any events
      * scheduled for processing by this {@code WorkPackage} are likely to be ignored.
      * <p>
-     * Use {@link WorkPackage#abort(Exception)} (possibly with a {@code null} reason) to obtain a {@link CompletableFuture} with a
-     * reference to the abort reason.
+     * Use {@link WorkPackage#abort(Exception)} (possibly with a {@code null} reason) to obtain a
+     * {@link CompletableFuture} with a reference to the abort reason.
      *
      * @return {@code true} if an abort was scheduled, otherwise {@code false}
      */
@@ -581,13 +582,14 @@ class WorkPackage {
     interface BatchProcessor {
 
         /**
-         * Processes a batch of events in the processing context.
+         * Processes a batch of entries in the processing context.
          *
-         * @param events  The batch of event messages to be processed.
+         * @param entries  The batch of event messages to be processed.
          * @param context The processing context in which the event messages are processed.
          * @return A stream of messages resulting from the processing of the event messages.
          */
-        MessageStream.Empty<Message> process(List<? extends EventMessage> events, ProcessingContext context);
+        MessageStream.Empty<Message> process(List<MessageStream.Entry<? extends EventMessage>> entries,
+                                             ProcessingContext context);
     }
 
     /**
@@ -757,8 +759,7 @@ class WorkPackage {
          * this {@code WorkPackage}. The provided {@code ProcessingContext} is enriched with resources from the
          * {@link MessageStream.Entry} to evaluate whether the event can be handled by this package's {@link Segment}.
          * Currently, the only usage of the context is for
-         * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage,
-         * ProcessingContext)} execution.
+         * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage, ProcessingContext)} execution.
          *
          * @param schedulingProcessingContextProvider The {@link ProcessingContext} provider.
          * @return The current Builder instance, for fluent interfacing.
@@ -796,12 +797,28 @@ class WorkPackage {
         TrackingToken trackingToken();
 
         /**
-         * Add this entry's events to the {@code eventBatch}. Since tracking is handled at the UnitOfWork level, we only
-         * need to add the actual event messages to the batch.
+         * Add this entry's events to the {@code eventBatch}, overriding the raw stream token already present in the
+         * entry's context with the given {@code wrappedToken}.
+         * <p>
+         * The raw token stored in the entry's context is the position as reported by the event source (e.g. a plain
+         * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken}).
+         * That raw value is insufficient for correct per-event processing: {@code wrappedToken} is the result of
+         * {@link WrappedToken#advance(TrackingToken, TrackingToken)} applied to the previous batch position and this
+         * entry's raw token, so it encodes additional state — most importantly, during a replay it is a
+         * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken} wrapping the raw
+         * position. Without this override, replay-detection logic such as
+         * {@link
+         * org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#isReplay(TrackingToken)} and
+         * {@link
+         * org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#concludesReplay(TrackingToken)}
+         * would always see a plain token and never recognise the replay boundary, causing all events in a batch to be
+         * mis-classified.
          *
-         * @param eventBatch The list of events to add this entry's events to.
+         * @param eventBatch   the list of events to add this entry's events to
+         * @param wrappedToken the result of {@link WrappedToken#advance} for this specific event; replaces the raw
+         *                     stream token in each event's context
          */
-        void addToBatch(List<EventMessage> eventBatch);
+        void addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
     }
 
     /**
@@ -825,9 +842,12 @@ class WorkPackage {
         }
 
         @Override
-        public void addToBatch(List<EventMessage> eventBatch) {
+        public void addToBatch(
+                List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                TrackingToken wrappedToken
+        ) {
             if (canHandle) {
-                eventBatch.add(eventEntry.message());
+                eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
             }
         }
     }
@@ -854,8 +874,11 @@ class WorkPackage {
         }
 
         @Override
-        public void addToBatch(List<EventMessage> eventBatch) {
-            processingEntries.forEach(entry -> entry.addToBatch(eventBatch));
+        public void addToBatch(
+                List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                TrackingToken wrappedToken
+        ) {
+            processingEntries.forEach(entry -> entry.addToBatch(eventBatch, wrappedToken));
         }
     }
 }

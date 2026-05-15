@@ -16,13 +16,13 @@
 
 package org.axonframework.messaging.core.interception.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ResourceOverridingProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;

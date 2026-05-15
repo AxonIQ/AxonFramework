@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -170,6 +171,18 @@ class InterceptingEventStoreTest {
                    .appendPosition();
 
         verify(eventStoreTransaction).appendPosition();
+    }
+
+    @Test
+    void delegateTransactionOverrideAppendConditionDirectly() {
+        when(eventStore.transaction(any())).thenReturn(eventStoreTransaction);
+
+        UnaryOperator<AppendCondition> testOverride = condition -> condition;
+
+        testSubject.transaction(new StubProcessingContext())
+                   .overrideAppendCondition(testOverride);
+
+        verify(eventStoreTransaction).overrideAppendCondition(testOverride);
     }
 
     @Test

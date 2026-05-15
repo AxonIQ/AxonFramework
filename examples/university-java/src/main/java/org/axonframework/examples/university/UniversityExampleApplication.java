@@ -16,8 +16,8 @@
 
 package org.axonframework.examples.university;
 
-import org.axonframework.axonserver.connector.AxonServerConfiguration;
-import org.axonframework.axonserver.connector.AxonServerConfigurationEnhancer;
+import io.axoniq.framework.axonserver.connector.api.AxonServerConfiguration;
+import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.infra.FilesystemStyleComponentDescriptor;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;

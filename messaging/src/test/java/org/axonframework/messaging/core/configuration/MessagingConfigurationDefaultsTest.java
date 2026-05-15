@@ -16,13 +16,13 @@
 
 package org.axonframework.messaging.core.configuration;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultAxonApplication;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
@@ -71,6 +71,8 @@ import org.axonframework.messaging.queryhandling.QueryPriorityCalculator;
 import org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.interception.InterceptingQueryBus;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -98,8 +100,10 @@ class MessagingConfigurationDefaultsTest {
         Configuration resultConfig = configurer.build();
 
         assertInstanceOf(AnnotationMessageTypeResolver.class, resultConfig.getComponent(MessageTypeResolver.class));
-        Converter generalConverter = resultConfig.getComponent(Converter.class);
-        assertInstanceOf(JacksonConverter.class, generalConverter);
+        GeneralConverter generalConverter = resultConfig.getComponent(GeneralConverter.class);
+        assertInstanceOf(DelegatingGeneralConverter.class, generalConverter);
+        Converter generalConverterDelegate = ((DelegatingGeneralConverter) generalConverter).delegate();
+        assertInstanceOf(JacksonConverter.class, generalConverterDelegate);
         MessageConverter messageConverter = resultConfig.getComponent(MessageConverter.class);
         assertInstanceOf(DelegatingMessageConverter.class, messageConverter);
         EventConverter eventConverter = resultConfig.getComponent(EventConverter.class);

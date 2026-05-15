@@ -38,7 +38,6 @@ class JobRunrAutoConfigurationTest {
     @Test
     void eventSchedulerAndDeadlineManagercreated() {
         new ApplicationContextRunner()
-                .withPropertyValues("axon.axonserver.enabled=false")
                 .withUserConfiguration(DefaultContext.class)
                 .run(context -> {
                     EventScheduler eventScheduler = context.getBean(EventScheduler.class);

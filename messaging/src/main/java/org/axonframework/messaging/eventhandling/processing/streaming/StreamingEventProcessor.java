@@ -16,13 +16,13 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.EventTrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToRetrieveIdentifierException;
 import org.axonframework.messaging.eventstreaming.TrackingTokenSource;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

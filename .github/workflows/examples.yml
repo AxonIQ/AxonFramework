@@ -1,5 +1,6 @@
 name: Axon Framework with Examples
 
+# The module split makes the examples brittle to run at this point in time
 on:
   workflow_dispatch:
   pull_request:
@@ -36,9 +37,15 @@ jobs:
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
 
-      - name: Regular Build including examples
+      - name: Build whole project (tests skipped)
         run: |
-          ./mvnw -B -U -ntp -Pintegration-test -Pexamples clean verify \
+          ./mvnw -B -U -ntp -Pintegration-test -Pexamples clean install -DskipTests \
+          -Dstyle.color=always
+
+      - name: Run tests for examples only
+        run: |
+          ./mvnw -B -ntp -Pexamples verify \
+          -pl examples,examples/university-demo,examples/university-java,examples/university-java-springboot-3,examples/university-java-springboot-4 \
           -Dcoverage \
           -Dstyle.color=always \
           -Dsurefire.rerunFailingTestsCount=5 \

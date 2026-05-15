@@ -84,7 +84,7 @@ class SubscribingEventProcessorModuleTest {
                     .customized((cfg, c) -> c);
 
             // then
-            assertThat(module.name()).isEqualTo(processorName);
+            assertThat(module.name()).isEqualTo("EventProcessor[" + processorName + "]");
         }
     }
 
@@ -665,7 +665,7 @@ class SubscribingEventProcessorModuleTest {
             AxonConfiguration configuration,
             String processorName
     ) {
-        return configuration.getModuleConfiguration(processorName)
+            return configuration.getModuleConfiguration("EventProcessor[" + processorName + "]")
                             .flatMap(m -> m.getOptionalComponent(EventProcessor.class, processorName))
                             .filter(SubscribingEventProcessor.class::isInstance)
                             .map(SubscribingEventProcessor.class::cast);

@@ -4,8 +4,10 @@
 Tracking messages in your system can be useful to analyze what the cause of a message was.
 There are several ways to track messages in your system.
 
-A clear solution to this, is xref:tracing.adoc[tracing], albeit slightly involved.
-Other options you have through Axon Framework, are xref:messaging-concepts:message-correlation.adoc[correlation data providers] or straight out logging in xref:messaging-concepts:message-intercepting.adoc[interceptors]
+ifdef::advanced-framework[]
+A clear solution to this, is xref:tracing:index.adoc[tracing], albeit slightly involved.
+endif::[]
+Among the options you have through the Axon Framework, there are xref:messaging-concepts:message-correlation.adoc[correlation data providers] or straight out logging in xref:messaging-concepts:message-intercepting.adoc[interceptors]
 You can correlate messages to each other with a Correlation Data Provider or log the messages being handled and dispatched.
 
 == Correlation data

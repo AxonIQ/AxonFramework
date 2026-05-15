@@ -2,8 +2,7 @@ name: axon-framework-reference
 title: Axon Framework
 version:
   axon-(?<version>+({0..9}).+({0..9})).*: $<version>
-  main: development
-prerelease: true
+  '*': development
 start_page: ROOT:index.adoc
 
 asciidoc:

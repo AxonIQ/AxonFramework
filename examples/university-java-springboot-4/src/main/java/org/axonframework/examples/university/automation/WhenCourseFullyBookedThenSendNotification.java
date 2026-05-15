@@ -110,56 +110,56 @@ public class WhenCourseFullyBookedThenSendNotification {
     @EventSourced(idType = CourseId.class, tagKey = FacultyTags.COURSE_ID)
     record State(Course course, boolean notified) {
 
-        record Course(CourseId courseId, int capacity, int students) {
+        record Course (CourseId courseId,int capacity, int students){
 
-            Course capacity(int newCapacity) {
+            Course capacity ( int newCapacity){
                 return new Course(this.courseId, newCapacity, this.students);
             }
 
-            Course studentSubscribed() {
+            Course studentSubscribed () {
                 return new Course(this.courseId, this.capacity, this.students + 1);
             }
 
-            Course studentUnsubscribed() {
+            Course studentUnsubscribed () {
                 return new Course(this.courseId, this.capacity, this.students - 1);
             }
 
-            boolean isFullyBooked() {
+            boolean isFullyBooked () {
                 return students >= capacity;
             }
         }
 
         @EntityCreator
-        State() {
+                State() {
             this(null, false);
         }
 
         @EventSourcingHandler
-        State evolve(CourseCreated event) {
+        State evolve (CourseCreated event){
             return new State(new Course(event.courseId(), event.capacity(), 0), isNotified());
         }
 
         @EventSourcingHandler
-        State evolve(CourseCapacityChanged event) {
+        State evolve (CourseCapacityChanged event){
             return new State(course.capacity(event.capacity()), isNotified());
         }
 
         @EventSourcingHandler
-        State evolve(StudentSubscribedToCourse event) {
+        State evolve (StudentSubscribedToCourse event){
             return new State(course.studentSubscribed(), isNotified());
         }
 
         @EventSourcingHandler
-        State evolve(StudentUnsubscribedFromCourse event) {
+        State evolve (StudentUnsubscribedFromCourse event){
             return new State(course.studentUnsubscribed(), isNotified());
         }
 
         @EventSourcingHandler
-        State evolve(CourseFullyBookedNotificationSent event) {
+        State evolve (CourseFullyBookedNotificationSent event){
             return new State(course, true);
         }
 
-        private boolean isNotified() {
+        private boolean isNotified () {
             if (course != null && course.isFullyBooked()) {
                 return notified;
             }

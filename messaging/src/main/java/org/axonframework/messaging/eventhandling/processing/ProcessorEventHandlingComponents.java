@@ -80,24 +80,43 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
 
 
     /**
-     * Processes a batch of events in the processing context.
+     * Processes a batch of events in the given processing context.
      * <p>
-     * The result of handling is an {@link MessageStream.Empty empty stream}. It's guaranteed that the events with same
+     * Each entry carries its own {@link TrackingToken} in its {@link org.axonframework.messaging.core.Context} under
+     * {@link TrackingToken#RESOURCE_KEY}. Before invoking the event handling components for a given entry, that
+     * per-event token is written into the shared {@code context} under the same key, overriding the batch-end token
+     * that the caller placed there. The {@code context} itself — including its transaction lifecycle and all other
+     * resources — is the same object for every event in the batch; only {@link TrackingToken#RESOURCE_KEY} is
+     * temporarily overridden for the duration of each event's handling. The batch-end token remains accessible under
+     * {@link TrackingToken#BATCH_END_RESOURCE_KEY} throughout.
+     * <p>
+     * This ensures that per-event replay detection (
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#isReplay(TrackingToken)} and
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#concludesReplay(TrackingToken)}) observes
+     * the correct position for each individual event rather than the shared batch-end token. When an entry carries no
+     * per-event token (e.g. from a
+     * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor} which has no
+     * stream position), the context is used as-is.
+     * <p>
+     * The result of handling is an {@link MessageStream.Empty empty stream}. It's guaranteed that events with the same
      * {@link #sequenceIdentifiersFor(EventMessage, ProcessingContext)} value are processed by a single component in the
-     * order they are received, but the sequencing of event processing is not preserved between different event handling
-     * components. This is intentional, as they may have different sequencing policies.
+     * order they are received, but sequencing is not preserved across different event handling components — this is
+     * intentional, as they may have different sequencing policies.
      *
-     * @param events  The batch of event messages to be processed.
-     * @param context The processing context in which the event messages are processed.
-     * @return A stream of messages resulting from the processing of the event messages.
+     * @param entries the batch of message stream entries to be processed
+     * @param context the processing context in which the event messages are processed
+     * @return a stream of messages resulting from the processing of the event messages
      */
     public MessageStream.Empty<Message> handle(
-            List<? extends EventMessage> events,
+            List<MessageStream.Entry<? extends EventMessage>> entries,
             ProcessingContext context
     ) {
         MessageStream<Message> batchResult = MessageStream.empty().cast();
-        for (var event : events) {
-            var eventResult = handle(event, context);
+        for (var entry : entries) {
+            ProcessingContext perEventContext = TrackingToken.fromContext(entry)
+                    .map(token -> context.withResource(TrackingToken.RESOURCE_KEY, token))
+                    .orElse(context);
+            var eventResult = handle(entry.message(), perEventContext);
             batchResult = batchResult.concatWith(eventResult.cast());
         }
         return batchResult.ignoreEntries()

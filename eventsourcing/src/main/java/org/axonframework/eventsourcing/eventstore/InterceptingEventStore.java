@@ -40,6 +40,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /**
  * Decorator around the {@link EventStore} intercepting all {@link EventMessage events} before they are
@@ -205,6 +206,11 @@ public class InterceptingEventStore implements EventStore {
         @Override
         public void appendEvent(EventMessage eventMessage) {
             interceptingAppender.interceptAndAppend(eventMessage, context);
+        }
+
+        @Override
+        public void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
+            delegate.overrideAppendCondition(conditionOverride);
         }
 
         @Override

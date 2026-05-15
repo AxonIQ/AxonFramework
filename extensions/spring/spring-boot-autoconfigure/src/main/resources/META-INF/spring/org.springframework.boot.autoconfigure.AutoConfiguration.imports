@@ -17,8 +17,6 @@
 org.axonframework.extension.springboot.autoconfig.AvroConverterAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.AvroSchemaStoreAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.AxonAutoConfiguration
-org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration
-org.axonframework.extension.springboot.autoconfig.AxonServerActuatorAutoConfiguration
 # TODO: include in config, see #3959 - org.axonframework.extension.springboot.autoconfig.AxonTimeoutAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.CBORConverterAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.CBORMapperAutoConfiguration
@@ -31,10 +29,8 @@ org.axonframework.extension.springboot.autoconfig.JacksonConverterAutoConfigurat
 org.axonframework.extension.springboot.autoconfig.Jackson2ConverterAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.Jackson2MapperAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JdbcAutoConfiguration
-org.axonframework.extension.springboot.autoconfig.JdbcDeadLetterQueueAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JdbcTransactionAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration
-org.axonframework.extension.springboot.autoconfig.JpaDeadLetterQueueAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaTransactionAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.NoOpTransactionAutoConfiguration

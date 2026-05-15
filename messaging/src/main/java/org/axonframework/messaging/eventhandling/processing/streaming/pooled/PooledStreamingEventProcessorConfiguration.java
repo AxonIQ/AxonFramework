@@ -20,6 +20,7 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.ConfigurationExtension;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.ConfigurationApplicationContext;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -37,8 +38,6 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorH
 import org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
-import org.axonframework.messaging.eventhandling.deadletter.CachingSequencedDeadLetterQueue;
-import org.axonframework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -57,7 +56,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.BuilderUtils.assertStrictPositive;
@@ -113,7 +111,6 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private Supplier<ProcessingContext> schedulingProcessingContextProvider =
             () -> new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
     private final List<SegmentChangeListener> segmentChangeListeners = new ArrayList<>();
-    private UnaryOperator<DeadLetterQueueConfiguration> deadLetterQueueCustomization = UnaryOperator.identity();
 
     /**
      * Constructs a new {@code PooledStreamingEventProcessorConfiguration} copying properties from the given
@@ -181,7 +178,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      *                    {@link PooledStreamingEventProcessor} under construction.
      * @return This {@code PooledStreamingEventProcessorConfiguration}, for fluent interfacing.
      */
-        public PooledStreamingEventProcessorConfiguration withInterceptor(
+    public PooledStreamingEventProcessorConfiguration withInterceptor(
             MessageHandlerInterceptor<? super EventMessage> interceptor
     ) {
         this.interceptors.add(interceptor);
@@ -492,43 +489,6 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         return this;
     }
 
-    /**
-     * Configures the Dead Letter Queue (DLQ) for this processor using a customization function.
-     * <p>
-     * The DLQ allows failed events to be stored for later processing or manual inspection. This method
-     * accepts a customization function that modifies a {@link DeadLetterQueueConfiguration}.
-     * <p>
-     * This method supports natural merging with defaults. When combining multiple customizations
-     * (e.g., defaults with processor-specific settings), each customization is applied in sequence.
-     * Later customizations can override earlier settings while preserving others.
-     * <p>
-     * The queue will be automatically wrapped with a {@link CachingSequencedDeadLetterQueue} to optimize
-     * {@code contains()} lookups. The cache is cleared when segments are released to ensure consistency.
-     * <p>
-     * Example usage:
-     * <pre>{@code
-     * config.deadLetterQueue(dlq -> dlq
-     *     .queue(InMemorySequencedDeadLetterQueue.defaultQueue())
-     *     .enqueuePolicy((letter, cause) -> Decisions.enqueue(cause))
-     *     .clearOnReset(false)
-     *     .cacheMaxSize(2048)
-     * )
-     * }</pre>
-     *
-     * @param customization A function that customizes the {@link DeadLetterQueueConfiguration}.
-     * @return The current instance, for fluent interfacing.
-     * @see DeadLetterQueueConfiguration
-     * @see CachingSequencedDeadLetterQueue
-     */
-    public PooledStreamingEventProcessorConfiguration deadLetterQueue(
-            UnaryOperator<DeadLetterQueueConfiguration> customization
-    ) {
-        assertNonNull(customization, "DLQ customization may not be null");
-        var previous = this.deadLetterQueueCustomization;
-        this.deadLetterQueueCustomization = config -> customization.apply(previous.apply(config));
-        return this;
-    }
-
     @Override
     protected void validate() throws AxonConfigurationException {
         super.validate();
@@ -722,16 +682,13 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
                                      .reduce(SegmentChangeListener.noOp(), SegmentChangeListener::andThen);
     }
 
-    /**
-     * Returns the merged {@link DeadLetterQueueConfiguration} by applying all customizations.
-     * <p>
-     * This method creates a new configuration instance and applies the accumulated customizations.
-     * Use {@link DeadLetterQueueConfiguration#isEnabled()} to check if a queue is configured.
-     *
-     * @return The merged dead letter queue configuration.
-     */
-    public DeadLetterQueueConfiguration deadLetterQueue() {
-        return deadLetterQueueCustomization.apply(new DeadLetterQueueConfiguration());
+    @Override
+    public <T extends ConfigurationExtension<?>> PooledStreamingEventProcessorConfiguration extend(
+            Class<T> extensionType,
+            Supplier<T> factory
+    ) {
+        super.extend(extensionType, factory);
+        return this;
     }
 
     @Override
@@ -750,7 +707,6 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         descriptor.describeProperty("clock", clock);
         descriptor.describeProperty("coordinatorExtendsClaims", coordinatorExtendsClaims);
         descriptor.describeProperty("eventCriteriaProvider", eventCriteriaProvider);
-        descriptor.describeProperty("deadLetterQueue", deadLetterQueue());
         descriptor.describeProperty("segmentChangeListeners", segmentChangeListeners);
         descriptor.describeProperty("schedulingProcessingContextProvider", schedulingProcessingContextProvider);
         descriptor.describeProperty("ignoredMessageHandler", ignoredMessageHandler);

@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../parent/pom.xml</relativePath>
     </parent>
 
@@ -30,12 +30,6 @@
     <description>Project depending on all modules to construct a combined coverage report</description>
 
     <dependencies>
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-server-connector</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-common</artifactId>

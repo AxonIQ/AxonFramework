@@ -49,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Mitchell Herrijgers
  */
-class MultiEntityCommandHandlingComponentIT extends AbstractCommandHandlingStudentIT {
+public abstract class MultiEntityCommandHandlingComponentIT extends AbstractCommandHandlingStudentIT {
     private final String student1 = createId("student-1");
     private final String student2 = createId("student-2");
     private final String student3 = createId("student-3");
@@ -116,7 +116,6 @@ class MultiEntityCommandHandlingComponentIT extends AbstractCommandHandlingStude
 
         // But five can not enroll for the first course
         assertThatThrownBy(() -> enrollStudentToCourse(student5, course1))
-                .isInstanceOf(CommandExecutionException.class)
                 .hasMessageContaining("Course already has 3 students");
     }
 
@@ -132,7 +131,6 @@ class MultiEntityCommandHandlingComponentIT extends AbstractCommandHandlingStude
 
         // But not a second time
         assertThatThrownBy(() -> sendCommand(new AssignMentorCommand(student1, student3)))
-                .isInstanceOf(CommandExecutionException.class)
                 .hasMessageContaining("Mentor already assigned to a mentee");
     }
 

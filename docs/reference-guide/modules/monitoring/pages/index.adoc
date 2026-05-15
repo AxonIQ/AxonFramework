@@ -21,8 +21,9 @@ A summary of the various subsections is given below.
 [cols="<,<"]
 |===
 |Subsection |Purpose
-
-|xref:tracing.adoc[Tracing] |Tracing support for Axon Framework
+ifdef::advanced-framework[]
+|xref:tracing:index.adoc[Tracing] |Tracing support for Axon Framework
+endif::[]
 |xref:metrics.adoc[Metrics] |How to configure and use metrics provided by Axon Framework
 |xref:health.adoc[Health Indicators] |Spring Boot actuator health indicators provided by Axon Framework
 |xref:processors.adoc[Event Processor Monitoring] |Tracking the status of your event processors

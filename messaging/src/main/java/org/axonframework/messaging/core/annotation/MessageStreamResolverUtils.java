@@ -91,7 +91,7 @@ public class MessageStreamResolverUtils {
         return switch (result) {
             case MessageStream<?> messageStream -> messageStream;
             case CompletableFuture<?> future -> MessageStream.fromFuture(
-                    future.thenApply(r -> new GenericMessage(typeResolver.resolveOrThrow(r), r))
+                    future.thenApply(r -> r == null ? null : new GenericMessage(typeResolver.resolveOrThrow(r), r))
             );
             case Optional<?> optional when optional.isPresent() -> {
                 Object r = optional.get();

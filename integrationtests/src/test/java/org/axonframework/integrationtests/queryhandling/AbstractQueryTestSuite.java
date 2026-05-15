@@ -16,8 +16,6 @@
 
 package org.axonframework.integrationtests.queryhandling;
 
-import org.jspecify.annotations.NonNull;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.MessageDispatchInterceptorChain;
@@ -25,12 +23,14 @@ import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.queryhandling.GenericQueryResponseMessage;
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryHandler;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
+import org.jspecify.annotations.NonNull;
 
 import java.util.Arrays;
 import java.util.List;

@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.axonframework</groupId>
         <artifactId>axon-parent</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>${revision}</version>
         <relativePath>../../build/parent/pom.xml</relativePath>
     </parent>
 
@@ -35,12 +35,12 @@
         <dependency>
             <groupId>org.openrewrite.recipe</groupId>
             <artifactId>rewrite-migrate-java</artifactId>
-            <version>3.30.0</version>
+            <version>3.33.1</version>
         </dependency>
         <dependency>
             <groupId>org.openrewrite</groupId>
             <artifactId>rewrite-test</artifactId>
-            <version>8.75.5</version>
+            <version>8.80.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

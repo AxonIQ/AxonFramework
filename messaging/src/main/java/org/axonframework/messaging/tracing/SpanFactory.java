@@ -19,7 +19,6 @@ package org.axonframework.messaging.tracing;
 import org.axonframework.messaging.core.Message;
 import org.jspecify.annotations.Nullable;
 
-
 import java.util.function.Supplier;
 
 /**

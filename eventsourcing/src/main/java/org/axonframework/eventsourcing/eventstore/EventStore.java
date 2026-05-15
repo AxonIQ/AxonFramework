@@ -16,13 +16,13 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.messaging.core.SubscribableEventSource;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventSink;
-import org.axonframework.messaging.eventstreaming.StreamableEventSource;
-import org.axonframework.messaging.core.SubscribableEventSource;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 
 import java.util.List;
 

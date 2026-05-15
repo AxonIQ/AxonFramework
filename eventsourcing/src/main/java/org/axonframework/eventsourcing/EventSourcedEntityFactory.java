@@ -16,13 +16,13 @@
 
 package org.axonframework.eventsourcing;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.commandhandling.CommandHandler;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.entity.EntityCommandHandler;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.function.BiFunction;

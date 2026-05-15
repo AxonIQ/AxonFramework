@@ -85,7 +85,7 @@ public abstract class PropertyAccessStrategy implements Comparable<PropertyAcces
      * @param <T>          Thy type defining the property
      * @return suitable {@link Property}, or {@code null} if none is found
      */
-    public @Nullable static <T> Property<T> getProperty(Class<? extends T> targetClass, String propertyName) {
+    public static @Nullable <T> Property<T> getProperty(Class<? extends T> targetClass, String propertyName) {
         Property<T> property = null;
         Iterator<PropertyAccessStrategy> strategies = STRATEGIES.iterator();
         while (property == null && strategies.hasNext()) {
@@ -106,6 +106,16 @@ public abstract class PropertyAccessStrategy implements Comparable<PropertyAcces
             return getClass().getName().compareTo(o.getClass().getName());
         }
         return diff;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return (obj instanceof PropertyAccessStrategy pas) && compareTo(pas) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 
     /**

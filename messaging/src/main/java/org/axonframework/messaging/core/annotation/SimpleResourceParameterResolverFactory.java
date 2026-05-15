@@ -16,8 +16,8 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Priority;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;

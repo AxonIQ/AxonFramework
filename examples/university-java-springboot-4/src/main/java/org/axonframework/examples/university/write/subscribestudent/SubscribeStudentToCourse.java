@@ -22,7 +22,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 public record SubscribeStudentToCourse(String studentId, CourseId courseId) {
 
     @TargetEntityId
-    private SubscriptionId subscriptionId() {
+    private SubscriptionId subscriptionId () {
         return new SubscriptionId(courseId, studentId);
     }
 }

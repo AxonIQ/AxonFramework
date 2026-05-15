@@ -16,28 +16,22 @@
 
 package org.axonframework.springboot.autoconfig;
 
-import org.axonframework.messaging.commandhandling.tracing.CommandBusSpanFactory;
-import org.axonframework.messaging.commandhandling.tracing.DefaultCommandBusSpanFactory;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.deadline.DeadlineManagerSpanFactory;
 import org.axonframework.deadline.DefaultDeadlineManagerSpanFactory;
+import org.axonframework.messaging.commandhandling.tracing.CommandBusSpanFactory;
+import org.axonframework.messaging.commandhandling.tracing.DefaultCommandBusSpanFactory;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.eventhandling.tracing.DefaultEventBusSpanFactory;
 import org.axonframework.messaging.eventhandling.tracing.DefaultEventProcessorSpanFactory;
 import org.axonframework.messaging.eventhandling.tracing.EventBusSpanFactory;
 import org.axonframework.messaging.eventhandling.tracing.EventProcessorSpanFactory;
 import org.axonframework.messaging.eventsourcing.snapshotting.DefaultSnapshotterSpanFactory;
 import org.axonframework.messaging.eventsourcing.snapshotting.SnapshotterSpanFactory;
-import org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration;
-import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
-import org.axonframework.modelling.command.DefaultRepositorySpanFactory;
-import org.axonframework.modelling.command.RepositorySpanFactory;
-import org.axonframework.modelling.saga.DefaultSagaManagerSpanFactory;
-import org.axonframework.modelling.saga.SagaManagerSpanFactory;
 import org.axonframework.messaging.queryhandling.tracing.DefaultQueryBusSpanFactory;
 import org.axonframework.messaging.queryhandling.tracing.DefaultQueryUpdateEmitterSpanFactory;
 import org.axonframework.messaging.queryhandling.tracing.QueryBusSpanFactory;
 import org.axonframework.messaging.queryhandling.tracing.QueryUpdateEmitterSpanFactory;
-import org.axonframework.springboot.TracingProperties;
 import org.axonframework.messaging.tracing.NoOpSpanFactory;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
@@ -48,8 +42,12 @@ import org.axonframework.messaging.tracing.attributes.MessageNameSpanAttributesP
 import org.axonframework.messaging.tracing.attributes.MessageTypeSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MetadataSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.PayloadTypeSpanAttributesProvider;
+import org.axonframework.modelling.command.DefaultRepositorySpanFactory;
+import org.axonframework.modelling.command.RepositorySpanFactory;
+import org.axonframework.modelling.saga.DefaultSagaManagerSpanFactory;
+import org.axonframework.modelling.saga.SagaManagerSpanFactory;
+import org.axonframework.springboot.TracingProperties;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -69,7 +67,6 @@ import java.util.List;
  * @since 4.6.0
  */
 @AutoConfiguration
-@AutoConfigureBefore({AxonServerAutoConfiguration.class, LegacyAxonAutoConfiguration.class})
 @EnableConfigurationProperties(TracingProperties.class)
 public class AxonTracingAutoConfiguration {
 

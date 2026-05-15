@@ -16,8 +16,8 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Set;

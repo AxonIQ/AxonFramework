@@ -212,14 +212,14 @@ public class SimpleQueryBus implements QueryBus {
         matchingHandlers.forEach((query, updateHandler) -> {
             try {
                 if (!updateHandler.offer(update, Context.empty())) {
-                    updateHandler.completeExceptionally(new QueryExecutionException("Subscription update buffer overflow", null));
+                    updateHandler.sealExceptionally(new QueryExecutionException("Subscription update buffer overflow", null));
                     updateHandlers.remove(query, updateHandler);
                 }
             } catch (Exception e) {
                 logger.info("An error occurred while trying to emit an update to a query '{}'. " +
                                     "The subscription will be cancelled. Exception summary: {}",
                             query.type(), e.toString());
-                updateHandler.completeExceptionally(e);
+                updateHandler.sealExceptionally(e);
                 updateHandlers.remove(query, updateHandler);
             }
         });
@@ -238,9 +238,9 @@ public class SimpleQueryBus implements QueryBus {
                       .forEach(entry -> {
                           QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler = entry.getValue();
                           try {
-                              updateHandler.complete();
+                              updateHandler.seal();
                           } catch (Exception e) {
-                              updateHandler.completeExceptionally(e);
+                              updateHandler.sealExceptionally(e);
                           }
                           updateHandlers.remove(entry.getKey(), updateHandler);
                       });
@@ -284,7 +284,7 @@ public class SimpleQueryBus implements QueryBus {
                            Throwable cause,
                            QueryMessage query) {
         try {
-            updateHandler.completeExceptionally(cause);
+            updateHandler.sealExceptionally(cause);
         } catch (Exception e) {
             logger.error("An error happened while trying to inform an update handler about the error. Query: {}",
                          query);

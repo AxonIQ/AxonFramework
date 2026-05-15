@@ -30,7 +30,7 @@ import static org.axonframework.common.configuration.ComponentDefinition.ofType;
 
 /**
  * A {@link ConfigurationEnhancer} that registers the {@link UpdateChecker} component. This component is responsible for
- * reporting anonymous usage data to the AxonIQ servers. It is registered during the external connections phase of the
+ * reporting anonymous usage data to the Axoniq servers. It is registered during the external connections phase of the
  * lifecycle.
  *
  * @author Mitchell Herrijgers
@@ -53,7 +53,7 @@ public class UpdateCheckerConfigurationEnhancer implements ConfigurationEnhancer
     @Override
     public void enhance(ComponentRegistry componentRegistry) {
         if (TestEnvironmentDetector.isTestEnvironment()) {
-            logger.debug("Skipping AxonIQ UpdateChecker as a testsuite environment was detected.");
+            logger.debug("Skipping Axoniq UpdateChecker as a testsuite environment was detected.");
             return;
         }
         componentRegistry

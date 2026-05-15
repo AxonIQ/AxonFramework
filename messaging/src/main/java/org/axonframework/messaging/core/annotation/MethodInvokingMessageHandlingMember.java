@@ -16,12 +16,12 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.DelayedMessageStream;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

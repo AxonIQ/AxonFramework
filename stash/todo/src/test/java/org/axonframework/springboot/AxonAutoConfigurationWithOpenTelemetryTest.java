@@ -38,7 +38,6 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
     void spanFactoryIsOpenTelemetrySpanFactory() {
         new ApplicationContextRunner()
                 .withUserConfiguration(Context.class)
-                .withPropertyValues("axon.axonserver.enabled=false")
                 .run(context -> {
                     assertNotNull(context);
 

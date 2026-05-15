@@ -17,11 +17,13 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import jakarta.persistence.EntityManagerFactory;
+import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.common.configuration.SearchScope;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.FactoryBasedEntityManagerProvider;
+import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurationDefaults;
 import org.axonframework.eventsourcing.eventstore.EventCoordinator;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
@@ -40,7 +42,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.transaction.PlatformTransactionManager;
 
-
 import java.time.Duration;
 import java.util.function.UnaryOperator;
 
@@ -52,9 +53,9 @@ import java.util.function.UnaryOperator;
  * @since 4.0
  */
 @AutoConfiguration(afterName = {
+        "io.axoniq.framework.springboot.autoconfig.AxonServerAutoConfiguration",
         "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration",
         "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
-        "org.axonframework.extension.springboot.autoconfig.AxonServerAutoConfiguration",
         "org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration"
 })
 @ConditionalOnBean({EntityManagerFactory.class, PlatformTransactionManager.class})
@@ -116,15 +117,22 @@ public class JpaEventStoreAutoConfiguration {
                                             )
                             );
 
-            registry.registerIfNotPresent(
-                    EventStorageEngine.class,
-                    configuration -> new AggregateBasedJpaEventStorageEngine(
-                            new JpaTransactionalExecutorProvider(factory),
-                            configuration.getComponent(EventConverter.class),
-                            configurer
-                    ),
-                    SearchScope.ALL
-            );
+            ComponentDefinition<EventStorageEngine> componentDefinition = ComponentDefinition.ofType(EventStorageEngine.class)
+                                                                                             .withBuilder(configuration -> new AggregateBasedJpaEventStorageEngine(
+                                                                                                     new JpaTransactionalExecutorProvider(
+                                                                                                             factory),
+                                                                                                     configuration.getComponent(
+                                                                                                             EventConverter.class),
+                                                                                                     configurer
+                                                                                             ))
+                                                                                             .onShutdown(Phase.INBOUND_EVENT_CONNECTORS,
+                                                                                                         ese -> {
+                                                                                                             if (ese instanceof AggregateBasedJpaEventStorageEngine engine) {
+                                                                                                                 engine.close();
+                                                                                                             }
+                                                                                                         });
+
+            registry.registerIfNotPresent(componentDefinition, SearchScope.ALL);
         }
 
         @Override
