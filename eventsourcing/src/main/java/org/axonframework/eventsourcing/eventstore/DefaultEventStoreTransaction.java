@@ -166,9 +166,9 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
         if (!tags.isEmpty()) {
             // No AppendCondition is present, but the event contains tags.
             // Tags make no sense without an AppendCondition, so let's create an ORIGIN call
-            processingContext.updateResource(appendConditionKey, current -> current == null
-                    ? new DefaultAppendCondition(ConsistencyMarker.ORIGIN, EventCriteria.havingTags(tags))
-                    : current
+            processingContext.computeResourceIfAbsent(
+                    appendConditionKey,
+                    () -> new DefaultAppendCondition(ConsistencyMarker.ORIGIN, EventCriteria.havingTags(tags))
             );
         }
         callbacks.forEach(callback -> callback.accept(eventMessage));
