@@ -86,7 +86,7 @@ public class EntityCommandHandlingComponent<ID, E> implements CommandHandlingCom
                 // If NoHandlerForCommandException is thrown it wasn't, so we fall back to EntityIdResolutionException.
                 // Let's state we're going to create without loading first.
                 context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
-                return metamodel.handleCreate(command, context).first()
+                return metamodel.handleCreate(command, context)
                                 .onErrorContinue(
                                         throwable -> throwable instanceof NoHandlerForCommandException
                                                 ? MessageStream.failed(e)
