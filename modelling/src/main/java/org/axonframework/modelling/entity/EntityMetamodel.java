@@ -46,9 +46,11 @@ public interface EntityMetamodel<E> extends EntityEvolver<E>, DescribableCompone
      * {@link #handleCreate(CommandMessage, ProcessingContext)} is invoked <b>without</b> trying to load the entity
      * first.
      * <p>
-     * This decision might be used down stream to derive the information required to correctly store the created
+* This flag might be used downstream to derive the information required to correctly store the created
      * entity.
-     */
+* @since 5.1.1
+*/
+
     @Internal
     Context.ResourceKey<Boolean> CREATE_WITHOUT_LOAD = Context.ResourceKey.withLabel("createWithoutLoad");
 

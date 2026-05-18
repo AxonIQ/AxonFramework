@@ -241,7 +241,7 @@ class EntityCommandHandlingComponentTest {
     }
 
     /**
-     * Test tests validate the {@link EntityCommandHandlingComponent} its assumption that if the
+* These tests validate the {@link EntityCommandHandlingComponent} its assumption that if the
      * {@link EntityIdResolver} throws an {@link EntityIdResolutionException}, that we may be dealing with a command
      * that does not have an entity identifier <b>because</b> it will create a new entity.
      * <p>
