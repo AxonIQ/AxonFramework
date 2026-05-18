@@ -41,18 +41,19 @@ sections later in this document.
 
 ### Session 2026-05-18
 
-- Q: When does the EventConverter convert a stored event's payload? → A: On-demand via `payloadAs()`
-  (FR-011, FR-013). Eager pre-conversion was rejected: if a stored event's type has been deleted
-  (the exact case a transformation handles -- drop or rename), eager conversion would fail before
-  the transformation runs. Raw byte access was rejected: it recreates the AF4
-  `IntermediateEventRepresentation` problem where developers had to manipulate serializer-specific
-  formats directly.
-- Q: What target types are valid for `payloadAs()`? → A: POJOs, `JsonNode`, `ObjectNode` (FR-011).
-  Raw `byte[]` is not valid -- events stored as bytes are bridged automatically by
-  `ByteArrayToJsonNodeConverter`. The separation is intentional: format conversion (byte[] ↔
-  structured) is the EventConverter's job; schema/identity change is the transformation's job.
+- Q: When does the EventConverter convert a stored event's payload? → A: On-demand when a
+  transformation requests it (FR-010, FR-012). Eager pre-conversion was rejected: if a stored
+  event's type has been deleted (the exact case a transformation handles -- drop or rename), eager
+  conversion would fail before the transformation runs. Raw byte access was rejected: it recreates
+  the AF4 `IntermediateEventRepresentation` problem where developers had to manipulate
+  serializer-specific formats directly.
+- Q: What target types can a transformation request for the payload? → A: Typed Java objects
+  (POJOs), `JsonNode`, and `ObjectNode` (FR-010). Raw `byte[]` is not a valid target -- events
+  stored as bytes are bridged automatically by `ByteArrayToJsonNodeConverter`. The separation is
+  intentional: format conversion (byte[] ↔ structured) is the EventConverter's job; schema/identity
+  change is the transformation's job.
 - Q: In which reading contexts must transformations apply? → A: All three -- event-sourced entity loading, DCB
-  reads, and tracking processor reads (FR-014). If transformations applied in some contexts but not
+  reads, and tracking processor reads (FR-013). If transformations applied in some contexts but not
   others, the same stored event would produce different results depending on who reads it, making
   a DCB consistency check and a projection disagree on current domain state.
 - Q: Should the spec require a Converter vs. transformation decision tree? → A: Yes -- added as
@@ -64,27 +65,27 @@ sections later in this document.
   transformation may only be removed once no stored event at its `from` version exists anywhere,
   including backups -- developers either accumulate transformations forever or remove them too early
   and break replays.
-- Q: How does registration work for splits and drops? → A: Two patterns (FR-001, FR-003). 1:1 uses
-  `from → to`; 1:N/1:0 uses `from` only with a list-returning function. Mirrors AF4's
-  SingleEventUpcaster / EventMultiUpcaster split. Rename stays frictionless as the degenerate 1:1
-  case with no function.
+- Q: How does registration work for splits and drops? → A: Two patterns (FR-001, FR-003). 1:1
+  declares source identity and target identity; 1:N/1:0 declares only source identity and a rule
+  producing zero or more replacement events. Mirrors AF4's SingleEventUpcaster / EventMultiUpcaster
+  split. Rename stays frictionless as the degenerate 1:1 case with no payload rule.
 - Q: Should version strings be constrained? → A: Yes -- semver major.minor.patch enforced at
-  registration (FR-010). Without this, `"1.0"` and `"1.0.0"` silently never match, breaking
+  registration (FR-009). Without this, `"1.0"` and `"1.0.0"` silently never match, breaking
   chaining.
 - Q: Startup-only or runtime registration? → A: Startup-only (FR-004). Runtime registration would
   let part of a stream run with one chain and part with another, producing inconsistent results from
   the same stored events.
 - Q: Observability signals? → A: Yes -- INFO at chain build, DEBUG per transformation applied
-  (FR-015, US8). INFO level avoids flooding production logs while still confirming correct wiring.
+  (FR-014, US8). INFO level avoids flooding production logs while still confirming correct wiring.
 - Q: Fully qualified name or local name only? → A: Fully qualified (FR-001, FR-005). Local names
   risk silent non-matches when two modules share the same event local name.
-- Q: Can transformations modify metadata? → A: No -- metadata preserved unchanged (FR-012).
+- Q: Can transformations modify metadata? → A: No -- metadata preserved unchanged (FR-011).
   Confirmed by AF4 `SingleEventUpcasterTest` line 75. Metadata fields like correlationId and
   causationId are written-once facts about the original message.
-- Q: FR-010 and FR-015 had no traceable user story -- spec or plan? → A: Added US7 and US8.
+- Q: FR-009 and FR-014 had no traceable user story -- spec or plan? → A: Added US7 and US8.
   Both describe developer-facing scenarios with testable acceptance criteria, not technical
   implementation choices.
-- Q: Exception handling? → A: Propagate immediately, halt processing (FR-017).
+- Q: Exception handling? → A: Propagate immediately, halt processing (FR-016).
 - Q: Registration mechanism? → A: Programmatic only for 5.2.0; annotation-based deferred (see
   Part C: Out of Scope and Non-Upcasting Scenarios).
 - Q: Snapshot upcasting in 5.2.0? → A: Deferred. Discard-and-replay is the correct primary
@@ -479,13 +480,13 @@ Replay a v1.0.0 event and verify the handler receives a v3.0.0 event with the co
    that registration order is the chain order and incorrect ordering leads to incomplete
    transformation, which is the developer's responsibility to get right.
 
-### User Story 7 - Misconfiguration Feedback at Registration Time (Priority: P1)
+### User Story 7 - Feedback on Misconfiguration and Runtime Failures (Priority: P1)
 
 **Plain-English explanation**: A developer registers two transformations that both target the same
 event name and version -- perhaps by copy-pasting a registration block and forgetting to change the
-`from` value. Or they register a transformation where the output identity is identical to the input
-(same name and version), which would cause an infinite loop at runtime. Or they provide a version
-string like `"1.0"` instead of `"1.0.0"`.
+source identity. Or they register a transformation where the target identity is identical to the
+source (same name and version), which would cause an infinite loop at runtime. Or they provide a
+version string like `"1.0"` instead of `"1.0.0"`.
 
 Without early detection, these mistakes produce no error at startup but cause silent failures at
 runtime: events matching two conflicting registrations are processed twice, the application loops
@@ -493,9 +494,12 @@ indefinitely on a self-referencing transformation, or a transformation never fir
 version string never matches the stored events. These bugs are hard to reproduce and hard to
 diagnose.
 
-The framework MUST catch all three classes of misconfiguration at registration time -- before any
+The framework MUST catch all four classes of misconfiguration at registration time -- before any
 event is read from the store -- and surface a clear error that names the conflicting or invalid
-registration, so the developer can fix it immediately without debugging a live system.
+declaration, so the developer can fix it immediately without debugging a live system. When a
+transformation fails at runtime (throws an exception during event processing), the framework must
+equally refuse to continue silently: it propagates the failure immediately with full context
+(which transformation failed, and which event triggered it).
 
 **Why this priority**: Silent misconfiguration errors are the highest-cost failure mode for an API
 used only at startup. A clear message at startup costs almost nothing; a runtime bug in an event
@@ -590,18 +594,18 @@ index; see the FR for the authoritative requirement.
 
 | Scenario | Specified in |
 |---|---|
-| Two transformations with the same `from` identity | FR-010 |
-| Self-loop registration (`from` == `to`) | FR-010 |
-| Invalid version format (not major.minor.patch) | FR-010 |
-| Non-fully-qualified event name in registration | FR-010 |
+| Two transformations with the same `from` identity | FR-009 |
+| Self-loop registration (`from` == `to`) | FR-009 |
+| Invalid version format (not major.minor.patch) | FR-009 |
+| Non-fully-qualified event name in registration | FR-009 |
 | Late registration after event processing starts | FR-004 |
 | Wrong chain order silently under-converts | FR-004; US6 scenario 4 shows expected behavior |
 | Split output events flow through the remaining chain | FR-007 |
-| Envelope and metadata preserved through any transformation | FR-012 |
-| Non-matching events pass through without deserialization | FR-013 |
-| Tracking token advances past dropped events | FR-016 |
-| Transformation exception propagates immediately | FR-017 |
-| Unversioned events treated as version 0.0.1 | FR-018 |
+| Envelope and metadata preserved through any transformation | FR-011 |
+| Non-matching events pass through without deserialization | FR-012 |
+| Tracking token advances past dropped events | FR-015 |
+| Transformation exception propagates immediately | FR-016 |
+| Unversioned events treated as version 0.0.1 | FR-017 |
 | Transformed event with no registered handler | Standard AF5 no-handler behavior -- not a transformation failure |
 | Transformation retirement (when safe to remove) | Developer responsibility -- safe only when no stored event exists at the `from` version in any event store, including backups |
 
@@ -900,28 +904,29 @@ API introduced here is the stable foundation that makes that future extension sa
 ### Functional Requirements
 
 - **FR-001**: For 1:1 transformations (structural payload change or rename), developers MUST be able
-  to register by declaring both the input identity (`from`: fully qualified event name + version) and
-  the output identity (`to`: fully qualified event name + version), together with an optional payload
-  transformation function. The fully qualified event name is the namespace (Java package) combined
+  to declare both the source event identity (`from`: fully qualified event name + version) and the
+  target event identity (`to`: fully qualified event name + version), together with an optional
+  payload transformation rule. The fully qualified event name is the namespace (Java package) combined
   with the local name (e.g., `com.example.CourseCreated`), matching how `MessageType` resolves event
   identity via `@Event`.
-  The framework applies the function to produce the output payload; if no function is supplied, the
-  payload passes through unchanged. The framework MUST reject any registration where `from` and `to`
-  are identical (same name AND same version), as this guarantees an infinite loop.
-  _Traces to: US1 (structural transform needs from→to + function), US2 (rename needs from→to without function)._
+  The framework applies the rule to produce the output payload; if no rule is supplied, the payload
+  passes through unchanged. The framework MUST reject any declaration where source and target are
+  identical (same name AND same version), as this guarantees an infinite loop.
+  _Traces to: US1 (structural transform needs source identity, target identity, and a payload rule), US2 (rename needs source and target identity without a payload rule)._
 - **FR-002**: Developers MUST be able to declare an event rename (old name + version to new name
-  and/or version) without writing a payload transformation function. This is the natural degenerate
-  case of FR-001: supply `from` and `to` with different names or versions, omit the function.
-  The payload is preserved byte-for-byte. No special rename API is required -- the same
-  `from → to` registration serves both structural transformations and pure renames.
-  _Traces to: US2 (rename without a payload function is the primary scenario)._
-- **FR-003**: For 1:N splits and 1:0 drops, developers MUST be able to register by declaring only
-  the input identity (`from`: fully qualified event name + version) together with a function that returns a list of
-  zero or more complete output messages. Each output message in the list carries its own MessageType
-  (name + version) set by the developer inside the function. The framework applies no `to` constraint
-  on this pattern -- the function has full control over the identity and payload of every output event.
-  Self-loop detection (FR-010) does not apply to this pattern since there is no declared `to`.
-  _Traces to: US3 (split: from + list-returning function), US4 (drop: from + function returning empty list)._
+  and/or version) without providing a payload transformation rule. This is the natural degenerate
+  case of FR-001: declare source and target identities with different names or versions; the payload
+  is preserved unchanged. No special rename declaration is required -- declaring source and target
+  identities serves both structural transformations and pure renames.
+  _Traces to: US2 (rename without a payload rule is the primary scenario)._
+- **FR-003**: For 1:N splits and 1:0 drops, developers MUST be able to declare only the source event
+  identity (`from`: fully qualified event name + version) together with a rule that produces zero or
+  more complete replacement events. Each replacement event carries its own identity (name + version)
+  and payload as determined by the developer's rule. The framework imposes no constraint on the
+  target identity for this pattern -- the rule has full control over the identity and payload of
+  every replacement event. Self-loop detection (FR-009) does not apply since no target identity is
+  declared.
+  _Traces to: US3 (split: source identity + rule producing two replacement events), US4 (drop: source identity + rule producing zero replacement events)._
 - **FR-004**: The order in which transformations are registered MUST be the order in which they are
   applied. The framework MUST NOT reorder transformations based on any implicit or explicit priority
   mechanism. Registration is programmatic (calling a framework API) and is valid only during
@@ -941,19 +946,17 @@ API introduced here is the stable foundation that makes that future extension sa
   _Traces to: US1 scenario 4 (all three reading contexts produce identical output -- only guaranteed if the transformation is pure), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
 - **FR-007**: When events pass through the transformation chain, the output of each transformation
   MUST flow into the next transformation as input (chaining). This applies to all output events,
-  including every event produced by a 1:N split: each event in the split's output list MUST
+  including every replacement event produced by a 1:N split: each replacement event MUST
   continue through the remaining transformations in the chain independently.
   _Traces to: US6 (the entire chaining story depends on output-as-input composition; without this, v1→v2 and v2→v3 would not compose), US3 scenario 4 (split output events flow through the remainder of the chain)._
 - **FR-008**: (Deferred) Snapshot upcasting is out of scope for 5.2.0. The framework MUST preserve
   the existing discard-and-replay fallback behavior unchanged: when a stored snapshot's version does
   not match the current entity version, the snapshot is discarded and all events are replayed from
-  the beginning. The hook point in `StoreBackedSnapshotter` is identified for a future release.
+  the beginning. This is the correct primary strategy, not a workaround -- snapshots are a cache and
+  can always be regenerated from the event stream. The hook point in `StoreBackedSnapshotter` is
+  identified for a future release.
   _Traces to: US5 (deferred snapshot upcasting; the no-regression requirement comes from the deferral decision)._
-- **FR-009**: (Retained from existing behavior) The discard-and-replay fallback MUST remain the
-  default when no snapshot transformation is registered. This is the correct primary strategy, not
-  a workaround -- snapshots are a cache and can always be regenerated from the event stream.
-  _Traces to: US5 (the discard-and-replay fallback is the existing behavior US5 defers to)._
-- **FR-010**: The framework MUST detect and report the following conflicts at registration time,
+- **FR-009**: The framework MUST detect and report the following conflicts at registration time,
   not during event processing:
   - Two transformations with the same `from` identity (same name + version) -- duplicate targeting.
   - A transformation where `from` and `to` are identical (same name AND same version) -- guaranteed
@@ -961,7 +964,7 @@ API introduced here is the stable foundation that makes that future extension sa
   - A version string in `from` or `to` that does not conform to semantic versioning format
     (major.minor.patch, e.g. `"1.0.0"`) -- rejected with a clear error identifying the invalid value.
   _Traces to: US7 (all four acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
-- **FR-011**: Transformations MUST operate on event data as structured, typed objects. Developers
+- **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
   MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
   framework provides an on-demand conversion mechanism: a transformation requests the typed payload
   by specifying the target type, and the EventConverter resolves it at that point. The EventConverter
@@ -971,20 +974,20 @@ API introduced here is the stable foundation that makes that future extension sa
   type by the registered ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible
   to the transformation author.
   _Traces to: US1 (developer writes a transformation function that reads and produces typed payload objects), US3 (split function accesses the original payload to derive two new payloads), US4 (drop function may inspect the payload to decide whether to suppress)._
-- **FR-012**: The event envelope -- entity type, entity identifier, tracking token, and sequence
+- **FR-011**: The event envelope -- entity type, entity identifier, tracking token, and sequence
   number -- MUST be preserved unchanged through any transformation. Event metadata (including
   infrastructure fields such as correlationId, causationId, and tracing headers) MUST also be
   preserved unchanged; transformations MUST NOT modify metadata. For a 1-to-N split, ALL output
   events MUST carry the same envelope and metadata as the original stored event. Transformations
   MUST only change the payload and the event identity (name and version).
   _Traces to: US1 scenario 1 (transformed event carries correct payload; envelope is unchanged), US3 scenario 1 (split output events are independent and complete -- they inherit the envelope of the original)._
-- **FR-013**: The framework MUST NOT deserialize an event's payload unless that event matches the
+- **FR-012**: The framework MUST NOT deserialize an event's payload unless that event matches the
   target name and version of at least one registered transformation. Non-matching events MUST pass
   through the transformation chain without triggering deserialization. This is enforced by the
   on-demand model: payload conversion only occurs when the transformation explicitly requests it,
   never eagerly.
   _Traces to: US1 scenario 3 (events that do not match pass through the chain unchanged -- without being deserialized), US4 scenario 2 (non-heartbeat events in the same stream pass through untouched)._
-- **FR-014**: The transformation chain MUST be applied consistently across all three event-reading
+- **FR-013**: The transformation chain MUST be applied consistently across all three event-reading
   contexts: event-sourced entity loading (bounded stream per entity), DCB reads
   (`SourcingCondition`-based bounded stream across multiple entities for command-side consistency
   enforcement), and tracking processor reads (unbounded stream across the full event store for
@@ -993,7 +996,7 @@ API introduced here is the stable foundation that makes that future extension sa
   Inconsistent application -- where one context sees transformed events and another sees the original
   stored format -- is explicitly prohibited.
   _Traces to: US1 scenario 4 (explicitly tests all three reading contexts and requires identical output from each)._
-- **FR-015**: The framework MUST emit observability signals at two levels:
+- **FR-014**: The framework MUST emit observability signals at two levels:
   - **INFO** at startup when the transformation chain is built: the number of registered
     transformations and their `from` identities, giving immediate confirmation that the chain is
     wired correctly without flooding production logs.
@@ -1003,13 +1006,13 @@ API introduced here is the stable foundation that makes that future extension sa
     registered correctly.
   No public API changes are required to support this -- logging is a framework-internal concern.
   _Traces to: US8 (all three acceptance scenarios in US8 map directly to the two log levels specified here)._
-- **FR-016**: The streaming position (tracking token) MUST advance past dropped events. When a
+- **FR-015**: The streaming position (tracking token) MUST advance past dropped events. When a
   transformation drops an event (returns an empty list), the framework MUST record that the event
   was read and advance the position marker accordingly. A tracking processor that restarts MUST NOT
   reprocess any event that was dropped in a previous run. The drop is transparent to position
   tracking: the stream advances as if the event had been handled normally.
   _Traces to: US4 scenario 3 (processor restarts after dropping a SystemHeartbeat and does not reprocess it)._
-- **FR-017**: If a transformation function throws an exception, the framework MUST propagate it
+- **FR-016**: If a transformation function throws an exception, the framework MUST propagate it
   immediately to the caller -- the event store read, event-sourced entity load, DCB read, or tracking processor
   invocation. Processing halts. Silently skipping the failed event or logging-and-continuing is
   explicitly prohibited: a failed transformation leaves the output event undefined, and delivering
@@ -1017,7 +1020,7 @@ API introduced here is the stable foundation that makes that future extension sa
   The propagated exception MUST identify which transformation failed and the name, version, and
   stream position of the event that triggered the failure.
   _Traces to: US7 scenario 6 (transformation throws during event read; caller receives propagated exception with clear context)._
-- **FR-018**: Events stored without an explicit version MUST be treated by the framework as carrying
+- **FR-017**: Events stored without an explicit version MUST be treated by the framework as carrying
   version `0.0.1` -- the AF5 default version in `MessageType`. Transformation registrations that
   target version `0.0.1` apply to these legacy events. No special API is required; the developer
   registers for `0.0.1` exactly as they would for any other version.
@@ -1027,10 +1030,9 @@ API introduced here is the stable foundation that makes that future extension sa
 
 - **Event transformation**: A single unit of logic that targets one event type at one
   version. "Transformation" is the canonical term used throughout this spec. Two patterns exist:
-  (1) **1:1** -- declares `from` and `to`
-  identity with an optional payload function; covers structural changes and renames. (2) **1:N/1:0**
-  -- declares only `from` with a function returning a list of zero or more complete output messages;
-  covers splits and drops. Each transformation has exactly one reason to change. Think of it as a simple
+  (1) **1:1** -- declares source and target event identity with an optional payload rule; covers
+  structural changes and renames. (2) **1:N/1:0** -- declares only the source identity with a rule
+  producing zero or more replacement events; covers splits and drops. Each transformation has exactly one reason to change. Think of it as a simple
   recipe: "given this event in this format, produce these events in this format."
 - **Transformation chain**: The ordered sequence of registered transformations applied when reading
   events from storage. Order is determined entirely by registration sequence -- first registered
