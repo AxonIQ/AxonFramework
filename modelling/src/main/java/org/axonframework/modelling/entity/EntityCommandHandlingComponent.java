@@ -84,14 +84,14 @@ public class EntityCommandHandlingComponent<ID, E> implements CommandHandlingCom
             } catch (EntityIdResolutionException e) {
                 // If there's no entity identifier to resolve, we might deal with a creational command.
                 // If NoHandlerForCommandException is thrown it wasn't, so we fall back to EntityIdResolutionException.
+                // Let's state we're going to create without loading first.
+                context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
                 return metamodel.handleCreate(command, context).first()
-                                .onErrorContinue(throwable -> {
-                                    if (throwable instanceof NoHandlerForCommandException) {
-                                        return MessageStream.failed(e);
-                                    } else {
-                                        return MessageStream.failed(throwable);
-                                    }
-                                })
+                                .onErrorContinue(
+                                        throwable -> throwable instanceof NoHandlerForCommandException
+                                                ? MessageStream.failed(e)
+                                                : MessageStream.failed(throwable)
+                                )
                                 .first();
             }
             QualifiedName messageName = command.type().qualifiedName();
