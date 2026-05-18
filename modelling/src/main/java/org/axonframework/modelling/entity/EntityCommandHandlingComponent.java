@@ -88,9 +88,12 @@ public class EntityCommandHandlingComponent<ID, E> implements CommandHandlingCom
                 context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
                 return metamodel.handleCreate(command, context)
                                 .onErrorContinue(
-                                        throwable -> throwable instanceof NoHandlerForCommandException
-                                                ? MessageStream.failed(e)
-                                                : MessageStream.failed(throwable)
+                                        throwable -> {
+                                            context.removeResource(EntityMetamodel.CREATE_WITHOUT_LOAD);
+                                            return throwable instanceof NoHandlerForCommandException
+                                                    ? MessageStream.failed(e)
+                                                    : MessageStream.failed(throwable);
+                                        }
                                 )
                                 .first();
             }
