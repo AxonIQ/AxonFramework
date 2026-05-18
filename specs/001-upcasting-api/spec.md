@@ -51,7 +51,7 @@ sections later in this document.
   Raw `byte[]` is not valid -- events stored as bytes are bridged automatically by
   `ByteArrayToJsonNodeConverter`. The separation is intentional: format conversion (byte[] ↔
   structured) is the EventConverter's job; schema/identity change is the transformation's job.
-- Q: In which reading contexts must transformations apply? → A: All three -- aggregate loading, DCB
+- Q: In which reading contexts must transformations apply? → A: All three -- event-sourced entity loading, DCB
   reads, and tracking processor reads (FR-014). If transformations applied in some contexts but not
   others, the same stored event would produce different results depending on who reads it, making
   a DCB consistency check and a projection disagree on current domain state.
@@ -258,7 +258,7 @@ field (e.g., `capacity: 30`). Later you realize you need both a minimum and a ma
 change the event class to use `minCapacity` and `maxCapacity`. But thousands of old events are already
 stored with just `capacity`. Every part of your application that reads those events -- **projections**
 (components that listen to events and build read models, such as a database view of all courses) and
-**aggregates** (the domain objects that rebuild their state by replaying their own event history) --
+**event-sourced entities** (the domain objects that rebuild their state by replaying their own event history) --
 needs to receive the new structure. Without upcasting, you would have to add conversion logic to
 every single handler. With a transformation, you write the transformation once and all handlers receive
 the new structure automatically.
@@ -288,7 +288,7 @@ events and verify that every handler receives the new structure and no handler e
    **Then** it passes through the chain unchanged.
 
 4. **Given** the same stored `CourseCreated` v1.0.0 event and the same registered transformation,
-   **When** the event is read in three different contexts -- (a) loading an event-sourced aggregate,
+   **When** the event is read in three different contexts -- (a) loading an event-sourced entity,
    (b) a DCB read enforcing command-side consistency, and (c) a tracking processor building a
    projection --
    **Then** all three contexts receive the identical transformed `CourseCreated` v2.0.0 payload.
@@ -347,7 +347,7 @@ were bundled together. Imagine you have exactly this problem: a single stored ev
 facts. You want to split it into two proper events: `StudentEnrolled` and `CourseCapacityUpdated`.
 
 Every time this stored event is read from the event store -- whether to rebuild a projection or to
-replay an aggregate's history -- the transformation must produce both replacement events in the correct order.
+replay an entity's history -- the transformation must produce both replacement events in the correct order.
 Handlers and projections that were written for the individual events will then work correctly.
 
 **Why this priority**: Splitting an event changes the shape of the event stream itself. This cannot be
@@ -536,7 +536,7 @@ the framework raises a descriptive error at registration time, before any event 
 
 6. **Given** a transformation whose function throws an exception when applied to a specific event,
    **When** that event is read from the event store,
-   **Then** the framework propagates the exception immediately to the caller -- the aggregate load,
+   **Then** the framework propagates the exception immediately to the caller -- the event-sourced entity load,
    DCB read, or tracking processor -- halting processing. The exception clearly identifies which
    transformation failed and the name, version, and stream position of the event that triggered it.
    The framework MUST NOT silently skip the failed event or log-and-continue.
@@ -636,13 +636,13 @@ Think of it like a shopping list: you cannot add up the totals until you have se
 event sourcing, this introduces two problems that cannot be solved cleanly in this release:
 
 1. **Where does the memory live?** Events are read in two very different contexts in Axon:
-   - When loading one **aggregate** (e.g., one specific Course), the framework reads only that
-     aggregate's own events as a **bounded stream** (a finite, ordered sequence that ends when all
-     the aggregate's events have been read). Memory that resets per aggregate is predictable here.
+   - When loading one **entity** (e.g., one specific Course), the framework reads only that
+     entity's own events as a **bounded stream** (a finite, ordered sequence that ends when all
+     the entity's events have been read). Memory that resets per entity is predictable here.
    - When a **tracking processor** (a background component that continuously reads all events from
      the entire event store to update projections) runs, it processes an **unbounded stream** (a
-     continuous, never-ending sequence of events from every aggregate in the system). Memory
-     spanning aggregate boundaries here would silently mix up data from completely unrelated
+     continuous, never-ending sequence of events from every entity in the system). Memory
+     spanning entity boundaries here would silently mix up data from completely unrelated
      entities -- causing bugs that are nearly impossible to reproduce or debug.
 
    In Axon Framework 4, **context-aware upcasters** (upcasters that carry state from one event to
@@ -681,7 +681,7 @@ memory problem described in the N-to-1 section above, applied to individual fiel
 whole events.
 
 The ambiguity of what "context" means in a framework that reads events both as bounded streams (per
-aggregate) and as unbounded streams (via tracking processors across the entire event store) makes
+entity) and as unbounded streams (via tracking processors across the entire event store) makes
 this impossible to implement with consistent, predictable behavior. Axon Framework 4 had
 context-aware upcasters and developers regularly encountered subtle, hard-to-reproduce bugs because
 the context scope behaved differently depending on whether the read was triggered by event sourcing
@@ -822,11 +822,11 @@ this can be added in issue #746 without breaking the event upcasting API introdu
 
 ### Snapshot Upcasting `[Deferred]`
 
-**The use case**: An aggregate with a large event history (tens of thousands of events) uses
-snapshots to avoid expensive full replays. When the aggregate's state schema changes -- e.g.,
+**The use case**: An entity with a large event history (tens of thousands of events) uses
+snapshots to avoid expensive full replays. When the entity's state schema changes -- e.g.,
 `capacity` is renamed to `maxCapacity` -- stored snapshots at the old schema cannot be deserialized.
 The current fallback discards the snapshot and replays all events from the beginning, which for
-large aggregates can take seconds to minutes.
+large entities can take seconds to minutes.
 
 Snapshot upcasting would let a developer register a `Snapshot → Snapshot` transformation for a
 specific snapshot version, so the framework can transform the old snapshot into the current format
@@ -840,9 +840,9 @@ truth. The event stream is always the source of truth; a snapshot is just an opt
 a stale snapshot and replaying is correct behavior, not a fallback of last resort.
 
 Snapshot upcasting is only justified when all three of these are simultaneously true:
-1. The aggregate has a very large event history (tens of thousands of events or more).
+1. The entity has a very large event history (tens of thousands of events or more).
 2. A full replay from the discarded snapshot position takes an unacceptable amount of time.
-3. The aggregate's state schema changed and stored snapshots are incompatible.
+3. The entity's state schema changed and stored snapshots are incompatible.
 
 This is a rare combination. Most teams deploying AF5 will not hit all three conditions at once.
 And even when they do, a one-time migration script that re-creates snapshots in the new format
@@ -863,13 +863,13 @@ dropped, and carry no event identity (name + version together) -- only a version
 
 **Acceptance scenarios (preserved for future spec)**:
 
-1. **Given** a stored aggregate snapshot at version 1.0.0 and a snapshot transformation registered,
-   **When** the aggregate is loaded,
+1. **Given** a stored entity snapshot at version 1.0.0 and a snapshot transformation registered,
+   **When** the entity is loaded,
    **Then** the framework applies the transformation and uses the resulting snapshot without replaying
    all events from the beginning.
 
 2. **Given** no snapshot transformation registered for a version mismatch,
-   **When** the aggregate is loaded,
+   **When** the entity is loaded,
    **Then** the framework discards the snapshot and replays all events (existing behavior -- no
    regression).
 
@@ -971,7 +971,7 @@ API introduced here is the stable foundation that makes that future extension sa
   type by the registered ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible
   to the transformation author.
   _Traces to: US1 (developer writes a transformation function that reads and produces typed payload objects), US3 (split function accesses the original payload to derive two new payloads), US4 (drop function may inspect the payload to decide whether to suppress)._
-- **FR-012**: The event envelope -- aggregate type, aggregate identifier, tracking token, and sequence
+- **FR-012**: The event envelope -- entity type, entity identifier, tracking token, and sequence
   number -- MUST be preserved unchanged through any transformation. Event metadata (including
   infrastructure fields such as correlationId, causationId, and tracing headers) MUST also be
   preserved unchanged; transformations MUST NOT modify metadata. For a 1-to-N split, ALL output
@@ -985,8 +985,8 @@ API introduced here is the stable foundation that makes that future extension sa
   never eagerly.
   _Traces to: US1 scenario 3 (events that do not match pass through the chain unchanged -- without being deserialized), US4 scenario 2 (non-heartbeat events in the same stream pass through untouched)._
 - **FR-014**: The transformation chain MUST be applied consistently across all three event-reading
-  contexts: aggregate loading (event sourcing, bounded stream per aggregate), DCB reads
-  (`SourcingCondition`-based bounded stream across multiple aggregates for command-side consistency
+  contexts: event-sourced entity loading (bounded stream per entity), DCB reads
+  (`SourcingCondition`-based bounded stream across multiple entities for command-side consistency
   enforcement), and tracking processor reads (unbounded stream across the full event store for
   projections). All three contexts read events from the same event store; a stored event MUST
   produce the same transformed output regardless of which reading context triggered the read.
@@ -1010,7 +1010,7 @@ API introduced here is the stable foundation that makes that future extension sa
   tracking: the stream advances as if the event had been handled normally.
   _Traces to: US4 scenario 3 (processor restarts after dropping a SystemHeartbeat and does not reprocess it)._
 - **FR-017**: If a transformation function throws an exception, the framework MUST propagate it
-  immediately to the caller -- the event store read, aggregate load, DCB read, or tracking processor
+  immediately to the caller -- the event store read, event-sourced entity load, DCB read, or tracking processor
   invocation. Processing halts. Silently skipping the failed event or logging-and-continuing is
   explicitly prohibited: a failed transformation leaves the output event undefined, and delivering
   corrupted or absent state to downstream consumers without a signal is worse than a hard failure.
@@ -1036,8 +1036,8 @@ API introduced here is the stable foundation that makes that future extension sa
   events from storage. Order is determined entirely by registration sequence -- first registered
   runs first.
 - **Snapshot transformation**: (Deferred to a future release) A unit of logic that would convert
-  a stored aggregate snapshot from an old format to the current format, avoiding a full event replay
-  for large aggregates. The hook point exists in `StoreBackedSnapshotter` but the API is not defined
+  a stored entity snapshot from an old format to the current format, avoiding a full event replay
+  for large entities. The hook point exists in `StoreBackedSnapshotter` but the API is not defined
   in this release. The discard-and-replay fallback remains the correct primary strategy.
 - **MessageType / Event identity**: Every event has a **MessageType** -- the combination of a
   fully qualified name (namespace + local name, e.g., `com.example.CourseCreated`) and a version
