@@ -177,7 +177,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     }
 
     /**
-     * Validates if the {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is set to {@code true}.
+* Returns {@code true} if the {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is set to {@code true}.
      * <p>
      * Typically, the {@code DefaultEventStoreTransaction} constructs an {@link AppendCondition} based on a
      * {@link SourcingCondition}, thus it creates the {@code AppendCondition} as a result from <b>loading</b> an entity.
