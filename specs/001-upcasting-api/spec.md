@@ -25,7 +25,7 @@ expects, Axon converts the stored payload (the data content of the event) to tha
 For example, when you add a new field to an event class, old stored events simply receive a default
 value for that field when they are read. You do not need to do anything.
 
-**Transformations are for the scenarios that payload conversion cannot handle**: situations where the
+**Transformations address scenarios that payload conversion cannot handle**: situations where the
 stored event stream itself must change -- splitting one event into two, renaming an event type, or
 restructuring a payload in a way that every handler needs to see uniformly. A transformation runs
 when events are read from the event store, before any handler sees them.
@@ -34,38 +34,62 @@ when events are read from the event store, before any handler sees them.
 
 ## Clarifications
 
+This section records design decisions made during the clarification process. Each entry explains
+why a particular choice was made -- the rationale that is not visible from the requirements alone.
+References to FR-xxx and SC-xxx entries are defined in the Requirements and Success Criteria
+sections later in this document.
+
 ### Session 2026-05-18
 
-- Q: When does the EventConverter convert a stored event's payload to a typed object relative to the transformation chain? → A: On-demand (lazy, pull-based) via `payloadAs()` -- Option B.
-- Q: What target types are valid when an upcaster calls `payloadAs()` to access the event payload? → A: Structured representations -- typed Java classes (POJOs), `JsonNode`, and `ObjectNode`. Raw `byte[]` is not a valid target for upcasters. Events stored as `byte[]` in the event store are automatically converted to the requested structured type by the `ByteArrayToJsonNodeConverter` registered in `Jackson2Converter`. Upcasters never see or handle raw bytes; the converter infrastructure is the bridge. This keeps the separation clean: format/serialization conversion (byte[] ↔ structured type) is Converter responsibility; schema/identity change is Upcaster responsibility.
-- Q: In which event-reading contexts must upcasters apply? → A: All three -- aggregate loading (event sourcing, bounded stream per aggregate), DCB reads (`SourcingCondition`-based, bounded stream across multiple aggregates for command-side consistency enforcement), and tracking processor reads (unbounded stream, all events, for projections). All three read from the same event store and must produce consistent results. If upcasters applied in some contexts but not others, a DCB decision model and a tracking processor projection would disagree on the current state of the domain for the same stored events.
-- Q: Should the spec require a published Converter vs. transformation decision tree as a documentation deliverable? → A: Yes -- add as SC-007. A developer building a new AF5 system needs to know which tool to reach for when handling event schema changes. The Background section describes the boundary but a concrete decision tree with examples is a first-class documentation artifact, not an assumption.
-- Q: Should the spec document the transformation retirement condition -- when it is safe to remove an upcaster from the codebase? → A: Yes -- document in Edge Cases. Without this, developers either accumulate upcasters forever or remove them too early and break replays. The retirement condition is deterministic: an upcaster may only be removed when no stored event at its target `from` version exists in any event store, including backups and cold archives.
-- Q: Should the spec document what happens when a transformed event has no registered handler? → A: Yes -- document in Edge Cases as explicitly intended behavior. A transformed event with no handler is silently ignored, which is standard AF5 behavior for any unhandled event. Stating this prevents debugging confusion and makes the chain's correct operation independently testable.
-- Q: How does the `from → to` registration model (FR-001) apply to splits and drops where there is no single output identity? → A: Two patterns. 1:1 transformations (structural transform, rename) use `from → to` + optional function as per FR-001. 1:N splits and 1:0 drops declare only `from` + a function that returns a list of zero or more complete output messages; each output message has its own MessageType set by the developer inside the function. The self-loop detection (FR-010) applies to 1:1 registrations only. Rename stays frictionless (no function needed). This mirrors AF4's SingleEventUpcaster / EventMultiUpcaster split and preserves FR-002's no-function guarantee for renames.
-- Q: Should the version string format be constrained? → A: Yes -- semantic versioning format (major.minor.patch, e.g. `"1.0.0"`) enforced at registration time. Invalid format rejected with a clear error. Prevents silent mismatches where `"1.0"` and `"1.0.0"` are intended to be the same version but never match, breaking chaining and duplicate detection. Consistent with the existing default version `"0.0.1"` already in the spec.
-- Q: Is transformation registration valid only at startup or also at runtime? → A: Startup/build-time only. Once event processing begins the chain is fixed. Runtime registration would allow a stream to be processed partially with one chain and partially with another, producing inconsistent results from the same stored event stream. Tests construct a fresh chain per test case, which startup-only naturally supports.
-- Q: Should the framework emit observability signals during normal transformation chain operation? → A: Yes -- INFO level at startup when the chain is built (number of transformations registered), DEBUG level each time a transformation is applied (which transformation, which event name+version). INFO confirms correct wiring without flooding production logs; DEBUG is off by default but available for diagnosis. No public API changes required.
-- Q: Should the "event name" in a transformation registration use the fully qualified name or local name only? → A: Fully qualified name required (e.g., `com.example.CourseCreated`). Consistent with how AF5 `MessageType` resolves event identity via `@Event` -- the namespace (package) + local name together form the unique identity. Using only the local name risks silent non-matches when two modules have events with the same local name. FR-001, FR-003, FR-005, and FR-010 updated to specify "fully qualified event name."
-- Q: Can transformations modify event metadata, or is metadata always preserved unchanged? → A: Metadata is always preserved unchanged. Transformations may only change payload and event identity (name + version). Consistent with AF4 behavior -- `SingleEventUpcasterTest` explicitly asserts metadata is preserved after upcasting. Infrastructure metadata (correlationId, causationId, tracing headers) are written-once facts about the original message and must not be mutated during schema evolution. FR-012 updated to make this explicit.
-- Q: FR-010 (conflict detection) and FR-015 (observability) had no traceable user story -- do they belong in the spec or move to the plan as technical constraints? → A: Add user stories. Both describe real developer-facing scenarios with testable acceptance criteria. US7 covers misconfiguration feedback at registration time (FR-010). US8 covers startup observability for the transformation chain (FR-015). Added to Part B.
-- Q: When a transformation throws an exception, what should the framework do? → A: Propagate -- processing halts.
-- Q: How are transformations registered? → A: Programmatic only for 5.2.0; annotation-based deferred until user demand justifies it.
-- Q: Should snapshot upcasting ship in 5.2.0 or be deferred? → A: Deferred -- design the door open. Discard-and-replay is the correct primary strategy; snapshot upcasting is a niche escape hatch for massive aggregates. Follows the same pattern as command/query upcasting deferral.
-- Q: How should the output version be specified, and how should infinite loops be prevented? → A: Explicit `from → to` registration for all transformations. The payload transform function is optional -- when absent, the payload passes through unchanged (this is the rename case, satisfying FR-002). The framework rejects registrations where `from` and `to` are identical (same name + same version) at registration time.
-
-  The transformation calls `message.payloadAs(MyType.class)` only when it explicitly needs the typed payload.
-  Non-matching events pass through the chain without any deserialization occurring.
-
-  **Why not Option A (eager pre-conversion):** Pre-converting every event before the chain violates
-  FR-013 -- events that no transformation targets would still be deserialized. Worse, if a stored event's
-  type has been deleted from the codebase (the exact case a transformation exists to handle -- e.g., to
-  drop or rename it), eager pre-conversion would fail before the transformation ever runs.
-
-  **Why not Option C (transformations see raw bytes):** This directly contradicts FR-011. It recreates the
-  AF4 `IntermediateEventRepresentation` problem: developers are forced to manipulate raw JSON or
-  bytes, understand serializer-specific formats, and handle missing fields manually. The redesign
-  exists precisely to eliminate this.
+- Q: When does the EventConverter convert a stored event's payload? → A: On-demand via `payloadAs()`
+  (FR-011, FR-013). Eager pre-conversion was rejected: if a stored event's type has been deleted
+  (the exact case a transformation handles -- drop or rename), eager conversion would fail before
+  the transformation runs. Raw byte access was rejected: it recreates the AF4
+  `IntermediateEventRepresentation` problem where developers had to manipulate serializer-specific
+  formats directly.
+- Q: What target types are valid for `payloadAs()`? → A: POJOs, `JsonNode`, `ObjectNode` (FR-011).
+  Raw `byte[]` is not valid -- events stored as bytes are bridged automatically by
+  `ByteArrayToJsonNodeConverter`. The separation is intentional: format conversion (byte[] ↔
+  structured) is the EventConverter's job; schema/identity change is the transformation's job.
+- Q: In which reading contexts must transformations apply? → A: All three -- aggregate loading, DCB
+  reads, and tracking processor reads (FR-014). If transformations applied in some contexts but not
+  others, the same stored event would produce different results depending on who reads it, making
+  a DCB consistency check and a projection disagree on current domain state.
+- Q: Should the spec require a Converter vs. transformation decision tree? → A: Yes -- added as
+  SC-007 (see Success Criteria). The Background section states the boundary but a decision tree with
+  concrete examples is a first-class documentation artifact a developer needs before choosing which
+  tool to reach for.
+- Q: Retirement and no-handler behavior -- document in spec? → A: Yes -- both are in the Edge Cases
+  table (see User Scenarios & Testing). Without a clear retirement rule -- which states that a
+  transformation may only be removed once no stored event at its `from` version exists anywhere,
+  including backups -- developers either accumulate transformations forever or remove them too early
+  and break replays.
+- Q: How does registration work for splits and drops? → A: Two patterns (FR-001, FR-003). 1:1 uses
+  `from → to`; 1:N/1:0 uses `from` only with a list-returning function. Mirrors AF4's
+  SingleEventUpcaster / EventMultiUpcaster split. Rename stays frictionless as the degenerate 1:1
+  case with no function.
+- Q: Should version strings be constrained? → A: Yes -- semver major.minor.patch enforced at
+  registration (FR-010). Without this, `"1.0"` and `"1.0.0"` silently never match, breaking
+  chaining.
+- Q: Startup-only or runtime registration? → A: Startup-only (FR-004). Runtime registration would
+  let part of a stream run with one chain and part with another, producing inconsistent results from
+  the same stored events.
+- Q: Observability signals? → A: Yes -- INFO at chain build, DEBUG per transformation applied
+  (FR-015, US8). INFO level avoids flooding production logs while still confirming correct wiring.
+- Q: Fully qualified name or local name only? → A: Fully qualified (FR-001, FR-005). Local names
+  risk silent non-matches when two modules share the same event local name.
+- Q: Can transformations modify metadata? → A: No -- metadata preserved unchanged (FR-012).
+  Confirmed by AF4 `SingleEventUpcasterTest` line 75. Metadata fields like correlationId and
+  causationId are written-once facts about the original message.
+- Q: FR-010 and FR-015 had no traceable user story -- spec or plan? → A: Added US7 and US8.
+  Both describe developer-facing scenarios with testable acceptance criteria, not technical
+  implementation choices.
+- Q: Exception handling? → A: Propagate immediately, halt processing (FR-017).
+- Q: Registration mechanism? → A: Programmatic only for 5.2.0; annotation-based deferred (see
+  Part C: Out of Scope and Non-Upcasting Scenarios).
+- Q: Snapshot upcasting in 5.2.0? → A: Deferred. Discard-and-replay is the correct primary
+  strategy. See Part C: Out of Scope for full rationale and the hook point in
+  `StoreBackedSnapshotter`.
 
 ---
 
@@ -76,12 +100,13 @@ This section is split into three parts:
 - **Part A** -- scenarios that AF5 already handles automatically. No transformation is needed. Each
   scenario has a passing test in the university-demo module that proves the behaviour works today.
 - **Part B** -- scenarios that require a transformation. These are the stories that drive the new API.
-- **Part C** -- scenarios that are not an upcasting problem at all. Each entry explains what to do
-  instead, and why an transformation is the wrong tool.
+- **Part C** -- scenarios that are out of scope or where a transformation is the wrong tool
+  entirely. Each entry explains what to do instead and why a transformation does not solve the
+  problem.
 
 ---
 
-## Part A: What AF5 Handles For You (No Transformation Needed)
+### Part A: What AF5 Handles For You (No Transformation Needed)
 
 The scenarios below are handled automatically by AF5's **payload conversion at handling time**
 mechanism. When an event is read from the event store, Axon converts its stored payload to whatever
@@ -219,7 +244,7 @@ event.
 
 ---
 
-## Part B: When Transformations Are Needed
+### Part B: When Transformations Are Needed
 
 The scenarios below cannot be handled by payload conversion. They require registering a transformation because
 the stored event stream itself must change. Each story is a distinct, independently testable use case.
@@ -463,8 +488,10 @@ event name and version -- perhaps by copy-pasting a registration block and forge
 string like `"1.0"` instead of `"1.0.0"`.
 
 Without early detection, these mistakes produce no error at startup but cause silent failures at
-runtime: events are double-processed, the application loops, or a transformation never fires because
-its version string never matches. These bugs are hard to reproduce and hard to diagnose.
+runtime: events matching two conflicting registrations are processed twice, the application loops
+indefinitely on a self-referencing transformation, or a transformation never fires because its
+version string never matches the stored events. These bugs are hard to reproduce and hard to
+diagnose.
 
 The framework MUST catch all three classes of misconfiguration at registration time -- before any
 event is read from the store -- and surface a clear error that names the conflicting or invalid
@@ -556,7 +583,31 @@ and verify that DEBUG-level output identifies which transformation ran and for w
 
 ---
 
-## Part C: Out of Scope and Non-Upcasting Scenarios
+### Edge Cases
+
+Each edge case below is fully specified in the referenced FR. This table exists as a quick-lookup
+index; see the FR for the authoritative requirement.
+
+| Scenario | Specified in |
+|---|---|
+| Two transformations with the same `from` identity | FR-010 |
+| Self-loop registration (`from` == `to`) | FR-010 |
+| Invalid version format (not major.minor.patch) | FR-010 |
+| Non-fully-qualified event name in registration | FR-010 |
+| Late registration after event processing starts | FR-004 |
+| Wrong chain order silently under-converts | FR-004; US6 scenario 4 shows expected behavior |
+| Split output events flow through the remaining chain | FR-007 |
+| Envelope and metadata preserved through any transformation | FR-012 |
+| Non-matching events pass through without deserialization | FR-013 |
+| Tracking token advances past dropped events | FR-016 |
+| Transformation exception propagates immediately | FR-017 |
+| Unversioned events treated as version 0.0.1 | FR-018 |
+| Transformed event with no registered handler | Standard AF5 no-handler behavior -- not a transformation failure |
+| Transformation retirement (when safe to remove) | Developer responsibility -- safe only when no stored event exists at the `from` version in any event store, including backups |
+
+---
+
+### Part C: Out of Scope and Non-Upcasting Scenarios
 
 This section documents scenarios that are either deferred to a later release, or are not an
 upcasting problem at all. Knowing what NOT to reach for a transformation for is as important as
@@ -572,7 +623,7 @@ The entries fall into two categories:
 
 ---
 
-### Out of Scope: N-to-1 Merge (Deferred)
+### N-to-1 Merge `[Deferred]`
 
 **Plain-English explanation**: Imagine you have two separate stored events -- `ItemAddedToCart`
 followed by `CartCheckedOut` -- and you realize they should have been a single `OrderCompleted` event.
@@ -615,7 +666,7 @@ above, the team will define a clear scope for context-aware upcasting in a futur
 
 ---
 
-### Out of Scope: Moving Data Between Events (Deferred)
+### Moving Data Between Events `[Deferred]`
 
 **Plain-English explanation**: Imagine `OrderPlaced` contains a `discountCode` field. Later, you
 realize that `discountCode` actually belongs on the `PaymentProcessed` event that follows it. You want
@@ -645,7 +696,7 @@ the team will revisit whether a well-scoped context-aware transformation is feas
 
 ---
 
-### Not an Upcasting Problem: Semantic Meaning of a Field Changed Silently
+### Semantic Meaning of a Field Changed Silently `[Wrong tool]`
 
 **Scenario**: A field's name stays the same but its meaning changes. For example, `capacity` in
 `CourseCreated` used to mean "total available seats" but now means "available seats remaining after
@@ -671,7 +722,7 @@ field that reflects the new concept explicitly.
 
 ---
 
-### Not an Upcasting Problem: New Event Cannot Be Derived from the Old One
+### New Event Cannot Be Derived from the Old One `[Wrong tool]`
 
 **Scenario**: An event has changed so fundamentally that the new version cannot be computed from the
 old stored data. For example, `CourseCreated` was originally modeled around rooms and time slots, but
@@ -698,7 +749,7 @@ concept. This is not "CourseCreated v2.0.0" -- it is `CourseScheduled`, a new bu
 
 ---
 
-### Deferred to #746: Command Upcasting (and Downcasting)
+### Command Upcasting and Downcasting `[Deferred — #746]`
 
 **The real-world driver -- rolling deployments**: Unlike events (which are stored permanently and
 read long after they were written), commands are sent live between running services. The versioning
@@ -749,7 +800,7 @@ collected concrete rolling-deployment command/query versioning cases from users.
 
 ---
 
-### Deferred to #746: Query Upcasting
+### Query Upcasting `[Deferred — #746]`
 
 **The real-world driver -- rolling deployments**: The same rolling-deployment scenario applies to
 queries. Service v2 sends a `FindCoursesByFaculty` query with a new `includeArchived` filter
@@ -769,7 +820,7 @@ this can be added in issue #746 without breaking the event upcasting API introdu
 
 ---
 
-### Deferred: Snapshot Upcasting
+### Snapshot Upcasting `[Deferred]`
 
 **The use case**: An aggregate with a large event history (tens of thousands of events) uses
 snapshots to avoid expensive full replays. When the aggregate's state schema changes -- e.g.,
@@ -828,7 +879,7 @@ dropped, and carry no event identity (name + version together) -- only a version
 
 ---
 
-### Deferred: Annotation-Based Transformation Registration
+### Annotation-Based Transformation Registration `[Deferred]`
 
 In 5.2.0, transformations are registered programmatically only. An annotation-based model (e.g.,
 `@Upcaster` on methods, discovered at startup) is intentionally deferred.
@@ -843,109 +894,6 @@ no priority attributes, and no framework magic.
 layered on top of the programmatic API without any breaking change -- annotations would simply be
 syntactic sugar that calls the same registration API in a defined discovery order. The programmatic
 API introduced here is the stable foundation that makes that future extension safe.
-
----
-
-### Edge Cases
-
-**Registration-time failures** (problems the framework must catch at startup, not during event processing):
-
-- Two transformations with the same `from` identity (same name + version): duplicate targeting.
-  The framework must detect and report this clearly at registration time.
-- A transformation where `from` and `to` are identical (same name AND same version): guaranteed
-  infinite loop. The output re-matches the same transformation on the next pass. Rejected at
-  registration time with a clear error pointing at the `from` and `to` values.
-- An attempt to register a transformation after event processing has started: rejected immediately
-  with a clear error. The chain is immutable once processing begins; late registration would cause
-  different events in the same stored stream to be processed with different chains, producing
-  inconsistent results.
-- A null, empty, or non-fully-qualified event name (missing namespace) in either `from` or `to`,
-  or a null, empty, or non-semver version: rejected at registration time with a clear configuration
-  error identifying the invalid value. Valid name form: `namespace.LocalName` (e.g.,
-  `com.example.CourseCreated`). Valid version format: major.minor.patch (e.g. `"1.0.0"`). The
-  default version `"0.0.1"` is always valid. Discovered from `EventTypeUpcasterTest` in the AF4
-  test suite.
-
-**Chain composition**:
-
-- What if the output of one transformation is itself subject to another registered transformation?
-  Transformations must chain correctly: the output of step A flows into step B.
-- What if upcasters are registered in the wrong order (e.g., v2→v3 registered before v1→v2)?
-  The chain produces no error -- it silently under-converts (a v1 event reaches the v2→v3 transformation
-  as v1, does not match, passes through as v1). This is the user's responsibility. The framework
-  guarantees chain order is registration order; it cannot detect logical ordering mistakes.
-  Discovered from `GenericUpcasterChainTest#upcastingResultOfOtherUpcasterOnlyWorksIfUpcastersAreInCorrectOrder`.
-- What if a splitting transformation produces events of types that are themselves subject to
-  further transformations? Each output event must flow through the remaining chain.
-
-**Envelope field preservation**:
-
-- What must happen to the event's envelope fields (aggregate type, aggregate identifier, tracking
-  token, sequence number) when a transformation transforms an event? These fields MUST be preserved
-  unchanged through any 1-to-1 transformation. In a 1-to-N split, every output event MUST carry
-  the same aggregate type, aggregate identifier, tracking token, and sequence number as the
-  original stored event. Transformations are only allowed to change the payload, the MessageType
-  name, and the version -- not the event's storage envelope.
-  Discovered from `SingleEventUpcasterTest#upcastingDomainEventData` and
-  `EventMultiUpcasterTest#upcastingDomainEventData`.
-
-**Lazy evaluation**:
-
-- What if an event does not match the transformation's target name and version? The framework MUST pass
-  it through without calling any deserialization on its payload. Upcasters act as a filter first:
-  if `canUpcast` returns false, the event's payload data must never be read. This is both a
-  performance requirement (avoid unnecessary deserialization of every non-matching event in a
-  large stream) and a correctness requirement (the payload format may be incompatible with the
-  transformation's expected type).
-  Discovered from `SingleEventUpcasterTest#ignoresUnknownType` and
-  `EventMultiUpcasterTest#upcasterIgnoresWrongEventType`.
-
-**Streaming position after event drop**:
-
-- What happens to the stream's position tracking when a transformation drops (suppresses) events?
-  The streaming position -- the **tracking token** (a marker that tells a background processor
-  where it is in the event store, so it can resume after a restart) -- MUST advance past dropped
-  events. If a transformation drops the last event in a stream, the position must still reflect that
-  the dropped event was read from storage. A processor that drops events must not re-process them
-  on the next restart.
-  Discovered from `EventStreamUtilsTest#domainEventStream_lastSequenceNumberEqualToLastProcessedEntryAfterIgnoringLastEntry`.
-
-**Exception handling**:
-
-- If a transformation throws an exception, the framework MUST propagate it immediately -- processing
-  halts and the exception surfaces to the caller (the event store read, aggregate load, or tracking
-  processor). Silently skipping or logging-and-continuing is explicitly rejected: a failed
-  transformation leaves the output event undefined, and delivering corrupted or missing state to
-  aggregates and projections without a visible signal is worse than a hard failure. The exception
-  MUST clearly identify which transformation failed and for which event (name, version, and position
-  in the stream) with enough information to diagnose the problem quickly.
-
-**Unversioned legacy events**:
-
-- What if a stored event carries no version (events written before versioning was introduced)?
-  The framework treats these as version "0.0.1" (the default version in AF5's `MessageType`).
-  Developers who need to target these legacy events register their transformation for version "0.0.1".
-
-**Transformed event with no registered handler**:
-
-- What if the transformation chain produces an event version that no handler is registered for?
-  The transformed event is silently ignored -- this is standard AF5 behavior for any event with no
-  registered handler, not a transformation failure. The transformation ran correctly; the absence of a handler
-  is a separate, independent concern. Developers debugging a scenario where events appear to
-  disappear should verify two things independently: (1) that the transformation chain ran and produced
-  the expected output version, and (2) that a handler is registered for that output version.
-  The SC-005 university demo examples serve as reference for proving both.
-
-**Transformation retirement**:
-
-- When is it safe to remove a transformation from the codebase? A transformation may only be removed when
-  no stored event at its target `from` version exists in any event store -- including backups, cold
-  archives, and disaster-recovery copies. Removing a transformation while old-format events still exist
-  anywhere will cause replays, aggregate loads, DCB reads, and tracking processor reads to see the
-  original unupcasted format, silently breaking projections and aggregate state reconstruction
-  without any framework-level error. The safe retirement sequence is: (1) confirm all event stores
-  including backups contain no events at the `from` version, then (2) remove the transformation.
-  Upcasters that have never been deployed to production can be removed freely.
 
 ## Requirements
 
@@ -1075,7 +1023,7 @@ API introduced here is the stable foundation that makes that future extension sa
   registers for `0.0.1` exactly as they would for any other version.
   _Traces to: US1 scenario 5 (a stored event with no version is matched by a transformation registered for version 0.0.1)._
 
-### Key Entities
+## Key Entities
 
 - **Event transformation**: A single unit of logic that targets one event type at one
   version. "Transformation" is the canonical term used throughout this spec. Two patterns exist:
