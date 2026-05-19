@@ -59,13 +59,15 @@ sections later in this document.
 ### Session 2026-05-19
 
 - Q: API surface for #746 alignment – should registration be typed on `Message<P>` or `EventMessage<P>`?
-  → A (provisional, pending team confirmation): Internal core typed on `Message<P>`; public 5.2.0 API
-  exposes only event-typed registration. #746 (command/query upcasting) can add parallel registration
-  on the same core without breaking the event API. Acknowledged trade-off: this carries a premature-abstraction
-  risk, since #746's concrete shape (rolling-deployment / downcasting semantics for commands) is not
-  yet specified. The envelope-field asymmetry (tracking token, sequence number, entity id are event-only)
-  must be modelled cleanly in the internal core. See "What needs team input" in DISCUSSION.md for the
-  open team question.
+  → A (decided 2026-05-19): A non-sealed `Upcaster<M extends Message<?>>` root interface is
+  introduced in `org.axonframework.messaging.upcasting`. It carries only `MessageType from()`.
+  The event-specific sealed hierarchy (`EventUpcaster`, `SingleEventUpcaster`,
+  `MultiEventUpcaster`) extends it. The public 5.2.0 API is event-only; #746 can add
+  `CommandUpcaster` and `QueryUpcaster` later without breaking the event API. Envelope-only
+  fields (tracking token, sequence number, entity id) remain on `EventUpcaster`; the generic
+  root holds only the cross-cutting `from()` contract. The premature-abstraction risk is
+  mitigated because the generic root is minimal (one method) and non-sealed. See DISCUSSION.md
+  item #0 for the ratified decision record.
 - Q: How does a transformation access the payload – auto-convert by declared target type, or via
   exposed `Converter`? → A: Both (dual entry points). Simple transformations declare a target type
   and the framework auto-converts the stored bytes via `ChainedConverter` before invocation. Advanced
@@ -614,12 +616,15 @@ indefinitely on a self-referencing transformation, or a transformation never fir
 version string never matches the stored events. These bugs are hard to reproduce and hard to
 diagnose.
 
-The framework MUST catch all four classes of misconfiguration at registration time – before any
-event is read from the store – and surface a clear error that names the conflicting or invalid
-declaration, so the developer can fix it immediately without debugging a live system. When a
-transformation fails at runtime (throws an exception during event processing), the framework must
-equally refuse to continue silently: it propagates the failure immediately with full context
-(which transformation failed, and which event triggered it).
+The framework MUST catch all five classes of misconfiguration before any event is read from the
+store. Four are detected at individual registration calls (`register()`): duplicate `from` identity,
+self-loop, invalid semver, and non-qualified name. The fifth – a multi-step cycle introduced by
+chaining 1:1 transformations – is detected at chain-build time (the configurer's `.build()` step),
+because a cycle only becomes visible once the full chain is known. All five produce a clear error
+that names the conflicting or invalid declaration so the developer can fix it immediately without
+debugging a live system. When a transformation fails at runtime (throws an exception during event
+processing), the framework must equally refuse to continue silently: it propagates the failure
+immediately with full context (which transformation failed, and which event triggered it).
 
 **Why this priority**: Silent misconfiguration errors are the highest-cost failure mode for an API
 used only at startup. A clear message at startup costs almost nothing; a runtime bug in an event
@@ -1102,8 +1107,9 @@ API introduced here is the stable foundation that makes that future extension sa
   can always be regenerated from the event stream. The hook point in `StoreBackedSnapshotter` is
   identified for a future release.
   _Traces to: US5 (deferred snapshot upcasting; the no-regression requirement comes from the deferral decision)._
-- **FR-009**: The framework MUST detect and report the following conflicts at registration time,
-  not during event processing:
+- **FR-009**: The framework MUST detect and report the following conflicts before any event is
+  processed. Four are detected at each `register(...)` call; one (multi-step cycle) is detected
+  at chain `lock()` during `.build()`. None are deferred to event-processing time:
   - Two transformations with the same `from` identity (same name + version) – duplicate targeting.
   - A transformation where `from` and `to` are identical (same name AND same version) – guaranteed
     infinite loop: the output would immediately re-match the same transformation on the next pass.

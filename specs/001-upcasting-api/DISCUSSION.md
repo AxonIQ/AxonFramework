@@ -36,7 +36,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | US4 Dropping | P4 | Suppress a stored event type entirely; tracking token still advances | FR-003, FR-010, FR-012, FR-015 |
 | US5 Snapshot upcasting | Deferred | Transform old snapshots -- discard-and-replay remains the default | FR-008 |
 | US6 Chaining | P2 | v1->v2 + v2->v3 registered in order compose automatically | FR-004, FR-005, FR-006, FR-007 |
-| US7 Misconfiguration + runtime failures | P1 | Clear errors at registration time; runtime failures propagate immediately | FR-004, FR-009, FR-016, FR-019 |
+| US7 Misconfiguration + runtime failures | P1 | Clear errors at registration or chain-build time (cycle detected at `.build()`); runtime failures propagate immediately | FR-004, FR-009, FR-016, FR-019 |
 | US8 Startup observability | P2 | INFO log confirms chain wiring; DEBUG log traces each transformation applied | FR-014 |
 
 ---
@@ -90,7 +90,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-016 | Error handling | Runtime transformation failure propagates immediately -- no silent skip or log-and-continue |
 | FR-017 | Versioning | Events stored without a version are treated as version `0.0.1` |
 | FR-018 | Testability | Transformation MUST be unit-testable in isolation (no event store / framework bootstrapping); only a `Converter` instance allowed as dependency (advanced entry point only) |
-| FR-019 | Correctness | For 1:1, framework MUST verify output identity matches declared `to`; mismatch propagated under FR-016. Does not apply to 1:N / 1:0 splits |
+| FR-019 | Correctness | For 1:1, framework MUST verify output identity matches declared `to`; mismatch propagated under FR-016. Does not apply to 1:N / 1:0 splits. For rename-factory upcasters (`EventUpcaster.rename(from, to)`), the check runs and passes trivially by construction (the factory rebinds the event to `to` before the check). |
 
 ---
 
@@ -98,7 +98,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 | # | Question |
 |---|---|
-| 0 | **#746 alignment -- universal Message API** -- working decision: internal core typed on `Message<P>`, public 5.2.0 API event-only. Lets #746 add command/query registration without breaking event API. Trade-offs: (a) premature abstraction risk since #746's concrete shape (e.g., command downcasting for rolling deployments) is not yet specified; (b) envelope asymmetry -- tracking token, sequence number, entity id are event-only and must be modelled cleanly in the generic core. Alternative: keep public API on `EventMessage<P>`, accept a breaking change to event upcasting when #746 lands. **Confirm direction with team.** |
+| 0 | **#746 alignment -- universal Message API** -- **DECIDED (2026-05-19)**: a non-sealed `Upcaster<M extends Message<?>>` root interface is introduced in `org.axonframework.messaging.upcasting`. It carries only `MessageType from()`. The event-specific sealed hierarchy (`EventUpcaster`, `SingleEventUpcaster`, `MultiEventUpcaster`) extends it. The public 5.2.0 API surface is event-only; #746 can add command/query subtypes later without breaking the event API. Envelope asymmetry (tracking token, sequence number, entity id) is event-only and stays on `EventUpcaster`; the generic root holds only the cross-cutting `from()` contract. No further team input needed on this item. |
 | 1 | **Two declaration patterns** -- 1:1 uses source + target; split/drop uses source + replacement rule. Does this feel right, or should split/drop also declare a target set? |
 | 2 | **Startup-only registration** -- chain locked once processing begins. Is there a valid use case for runtime registration we have not considered? |
 | 3 | **Fully qualified name requirement** -- forces namespace inclusion. Is this a breaking ergonomics concern for developers coming from AF4? |
