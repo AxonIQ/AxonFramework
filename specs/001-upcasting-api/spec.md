@@ -71,8 +71,9 @@ sections later in this document.
 - Q: How does a transformation access the payload – auto-convert by declared target type, or via
   exposed `Converter`? → A: Both (dual entry points). Simple transformations declare a target type
   and the framework auto-converts the stored bytes via `ChainedConverter` before invocation. Advanced
-  transformations that need to inspect or produce multiple representations (e.g., peek as `JsonNode`,
-  then return a POJO) receive a `Converter` instance and call `.convert()` inline. Rationale: matches
+  transformations that need to inspect or produce multiple representations (e.g., peek as a
+  structural representation such as `JsonNode`, `GenericRecord`, or a DOM `Document`, then return
+  a POJO) receive a `Converter` instance and call `.convert()` inline. Rationale: matches
   AF5's "support bare-bones and advanced styles" principle; avoids AF4's `IntermediateEventRepresentation`
   trap (forced low-level access) while preserving an escape hatch for transformations that genuinely
   need multiple representations. Both entry points are described in FR-010.
@@ -120,12 +121,16 @@ sections later in this document.
   conversion would fail before the transformation runs. Raw byte access was rejected: it recreates
   the AF4 `IntermediateEventRepresentation` problem where developers had to manipulate
   serializer-specific formats directly.
-- Q: What target types can a transformation request for the payload? → A: Typed Java objects
-  (POJOs) for all formats; `JsonNode` / `ObjectNode` for Jackson and CBOR; `SpecificRecordBase`
-  subclass or `GenericRecord` for Avro (FR-010). Raw `byte[]` is not a valid target – events
-  stored as bytes are bridged automatically by `ByteArrayToJsonNodeConverter`. The separation is
-  intentional: format conversion (byte[] ↔ structured) is the EventConverter's job; schema/identity
-  change is the transformation's job.
+- Q: What target types can a transformation request for the payload? → A: Whatever the registered
+  `Converter` for the stored event's format can produce (FR-010). For the shipped converters that
+  is at minimum: typed Java classes (POJOs) for every format; `JsonNode` / `ObjectNode` /
+  `Map<String, Object>` for Jackson 2, Jackson 3, and CBOR; `SpecificRecordBase` or `GenericRecord`
+  for Avro. For user-supplied converters (e.g. an XML-based serializer) the valid types are
+  whatever that converter exposes -- typically DOM `Document` / `Element` for XML, or a generated
+  binding type. Raw `byte[]` is not a valid target -- events stored as bytes are bridged
+  automatically by the `ContentTypeConverter` chain to whichever structured type the transformation
+  requests. The separation is intentional: format conversion (`byte[]` <-> structured) is the
+  `EventConverter`'s job; schema/identity change is the transformation's job.
 - Q: In which reading contexts must transformations apply? → A: All three – event-sourced entity loading, DCB
   reads, and tracking processor reads (FR-013). If transformations applied in some contexts but not
   others, the same stored event would produce different results depending on who reads it, making
@@ -153,9 +158,13 @@ sections later in this document.
   (FR-014, US8). INFO level avoids flooding production logs while still confirming correct wiring.
 - Q: Fully qualified name or local name only? → A: Fully qualified (FR-001, FR-005). Local names
   risk silent non-matches when two modules share the same event local name.
-- Q: Can transformations modify metadata? → A: No – metadata preserved unchanged (FR-011).
-  Confirmed by AF4 `SingleEventUpcasterTest` line 75. Metadata fields like correlationId and
-  causationId are written-once facts about the original message.
+- Q: Can transformations modify metadata? → A (revised 2026-05-19): Yes, but only via the
+  message-level entry point (FR-011). The default payload-only shape preserves metadata
+  unchanged. AF4's `IntermediateEventRepresentation.upcast(...)` took both a payload and a
+  metadata `Function`, so message-level mutation matches AF4 intent; the original spec
+  tightening (preservation as a hard invariant) was unjustified. The audit trail is preserved
+  unconditionally by the append-only event store -- downstream metadata mutation only affects
+  the in-memory view. Envelope fields (entity, token, sequence number) remain immutable.
 - Q: FR-009 and FR-014 had no traceable user story – spec or plan? → A: Added US7 and US8.
   Both describe developer-facing scenarios with testable acceptance criteria, not technical
   implementation choices.
@@ -195,7 +204,12 @@ exact mechanism depends on the format:
 |---|---|---|
 | `Jackson2Converter` | JSON (Jackson 2) | `@JsonIgnoreProperties`, `@JsonProperty`, numeric coercion |
 | `JacksonConverter` | JSON or CBOR (Jackson 3) | Same annotations as Jackson 2; CBOR bytes are compact binary but annotation behavior is identical |
-| `AvroConverter` | Avro binary | Writer/reader schema resolution: field defaults, field aliases, type promotion |
+| `AvroConverter` | Avro binary | Writer/reader schema resolution: field defaults, field aliases, type promotion. Follows the standard Avro schema compatibility levels (BACKWARD, FORWARD, FULL, NONE) -- see [Confluent's compatibility documentation](https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html). |
+
+Users MAY plug in additional `Converter` implementations (e.g., an XML-based serializer using JAXB
+or a custom DOM walker). The framework treats any user-supplied converter as a peer of the shipped
+ones. Format-specific concerns -- e.g., XML's element-order sensitivity, or a non-Jackson JSON
+binding's null handling -- are the responsibility of that converter, not of the upcasting chain.
 
 For scenarios where Jackson and Avro use different mechanisms (A3, A4), both are described and
 tested separately. A5 is format-independent: it is handled by `MessageType` routing in the
@@ -744,7 +758,7 @@ index; see the FR for the authoritative requirement.
 | Late registration after event processing starts | FR-004 |
 | Wrong chain order silently under-converts | FR-004; US6 scenario 4 shows expected behavior |
 | Split output events flow through the remaining chain | FR-007 |
-| Envelope and metadata preserved through any transformation | FR-011 |
+| Envelope (entity, token, sequence number) preserved; metadata preserved by default, may be modified via message-level entry point; split outputs inherit metadata by default | FR-011 |
 | Non-matching events pass through without deserialization | FR-012 |
 | Tracking token advances past dropped events | FR-015 |
 | Transformation exception propagates immediately | FR-016 |
@@ -1094,15 +1108,21 @@ API introduced here is the stable foundation that makes that future extension sa
   registered for. Matching is exact: both the fully qualified name and the version must match the
   stored event's `MessageType` precisely.
   _Traces to: US1 scenario 3 (non-matching events pass through unchanged), US6 (version-exact matching is what routes v1 to v1→v2 and v2 to v2→v3, not both)._
-- **FR-006**: Transformations MUST be pure AND thread-safe: given the same input event, a
-  transformation MUST always produce the same output. Transformations MUST NOT call external
-  services, read from databases, or depend on the current time or any other external state.
-  Transformations MUST NOT mutate instance state across invocations -- a registered transformation
-  is effectively a static function. The framework MAY invoke a transformation concurrently from any
-  thread (e.g., two tracking processors reading the same stream in parallel, simultaneous
-  event-sourced entity loads). Per-invocation local state (variables and intermediate values
-  computed inside the function body) is permitted.
-  _Traces to: US1 scenario 4 (all three reading contexts produce identical output – only guaranteed if the transformation is pure and thread-safe), US1 scenario 6 (concurrent invocation from multiple threads produces identical output without requiring external synchronization), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
+- **FR-006**: Transformations MUST be deterministic and thread-safe: given the same input event, a
+  transformation MUST always produce the same output. Concretely this means:
+  - MUST NOT call external services or read from databases.
+  - MUST NOT depend on the current time, random number generators, or any other non-deterministic
+    source.
+  - MUST NOT mutate shared instance state across invocations.
+  - MAY read from in-process, read-only data structures (e.g., a constant `Map` used as a lookup
+    table for field renames). Read-only access to immutable data does not violate determinism.
+  The framework MAY invoke a transformation concurrently from any thread (e.g., two tracking
+  processors reading the same stream in parallel, simultaneous event-sourced entity loads).
+  Per-invocation local state (variables and intermediate values computed inside the function body)
+  is always permitted. This requirement is a contract for documentation and communication; the
+  framework does not enforce it at runtime -- violations will produce hard-to-diagnose
+  non-deterministic bugs.
+  _Traces to: US1 scenario 4 (all three reading contexts produce identical output -- only guaranteed if the transformation is deterministic and thread-safe), US1 scenario 6 (concurrent invocation from multiple threads produces identical output without requiring external synchronization), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
 - **FR-007**: When events pass through the transformation chain, the output of each transformation
   MUST flow into the next transformation as input (chaining). This applies to all output events,
   including every replacement event produced by a 1:N split: each replacement event MUST
@@ -1136,8 +1156,8 @@ API introduced here is the stable foundation that makes that future extension sa
     individual `register(...)` call, because the cycle only manifests once the full chain is known.
   _Traces to: US7 (all five acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
 - **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
-  MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
-  framework provides two entry points for accessing the payload, and a transformation chooses one:
+  MUST NOT need to work with raw bytes or serializer-internal wire formats. The framework provides
+  two entry points for accessing the payload, and a transformation chooses one:
   - **Declarative target type (simple case)**: the transformation declares a target type at
     registration; the framework auto-resolves the stored bytes to that type via the registered
     `ChainedConverter` before invoking the transformation function. The function receives the
@@ -1145,26 +1165,60 @@ API introduced here is the stable foundation that makes that future extension sa
   - **Converter access (advanced case)**: the transformation receives a `Converter` instance and
     calls `.convert()` inline when it needs the payload in a specific representation. This entry
     point is intended for transformations that need to inspect or produce multiple representations
-    of the same payload (e.g., read as `JsonNode` for branching, then return a POJO).
+    of the same payload (e.g., read as a structural representation for branching, then return a
+    POJO).
   The two entry points share the same registration and chain semantics; only the payload-access
-  shape differs. The EventConverter does NOT pre-convert all events before the chain runs --
-  conversion is on-demand in both cases. Valid target types depend on the serialization format of
-  the stored event:
-  - **Jackson / CBOR**: typed Java class (POJO), `JsonNode`, or `ObjectNode`.
-  - **Avro**: typed `SpecificRecordBase` subclass (generated or hand-written), or `GenericRecord` for
-    schema-only field access without a concrete Java class.
-  Raw `byte[]` is not a valid target for transformation payloads -- events stored as `byte[]` in the
-  event store are automatically bridged to the requested structured type by the registered
-  ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible to the transformation
-  author.
+  shape differs. The `EventConverter` does NOT pre-convert all events before the chain runs --
+  conversion is on-demand in both cases.
+
+  Valid target types are determined by what the registered `Converter` for the stored event's
+  format can produce. A transformation MAY request any representation supported by that converter.
+  The shipped converters support at minimum:
+  - **Jackson 2 / Jackson 3 / CBOR**: typed Java class (POJO), `JsonNode`, `ObjectNode`,
+    `Map<String, Object>`.
+  - **Avro**: typed `SpecificRecordBase` subclass (generated or hand-written), or `GenericRecord`
+    for schema-only field access without a concrete Java class.
+  - **Other formats (user-supplied `Converter`, e.g. an XML-based serializer)**: the typed
+    representations exposed by that converter. For an XML converter this is typically a DOM
+    `Document` / `Element` or the converter's generated binding type. XML's element-order
+    sensitivity is the user's responsibility -- the framework treats whatever the converter
+    produces as authoritative.
+
+  Raw `byte[]` is not a valid target for transformation payloads -- events stored as `byte[]` in
+  the event store are automatically bridged to the requested structured type by the registered
+  `ContentTypeConverter` chain, invisible to the transformation author.
   _Traces to: US1 (developer writes a transformation function that reads and produces typed payload objects), US3 (split function accesses the original payload to derive two new payloads), US4 (drop function may inspect the payload to decide whether to suppress)._
-- **FR-011**: The event envelope – entity type, entity identifier, tracking token, and sequence
-  number – MUST be preserved unchanged through any transformation. Event metadata (including
-  infrastructure fields such as correlationId, causationId, and tracing headers) MUST also be
-  preserved unchanged; transformations MUST NOT modify metadata. For a 1-to-N split, ALL output
-  events MUST carry the same envelope and metadata as the original stored event. Transformations
-  MUST only change the payload and the event identity (name and version).
-  _Traces to: US1 scenario 1 (transformed event carries correct payload; envelope is unchanged), US3 scenario 1 (split output events are independent and complete – they inherit the envelope of the original)._
+- **FR-011**: The event envelope -- entity type, entity identifier, tracking token, and sequence
+  number -- MUST be preserved unchanged through any transformation. These are storage-level facts
+  the framework owns; transformations have no say.
+
+  Event metadata (correlationId, causationId, tracing headers, custom metadata) MAY be modified by
+  message-level transformations. The framework provides two transformation shapes and the user
+  chooses per upcaster:
+  - **Payload-only (default, simple case)**: the transformation returns a new payload; the
+    framework rebinds it to a new `EventMessage` with the declared `to` identity and carries the
+    original metadata forward unchanged. This is the recommended shape for the vast majority of
+    schema/identity changes.
+  - **Message-level (advanced case)**: the transformation returns a complete `EventMessage`,
+    including its metadata. The framework preserves the envelope (entity, token, sequence number)
+    but accepts whatever metadata the transformation produced. Use this for explicit metadata
+    migrations (e.g., renaming a metadata key, migrating a tracing header format).
+
+  The event store itself is append-only and never modified -- the original stored event always
+  remains intact on disk. Metadata modification only affects the in-memory `EventMessage` that
+  flows downstream to handlers, projections, and tracking processors. Operators who need the
+  original metadata can always re-read the raw stored event.
+
+  For a 1-to-N split (`MultiEventUpcaster`), every output event inherits the original event's
+  envelope and metadata by default. A split rule MAY override the metadata on any individual
+  output event independently -- the rule is responsible for explicit overrides; the framework
+  applies "inherit from input" as the default for any output where metadata was not explicitly
+  set.
+
+  Transformations MUST NOT modify the envelope (entity type, entity id, tracking token, sequence
+  number). Any attempt to do so via the advanced entry point is overridden by the framework
+  before delivery downstream -- this is a framework invariant, not a user responsibility.
+  _Traces to: US1 scenario 1 (transformed event carries correct payload; envelope is unchanged), US3 scenario 1 (split output events are independent and complete -- they inherit the envelope of the original by default)._
 - **FR-012**: The framework MUST NOT deserialize an event's payload unless that event matches the
   target name and version of at least one registered transformation. Non-matching events MUST pass
   through the transformation chain without triggering deserialization. This is enforced by the

@@ -77,12 +77,12 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-003 | Registration | Declare source identity + rule producing zero or more replacement events (split / drop) |
 | FR-004 | Registration | Declaration order IS chain order; startup-only; late registration rejected with clear error |
 | FR-005 | Matching | Exact match on fully qualified name + version; non-matching events pass through |
-| FR-006 | Correctness | Transformations must be pure AND thread-safe -- same input always produces same output; no external calls; no cross-invocation instance state; framework may invoke concurrently from any thread |
+| FR-006 | Correctness | Transformations must be deterministic AND thread-safe -- same input always produces same output; no external I/O, no time/random sources, no cross-invocation mutable state; read-only in-process data (e.g. constant lookup tables) is allowed; framework may invoke concurrently from any thread |
 | FR-007 | Chain | Output of each transformation feeds into the next; split replacement events continue through the remaining chain |
 | FR-008 | Deferred | Snapshot upcasting out of scope; discard-and-replay fallback preserved unchanged |
 | FR-009 | Validation | Five conflict classes rejected before any event is processed: duplicate `from`, self-loop, invalid semver, non-qualified name (all at `register()`); multi-step 1:1 cycle (at `.build()` lock) |
-| FR-010 | Payload | Access payload as typed Java objects; Jackson/CBOR: POJO, `JsonNode`, `ObjectNode`; Avro: `SpecificRecordBase` subclass or `GenericRecord`; conversion is on-demand, never raw bytes |
-| FR-011 | Envelope | Entity id, tracking token, sequence number, and all metadata preserved unchanged through any transformation |
+| FR-010 | Payload | Access payload as typed Java objects, in any representation the registered `Converter` exposes; shipped converters support at minimum POJO (all formats), `JsonNode`/`ObjectNode`/`Map<String,Object>` (Jackson/CBOR), `SpecificRecordBase`/`GenericRecord` (Avro); user-supplied converters (e.g. XML) provide their own typed representations; conversion is on-demand, never raw bytes |
+| FR-011 | Envelope + metadata | Envelope (entity id, tracking token, sequence number) preserved unchanged. Metadata preserved by default (payload-only entry point) but modifiable via message-level entry point. Split (1:N) outputs inherit input metadata by default; rule may override per-output |
 | FR-012 | Lazy evaluation | Non-matching events pass through without being deserialized |
 | FR-013 | Consistency | Chain applies identically in all three reading contexts: event-sourced entity load, DCB read, tracking processor |
 | FR-014 | Observability | INFO log at startup listing the chain; DEBUG log per transformation applied |
