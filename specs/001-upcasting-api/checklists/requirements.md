@@ -24,7 +24,7 @@
 
 ## Coverage Completeness
 
-- [x] Part A: 7 scenarios AF5 handles automatically, each with a passing test reference
+- [x] Part A: 7 scenarios AF5 handles automatically, each with passing test references across all relevant serialization formats
 - [x] Part B: 8 user stories
       - P1 Structural transformation (1-to-1)
       - P2 Event identity change / rename
@@ -62,12 +62,21 @@
   A2 has a second test proving @JsonIgnoreProperties is required when a strict ObjectMapper is used
   (Jackson 3.x defaults FAIL_ON_UNKNOWN_PROPERTIES=false, so annotation is best practice, not default).
   A5 has two tests (resolver + deserialization). A7 has two tests (byte[] and JsonNode stored forms).
-- Part A now also covered by AvroPayloadEvolutionCapabilityTest (conversion module). 6 tests pass.
-  Avro scenarios A1-A4 and A6-A7 are verified via AvroConverter directly. A3 and A4 clarify that
-  alias resolution and int-to-long promotion apply at the Java class binding level (via
-  SpecificRecordBaseConverterStrategy), not at the GenericRecord level. A5 is format-independent
-  (MessageType routing) and covered only by the Jackson test. Spec Part A updated with Avro notes
-  and cross-references to both test classes.
+- Part A now also covered by AvroPayloadEvolutionCapabilityTest (conversion module, 8 tests pass) and
+  CborPayloadEvolutionCapabilityTest (conversion module, 7 tests pass).
+  Avro scenarios A1-A7 are fully verified via AvroConverter directly.
+  A3 and A4 each have two tests: one showing the intermediate GenericRecord step (writer schema preserved)
+  and one showing full resolution via SpecificRecordBase subclasses (ComplexObjectWithRenamedValue1
+  with field alias, ComplexObjectWithLongValue3 with long value3). Record-level schema aliases
+  (e.g. "aliases": ["org.axonframework.conversion.avro.test.ComplexObject"]) allow Avro schema
+  resolution to match distinct reader classes to the stored ComplexObject writer schema without
+  naming conflicts in SpecificData's class registry.
+  CBOR scenarios A1-A4 and A6-A7 are verified via JacksonConverter(CBORMapper). CBOR uses the same
+  com.fasterxml.jackson.annotation annotations as JSON (Jackson 3 POM: "Annotations remain at
+  Jackson 2.x group id"). Strict CBORMapper (FAIL_ON_UNKNOWN_PROPERTIES=true) proves @JsonIgnoreProperties
+  is the opt-out mechanism, not a Jackson default.
+  A5 is format-independent (MessageType routing) and covered only by the Jackson test.
+  Spec Part A updated with format-specific mechanism notes and cross-references to all three test classes.
 - Command and query upcasting are explicitly documented as deferred with rationale; the API is
   designed to support them without breaking changes (Message-based interface, not EventMessage).
 - FR-012 (envelope field preservation) and FR-013 (lazy evaluation) added based on AF4 test

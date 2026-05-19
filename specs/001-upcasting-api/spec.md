@@ -114,62 +114,89 @@ mechanism. When an event is read from the event store, Axon converts its stored 
 Java type the handler declares. This conversion happens per-handler, at handling time, without touching
 the stored event. No transformation needed, no migration script, no changes to other handlers.
 
-Each scenario below is verified by a test in:
-`examples/university-demo/src/test/java/.../faculty/PayloadConversionCapabilityTest.java`
+AF5 ships three serialization converter implementations. Each handles the scenarios below, but the
+exact mechanism depends on the format:
 
-Each test goes through the real AF5 conversion infrastructure: a `DelegatingEventConverter` backed
-by `Jackson2Converter`, with events stored as `byte[]` (the actual stored form in the event store).
-Tests do NOT use raw Jackson directly – they prove the AF5 conversion pipeline handles each case.
+| Converter | Format | Schema evolution mechanism |
+|---|---|---|
+| `Jackson2Converter` | JSON (Jackson 2) | `@JsonIgnoreProperties`, `@JsonProperty`, numeric coercion |
+| `JacksonConverter` | JSON or CBOR (Jackson 3) | Same annotations as Jackson 2; CBOR bytes are compact binary but annotation behavior is identical |
+| `AvroConverter` | Avro binary | Writer/reader schema resolution: field defaults, field aliases, type promotion |
+
+For scenarios where Jackson and Avro use different mechanisms (A3, A4), both are described and
+tested separately. A5 is format-independent: it is handled by `MessageType` routing in the
+messaging layer, not by the serialization converter.
+
+Each scenario is verified by tests across all three implementations:
+
+- `examples/university-demo/src/test/java/.../faculty/PayloadConversionCapabilityTest.java`
+  -- `DelegatingEventConverter` + `Jackson2Converter`, full AF5 pipeline, events stored as `byte[]`
+- `conversion/src/test/java/.../jackson/CborPayloadEvolutionCapabilityTest.java`
+  -- `JacksonConverter(CBORMapper)`; covers `JacksonConverter` for both JSON and CBOR since
+  annotation behavior is format-independent within the Jackson family
+- `conversion/src/test/java/.../avro/AvroPayloadEvolutionCapabilityTest.java`
+  -- `AvroConverter`, writer/reader schema resolution
 
 ---
 
 #### A1 - Added a New Field
 
 **Scenario**: You add an optional `description` field to `CourseCreated`. Old stored events do not
-have this field in their JSON.
+have this field.
 
-**How AF5 handles it**: When an old event is deserialized, the missing field defaults to `null`.
-Handlers that use `description` simply receive `null` for old events and the real value for new ones.
-No code change needed in any handler.
+**How AF5 handles it**: When an old event is deserialized, the missing field defaults to `null`
+(Jackson) or the Avro schema default (Avro). Handlers that use `description` simply receive `null`
+or the schema default for old events and the real value for new ones. No code change needed in any
+handler.
 
 **Example**: `CourseCreated` gains a `String description` field. A stored event written before this
-field existed deserializes cleanly – `description` is `null`.
+field existed deserializes cleanly -- `description` is `null` for Jackson, the declared schema
+default for Avro.
 
-**Test**: `PayloadConversionCapabilityTest$AddedNewField`
-`#newFieldDefaultsToNull_whenMissingFromStoredPayload`
+**Tests**: `PayloadConversionCapabilityTest$AddedNewField#newFieldDefaultsToNull_whenMissingFromStoredPayload`
+| `CborPayloadEvolutionCapabilityTest$AddedNewField#newFieldDefaultsToNull_whenMissingFromStoredCborPayload`
+| `AvroPayloadEvolutionCapabilityTest$AddedNewField#newField_receivesSchemaDefault_whenMissingFromStoredPayload`
 
 ---
 
 #### A2 - Removed a Field
 
 **Scenario**: You remove a field from your event class (e.g., `lastName` is dropped from
-`StudentEnrolledInFaculty`). Old stored events still carry the field in their JSON.
+`StudentEnrolledInFaculty`). Old stored events still carry the field.
 
-**How AF5 handles it**: The extra field in the stored JSON is silently ignored during deserialization.
-Add `@JsonIgnoreProperties(ignoreUnknown = true)` to your event class to make this explicit.
-No handler changes needed.
+**How AF5 handles it**: The extra field in the stored payload is silently ignored during
+deserialization. For Jackson / CBOR, add `@JsonIgnoreProperties(ignoreUnknown = true)` to your
+event class to make this explicit. For Avro, writer/reader schema resolution drops writer-only
+fields automatically -- no annotation needed. No handler changes needed in either case.
 
-**Example**: `StudentEnrolledInFaculty` drops `lastName`. Old stored events still have
-`"lastName": "Doe"` in JSON – the new class ignores it without error.
+**Example**: `StudentEnrolledInFaculty` drops `lastName`. Old stored events still carry `lastName`
+in their payload -- the new class ignores it without error.
 
-**Test**: `PayloadConversionCapabilityTest$RemovedField`
-`#removedField_isIgnoredWhenPresentInStoredPayload`
+**Tests**: `PayloadConversionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredPayload`
+| `CborPayloadEvolutionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredCborPayload`
+| `AvroPayloadEvolutionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredPayload`
 
 ---
 
 #### A3 - Renamed a Field
 
 **Scenario**: You rename a field in your event class (e.g., `capacity` becomes `maxCapacity`). Old
-stored events have the JSON key `"capacity"`.
+stored events carry the old field name.
 
-**How AF5 handles it**: Annotate the new field with `@JsonProperty("capacity")`. Jackson maps the
-old stored key to the new field name automatically. No handler changes needed.
+**How AF5 handles it**: The mechanism depends on the serialization format.
 
-**Example**: `CourseCreated` renames `capacity` to `maxCapacity`. Adding
-`@JsonProperty("capacity")` on `maxCapacity` means old stored events deserialize correctly.
+- **Jackson / CBOR**: Annotate the new field with `@JsonProperty("oldName")`. Jackson maps the
+  stored key to the new field name automatically.
+- **Avro**: Declare `"aliases": ["oldName"]` on the reader schema field. Avro's writer/reader
+  schema resolution maps the stored field name to the new field name via the alias, applied by
+  `SpecificRecordBaseConverterStrategy` when decoding into a generated Java class.
 
-**Test**: `PayloadConversionCapabilityTest$RenamedField`
-`#renamedField_isMappedViaJsonProperty`
+No handler changes needed in either case.
+
+**Tests**: `PayloadConversionCapabilityTest$RenamedField#renamedField_isMappedViaJsonProperty`
+| `CborPayloadEvolutionCapabilityTest$RenamedField#renamedField_isMappedViaJsonProperty`
+| `AvroPayloadEvolutionCapabilityTest$RenamedField#storedValue_isPreservedUnderWriterFieldName_whenReadAsGenericRecord`
+| `AvroPayloadEvolutionCapabilityTest$RenamedField#renamedField_isMappedViaAlias_whenDecodingIntoSpecificRecord`
 
 ---
 
@@ -177,14 +204,21 @@ old stored key to the new field name automatically. No handler changes needed.
 
 **Scenario**: You widen a field's type (e.g., `capacity` changes from `int` to `long`).
 
-**How AF5 handles it**: Jackson converts compatible numeric types automatically during
-deserialization. No annotation or handler change needed.
+**How AF5 handles it**: The mechanism depends on the serialization format.
+
+- **Jackson / CBOR**: Jackson coerces compatible numeric types automatically during deserialization.
+  No annotation or handler change needed.
+- **Avro**: Avro's writer/reader schema resolution promotes `int` to `long` automatically when the
+  reader schema declares the field as `long`, applied by `SpecificRecordBaseConverterStrategy` when
+  decoding into a generated Java class.
 
 **Example**: `CourseCreated.capacity` changes from `int` to `long`. Stored `30` (int) deserializes
 cleanly as `30L` (long).
 
-**Test**: `PayloadConversionCapabilityTest$CompatibleTypeChange`
-`#intWidenedToLong_isCoercedByEventConverter`
+**Tests**: `PayloadConversionCapabilityTest$CompatibleTypeChange#intWidenedToLong_isCoercedByEventConverter`
+| `CborPayloadEvolutionCapabilityTest$CompatibleTypeChange#intWidenedToLong_isCoercedByCborConverter`
+| `AvroPayloadEvolutionCapabilityTest$CompatibleTypeChange#storedIntValue_isPreservedWhenReadAsGenericRecord`
+| `AvroPayloadEvolutionCapabilityTest$CompatibleTypeChange#intWidenedToLong_whenDecodingIntoSpecificRecord`
 
 ---
 
@@ -195,8 +229,9 @@ follow naming conventions, but the business event is the same.
 
 **How AF5 handles it**: Axon routes events by their **MessageType** name (set via
 `@Event(name = "...")`) not by the Java class name. Keep the `@Event(name = ...)` value the same as
-the old class name and Axon continues to match stored events to the renamed class. The payload JSON
-is byte-for-byte identical – nothing to convert.
+the old class name and Axon continues to match stored events to the renamed class. The payload is
+byte-for-byte identical -- nothing to convert. This mechanism is format-independent: it applies
+equally regardless of whether events are stored as JSON, CBOR, or Avro binary.
 
 **Example**: `CourseCreatedEvent` is renamed to `CourseCreated`. Adding
 `@Event(name = "...CourseCreatedEvent")` to the new class preserves routing. All stored events
@@ -211,7 +246,8 @@ continue to reach the handler unchanged.
 #### A6 - Handler Wants a Different Representation
 
 **Scenario**: One handler wants to receive the event as a typed Java class, while another handler
-(perhaps a diagnostic or schema-agnostic projector) wants to receive the raw JSON as a `JsonNode`.
+(perhaps a diagnostic or schema-agnostic projector) wants to receive the raw JSON as a `JsonNode`
+or a `GenericRecord`.
 
 **How AF5 handles it**: Different handlers for the same event can declare different parameter types.
 Axon converts the stored payload to whatever type each handler requests. No changes to the event
@@ -219,17 +255,20 @@ class or the event store are needed.
 
 **Example**: `@EventHandler public void on(CourseCreated event)` receives a typed object.
 `@EventHandler(eventName = "...CourseCreated") public void on(JsonNode event)` on a different
-handler receives the raw JSON. Both handle the same stored event simultaneously.
+handler receives the raw JSON. Both handle the same stored event simultaneously. For Avro, a handler
+can declare `GenericRecord` to receive the untyped record without a generated class.
 
-**Test**: `PayloadConversionCapabilityTest$HandlerReceivesDifferentRepresentation`
-`#differentHandlers_receiveTheSameStoredEvent_inDifferentRepresentations`
+**Tests**: `PayloadConversionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredEvent_inDifferentRepresentations`
+| `CborPayloadEvolutionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredCborBytes_inDifferentRepresentations`
+| `AvroPayloadEvolutionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredBytes_inDifferentRepresentations`
 
 ---
 
 #### A7 - Switched Serialization Format
 
 **Scenario**: You migrate the serialization format of your event store (e.g., from XStream to
-Jackson). Old events were written in the old format; new events are written in the new format.
+Jackson, or from Jackson to Avro). Old events were written in the old format; new events are written
+in the new format.
 
 **How AF5 handles it**: Configure an **EventConverter** (a component responsible for
 format/serialization conversion, distinct from upcasters) to bridge the two formats. Event handlers
@@ -237,11 +276,11 @@ and event classes require no changes at all. The conversion is transparent.
 
 **Example**: Migrating from XStream to Jackson. After configuring the `EventConverter`, all handlers
 continue to receive correctly deserialized events regardless of which serializer wrote the stored
-event.
+event. The same applies when switching to Avro: only the converter configuration changes.
 
-**Tests**: `PayloadConversionCapabilityTest$SwitchedSerializationFormat`
-`#eventClass_requiresNoChange_whenPayloadStoredAsByteArray`
-`#eventClass_requiresNoChange_whenPayloadStoredAsJsonNode`
+**Tests**: `PayloadConversionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenPayloadStoredAsByteArray`
+| `CborPayloadEvolutionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenSerializationFormatIsCbor`
+| `AvroPayloadEvolutionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenSerializationFormatIsAvro`
 
 ---
 
@@ -349,7 +388,7 @@ facts. You want to split it into two proper events: `StudentEnrolled` and `Cours
 
 Every time this stored event is read from the event store – whether to rebuild a projection or to
 replay an entity's history – the transformation must produce both replacement events in the correct order.
-Handlers and projections that were written for the individual events will then work correctly.
+Handlers and projections written for the individual events will then work correctly.
 
 **Why this priority**: Splitting an event changes the shape of the event stream itself. This cannot be
 done at the handler level – every handler would need its own split logic. Upcasting is the right tool
@@ -844,7 +883,7 @@ truth. The event stream is always the source of truth; a snapshot is just an opt
 a stale snapshot and replaying is correct behavior, not a fallback of last resort.
 
 Snapshot upcasting is only justified when all three of these are simultaneously true:
-1. The entity has a very large event history (tens of thousands of events or more).
+1. The entity has a huge event history (tens of thousands of events or more).
 2. A full replay from the discarded snapshot position takes an unacceptable amount of time.
 3. The entity's state schema changed and stored snapshots are incompatible.
 
