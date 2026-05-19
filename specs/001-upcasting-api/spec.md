@@ -25,8 +25,8 @@ expects, Axon converts the stored payload (the data content of the event) to tha
 For example, when you add a new field to an event class, old stored events simply receive a default
 value for that field when they are read. You do not need to do anything.
 
-**Transformations address scenarios that payload conversion cannot handle**: situations where the
-stored event stream itself must change -- splitting one event into two, renaming an event type, or
+** Upcasters address scenarios that payload conversion cannot handle**: situations where the
+stored event stream itself must change – splitting one event into two, renaming an event type, or
 restructuring a payload in a way that every handler needs to see uniformly. A transformation runs
 when events are read from the event store, before any handler sees them.
 
@@ -35,7 +35,7 @@ when events are read from the event store, before any handler sees them.
 ## Clarifications
 
 This section records design decisions made during the clarification process. Each entry explains
-why a particular choice was made -- the rationale that is not visible from the requirements alone.
+why a particular choice was made – the rationale that is not visible from the requirements alone.
 References to FR-xxx and SC-xxx entries are defined in the Requirements and Success Criteria
 sections later in this document.
 
@@ -43,46 +43,46 @@ sections later in this document.
 
 - Q: When does the EventConverter convert a stored event's payload? → A: On-demand when a
   transformation requests it (FR-010, FR-012). Eager pre-conversion was rejected: if a stored
-  event's type has been deleted (the exact case a transformation handles -- drop or rename), eager
+  event's type has been deleted (the exact case a transformation handles – drop or rename), eager
   conversion would fail before the transformation runs. Raw byte access was rejected: it recreates
   the AF4 `IntermediateEventRepresentation` problem where developers had to manipulate
   serializer-specific formats directly.
 - Q: What target types can a transformation request for the payload? → A: Typed Java objects
-  (POJOs), `JsonNode`, and `ObjectNode` (FR-010). Raw `byte[]` is not a valid target -- events
+  (POJOs), `JsonNode`, and `ObjectNode` (FR-010). Raw `byte[]` is not a valid target – events
   stored as bytes are bridged automatically by `ByteArrayToJsonNodeConverter`. The separation is
   intentional: format conversion (byte[] ↔ structured) is the EventConverter's job; schema/identity
   change is the transformation's job.
-- Q: In which reading contexts must transformations apply? → A: All three -- event-sourced entity loading, DCB
+- Q: In which reading contexts must transformations apply? → A: All three – event-sourced entity loading, DCB
   reads, and tracking processor reads (FR-013). If transformations applied in some contexts but not
   others, the same stored event would produce different results depending on who reads it, making
   a DCB consistency check and a projection disagree on current domain state.
-- Q: Should the spec require a Converter vs. transformation decision tree? → A: Yes -- added as
+- Q: Should the spec require a Converter vs. transformation decision tree? → A: Yes – added as
   SC-007 (see Success Criteria). The Background section states the boundary but a decision tree with
   concrete examples is a first-class documentation artifact a developer needs before choosing which
   tool to reach for.
-- Q: Retirement and no-handler behavior -- document in spec? → A: Yes -- both are in the Edge Cases
-  table (see User Scenarios & Testing). Without a clear retirement rule -- which states that a
+- Q: Retirement and no-handler behavior – document in spec? → A: Yes – both are in the Edge Cases
+  table (see User Scenarios & Testing). Without a clear retirement rule – which states that a
   transformation may only be removed once no stored event at its `from` version exists anywhere,
-  including backups -- developers either accumulate transformations forever or remove them too early
+  including backups – developers either accumulate transformations forever or remove them too early
   and break replays.
 - Q: How does registration work for splits and drops? → A: Two patterns (FR-001, FR-003). 1:1
   declares source identity and target identity; 1:N/1:0 declares only source identity and a rule
   producing zero or more replacement events. Mirrors AF4's SingleEventUpcaster / EventMultiUpcaster
   split. Rename stays frictionless as the degenerate 1:1 case with no payload rule.
-- Q: Should version strings be constrained? → A: Yes -- semver major.minor.patch enforced at
+- Q: Should version strings be constrained? → A: Yes – semver major.minor.patch enforced at
   registration (FR-009). Without this, `"1.0"` and `"1.0.0"` silently never match, breaking
   chaining.
 - Q: Startup-only or runtime registration? → A: Startup-only (FR-004). Runtime registration would
   let part of a stream run with one chain and part with another, producing inconsistent results from
   the same stored events.
-- Q: Observability signals? → A: Yes -- INFO at chain build, DEBUG per transformation applied
+- Q: Observability signals? → A: Yes – INFO at chain build, DEBUG per transformation applied
   (FR-014, US8). INFO level avoids flooding production logs while still confirming correct wiring.
 - Q: Fully qualified name or local name only? → A: Fully qualified (FR-001, FR-005). Local names
   risk silent non-matches when two modules share the same event local name.
-- Q: Can transformations modify metadata? → A: No -- metadata preserved unchanged (FR-011).
+- Q: Can transformations modify metadata? → A: No – metadata preserved unchanged (FR-011).
   Confirmed by AF4 `SingleEventUpcasterTest` line 75. Metadata fields like correlationId and
   causationId are written-once facts about the original message.
-- Q: FR-009 and FR-014 had no traceable user story -- spec or plan? → A: Added US7 and US8.
+- Q: FR-009 and FR-014 had no traceable user story – spec or plan? → A: Added US7 and US8.
   Both describe developer-facing scenarios with testable acceptance criteria, not technical
   implementation choices.
 - Q: Exception handling? → A: Propagate immediately, halt processing (FR-016).
@@ -98,10 +98,10 @@ sections later in this document.
 
 This section is split into three parts:
 
-- **Part A** -- scenarios that AF5 already handles automatically. No transformation is needed. Each
+- **Part A** – scenarios that AF5 already handles automatically. No transformation is needed. Each
   scenario has a passing test in the university-demo module that proves the behaviour works today.
-- **Part B** -- scenarios that require a transformation. These are the stories that drive the new API.
-- **Part C** -- scenarios that are out of scope or where a transformation is the wrong tool
+- **Part B** – scenarios that require a transformation. These are the stories that drive the new API.
+- **Part C** – scenarios that are out of scope or where a transformation is the wrong tool
   entirely. Each entry explains what to do instead and why a transformation does not solve the
   problem.
 
@@ -119,7 +119,7 @@ Each scenario below is verified by a test in:
 
 Each test goes through the real AF5 conversion infrastructure: a `DelegatingEventConverter` backed
 by `Jackson2Converter`, with events stored as `byte[]` (the actual stored form in the event store).
-Tests do NOT use raw Jackson directly -- they prove the AF5 conversion pipeline handles each case.
+Tests do NOT use raw Jackson directly – they prove the AF5 conversion pipeline handles each case.
 
 ---
 
@@ -133,7 +133,7 @@ Handlers that use `description` simply receive `null` for old events and the rea
 No code change needed in any handler.
 
 **Example**: `CourseCreated` gains a `String description` field. A stored event written before this
-field existed deserializes cleanly -- `description` is `null`.
+field existed deserializes cleanly – `description` is `null`.
 
 **Test**: `PayloadConversionCapabilityTest$AddedNewField`
 `#newFieldDefaultsToNull_whenMissingFromStoredPayload`
@@ -150,7 +150,7 @@ Add `@JsonIgnoreProperties(ignoreUnknown = true)` to your event class to make th
 No handler changes needed.
 
 **Example**: `StudentEnrolledInFaculty` drops `lastName`. Old stored events still have
-`"lastName": "Doe"` in JSON -- the new class ignores it without error.
+`"lastName": "Doe"` in JSON – the new class ignores it without error.
 
 **Test**: `PayloadConversionCapabilityTest$RemovedField`
 `#removedField_isIgnoredWhenPresentInStoredPayload`
@@ -196,7 +196,7 @@ follow naming conventions, but the business event is the same.
 **How AF5 handles it**: Axon routes events by their **MessageType** name (set via
 `@Event(name = "...")`) not by the Java class name. Keep the `@Event(name = ...)` value the same as
 the old class name and Axon continues to match stored events to the renamed class. The payload JSON
-is byte-for-byte identical -- nothing to convert.
+is byte-for-byte identical – nothing to convert.
 
 **Example**: `CourseCreatedEvent` is renamed to `CourseCreated`. Adding
 `@Event(name = "...CourseCreatedEvent")` to the new class preserves routing. All stored events
@@ -257,7 +257,7 @@ the stored event stream itself must change. Each story is a distinct, independen
 **Plain-English explanation**: Imagine you designed a `CourseCreated` event with a single `capacity`
 field (e.g., `capacity: 30`). Later you realize you need both a minimum and a maximum capacity. You
 change the event class to use `minCapacity` and `maxCapacity`. But thousands of old events are already
-stored with just `capacity`. Every part of your application that reads those events -- **projections**
+stored with just `capacity`. Every part of your application that reads those events – **projections**
 (components that listen to events and build read models, such as a database view of all courses) and
 **event-sourced entities** (the domain objects that rebuild their state by replaying their own event history) --
 needs to receive the new structure. Without upcasting, you would have to add conversion logic to
@@ -281,7 +281,7 @@ events and verify that every handler receives the new structure and no handler e
 
 2. **Given** multiple handlers registered for the same event,
    **When** the event is read from storage,
-   **Then** all handlers receive the transformed payload -- no handler needs to implement its own
+   **Then** all handlers receive the transformed payload – no handler needs to implement its own
    conversion.
 
 3. **Given** an event that does not match the transformation's target name and version,
@@ -289,7 +289,7 @@ events and verify that every handler receives the new structure and no handler e
    **Then** it passes through the chain unchanged.
 
 4. **Given** the same stored `CourseCreated` v1.0.0 event and the same registered transformation,
-   **When** the event is read in three different contexts -- (a) loading an event-sourced entity,
+   **When** the event is read in three different contexts – (a) loading an event-sourced entity,
    (b) a DCB read enforcing command-side consistency, and (c) a tracking processor building a
    projection --
    **Then** all three contexts receive the identical transformed `CourseCreated` v2.0.0 payload.
@@ -298,7 +298,7 @@ events and verify that every handler receives the new structure and no handler e
 5. **Given** a stored `CourseCreated` event that carries no version (written before versioning was
    introduced to the system),
    **When** a transformation registered for `com.example.CourseCreated` at version `0.0.1` is active,
-   **Then** the transformation applies to that event -- the framework treats the absence of a version
+   **Then** the transformation applies to that event – the framework treats the absence of a version
    as version `0.0.1`, the AF5 default.
 
 ---
@@ -309,16 +309,16 @@ events and verify that every handler receives the new structure and no handler e
 after talking to domain experts you realize the correct business term is `CourseCreated`. You rename
 the class in your code. But thousands of events are already stored under the old name `CourseOpened`.
 Axon identifies events by their name, so a handler registered for `CourseCreated` will not receive
-events stored as `CourseOpened` -- unless you declare the mapping.
+events stored as `CourseOpened` – unless you declare the mapping.
 
-Since the payload (the data inside the event) has not changed -- only the name changed -- you should
+Since the payload (the data inside the event) has not changed – only the name changed – you should
 not need to write a transformation function. You declare the mapping in one place using the same
 `from → to` registration as any other transformation, simply omitting the payload function:
 "events stored as `CourseOpened` v1.0.0 are the same thing as `CourseCreated` v1.0.0."
 The framework passes the payload through unchanged. No separate rename API is needed.
 
 **Why this priority**: Event renames are common during domain modeling refinements. They should
-require the least possible effort since no data actually changes -- only the label changes.
+require the least possible effort since no data actually changes – only the label changes.
 
 **Independent Test**: Declare a rename from `CourseOpened` v1.0.0 to `CourseCreated` v1.0.0. Replay
 events and verify that a handler registered for `CourseCreated` receives the renamed events with the
@@ -347,12 +347,12 @@ payload intact.
 were bundled together. Imagine you have exactly this problem: a single stored event that records two
 facts. You want to split it into two proper events: `StudentEnrolled` and `CourseCapacityUpdated`.
 
-Every time this stored event is read from the event store -- whether to rebuild a projection or to
-replay an entity's history -- the transformation must produce both replacement events in the correct order.
+Every time this stored event is read from the event store – whether to rebuild a projection or to
+replay an entity's history – the transformation must produce both replacement events in the correct order.
 Handlers and projections that were written for the individual events will then work correctly.
 
 **Why this priority**: Splitting an event changes the shape of the event stream itself. This cannot be
-done at the handler level -- every handler would need its own split logic. Upcasting is the right tool
+done at the handler level – every handler would need its own split logic. Upcasting is the right tool
 because the transformation is applied once, transparently, for all consumers.
 
 **Independent Test**: Register a splitting transformation for `StudentEnrolledAndCourseUpdated` v1.0.0
@@ -364,7 +364,7 @@ it is registered for.
 
 1. **Given** a stored `StudentEnrolledAndCourseUpdated` event at version 1.0.0,
    **When** the event stream is read with the splitting transformation registered,
-   **Then** two events appear in its place -- `StudentEnrolled` first, then `CourseCapacityUpdated` --
+   **Then** two events appear in its place – `StudentEnrolled` first, then `CourseCapacityUpdated` --
    in that exact order.
 
 2. **Given** a handler registered only for `StudentEnrolled`,
@@ -380,7 +380,7 @@ it is registered for.
    transformation for `StudentEnrolled` v1.0.0 registered in that order,
    **When** the stream is read,
    **Then** the split fires first producing `StudentEnrolled` v1.0.0 and `CourseCapacityUpdated` v1.0.0,
-   and the subsequent transformation then applies to the `StudentEnrolled` output event -- both output
+   and the subsequent transformation then applies to the `StudentEnrolled` output event – both output
    events from the split flow through the remainder of the chain.
 
 ---
@@ -388,7 +388,7 @@ it is registered for.
 ### User Story 4 - Event Dropping (Priority: P4)
 
 **Plain-English explanation**: Imagine a `SystemHeartbeat` event was accidentally stored in the event
-store. It carries no business meaning -- it was a monitoring artifact that should never have been
+store. It carries no business meaning – it was a monitoring artifact that should never have been
 persisted. Every projection and handler that replays history will encounter it and needs to ignore it.
 Rather than adding "if it's a heartbeat, skip it" logic to every single handler, you want to register
 a transformation that silently removes these events before any handler sees them.
@@ -415,7 +415,7 @@ handlers normally.
 
 3. **Given** a tracking processor that has processed up to and including a `SystemHeartbeat` event,
    **When** the processor restarts,
-   **Then** the processor resumes after the dropped `SystemHeartbeat` -- it does not reprocess it.
+   **Then** the processor resumes after the dropped `SystemHeartbeat` – it does not reprocess it.
    The stream position (tracking token) advances past dropped events as if they had been handled.
 
 ---
@@ -476,14 +476,14 @@ Replay a v1.0.0 event and verify the handler receives a v3.0.0 event with the co
 4. **Given** two transformations registered in the wrong order (v2→v3 before v1→v2),
    **When** a v1.0.0 event is read,
    **Then** the v2→v3 transformation does not apply (its input version 2.0.0 does not match the stored
-   version 1.0.0), the v1→v2 transformation applies, and the output is version 2.0.0 -- demonstrating
+   version 1.0.0), the v1→v2 transformation applies, and the output is version 2.0.0 – demonstrating
    that registration order is the chain order and incorrect ordering leads to incomplete
    transformation, which is the developer's responsibility to get right.
 
 ### User Story 7 - Feedback on Misconfiguration and Runtime Failures (Priority: P1)
 
 **Plain-English explanation**: A developer registers two transformations that both target the same
-event name and version -- perhaps by copy-pasting a registration block and forgetting to change the
+event name and version – perhaps by copy-pasting a registration block and forgetting to change the
 source identity. Or they register a transformation where the target identity is identical to the
 source (same name and version), which would cause an infinite loop at runtime. Or they provide a
 version string like `"1.0"` instead of `"1.0.0"`.
@@ -494,8 +494,8 @@ indefinitely on a self-referencing transformation, or a transformation never fir
 version string never matches the stored events. These bugs are hard to reproduce and hard to
 diagnose.
 
-The framework MUST catch all four classes of misconfiguration at registration time -- before any
-event is read from the store -- and surface a clear error that names the conflicting or invalid
+The framework MUST catch all four classes of misconfiguration at registration time – before any
+event is read from the store – and surface a clear error that names the conflicting or invalid
 declaration, so the developer can fix it immediately without debugging a live system. When a
 transformation fails at runtime (throws an exception during event processing), the framework must
 equally refuse to continue silently: it propagates the failure immediately with full context
@@ -540,8 +540,8 @@ the framework raises a descriptive error at registration time, before any event 
 
 6. **Given** a transformation whose function throws an exception when applied to a specific event,
    **When** that event is read from the event store,
-   **Then** the framework propagates the exception immediately to the caller -- the event-sourced entity load,
-   DCB read, or tracking processor -- halting processing. The exception clearly identifies which
+   **Then** the framework propagates the exception immediately to the caller – the event-sourced entity load,
+   DCB read, or tracking processor – halting processing. The exception clearly identifies which
    transformation failed and the name, version, and stream position of the event that triggered it.
    The framework MUST NOT silently skip the failed event or log-and-continue.
 
@@ -551,7 +551,7 @@ the framework raises a descriptive error at registration time, before any event 
 
 **Plain-English explanation**: A developer deploys a new version of the application with two
 transformations registered. The application starts, processes events, and the developer wants to
-confirm that both transformations were actually picked up by the framework -- without reading
+confirm that both transformations were actually picked up by the framework – without reading
 framework internals, enabling debug logs for the whole system, or writing a test that inspects
 internal state.
 
@@ -606,8 +606,8 @@ index; see the FR for the authoritative requirement.
 | Tracking token advances past dropped events | FR-015 |
 | Transformation exception propagates immediately | FR-016 |
 | Unversioned events treated as version 0.0.1 | FR-017 |
-| Transformed event with no registered handler | Standard AF5 no-handler behavior -- not a transformation failure |
-| Transformation retirement (when safe to remove) | Developer responsibility -- safe only when no stored event exists at the `from` version in any event store, including backups |
+| Transformed event with no registered handler | Standard AF5 no-handler behavior – not a transformation failure |
+| Transformation retirement (when safe to remove) | Developer responsibility – safe only when no stored event exists at the `from` version in any event store, including backups |
 
 ---
 
@@ -629,8 +629,8 @@ The entries fall into two categories:
 
 ### N-to-1 Merge `[Deferred]`
 
-**Plain-English explanation**: Imagine you have two separate stored events -- `ItemAddedToCart`
-followed by `CartCheckedOut` -- and you realize they should have been a single `OrderCompleted` event.
+**Plain-English explanation**: Imagine you have two separate stored events – `ItemAddedToCart`
+followed by `CartCheckedOut` – and you realize they should have been a single `OrderCompleted` event.
 You want to combine (merge) multiple stored events into one output event.
 
 **Why this is NOT in scope for 5.2.0:**
@@ -647,14 +647,14 @@ event sourcing, this introduces two problems that cannot be solved cleanly in th
      the entire event store to update projections) runs, it processes an **unbounded stream** (a
      continuous, never-ending sequence of events from every entity in the system). Memory
      spanning entity boundaries here would silently mix up data from completely unrelated
-     entities -- causing bugs that are nearly impossible to reproduce or debug.
+     entities – causing bugs that are nearly impossible to reproduce or debug.
 
    In Axon Framework 4, **context-aware upcasters** (upcasters that carry state from one event to
    the next) had exactly this problem: the same transformation ran in both contexts but its memory scope
    was inconsistent between them. The team has explicitly chosen not to repeat this in AF5.
 
 2. **The framework's streaming model (`MessageStream`) does not support it today.** Axon 5
-   processes events as a continuous `MessageStream` -- a push-based flow where each event is
+   processes events as a continuous `MessageStream` – a push-based flow where each event is
    processed in turn. That stream has no built-in concept of "group these N items together before
    moving on." Adding windowing or grouping to `MessageStream` would require significant changes
    to the core streaming infrastructure, well beyond the scope of this feature.
@@ -679,7 +679,7 @@ as they are read from storage.
 
 **Why this is NOT in scope for 5.2.0:**
 
-Moving data from one event to a later event requires a **context-aware transformation** -- one that
+Moving data from one event to a later event requires a **context-aware transformation** – one that
 carries state (a "context") from one event to the next as it processes the stream. This is the same
 memory problem described in the N-to-1 section above, applied to individual fields rather than
 whole events.
@@ -704,17 +704,17 @@ the team will revisit whether a well-scoped context-aware transformation is feas
 
 **Scenario**: A field's name stays the same but its meaning changes. For example, `capacity` in
 `CourseCreated` used to mean "total available seats" but now means "available seats remaining after
-cancellations." The field name, type, and value range all look identical -- only what the number
+cancellations." The field name, type, and value range all look identical – only what the number
 represents has changed.
 
 **Why a transformation is the wrong tool**: A transformation modifies the data. Here the data itself has not
-changed -- the interpretation has. If you write a transformation to "fix" this, you corrupt your audit
+changed – the interpretation has. If you write a transformation to "fix" this, you corrupt your audit
 trail: old events that were correct under the old meaning would be silently altered to appear as if
 they carried a different number all along.
 
 **Gregory Young's rule**: Never silently change the semantic meaning of a field. A value that now
 means something different from what it meant when it was written is not a new version of the same
-event -- it is a different event type.
+event – it is a different event type.
 
 **What to do instead**: Create a new event type with a name that makes the new meaning explicit
 (e.g., `CourseOpened` with an `availableSeats` field). Keep `CourseCreated` with `capacity` meaning
@@ -735,11 +735,11 @@ and different business rules.
 
 **Why a transformation is the wrong tool**: A transformation must produce the new event from the old data. If
 the old data does not contain enough information to construct the new event correctly, the transformation
-would be forced to invent or default values -- producing events that misrepresent what actually
+would be forced to invent or default values – producing events that misrepresent what actually
 happened. This destroys the audit trail and violates the immutability principle.
 
 **Gregory Young's rule**: A new version of an event MUST be derivable from the old version. If it
-cannot be derived, it is not a new version -- it is a genuinely new business event. Give it a new,
+cannot be derived, it is not a new version – it is a genuinely new business event. Give it a new,
 distinct name that reflects the new concept.
 
 **What to do instead**: Introduce a new event type with a name that reflects the new concept (e.g.,
@@ -748,14 +748,14 @@ projections continue to consume `CourseCreated`; new projections consume `Course
 Use Copy and Replace as a last resort if the old stream must be fully replaced.
 
 **Example**: `CourseCreated` was structured around rooms and manual time slots. The new scheduling
-model is built around recurring templates and automated slot generation -- a fundamentally different
-concept. This is not "CourseCreated v2.0.0" -- it is `CourseScheduled`, a new business event.
+model is built around recurring templates and automated slot generation – a fundamentally different
+concept. This is not "CourseCreated v2.0.0" – it is `CourseScheduled`, a new business event.
 
 ---
 
 ### Command Upcasting and Downcasting `[Deferred — #746]`
 
-**The real-world driver -- rolling deployments**: Unlike events (which are stored permanently and
+**The real-world driver – rolling deployments**: Unlike events (which are stored permanently and
 read long after they were written), commands are sent live between running services. The versioning
 challenge arises specifically in **rolling deployments**, where two versions of an application run
 concurrently: for example, service v2 sends commands to a mix of v1 and v2 receivers.
@@ -768,7 +768,7 @@ In this situation there are two distinct problems:
 - **Downcasting (new sender, old receiver)**: Service v2 sends an `EnrollStudent` command with
   `enrollmentReason` included. Service v1's command handler does not know this field. Ideally the
   sender would strip the extra field before dispatching, so v1 does not choke on unknown data. This
-  is called **downcasting** -- transforming a newer-format message to an older format for backward
+  is called **downcasting** – transforming a newer-format message to an older format for backward
   compatibility.
 
 Downcasting is the inverse of upcasting: where a transformation converts old-to-new at the receiver,
@@ -806,7 +806,7 @@ collected concrete rolling-deployment command/query versioning cases from users.
 
 ### Query Upcasting `[Deferred — #746]`
 
-**The real-world driver -- rolling deployments**: The same rolling-deployment scenario applies to
+**The real-world driver – rolling deployments**: The same rolling-deployment scenario applies to
 queries. Service v2 sends a `FindCoursesByFaculty` query with a new `includeArchived` filter
 parameter. Service v1's query handler does not know this field.
 
@@ -827,8 +827,8 @@ this can be added in issue #746 without breaking the event upcasting API introdu
 ### Snapshot Upcasting `[Deferred]`
 
 **The use case**: An entity with a large event history (tens of thousands of events) uses
-snapshots to avoid expensive full replays. When the entity's state schema changes -- e.g.,
-`capacity` is renamed to `maxCapacity` -- stored snapshots at the old schema cannot be deserialized.
+snapshots to avoid expensive full replays. When the entity's state schema changes – e.g.,
+`capacity` is renamed to `maxCapacity` – stored snapshots at the old schema cannot be deserialized.
 The current fallback discards the snapshot and replays all events from the beginning, which for
 large entities can take seconds to minutes.
 
@@ -839,7 +839,7 @@ and avoid the expensive replay.
 **Why not in 5.2.0**:
 
 Gregory Young's own guidance is that the normal way to handle snapshot schema changes is to
-**rebuild the snapshot from events** -- not to upcast it. Snapshots are a cache, not a source of
+**rebuild the snapshot from events** – not to upcast it. Snapshots are a cache, not a source of
 truth. The event stream is always the source of truth; a snapshot is just an optimization. Discarding
 a stale snapshot and replaying is correct behavior, not a fallback of last resort.
 
@@ -861,9 +861,9 @@ mismatch branch (currently logs a warning and returns `null`). A future snapshot
 would slot in exactly there, with no changes to the event upcasting API introduced in this release.
 
 The snapshot transformation interface would operate on `Snapshot` objects directly (not on `Message`)
--- a simple `Snapshot → Snapshot` function registered by entity type and snapshot version. It does
+– a simple `Snapshot → Snapshot` function registered by entity type and snapshot version. It does
 not need to share an interface with event transformations because snapshots are never split, never
-dropped, and carry no event identity (name + version together) -- only a version string.
+dropped, and carry no event identity (name + version together) – only a version string.
 
 **Acceptance scenarios (preserved for future spec)**:
 
@@ -874,7 +874,7 @@ dropped, and carry no event identity (name + version together) -- only a version
 
 2. **Given** no snapshot transformation registered for a version mismatch,
    **When** the entity is loaded,
-   **Then** the framework discards the snapshot and replays all events (existing behavior -- no
+   **Then** the framework discards the snapshot and replays all events (existing behavior – no
    regression).
 
 3. **Given** a snapshot transformation registered for version 1.0.0,
@@ -895,7 +895,7 @@ guarantee trivially enforceable: the order of the API calls is the chain order, 
 no priority attributes, and no framework magic.
 
 **When to add**: If enough users request annotation-based registration after 5.2.0 ships, it can be
-layered on top of the programmatic API without any breaking change -- annotations would simply be
+layered on top of the programmatic API without any breaking change – annotations would simply be
 syntactic sugar that calls the same registration API in a defined discovery order. The programmatic
 API introduced here is the stable foundation that makes that future extension safe.
 
@@ -916,21 +916,21 @@ API introduced here is the stable foundation that makes that future extension sa
 - **FR-002**: Developers MUST be able to declare an event rename (old name + version to new name
   and/or version) without providing a payload transformation rule. This is the natural degenerate
   case of FR-001: declare source and target identities with different names or versions; the payload
-  is preserved unchanged. No special rename declaration is required -- declaring source and target
+  is preserved unchanged. No special rename declaration is required – declaring source and target
   identities serves both structural transformations and pure renames.
   _Traces to: US2 (rename without a payload rule is the primary scenario)._
 - **FR-003**: For 1:N splits and 1:0 drops, developers MUST be able to declare only the source event
   identity (`from`: fully qualified event name + version) together with a rule that produces zero or
   more complete replacement events. Each replacement event carries its own identity (name + version)
   and payload as determined by the developer's rule. The framework imposes no constraint on the
-  target identity for this pattern -- the rule has full control over the identity and payload of
+  target identity for this pattern – the rule has full control over the identity and payload of
   every replacement event. Self-loop detection (FR-009) does not apply since no target identity is
   declared.
   _Traces to: US3 (split: source identity + rule producing two replacement events), US4 (drop: source identity + rule producing zero replacement events)._
 - **FR-004**: The order in which transformations are registered MUST be the order in which they are
   applied. The framework MUST NOT reorder transformations based on any implicit or explicit priority
   mechanism. Registration is programmatic (calling a framework API) and is valid only during
-  application startup or build time -- the chain is immutable once event processing begins. Any
+  application startup or build time – the chain is immutable once event processing begins. Any
   attempt to register a transformation after event processing has started MUST be rejected immediately
   with a clear error stating that the chain is locked.
   Annotation-based registration is not supported in this release (see out-of-scope section).
@@ -943,7 +943,7 @@ API introduced here is the stable foundation that makes that future extension sa
 - **FR-006**: Transformations MUST be pure: given the same input event, a transformation MUST always
   produce the same output. Transformations MUST NOT call external services, read from databases,
   or depend on the current time or any other external state.
-  _Traces to: US1 scenario 4 (all three reading contexts produce identical output -- only guaranteed if the transformation is pure), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
+  _Traces to: US1 scenario 4 (all three reading contexts produce identical output – only guaranteed if the transformation is pure), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
 - **FR-007**: When events pass through the transformation chain, the output of each transformation
   MUST flow into the next transformation as input (chaining). This applies to all output events,
   including every replacement event produced by a 1:N split: each replacement event MUST
@@ -952,17 +952,17 @@ API introduced here is the stable foundation that makes that future extension sa
 - **FR-008**: (Deferred) Snapshot upcasting is out of scope for 5.2.0. The framework MUST preserve
   the existing discard-and-replay fallback behavior unchanged: when a stored snapshot's version does
   not match the current entity version, the snapshot is discarded and all events are replayed from
-  the beginning. This is the correct primary strategy, not a workaround -- snapshots are a cache and
+  the beginning. This is the correct primary strategy, not a workaround – snapshots are a cache and
   can always be regenerated from the event stream. The hook point in `StoreBackedSnapshotter` is
   identified for a future release.
   _Traces to: US5 (deferred snapshot upcasting; the no-regression requirement comes from the deferral decision)._
 - **FR-009**: The framework MUST detect and report the following conflicts at registration time,
   not during event processing:
-  - Two transformations with the same `from` identity (same name + version) -- duplicate targeting.
-  - A transformation where `from` and `to` are identical (same name AND same version) -- guaranteed
+  - Two transformations with the same `from` identity (same name + version) – duplicate targeting.
+  - A transformation where `from` and `to` are identical (same name AND same version) – guaranteed
     infinite loop: the output would immediately re-match the same transformation on the next pass.
   - A version string in `from` or `to` that does not conform to semantic versioning format
-    (major.minor.patch, e.g. `"1.0.0"`) -- rejected with a clear error identifying the invalid value.
+    (major.minor.patch, e.g. `"1.0.0"`) – rejected with a clear error identifying the invalid value.
   _Traces to: US7 (all four acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
 - **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
   MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
@@ -974,27 +974,27 @@ API introduced here is the stable foundation that makes that future extension sa
   type by the registered ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible
   to the transformation author.
   _Traces to: US1 (developer writes a transformation function that reads and produces typed payload objects), US3 (split function accesses the original payload to derive two new payloads), US4 (drop function may inspect the payload to decide whether to suppress)._
-- **FR-011**: The event envelope -- entity type, entity identifier, tracking token, and sequence
-  number -- MUST be preserved unchanged through any transformation. Event metadata (including
+- **FR-011**: The event envelope – entity type, entity identifier, tracking token, and sequence
+  number – MUST be preserved unchanged through any transformation. Event metadata (including
   infrastructure fields such as correlationId, causationId, and tracing headers) MUST also be
   preserved unchanged; transformations MUST NOT modify metadata. For a 1-to-N split, ALL output
   events MUST carry the same envelope and metadata as the original stored event. Transformations
   MUST only change the payload and the event identity (name and version).
-  _Traces to: US1 scenario 1 (transformed event carries correct payload; envelope is unchanged), US3 scenario 1 (split output events are independent and complete -- they inherit the envelope of the original)._
+  _Traces to: US1 scenario 1 (transformed event carries correct payload; envelope is unchanged), US3 scenario 1 (split output events are independent and complete – they inherit the envelope of the original)._
 - **FR-012**: The framework MUST NOT deserialize an event's payload unless that event matches the
   target name and version of at least one registered transformation. Non-matching events MUST pass
   through the transformation chain without triggering deserialization. This is enforced by the
   on-demand model: payload conversion only occurs when the transformation explicitly requests it,
   never eagerly.
-  _Traces to: US1 scenario 3 (events that do not match pass through the chain unchanged -- without being deserialized), US4 scenario 2 (non-heartbeat events in the same stream pass through untouched)._
+  _Traces to: US1 scenario 3 (events that do not match pass through the chain unchanged – without being deserialized), US4 scenario 2 (non-heartbeat events in the same stream pass through untouched)._
 - **FR-013**: The transformation chain MUST be applied consistently across all three event-reading
   contexts: event-sourced entity loading (bounded stream per entity), DCB reads
   (`SourcingCondition`-based bounded stream across multiple entities for command-side consistency
   enforcement), and tracking processor reads (unbounded stream across the full event store for
   projections). All three contexts read events from the same event store; a stored event MUST
   produce the same transformed output regardless of which reading context triggered the read.
-  Inconsistent application -- where one context sees transformed events and another sees the original
-  stored format -- is explicitly prohibited.
+  Inconsistent application – where one context sees transformed events and another sees the original
+  stored format – is explicitly prohibited.
   _Traces to: US1 scenario 4 (explicitly tests all three reading contexts and requires identical output from each)._
 - **FR-014**: The framework MUST emit observability signals at two levels:
   - **INFO** at startup when the transformation chain is built: the number of registered
@@ -1004,7 +1004,7 @@ API introduced here is the stable foundation that makes that future extension sa
     version of the event it was applied to. This level is off by default in production but available
     when diagnosing whether a transformation ran, was skipped (non-matching event), or was never
     registered correctly.
-  No public API changes are required to support this -- logging is a framework-internal concern.
+  No public API changes are required to support this – logging is a framework-internal concern.
   _Traces to: US8 (all three acceptance scenarios in US8 map directly to the two log levels specified here)._
 - **FR-015**: The streaming position (tracking token) MUST advance past dropped events. When a
   transformation drops an event (returns an empty list), the framework MUST record that the event
@@ -1013,7 +1013,7 @@ API introduced here is the stable foundation that makes that future extension sa
   tracking: the stream advances as if the event had been handled normally.
   _Traces to: US4 scenario 3 (processor restarts after dropping a SystemHeartbeat and does not reprocess it)._
 - **FR-016**: If a transformation function throws an exception, the framework MUST propagate it
-  immediately to the caller -- the event store read, event-sourced entity load, DCB read, or tracking processor
+  immediately to the caller – the event store read, event-sourced entity load, DCB read, or tracking processor
   invocation. Processing halts. Silently skipping the failed event or logging-and-continuing is
   explicitly prohibited: a failed transformation leaves the output event undefined, and delivering
   corrupted or absent state to downstream consumers without a signal is worse than a hard failure.
@@ -1021,7 +1021,7 @@ API introduced here is the stable foundation that makes that future extension sa
   stream position of the event that triggered the failure.
   _Traces to: US7 scenario 6 (transformation throws during event read; caller receives propagated exception with clear context)._
 - **FR-017**: Events stored without an explicit version MUST be treated by the framework as carrying
-  version `0.0.1` -- the AF5 default version in `MessageType`. Transformation registrations that
+  version `0.0.1` – the AF5 default version in `MessageType`. Transformation registrations that
   target version `0.0.1` apply to these legacy events. No special API is required; the developer
   registers for `0.0.1` exactly as they would for any other version.
   _Traces to: US1 scenario 5 (a stored event with no version is matched by a transformation registered for version 0.0.1)._
@@ -1030,23 +1030,23 @@ API introduced here is the stable foundation that makes that future extension sa
 
 - **Event transformation**: A single unit of logic that targets one event type at one
   version. "Transformation" is the canonical term used throughout this spec. Two patterns exist:
-  (1) **1:1** -- declares source and target event identity with an optional payload rule; covers
-  structural changes and renames. (2) **1:N/1:0** -- declares only the source identity with a rule
+  (1) **1:1** – declares source and target event identity with an optional payload rule; covers
+  structural changes and renames. (2) **1:N/1:0** – declares only the source identity with a rule
   producing zero or more replacement events; covers splits and drops. Each transformation has exactly one reason to change. Think of it as a simple
   recipe: "given this event in this format, produce these events in this format."
 - **Transformation chain**: The ordered sequence of registered transformations applied when reading
-  events from storage. Order is determined entirely by registration sequence -- first registered
+  events from storage. Order is determined entirely by registration sequence – first registered
   runs first.
 - **Snapshot transformation**: (Deferred to a future release) A unit of logic that would convert
   a stored entity snapshot from an old format to the current format, avoiding a full event replay
   for large entities. The hook point exists in `StoreBackedSnapshotter` but the API is not defined
   in this release. The discard-and-replay fallback remains the correct primary strategy.
-- **MessageType / Event identity**: Every event has a **MessageType** -- the combination of a
+- **MessageType / Event identity**: Every event has a **MessageType** – the combination of a
   fully qualified name (namespace + local name, e.g., `com.example.CourseCreated`) and a version
   (e.g., `1.0.0`). Both components are always present; there is no concept of a "versionless" event
   in AF5. Events stored before versioning was introduced are assigned the default version `0.0.1`
   by the framework. Transformation registration uses the fully qualified name in both `from` and
-  `to` -- using only the local name (e.g., `CourseCreated`) will silently fail to match stored
+  `to` – using only the local name (e.g., `CourseCreated`) will silently fail to match stored
   events whose `MessageType` includes the namespace.
 
 ## Success Criteria
@@ -1061,7 +1061,7 @@ API introduced here is the stable foundation that makes that future extension sa
   fallback behavior is preserved and remains the correct primary strategy for snapshot version mismatches.
 - **SC-004**: A conflict between two transformations targeting the same event name and version is
   detected and reported before any event is processed (at startup or registration time).
-- **SC-005**: All four in-scope use cases -- structural transform, rename, split, drop -- are
+- **SC-005**: All four in-scope use cases – structural transform, rename, split, drop – are
   independently demonstrated with running examples in the university demo application.
 - **SC-006**: A developer migrating from Axon Framework 4 upcasters can identify the equivalent
   AF5 approach for each of their existing upcasters from documentation alone, without reading
