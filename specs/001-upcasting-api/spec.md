@@ -1011,6 +1011,14 @@ The snapshot transformation interface would operate on `Snapshot` objects direct
 not need to share an interface with event transformations because snapshots are never split, never
 dropped, and carry no event identity (name + version together) – only a version string.
 
+**Team decision (2026-05-19)**: The team confirmed this direction explicitly. `Snapshot` is not a
+`Message<?>` subtype, so forcing it into the `Upcaster<M extends Message<?>>` hierarchy would be
+unnatural -- several envelope fields (tracking token, entity identifier) have no clear analogue in
+a snapshot context. The accepted direction is a SEPARATE
+interface hierarchy for snapshot upcasting, generic at its own level but not sharing a parent with
+`Upcaster<M>`. This has no impact on the 5.2.0 deliverables: the `messaging/upcasting` generic root
+introduced here is scoped to `Message<?>` subtypes only.
+
 **Acceptance scenarios (preserved for future spec)**:
 
 1. **Given** a stored entity snapshot at version 1.0.0 and a snapshot transformation registered,
