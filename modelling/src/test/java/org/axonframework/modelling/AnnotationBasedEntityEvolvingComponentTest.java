@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -165,7 +166,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @Test
         void resolvesTimestamps() {
             var timestamp = Instant.now();
-            GenericEventMessage.clock = Clock.fixed(timestamp, ZoneId.systemDefault());
+            ClockUtils.set(Clock.fixed(timestamp, ZoneId.systemDefault()));
 
             // given
             var state = new TestState();
@@ -181,7 +182,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         @AfterEach
         void afterEach() {
-            GenericEventMessage.clock = Clock.systemUTC();
+            ClockUtils.reset();
         }
     }
 

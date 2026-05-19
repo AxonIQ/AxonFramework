@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ProcessUtils;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -356,66 +357,40 @@ class Coordinator {
     }
 
     /**
-     * Status holder for this service. Defines whether it is running, has been started (to ensure double
-     * {@link #start()} invocations do not restart this coordinator) and maintains a shutdown handler to complete
-     * asynchronously through {@link #stop()}.
-     */
-    private static class RunState {
-
-        private final boolean isRunning;
-        private final boolean wasStarted;
-        private final CompletableFuture<Void> shutdownHandle;
-        private final Runnable shutdownAction;
-
-        private RunState(boolean isRunning,
-                         boolean wasStarted,
-                         CompletableFuture<Void> shutdownHandle,
-                         Runnable shutdownAction) {
-            this.isRunning = isRunning;
-            this.wasStarted = wasStarted;
-            this.shutdownHandle = shutdownHandle;
-            this.shutdownAction = shutdownAction;
-        }
+         * Status holder for this service. Defines whether it is running, has been started (to ensure double
+         * {@link #start()} invocations do not restart this coordinator) and maintains a shutdown handler to complete
+         * asynchronously through {@link #stop()}.
+         */
+        private record RunState(boolean isRunning, boolean wasStarted, CompletableFuture<Void> shutdownHandle,
+                                Runnable shutdownAction) {
 
         public static RunState initial(Runnable shutdownAction) {
-            return new RunState(false, false, emptyCompletedFuture(), shutdownAction);
-        }
+                return new RunState(false, false, emptyCompletedFuture(), shutdownAction);
+            }
 
-        public RunState attemptStart() {
-            if (isRunning) {
-                // It was already started
-                return new RunState(true, false, null, shutdownAction);
-            } else if (shutdownHandle.isDone()) {
-                // Shutdown has previously been completed. It's allowed to start
-                return new RunState(true, true, null, shutdownAction);
-            } else {
-                // Shutdown is in progress
-                return this;
+            public RunState attemptStart() {
+                if (isRunning) {
+                    // It was already started
+                    return new RunState(true, false, null, shutdownAction);
+                } else if (shutdownHandle.isDone()) {
+                    // Shutdown has previously been completed. It's allowed to start
+                    return new RunState(true, true, null, shutdownAction);
+                } else {
+                    // Shutdown is in progress
+                    return this;
+                }
+            }
+
+            public RunState attemptStop() {
+                // It's already stopped
+                if (!isRunning || shutdownHandle != null) {
+                    return this;
+                }
+                CompletableFuture<Void> newShutdownHandle = new CompletableFuture<>();
+                newShutdownHandle.whenComplete((r, e) -> shutdownAction.run());
+                return new RunState(false, false, newShutdownHandle, shutdownAction);
             }
         }
-
-        public RunState attemptStop() {
-            // It's already stopped
-            if (!isRunning || shutdownHandle != null) {
-                return this;
-            }
-            CompletableFuture<Void> newShutdownHandle = new CompletableFuture<>();
-            newShutdownHandle.whenComplete((r, e) -> shutdownAction.run());
-            return new RunState(false, false, newShutdownHandle, shutdownAction);
-        }
-
-        public boolean isRunning() {
-            return isRunning;
-        }
-
-        public boolean wasStarted() {
-            return wasStarted;
-        }
-
-        public CompletableFuture<Void> shutdownHandle() {
-            return shutdownHandle;
-        }
-    }
 
     /**
      * Package private builder class to construct a {@link Coordinator}. Not used for validation of the fields as is the
@@ -436,7 +411,7 @@ class Coordinator {
         private long claimExtensionThreshold = 5000;
         private long tokenStoreInitRetryInterval = 100;
         private long tokenStoreInitMaxRetries = 30;
-        private Clock clock = GenericEventMessage.clock;
+        private Clock clock = ClockUtils.get();
         private MaxSegmentProvider maxSegmentProvider;
         private int initialSegmentCount = 16;
         private Function<TrackingTokenSource, CompletableFuture<TrackingToken>> initialToken;
@@ -588,7 +563,7 @@ class Coordinator {
 
         /**
          * The {@link Clock} used for any time dependent operations in this {@link Coordinator}. For example used to
-         * define when to attempt claiming new tokens. Defaults to {@link GenericEventMessage#clock}.
+         * define when to attempt claiming new tokens. Defaults to {@link ClockUtils#get()}.
          *
          * @param clock a {@link Clock} used for any time dependent operations in this {@link Coordinator}
          * @return the current Builder instance, for fluent interfacing
@@ -1092,7 +1067,7 @@ class Coordinator {
                             .limit(workPackages.size() - maxSegmentsPerNode)
                             .forEach(workPackage -> releaseUntil(
                                     workPackage.segment().getSegmentId(),
-                                    GenericEventMessage.clock.instant().plusMillis(tokenClaimInterval)
+                                    clock.instant().plusMillis(tokenClaimInterval)
                             ));
             }
             return tooManySegmentsClaimed;
@@ -1149,7 +1124,7 @@ class Coordinator {
                 Segment segment, Map<Segment, TrackingToken> claims
         ) {
             int segmentId = segment.getSegmentId();
-            return unitOfWorkFactory.create().<TrackingToken>executeWithResult(
+            return unitOfWorkFactory.create().executeWithResult(
                     context -> tokenStore.fetchToken(name, segment, context)
             ).thenApply(token -> {
                 claims.put(segment, token);

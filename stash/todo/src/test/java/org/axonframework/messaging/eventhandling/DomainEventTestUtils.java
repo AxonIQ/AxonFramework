@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
@@ -104,12 +105,12 @@ public abstract class DomainEventTestUtils {
                                                        String payload,
                                                        Metadata metadata) {
         return new org.axonframework.messaging.eventhandling.GenericDomainEventMessage(type,
-                                               aggregateId,
-                                               sequenceNumber,
-                                               eventId,
-                                               TYPE,
-                                               payload,
-                                               metadata,
-                                               GenericDomainEventMessage.clock.instant());
+                                                                                       aggregateId,
+                                                                                       sequenceNumber,
+                                                                                       eventId,
+                                                                                       TYPE,
+                                                                                       payload,
+                                                                                       metadata,
+                                                                                       ClockUtils.instant());
     }
 }

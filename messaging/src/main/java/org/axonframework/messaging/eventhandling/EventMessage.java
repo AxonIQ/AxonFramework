@@ -38,7 +38,7 @@ import java.util.Map;
 public interface EventMessage extends Message {
 
     /**
-     * Returns the identifier of this {@link EventMessage event}.
+     * Returns the identifier of this .
      * <p>
      * The identifier is used to define the uniqueness of an event. Two events may contain similar (or equal)
      * {@link #payload() payloads} and {@link #timestamp() timestamp}, if the event identifiers are different, they both
@@ -52,17 +52,17 @@ public interface EventMessage extends Message {
      * previous address. In that case, the event payload is equal for both {@code EventMessage} instances, but the event
      * identifier is different for both.
      *
-     * @return The identifier of this {@link EventMessage event}.
+     * @return The identifier of this .
      */
     @Override
     String identifier();
 
     /**
-     * Returns the timestamp of this {@link EventMessage event}.
+     * Returns the timestamp of this .
      * <p>
      * The timestamp is set to the date and time the event was reported.
      *
-     * @return The timestamp of this {@link EventMessage event}.
+     * @return The timestamp of this .
      */
     Instant timestamp();
 
@@ -73,12 +73,12 @@ public interface EventMessage extends Message {
     EventMessage andMetadata(Map<String,@Nullable String> metadata);
 
     @Override
-        default EventMessage withConvertedPayload(Class<?> type, Converter converter) {
+    default EventMessage withConvertedPayload(Class<?> type, Converter converter) {
         return withConvertedPayload((Type) type, converter);
     }
 
     @Override
-        default EventMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
+    default EventMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
         return withConvertedPayload(type.getType(), converter);
     }
 

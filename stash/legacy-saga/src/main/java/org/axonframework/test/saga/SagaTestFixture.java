@@ -321,13 +321,11 @@ public class SagaTestFixture<T> implements FixtureConfiguration, ContinuedGivenS
     private static <P> EventMessage asEventMessage(Object event) {
         if (event instanceof EventMessage) {
             return (EventMessage) event;
-        } else if (event instanceof Message) {
-            Message message = (Message) event;
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+        } else if (event instanceof Message message) {
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
-                new GenericMessage(new MessageType(event.getClass()), event),
-                () -> GenericEventMessage.clock.instant()
+                new GenericMessage(new MessageType(event.getClass()), event)
         );
     }
 
@@ -608,30 +606,23 @@ public class SagaTestFixture<T> implements FixtureConfiguration, ContinuedGivenS
     }
 
     /**
-     * Wrapping {@link ResourceInjector} instance. Will first call the {@link TransienceValidatingResourceInjector}, to
-     * ensure the fixture's approach of injecting the default classes (like the {@link EventBus} and {@link CommandBus}
-     * for example) is maintained. Afterward, the custom {@code ResourceInjector} provided through the
-     * {@link #registerResourceInjector(ResourceInjector)} is called. This will (depending on the implementation) inject
-     * more resources, as well as potentially override resources already injected by the
-     * {@code TransienceValidatingResourceInjector}.
-     */
-    private static class WrappingResourceInjector implements ResourceInjector {
-
-        private final ResourceInjector customResourceInjector;
-        private final TransienceValidatingResourceInjector defaultResourceInjector;
-
-        public WrappingResourceInjector(ResourceInjector customResourceInjector,
-                                        TransienceValidatingResourceInjector defaultResourceInjector) {
-            this.customResourceInjector = customResourceInjector;
-            this.defaultResourceInjector = defaultResourceInjector;
-        }
+         * Wrapping {@link ResourceInjector} instance. Will first call the {@link TransienceValidatingResourceInjector}, to
+         * ensure the fixture's approach of injecting the default classes (like the {@link EventBus} and {@link CommandBus}
+         * for example) is maintained. Afterward, the custom {@code ResourceInjector} provided through the
+         * {@link #registerResourceInjector(ResourceInjector)} is called. This will (depending on the implementation) inject
+         * more resources, as well as potentially override resources already injected by the
+         * {@code TransienceValidatingResourceInjector}.
+         */
+        private record WrappingResourceInjector(ResourceInjector customResourceInjector,
+                                                TransienceValidatingResourceInjector defaultResourceInjector)
+            implements ResourceInjector {
 
         @Override
-        public void injectResources(Object saga) {
-            // First call the default, transience checking injector to ensure correct fixture workings
-            defaultResourceInjector.injectResources(saga);
-            // Then, call the custom injector, to add other resource or override injection by the default injector
-            customResourceInjector.injectResources(saga);
+            public void injectResources(Object saga) {
+                // First call the default, transience checking injector to ensure correct fixture workings
+                defaultResourceInjector.injectResources(saga);
+                // Then, call the custom injector, to add other resource or override injection by the default injector
+                customResourceInjector.injectResources(saga);
+            }
         }
-    }
 }

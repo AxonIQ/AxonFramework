@@ -23,6 +23,7 @@ import com.github.kagkarlsson.scheduler.task.TaskDescriptor;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
@@ -51,7 +52,6 @@ import java.util.function.Supplier;
 
 import static java.util.Objects.isNull;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
-import static org.axonframework.messaging.eventhandling.GenericEventMessage.clock;
 import static org.axonframework.messaging.eventhandling.scheduling.dbscheduler.DbSchedulerScheduleToken.TASK_NAME;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -80,13 +80,13 @@ public class DbSchedulerEventScheduler implements EventScheduler {
     private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     /**
-     * Instantiate a {@link DbSchedulerEventScheduler} based on the fields contained in the
+     * Instantiate a  based on the fields contained in the
      * {@link DbSchedulerEventScheduler.Builder}.
      * <p>
      * Will assert that the {@link Scheduler}, {@link Serializer} and {@link EventBus} are not {@code null}, and will
      * throw an {@link AxonConfigurationException} if any of them is {@code null}.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link DbSchedulerEventScheduler} instance
+     * @param builder the {@link Builder} used to instantiate a  instance
      */
     protected DbSchedulerEventScheduler(Builder builder) {
         builder.validate();
@@ -101,7 +101,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
     }
 
     /**
-     * Instantiate a Builder to be able to create a {@link DbSchedulerEventScheduler}.
+     * Instantiate a Builder to be able to create a .
      * <p>
      * The {@link TransactionManager} is defaulted to a {@link NoTransactionManager}. The {@code useBinaryPojo} is
      * defaulted to {@code true}.
@@ -109,7 +109,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
      * The {@link Scheduler}, {@link Serializer} and {@link EventBus} are <b>hard requirements</b> and as such should be
      * provided.
      *
-     * @return a Builder to be able to create a {@link DbSchedulerEventScheduler}
+     * @return a Builder to be able to create a
      */
     public static Builder builder() {
         return new Builder();
@@ -137,7 +137,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
      * Gives the {@link Task} using {@link DbSchedulerBinaryEventData} to publish an event via a {@link Scheduler}. To
      * be able to execute the task, this should be added to the task list, used to create the scheduler.
      *
-     * @param eventSchedulerSupplier a {@link Supplier} of a {@link DbSchedulerEventScheduler}. Preferably a method
+     * @param eventSchedulerSupplier a {@link Supplier} of a . Preferably a method
      *                               involving dependency injection is used. When those are not available the
      *                               {@link DbSchedulerEventSchedulerSupplier} can be used instead.
      * @return a {@link Task} to publish an event
@@ -161,7 +161,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
      * {@link Scheduler}. To be able to execute the task, this should be added to the task list, used to create the
      * scheduler.
      *
-     * @param eventSchedulerSupplier a {@link Supplier} of a {@link DbSchedulerEventScheduler}. Preferably a method
+     * @param eventSchedulerSupplier a {@link Supplier} of a . Preferably a method
      *                               involving dependency injection is used. When those are not available the
      *                               {@link DbSchedulerEventSchedulerSupplier} can be used instead.
      * @return a {@link Task} to publish an event
@@ -253,7 +253,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),
@@ -279,15 +279,14 @@ public class DbSchedulerEventScheduler implements EventScheduler {
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(clock.instant().plus(triggerDuration), event);
+        return schedule(ClockUtils.instant().plus(triggerDuration), event);
     }
 
     @Override
     public void cancelSchedule(ScheduleToken scheduleToken) {
-        if (!(scheduleToken instanceof DbSchedulerScheduleToken)) {
+        if (!(scheduleToken instanceof DbSchedulerScheduleToken reference)) {
             throw new IllegalArgumentException("The given ScheduleToken was not provided by this scheduler.");
         }
-        DbSchedulerScheduleToken reference = (DbSchedulerScheduleToken) scheduleToken;
         scheduler.cancel(reference);
     }
 

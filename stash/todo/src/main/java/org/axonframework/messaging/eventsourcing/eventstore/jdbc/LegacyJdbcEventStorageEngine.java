@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventsourcing.eventstore.jdbc;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.JdbcSQLErrorCodesResolver;
@@ -130,17 +131,17 @@ public class LegacyJdbcEventStorageEngine extends BatchingEventStorageEngine {
     private final ReadSnapshotDataStatementBuilder readSnapshotData;
     private final ReadEventDataWithoutGapsStatementBuilder readEventDataWithoutGaps;
     private final ReadEventDataWithGapsStatementBuilder readEventDataWithGaps;
-    private int gapTimeout;
-    private int gapCleaningThreshold;
+    private final int gapTimeout;
+    private final int gapCleaningThreshold;
 
     /**
-     * Instantiate a {@link LegacyJdbcEventStorageEngine} based on the fields contained in the {@link Builder}.
+     * Instantiate a  based on the fields contained in the {@link Builder}.
      * <p>
      * Will assert that the event and snapshot {@link Serializer}, the {@link ConnectionProvider} and
      * {@link TransactionManager} are not {@code null}, and will throw an {@link AxonConfigurationException} if any of
      * them is {@code null}.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link LegacyJdbcEventStorageEngine} instance
+     * @param builder the {@link Builder} used to instantiate a  instance
      */
     protected LegacyJdbcEventStorageEngine(Builder builder) {
         super(builder);
@@ -169,7 +170,7 @@ public class LegacyJdbcEventStorageEngine extends BatchingEventStorageEngine {
     }
 
     /**
-     * Instantiate a Builder to be able to create a {@link LegacyJdbcEventStorageEngine}.
+     * Instantiate a Builder to be able to create a .
      * <p>
      * The following configurable fields have defaults:
      * <ul>
@@ -202,7 +203,7 @@ public class LegacyJdbcEventStorageEngine extends BatchingEventStorageEngine {
      * The event and snapshot {@link Serializer}, {@link ConnectionProvider} and {@link TransactionManager} are <b>hard
      * requirements</b> and as such should be provided.
      *
-     * @return a Builder to be able to create a {@link LegacyJdbcEventStorageEngine}
+     * @return a Builder to be able to create a
      */
     public static Builder builder() {
         return new Builder();
@@ -679,7 +680,7 @@ public class LegacyJdbcEventStorageEngine extends BatchingEventStorageEngine {
     }
 
     private Instant gapTimeoutFrame() {
-        return GenericEventMessage.clock.instant().minus(gapTimeout, ChronoUnit.MILLIS);
+        return ClockUtils.instant().minus(gapTimeout, ChronoUnit.MILLIS);
     }
 
     /**

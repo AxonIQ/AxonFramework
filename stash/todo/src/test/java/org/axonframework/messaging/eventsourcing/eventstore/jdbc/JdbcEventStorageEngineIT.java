@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventsourcing.eventstore.jdbc;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.eventhandling.DomainEventMessage;
@@ -169,19 +170,16 @@ class JdbcEventStorageEngineIT
 
     @Test
     void gapsForVeryOldEventsAreNotIncluded() throws SQLException {
-        GenericEventMessage.clock =
-                Clock.fixed(Clock.systemUTC().instant().minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-1), createDomainEvent(0));
 
-        GenericEventMessage.clock =
-                Clock.fixed(Clock.systemUTC().instant().minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-2), createDomainEvent(1));
 
-        GenericEventMessage.clock =
-                Clock.fixed(Clock.systemUTC().instant().minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-3), createDomainEvent(2));
 
-        GenericEventMessage.clock = Clock.fixed(Clock.systemUTC().instant(), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant(), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-4), createDomainEvent(3));
 
         try (Connection conn = dataSource.getConnection()) {
@@ -199,13 +197,13 @@ class JdbcEventStorageEngineIT
         testSubject = createEngine(engineBuilder -> engineBuilder.gapTimeout(50001).gapCleaningThreshold(50));
 
         Instant now = Clock.systemUTC().instant();
-        GenericEventMessage.clock = Clock.fixed(now.minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(now.minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-1), createDomainEvent(0)); // index 0 and 1
-        GenericEventMessage.clock = Clock.fixed(now.minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(now.minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-2), createDomainEvent(1)); // index 2 and 3
-        GenericEventMessage.clock = Clock.fixed(now.minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(now.minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-3), createDomainEvent(2)); // index 4 and 5
-        GenericEventMessage.clock = Clock.fixed(now, Clock.systemUTC().getZone());
+        ClockUtils.set(Clock.fixed(now, Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-4), createDomainEvent(3)); // index 6 and 7
 
         try (Connection conn = dataSource.getConnection()) {
@@ -219,7 +217,7 @@ class JdbcEventStorageEngineIT
         List<? extends TrackedEventData<?>> events =
                 testSubject.fetchTrackedEvents(GapAwareTrackingToken.newInstance(6, gaps), 100);
         assertEquals(1, events.size());
-        assertEquals(4L, (long) ((GapAwareTrackingToken) events.get(0).trackingToken()).getGaps().first());
+        assertEquals(4L, (long) ((GapAwareTrackingToken) events.getFirst().trackingToken()).getGaps().first());
     }
 
     @Test
@@ -489,4 +487,5 @@ class JdbcEventStorageEngineIT
             throw new IllegalStateException(e);
         }
     }
+
 }

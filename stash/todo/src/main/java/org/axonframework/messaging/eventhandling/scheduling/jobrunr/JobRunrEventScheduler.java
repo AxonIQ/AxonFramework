@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.scheduling.jobrunr;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventBus;
@@ -48,7 +49,6 @@ import java.util.UUID;
 import static java.util.Objects.isNull;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.deadline.jobrunr.LabelUtils.getLabel;
-import static org.axonframework.messaging.eventhandling.GenericEventMessage.clock;
 
 /**
  * EventScheduler implementation that delegates scheduling and triggering to a JobRunr JobScheduler.
@@ -151,15 +151,14 @@ public class JobRunrEventScheduler implements EventScheduler {
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(clock.instant().plus(triggerDuration), event);
+        return schedule(ClockUtils.instant().plus(triggerDuration), event);
     }
 
     @Override
     public void cancelSchedule(ScheduleToken scheduleToken) {
-        if (!(scheduleToken instanceof JobRunrScheduleToken)) {
+        if (!(scheduleToken instanceof JobRunrScheduleToken reference)) {
             throw new IllegalArgumentException("The given ScheduleToken was not provided by this scheduler.");
         }
-        JobRunrScheduleToken reference = (JobRunrScheduleToken) scheduleToken;
         jobScheduler.delete(reference.getJobIdentifier(), "Deleted via Axon EventScheduler API");
     }
 
@@ -241,7 +240,7 @@ public class JobRunrEventScheduler implements EventScheduler {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),

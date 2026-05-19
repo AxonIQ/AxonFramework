@@ -16,12 +16,13 @@
 
 package org.axonframework.eventsourcing.eventstore.jpa;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GapAwareTrackingToken;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.slf4j.Logger;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -36,8 +37,13 @@ import java.util.List;
  */
 record GapAwareTrackingTokenOperations(
         int gapTimeout,
-        Logger logger
+        Logger logger,
+        Clock clock
 ) {
+
+    GapAwareTrackingTokenOperations(int gapTimeout, Logger logger) {
+        this(gapTimeout, logger, ClockUtils.get());
+    }
 
     GapAwareTrackingToken withGapsCleaned(GapAwareTrackingToken token, List<Object[]> indexAndTimestampBetweenGaps) {
         Instant gapTimeoutThreshold = gapTimeoutThreshold();
@@ -79,8 +85,7 @@ record GapAwareTrackingTokenOperations(
         }
     }
 
-
     Instant gapTimeoutThreshold() {
-        return GenericEventMessage.clock.instant().minus(gapTimeout, ChronoUnit.MILLIS);
+        return clock.instant().minus(gapTimeout, ChronoUnit.MILLIS);
     }
 }

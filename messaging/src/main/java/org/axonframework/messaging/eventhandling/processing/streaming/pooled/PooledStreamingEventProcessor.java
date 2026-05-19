@@ -230,7 +230,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
         coordinator.releaseUntil(
-                segmentId, GenericEventMessage.clock.instant().plusMillis(unit.toMillis(releaseDuration))
+                segmentId, configuration.clock().instant().plusMillis(unit.toMillis(releaseDuration))
         );
         return FutureUtils.emptyCompletedFuture();
     }

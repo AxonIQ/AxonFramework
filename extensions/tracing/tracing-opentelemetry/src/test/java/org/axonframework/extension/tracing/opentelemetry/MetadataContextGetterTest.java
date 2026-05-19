@@ -16,10 +16,11 @@
 
 package org.axonframework.extension.tracing.opentelemetry;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.junit.jupiter.api.*;
 
 import java.util.Collections;
@@ -57,7 +58,7 @@ class MetadataContextGetterTest {
     private static <P> EventMessage asEventMessage(P event) {
         return new GenericEventMessage(
                 new GenericMessage(new MessageType(event.getClass()), event),
-                () -> GenericEventMessage.clock.instant()
+                ClockUtils::instant
         );
     }
 }

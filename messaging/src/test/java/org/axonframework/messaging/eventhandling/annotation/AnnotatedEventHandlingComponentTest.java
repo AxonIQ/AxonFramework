@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.annotation;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.LegacyResources;
@@ -237,7 +238,7 @@ class AnnotatedEventHandlingComponentTest {
         @Test
         void resolvesTimestamps() {
             var timestamp = Instant.now();
-            GenericEventMessage.clock = Clock.fixed(timestamp, ZoneId.systemDefault());
+            ClockUtils.set(Clock.fixed(timestamp, ZoneId.systemDefault()));
 
             // given
             var event = eventMessage(0);
@@ -252,7 +253,7 @@ class AnnotatedEventHandlingComponentTest {
 
         @AfterEach
         void afterEach() {
-            GenericEventMessage.clock = Clock.systemUTC();
+            ClockUtils.reset();
         }
     }
 

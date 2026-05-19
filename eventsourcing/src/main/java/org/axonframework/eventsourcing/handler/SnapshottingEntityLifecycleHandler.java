@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.handler;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
@@ -165,11 +166,11 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
             };
 
         return source
-            .reduce((E) null, accumulator)
+            .reduce(null, accumulator)
             .exceptionallyCompose(e -> switch (e) {
                 case SnapshotIncompatibleException sce ->
                     transaction.source(SourcingCondition.conditionFor(Position.START, criteria), positionRef::set)
-                        .reduce((E) null, accumulator);
+                        .reduce(null, accumulator);
                 default -> CompletableFuture.failedFuture(e);
             })
             .thenApply(entity -> {
@@ -187,7 +188,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     }
 
     private void storeSnapshot(I identifier, E entity, Position position) {
-        Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, GenericEventMessage.clock.instant(), Map.of());
+        Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, ClockUtils.instant(), Map.of());
 
         snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot)
             .whenComplete((voidResult, ex) -> {

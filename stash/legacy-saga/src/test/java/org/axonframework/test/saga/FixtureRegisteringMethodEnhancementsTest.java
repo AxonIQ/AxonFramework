@@ -71,7 +71,7 @@ public class FixtureRegisteringMethodEnhancementsTest {
                    .whenPublishingA(new ParameterResolvedEvent(TEST_AGGREGATE_IDENTIFIER))
                    .expectDispatchedCommandsMatching(listWithAnyOf(predicate(commandMessage -> {
                        Object payload = commandMessage.payload();
-                       assertTrue(payload instanceof ResolveParameterCommand);
+                       assertInstanceOf(ResolveParameterCommand.class, payload);
                        AtomicBoolean assertion = ((ResolveParameterCommand) payload).getAssertion();
                        return assertion.get();
                    })));
@@ -79,8 +79,7 @@ public class FixtureRegisteringMethodEnhancementsTest {
 
     private static <P> EventMessage asEventMessage(P event) {
         return new GenericEventMessage(
-                new GenericMessage(new MessageType(event.getClass()), event),
-                () -> GenericEventMessage.clock.instant()
+                new GenericMessage(new MessageType(event.getClass()), event)
         );
     }
 
@@ -120,73 +119,55 @@ public class FixtureRegisteringMethodEnhancementsTest {
                    .expectAssociationWith("extraIdentifier", "myExtraIdentifier");
     }
 
-    private static class TestParameterResolverFactory
-            implements ParameterResolverFactory, ParameterResolver<AtomicBoolean> {
-
-        private final AtomicBoolean assertion;
-
-        private TestParameterResolverFactory(AtomicBoolean assertion) {
-            this.assertion = assertion;
-        }
+    private record TestParameterResolverFactory(AtomicBoolean assertion)
+                implements ParameterResolverFactory, ParameterResolver<AtomicBoolean> {
 
         @Nullable
-        @Override
-        public ParameterResolver<AtomicBoolean> createInstance(@NonNull Executable executable,
-                                                               @NonNull Parameter[] parameters,
-                                                               int parameterIndex) {
-            return AtomicBoolean.class.equals(parameters[parameterIndex].getType()) ? this : null;
+            @Override
+            public ParameterResolver<AtomicBoolean> createInstance(@NonNull Executable executable,
+                                                                   @NonNull Parameter[] parameters,
+                                                                   int parameterIndex) {
+                return AtomicBoolean.class.equals(parameters[parameterIndex].getType()) ? this : null;
+            }
+
+            @NonNull
+            @Override
+            public CompletableFuture<AtomicBoolean> resolveParameterValue(@NonNull ProcessingContext context) {
+                return CompletableFuture.completedFuture(assertion);
+            }
+
+            @Override
+            public boolean matches(@NonNull ProcessingContext context) {
+                Message message = Message.fromContext(context);
+                return message.payloadType().isAssignableFrom(ParameterResolvedEvent.class);
+            }
         }
 
-        @NonNull
-        @Override
-        public CompletableFuture<AtomicBoolean> resolveParameterValue(@NonNull ProcessingContext context) {
-            return CompletableFuture.completedFuture(assertion);
-        }
-
-        @Override
-        public boolean matches(@NonNull ProcessingContext context) {
-            Message message = Message.fromContext(context);
-            return message.payloadType().isAssignableFrom(ParameterResolvedEvent.class);
-        }
-    }
-
-    private static class TestHandlerDefinition implements HandlerDefinition {
-
-        private final AtomicBoolean assertion;
-
-        public TestHandlerDefinition(AtomicBoolean assertion) {
-            this.assertion = assertion;
-        }
+    private record TestHandlerDefinition(AtomicBoolean assertion) implements HandlerDefinition {
 
         @Override
-        public <T> Optional<MessageHandlingMember<T>> createHandler(
-                @NonNull Class<T> declaringType,
-                @NonNull Method method,
-                @NonNull ParameterResolverFactory parameterResolverFactory,
-                @NonNull Function<Object, MessageStream<?>> messageStreamResolver
-        ) {
-            assertion.set(true);
-            // We do not care about a specific MessageHandlingMember,
-            //  only that this method is called to ensure its part of the FixtureConfiguration.
-            return Optional.empty();
+            public <T> Optional<MessageHandlingMember<T>> createHandler(
+                    @NonNull Class<T> declaringType,
+                    @NonNull Method method,
+                    @NonNull ParameterResolverFactory parameterResolverFactory,
+                    @NonNull Function<Object, MessageStream<?>> messageStreamResolver
+            ) {
+                assertion.set(true);
+                // We do not care about a specific MessageHandlingMember,
+                //  only that this method is called to ensure its part of the FixtureConfiguration.
+                return Optional.empty();
+            }
         }
-    }
 
-    private static class TestHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
-
-        private final AtomicBoolean assertion;
-
-        private TestHandlerEnhancerDefinition(AtomicBoolean assertion) {
-            this.assertion = assertion;
-        }
+    private record TestHandlerEnhancerDefinition(AtomicBoolean assertion) implements HandlerEnhancerDefinition {
 
         @Override
-        public @NonNull
-        <T> MessageHandlingMember<T> wrapHandler(@NonNull MessageHandlingMember<T> original) {
-            assertion.set(true);
-            // We do not care about a specific MessageHandlingMember,
-            //  only that this method is called to ensure its part of the FixtureConfiguration.
-            return original;
+            public @NonNull
+            <T> MessageHandlingMember<T> wrapHandler(@NonNull MessageHandlingMember<T> original) {
+                assertion.set(true);
+                // We do not care about a specific MessageHandlingMember,
+                //  only that this method is called to ensure its part of the FixtureConfiguration.
+                return original;
+            }
         }
-    }
 }

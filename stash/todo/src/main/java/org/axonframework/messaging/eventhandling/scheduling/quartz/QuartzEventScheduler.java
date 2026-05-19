@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.scheduling.quartz;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventBus;
@@ -52,7 +53,6 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
-import static org.axonframework.messaging.eventhandling.GenericEventMessage.clock;
 import static org.axonframework.messaging.eventhandling.scheduling.quartz.FireEventJob.*;
 import static org.quartz.JobKey.jobKey;
 
@@ -81,14 +81,14 @@ public class QuartzEventScheduler implements EventScheduler {
     private volatile boolean initialized;
 
     /**
-     * Instantiate a {@link QuartzEventScheduler} based on the fields contained in the {@link Builder}.
+     * Instantiate a  based on the fields contained in the {@link Builder}.
      * <p>
      * Will assert that the {@link Scheduler} and {@link EventBus} are not {@code null}, and will throw an
      * {@link AxonConfigurationException} if any of them is {@code null}. The EventBus, TransactionManager and
      * EventJobDataBinder will be tied to the Scheduler's context. If this initialization step fails, this will too
      * result in an AxonConfigurationException.
      *
-     * @param builder the {@link Builder} used to instantiate a {@link QuartzEventScheduler} instance
+     * @param builder the {@link Builder} used to instantiate a  instance
      */
     protected QuartzEventScheduler(Builder builder) {
         builder.validate();
@@ -114,7 +114,7 @@ public class QuartzEventScheduler implements EventScheduler {
     }
 
     /**
-     * Instantiate a Builder to be able to create a {@link QuartzEventScheduler}.
+     * Instantiate a Builder to be able to create a .
      * <p>
      * The {@link EventJobDataBinder} is defaulted to a {@link DirectEventJobDataBinder} using the configured
      * {@link Serializer}, and the {@link TransactionManager} defaults to a {@link NoTransactionManager}. Note that if
@@ -122,7 +122,7 @@ public class QuartzEventScheduler implements EventScheduler {
      * <p>
      * The {@link Scheduler} and {@link EventBus} are <b>hard requirements</b> and as such should be provided.
      *
-     * @return a Builder to be able to create a {@link QuartzEventScheduler}
+     * @return a Builder to be able to create a
      */
     public static Builder builder() {
         return new Builder();
@@ -148,7 +148,7 @@ public class QuartzEventScheduler implements EventScheduler {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),
@@ -197,17 +197,16 @@ public class QuartzEventScheduler implements EventScheduler {
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(clock.instant().plus(triggerDuration), event);
+        return schedule(ClockUtils.instant().plus(triggerDuration), event);
     }
 
     @Override
     public void cancelSchedule(ScheduleToken scheduleToken) {
-        if (!(scheduleToken instanceof QuartzScheduleToken)) {
+        if (!(scheduleToken instanceof QuartzScheduleToken reference)) {
             throw new IllegalArgumentException("The given ScheduleToken was not provided by this scheduler.");
         }
         Assert.state(initialized, () -> "Scheduler is not yet initialized");
 
-        QuartzScheduleToken reference = (QuartzScheduleToken) scheduleToken;
         try {
             if (!scheduler.deleteJob(jobKey(reference.getJobIdentifier(), reference.getGroupIdentifier()))) {
                 logger.warn("The job belonging to this token could not be deleted.");

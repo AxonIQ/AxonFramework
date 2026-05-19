@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventsourcing.eventstore;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.DomainEventMessage;
 import org.axonframework.messaging.eventhandling.DomainEventTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -53,7 +54,7 @@ public abstract class EventStorageEngineTest {
 
     @AfterEach
     public void tearDown() {
-        GenericEventMessage.clock = Clock.systemUTC();
+        ClockUtils.reset();
     }
 
     @Test

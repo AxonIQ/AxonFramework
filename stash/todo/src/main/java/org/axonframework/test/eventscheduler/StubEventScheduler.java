@@ -91,13 +91,11 @@ public class StubEventScheduler implements EventScheduler {
     private static <P> EventMessage asEventMessage(Object event) {
         if (event instanceof EventMessage) {
             return (EventMessage) event;
-        } else if (event instanceof Message) {
-            Message message = (Message) event;
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+        } else if (event instanceof Message message) {
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
-                new GenericMessage(new MessageType(event.getClass()), (P) event),
-                () -> GenericEventMessage.clock.instant()
+                new GenericMessage(new MessageType(event.getClass()), event)
         );
     }
 
