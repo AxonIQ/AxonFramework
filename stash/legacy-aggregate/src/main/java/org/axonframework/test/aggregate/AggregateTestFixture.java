@@ -42,6 +42,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Assert;
 import org.axonframework.common.FutureUtils;
@@ -462,12 +463,12 @@ public class AggregateTestFixture<T> implements FixtureConfiguration<T>, TestExe
     }
 
     private void executeAtSimulatedTime(Runnable runnable) {
-        Clock previousClock = GenericEventMessage.clock;
+        Clock previousClock = ClockUtils.get();
         try {
-            GenericEventMessage.clock = Clock.fixed(currentTime(), ZoneOffset.UTC);
+            ClockUtils.set(Clock.fixed(currentTime(), ZoneOffset.UTC));
             runnable.run();
         } finally {
-            GenericEventMessage.clock = previousClock;
+            ClockUtils.set(previousClock);
         }
     }
 

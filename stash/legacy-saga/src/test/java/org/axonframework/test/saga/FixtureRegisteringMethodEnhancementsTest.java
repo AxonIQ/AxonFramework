@@ -79,8 +79,7 @@ public class FixtureRegisteringMethodEnhancementsTest {
 
     private static <P> EventMessage asEventMessage(P event) {
         return new GenericEventMessage(
-                new GenericMessage(new MessageType(event.getClass()), event),
-                () -> GenericEventMessage.clock.instant()
+                new GenericMessage(new MessageType(event.getClass()), event)
         );
     }
 

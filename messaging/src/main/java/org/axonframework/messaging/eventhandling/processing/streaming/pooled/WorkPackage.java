@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.Assert;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -609,7 +610,7 @@ class WorkPackage {
         private int batchSize = 1;
         private long claimExtensionThreshold = 5000;
         private @Nullable Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
-        private Clock clock = GenericEventMessage.clock;
+        private Clock clock = ClockUtils.get();
         private Supplier<ProcessingContext> schedulingProcessingContextProvider = () ->
                 new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
 
@@ -743,8 +744,7 @@ class WorkPackage {
 
         /**
          * Defines the {@link Clock} used for time dependent operations. For example used to update whenever this
-         * {@code WorkPackage} updated the {@link TrackingToken} claim last. Defaults to
-         * {@link GenericEventMessage#clock}.
+         * {@code WorkPackage} updated the {@link TrackingToken} claim last.
          *
          * @param clock the {@link Clock} used for time dependent operations
          * @return the current Builder instance, for fluent interfacing

@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventsourcing.eventstore.jdbc;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.JdbcSQLErrorCodesResolver;
@@ -679,7 +680,7 @@ public class LegacyJdbcEventStorageEngine extends BatchingEventStorageEngine {
     }
 
     private Instant gapTimeoutFrame() {
-        return GenericEventMessage.clock.instant().minus(gapTimeout, ChronoUnit.MILLIS);
+        return ClockUtils.instant().minus(gapTimeout, ChronoUnit.MILLIS);
     }
 
     /**

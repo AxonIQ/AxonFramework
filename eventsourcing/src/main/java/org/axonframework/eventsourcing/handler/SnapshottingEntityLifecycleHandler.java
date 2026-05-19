@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.handler;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
@@ -187,7 +188,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     }
 
     private void storeSnapshot(I identifier, E entity, Position position) {
-        Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, GenericEventMessage.clock.instant(), Map.of());
+        Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, ClockUtils.instant(), Map.of());
 
         snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot)
             .whenComplete((voidResult, ex) -> {

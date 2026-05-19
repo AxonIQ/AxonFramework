@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.scheduling.quartz;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventBus;
@@ -52,7 +53,6 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
-import static org.axonframework.messaging.eventhandling.GenericEventMessage.clock;
 import static org.axonframework.messaging.eventhandling.scheduling.quartz.FireEventJob.*;
 import static org.quartz.JobKey.jobKey;
 
@@ -148,7 +148,7 @@ public class QuartzEventScheduler implements EventScheduler {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),
@@ -197,7 +197,7 @@ public class QuartzEventScheduler implements EventScheduler {
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(clock.instant().plus(triggerDuration), event);
+        return schedule(ClockUtils.instant().plus(triggerDuration), event);
     }
 
     @Override

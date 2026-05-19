@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -426,7 +427,7 @@ class Coordinator {
         private BiConsumer<Integer, UnaryOperator<TrackerStatus>> processingStatusUpdater;
         private long tokenClaimInterval = 5000;
         private long claimExtensionThreshold = 5000;
-        private Clock clock = GenericEventMessage.clock;
+        private Clock clock = ClockUtils.get();
         private MaxSegmentProvider maxSegmentProvider;
         private int initialSegmentCount = 16;
         private Function<TrackingTokenSource, CompletableFuture<TrackingToken>> initialToken;
@@ -556,7 +557,7 @@ class Coordinator {
 
         /**
          * The {@link Clock} used for any time dependent operations in this {@link Coordinator}. For example used to
-         * define when to attempt claiming new tokens. Defaults to {@link GenericEventMessage#clock}.
+         * define when to attempt claiming new tokens. Defaults to {@link ClockUtils#get()}.
          *
          * @param clock a {@link Clock} used for any time dependent operations in this {@link Coordinator}
          * @return the current Builder instance, for fluent interfacing
@@ -1040,7 +1041,7 @@ class Coordinator {
                             .limit(workPackages.size() - maxSegmentsPerNode)
                             .forEach(workPackage -> releaseUntil(
                                     workPackage.segment().getSegmentId(),
-                                    GenericEventMessage.clock.instant().plusMillis(tokenClaimInterval)
+                                    clock.instant().plusMillis(tokenClaimInterval)
                             ));
             }
             return tooManySegmentsClaimed;

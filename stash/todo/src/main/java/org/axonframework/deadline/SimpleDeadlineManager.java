@@ -18,10 +18,10 @@ package org.axonframework.deadline;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonThreadFactory;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.*;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.tracing.NoOpSpanFactory;
 import org.axonframework.messaging.tracing.Span;
@@ -355,7 +355,7 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
             Span span = spanFactory.createExecuteSpan(deadlineId.deadlineName, deadlineId.deadlineId, deadlineMessage)
                                    .start();
             try (SpanScope unused = span.makeCurrent()) {
-                Instant triggerInstant = GenericEventMessage.clock.instant();
+                Instant triggerInstant = ClockUtils.instant();
                 /*
                 // TODO: reintegrate as part of #3065
                 LegacyUnitOfWork<DeadlineMessage> unitOfWork = new LegacyDefaultUnitOfWork<>(new GenericDeadlineMessage(

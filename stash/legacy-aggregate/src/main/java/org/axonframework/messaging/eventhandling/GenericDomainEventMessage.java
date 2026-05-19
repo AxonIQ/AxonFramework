@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageType;
@@ -81,7 +82,7 @@ public class GenericDomainEventMessage extends GenericEventMessage implements Do
              aggregateIdentifier,
              sequenceNumber,
              new GenericMessage(type, payload, metadata),
-             clock.instant());
+             ClockUtils.instant());
     }
 
     /**
@@ -195,7 +196,7 @@ public class GenericDomainEventMessage extends GenericEventMessage implements Do
     }
 
     @Override
-        public GenericDomainEventMessage withMetadata(Map<String, String> metadata) {
+    public GenericDomainEventMessage withMetadata(Map<String, String> metadata) {
         if (metadata().equals(metadata)) {
             return this;
         }

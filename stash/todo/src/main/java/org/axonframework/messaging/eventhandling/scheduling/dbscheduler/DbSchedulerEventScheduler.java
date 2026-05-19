@@ -23,6 +23,7 @@ import com.github.kagkarlsson.scheduler.task.TaskDescriptor;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.messaging.core.unitofwork.transaction.NoTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
@@ -51,7 +52,6 @@ import java.util.function.Supplier;
 
 import static java.util.Objects.isNull;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
-import static org.axonframework.messaging.eventhandling.GenericEventMessage.clock;
 import static org.axonframework.messaging.eventhandling.scheduling.dbscheduler.DbSchedulerScheduleToken.TASK_NAME;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -253,7 +253,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),
@@ -279,7 +279,7 @@ public class DbSchedulerEventScheduler implements EventScheduler {
 
     @Override
     public ScheduleToken schedule(Duration triggerDuration, Object event) {
-        return schedule(clock.instant().plus(triggerDuration), event);
+        return schedule(ClockUtils.instant().plus(triggerDuration), event);
     }
 
     @Override

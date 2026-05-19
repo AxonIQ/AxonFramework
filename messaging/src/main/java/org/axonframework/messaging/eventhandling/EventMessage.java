@@ -73,12 +73,12 @@ public interface EventMessage extends Message {
     EventMessage andMetadata(Map<String,@Nullable String> metadata);
 
     @Override
-        default EventMessage withConvertedPayload(Class<?> type, Converter converter) {
+    default EventMessage withConvertedPayload(Class<?> type, Converter converter) {
         return withConvertedPayload((Type) type, converter);
     }
 
     @Override
-        default EventMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
+    default EventMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
         return withConvertedPayload(type.getType(), converter);
     }
 

@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
@@ -102,7 +103,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private MaxSegmentProvider maxSegmentProvider = MaxSegmentProvider.maxShort();
     private long claimExtensionThreshold = 5000;
     private int batchSize = 1;
-    private Clock clock = GenericEventMessage.clock;
+    private Clock clock = ClockUtils.get();
     private boolean coordinatorExtendsClaims = false;
     private Function<Set<QualifiedName>, EventCriteria> eventCriteriaProvider =
             (supportedEvents) -> EventCriteria.havingAnyTag().andBeingOneOfTypes(supportedEvents);
@@ -383,7 +384,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Defines the {@link Clock} used for time dependent operation by this {@link EventProcessor}. Used by the
      * {@link Coordinator} and {@link WorkPackage} threads to decide when to perform certain tasks, like updating
      * {@link TrackingToken} claims or when to unmark a {@link Segment} as "unclaimable". Defaults to
-     * {@link GenericEventMessage#clock}.
+     * {@link ClockUtils#get()}.
      *
      * @param clock The {@link Clock} used for time dependent operation by this {@link EventProcessor}.
      * @return The current instance, for fluent interfacing.
