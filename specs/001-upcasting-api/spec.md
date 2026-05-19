@@ -39,6 +39,45 @@ why a particular choice was made – the rationale that is not visible from the 
 References to FR-xxx and SC-xxx entries are defined in the Requirements and Success Criteria
 sections later in this document.
 
+### Session 2026-05-19
+
+- Q: API surface for #746 alignment – should registration be typed on `Message<P>` or `EventMessage<P>`?
+  → A (provisional, pending team confirmation): Internal core typed on `Message<P>`; public 5.2.0 API
+  exposes only event-typed registration. #746 (command/query upcasting) can add parallel registration
+  on the same core without breaking the event API. Acknowledged trade-off: this carries a premature-abstraction
+  risk, since #746's concrete shape (rolling-deployment / downcasting semantics for commands) is not
+  yet specified. The envelope-field asymmetry (tracking token, sequence number, entity id are event-only)
+  must be modelled cleanly in the internal core. See "What needs team input" in DISCUSSION.md for the
+  open team question.
+- Q: How does a transformation access the payload – auto-convert by declared target type, or via
+  exposed `Converter`? → A: Both (dual entry points). Simple transformations declare a target type
+  and the framework auto-converts the stored bytes via `ChainedConverter` before invocation. Advanced
+  transformations that need to inspect or produce multiple representations (e.g., peek as `JsonNode`,
+  then return a POJO) receive a `Converter` instance and call `.convert()` inline. Rationale: matches
+  AF5's "support bare-bones and advanced styles" principle; avoids AF4's `IntermediateEventRepresentation`
+  trap (forced low-level access) while preserving an escape hatch for transformations that genuinely
+  need multiple representations. Both entry points are described in FR-010.
+- Q: How do AF4 users migrate their existing upcasters? → A: For 5.2.0, ship a migration guide only
+  (manual rewrite with worked examples). No compatibility layer (would reintroduce
+  `IntermediateEventRepresentation` shapes we are explicitly dropping). OpenRewrite recipes are
+  deferred and will be considered only if community demand surfaces. Rationale: AF5 introduces enough
+  fundamental shifts (Message-based, Converter-based, no IntermediateEventRepresentation, semver
+  version strings, fully qualified names) that a structural rewrite tool would be a non-trivial
+  investment; ship the guide first and let evidence of pain drive further tooling.
+- Q: Should 5.2.0 ship a mechanism to retire old upcasters (stream squashing / versioning bankruptcy)?
+  → A: No. Out of scope. The manual retirement rule is already documented in the Edge Cases table:
+  an upcaster may be removed only once no stored event at its `from` version exists anywhere
+  (including backups). A first-class stream-squashing API is a substantial feature (race conditions,
+  projection rebuilds, tracking-token preservation) and is premature without evidence of accumulation
+  pain at scale. Revisit if community feedback shows real friction.
+- Q: Should the spec assert a baseline testability requirement for transformations? → A: Yes (FR-018).
+  Transformations MUST be unit-testable from a plain JUnit test without an event store, processor,
+  or framework bootstrapping; the only allowed dependency at invocation time is a `Converter`
+  instance (and only when the advanced FR-010 entry point is used). Rationale: AF4's testing pain
+  was caused by upcasters being entangled with serialized-form construction and full chain
+  simulation; locking testability in as an architectural invariant prevents that recurrence. A full
+  test fixture API remains deferred to a separate issue.
+
 ### Session 2026-05-18
 
 - Q: When does the EventConverter convert a stored event's payload? → A: On-demand when a
@@ -1010,10 +1049,19 @@ API introduced here is the stable foundation that makes that future extension sa
   _Traces to: US7 (all four acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
 - **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
   MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
-  framework provides an on-demand conversion mechanism: a transformation requests the typed payload
-  by specifying the target type, and the EventConverter resolves it at that point. The EventConverter
-  does NOT pre-convert all events before the chain runs. Valid target types depend on the serialization
-  format of the stored event:
+  framework provides two entry points for accessing the payload, and a transformation chooses one:
+  - **Declarative target type (simple case)**: the transformation declares a target type at
+    registration; the framework auto-resolves the stored bytes to that type via the registered
+    `ChainedConverter` before invoking the transformation function. The function receives the
+    typed payload directly.
+  - **Converter access (advanced case)**: the transformation receives a `Converter` instance and
+    calls `.convert()` inline when it needs the payload in a specific representation. This entry
+    point is intended for transformations that need to inspect or produce multiple representations
+    of the same payload (e.g., read as `JsonNode` for branching, then return a POJO).
+  The two entry points share the same registration and chain semantics; only the payload-access
+  shape differs. The EventConverter does NOT pre-convert all events before the chain runs --
+  conversion is on-demand in both cases. Valid target types depend on the serialization format of
+  the stored event:
   - **Jackson / CBOR**: typed Java class (POJO), `JsonNode`, or `ObjectNode`.
   - **Avro**: typed `SpecificRecordBase` subclass (generated or hand-written), or `GenericRecord` for
     schema-only field access without a concrete Java class.
@@ -1073,6 +1121,15 @@ API introduced here is the stable foundation that makes that future extension sa
   target version `0.0.1` apply to these legacy events. No special API is required; the developer
   registers for `0.0.1` exactly as they would for any other version.
   _Traces to: US1 scenario 5 (a stored event with no version is matched by a transformation registered for version 0.0.1)._
+- **FR-018**: A transformation MUST be invocable from a plain JUnit test without an event store,
+  tracking processor, or framework bootstrapping. The only dependency a transformation may require
+  at invocation time is a `Converter` instance (and only when the advanced entry point of FR-010 is
+  used; the declarative-target-type entry point requires no `Converter` from the test author). This
+  guarantees that AF4's testing pain (manual construction of serialized representations, full
+  upcaster chain simulation) does not recur. A full test fixture API is deferred to a separate
+  issue; this requirement is an architectural invariant on the transformation API itself, not a
+  fixture deliverable.
+  _Traces to: US1, US3, US4, US6 (every transformation in scope must be unit-testable in isolation to support TDD-style development of versioning logic)._
 
 ## Key Entities
 

@@ -30,7 +30,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 | Story | Priority | What it solves | Key FRs |
 |---|---|---|---|
-| US1 Structural transform | P1 | Restructure payload for all handlers (e.g. `capacity` -> `minCapacity` + `maxCapacity`) | FR-001, FR-005, FR-006, FR-010, FR-011, FR-012, FR-013, FR-017 |
+| US1 Structural transform | P1 | Restructure payload for all handlers (e.g. `capacity` -> `minCapacity` + `maxCapacity`) | FR-001, FR-005, FR-006, FR-010, FR-011, FR-012, FR-013, FR-017, FR-018 |
 | US2 Rename | P2 | Stored events under old name reach handlers registered for new name | FR-001, FR-002, FR-005 |
 | US3 Splitting | P3 | One stored event becomes two or more independent events | FR-003, FR-007, FR-010, FR-011 |
 | US4 Dropping | P4 | Suppress a stored event type entirely; tracking token still advances | FR-003, FR-010, FR-012, FR-015 |
@@ -63,6 +63,8 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | Snapshot upcasting | Discard-and-replay is the correct primary strategy; niche use case | Hook point in `StoreBackedSnapshotter` identified |
 | Command / query upcasting | Rolling deployment concern; different pipeline | Issue #746; API designed to support it without breaking changes |
 | Annotation-based registration | Risks reintroducing AF4's ordering problem | Add on top of programmatic API once demand is proven |
+| AF4 migration tooling (OpenRewrite / compatibility layer) | Compat layer would pull back `IntermediateEventRepresentation`; structural rewrites are a non-trivial up-front investment | 5.2.0 ships a manual migration guide with worked examples; OpenRewrite recipes added later if community asks |
+| Stream squashing / versioning bankruptcy (built-in upcaster retirement) | Substantial feature: race conditions, projection rebuilds, tracking-token preservation; premature without evidence of accumulation pain | Manual retirement rule documented in Edge Cases; revisit when community signals real friction |
 
 ---
 
@@ -87,6 +89,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-015 | Dropping | Tracking token advances past dropped events; processor does not reprocess them on restart |
 | FR-016 | Error handling | Runtime transformation failure propagates immediately -- no silent skip or log-and-continue |
 | FR-017 | Versioning | Events stored without a version are treated as version `0.0.1` |
+| FR-018 | Testability | Transformation MUST be unit-testable in isolation (no event store / framework bootstrapping); only a `Converter` instance allowed as dependency (advanced entry point only) |
 
 ---
 
@@ -94,6 +97,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 | # | Question |
 |---|---|
+| 0 | **#746 alignment -- universal Message API** -- working decision: internal core typed on `Message<P>`, public 5.2.0 API event-only. Lets #746 add command/query registration without breaking event API. Trade-offs: (a) premature abstraction risk since #746's concrete shape (e.g., command downcasting for rolling deployments) is not yet specified; (b) envelope asymmetry -- tracking token, sequence number, entity id are event-only and must be modelled cleanly in the generic core. Alternative: keep public API on `EventMessage<P>`, accept a breaking change to event upcasting when #746 lands. **Confirm direction with team.** |
 | 1 | **Two declaration patterns** -- 1:1 uses source + target; split/drop uses source + replacement rule. Does this feel right, or should split/drop also declare a target set? |
 | 2 | **Startup-only registration** -- chain locked once processing begins. Is there a valid use case for runtime registration we have not considered? |
 | 3 | **Fully qualified name requirement** -- forces namespace inclusion. Is this a breaking ergonomics concern for developers coming from AF4? |
