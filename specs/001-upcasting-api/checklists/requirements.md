@@ -62,6 +62,12 @@
   A2 has a second test proving @JsonIgnoreProperties is required when a strict ObjectMapper is used
   (Jackson 3.x defaults FAIL_ON_UNKNOWN_PROPERTIES=false, so annotation is best practice, not default).
   A5 has two tests (resolver + deserialization). A7 has two tests (byte[] and JsonNode stored forms).
+- Part A now also covered by AvroPayloadEvolutionCapabilityTest (conversion module). 6 tests pass.
+  Avro scenarios A1-A4 and A6-A7 are verified via AvroConverter directly. A3 and A4 clarify that
+  alias resolution and int-to-long promotion apply at the Java class binding level (via
+  SpecificRecordBaseConverterStrategy), not at the GenericRecord level. A5 is format-independent
+  (MessageType routing) and covered only by the Jackson test. Spec Part A updated with Avro notes
+  and cross-references to both test classes.
 - Command and query upcasting are explicitly documented as deferred with rationale; the API is
   designed to support them without breaking changes (Message-based interface, not EventMessage).
 - FR-012 (envelope field preservation) and FR-013 (lazy evaluation) added based on AF4 test

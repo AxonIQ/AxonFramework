@@ -123,7 +123,7 @@ Tests do NOT use raw Jackson directly – they prove the AF5 conversion pipeline
 
 ---
 
-### A1 - Added a New Field
+#### A1 - Added a New Field
 
 **Scenario**: You add an optional `description` field to `CourseCreated`. Old stored events do not
 have this field in their JSON.
@@ -140,7 +140,7 @@ field existed deserializes cleanly – `description` is `null`.
 
 ---
 
-### A2 - Removed a Field
+#### A2 - Removed a Field
 
 **Scenario**: You remove a field from your event class (e.g., `lastName` is dropped from
 `StudentEnrolledInFaculty`). Old stored events still carry the field in their JSON.
@@ -157,7 +157,7 @@ No handler changes needed.
 
 ---
 
-### A3 - Renamed a Field
+#### A3 - Renamed a Field
 
 **Scenario**: You rename a field in your event class (e.g., `capacity` becomes `maxCapacity`). Old
 stored events have the JSON key `"capacity"`.
@@ -173,7 +173,7 @@ old stored key to the new field name automatically. No handler changes needed.
 
 ---
 
-### A4 - Changed a Field to a Compatible Type
+#### A4 - Changed a Field to a Compatible Type
 
 **Scenario**: You widen a field's type (e.g., `capacity` changes from `int` to `long`).
 
@@ -188,7 +188,7 @@ cleanly as `30L` (long).
 
 ---
 
-### A5 - Renamed the Java Class Only
+#### A5 - Renamed the Java Class Only
 
 **Scenario**: You rename the Java class (e.g., `CourseCreatedEvent` becomes `CourseCreated`) to
 follow naming conventions, but the business event is the same.
@@ -208,7 +208,7 @@ continue to reach the handler unchanged.
 
 ---
 
-### A6 - Handler Wants a Different Representation
+#### A6 - Handler Wants a Different Representation
 
 **Scenario**: One handler wants to receive the event as a typed Java class, while another handler
 (perhaps a diagnostic or schema-agnostic projector) wants to receive the raw JSON as a `JsonNode`.
@@ -226,7 +226,7 @@ handler receives the raw JSON. Both handle the same stored event simultaneously.
 
 ---
 
-### A7 - Switched Serialization Format
+#### A7 - Switched Serialization Format
 
 **Scenario**: You migrate the serialization format of your event store (e.g., from XStream to
 Jackson). Old events were written in the old format; new events are written in the new format.
