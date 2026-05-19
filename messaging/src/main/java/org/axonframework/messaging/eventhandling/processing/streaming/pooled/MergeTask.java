@@ -166,11 +166,6 @@ class MergeTask extends CoordinatorTask {
                                              mergedSegment,
                                              context
                                          ))
-                                         .thenCompose(result -> tokenStore.releaseClaim(
-                                             name,
-                                             mergedSegment.getSegmentId(),
-                                             context
-                                         ))
             ));
 
             logger.info("Processor [{}] successfully merged {} with {} into {}.",
