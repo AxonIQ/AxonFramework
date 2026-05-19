@@ -32,6 +32,23 @@ when events are read from the event store, before any handler sees them.
 
 ---
 
+## Glossary -- "transformation" vs "upcaster"
+
+The two terms refer to the same thing at different levels of discussion:
+
+- **Transformation** -- the user-facing concept used throughout this spec's prose, acceptance
+  scenarios, and edge cases ("register a transformation", "transformation chain", "the
+  transformation fires"). Optimised for readability without prior Axon Framework knowledge.
+- **Upcaster** -- the Java type name used in the contracts, configurer methods, and source
+  code (`EventUpcaster`, `SingleEventUpcaster`, `MultiEventUpcaster`,
+  `registerEventUpcaster(...)`). Preserved for naming continuity with Axon Framework 4 and
+  the Constitution.
+
+The two are interchangeable: any sentence about "a transformation" is a sentence about "an
+upcaster". The spec stays in prose-mode and the contracts stay in type-mode.
+
+---
+
 ## Clarifications
 
 This section records design decisions made during the clarification process. Each entry explains
@@ -636,19 +653,26 @@ the framework raises a descriptive error at registration time, before any event 
    **Then** the framework raises an error at registration time identifying the invalid name, and no
    event processing occurs.
 
-5. **Given** a correctly configured transformation chain that has already started processing events,
+5. **Given** two 1:1 transformations forming a cycle (transformation A maps `X@1.0.0 → X@2.0.0`
+   and transformation B maps `X@2.0.0 → X@1.0.0`),
+   **When** the configurer's `.build()` step locks the chain,
+   **Then** the framework raises an error at lock time enumerating the full cycle
+   (`X@1.0.0 → X@2.0.0 → X@1.0.0`), and no event processing occurs. The framework MUST NOT attempt
+   to silently break the cycle or apply only part of it.
+
+6. **Given** a correctly configured transformation chain that has already started processing events,
    **When** an attempt is made to register an additional transformation at runtime,
    **Then** the framework rejects the registration immediately with a clear error stating that the
    chain is immutable once event processing has begun, and the chain remains unchanged.
 
-6. **Given** a transformation whose function throws an exception when applied to a specific event,
+7. **Given** a transformation whose function throws an exception when applied to a specific event,
    **When** that event is read from the event store,
    **Then** the framework propagates the exception immediately to the caller – the event-sourced entity load,
    DCB read, or tracking processor – halting processing. The exception clearly identifies which
    transformation failed and the name, version, and stream position of the event that triggered it.
    The framework MUST NOT silently skip the failed event or log-and-continue.
 
-7. **Given** a 1:1 transformation declared with `to = (com.example.CourseCreated, 2.0.0)` whose
+8. **Given** a 1:1 transformation declared with `to = (com.example.CourseCreated, 2.0.0)` whose
    function returns a payload of a different type (e.g. `OrderPlacedV2`) or a payload whose
    resolved `MessageType` does not match the declared `to` (e.g. version `3.0.0` or name
    `com.example.CourseScheduled`),
@@ -709,6 +733,7 @@ index; see the FR for the authoritative requirement.
 |---|---|
 | Two transformations with the same `from` identity | FR-009 |
 | Self-loop registration (`from` == `to`) | FR-009 |
+| Multi-step cycle introduced by chaining (e.g. A: X@1→X@2; B: X@2→X@1) | FR-009; US7 scenario 5 |
 | Invalid version format (not major.minor.patch) | FR-009 |
 | Non-fully-qualified event name in registration | FR-009 |
 | Late registration after event processing starts | FR-004 |
@@ -719,8 +744,9 @@ index; see the FR for the authoritative requirement.
 | Tracking token advances past dropped events | FR-015 |
 | Transformation exception propagates immediately | FR-016 |
 | Unversioned events treated as version 0.0.1 | FR-017 |
-| 1:1 transformation output does not match declared `to` | FR-019; US7 scenario 7 |
+| 1:1 transformation output does not match declared `to` | FR-019; US7 scenario 8 |
 | Concurrent invocation of same transformation from multiple threads | FR-006; US1 scenario 6 |
+| Runtime cycle induced by a `MultiEventUpcaster` rule (rule emits an identity that re-enters the chain through a 1:1 transformation whose output re-matches the rule) | Developer responsibility – not statically detectable per FR-009 carve-out for rule-produced identities; surfaces as stack overflow at read time. Mitigation: ensure split rules never emit identities that later 1:1 transformations rewrite back to the rule's `from`. |
 | Transformed event with no registered handler | Standard AF5 no-handler behavior – not a transformation failure |
 | Transformation retirement (when safe to remove) | Developer responsibility – safe only when no stored event exists at the `from` version in any event store, including backups |
 
@@ -1025,8 +1051,8 @@ API introduced here is the stable foundation that makes that future extension sa
   with the local name (e.g., `com.example.CourseCreated`), matching how `MessageType` resolves event
   identity via `@Event`.
   The framework applies the rule to produce the output payload; if no rule is supplied, the payload
-  passes through unchanged. The framework MUST reject any declaration where source and target are
-  identical (same name AND same version), as this guarantees an infinite loop.
+  passes through unchanged. Identity conflicts (including the `from == to` self-loop and multi-step
+  cycles created by chaining) are rejected per FR-009.
   _Traces to: US1 (structural transform needs source identity, target identity, and a payload rule), US2 (rename needs source and target identity without a payload rule)._
 - **FR-002**: Developers MUST be able to declare an event rename (old name + version to new name
   and/or version) without providing a payload transformation rule. This is the natural degenerate
@@ -1049,7 +1075,7 @@ API introduced here is the stable foundation that makes that future extension sa
   attempt to register a transformation after event processing has started MUST be rejected immediately
   with a clear error stating that the chain is locked.
   Annotation-based registration is not supported in this release (see out-of-scope section).
-  _Traces to: US6 (correct chain order is what makes version-hop chaining work), US1 (startup-only registration is the prerequisite for all transformations to apply consistently), US7 scenario 5 (late registration rejected with clear error)._
+  _Traces to: US6 (correct chain order is what makes version-hop chaining work), US1 (startup-only registration is the prerequisite for all transformations to apply consistently), US7 scenario 6 (late registration rejected with clear error)._
 - **FR-005**: Each registered transformation MUST target exactly one specific fully qualified event
   name and version combination. A transformation MUST NOT apply to events it was not explicitly
   registered for. Matching is exact: both the fully qualified name and the version must match the
@@ -1087,7 +1113,14 @@ API introduced here is the stable foundation that makes that future extension sa
     `"com.example.CourseCreated"`) – rejected with a clear error identifying the unqualified name.
     Unqualified names would silently never match stored events, since `MessageType` always stores the
     fully qualified name.
-  _Traces to: US7 (all four acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
+  - A multi-step cycle introduced by chaining (e.g., upcaster A: `X@1.0.0 → X@2.0.0` and upcaster
+    B: `X@2.0.0 → X@1.0.0`) – detected by graph walk over the union of all declared `from → to`
+    edges from registered 1:1 `SingleEventUpcaster`s. 1:N / 1:0 upcasters (`MultiEventUpcaster`)
+    are excluded from this analysis: their replacement events' identities are rule-determined and
+    cannot be inspected statically. The framework MUST surface the cycle's full edge list in the
+    error message. Detection runs at chain `lock()` (the configurer's `.build()` step), not at each
+    individual `register(...)` call, because the cycle only manifests once the full chain is known.
+  _Traces to: US7 (all five acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
 - **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
   MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
   framework provides two entry points for accessing the payload, and a transformation chooses one:
@@ -1133,14 +1166,21 @@ API introduced here is the stable foundation that makes that future extension sa
   Inconsistent application – where one context sees transformed events and another sees the original
   stored format – is explicitly prohibited.
   _Traces to: US1 scenario 4 (explicitly tests all three reading contexts and requires identical output from each)._
-- **FR-014**: The framework MUST emit observability signals at two levels:
-  - **INFO** at startup when the transformation chain is built: the number of registered
-    transformations and their `from` identities, giving immediate confirmation that the chain is
-    wired correctly without flooding production logs.
-  - **DEBUG** each time a transformation is applied: which transformation ran, and the name and
-    version of the event it was applied to. This level is off by default in production but available
-    when diagnosing whether a transformation ran, was skipped (non-matching event), or was never
-    registered correctly.
+- **FR-014**: The framework MUST emit observability signals at two levels. The exact log
+  message format is framework-internal, but each entry MUST include at minimum the listed
+  fields so log-scraping and incident review remain reliable across releases:
+  - **INFO** at startup, once, when the transformation chain is built. Required fields:
+    (a) the count of registered transformations and (b) each registered transformation's
+    `from` identity (fully qualified name + version) and, for 1:1 transformations, its `to`
+    identity. INFO level avoids flooding production logs while still confirming correct wiring.
+  - **DEBUG** each time a transformation is applied to a matching event. Required fields:
+    (a) the transformation's identifier -- for a hand-rolled `SingleEventUpcaster` or
+    `MultiEventUpcaster` this is the implementation class's simple name; for the declarative
+    `EventUpcaster.from(...)` builder path (where the user supplies only a lambda and has no
+    nameable class) the framework substitutes the `from()` identity as the identifier, which
+    is unique within a chain by FR-009 conflict 1, (b) the matched event's `from` identity,
+    and (c) the event's stream position (sequence number for entity loads / tracking token
+    for processor reads). DEBUG is off by default in production.
   No public API changes are required to support this – logging is a framework-internal concern.
   _Traces to: US8 (all three acceptance scenarios in US8 map directly to the two log levels specified here)._
 - **FR-015**: The streaming position (tracking token) MUST advance past dropped events. When a
@@ -1156,7 +1196,7 @@ API introduced here is the stable foundation that makes that future extension sa
   corrupted or absent state to downstream consumers without a signal is worse than a hard failure.
   The propagated exception MUST identify which transformation failed and the name, version, and
   stream position of the event that triggered the failure.
-  _Traces to: US7 scenario 6 (transformation throws during event read; caller receives propagated exception with clear context)._
+  _Traces to: US7 scenario 7 (transformation throws during event read; caller receives propagated exception with clear context)._
 - **FR-017**: Events stored without an explicit version MUST be treated by the framework as carrying
   version `0.0.1` – the AF5 default version in `MessageType`. Transformation registrations that
   target version `0.0.1` apply to these legacy events. No special API is required; the developer
@@ -1180,12 +1220,16 @@ API introduced here is the stable foundation that makes that future extension sa
   declared `to`. Rationale: cheap insurance against author bugs that would otherwise produce silent
   data drift downstream (the wrong-typed output flows through FR-007 chaining and is silently
   ignored by later transformations that don't match its name).
+  This requirement applies to every 1:1 transformation that supplies a payload function. It
+  is satisfied trivially -- but still checked -- for **pure renames (FR-002)**, because the
+  rename factory produces an upcaster whose `apply(...)` is an identity-rebinding operation
+  owned by the framework: the output payload is the input payload and the output identity is
+  set to the declared `to` before the check runs. The check therefore never fails for a
+  rename produced by the framework's factory.
   This requirement does NOT apply to:
-  - **Pure renames (FR-002)** -- there is no payload function whose output could be wrong; the
-    framework owns the identity rewrite and applies the declared `to` directly.
   - **1:N / 1:0 transformations (FR-003)** -- the rule has full control over each replacement
     event's identity by design.
-  _Traces to: US1 (1:1 structural transform produces output matching declared target), US7 scenario 7 (output identity mismatch is propagated as runtime failure with declared-vs-actual diagnostic context)._
+  _Traces to: US1 (1:1 structural transform produces output matching declared target), US7 scenario 8 (output identity mismatch is propagated as runtime failure with declared-vs-actual diagnostic context)._
 
 ## Key Entities
 
@@ -1223,16 +1267,22 @@ API introduced here is the stable foundation that makes that future extension sa
 
 ### Measurable Outcomes
 
-- **SC-001**: A developer can implement and register a complete structural event transformation using
-  fewer steps than the equivalent implementation required in Axon Framework 4.
+- **SC-001**: A developer can implement and register a complete 1:1 structural event
+  transformation in **no more than 10 lines of Java**, counted as: import-stripped registration
+  block including `MessageType` constants and the transformation lambda. Reference scenario:
+  US1's `CourseCreated` v1.0.0 -> v2.0.0 (see [quickstart.md](quickstart.md#step-1----structural-transformation-us1)).
+  AF4's equivalent registration of the same scenario (one `SingleEventUpcaster` subclass plus
+  the `org.springframework.context.annotation.Configuration` wiring) requires materially more
+  code; the AF4-to-AF5 migration guide (SC-006) captures the side-by-side count.
 - **SC-002**: 100% of registered transformations are applied in the exact order they were registered,
   verifiable across all four in-scope use cases.
-- **SC-003**: (Deferred) Snapshot upcasting is out of scope for 5.2.0. The existing discard-and-replay
-  fallback behavior is preserved and remains the correct primary strategy for snapshot version mismatches.
 - **SC-004**: A conflict between two transformations targeting the same event name and version is
   detected and reported before any event is processed (at startup or registration time).
 - **SC-005**: All four in-scope use cases – structural transform, rename, split, drop – are
-  independently demonstrated with running examples in the university demo application.
+  demonstrated by code in `examples/university-demo`, each with at least one passing automated
+  test executed under the Maven `-Pexamples` profile in CI. A reviewer running
+  `./mvnw -Pexamples clean verify` MUST observe all four upcasters built, registered, and exercised
+  by tests, without manual configuration.
 - **SC-006**: A developer migrating from Axon Framework 4 upcasters can identify the equivalent
   AF5 approach for each of their existing upcasters from documentation alone, without reading
   framework source code.
@@ -1253,6 +1303,16 @@ API introduced here is the stable foundation that makes that future extension sa
 - **SC-010**: A registered transformation invoked from N concurrent threads (N >= 8) on the same
   input event produces N identical outputs and requires no external synchronization from the
   transformation author. Verified by automated test. Verifies the thread-safety contract in FR-006.
+
+### Excluded / Deferred Criteria
+
+The following criterion is intentionally NOT a measurable outcome for 5.2.0. It is listed
+here so reviewers can see that the deferral was deliberate; it is NOT a deliverable.
+
+- **SC-003 (deferred)**: Snapshot upcasting is out of scope for 5.2.0 per FR-008 / US5. The
+  existing discard-and-replay fallback in `StoreBackedSnapshotter` remains the correct
+  primary strategy for snapshot version mismatches and is preserved unchanged. No SC-003
+  build verification is performed.
 
 ## Assumptions
 

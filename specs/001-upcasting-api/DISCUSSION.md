@@ -80,7 +80,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-006 | Correctness | Transformations must be pure AND thread-safe -- same input always produces same output; no external calls; no cross-invocation instance state; framework may invoke concurrently from any thread |
 | FR-007 | Chain | Output of each transformation feeds into the next; split replacement events continue through the remaining chain |
 | FR-008 | Deferred | Snapshot upcasting out of scope; discard-and-replay fallback preserved unchanged |
-| FR-009 | Validation | Duplicate source identity, self-loop, invalid semver, non-qualified name -- all rejected at registration time |
+| FR-009 | Validation | Five conflict classes rejected before any event is processed: duplicate `from`, self-loop, invalid semver, non-qualified name (all at `register()`); multi-step 1:1 cycle (at `.build()` lock) |
 | FR-010 | Payload | Access payload as typed Java objects; Jackson/CBOR: POJO, `JsonNode`, `ObjectNode`; Avro: `SpecificRecordBase` subclass or `GenericRecord`; conversion is on-demand, never raw bytes |
 | FR-011 | Envelope | Entity id, tracking token, sequence number, and all metadata preserved unchanged through any transformation |
 | FR-012 | Lazy evaluation | Non-matching events pass through without being deserialized |
