@@ -48,7 +48,8 @@ sections later in this document.
   the AF4 `IntermediateEventRepresentation` problem where developers had to manipulate
   serializer-specific formats directly.
 - Q: What target types can a transformation request for the payload? → A: Typed Java objects
-  (POJOs), `JsonNode`, and `ObjectNode` (FR-010). Raw `byte[]` is not a valid target – events
+  (POJOs) for all formats; `JsonNode` / `ObjectNode` for Jackson and CBOR; `SpecificRecordBase`
+  subclass or `GenericRecord` for Avro (FR-010). Raw `byte[]` is not a valid target – events
   stored as bytes are bridged automatically by `ByteArrayToJsonNodeConverter`. The separation is
   intentional: format conversion (byte[] ↔ structured) is the EventConverter's job; schema/identity
   change is the transformation's job.
@@ -1002,16 +1003,24 @@ API introduced here is the stable foundation that makes that future extension sa
     infinite loop: the output would immediately re-match the same transformation on the next pass.
   - A version string in `from` or `to` that does not conform to semantic versioning format
     (major.minor.patch, e.g. `"1.0.0"`) – rejected with a clear error identifying the invalid value.
+  - An event name in `from` or `to` that is not fully qualified (e.g., `"CourseCreated"` instead of
+    `"com.example.CourseCreated"`) – rejected with a clear error identifying the unqualified name.
+    Unqualified names would silently never match stored events, since `MessageType` always stores the
+    fully qualified name.
   _Traces to: US7 (all four acceptance scenarios in US7 correspond directly to the conflict classes listed here)._
 - **FR-010**: Transformations MUST operate on event data as structured, typed objects. Developers
   MUST NOT need to work with raw bytes, XML documents, or other serialized binary formats. The
   framework provides an on-demand conversion mechanism: a transformation requests the typed payload
   by specifying the target type, and the EventConverter resolves it at that point. The EventConverter
-  does NOT pre-convert all events before the chain runs. Valid target types are typed Java classes
-  (POJOs), `JsonNode`, and `ObjectNode`. Raw `byte[]` is not a valid target for transformation payloads --
-  events stored as `byte[]` in the event store are automatically bridged to the requested structured
-  type by the registered ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible
-  to the transformation author.
+  does NOT pre-convert all events before the chain runs. Valid target types depend on the serialization
+  format of the stored event:
+  - **Jackson / CBOR**: typed Java class (POJO), `JsonNode`, or `ObjectNode`.
+  - **Avro**: typed `SpecificRecordBase` subclass (generated or hand-written), or `GenericRecord` for
+    schema-only field access without a concrete Java class.
+  Raw `byte[]` is not a valid target for transformation payloads -- events stored as `byte[]` in the
+  event store are automatically bridged to the requested structured type by the registered
+  ContentTypeConverter chain (e.g., `ByteArrayToJsonNodeConverter`), invisible to the transformation
+  author.
   _Traces to: US1 (developer writes a transformation function that reads and produces typed payload objects), US3 (split function accesses the original payload to derive two new payloads), US4 (drop function may inspect the payload to decide whether to suppress)._
 - **FR-011**: The event envelope – entity type, entity identifier, tracking token, and sequence
   number – MUST be preserved unchanged through any transformation. Event metadata (including

@@ -9,15 +9,18 @@ AF5 already handles many versioning scenarios automatically. Upcasters cover the
 
 **AF5 handles these automatically -- no upcaster needed:**
 
-| Scenario | Mechanism |
-|---|---|
-| Added a new field | New field defaults to `null` |
-| Removed a field | Ignored via `@JsonIgnoreProperties` |
-| Renamed a field | Mapped via `@JsonProperty("oldName")` |
-| Compatible type change | Jackson coerces automatically (e.g. `int` -> `long`) |
-| Renamed the Java class | Annotate new class with `@Event(name = "OldName")` |
-| Handler wants different representation | Declare `JsonNode` or concrete class -- both work |
-| Switched serialization format | Reconfigure `EventConverter`; event classes unchanged |
+The mechanism depends on the serialization format. AF5 ships three: `Jackson2Converter` (Jackson 2),
+`JacksonConverter` (Jackson 3, covers JSON and CBOR), and `AvroConverter` (Avro binary).
+
+| Scenario | Jackson / CBOR | Avro |
+|---|---|---|
+| Added a new field | New field defaults to `null` | New field receives its Avro schema default |
+| Removed a field | Ignored via `@JsonIgnoreProperties(ignoreUnknown = true)` | Writer-only fields dropped automatically by schema resolution |
+| Renamed a field | `@JsonProperty("oldName")` on the new field | `"aliases": ["oldName"]` on the reader schema field |
+| Compatible type change | Jackson coerces automatically (e.g. `int` -> `long`) | Avro schema resolution promotes compatible types automatically |
+| Renamed the Java class | `@Event(name = "OldName")` -- format-independent | Same -- `MessageType` routing is format-independent |
+| Handler wants different representation | Declare `JsonNode` or concrete class | Declare `GenericRecord` or generated class |
+| Switched serialization format | Reconfigure `EventConverter`; event classes unchanged | Same -- only the converter configuration changes |
 
 **Upcasters are needed when** the stored event stream itself must change: payload restructured, event renamed at MessageType level, one event split into many, or an event suppressed entirely.
 
@@ -76,9 +79,9 @@ AF5 already handles many versioning scenarios automatically. Upcasters cover the
 | FR-007 | Chain | Output of each transformation feeds into the next; split replacement events continue through the remaining chain |
 | FR-008 | Deferred | Snapshot upcasting out of scope; discard-and-replay fallback preserved unchanged |
 | FR-009 | Validation | Duplicate source identity, self-loop, invalid semver, non-qualified name -- all rejected at registration time |
-| FR-010 | Payload | Access payload as typed Java objects (POJO, JsonNode, ObjectNode); conversion is on-demand, never raw bytes |
+| FR-010 | Payload | Access payload as typed Java objects; Jackson/CBOR: POJO, `JsonNode`, `ObjectNode`; Avro: `SpecificRecordBase` subclass or `GenericRecord`; conversion is on-demand, never raw bytes |
 | FR-011 | Envelope | Entity id, tracking token, sequence number, and all metadata preserved unchanged through any transformation |
-| FR-012 | Performance | Non-matching events pass through without being deserialized |
+| FR-012 | Lazy evaluation | Non-matching events pass through without being deserialized |
 | FR-013 | Consistency | Chain applies identically in all three reading contexts: event-sourced entity load, DCB read, tracking processor |
 | FR-014 | Observability | INFO log at startup listing the chain; DEBUG log per transformation applied |
 | FR-015 | Dropping | Tracking token advances past dropped events; processor does not reprocess them on restart |
