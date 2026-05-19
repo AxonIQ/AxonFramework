@@ -16,15 +16,16 @@
 
 package org.axonframework.modelling.entity;
 
+import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
 import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
-import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.modelling.EntityIdResolutionException;
 import org.axonframework.modelling.EntityIdResolver;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.extension.*;
 import org.mockito.*;
 import org.mockito.junit.jupiter.*;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -236,6 +238,43 @@ class EntityCommandHandlingComponentTest {
 
         var exception = assertThrows(RuntimeException.class, () -> componentResult.asCompletableFuture().join());
         assertEquals("Failed to resolve ID", exception.getCause().getMessage());
+    }
+
+    /**
+     * These tests validate the {@link EntityCommandHandlingComponent} its assumption that if the
+     * {@link EntityIdResolver} throws an {@link EntityIdResolutionException}, that we may be dealing with a command
+     * that does not have an entity identifier <b>because</b> it will create a new entity.
+     * <p>
+     * When this assumption is correct, we should be able to successfully invoke a
+     * {@link EntityMetamodel#handleCreate(CommandMessage, ProcessingContext) creational command handler}. When this
+     * assumption is incorrect, signaled with a {@link NoHandlerForCommandException}, we should fall back to the
+     * original {@link EntityIdResolutionException}.
+     */
+    @Nested
+    class EntityIdResolutionFallback {
+
+        @Test
+        void whenEntityIdResolverThrowsThenCreationalCommandHandlerIsInvokedSuccessfully() throws EntityIdResolutionException {
+            when(idResolver.resolve(eq(creationalCommandMessage), any()))
+                    .thenThrow(new EntityIdResolutionException(String.class, List.of()));
+
+            MessageStream.Single<CommandResultMessage> componentResult =
+                    testComponent.handle(creationalCommandMessage, context);
+
+            verify(metamodel).handleCreate(eq(creationalCommandMessage), any());
+            assertEquals("creational", componentResult.asCompletableFuture().join().message().payload());
+        }
+
+        @Test
+        void whenEntityIdResolverThrowsAndEntityMetaModelThrowsReturnOriginalEntityIdResolutionException() throws EntityIdResolutionException {
+            when(idResolver.resolve(eq(missingCommandMessage), any()))
+                    .thenThrow(new EntityIdResolutionException(String.class, List.of()));
+
+            MessageStream.Single<CommandResultMessage> componentResult =
+                    testComponent.handle(missingCommandMessage, context);
+
+            assertCompletedExceptionally(componentResult, EntityIdResolutionException.class, "String");
+        }
     }
 
     @Test

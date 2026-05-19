@@ -1,0 +1,92 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Modelling module renames (aggregates → entities).
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Modelling
+displayName: Apply Axon Framework 5 modelling module renames
+description: >-
+  Migrates the modelling layer from the `aggregate` vocabulary to the `entity`
+  vocabulary: relocates `org.axonframework.modelling.command` to
+  `org.axonframework.modelling.entity`, renames `TargetAggregateIdentifier` to
+  `TargetEntityId`, `AggregateMember` to `EntityMember`, `Repository` into
+  `modelling.repository`, and `CommandTargetResolver` to `EntityIdResolver`.
+  Strips AF4-only modelling annotations (`@AggregateIdentifier`,
+  `@CreationPolicy`) that have no AF5 successor — id resolution moved onto
+  commands via `@TargetEntityId`, and the AF4 creation-policy semantics map
+  onto static command handlers in AF5 (a manual rewrite the recipe cannot
+  infer beyond removing the annotation itself).
+recipeList:
+  # ── Package-prefix move: modelling.command → modelling.entity ───────────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.modelling.command
+      newPackageName: org.axonframework.modelling.entity
+      recursive: true
+
+  # ── Class moves on top of the package rename ────────────────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.entity.TargetAggregateIdentifier
+      newFullyQualifiedTypeName: org.axonframework.modelling.annotation.TargetEntityId
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.entity.AggregateMember
+      newFullyQualifiedTypeName: org.axonframework.modelling.entity.annotation.EntityMember
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.entity.Repository
+      newFullyQualifiedTypeName: org.axonframework.modelling.repository.Repository
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.entity.CommandTargetResolver
+      newFullyQualifiedTypeName: org.axonframework.modelling.EntityIdResolver
+
+  # ── MetaData → Metadata casing fix in modelling helpers ─────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.MetaDataAssociationResolver
+      newFullyQualifiedTypeName: org.axonframework.modelling.MetadataAssociationResolver
+
+  # ── Annotate aggregate-identifier fields in event classes ───────────────
+  # MUST run BEFORE @AggregateIdentifier is removed below; scans entity
+  # classes for the @AggregateIdentifier field name and entity simple name,
+  # then adds @EventTag(key = "<EntitySimpleName>") to the corresponding
+  # field in each event class that appears in an @EventSourcingHandler method.
+  - org.axonframework.migration.AddEventTagAnnotation
+
+  # ── Strip AF4-only annotations with no AF5 successor ────────────────────
+  # `@AggregateIdentifier` (post-`ChangePackage` FQN). The class is gone in
+  # AF5 — id resolution moved onto commands via `@TargetEntityId`, so the
+  # field annotation has no replacement. The field itself is preserved.
+  - org.openrewrite.java.RemoveAnnotation:
+      annotationPattern: "@org.axonframework.modelling.entity.AggregateIdentifier"
+  # `@CreationPolicy(...)`. The `ALWAYS` flow becomes implicit (static
+  # command handlers create entities). `CREATE_IF_MISSING` and `NEVER`
+  # semantics need a manual rewrite — see the migration guide; the
+  # annotation is unconditionally removed because it does not exist in AF5
+  # and would cause a compile error.
+  - org.openrewrite.java.RemoveAnnotation:
+      annotationPattern: "@org.axonframework.modelling.entity.CreationPolicy"
+
+  # ── Add axon-modelling dep when modelling types are in use ──────────────
+  # Like axon-eventsourcing, axon-modelling is no longer transitive from
+  # the AF5 Spring Boot starter. Apps that use modelling but not event
+  # sourcing still need it. (Apps that DO use event sourcing get it
+  # transitively from axon-eventsourcing — Maven dedupes either way.)
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: org.axonframework
+      artifactId: axon-modelling
+      version: ${project.version}
+      # Match the AF4 fully-qualified name — `onlyIfUsing` resolves against
+      # the LST as parsed, so the AF5 post-rename name would never match.
+      onlyIfUsing: org.axonframework.modelling.command.TargetAggregateIdentifier

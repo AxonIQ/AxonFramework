@@ -77,19 +77,16 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
     void canNotCreateDuplicateEmployee() {
         sendCommand(CREATE_EMPLOYEE_1_COMMAND);
 
-        assertThrowsExceptionWithText("existing entity", () -> {
-            sendCommand(CREATE_EMPLOYEE_1_COMMAND);
-        });
+        assertThrowsExceptionWithText("AppendEventsTransactionRejectedException",
+                                      () -> sendCommand(CREATE_EMPLOYEE_1_COMMAND));
     }
-
 
     @Test
     void canNotCreateDuplicateCustomer() {
         sendCommand(CREATE_CUSTOMER_1_COMMAND);
 
-        assertThrowsExceptionWithText("existing entity", () -> {
-            sendCommand(CREATE_CUSTOMER_1_COMMAND);
-        });
+        assertThrowsExceptionWithText("AppendEventsTransactionRejectedException",
+                                      () -> sendCommand(CREATE_CUSTOMER_1_COMMAND));
     }
 
     @Test
@@ -156,12 +153,16 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         try {
             runnable.run();
         } catch (CompletionException e) {
-            Assertions.assertTrue(e.getCause().getMessage().toLowerCase().contains(expectedMessage.toLowerCase()),
-                                  () -> "Expected message to contain: " + expectedMessage + ", but got: " + e.getCause()
-                                                                                                             .getMessage()
-                                          + "\n" + Arrays.stream(
-                                                                 e.getCause().getStackTrace()).map(StackTraceElement::toString)
-                                                         .collect(Collectors.joining("\n")));
+            Throwable cause = e.getCause();
+            String matchTarget = cause.getClass().getSimpleName() + ": " + cause.getMessage();
+            Assertions.assertTrue(
+                    matchTarget.toLowerCase().contains(expectedMessage.toLowerCase()),
+                    () -> "Expected message to contain: " + expectedMessage
+                            + ", but got: " + matchTarget + "\n"
+                            + Arrays.stream(cause.getStackTrace())
+                                    .map(StackTraceElement::toString)
+                                    .collect(Collectors.joining("\n"))
+            );
             return;
         } catch (Exception e) {
             Assertions.fail("Expected CompletionException, but got: " + e.getClass().getSimpleName());

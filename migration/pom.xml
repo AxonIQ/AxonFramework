@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.axonframework</groupId>
+        <artifactId>axon-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../build/parent/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>axon-migration</artifactId>
+
+    <name>Axon Framework - Migration</name>
+    <description>
+        OpenRewrite recipes for migrating Axon Framework applications from 4.x to 5.x.
+    </description>
+
+    <properties>
+        <rewrite-recipe-bom.version>3.30.1</rewrite-recipe-bom.version>
+        <!-- Axon Framework 4.x version used to resolve types in recipe tests
+             (the rename recipes match AF4 fully-qualified names, so the test
+             parser needs the AF4 classpath to produce a typed LST). -->
+        <axon4.version>4.13.1</axon4.version>
+        <!-- Axoniq Framework 5 (commercial) target version. The free Axon
+             Framework 5 target is `${project.version}` (inherited from the
+             root `${revision}`); this property is the single source of truth
+             for the *commercial* coordinates the recipes migrate to. Bump
+             here when re-targeting the migration to a newer Axoniq release. -->
+        <axoniq.version>5.1.1-SNAPSHOT</axoniq.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.openrewrite.recipe</groupId>
+                <artifactId>rewrite-recipe-bom</artifactId>
+                <version>${rewrite-recipe-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-kotlin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-maven</artifactId>
+        </dependency>
+        <!-- Pulls in `org.openrewrite.java.dependencies.UpgradeDependencyVersion`,
+             the multi-build-tool (Maven + Gradle) entrypoint we compose in
+             `UpgradeKotlin`. The artifact is on the runtime classpath via
+             `rewrite-maven`, but composing it from Java sources needs it at
+             compile scope. -->
+        <dependency>
+            <groupId>org.openrewrite.recipe</groupId>
+            <artifactId>rewrite-java-dependencies</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-properties</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite.recipe</groupId>
+            <artifactId>rewrite-migrate-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openrewrite.recipe</groupId>
+            <artifactId>rewrite-spring</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.openrewrite</groupId>
+            <artifactId>rewrite-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Axon Framework 4.x type stubs for recipe tests. These are scoped
+             to test only so they do not pollute the published recipe artifact. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-messaging</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-modelling</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-eventsourcing</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-spring</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-micrometer</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+            <version>${axon4.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- Filter rewrite recipe YAMLs so they can interpolate ${project.version}
+                 (the AF5 free target, derived from <revision>) and ${axoniq.version}
+                 (the AF5 commercial target). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>META-INF/rewrite/**</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>META-INF/rewrite/**</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <testResources>
+            <!-- Filter `migration-versions.properties` so recipe tests can assert
+                 against the same target versions the filtered recipe YAMLs inject
+                 (keeping these values defined in exactly one place: the parent's
+                 <revision> and the <axoniq.version> property above). -->
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>migration-versions.properties</include>
+                </includes>
+            </testResource>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>migration-versions.properties</exclude>
+                </excludes>
+            </testResource>
+        </testResources>
+    </build>
+</project>

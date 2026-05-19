@@ -223,6 +223,11 @@ public class JpaTokenStore implements TokenStore {
             if (updates == 0) {
                 throw new UnableToClaimTokenException("Unable to remove token. It is not owned by " + nodeId);
             }
+            // Bulk JPQL DELETE bypasses the persistence context — evict stale state so subsequent
+            // em.persist() of a new entity with the same PK (e.g., re-initializing after split) doesn't
+            // throw NonUniqueObjectException.
+            em.flush();
+            em.clear();
         });
     }
 

@@ -16,21 +16,21 @@
 
 package org.axonframework.modelling.entity;
 
-import org.jspecify.annotations.Nullable;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.DuplicateCommandHandlerSubscriptionException;
 import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
-import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.entity.child.ChildAmbiguityException;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -99,7 +99,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
      * @param entityType The {@code Class} object representing the entity type.
      * @return A {@link Builder} instance configured for the specified entity type.
      */
-        public static <E> EntityMetamodelBuilder<E> forEntityClass(Class<E> entityType) {
+    public static <E> EntityMetamodelBuilder<E> forEntityClass(Class<E> entityType) {
         requireNonNull(entityType, "The entityType may not be null.");
         return new Builder<>(entityType);
     }
@@ -120,7 +120,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
     }
 
     @Override
-        public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
+    public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
                                                                    ProcessingContext context) {
         if (isInstanceCommand(message) && !isCreationalCommand(message)) {
             return MessageStream.failed(new EntityMissingForInstanceCommandHandlerException(message));
@@ -138,7 +138,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
     }
 
     @Override
-        public MessageStream.Single<CommandResultMessage> handleInstance(
+    public MessageStream.Single<CommandResultMessage> handleInstance(
             CommandMessage message,
             E entity,
             ProcessingContext context

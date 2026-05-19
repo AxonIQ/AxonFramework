@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.unitofwork;
 
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Context;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -83,7 +84,7 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * @return The new value associated with the {@code key}, or {@code null} when removed.
      */
     <T> T updateResource(ResourceKey<T> key,
-                         UnaryOperator<T> resourceUpdater);
+                         UnaryOperator<@Nullable T> resourceUpdater);
 
     /**
      * Register the given {@code instance} under the given {@code key} if no value is currently present.
