@@ -285,7 +285,7 @@ If you need "only create if missing" logic, you can implement it within the stat
 @CommandHandler
 public static void handle(IssueGiftCard cmd,
                           EventAppender eventAppender, 
-                          @InjectState @Nullable GiftCard giftCard) {
+                          @InjectEntity @Nullable GiftCard giftCard) {
     if (giftCard != null) {
         throw new IllegalStateException("GiftCard already exists");
     }

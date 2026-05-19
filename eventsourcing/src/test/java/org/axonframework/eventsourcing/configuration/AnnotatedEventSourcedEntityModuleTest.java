@@ -30,8 +30,9 @@ import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
 import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-import org.axonframework.eventsourcing.handler.SnapshottingSourcingHandler;
-import org.axonframework.eventsourcing.handler.SourcingHandler;
+import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
+import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
+import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -128,7 +129,7 @@ class AnnotatedEventSourcedEntityModuleTest {
 
     @Test
     void customCriteriaResolverIsPresentOnResultingEventSourcingRepository(
-        @Captor ArgumentCaptor<SourcingHandler<CourseId, CustomCriteriaResolverCourse>> sourcingHandlerCaptor
+        @Captor ArgumentCaptor<EntityLifecycleHandler<CourseId, CustomCriteriaResolverCourse>> handlerCaptor
     ) {
         componentRegistry.registerModule(
                 EventSourcedEntityModule.autodetected(CourseId.class, CustomCriteriaResolverCourse.class)
@@ -146,15 +147,18 @@ class AnnotatedEventSourcedEntityModuleTest {
                           .isInstanceOf(EventSourcingRepository.class);
         result.describeTo(componentDescriptor);
 
-        verify(componentDescriptor).describeProperty(eq("sourcingHandler"), sourcingHandlerCaptor.capture());
+        verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), handlerCaptor.capture());
 
-        sourcingHandlerCaptor.getValue().describeTo(componentDescriptor);
+        handlerCaptor.getValue().describeTo(componentDescriptor);
 
         verify(componentDescriptor).describeProperty(eq("criteriaResolver"), isA(CustomCriteriaResolver.class));
     }
 
     @Test
-    void customEntityFactoryIsPresentOnResultingEventSourcingRepository() {
+    void customEntityFactoryIsPresentOnResultingEventSourcingRepository(
+        @Captor ArgumentCaptor<EntityLifecycleHandler<CourseId, CustomCriteriaResolverCourse>> handlerCaptor,
+        @Captor ArgumentCaptor<InitializingEntityEvolver<CourseId, CustomCriteriaResolverCourse>> evolverCaptor
+    ) {
         ComponentDescriptor componentDescriptor = mock(ComponentDescriptor.class);
         componentRegistry.registerModule(
                 EventSourcedEntityModule.autodetected(CourseId.class, CustomEntityFactoryCourse.class)
@@ -171,6 +175,15 @@ class AnnotatedEventSourcedEntityModuleTest {
                 .isNotNull()
                 .isInstanceOf(EventSourcingRepository.class);
         result.describeTo(componentDescriptor);
+
+        verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), handlerCaptor.capture());
+
+        handlerCaptor.getValue().describeTo(componentDescriptor);
+
+        verify(componentDescriptor).describeProperty(eq("evolver"), evolverCaptor.capture());
+
+        evolverCaptor.getValue().describeTo(componentDescriptor);
+
         verify(componentDescriptor).describeProperty(eq("entityFactory"), isA(CustomEventSourcedEntityFactory.class));
     }
 
@@ -303,7 +316,7 @@ class AnnotatedEventSourcedEntityModuleTest {
         }
 
         @Test
-        void afterEventsConfigurationShouldUseSnapshottingSourcingHandler() {
+        void afterEventsConfigurationShouldUseSnapshottingEntityLifecycleHandler() {
             AxonConfiguration configuration = EventSourcingConfigurer.create()
                 .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
                 .componentRegistry(cr -> cr.registerModule(
@@ -315,11 +328,11 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             result.describeTo(componentDescriptor);
 
-            verify(componentDescriptor).describeProperty(eq("sourcingHandler"), isA(SnapshottingSourcingHandler.class));
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
         }
 
         @Test
-        void afterSourcingTimeConfigurationShouldUseSnapshottingSourcingHandler() {
+        void afterSourcingTimeConfigurationShouldUseSnapshottingEntityLifecycleHandler() {
             AxonConfiguration configuration = EventSourcingConfigurer.create()
                 .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
                 .componentRegistry(cr -> cr.registerModule(
@@ -331,11 +344,11 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             result.describeTo(componentDescriptor);
 
-            verify(componentDescriptor).describeProperty(eq("sourcingHandler"), isA(SnapshottingSourcingHandler.class));
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
         }
 
         @Test
-        void combinedConditionsShouldUseSnapshottingSourcingHandler() {
+        void combinedConditionsShouldUseSnapshottingEntityLifecycleHandler() {
             AxonConfiguration configuration = EventSourcingConfigurer.create()
                 .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
                 .componentRegistry(cr -> cr.registerModule(
@@ -347,7 +360,7 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             result.describeTo(componentDescriptor);
 
-            verify(componentDescriptor).describeProperty(eq("sourcingHandler"), isA(SnapshottingSourcingHandler.class));
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
         }
 
         @Test
@@ -372,11 +385,11 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             result.describeTo(componentDescriptor);
 
-            verify(componentDescriptor).describeProperty(eq("sourcingHandler"), isA(SnapshottingSourcingHandler.class));
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
         }
 
         @Test
-        void metaAnnotatedSnapshottingShouldUseSnapshottingSourcingHandler() {
+        void metaAnnotatedSnapshottingShouldUseSnapshottingEntityLifecycleHandler() {
             AxonConfiguration configuration = EventSourcingConfigurer.create()
                 .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
                 .componentRegistry(cr -> cr.registerModule(
@@ -389,7 +402,7 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             result.describeTo(componentDescriptor);
 
-            verify(componentDescriptor).describeProperty(eq("sourcingHandler"), isA(SnapshottingSourcingHandler.class));
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
         }
     }
 

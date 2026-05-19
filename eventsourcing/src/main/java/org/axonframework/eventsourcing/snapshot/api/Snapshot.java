@@ -29,10 +29,10 @@ import java.util.Objects;
  * the entity to be sourced from this state instead of from scratch.
  *
  * @param position the position in the event stream corresponding to this snapshot, never {@code null}
- * @param version the entity's version at the time of this snapshot, never {@code null}
- * @param payload the payload to associate with the snapshot, never {@code null}
- * @param timestamp the timestamp to associate with the snapshot, never {@code null}
- * @param metadata the metadata to associate with the snapshot, never {@code null}
+ * @param version the entity's version for this snapshot, never {@code null}
+ * @param payload the payload of the snapshot, never {@code null}
+ * @param timestamp the timestamp of the snapshot, never {@code null}
+ * @param metadata the metadata of the snapshot, never {@code null}
  * @author John Hendrikx
  * @since 5.1.0
  */

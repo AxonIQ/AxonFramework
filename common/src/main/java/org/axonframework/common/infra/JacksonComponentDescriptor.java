@@ -98,12 +98,12 @@ public class JacksonComponentDescriptor implements ComponentDescriptor {
     }
 
     @Override
-    public void describeProperty(String name, Object object) {
+    public void describeProperty(String name, @Nullable Object object) {
         var json = describeObject(object);
         rootNode.set(name, json);
     }
 
-    private JsonNode describeObject(Object object) {
+    private JsonNode describeObject(@Nullable Object object) {
         if (object instanceof DescribableComponent component) {
             var id = processedComponents.get(component);
             var componentSeenAlready = id != null;
@@ -179,21 +179,25 @@ public class JacksonComponentDescriptor implements ComponentDescriptor {
     }
 
     @Override
-    public void describeProperty(String name, String value) {
+    public void describeProperty(String name, @Nullable String value) {
         rootNode.put(name, value);
     }
 
     @Override
-    public void describeProperty(String name, Long value) {
+    public void describeProperty(String name, @Nullable Long value) {
         rootNode.put(name, value);
     }
 
     @Override
-    public void describeProperty(String name, Boolean value) {
+    public void describeProperty(String name, @Nullable Boolean value) {
         rootNode.put(name, value);
     }
 
-    @Override
+    /**
+     * Provides a description of what has been described in this Descriptor as a String.
+     *
+     * @return a description of what has been described in this Descriptor
+     */
     public String describe() {
         try {
             return objectMapper.writeValueAsString(rootNode);
