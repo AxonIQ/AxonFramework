@@ -25,7 +25,7 @@ expects, Axon converts the stored payload (the data content of the event) to tha
 For example, when you add a new field to an event class, old stored events simply receive a default
 value for that field when they are read. You do not need to do anything.
 
-** Upcasters address scenarios that payload conversion cannot handle**: situations where the
+**Upcasters address scenarios that payload conversion cannot handle**: situations where the
 stored event stream itself must change – splitting one event into two, renaming an event type, or
 restructuring a payload in a way that every handler needs to see uniformly. A transformation runs
 when events are read from the event store, before any handler sees them.
@@ -77,6 +77,21 @@ sections later in this document.
   was caused by upcasters being entangled with serialized-form construction and full chain
   simulation; locking testability in as an architectural invariant prevents that recurrence. A full
   test fixture API remains deferred to a separate issue.
+- Q: What is the concurrency / thread-safety contract for transformations? → A: Transformations MUST
+  be thread-safe and stateless across invocations (FR-006 updated). The framework may invoke a
+  transformation concurrently from any thread -- e.g., two tracking processors reading the same
+  stream in parallel, or simultaneous event-sourced entity loads. A registered transformation is
+  effectively a static function. Per-invocation local state (variables inside the function body) is
+  permitted; mutation of instance fields across invocations is not. Rationale: simplest user
+  contract, matches the purity intent, and maximises framework freedom to parallelise reads.
+- Q: Does the framework validate that a 1:1 transformation's output matches the declared `to`
+  identity? → A: Yes (FR-019). After the function returns, the framework MUST verify the output
+  payload's `MessageType` matches the registered `to` (name + version); a mismatch is propagated
+  as a runtime failure under FR-016, with full diagnostic context. The framework MUST NOT silently
+  coerce the output. Rationale: catches author bugs (wrong return type, version typo) at the exact
+  transformation that produced them, instead of letting wrong-typed output flow through FR-007
+  chaining and be silently skipped by later transformations. Does not apply to 1:N / 1:0
+  (FR-003): split/drop rules own each replacement event's identity by design.
 
 ### Session 2026-05-18
 
@@ -380,6 +395,15 @@ events and verify that every handler receives the new structure and no handler e
    **Then** the transformation applies to that event – the framework treats the absence of a version
    as version `0.0.1`, the AF5 default.
 
+6. **Given** a single registered `CourseCreated` v1.0.0 → v2.0.0 transformation and the same stored
+   event read simultaneously by multiple threads (e.g. two tracking processors and an event-sourced
+   entity load running in parallel),
+   **When** the framework invokes the transformation function concurrently from those threads,
+   **Then** every invocation produces an identical v2.0.0 payload, and the framework MUST NOT
+   require external synchronization from the transformation author. The transformation is treated as
+   a static function -- the framework does not serialize invocations per stream, per processor, or
+   per entity.
+
 ---
 
 ### User Story 2 - Event Identity Change / Rename (Priority: P2)
@@ -624,6 +648,16 @@ the framework raises a descriptive error at registration time, before any event 
    transformation failed and the name, version, and stream position of the event that triggered it.
    The framework MUST NOT silently skip the failed event or log-and-continue.
 
+7. **Given** a 1:1 transformation declared with `to = (com.example.CourseCreated, 2.0.0)` whose
+   function returns a payload of a different type (e.g. `OrderPlacedV2`) or a payload whose
+   resolved `MessageType` does not match the declared `to` (e.g. version `3.0.0` or name
+   `com.example.CourseScheduled`),
+   **When** the event is read from the event store and the transformation is applied,
+   **Then** the framework propagates a runtime failure under the same path as scenario 6, with a
+   message identifying the offending transformation, the declared `to`, and the actual output
+   `MessageType`. The framework MUST NOT silently coerce the output identity to match the declared
+   `to`, and MUST NOT let the wrong-typed output flow into the rest of the chain.
+
 ---
 
 ### User Story 8 - Startup Observability for the Transformation Chain (Priority: P2)
@@ -685,6 +719,8 @@ index; see the FR for the authoritative requirement.
 | Tracking token advances past dropped events | FR-015 |
 | Transformation exception propagates immediately | FR-016 |
 | Unversioned events treated as version 0.0.1 | FR-017 |
+| 1:1 transformation output does not match declared `to` | FR-019; US7 scenario 7 |
+| Concurrent invocation of same transformation from multiple threads | FR-006; US1 scenario 6 |
 | Transformed event with no registered handler | Standard AF5 no-handler behavior – not a transformation failure |
 | Transformation retirement (when safe to remove) | Developer responsibility – safe only when no stored event exists at the `from` version in any event store, including backups |
 
@@ -1019,10 +1055,15 @@ API introduced here is the stable foundation that makes that future extension sa
   registered for. Matching is exact: both the fully qualified name and the version must match the
   stored event's `MessageType` precisely.
   _Traces to: US1 scenario 3 (non-matching events pass through unchanged), US6 (version-exact matching is what routes v1 to v1→v2 and v2 to v2→v3, not both)._
-- **FR-006**: Transformations MUST be pure: given the same input event, a transformation MUST always
-  produce the same output. Transformations MUST NOT call external services, read from databases,
-  or depend on the current time or any other external state.
-  _Traces to: US1 scenario 4 (all three reading contexts produce identical output – only guaranteed if the transformation is pure), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
+- **FR-006**: Transformations MUST be pure AND thread-safe: given the same input event, a
+  transformation MUST always produce the same output. Transformations MUST NOT call external
+  services, read from databases, or depend on the current time or any other external state.
+  Transformations MUST NOT mutate instance state across invocations -- a registered transformation
+  is effectively a static function. The framework MAY invoke a transformation concurrently from any
+  thread (e.g., two tracking processors reading the same stream in parallel, simultaneous
+  event-sourced entity loads). Per-invocation local state (variables and intermediate values
+  computed inside the function body) is permitted.
+  _Traces to: US1 scenario 4 (all three reading contexts produce identical output – only guaranteed if the transformation is pure and thread-safe), US1 scenario 6 (concurrent invocation from multiple threads produces identical output without requiring external synchronization), US6 scenario 1 (chaining always produces the same final version regardless of when or how often it runs)._
 - **FR-007**: When events pass through the transformation chain, the output of each transformation
   MUST flow into the next transformation as input (chaining). This applies to all output events,
   including every replacement event produced by a 1:N split: each replacement event MUST
@@ -1130,6 +1171,21 @@ API introduced here is the stable foundation that makes that future extension sa
   issue; this requirement is an architectural invariant on the transformation API itself, not a
   fixture deliverable.
   _Traces to: US1, US3, US4, US6 (every transformation in scope must be unit-testable in isolation to support TDD-style development of versioning logic)._
+- **FR-019**: For 1:1 transformations that supply a payload transformation rule, after the function
+  returns, the framework MUST verify that the output payload's identity (fully qualified name +
+  version) matches the `to` declared at registration. A mismatch MUST be treated as a runtime
+  transformation failure under FR-016 -- propagated immediately with full context (which
+  transformation failed, the declared `to`, the actual output identity, and the stream position of
+  the event that triggered it). The framework MUST NOT silently coerce the output identity to the
+  declared `to`. Rationale: cheap insurance against author bugs that would otherwise produce silent
+  data drift downstream (the wrong-typed output flows through FR-007 chaining and is silently
+  ignored by later transformations that don't match its name).
+  This requirement does NOT apply to:
+  - **Pure renames (FR-002)** -- there is no payload function whose output could be wrong; the
+    framework owns the identity rewrite and applies the declared `to` directly.
+  - **1:N / 1:0 transformations (FR-003)** -- the rule has full control over each replacement
+    event's identity by design.
+  _Traces to: US1 (1:1 structural transform produces output matching declared target), US7 scenario 7 (output identity mismatch is propagated as runtime failure with declared-vs-actual diagnostic context)._
 
 ## Key Entities
 
@@ -1153,6 +1209,15 @@ API introduced here is the stable foundation that makes that future extension sa
   by the framework. Transformation registration uses the fully qualified name in both `from` and
   `to` – using only the local name (e.g., `CourseCreated`) will silently fail to match stored
   events whose `MessageType` includes the namespace.
+- **DCB read (`SourcingCondition`)**: **Dynamic Consistency Boundary** -- an AF5 mechanism for
+  enforcing command-side consistency without requiring a fixed aggregate root. A `SourcingCondition`
+  declares which events the command handler needs to make a decision (e.g., "all events tagged
+  with this course id AND all events tagged with this student id"). The framework reads exactly
+  those events as a bounded stream, applies the transformation chain (FR-013), and feeds the result
+  into the command handler. DCB is one of the three event-reading contexts in FR-013 alongside
+  event-sourced entity loading and tracking processor reads. DCB reads are bounded (finite) and may
+  span multiple entity boundaries, in contrast to entity loads (bounded, single entity) and
+  tracking processor reads (unbounded, all entities).
 
 ## Success Criteria
 
@@ -1178,6 +1243,16 @@ API introduced here is the stable foundation that makes that future extension sa
   and (c) the boundary rule stated in one sentence. A developer who has never used AF5 upcasters
   can read this artifact and correctly classify their own versioning scenario without reading
   framework source code.
+- **SC-008**: Every in-scope transformation example (structural transform, rename, split, drop) is
+  unit-tested in isolation -- the test exercises the transformation function with a plain JUnit
+  test, without starting an event store, processor, or framework bootstrapping. Verifies FR-018.
+- **SC-009**: A 1:1 transformation with a payload rule whose function returns an output with a
+  `MessageType` other than the declared `to` produces a runtime error that names the offending
+  transformation, the declared `to`, and the actual output identity. Verified by automated test.
+  100% of mismatch cases produce the error; 0% silently coerce. Verifies FR-019.
+- **SC-010**: A registered transformation invoked from N concurrent threads (N >= 8) on the same
+  input event produces N identical outputs and requires no external synchronization from the
+  transformation author. Verified by automated test. Verifies the thread-safety contract in FR-006.
 
 ## Assumptions
 

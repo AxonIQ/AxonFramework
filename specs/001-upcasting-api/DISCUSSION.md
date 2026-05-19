@@ -30,13 +30,13 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 | Story | Priority | What it solves | Key FRs |
 |---|---|---|---|
-| US1 Structural transform | P1 | Restructure payload for all handlers (e.g. `capacity` -> `minCapacity` + `maxCapacity`) | FR-001, FR-005, FR-006, FR-010, FR-011, FR-012, FR-013, FR-017, FR-018 |
+| US1 Structural transform | P1 | Restructure payload for all handlers (e.g. `capacity` -> `minCapacity` + `maxCapacity`) | FR-001, FR-005, FR-006, FR-010, FR-011, FR-012, FR-013, FR-017, FR-018, FR-019 |
 | US2 Rename | P2 | Stored events under old name reach handlers registered for new name | FR-001, FR-002, FR-005 |
 | US3 Splitting | P3 | One stored event becomes two or more independent events | FR-003, FR-007, FR-010, FR-011 |
 | US4 Dropping | P4 | Suppress a stored event type entirely; tracking token still advances | FR-003, FR-010, FR-012, FR-015 |
 | US5 Snapshot upcasting | Deferred | Transform old snapshots -- discard-and-replay remains the default | FR-008 |
 | US6 Chaining | P2 | v1->v2 + v2->v3 registered in order compose automatically | FR-004, FR-005, FR-006, FR-007 |
-| US7 Misconfiguration + runtime failures | P1 | Clear errors at registration time; runtime failures propagate immediately | FR-004, FR-009, FR-016 |
+| US7 Misconfiguration + runtime failures | P1 | Clear errors at registration time; runtime failures propagate immediately | FR-004, FR-009, FR-016, FR-019 |
 | US8 Startup observability | P2 | INFO log confirms chain wiring; DEBUG log traces each transformation applied | FR-014 |
 
 ---
@@ -77,7 +77,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-003 | Registration | Declare source identity + rule producing zero or more replacement events (split / drop) |
 | FR-004 | Registration | Declaration order IS chain order; startup-only; late registration rejected with clear error |
 | FR-005 | Matching | Exact match on fully qualified name + version; non-matching events pass through |
-| FR-006 | Correctness | Transformations must be pure -- same input always produces same output; no external calls |
+| FR-006 | Correctness | Transformations must be pure AND thread-safe -- same input always produces same output; no external calls; no cross-invocation instance state; framework may invoke concurrently from any thread |
 | FR-007 | Chain | Output of each transformation feeds into the next; split replacement events continue through the remaining chain |
 | FR-008 | Deferred | Snapshot upcasting out of scope; discard-and-replay fallback preserved unchanged |
 | FR-009 | Validation | Duplicate source identity, self-loop, invalid semver, non-qualified name -- all rejected at registration time |
@@ -90,6 +90,7 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 | FR-016 | Error handling | Runtime transformation failure propagates immediately -- no silent skip or log-and-continue |
 | FR-017 | Versioning | Events stored without a version are treated as version `0.0.1` |
 | FR-018 | Testability | Transformation MUST be unit-testable in isolation (no event store / framework bootstrapping); only a `Converter` instance allowed as dependency (advanced entry point only) |
+| FR-019 | Correctness | For 1:1, framework MUST verify output identity matches declared `to`; mismatch propagated under FR-016. Does not apply to 1:N / 1:0 splits |
 
 ---
 
