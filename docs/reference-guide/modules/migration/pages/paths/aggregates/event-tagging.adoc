@@ -1,4 +1,4 @@
-= Event tagging with `@EventTag`
+= Event Tagging with `@EventTag`
 :navtitle: Event tagging
 
 In Axon Framework 4, the `@AggregateIdentifier` field on the aggregate was the single source of truth that linked events to their aggregate instance. Axon Framework 5 inverts this: the entity declares a `tagKey`, and every event the entity emits carries an explicit `@EventTag` whose key matches that `tagKey` and whose value is the entity identifier. The event store uses these tags to source the right events when reconstructing an entity.
