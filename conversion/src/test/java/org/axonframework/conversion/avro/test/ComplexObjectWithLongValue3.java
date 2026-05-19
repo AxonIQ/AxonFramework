@@ -49,6 +49,7 @@ public class ComplexObjectWithLongValue3 extends SpecificRecordBase {
     private long value3;
 
     public ComplexObjectWithLongValue3() {
+        // no-args constructor required by Avro
     }
 
     @Override
@@ -57,22 +58,22 @@ public class ComplexObjectWithLongValue3 extends SpecificRecordBase {
     }
 
     @Override
-    public Object get(int field$) {
-        return switch (field$) {
+    public Object get(int fieldIndex) {
+        return switch (fieldIndex) {
             case 0 -> value1;
             case 1 -> value2;
             case 2 -> value3;
-            default -> throw new IndexOutOfBoundsException("Invalid index: " + field$);
+            default -> throw new IndexOutOfBoundsException("Invalid index: " + fieldIndex);
         };
     }
 
     @Override
-    public void put(int field$, Object value$) {
-        switch (field$) {
-            case 0 -> value1 = value$ != null ? value$.toString() : null;
-            case 1 -> value2 = value$ != null ? value$.toString() : null;
-            case 2 -> value3 = (Long) value$;
-            default -> throw new IndexOutOfBoundsException("Invalid index: " + field$);
+    public void put(int fieldIndex, Object fieldValue) {
+        switch (fieldIndex) {
+            case 0 -> value1 = fieldValue != null ? fieldValue.toString() : null;
+            case 1 -> value2 = fieldValue != null ? fieldValue.toString() : null;
+            case 2 -> value3 = (Long) fieldValue;
+            default -> throw new IndexOutOfBoundsException("Invalid index: " + fieldIndex);
         }
     }
 

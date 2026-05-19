@@ -167,7 +167,7 @@ class AvroPayloadEvolutionCapabilityTest {
 
             // then -- value accessible via the writer schema's field name (alias resolution requires a typed class)
             assertThat(result).isNotNull();
-            assertThat(result.get("oldValue1").toString()).isEqualTo("renamed-value");
+            assertThat(result.get("oldValue1")).hasToString("renamed-value");
         }
 
         @Test
@@ -292,8 +292,8 @@ class AvroPayloadEvolutionCapabilityTest {
 
             // and -- handler B receives the same data as a GenericRecord; no generated class needed
             assertThat(genericResult).isNotNull();
-            assertThat(genericResult.get("value1").toString()).isEqualTo("hello");
-            assertThat(genericResult.get("value2").toString()).isEqualTo("world");
+            assertThat(genericResult.get("value1")).hasToString("hello");
+            assertThat(genericResult.get("value2")).hasToString("world");
             assertThat(genericResult.get("value3")).isEqualTo(42);
         }
     }
