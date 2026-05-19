@@ -137,6 +137,17 @@ recipeList:
   # developer and the next-running LLM-driven skill see it immediately.
   - org.axonframework.migration.AnnotateObsoleteSequencingPolicyProperty
 
+  # ── MessageOriginProvider: create Spring @Bean with AF4-compatible keys ─
+  # Spring Boot applications rely on bean discovery to register
+  # CorrelationDataProvider implementations. This recipe creates (or updates)
+  # a `CorrelationDataProviderConfiguration` @Configuration class that exposes
+  # MessageOriginProvider as a bean with explicit "correlationId" / "traceId"
+  # keys, preserving the AF4-compatible key names that the surrounding system
+  # may already depend on.
+  # Runs after MigrateMessageOriginProviderDefaultKeys (in Axon4ToAxon5Messaging)
+  # which replaces no-args constructors; this recipe adds the Spring wiring on top.
+  - org.axonframework.migration.AddMessageOriginProviderSpringBeanConfiguration
+
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension

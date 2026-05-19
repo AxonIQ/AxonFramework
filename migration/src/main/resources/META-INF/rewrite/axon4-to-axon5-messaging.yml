@@ -361,3 +361,14 @@ recipeList:
   # `CommandGateway`. Anything outside the supported body shapes (single dispatch / try/catch with one
   # dispatch per branch) is left untouched so the build still surfaces those call sites for the human.
   - org.axonframework.migration.MigrateCommandGatewayInEventHandler
+
+  # ── MessageOriginProvider: pin AF4-compatible default metadata keys ──────
+  # AF5 renamed MessageOriginProvider's default metadata keys:
+  #   AF4 `traceId`      (propagated originating-message id) → AF5 `correlationId`
+  #   AF4 `correlationId` (current-message id, direct cause) → AF5 `causationId`
+  # A no-args `new MessageOriginProvider()` in AF5 therefore writes metadata
+  # under the NEW key names, silently breaking downstream consumers that read
+  # the old AF4 keys. This recipe replaces every no-args constructor call with
+  # `new MessageOriginProvider("traceId", "correlationId")` so the provider
+  # continues to emit metadata under the AF4-compatible key names.
+  - org.axonframework.migration.MigrateMessageOriginProviderDefaultKeys
