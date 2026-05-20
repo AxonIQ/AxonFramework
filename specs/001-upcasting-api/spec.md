@@ -105,7 +105,7 @@ the stored event stream itself must change. Each story is a distinct, independen
 
 ---
 
-### User Story 1 - Structural Payload Transformation (Priority: P1)
+#### User Story 1 - Structural Payload Transformation (Priority: P1)
 
 **Plain-English explanation**: Imagine you designed a `CourseCreated` event with a single `capacity`
 field (e.g., `capacity: 30`). Later you realize you need both a minimum and a maximum capacity. You
@@ -165,7 +165,7 @@ events and verify that every handler receives the new structure and no handler e
 
 ---
 
-### User Story 2 - Event Identity Change / Rename (Priority: P2)
+#### User Story 2 - Event Identity Change / Rename (Priority: P2)
 
 **Plain-English explanation**: Imagine you named an event `CourseOpened` during early development, but
 after talking to domain experts you realize the correct business term is `CourseCreated`. You rename
@@ -202,7 +202,7 @@ payload intact.
 
 ---
 
-### User Story 3 - Event Splitting (Priority: P3)
+#### User Story 3 - Event Splitting (Priority: P3)
 
 **Plain-English explanation**: A good practice in event design is to avoid event names containing "and"
 (e.g., `StudentEnrolledAndCourseUpdated`), because "and" signals that two distinct things happened and
@@ -247,7 +247,7 @@ it is registered for.
 
 ---
 
-### User Story 4 - Event Dropping (Priority: P4)
+#### User Story 4 - Event Dropping (Priority: P4)
 
 **Plain-English explanation**: Imagine a `SystemHeartbeat` event was accidentally stored in the event
 store. It carries no business meaning – it was a monitoring artifact that should never have been
@@ -282,17 +282,7 @@ handlers normally.
 
 ---
 
-### User Story 5 - Snapshot Upcasting (Deferred)
-
-Snapshot upcasting is a valid use case but is deferred from 5.2.0. See Part C for the full
-rationale, the hook point, and the design constraints that keep this option open for a future release.
-
-The existing discard-and-replay fallback in `StoreBackedSnapshotter` remains the correct primary
-strategy and is preserved unchanged.
-
----
-
-### User Story 6 - Chaining Transformations Across Multiple Versions (Priority: P2)
+#### User Story 6 - Chaining Transformations Across Multiple Versions (Priority: P2)
 
 **Plain-English explanation**: Real systems do not jump from v1 directly to the latest version in
 one step. Over time, `CourseCreated` might have gone through three versions:
@@ -342,7 +332,7 @@ Replay a v1.0.0 event and verify the handler receives a v3.0.0 event with the co
    that registration order is the chain order and incorrect ordering leads to incomplete
    transformation, which is the developer's responsibility to get right.
 
-### User Story 7 - Feedback on Misconfiguration and Runtime Failures (Priority: P1)
+#### User Story 7 - Feedback on Misconfiguration and Runtime Failures (Priority: P1)
 
 **Plain-English explanation**: A developer registers two transformations that both target the same
 event name and version – perhaps by copy-pasting a registration block and forgetting to change the
@@ -429,7 +419,7 @@ the framework raises a descriptive error at registration time, before any event 
 
 ---
 
-### User Story 8 - Startup Observability for the Transformation Chain (Priority: P2)
+#### User Story 8 - Startup Observability for the Transformation Chain (Priority: P2)
 
 **Plain-English explanation**: A developer deploys a new version of the application with two
 transformations registered. The application starts, processes events, and the developer wants to
@@ -469,7 +459,47 @@ and verify that DEBUG-level output identifies which transformation ran and for w
 
 ---
 
-### Edge Cases
+#### User Story 9 - Command Upcasting (Priority: P3)
+
+**Use case**: a receiver applies the transformation chain to an incoming command before
+dispatching it to the command handler -- same mechanism as events, because the transformer is a
+decorator around the message converter and works for any `Message`. Common scenarios: structural
+field changes, renames, version bumps. Most relevant in rolling deployments where old and new
+service versions coexist.
+
+**Why this priority**: deliverable on top of the event upcasting infrastructure. Adds command
+versioning support without a separate API.
+
+**Scope**: 1:1 (structural transform, rename) applies. 1:N split and 1:0 drop do NOT apply --
+each command is a single intent expecting a response. Downcasting (new-to-old at the sender) is
+deferred (see Part C).
+
+**Independent Test**: register a 1:1 command transformer that fills a default `enrollmentReason`
+on old `EnrollStudent` commands; dispatch a v1 command; assert the handler receives the
+transformed payload.
+
+---
+
+#### User Story 10 - Query Upcasting (Priority: P3)
+
+**Use case**: a receiver applies the transformation chain to an incoming query before dispatching
+it to the query handler -- same mechanism as commands and events. Common scenario: a new optional
+filter parameter (e.g., `includeArchived`) is added and the handler needs a default value for
+queries sent by older callers.
+
+**Why this priority**: deliverable on top of the same `Message`-based transformer mechanism. No
+separate API.
+
+**Scope**: 1:1 (structural transform, rename) applies. 1:N split and 1:0 drop do NOT apply.
+Downcasting is deferred (see Part C).
+
+**Independent Test**: register a 1:1 query transformer that fills a default
+`includeArchived = false` on old `FindCoursesByFaculty` queries; dispatch a v1 query; assert
+the handler receives the transformed payload.
+
+---
+
+#### Edge Cases
 
 Each edge case below is fully specified in the referenced FR. This table exists as a quick-lookup
 index; see the FR for the authoritative requirement.
@@ -497,335 +527,116 @@ index; see the FR for the authoritative requirement.
 
 ---
 
-### Part C: Out of Scope and Non-Upcasting Scenarios
+### Part C: Out of Scope and Non-Transformer Scenarios
 
-This section documents scenarios that are either deferred to a later release, or are not an
-upcasting problem at all. Knowing what NOT to reach for a transformation for is as important as
+This section documents scenarios that are either deferred to a later release, or are not a
+transformer problem at all. Knowing when NOT to reach for a transformer is as important as
 knowing when to use one.
 
 The entries fall into two categories:
 
-- **Deferred**: upcasting is the right concept, but the scenario is out of scope for 5.2.0 for
-  reasons of scope management or open design questions. The API is designed to support these without
-  breaking changes.
-- **Wrong tool**: a transformation would give the wrong answer or corrupt the audit trail. The correct
-  solution is a different pattern entirely.
+- **Deferred**: a transformer is the right concept, but the scenario is out of scope for 5.2.0. The transformer API shipped in 5.2.0
+  is designed so these can land in a later release without breaking changes for existing users.
+- **Wrong tool**: a transformer would give the wrong answer or corrupt the audit trail. The
+  correct solution is a different pattern entirely (a new event type, a stateful projection, a
+  Copy and Replace migration, etc.).
 
 ---
 
-### N-to-1 Merge `[Deferred]`
+#### N-to-1 Merge `[Deferred]`
 
-**Plain-English explanation**: Imagine you have two separate stored events – `ItemAddedToCart`
-followed by `CartCheckedOut` – and you realize they should have been a single `OrderCompleted` event.
-You want to combine (merge) multiple stored events into one output event.
+**Scenario**: combine multiple (N) stored events into one (1) output event -- for example,
+merge `StudentRegistered` + `StudentEnrolledInFaculty` into a single `StudentJoined` event.
 
-**Why this is NOT in scope for 5.2.0:**
+**Why deferred for 5.2.0**: merging requires the framework to "remember" earlier events while
+reading later ones. Two unresolved problems:
 
-Merging N events into 1 requires the framework to "remember" earlier events while reading later ones.
-Think of it like a shopping list: you cannot add up the totals until you have seen every item. In
-event sourcing, this introduces two problems that cannot be solved cleanly in this release:
+1. **Memory scope is context-dependent.** Entity loads are bounded streams (per-entity, finite);
+   tracking processors are unbounded streams (every entity, continuous). Memory that resets
+   per-entity is predictable for the first; cross-entity memory in the second would silently
+   mix unrelated entities – exactly the AF4 context-aware-upcaster bug class the team has
+   chosen not to repeat.
 
-1. **Where does the memory live?** Events are read in two very different contexts in Axon:
-   - When loading one **entity** (e.g., one specific Course), the framework reads only that
-     entity's own events as a **bounded stream** (a finite, ordered sequence that ends when all
-     the entity's events have been read). Memory that resets per entity is predictable here.
-   - When a **tracking processor** (a background component that continuously reads all events from
-     the entire event store to update projections) runs, it processes an **unbounded stream** (a
-     continuous, never-ending sequence of events from every entity in the system). Memory
-     spanning entity boundaries here would silently mix up data from completely unrelated
-     entities – causing bugs that are nearly impossible to reproduce or debug.
+2. **`MessageStream` has no grouping / windowing today.** Adding it would touch core streaming
+   infrastructure well outside this feature's scope.
 
-   In Axon Framework 4, **context-aware upcasters** (upcasters that carry state from one event to
-   the next) had exactly this problem: the same transformation ran in both contexts but its memory scope
-   was inconsistent between them. The team has explicitly chosen not to repeat this in AF5.
+**What to do instead**:
 
-2. **The framework's streaming model (`MessageStream`) does not support it today.** Axon 5
-   processes events as a continuous `MessageStream` – a push-based flow where each event is
-   processed in turn. That stream has no built-in concept of "group these N items together before
-   moving on." Adding windowing or grouping to `MessageStream` would require significant changes
-   to the core streaming infrastructure, well beyond the scope of this feature.
+- **Stateful projection** – accumulate events over time and produce a combined read model. Right
+  tool for most cases.
+- **Copy and Replace** (Gregory Young) -- one-time migration: read old events, write new ones
+  to a fresh stream. Right tool when the stored stream itself must change.
+---
 
-**What to do instead**: For most cases where N-to-1 seems necessary, a stateful projection (a
-component that accumulates events over time and produces a combined result) is the right tool.
-For cases where the event stream boundaries themselves must change, Gregory Young's "Copy and
-Replace" pattern (reading old events, writing new ones to a fresh stream) solves the problem
-completely, at the cost of a one-time migration.
+#### Moving Data Between Events `[Deferred]`
 
-**When to revisit**: After collecting concrete user cases that cannot be solved with the alternatives
-above, the team will define a clear scope for context-aware upcasting in a future release.
+**Scenario**: enrich a stored event with data captured from an earlier event in the stream -- for
+example, when reading `TuitionPaid`, attach the `scholarshipCode` that was present on the earlier
+`StudentEnrolled` event of the same student.
+
+**Why deferred for 5.2.0**: this requires a **context-aware transformation** – one that
+remembers data from earlier events and uses it when transforming a later event. Same memory-scope
+problem as the N-to-1 entry above, applied at the field level: per-entity scope works for entity
+loads but silently mixes data across entities on tracking processors. AF4 context-aware upcasters
+had this exact inconsistency, causing subtle and hard-to-reproduce bugs.
+
+**What to do instead**: **Copy and Replace** – read existing events, rewrite them with the
+fields they should have carried, switch the application over to the corrected stream. One-time
+migration, not ongoing transformation.
 
 ---
 
-### Moving Data Between Events `[Deferred]`
+#### Downcasting `[Deferred]`
 
-**Plain-English explanation**: Imagine `OrderPlaced` contains a `discountCode` field. Later, you
-realize that `discountCode` actually belongs on the `PaymentProcessed` event that follows it. You want
-a transformation that reads `discountCode` from the first event and copies it into the second event
-as they are read from storage.
+**Scenario**: in a rolling deployment, a newer sender strips fields that an older receiver does
+not yet understand. For example, service v2 sends a `FindCoursesByFaculty` query with a new
+`includeArchived` filter; service v1's handler does not know the field. Ideally the sender
+removes it before dispatch.
 
-**Why this is NOT in scope for 5.2.0:**
+**Why deferred for 5.2.0**: downcasting is new-to-old at the
+sender, instead of old-to-new at the receiver. It introduces sender-awareness questions (how
+does the sender know what version the receiver understands?) that need their own specification.
 
-Moving data from one event to a later event requires a **context-aware transformation** – one that
-carries state (a "context") from one event to the next as it processes the stream. This is the same
-memory problem described in the N-to-1 section above, applied to individual fields rather than
-whole events.
+Command and query upcasting (the receiver-side, old-to-new direction) IS in scope for 5.2.0 –
+see US9 (commands) and US10 (queries) in Part B. The transformer is a decorator around the
+message converter, so the same mechanism works for any `Message` type.
 
-The ambiguity of what "context" means in a framework that reads events both as bounded streams (per
-entity) and as unbounded streams (via tracking processors across the entire event store) makes
-this impossible to implement with consistent, predictable behavior. Axon Framework 4 had
-context-aware upcasters and developers regularly encountered subtle, hard-to-reproduce bugs because
-the context scope behaved differently depending on whether the read was triggered by event sourcing
-or by a tracking processor.
-
-**What to do instead**: If a field needs to be on a different event, the cleanest solution is a
-one-time "Copy and Replace" migration: read all existing events, write corrected events to a fresh
-stream, and switch the application over. This is a one-time migration, not ongoing upcasting.
-
-**When to revisit**: Once Axon 5's streaming model and consistency boundaries are fully stabilized,
-the team will revisit whether a well-scoped context-aware transformation is feasible.
+**When to revisit**: when concrete rolling-deployment cases surface that cannot be solved by
+receiver-side upcasting alone.
 
 ---
 
-### Semantic Meaning of a Field Changed Silently `[Wrong tool]`
+#### Snapshot Upcasting `[Deferred]`
 
-**Scenario**: A field's name stays the same but its meaning changes. For example, `capacity` in
-`CourseCreated` used to mean "total available seats" but now means "available seats remaining after
-cancellations." The field name, type, and value range all look identical – only what the number
-represents has changed.
+**Use case**: a 1:1 `Snapshot -> Snapshot` transformer would let the framework apply a
+state-schema change to a stored snapshot instead of discarding it and replaying all events.
 
-**Why a transformation is the wrong tool**: A transformation modifies the data. Here the data itself has not
-changed – the interpretation has. If you write a transformation to "fix" this, you corrupt your audit
-trail: old events that were correct under the old meaning would be silently altered to appear as if
-they carried a different number all along.
+**Why deferred for 5.2.0**: scope and focus, NOT architecture. The snapshot-on-`MessageStream`
+rework has landed -- `SnapshotEventMessage extends GenericEventMessage` exists, and
+`SnapshotCapableEventStorageEngine` delivers the snapshot as the first entry of the
+`MessageStream` returned by `EventStoreTransaction.source(...)`. The same converter-decorator we
+use for events on the storage-engine stream would naturally see `SnapshotEventMessage` entries,
+so the integration point is already in place.
 
-**Gregory Young's rule**: Never silently change the semantic meaning of a field. A value that now
-means something different from what it meant when it was written is not a new version of the same
-event – it is a different event type.
+**In scope for 5.2.0**: the design MUST keep snapshot transformations easily triggerable through the
+same decorator mechanism – no special-casing of `SnapshotEventMessage` in the chain, no
+additional registration API surface. A future snapshot transformation should require only a new user
+story and the corresponding tests, not a redesign.
 
-**What to do instead**: Create a new event type with a name that makes the new meaning explicit
-(e.g., `CourseOpened` with an `availableSeats` field). Keep `CourseCreated` with `capacity` meaning
-what it always meant. Introduce a migration event or a compensating event to bridge the two.
+**Ergonomic gap (not a blocker)**: `Snapshot` is a plain record without a `.payloadAs(Class<?>)`
+accessor. A future snapshot transformation either uses the `Converter` directly
+(`converter.convert(snapshot.payload(), TargetType.class)`) or a `.payloadAs(...)` helper added
+on `Snapshot` later. Both options remain open.
 
-**Example**: `CourseCreated.capacity` used to mean total seats. Now it should mean remaining seats.
-Rather than changing the meaning of `capacity`, create `CourseRescheduled` with an `availableSeats`
-field that reflects the new concept explicitly.
-
----
-
-### New Event Cannot Be Derived from the Old One `[Wrong tool]`
-
-**Scenario**: An event has changed so fundamentally that the new version cannot be computed from the
-old stored data. For example, `CourseCreated` was originally modeled around rooms and time slots, but
-is now modeled around a completely new scheduling system with different concepts, different fields,
-and different business rules.
-
-**Why a transformation is the wrong tool**: A transformation must produce the new event from the old data. If
-the old data does not contain enough information to construct the new event correctly, the transformation
-would be forced to invent or default values – producing events that misrepresent what actually
-happened. This destroys the audit trail and violates the immutability principle.
-
-**Gregory Young's rule**: A new version of an event MUST be derivable from the old version. If it
-cannot be derived, it is not a new version – it is a genuinely new business event. Give it a new,
-distinct name that reflects the new concept.
-
-**What to do instead**: Introduce a new event type with a name that reflects the new concept (e.g.,
-`CourseScheduled` under the new model). Run both event types in parallel during migration. Old
-projections continue to consume `CourseCreated`; new projections consume `CourseScheduled`.
-Use Copy and Replace as a last resort if the old stream must be fully replaced.
-
-**Example**: `CourseCreated` was structured around rooms and manual time slots. The new scheduling
-model is built around recurring templates and automated slot generation – a fundamentally different
-concept. This is not "CourseCreated v2.0.0" – it is `CourseScheduled`, a new business event.
+**When justified** (Gregory Young): snapshots are a cache, not a source of truth.
+Discard-and-replay is the correct primary strategy; snapshot upcasting is the optimisation,
+worth it only when the event history is huge AND replay is slow AND the snapshot schema changed.
 
 ---
 
-### Command Upcasting and Downcasting `[Deferred — #746]`
+#### Annotation-Based Transformation Registration `[Deferred]`
 
-**The real-world driver – rolling deployments**: Unlike events (which are stored permanently and
-read long after they were written), commands are sent live between running services. The versioning
-challenge arises specifically in **rolling deployments**, where two versions of an application run
-concurrently: for example, service v2 sends commands to a mix of v1 and v2 receivers.
-
-In this situation there are two distinct problems:
-
-- **Upcasting (old sender, new receiver)**: Service v1 sends an `EnrollStudent` command without
-  `enrollmentReason`. Service v2's command handler expects `enrollmentReason` to be present. The
-  receiver needs a transformation that fills in a default for the missing field.
-- **Downcasting (new sender, old receiver)**: Service v2 sends an `EnrollStudent` command with
-  `enrollmentReason` included. Service v1's command handler does not know this field. Ideally the
-  sender would strip the extra field before dispatching, so v1 does not choke on unknown data. This
-  is called **downcasting** – transforming a newer-format message to an older format for backward
-  compatibility.
-
-Downcasting is the inverse of upcasting: where a transformation converts old-to-new at the receiver,
-a downcaster transforms new-to-old at the sender. Both were discussed during the design of issue
-#80 by Allard Buijze and the team. Both are relevant in distributed rolling deployments.
-
-**Why this is NOT in scope for 5.2.0:**
-
-Commands, events, and queries in AF5 all share the same `Message` contract (name, version,
-payload, metadata) and the same converter hierarchy. The upcasting mechanism generalises naturally
-across all message types, and the transformation interface is deliberately built on `Message` rather than
-`EventMessage` so that command and query support can be added later without a breaking change.
-
-It is deferred because:
-
-- The primary pain point today is event upcasting (events are stored indefinitely and accumulate
-  across years; commands and queries are transient). Delivering event upcasting first keeps the
-  scope focused.
-- Command upcasting introduces pipeline placement questions (at what point in the command dispatch
-  pipeline does the transformation run?) and downcasting introduces sender-awareness questions (how does
-  the sender know what version the receiver understands?) that require their own specification.
-- The deferred decision is about scope and timing, not technical feasibility.
-
-**API design constraint**: The transformation interface defined in this release MUST operate on `Message`,
-not on `EventMessage`. This is the guarantee that command and query support can be added in #746
-without changing the interface or breaking existing event transformations.
-
-**Tracked as**: issue #746 ("Allow registration of Upcasters on all components"), which is listed
-as a parent of issue #3597 and is on the 5.2.0 milestone for design consideration.
-
-**When to deliver**: As a follow-on once the event upcasting API is stable and the team has
-collected concrete rolling-deployment command/query versioning cases from users.
-
----
-
-### Query Upcasting `[Deferred — #746]`
-
-**The real-world driver – rolling deployments**: The same rolling-deployment scenario applies to
-queries. Service v2 sends a `FindCoursesByFaculty` query with a new `includeArchived` filter
-parameter. Service v1's query handler does not know this field.
-
-- **Upcasting at the query handler**: the receiver fills in `includeArchived = false` for queries
-  that do not include the field.
-- **Downcasting at the query sender**: the sender strips `includeArchived` before dispatching to
-  an old receiver that cannot handle it.
-
-**Why this is NOT in scope for 5.2.0:**
-
-The same reasoning as command upcasting above. The `Message`-based transformation interface ensures
-this can be added in issue #746 without breaking the event upcasting API introduced here.
-
-**Tracked as**: issue #746.
-
----
-
-### Snapshot Upcasting `[Deferred]`
-
-**The use case**: An entity with a large event history (tens of thousands of events) uses
-snapshots to avoid expensive full replays. When the entity's state schema changes – e.g.,
-`capacity` renamed to `maxCapacity` – stored snapshots cannot be deserialized. The current
-fallback discards the snapshot and replays all events from the beginning, which for large
-entities can take seconds to minutes.
-
-Snapshot upcasting would let a developer register a `Snapshot → Snapshot` transformation,
-avoiding the expensive replay.
-
-**Why not in 5.2.0**: Gregory Young's guidance is to **rebuild the snapshot from events**, not
-upcast it. Snapshots are a cache, not a source of truth; discarding and replaying is correct
-behavior, not a fallback of last resort.
-
-Snapshot upcasting is only justified when ALL three hold simultaneously:
-1. The entity has a huge event history (tens of thousands of events or more).
-2. Replay from the discarded snapshot position takes an unacceptable amount of time.
-3. The entity's state schema changed and stored snapshots are incompatible.
-
-A rare combination. Even when it hits, a one-time migration script is often simpler than
-ongoing upcasting infrastructure. Delivering event upcasting first keeps 5.2.0 focused.
-
-**Direction confirmed by team (2026-05-19)**:
-- Snapshot upcasting deferred from 5.2.0.
-- 5.2.0 integration is event-specific — `Upcaster<M extends Message<?>>` scoped to messages.
-- Future hook point: `StoreBackedSnapshotter.load()` version-mismatch branch (today returns
-  `null` and forces replay).
-
-**Shared root vs parallel hierarchies — short comparison**:
-
-| | Shared root (`Upcaster<T extends HasTypeIdentifier>`) | Parallel hierarchies (5.2.0 choice) |
-|--|--------------------------------------------------------|--------------------------------------|
-| **Pros** | One mental model across events + snapshots; symmetric API; cross-cutting features (metrics, lifecycle) can be generic | Gate II compliant (each abstraction has >=1 concrete user); snapshot identity contract designed when US5 ships, not guessed; cardinality (snapshots = 1:1 only -- never split, never dropped) compiler-enforced; semantically honest (distinct `MessageType` vs `SnapshotType` -- `Snapshot` is not a `Message`) |
-| **Cons** | Premature abstraction (only events ship in 5.2.0); guesses snapshot identity contract; loose cardinality exposes splits/drops to snapshots | Some code duplication if US5 ships (builder, registry, chain); API drift risk over time (mitigated by R-8 commitment to isomorphic DSL) |
-| **Future** | Already committed at API surface | Shared root remains possible as a future internal refactor — non-breaking for 5.2.0 customers (see proposal below) |
-
-**Non-breaking guarantee for 5.2.0 customers**:
-
-| Future change (US5) | Breaks 5.2.0? | Why |
-|---------------------|----------------|-----|
-| Add `SnapshotUpcaster` types + `registerSnapshotUpcaster(...)` + `SnapshotType` | No | Pure additions; new method on existing class is binary-compatible |
-| Optional later shared root via `TypeIdentifier` / `HasTypeIdentifier` (proposal below) | No | Adding a parent interface satisfied by covariant return is binary-compatible; relaxing a generic bound is binary-compatible |
-| Event upcaster API shipped in 5.2.0 | Untouched | No changes ever required |
-
-Anyone who writes event upcasters in 5.2.0 keeps compiling and running in 5.3.0+ — no migration,
-no deprecation, no rewrites.
-
-**Future shared root proposal (non-breaking refactor when US5 lands)**:
-
-A concrete proposal — not committed for 5.2.0 (Gate II: only one concrete user today). The shape
-may evolve when snapshots are specced with full understanding of their needs. Each step below is
-binary-compatible.
-
-```java
-// Step 1: minimal shared abstraction (new public types)
-public interface TypeIdentifier {
-    QualifiedName qualifiedName();
-    String version();
-}
-public interface HasTypeIdentifier {
-    TypeIdentifier type();
-}
-
-// Step 2: retrofit Message side (source-compatible via covariant return)
-public record MessageType(QualifiedName qualifiedName, String version)
-        implements TypeIdentifier {}
-public interface Message<P> extends HasTypeIdentifier {
-    @Override MessageType type();   // existing callers still see MessageType
-}
-
-// Step 3: snapshot side (distinct identity)
-public record SnapshotType(QualifiedName qualifiedName, String version)
-        implements TypeIdentifier {}
-public record Snapshot(...) implements HasTypeIdentifier {
-    @Override SnapshotType type();
-}
-
-// Step 4: relax the upcaster root bound
-public interface Upcaster<T extends HasTypeIdentifier> {
-    TypeIdentifier from();
-}
-
-// Step 5: subtypes unchanged at the call site (covariant return)
-public sealed interface EventUpcaster extends Upcaster<EventMessage>
-        permits SingleEventUpcaster, MultiEventUpcaster {
-    @Override MessageType from();
-}
-public sealed interface SnapshotUpcaster extends Upcaster<Snapshot>
-        permits SingleSnapshotUpcaster {     // 1:1 only -- domain rule
-    @Override SnapshotType from();
-}
-```
-
-**Acceptance scenarios (preserved for future spec)**:
-
-1. **Given** a stored entity snapshot at version 1.0.0 and a snapshot transformation registered,
-   **When** the entity is loaded,
-   **Then** the framework applies the transformation and uses the resulting snapshot without replaying
-   all events from the beginning.
-
-2. **Given** no snapshot transformation registered for a version mismatch,
-   **When** the entity is loaded,
-   **Then** the framework discards the snapshot and replays all events (existing behavior – no
-   regression).
-
-3. **Given** a snapshot transformation registered for version 1.0.0,
-   **When** a snapshot at a different version (e.g., 2.0.0) is read,
-   **Then** the transformation does not apply.
-
----
-
-### Annotation-Based Transformation Registration `[Deferred]`
-
-In 5.2.0, transformations are registered programmatically only. An annotation-based model (e.g.,
-`@Upcaster` on methods, discovered at startup) is intentionally deferred.
+In 5.2.0, transformations are registered programmatically only. An annotation-based model is intentionally deferred.
 
 **Why not now**: The spec's primary AF4 complaint is that Spring Bean-based registration made chain
 order unpredictable. Introducing an annotation-discovery mechanism in the same release risks
@@ -833,10 +644,44 @@ reintroducing that problem through a different path. Programmatic registration k
 guarantee trivially enforceable: the order of the API calls is the chain order, with no scanning,
 no priority attributes, and no framework magic.
 
-**When to add**: If enough users request annotation-based registration after 5.2.0 ships, it can be
-layered on top of the programmatic API without any breaking change – annotations would simply be
-syntactic sugar that calls the same registration API in a defined discovery order. The programmatic
-API introduced here is the stable foundation that makes that future extension safe.
+#### Semantic Meaning of a Field Changed Silently `[Wrong tool]`
+
+**Scenario**: a field's name and type stay the same, but its meaning changes. For example,
+`CourseCreated.capacity` used to mean "total available seats" but should now mean "seats
+remaining after cancellations" -- same field, different interpretation.
+
+**Why a transformer is the wrong tool**: the stored data did not change, only its meaning did.
+A transformer that rewrites old events to match the new interpretation corrupts the audit trail:
+events that were correct under the old meaning would be silently presented as if they had always
+carried the new number.
+
+**What to do instead** (Gregory Young's rule): a value that now means something different from
+what it meant when it was written is a different event type, not a new version. Create a new
+event with a name that makes the new meaning explicit -- e.g., `CourseRescheduled` with an
+`availableSeats` field. Keep `CourseCreated.capacity` meaning what it always meant.
+
+---
+
+#### New Event Cannot Be Derived from the Old One `[Wrong tool]`
+
+**Scenario**: an event has changed so fundamentally that the new version cannot be computed
+from the old stored data. For example, `CourseCreated` was originally modeled around rooms
+and manual time slots; the new model uses recurring templates and automated slot generation –
+a different concept, not a new version.
+
+**Why a transformer is the wrong tool**: a transformer must produce the new event from the old
+data. If the old data lacks enough information, the transformer is forced to invent or default
+values – producing events that misrepresent what actually happened and destroying the audit
+trail.
+
+**What to do instead** (Gregory Young's rule): a new event version MUST be derivable from the
+old version. If it cannot, it is a genuinely new business event – give it a new name (e.g.,
+`CourseScheduled`). Run both event types in parallel during migration: old projections continue
+to consume `CourseCreated`, new projections consume `CourseScheduled`. Use Copy and Replace as
+a last resort if the old stream must be fully replaced.
+
+---
+
 
 ## Requirements
 
@@ -899,13 +744,6 @@ API introduced here is the stable foundation that makes that future extension sa
   including every replacement event produced by a 1:N split: each replacement event MUST
   continue through the remaining transformations in the chain independently.
   _Traces to: US6 (the entire chaining story depends on output-as-input composition; without this, v1→v2 and v2→v3 would not compose), US3 scenario 4 (split output events flow through the remainder of the chain)._
-- **FR-008**: (Deferred) Snapshot upcasting is out of scope for 5.2.0. The framework MUST preserve
-  the existing discard-and-replay fallback behavior unchanged: when a stored snapshot's version does
-  not match the current entity version, the snapshot is discarded and all events are replayed from
-  the beginning. This is the correct primary strategy, not a workaround – snapshots are a cache and
-  can always be regenerated from the event stream. The hook point in `StoreBackedSnapshotter` is
-  identified for a future release.
-  _Traces to: US5 (deferred snapshot upcasting; the no-regression requirement comes from the deferral decision)._
 - **FR-009**: The framework MUST detect and report the following conflicts before any event is
   processed. Four are detected at each `register(...)` call; one (multi-step cycle) is detected
   at chain `lock()` during `.build()`. None are deferred to event-processing time:
@@ -1069,6 +907,14 @@ API introduced here is the stable foundation that makes that future extension sa
   - **1:N / 1:0 transformations (FR-003)** -- the rule has full control over each replacement
     event's identity by design.
   _Traces to: US1 (1:1 structural transform produces output matching declared target), US7 scenario 8 (output identity mismatch is propagated as runtime failure with declared-vs-actual diagnostic context)._
+- **FR-020**: The transformer mechanism MUST support commands and queries in addition to events.
+  The transformer is a decorator around the message converter and applies to any `Message`
+  subtype (events, commands, queries). The 1:1 patterns -- structural transform (FR-001) and
+  rename (FR-002) -- apply to all three message types. The 1:N split and 1:0 drop patterns
+  (FR-003) apply ONLY to events: commands and queries are single-intent messages and the
+  framework MUST reject registration of a `MultiEventUpcaster`-equivalent for command or query
+  message types. Downcasting (new-to-old at the sender) is out of scope (see Part C).
+  _Traces to: US9 (command upcasting), US10 (query upcasting)._
 
 ## Key Entities
 
@@ -1117,11 +963,12 @@ API introduced here is the stable foundation that makes that future extension sa
   verifiable across all four in-scope use cases.
 - **SC-004**: A conflict between two transformations targeting the same event name and version is
   detected and reported before any event is processed (at startup or registration time).
-- **SC-005**: All four in-scope use cases – structural transform, rename, split, drop – are
-  demonstrated by code in `examples/university-demo`, each with at least one passing automated
-  test executed under the Maven `-Pexamples` profile in CI. A reviewer running
-  `./mvnw -Pexamples clean verify` MUST observe all four upcasters built, registered, and exercised
-  by tests, without manual configuration.
+- **SC-005**: All in-scope use cases -- structural transform, rename, split, drop (events),
+  1:1 command upcasting (US9), and 1:1 query upcasting (US10) -- are demonstrated by code in
+  `examples/university-demo`, each with at least one passing automated test executed under the
+  Maven `-Pexamples` profile in CI. A reviewer running `./mvnw -Pexamples clean verify` MUST
+  observe all transformers built, registered, and exercised by tests, without manual
+  configuration.
 - **SC-006**: A developer migrating from Axon Framework 4 upcasters can identify the equivalent
   AF5 approach for each of their existing upcasters from documentation alone, without reading
   framework source code.
@@ -1143,16 +990,6 @@ API introduced here is the stable foundation that makes that future extension sa
   input event produces N identical outputs and requires no external synchronization from the
   transformation author. Verified by automated test. Verifies the thread-safety contract in FR-006.
 
-### Excluded / Deferred Criteria
-
-The following criterion is intentionally NOT a measurable outcome for 5.2.0. It is listed
-here so reviewers can see that the deferral was deliberate; it is NOT a deliverable.
-
-- **SC-003 (deferred)**: Snapshot upcasting is out of scope for 5.2.0 per FR-008 / US5. The
-  existing discard-and-replay fallback in `StoreBackedSnapshotter` remains the correct
-  primary strategy for snapshot version mismatches and is preserved unchanged. No SC-003
-  build verification is performed.
-
 ## Assumptions
 
 - The primary actor is an application developer building an event-sourced system with Axon
@@ -1162,8 +999,9 @@ here so reviewers can see that the deferral was deliberate; it is NOT a delivera
   store are never modified.
 - Events stored without an explicit version are assigned the default version `0.0.1` by the
   framework. Transformations that need to target these legacy events use `0.0.1` as the version.
-- The scope is limited to events. Snapshot upcasting and command/query upcasting are both deferred
-  to future releases (snapshot upcasting to a future release; commands/queries tracked as issue #746).
+- Scope covers events (US1-US4, US6-US8) plus 1:1 command and query upcasting (US9, US10).
+  Snapshot upcasting and downcasting are deferred (see Part C for the conditions under which
+  each becomes feasible).
 - N-to-1 event merging and moving data between events (context-aware transformations) are
   out of scope for this release. See the out-of-scope stories above for full rationale.
 - The university demo application (plain Java, no Spring) is the target for demonstrating all four
