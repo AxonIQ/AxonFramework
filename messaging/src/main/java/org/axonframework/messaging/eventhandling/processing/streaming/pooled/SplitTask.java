@@ -144,11 +144,6 @@ class SplitTask extends CoordinatorTask {
                                  splitStatuses[1].getSegment(),
                                  context
                          )
-                         .thenCompose(result -> tokenStore.releaseClaim(
-                                 name,
-                                 splitStatuses[0].getSegment().getSegmentId(),
-                                 context
-                         ))
                          .thenCompose(result -> tokenStore.deleteToken(
                                  name,
                                  splitStatuses[0].getSegment().getSegmentId(),

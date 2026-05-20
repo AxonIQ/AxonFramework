@@ -1,5 +1,3 @@
-// TODO this is currently not referenced, but should be restructured to accompany the snapshotting docs
-// we include in Axoniq Framework. See https://github.com/AxonIQ/AxonFramework/pull/4420#discussion_r3100143396
 = Snapshots
 
 == Snapshotting
@@ -47,7 +45,7 @@ As events are applied during sourcing, the configured `SnapshotPolicy` is invoke
 This allows the policy to detect whether a snapshot should be triggered based on the events being processed.
 
 After sourcing has completed, the policy is evaluated based on the full evolution of the entity.
-If the policy indicates that a snapshot should be created—either based on the overall evolution (such as event count or sourcing time) or because a triggering event was observed—a new snapshot is created and stored.
+If the policy indicates that a snapshot should be created, either based on the overall evolution (such as event count or sourcing time) or because a triggering event was observed, a new snapshot is created and stored.
 
 This snapshot can then be used the next time the entity is loaded, reducing the number of events that need to be replayed.
 
@@ -132,20 +130,73 @@ Snapshotting is enabled by providing a `SnapshotPolicy` for an event-sourced ent
 When a policy is configured, the repository automatically handles the creation and application of snapshots during sourcing.
 If no policy is provided, snapshotting is disabled, and the entity is always reconstructed from the event stream.
 
+The repository requires several supporting components to be present when snapshotting is enabled:
+
+* A `Converter` to serialize and deserialize snapshot payloads.
+* A `MessageTypeResolver` capable of resolving a `MessageType` for the entity type, used to identify the snapshot and its version.
+* A `SnapshotStore` to persist snapshots.
+
+If any of these components are missing, configuration will fail when snapshotting is enabled.
+
+==== Annotation-based configuration
+
+For entities registered with `@EventSourcedEntity`, snapshotting can be enabled by adding `@Snapshotting` to the entity class.
+At least one threshold must be configured, either directly on the annotation or via a higher-level annotation on an enclosing class, package, or module:
+
+[source,java]
+----
+@EventSourcedEntity
+@Snapshotting(afterEvents = 100)
+public class Course { ... }
+----
+
+`afterEvents` sets the event-count threshold.
+`afterSourcingTime` accepts an ISO-8601 duration string and triggers a snapshot when sourcing time exceeds that threshold.
+When both are set, either condition independently triggers a snapshot.
+
+[source,java]
+----
+@EventSourcedEntity
+@Snapshotting(afterEvents = 100, afterSourcingTime = "PT5S")
+public class Course { ... }
+----
+
+A shared default can be provided at the package level, so individual entity classes can opt in with a bare `@Snapshotting` annotation:
+
+[source,java]
+----
+// package-info.java
+@Snapshotting(afterEvents = 50)
+package com.example.faculty;
+----
+
+[source,java]
+----
+@EventSourcedEntity
+@Snapshotting  // inherits afterEvents = 50 from the package annotation
+public class Course { ... }
+----
+
+If no concrete threshold can be resolved from the annotation hierarchy, configuration fails with an error at startup.
+
+For payload-based triggers, such as forcing a snapshot when a specific event type is encountered, use the programmatic API described below.
+
+==== Programmatic configuration
+
 The `SnapshotPolicy` is configured as part of the entity registration.
-The example below shows how to configure snapshotting for an event-sourced entity:
+The example below shows how to configure snapshotting for an event-sourced entity using the declarative builder:
 
 [source,java]
 ----
 SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(5)
         .or(SnapshotPolicy.whenEventMatches(
                 msg -> msg.type().qualifiedName().equals(
-                        new QualifiedName(AccountClosed.class)
+                        new QualifiedName(CourseRenamed.class)
                 )
         ));
 
-EventSourcedEntityModule<String, Account> accountModule =
-        EventSourcedEntityModule.declarative(String.class, Account.class)
+EventSourcedEntityModule<CourseId, Course> courseModule =
+        EventSourcedEntityModule.declarative(CourseId.class, Course.class)
                                 // other entity configuration omitted
                                 .snapshotPolicy(c -> snapshotPolicy)
                                 .build();
@@ -157,15 +208,9 @@ In this configuration:
 In the example, a snapshot is created after more than five events have been applied or when a matching event is encountered during sourcing.
 * Snapshotting is activated automatically when a `SnapshotPolicy` is configured.
 If no policy is provided, snapshotting is not used and the entity is always sourced from events only.
-* The repository requires several supporting components to be present when snapshotting is enabled:
-** A `Converter` to serialize and deserialize snapshot payloads.
-** A `MessageTypeResolver` capable of resolving a `MessageType` for the entity type.
-This type is used to identify the snapshot and its version.
-** A `SnapshotStore` to persist snapshots (this requirement will change in future versions as snapshotting becomes more tightly integrated with the event store).
-
-If any of these components are missing, configuration will fail when snapshotting is enabled.
 
 Custom snapshot behavior can be achieved by using `whenEventMatches` for domain-specific triggers, as shown in the example, or by implementing the `SnapshotPolicy` interface directly.
+For a complete use of the declarative `EventSourcedEntityModule` API, please check xref:commands:command-handlers.adoc#stateful-command-handlers[here.]
 
 === Entity conversion for snapshots
 
@@ -177,17 +222,20 @@ Most JSON-based converters (such as Jackson, when compiled with parameter names 
 
 [source,java]
 ----
-public class Account {
-    private final String accountId;
-    private final int balance;
+public class Course {
+    private final String courseId;
+    private final String name;
+    private final int capacity;
 
-    public Account(String accountId, int balance) {
-        this.accountId = accountId;
-        this.balance = balance;
+    public Course(String courseId, String name, int capacity) {
+        this.courseId = courseId;
+        this.name = name;
+        this.capacity = capacity;
     }
 
-    public String getAccountId() { return accountId; }
-    public int getBalance() { return balance; }
+    public String getCourseId() { return courseId; }
+    public String getName() { return name; }
+    public int getCapacity() { return capacity; }
 }
 ----
 
@@ -195,7 +243,7 @@ Or using a `record`:
 
 [source,java]
 ----
-public record Account(String accountId, int balance) {}
+public record Course(String courseId, String name, int capacity) {}
 ----
 
 While setters and default constructors can still be used if necessary, the constructor-based approach ensures immutability and aligns with modern Java development practices.

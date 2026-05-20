@@ -159,7 +159,6 @@ class MergeTask extends CoordinatorTask {
             return tokenStore.deleteToken(name, thisSegment.getSegmentId(), context)
                              .thenCompose(result -> tokenStore.deleteToken(name, thatSegment.getSegmentId(), context))
                              .thenCompose(result -> tokenStore.initializeSegment(mergedToken, name, mergedSegment, context))
-                             .thenCompose(result -> tokenStore.releaseClaim(name, mergedSegment.getSegmentId(), context))
                              .thenApply(unused -> {
                                  logger.info("Processor [{}] successfully merged {} with {} into {}.",
                                              name, thisSegment, thatSegment, mergedSegment);

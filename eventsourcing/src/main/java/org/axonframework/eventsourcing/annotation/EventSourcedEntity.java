@@ -96,6 +96,13 @@ import java.lang.annotation.Target;
  * id based on the {@link TargetEntityId} annotation on a field or method
  * of the command payload. You can customize this behavior by providing a custom {@link #entityIdResolverDefinition()}.
  *
+ * <h2>Snapshotting</h2>
+ * Snapshotting can be enabled declaratively by adding {@link Snapshotting @Snapshotting} alongside this annotation.
+ * By default, {@code @Snapshotting} triggers a snapshot after every 50 events sourced. Both the event-count and
+ * sourcing-time thresholds are tunable via its attributes. For more complex policies (e.g. payload-based triggers),
+ * use the programmatic API via
+ * {@link org.axonframework.eventsourcing.configuration.EventSourcedEntityModule.OptionalPhase#snapshotPolicy}.
+ *
  * <h2>Polymorphic entities</h2>
  * Polymorphic entities are entities that can have multiple concrete types, and the type of the entity is determined
  * by the payload of the first event. In this case, the {@link EventSourcedEntity#concreteTypes()} should be

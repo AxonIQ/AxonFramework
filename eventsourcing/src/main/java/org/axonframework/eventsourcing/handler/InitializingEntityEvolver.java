@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.handler;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EntityMissingAfterLoadOrCreateException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
@@ -43,7 +45,7 @@ import java.util.Objects;
  * @author John Hendrikx
  */
 @Internal
-public class InitializingEntityEvolver<I, E> {
+public class InitializingEntityEvolver<I, E> implements DescribableComponent {
     private final EventSourcedEntityFactory<I, E> entityFactory;
     private final EntityEvolver<E> entityEvolver;
 
@@ -108,5 +110,11 @@ public class InitializingEntityEvolver<I, E> {
         }
 
         return entityEvolver.evolve(entity, message, context);
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("entityFactory", entityFactory);
+        descriptor.describeProperty("entityEvolver", entityEvolver);
     }
 }

@@ -207,8 +207,8 @@ The list below contains all the features, enhancements, bugs, and documentation 
 
 For those looking to start with Axon Framework 5, we recommend you go through the [Getting Started](https://docs.axoniq.io/axon-framework-5-getting-started/) section of Axoniq Docs.
 If you have an Axon Framework 4 background, for example because you are looking to migrate an Axon Framework 4 application to Axon Framework 5, note that thorough migration tooling will follow in release 5.1.0 (please follow [this issue](https://github.com/AxonFramework/AxonFramework/issues/3195) when curious).
-If you want to give a manual migration a go, we strongly recommend that you check out the `/axon-5/api-changes.md` [file](https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes.md) present in the Axon Framework project.
-Although the `api-changes.md` is not strictly the migration guide, we will use it as the basis to form our future migration guide and documentation.
+If you want to give a manual migration a go, we strongly recommend that you check out the `/axon-5/api-changes/` link:https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes/index.md[directory] present in the Axon Framework project.
+Although the `api-changes/` files are not strictly the migration guide, we will use them as the basis to form our future migration guide and documentation.
 
 Given the shear amount of changes, we recommend checking out the full change list link:https://github.com/AxonFramework/AxonFramework/releases/tag/axon-5.0.0[here].
 
