@@ -697,7 +697,7 @@ a last resort if the old stream must be fully replaced.
   remains reliable across releases. No public API changes.
   _Traces to: US7._
 - **FR-015 (Position advances past drops)**: When a transformation drops an event, the tracking
-  token MUST still advance. A restarting tracking processor MUST NOT reprocess dropped events.
+  token MUST still advance. A restarting streaming processor MUST NOT reprocess dropped events.
   _Traces to: US4 scenario 3._
 - **FR-016 (Exception propagation)**: If any step in applying a transformation throws -- the
   transformation function itself OR the framework's pre-invocation conversion to the declared
