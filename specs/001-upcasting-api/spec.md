@@ -12,363 +12,89 @@
 
 ## Background: Why Events Need Versioning
 
-In an event-sourced system, every change in the application is recorded as an event and stored
-permanently. Unlike a traditional database where you update a row, events are never changed after they
-are written – they are immutable facts about what happened.
+In an event-sourced system, every change in the application is recorded as an event and stored permanently. Events are never changed after they are written — they are immutable facts about what happened.
 
-This immutability is a strength (complete audit trail, ability to replay history), but it creates a
-challenge when your application evolves: old events stored in the past must still work with new code.
+This immutability is a strength (complete audit trail, ability to replay history), but it creates a challenge when your application evolves: old events stored in the past must still work with new code.
 
-**Axon Framework 5 already handles many common versioning scenarios automatically** through a
-mechanism called **payload conversion at handling time**: when an event handler declares the type it
-expects, Axon converts the stored payload (the data content of the event) to that type on the fly.
-For example, when you add a new field to an event class, old stored events simply receive a default
-value for that field when they are read. You do not need to do anything.
+Axon Framework 5 addresses this with two complementary mechanisms that run in order when a message is read:
 
-**Upcasters address scenarios that payload conversion cannot handle**: situations where the
-stored event stream itself must change – splitting one event into two, renaming an event type, or
-restructuring a payload in a way that every handler needs to see uniformly. A transformation runs
-when events are read from the event store, before any handler sees them.
+1. A **message transformer** (called upcasters in the past) changes the *structure* of a message — splitting one event into two, renaming a message type, or reshaping a payload. It runs first, so every handler observes the same, up-to-date shape. A transformer is a decorator around the converter, intercepting messages as they flow through. Transformers are most commonly applied to events (where they have historically been called *upcasters*), but the same mechanism works for snapshots, commands, and queries.
 
----
+2. A **message converter** changes the *representation* of the payload — producing the concrete type a handler declared. It runs after the transformer, on the already-restructured message. The converter handles many common versioning scenarios automatically: for example, when you add a new optional field to an event class, old stored events simply receive a default value for that field when they are read. You do not need to do anything.
 
-## Glossary -- "transformation" vs "upcaster"
+You reach for a transformer only when the message itself must be restructured before any handler sees it — scenarios the converter cannot handle on its own.
 
-The two terms refer to the same thing at different levels of discussion:
-
-- **Transformation** -- the user-facing concept used throughout this spec's prose, acceptance
-  scenarios, and edge cases ("register a transformation", "transformation chain", "the
-  transformation fires"). Optimised for readability without prior Axon Framework knowledge.
-- **Upcaster** -- the Java type name used in the contracts, configurer methods, and source
-  code (`EventUpcaster`, `SingleEventUpcaster`, `MultiEventUpcaster`,
-  `registerEventUpcaster(...)`). Preserved for naming continuity with Axon Framework 4 and
-  the Constitution.
-
-The two are interchangeable: any sentence about "a transformation" is a sentence about "an
-upcaster". The spec stays in prose-mode and the contracts stay in type-mode.
-
----
-
-## Clarifications
-
-This section records design decisions made during the clarification process. Each entry explains
-why a particular choice was made – the rationale that is not visible from the requirements alone.
-References to FR-xxx and SC-xxx entries are defined in the Requirements and Success Criteria
-sections later in this document.
-
-### Session 2026-05-19
-
-- Q: API surface for #746 alignment – should registration be typed on `Message<P>` or `EventMessage<P>`?
-  → A (decided 2026-05-19): A non-sealed `Upcaster<M extends Message<?>>` root interface is
-  introduced in `org.axonframework.messaging.upcasting`. It carries only `MessageType from()`.
-  The event-specific sealed hierarchy (`EventUpcaster`, `SingleEventUpcaster`,
-  `MultiEventUpcaster`) extends it. The public 5.2.0 API is event-only; #746 can add
-  `CommandUpcaster` and `QueryUpcaster` later without breaking the event API. Envelope-only
-  fields (tracking token, sequence number, entity id) remain on `EventUpcaster`; the generic
-  root holds only the cross-cutting `from()` contract. The premature-abstraction risk is
-  mitigated because the generic root is minimal (one method) and non-sealed. See DISCUSSION.md
-  item #0 for the ratified decision record.
-- Q: How does a transformation access the payload – auto-convert by declared target type, or via
-  exposed `Converter`? → A: Both (dual entry points). Simple transformations declare a target type
-  and the framework auto-converts the stored bytes via `ChainedConverter` before invocation. Advanced
-  transformations that need to inspect or produce multiple representations (e.g., peek as a
-  structural representation such as `JsonNode`, `GenericRecord`, or a DOM `Document`, then return
-  a POJO) receive a `Converter` instance and call `.convert()` inline. Rationale: matches
-  AF5's "support bare-bones and advanced styles" principle; avoids AF4's `IntermediateEventRepresentation`
-  trap (forced low-level access) while preserving an escape hatch for transformations that genuinely
-  need multiple representations. Both entry points are described in FR-010.
-- Q: How do AF4 users migrate their existing upcasters? → A: For 5.2.0, ship a migration guide only
-  (manual rewrite with worked examples). No compatibility layer (would reintroduce
-  `IntermediateEventRepresentation` shapes we are explicitly dropping). OpenRewrite recipes are
-  deferred and will be considered only if community demand surfaces. Rationale: AF5 introduces enough
-  fundamental shifts (Message-based, Converter-based, no IntermediateEventRepresentation, semver
-  version strings, fully qualified names) that a structural rewrite tool would be a non-trivial
-  investment; ship the guide first and let evidence of pain drive further tooling.
-- Q: Should 5.2.0 ship a mechanism to retire old upcasters (stream squashing / versioning bankruptcy)?
-  → A: No. Out of scope. The manual retirement rule is already documented in the Edge Cases table:
-  an upcaster may be removed only once no stored event at its `from` version exists anywhere
-  (including backups). A first-class stream-squashing API is a substantial feature (race conditions,
-  projection rebuilds, tracking-token preservation) and is premature without evidence of accumulation
-  pain at scale. Revisit if community feedback shows real friction.
-- Q: Should the spec assert a baseline testability requirement for transformations? → A: Yes (FR-018).
-  Transformations MUST be unit-testable from a plain JUnit test without an event store, processor,
-  or framework bootstrapping; the only allowed dependency at invocation time is a `Converter`
-  instance (and only when the advanced FR-010 entry point is used). Rationale: AF4's testing pain
-  was caused by upcasters being entangled with serialized-form construction and full chain
-  simulation; locking testability in as an architectural invariant prevents that recurrence. A full
-  test fixture API remains deferred to a separate issue.
-- Q: What is the concurrency / thread-safety contract for transformations? → A: Transformations MUST
-  be thread-safe and stateless across invocations (FR-006 updated). The framework may invoke a
-  transformation concurrently from any thread -- e.g., two tracking processors reading the same
-  stream in parallel, or simultaneous event-sourced entity loads. A registered transformation is
-  effectively a static function. Per-invocation local state (variables inside the function body) is
-  permitted; mutation of instance fields across invocations is not. Rationale: simplest user
-  contract, matches the purity intent, and maximises framework freedom to parallelise reads.
-- Q: Does the framework validate that a 1:1 transformation's output matches the declared `to`
-  identity? → A: Yes (FR-019). After the function returns, the framework MUST verify the output
-  payload's `MessageType` matches the registered `to` (name + version); a mismatch is propagated
-  as a runtime failure under FR-016, with full diagnostic context. The framework MUST NOT silently
-  coerce the output. Rationale: catches author bugs (wrong return type, version typo) at the exact
-  transformation that produced them, instead of letting wrong-typed output flow through FR-007
-  chaining and be silently skipped by later transformations. Does not apply to 1:N / 1:0
-  (FR-003): split/drop rules own each replacement event's identity by design.
-
-### Session 2026-05-18
-
-- Q: When does the EventConverter convert a stored event's payload? → A: On-demand when a
-  transformation requests it (FR-010, FR-012). Eager pre-conversion was rejected: if a stored
-  event's type has been deleted (the exact case a transformation handles – drop or rename), eager
-  conversion would fail before the transformation runs. Raw byte access was rejected: it recreates
-  the AF4 `IntermediateEventRepresentation` problem where developers had to manipulate
-  serializer-specific formats directly.
-- Q: What target types can a transformation request for the payload? → A: Whatever the registered
-  `Converter` for the stored event's format can produce (FR-010). For the shipped converters that
-  is at minimum: typed Java classes (POJOs) for every format; `JsonNode` / `ObjectNode` /
-  `Map<String, Object>` for Jackson 2, Jackson 3, and CBOR; `SpecificRecordBase` or `GenericRecord`
-  for Avro. For user-supplied converters (e.g. an XML-based serializer) the valid types are
-  whatever that converter exposes -- typically DOM `Document` / `Element` for XML, or a generated
-  binding type. Raw `byte[]` is not a valid target -- events stored as bytes are bridged
-  automatically by the `ContentTypeConverter` chain to whichever structured type the transformation
-  requests. The separation is intentional: format conversion (`byte[]` <-> structured) is the
-  `EventConverter`'s job; schema/identity change is the transformation's job.
-- Q: In which reading contexts must transformations apply? → A: All three – event-sourced entity loading, DCB
-  reads, and tracking processor reads (FR-013). If transformations applied in some contexts but not
-  others, the same stored event would produce different results depending on who reads it, making
-  a DCB consistency check and a projection disagree on current domain state.
-- Q: Should the spec require a Converter vs. transformation decision tree? → A: Yes – added as
-  SC-007 (see Success Criteria). The Background section states the boundary but a decision tree with
-  concrete examples is a first-class documentation artifact a developer needs before choosing which
-  tool to reach for.
-- Q: Retirement and no-handler behavior – document in spec? → A: Yes – both are in the Edge Cases
-  table (see User Scenarios & Testing). Without a clear retirement rule – which states that a
-  transformation may only be removed once no stored event at its `from` version exists anywhere,
-  including backups – developers either accumulate transformations forever or remove them too early
-  and break replays.
-- Q: How does registration work for splits and drops? → A: Two patterns (FR-001, FR-003). 1:1
-  declares source identity and target identity; 1:N/1:0 declares only source identity and a rule
-  producing zero or more replacement events. Mirrors AF4's SingleEventUpcaster / EventMultiUpcaster
-  split. Rename stays frictionless as the degenerate 1:1 case with no payload rule.
-- Q: Should version strings be constrained? → A: Yes – semver major.minor.patch enforced at
-  registration (FR-009). Without this, `"1.0"` and `"1.0.0"` silently never match, breaking
-  chaining.
-- Q: Startup-only or runtime registration? → A: Startup-only (FR-004). Runtime registration would
-  let part of a stream run with one chain and part with another, producing inconsistent results from
-  the same stored events.
-- Q: Observability signals? → A: Yes – INFO at chain build, DEBUG per transformation applied
-  (FR-014, US8). INFO level avoids flooding production logs while still confirming correct wiring.
-- Q: Fully qualified name or local name only? → A: Fully qualified (FR-001, FR-005). Local names
-  risk silent non-matches when two modules share the same event local name.
-- Q: Can transformations modify metadata? → A (revised 2026-05-19): Yes, but only via the
-  message-level entry point (FR-011). The default payload-only shape preserves metadata
-  unchanged. AF4's `IntermediateEventRepresentation.upcast(...)` took both a payload and a
-  metadata `Function`, so message-level mutation matches AF4 intent; the original spec
-  tightening (preservation as a hard invariant) was unjustified. The audit trail is preserved
-  unconditionally by the append-only event store -- downstream metadata mutation only affects
-  the in-memory view. Envelope fields (entity, token, sequence number) remain immutable.
-- Q: FR-009 and FR-014 had no traceable user story – spec or plan? → A: Added US7 and US8.
-  Both describe developer-facing scenarios with testable acceptance criteria, not technical
-  implementation choices.
-- Q: Exception handling? → A: Propagate immediately, halt processing (FR-016).
-- Q: Registration mechanism? → A: Programmatic only for 5.2.0; annotation-based deferred (see
-  Part C: Out of Scope and Non-Upcasting Scenarios).
-- Q: Snapshot upcasting in 5.2.0? → A: Deferred. Discard-and-replay is the correct primary
-  strategy. See Part C: Out of Scope for full rationale and the hook point in
-  `StoreBackedSnapshotter`.
-
----
 
 ## User Scenarios & Testing
 
 This section is split into three parts:
 
-- **Part A** – scenarios that AF5 already handles automatically. No transformation is needed. Each
-  scenario has a passing test in the university-demo module that proves the behaviour works today.
-- **Part B** – scenarios that require a transformation. These are the stories that drive the new API.
-- **Part C** – scenarios that are out of scope or where a transformation is the wrong tool
-  entirely. Each entry explains what to do instead and why a transformation does not solve the
-  problem.
+- **Part A** – scenarios the converter handles on its own. No transformer is needed. 
+- **Part B** – scenarios that require a transformer. These are the stories that drive the new API.
+- **Part C** – scenarios that are out of scope or where a transformer is the wrong tool entirely.
+  Each entry explains what to do instead and why a transformer does not solve the problem.
 
 ---
 
-### Part A: What AF5 Handles For You (No Transformation Needed)
+### Part A: What the converter handles (no transformer needed)
 
-The scenarios below are handled automatically by AF5's **payload conversion at handling time**
-mechanism. When an event is read from the event store, Axon converts its stored payload to whatever
-Java type the handler declares. This conversion happens per-handler, at handling time, without touching
-the stored event. No transformation needed, no migration script, no changes to other handlers.
+The converter absorbs most schema evolution on its own through two mechanisms: **payload
+conversion at handling time** (each handler declares its preferred Java type and the converter
+produces it from the stored payload) and **converter-level compatibility configuration** (Jackson
+annotations, Avro reader/writer schemas, JAXB bindings, defaults, ignore-unknown settings -- all
+on the converter, never on the upcaster chain).
 
-AF5 ships three serialization converter implementations. Each handles the scenarios below, but the
-exact mechanism depends on the format:
+So **whether a change requires a transformer depends as much on how your converter is configured
+as on the change itself.** A loose configuration absorbs more; a strict one rejects more.
 
-| Converter | Format | Schema evolution mechanism |
-|---|---|---|
-| `Jackson2Converter` | JSON (Jackson 2) | `@JsonIgnoreProperties`, `@JsonProperty`, numeric coercion |
-| `JacksonConverter` | JSON or CBOR (Jackson 3) | Same annotations as Jackson 2; CBOR bytes are compact binary but annotation behavior is identical |
-| `AvroConverter` | Avro binary | Writer/reader schema resolution: field defaults, field aliases, type promotion. Follows the standard Avro schema compatibility levels (BACKWARD, FORWARD, FULL, NONE) -- see [Confluent's compatibility documentation](https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html). |
-
-Users MAY plug in additional `Converter` implementations (e.g., an XML-based serializer using JAXB
-or a custom DOM walker). The framework treats any user-supplied converter as a peer of the shipped
-ones. Format-specific concerns -- e.g., XML's element-order sensitivity, or a non-Jackson JSON
-binding's null handling -- are the responsibility of that converter, not of the upcasting chain.
-
-For scenarios where Jackson and Avro use different mechanisms (A3, A4), both are described and
-tested separately. A5 is format-independent: it is handled by `MessageType` routing in the
-messaging layer, not by the serialization converter.
-
-Each scenario is verified by tests across all three implementations:
-
-- `examples/university-demo/src/test/java/.../faculty/PayloadConversionCapabilityTest.java`
-  -- `DelegatingEventConverter` + `Jackson2Converter`, full AF5 pipeline, events stored as `byte[]`
-- `conversion/src/test/java/.../jackson/CborPayloadEvolutionCapabilityTest.java`
-  -- `JacksonConverter(CBORMapper)`; covers `JacksonConverter` for both JSON and CBOR since
-  annotation behavior is format-independent within the Jackson family
-- `conversion/src/test/java/.../avro/AvroPayloadEvolutionCapabilityTest.java`
-  -- `AvroConverter`, writer/reader schema resolution
+> **The rule:** configure your converter first; reach for a transformer only when the change
+> cannot be expressed there. The decision below covers every common case.
 
 ---
 
-#### A1 - Added a New Field
+#### Do I need a transformer?
 
-**Scenario**: You add an optional `description` field to `CourseCreated`. Old stored events do not
-have this field.
+**Does the stored message need to be restructured before any handler sees it?**
 
-**How AF5 handles it**: When an old event is deserialized, the missing field defaults to `null`
-(Jackson) or the Avro schema default (Avro). Handlers that use `description` simply receive `null`
-or the schema default for old events and the real value for new ones. No code change needed in any
-handler.
+##### No -- the converter handles it natively
 
-**Example**: `CourseCreated` gains a `String description` field. A stored event written before this
-field existed deserializes cleanly -- `description` is `null` for Jackson, the declared schema
-default for Avro.
+*Field changes:*
 
-**Tests**: `PayloadConversionCapabilityTest$AddedNewField#newFieldDefaultsToNull_whenMissingFromStoredPayload`
-| `CborPayloadEvolutionCapabilityTest$AddedNewField#newFieldDefaultsToNull_whenMissingFromStoredCborPayload`
-| `AvroPayloadEvolutionCapabilityTest$AddedNewField#newField_receivesSchemaDefault_whenMissingFromStoredPayload`
+- **Add OPTIONAL field** -- converter supplies default for missing fields (Jackson `null`, Avro schema default, JAXB library default).
+- **Remove a field** (optional or required) – converter ignores unknown fields (Jackson `@JsonIgnoreProperties(ignoreUnknown=true)`, Avro writer/reader schema resolution, JAXB tolerates unknown elements).
+- **Change required → optional** (relax) -- schema / annotation update.
+- **Rename a field** -- old-name → new-name mapping (Jackson `@JsonProperty("oldName")`, Avro `"aliases": ["oldName"]`, JAXB `@XmlElement(name="oldName")`).
+- **Compatible type change** (e.g., `int -> long`) -- converter coerces (Jackson numeric coercion, Avro schema promotion).
 
----
+*Class / format / handler changes:*
 
-#### A2 - Removed a Field
+- **Rename Java class only** - `@Event(name = "OldName")` preserves `MessageType` routing; payload unchanged.
+- **Switch serialization format** - reconfigure `EventConverter`; event classes unchanged.
+- **Handler wants different representation** – each handler declares its preferred type (`JsonNode`, `GenericRecord`, `Document`, concrete class).
 
-**Scenario**: You remove a field from your event class (e.g., `lastName` is dropped from
-`StudentEnrolledInFaculty`). Old stored events still carry the field.
+##### Yes -- transformer needed
 
-**How AF5 handles it**: The extra field in the stored payload is silently ignored during
-deserialization. For Jackson / CBOR, add `@JsonIgnoreProperties(ignoreUnknown = true)` to your
-event class to make this explicit. For Avro, writer/reader schema resolution drops writer-only
-fields automatically -- no annotation needed. No handler changes needed in either case.
+*Payload can't be bridged at the converter level:*
 
-**Example**: `StudentEnrolledInFaculty` drops `lastName`. Old stored events still carry `lastName`
-in their payload -- the new class ignores it without error.
+- **Add REQUIRED field, no usable default** -> `SingleEventUpcaster` (populate from existing payload data).
+- **Change optional -> required, no usable default** -> `SingleEventUpcaster`.
+- **Rename triggers payload restructure beyond a simple alias** -> `SingleEventUpcaster`.
+- **Incompatible type change** (e.g., `String -> int` requiring a parse step) -> `SingleEventUpcaster`.
+- **Payload restructure** (one field → 2; combining fields; complex shape) -> `SingleEventUpcaster`.
+- **Strict converter config rejects an otherwise-bridgeable difference** (`FAIL_ON_UNKNOWN_PROPERTIES = true`, Avro `NONE`, JAXB without an alias) -> relax the config, or write a `SingleEventUpcaster`.
 
-**Tests**: `PayloadConversionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredPayload`
-| `CborPayloadEvolutionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredCborPayload`
-| `AvroPayloadEvolutionCapabilityTest$RemovedField#removedField_isIgnoredWhenPresentInStoredPayload`
+*Identity / cardinality changes:*
 
----
-
-#### A3 - Renamed a Field
-
-**Scenario**: You rename a field in your event class (e.g., `capacity` becomes `maxCapacity`). Old
-stored events carry the old field name.
-
-**How AF5 handles it**: The mechanism depends on the serialization format.
-
-- **Jackson / CBOR**: Annotate the new field with `@JsonProperty("oldName")`. Jackson maps the
-  stored key to the new field name automatically.
-- **Avro**: Declare `"aliases": ["oldName"]` on the reader schema field. Avro's writer/reader
-  schema resolution maps the stored field name to the new field name via the alias, applied by
-  `SpecificRecordBaseConverterStrategy` when decoding into a generated Java class.
-
-No handler changes needed in either case.
-
-**Tests**: `PayloadConversionCapabilityTest$RenamedField#renamedField_isMappedViaJsonProperty`
-| `CborPayloadEvolutionCapabilityTest$RenamedField#renamedField_isMappedViaJsonProperty`
-| `AvroPayloadEvolutionCapabilityTest$RenamedField#storedValue_isPreservedUnderWriterFieldName_whenReadAsGenericRecord`
-| `AvroPayloadEvolutionCapabilityTest$RenamedField#renamedField_isMappedViaAlias_whenDecodingIntoSpecificRecord`
+- **Event identity changed (name or version), payload unchanged** -> `EventUpcaster.rename(from, to)`.
+- **Event identity changed, payload also changes** -> `SingleEventUpcaster`.
+- **One event becomes multiple events** -> `MultiEventUpcaster`.
+- **Drop event entirely** -> `MultiEventUpcaster` returning an empty list.
 
 ---
 
-#### A4 - Changed a Field to a Compatible Type
+#### Tests proving the No-branch leaves
 
-**Scenario**: You widen a field's type (e.g., `capacity` changes from `int` to `long`).
-
-**How AF5 handles it**: The mechanism depends on the serialization format.
-
-- **Jackson / CBOR**: Jackson coerces compatible numeric types automatically during deserialization.
-  No annotation or handler change needed.
-- **Avro**: Avro's writer/reader schema resolution promotes `int` to `long` automatically when the
-  reader schema declares the field as `long`, applied by `SpecificRecordBaseConverterStrategy` when
-  decoding into a generated Java class.
-
-**Example**: `CourseCreated.capacity` changes from `int` to `long`. Stored `30` (int) deserializes
-cleanly as `30L` (long).
-
-**Tests**: `PayloadConversionCapabilityTest$CompatibleTypeChange#intWidenedToLong_isCoercedByEventConverter`
-| `CborPayloadEvolutionCapabilityTest$CompatibleTypeChange#intWidenedToLong_isCoercedByCborConverter`
-| `AvroPayloadEvolutionCapabilityTest$CompatibleTypeChange#storedIntValue_isPreservedWhenReadAsGenericRecord`
-| `AvroPayloadEvolutionCapabilityTest$CompatibleTypeChange#intWidenedToLong_whenDecodingIntoSpecificRecord`
-
----
-
-#### A5 - Renamed the Java Class Only
-
-**Scenario**: You rename the Java class (e.g., `CourseCreatedEvent` becomes `CourseCreated`) to
-follow naming conventions, but the business event is the same.
-
-**How AF5 handles it**: Axon routes events by their **MessageType** name (set via
-`@Event(name = "...")`) not by the Java class name. Keep the `@Event(name = ...)` value the same as
-the old class name and Axon continues to match stored events to the renamed class. The payload is
-byte-for-byte identical -- nothing to convert. This mechanism is format-independent: it applies
-equally regardless of whether events are stored as JSON, CBOR, or Avro binary.
-
-**Example**: `CourseCreatedEvent` is renamed to `CourseCreated`. Adding
-`@Event(name = "...CourseCreatedEvent")` to the new class preserves routing. All stored events
-continue to reach the handler unchanged.
-
-**Tests**: `PayloadConversionCapabilityTest$RenamedJavaClass`
-`#messageTypeResolver_usesAnnotationName_notJavaClassName`
-`#payloadIsUnchanged_soEventConverterDeserializesCorrectly`
-
----
-
-#### A6 - Handler Wants a Different Representation
-
-**Scenario**: One handler wants to receive the event as a typed Java class, while another handler
-(perhaps a diagnostic or schema-agnostic projector) wants to receive the raw JSON as a `JsonNode`
-or a `GenericRecord`.
-
-**How AF5 handles it**: Different handlers for the same event can declare different parameter types.
-Axon converts the stored payload to whatever type each handler requests. No changes to the event
-class or the event store are needed.
-
-**Example**: `@EventHandler public void on(CourseCreated event)` receives a typed object.
-`@EventHandler(eventName = "...CourseCreated") public void on(JsonNode event)` on a different
-handler receives the raw JSON. Both handle the same stored event simultaneously. For Avro, a handler
-can declare `GenericRecord` to receive the untyped record without a generated class.
-
-**Tests**: `PayloadConversionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredEvent_inDifferentRepresentations`
-| `CborPayloadEvolutionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredCborBytes_inDifferentRepresentations`
-| `AvroPayloadEvolutionCapabilityTest$HandlerReceivesDifferentRepresentation#differentHandlers_receiveTheSameStoredBytes_inDifferentRepresentations`
-
----
-
-#### A7 - Switched Serialization Format
-
-**Scenario**: You migrate the serialization format of your event store (e.g., from XStream to
-Jackson, or from Jackson to Avro). Old events were written in the old format; new events are written
-in the new format.
-
-**How AF5 handles it**: Configure an **EventConverter** (a component responsible for
-format/serialization conversion, distinct from upcasters) to bridge the two formats. Event handlers
-and event classes require no changes at all. The conversion is transparent.
-
-**Example**: Migrating from XStream to Jackson. After configuring the `EventConverter`, all handlers
-continue to receive correctly deserialized events regardless of which serializer wrote the stored
-event. The same applies when switching to Avro: only the converter configuration changes.
-
-**Tests**: `PayloadConversionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenPayloadStoredAsByteArray`
-| `CborPayloadEvolutionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenSerializationFormatIsCbor`
-| `AvroPayloadEvolutionCapabilityTest$SwitchedSerializationFormat#eventClass_requiresNoChange_whenSerializationFormatIsAvro`
+Each NO-branch leaf is a `@Nested` class of the same name in [`PayloadConversionCapabilityTest`](../../examples/university-demo/src/test/java/org/axonframework/examples/demo/university/faculty/PayloadConversionCapabilityTest.java) (Jackson 2, full AF5 pipeline; also the sole home of `RenamedJavaClass`, which is format-independent), [`CborPayloadEvolutionCapabilityTest`](../../conversion/src/test/java/org/axonframework/conversion/jackson/CborPayloadEvolutionCapabilityTest.java) (Jackson 3 / CBOR), and [`AvroPayloadEvolutionCapabilityTest`](../../conversion/src/test/java/org/axonframework/conversion/avro/AvroPayloadEvolutionCapabilityTest.java) (Avro). "Change required -> optional" has no separate test -- it is a converter config change with no framework behaviour to assert.
 
 ---
 
