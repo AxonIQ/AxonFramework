@@ -34,6 +34,11 @@ docs/_playbook/build
 .vscode
 .cursor
 
+# Spec-kit (local use only, not committed, testing out)
+.specify/
+.claude/skills/speckit-*/
+
+
 # just - console helper
 .justfile
 .flattened-pom.xml
