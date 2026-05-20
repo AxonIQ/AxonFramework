@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc;
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.ClassUtils;
 import org.axonframework.common.DateTimeUtils;
@@ -44,8 +45,11 @@ public class JdbcTokenEntry {
 
     /**
      * The clock used to persist timestamps in this entry. Defaults to UTC system time.
+     *
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
-    public static Clock clock = Clock.systemUTC();
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    public static Clock clock = ClockUtils.get();
 
     private byte[] token;
     private String tokenType;

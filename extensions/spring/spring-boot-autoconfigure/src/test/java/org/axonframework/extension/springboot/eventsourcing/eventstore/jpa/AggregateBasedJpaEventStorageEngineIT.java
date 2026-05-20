@@ -307,7 +307,7 @@ class AggregateBasedJpaEventStorageEngineIT
         entityManager.clear();
         transaction.commit();
 
-        Instant now = Clock.systemUTC().instant();
+        Instant now = ClockUtils.instant();
         Tag aggregateToRemove = Tag.of("MyAggregate", "remove");
         AppendCondition removeAggregateCondition =
                 AppendCondition.withCriteria(EventCriteria.havingTags(aggregateToRemove));

@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventsourcing;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.DomainEventMessage;
 import org.axonframework.messaging.eventhandling.GenericDomainEventMessage;
 import org.axonframework.messaging.eventsourcing.snapshotting.AggregateLoadTimeSnapshotTriggerDefinition;
@@ -65,7 +66,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
                 null
         );
         now = Instant.now();
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now, ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now, ZoneId.of("UTC")));
     }
 
     @AfterEach
@@ -73,6 +74,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
         while (CurrentUnitOfWork.isStarted()) {
             CurrentUnitOfWork.get().rollback();
         }
+        ClockUtils.reset();
     }
 
     @Test
@@ -81,7 +83,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
         );
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC")));
 
         trigger.eventHandled(testEvent);
 
@@ -96,7 +98,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     @Test
     void snapshotterTriggeredOnUnitOfWorkCommit() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC")));
 
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
@@ -112,7 +114,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     @Test
     void snapshotterIsNotTriggeredOnUnitOfWorkRollbackIfEventsHandledAfterInitialization() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC")));
 
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
@@ -128,7 +130,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     @Test
     void snapshotterTriggeredOnUnitOfWorkRollbackWhenEventsHandledBeforeInitialization() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC")));
 
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
@@ -144,7 +146,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     @Test
     void snapshotterNotTriggered() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1000), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1000), ZoneId.of("UTC")));
 
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"
@@ -159,7 +161,7 @@ class AggregateLoadSnapshotTriggerDefinitionTest {
     @Test
     void scheduleANewSnapshotAfterCommitTrigger() {
         SnapshotTrigger trigger = testSubject.prepareTrigger(aggregate.rootType());
-        AggregateLoadTimeSnapshotTriggerDefinition.clock = Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC"));
+        ClockUtils.set(Clock.fixed(now.plusMillis(1001), ZoneId.of("UTC")));
 
         DomainEventMessage testEvent = new GenericDomainEventMessage(
                 "type", aggregateIdentifier, 0, new MessageType("event"), "Mock contents"

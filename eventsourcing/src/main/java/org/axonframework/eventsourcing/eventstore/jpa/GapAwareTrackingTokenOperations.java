@@ -38,6 +38,7 @@ import java.util.List;
 record GapAwareTrackingTokenOperations(
         int gapTimeout,
         Logger logger,
+        @Deprecated(forRemoval = true, since = "5.2.0")
         Clock clock
 ) {
 

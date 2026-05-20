@@ -100,6 +100,7 @@ class Coordinator {
     private final long claimExtensionThreshold;
     private final long tokenStoreInitRetryInterval;
     private final long tokenStoreInitMaxRetries;
+    @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
     private final MaxSegmentProvider maxSegmentProvider;
     private final int initialSegmentCount;
@@ -411,6 +412,7 @@ class Coordinator {
         private long claimExtensionThreshold = 5000;
         private long tokenStoreInitRetryInterval = 100;
         private long tokenStoreInitMaxRetries = 30;
+        @Deprecated(forRemoval = true, since = "5.2.0")
         private Clock clock = ClockUtils.get();
         private MaxSegmentProvider maxSegmentProvider;
         private int initialSegmentCount = 16;
@@ -565,9 +567,11 @@ class Coordinator {
          * The {@link Clock} used for any time dependent operations in this {@link Coordinator}. For example used to
          * define when to attempt claiming new tokens. Defaults to {@link ClockUtils#get()}.
          *
+         * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
          * @param clock a {@link Clock} used for any time dependent operations in this {@link Coordinator}
          * @return the current Builder instance, for fluent interfacing
          */
+        @Deprecated(forRemoval = true, since = "5.2.0")
         Builder clock(Clock clock) {
             this.clock = clock;
             return this;

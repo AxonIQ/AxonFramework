@@ -98,6 +98,7 @@ class WorkPackage {
     private final Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
     private final Supplier<ProcessingContext> schedulingProcessingContextProvider;
     private Runnable batchProcessedCallback;
+    @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
 
     private TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
@@ -607,6 +608,7 @@ class WorkPackage {
         private int batchSize = 1;
         private long claimExtensionThreshold = 5000;
         private @Nullable Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
+        @Deprecated(forRemoval = true, since = "5.2.0")
         private Clock clock = ClockUtils.get();
         private Supplier<ProcessingContext> schedulingProcessingContextProvider = () ->
                 new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
@@ -745,7 +747,9 @@ class WorkPackage {
          *
          * @param clock the {@link Clock} used for time dependent operations
          * @return the current Builder instance, for fluent interfacing
+         * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
          */
+        @Deprecated(forRemoval = true, since = "5.2.0")
         Builder clock(Clock clock) {
             this.clock = clock;
             return this;

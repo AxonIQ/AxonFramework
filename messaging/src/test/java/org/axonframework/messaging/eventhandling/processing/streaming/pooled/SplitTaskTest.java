@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -51,7 +52,6 @@ class SplitTaskTest {
     private final WorkPackage workPackage = mock(WorkPackage.class);
     private final Map<Integer, java.time.Instant> releasesDeadlines = new HashMap<>();
     private CompletableFuture<Boolean> result;
-    private final java.time.Clock clock = java.time.Clock.systemUTC();
     private SplitTask testSubject;
 
     @BeforeEach
@@ -66,7 +66,7 @@ class SplitTaskTest {
                 releasesDeadlines,
                 tokenStore,
                 UnitOfWorkTestUtils.SIMPLE_FACTORY,
-                clock
+                ClockUtils.get()
         );
     }
 

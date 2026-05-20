@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -26,6 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -55,8 +58,9 @@ class MergeTask extends CoordinatorTask {
     private final Map<Integer, WorkPackage> workPackages;
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
-    private final Map<Integer, java.time.Instant> releasesDeadlines;
-    private final java.time.Clock clock;
+    private final Map<Integer, Instant> releasesDeadlines;
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    private final Clock clock;
 
     /**
      * Constructs a {@code MergeTask}.
@@ -75,16 +79,17 @@ class MergeTask extends CoordinatorTask {
      *                          the merged token.
      * @param unitOfWorkFactory The {@link UnitOfWorkFactory} that spawns {@link UnitOfWork UnitOfWorks} used to invoke
      *                          all {@link TokenStore} operations inside a unit of work.
-     * @param clock              the clock used for time-based operations
+     * @param clock             the clock used for time-based operations, deprecated in favor of {@link ClockUtils#get()}
      */
     MergeTask(CompletableFuture<Boolean> result,
               String name,
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
-              Map<Integer, java.time.Instant> releasesDeadlines,
+              Map<Integer, Instant> releasesDeadlines,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
-              java.time.Clock clock) {
+              @Deprecated(forRemoval = true, since = "5.2.0")
+              Clock clock) {
         super(result, name);
         this.name = name;
         this.segmentId = segmentId;

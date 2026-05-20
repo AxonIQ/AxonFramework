@@ -16,6 +16,8 @@
 
 package org.axonframework.messaging.eventsourcing.snapshotting;
 
+import org.axonframework.common.ClockUtils;
+
 import java.time.Clock;
 
 /**
@@ -41,8 +43,6 @@ public class AggregateLoadTimeSnapshotTriggerDefinition implements SnapshotTrigg
 
     private final Snapshotter snapshotter;
     private final long loadTimeMillisThreshold;
-    public static Clock clock = Clock.systemUTC();
-
 
     /**
      * Initialize a {@link SnapshotTriggerDefinition} to trigger snapshot creation using the given {@code snapshotter}
@@ -73,7 +73,7 @@ public class AggregateLoadTimeSnapshotTriggerDefinition implements SnapshotTrigg
     private static class AggregateLoadTimeSnapshotTrigger extends AbstractSnapshotTrigger {
 
         private final long loadTimeMillisThreshold;
-        private long startTime = clock.instant().toEpochMilli();
+        private long startTime = ClockUtils.instant().toEpochMilli();
 
         public AggregateLoadTimeSnapshotTrigger(Snapshotter snapshotter,
                                                 Class<?> aggregateType,
@@ -84,12 +84,12 @@ public class AggregateLoadTimeSnapshotTriggerDefinition implements SnapshotTrigg
 
         @Override
         public boolean exceedsThreshold() {
-            return (clock.instant().toEpochMilli() - startTime) > loadTimeMillisThreshold;
+            return (ClockUtils.instant().toEpochMilli() - startTime) > loadTimeMillisThreshold;
         }
 
         @Override
         public void reset() {
-            startTime = clock.instant().toEpochMilli();
+            startTime = ClockUtils.instant().toEpochMilli();
         }
     }
 }

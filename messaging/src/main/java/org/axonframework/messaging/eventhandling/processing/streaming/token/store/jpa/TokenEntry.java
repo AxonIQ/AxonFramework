@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa;
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.Nullable;
 import jakarta.persistence.Basic;
 import jakarta.persistence.Column;
@@ -51,7 +52,10 @@ public class TokenEntry {
 
     /**
      * The clock used to persist timestamps in this entry. Defaults to UTC system time.
+     *
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public static Clock clock = Clock.systemUTC();
 
     /**
@@ -66,6 +70,7 @@ public class TokenEntry {
     @Lob
     @Column(length = 10000)
     private byte[] token;
+
     @Basic
     private String tokenType;
 
@@ -77,8 +82,10 @@ public class TokenEntry {
 
     @Id
     private String processorName;
+
     @Id
     private int segment;
+
     @Basic(optional = false)
     private int mask;
 
@@ -158,7 +165,7 @@ public class TokenEntry {
     }
 
     private boolean expired(TemporalAmount claimTimeout) {
-        return timestamp().plus(claimTimeout).isBefore(clock.instant());
+        return timestamp().plus(claimTimeout).isBefore(ClockUtils.instant());
     }
 
     /**
@@ -171,7 +178,7 @@ public class TokenEntry {
     public boolean releaseClaim(String owner) {
         if (Objects.equals(this.owner, owner)) {
             this.owner = null;
-            this.timestamp = formatInstant(clock.instant());
+            this.timestamp = formatInstant(ClockUtils.instant());
         }
         return this.owner == null;
     }
@@ -202,7 +209,7 @@ public class TokenEntry {
      * @param converter The converter that will be used to serialize the token.
      */
     public void updateToken(@Nullable TrackingToken token, Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();
