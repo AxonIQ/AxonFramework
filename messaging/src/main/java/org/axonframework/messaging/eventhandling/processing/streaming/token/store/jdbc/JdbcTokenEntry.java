@@ -43,14 +43,6 @@ import static org.axonframework.common.DateTimeUtils.formatInstant;
  */
 public class JdbcTokenEntry {
 
-    /**
-     * The clock used to persist timestamps in this entry. Defaults to UTC system time.
-     *
-     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
-     */
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    public static Clock clock = ClockUtils.get();
-
     private byte[] token;
     private String tokenType;
     private String timestamp;
@@ -196,7 +188,7 @@ public class JdbcTokenEntry {
         if (!mayClaim(owner, claimTimeout)) {
             return false;
         }
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         this.owner = owner;
         return true;
     }
@@ -214,7 +206,7 @@ public class JdbcTokenEntry {
     }
 
     private boolean expired(TemporalAmount claimTimeout) {
-        return timestamp().plus(claimTimeout).isBefore(clock.instant());
+        return timestamp().plus(claimTimeout).isBefore(ClockUtils.instant());
     }
 
     /**
@@ -227,7 +219,7 @@ public class JdbcTokenEntry {
     public boolean releaseClaim(String owner) {
         if (Objects.equals(this.owner, owner)) {
             this.owner = null;
-            this.timestamp = formatInstant(clock.instant());
+            this.timestamp = formatInstant(ClockUtils.instant());
         }
         return this.owner == null;
     }
@@ -240,7 +232,7 @@ public class JdbcTokenEntry {
      * @param converter The converter to update token to.
      */
     public final void updateToken(@Nullable TrackingToken token, Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();

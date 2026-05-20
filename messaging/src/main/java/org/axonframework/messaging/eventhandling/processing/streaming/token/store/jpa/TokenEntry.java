@@ -51,20 +51,12 @@ import static org.axonframework.common.DateTimeUtils.formatInstant;
 public class TokenEntry {
 
     /**
-     * The clock used to persist timestamps in this entry. Defaults to UTC system time.
-     *
-     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
-     */
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    public static Clock clock = Clock.systemUTC();
-
-    /**
      * Computes a token timestamp.
      *
      * @return A token timestamp.
      */
     public static String computeTokenTimestamp() {
-        return formatInstant(clock.instant());
+        return formatInstant(ClockUtils.instant());
     }
 
     @Lob
@@ -102,7 +94,7 @@ public class TokenEntry {
                       Segment segment,
                       @Nullable TrackingToken token,
                       Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();
@@ -147,7 +139,7 @@ public class TokenEntry {
         if (!mayClaim(owner, claimTimeout)) {
             return false;
         }
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         this.owner = owner;
         return true;
     }
