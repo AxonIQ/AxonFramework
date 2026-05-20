@@ -37,14 +37,8 @@ import java.util.List;
  */
 record GapAwareTrackingTokenOperations(
         int gapTimeout,
-        Logger logger,
-        @Deprecated(forRemoval = true, since = "5.2.0")
-        Clock clock
+        Logger logger
 ) {
-
-    GapAwareTrackingTokenOperations(int gapTimeout, Logger logger) {
-        this(gapTimeout, logger, ClockUtils.get());
-    }
 
     GapAwareTrackingToken withGapsCleaned(GapAwareTrackingToken token, List<Object[]> indexAndTimestampBetweenGaps) {
         Instant gapTimeoutThreshold = gapTimeoutThreshold();
@@ -87,6 +81,6 @@ record GapAwareTrackingTokenOperations(
     }
 
     Instant gapTimeoutThreshold() {
-        return clock.instant().minus(gapTimeout, ChronoUnit.MILLIS);
+        return ClockUtils.instant().minus(gapTimeout, ChronoUnit.MILLIS);
     }
 }
