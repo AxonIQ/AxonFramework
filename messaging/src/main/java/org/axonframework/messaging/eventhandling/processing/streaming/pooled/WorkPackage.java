@@ -823,28 +823,28 @@ class WorkPackage {
     }
 
     /**
-         * Container of a {@link MessageStream.Entry} and {@code boolean} whether the given {@code eventMessage} can be
-         * handled in this package. The combination constitutes to a processing entry the {@code WorkPackage} should
-         * ingest.
-         */
-        private record DefaultProcessingEntry(MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle)
+     * Container of a {@link MessageStream.Entry} and {@code boolean} whether the given {@code eventMessage} can be
+     * handled in this package. The combination constitutes to a processing entry the {@code WorkPackage} should
+     * ingest.
+     */
+    private record DefaultProcessingEntry(MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle)
             implements ProcessingEntry {
 
         @Override
-            public TrackingToken trackingToken() {
+        public TrackingToken trackingToken() {
                 return TrackingToken.fromContext(eventEntry).orElse(null);
             }
 
-            @Override
-            public void addToBatch(
-                    List<MessageStream.Entry<? extends EventMessage>> eventBatch,
-                    TrackingToken wrappedToken
-            ) {
-                if (canHandle) {
-                    eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
-                }
+        @Override
+        public void addToBatch(
+                List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                TrackingToken wrappedToken
+        ) {
+            if (canHandle) {
+                eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
             }
         }
+    }
 
     /**
      * Container of a batch of {@link ProcessingEntry ProcessingEntries}. These entries are grouped together since they

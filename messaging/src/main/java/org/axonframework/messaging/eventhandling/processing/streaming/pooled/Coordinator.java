@@ -358,40 +358,40 @@ class Coordinator {
     }
 
     /**
-         * Status holder for this service. Defines whether it is running, has been started (to ensure double
-         * {@link #start()} invocations do not restart this coordinator) and maintains a shutdown handler to complete
-         * asynchronously through {@link #stop()}.
-         */
-        private record RunState(boolean isRunning, boolean wasStarted, CompletableFuture<Void> shutdownHandle,
-                                Runnable shutdownAction) {
+     * Status holder for this service. Defines whether it is running, has been started (to ensure double
+     * {@link #start()} invocations do not restart this coordinator) and maintains a shutdown handler to complete
+     * asynchronously through {@link #stop()}.
+     */
+    private record RunState(boolean isRunning, boolean wasStarted, @Nullable CompletableFuture<Void> shutdownHandle,
+                            Runnable shutdownAction) {
 
         public static RunState initial(Runnable shutdownAction) {
-                return new RunState(false, false, emptyCompletedFuture(), shutdownAction);
-            }
+            return new RunState(false, false, emptyCompletedFuture(), shutdownAction);
+        }
 
-            public RunState attemptStart() {
-                if (isRunning) {
-                    // It was already started
-                    return new RunState(true, false, null, shutdownAction);
-                } else if (shutdownHandle.isDone()) {
-                    // Shutdown has previously been completed. It's allowed to start
-                    return new RunState(true, true, null, shutdownAction);
-                } else {
-                    // Shutdown is in progress
-                    return this;
-                }
-            }
-
-            public RunState attemptStop() {
-                // It's already stopped
-                if (!isRunning || shutdownHandle != null) {
-                    return this;
-                }
-                CompletableFuture<Void> newShutdownHandle = new CompletableFuture<>();
-                newShutdownHandle.whenComplete((r, e) -> shutdownAction.run());
-                return new RunState(false, false, newShutdownHandle, shutdownAction);
+        public RunState attemptStart() {
+            if (isRunning) {
+                // It was already started
+                return new RunState(true, false, null, shutdownAction);
+            } else if (shutdownHandle.isDone()) {
+                // Shutdown has previously been completed. It's allowed to start
+                return new RunState(true, true, null, shutdownAction);
+            } else {
+                // Shutdown is in progress
+                return this;
             }
         }
+
+        public RunState attemptStop() {
+            // It's already stopped
+            if (!isRunning || shutdownHandle != null) {
+                return this;
+            }
+            CompletableFuture<Void> newShutdownHandle = new CompletableFuture<>();
+            newShutdownHandle.whenComplete((r, e) -> shutdownAction.run());
+            return new RunState(false, false, newShutdownHandle, shutdownAction);
+        }
+    }
 
     /**
      * Package private builder class to construct a {@link Coordinator}. Not used for validation of the fields as is the
