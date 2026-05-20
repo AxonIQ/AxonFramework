@@ -832,8 +832,8 @@ class WorkPackage {
 
         @Override
         public TrackingToken trackingToken() {
-                return TrackingToken.fromContext(eventEntry).orElse(null);
-            }
+            return TrackingToken.fromContext(eventEntry).orElse(null);
+        }
 
         @Override
         public void addToBatch(
