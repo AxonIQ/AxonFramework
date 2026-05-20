@@ -536,17 +536,13 @@ receiver-side upcasting alone.
 **Use case**: a 1:1 `Snapshot -> Snapshot` transformer would let the framework apply a
 state-schema change to a stored snapshot instead of discarding it and replaying all events.
 
-**Why deferred for 5.2.0**: scope and focus, NOT architecture. The snapshot-on-`MessageStream`
-rework has landed -- `SnapshotEventMessage extends GenericEventMessage` exists, and
-`SnapshotCapableEventStorageEngine` delivers the snapshot as the first entry of the
-`MessageStream` returned by `EventStoreTransaction.source(...)`. The same converter-decorator we
-use for events on the storage-engine stream would naturally see `SnapshotEventMessage` entries,
-so the integration point is already in place.
-
-**In scope for 5.2.0**: the design MUST keep snapshot transformations easily triggerable through the
-same decorator mechanism -- no special-casing of `SnapshotEventMessage` in the chain, no
-additional registration API surface. A future snapshot transformation should require only a new user
-story and the corresponding tests, not a redesign.
+**Why deferred for 5.2.0**: scope and focus, NOT architecture. `SnapshotEventMessage extends
+GenericEventMessage` and `SnapshotCapableEventStorageEngine` delivers the snapshot as the first
+entry of the `MessageStream` returned by `EventStoreTransaction.source(...)`. The chain
+decorates the storage engine and processes `SnapshotEventMessage` entries like any other event
+in the stream -- no special-casing. So a developer who registers a matching transformation in
+5.2.0 will see it fire on snapshots; what is deferred is the user-facing API/docs/test fixtures,
+not the chain wiring.
 
 **Ergonomic gap (not a blocker)**: `Snapshot` is a plain record without a `.payloadAs(Class<?>)`
 accessor. A future snapshot transformation either uses the `Converter` directly
@@ -678,14 +674,18 @@ a last resort if the old stream must be fully replaced.
   output. The event store remains append-only -- modifications only affect the in-memory
   `EventMessage` flowing downstream.
   _Traces to: US1 scenario 1, US3 scenario 1._
-- **FR-012 (Lazy deserialization)**: The framework MUST NOT deserialize a payload unless the event
-  matches at least one registered transformation. Non-matching events MUST pass through without
-  conversion.
+- **FR-012 (Lazy deserialization and chain cost)**: The framework MUST NOT deserialize a payload
+  unless the event matches at least one registered transformation. Non-matching events MUST pass
+  through without conversion. Per-event work on the non-matching path MUST be `O(1)` in chain
+  length (e.g., HashMap keyed by `(name, version)`) with no per-event allocations. Benchmark
+  thresholds and JMH targets are set in plan.md.
   _Traces to: US1 scenario 3, US4 scenario 2._
 - **FR-013 (Reading-context consistency)**: The chain MUST be applied identically across all three
   event-reading contexts -- event-sourced entity loads, DCB reads (`SourcingCondition`), and
-  tracking processor reads -- so the same stored event yields the same transformed output
-  regardless of who triggered the read.
+  tracking processor reads. `SourcingCondition` and `StreamingCondition` filtering runs at the
+  storage-engine level (SQL `WHERE`, in-memory pre-filter) BEFORE the chain; tag-based identity
+  is fixed at append time, so a transformation that changes message identity does NOT affect
+  which events match -- use Copy and Replace if the stored stream itself must change.
   _Traces to: US1 scenario 4._
 - **FR-014 (Observability)**: The framework MUST emit:
   - **INFO once at startup**: total transformation count and each transformation's `from` (and
@@ -699,10 +699,15 @@ a last resort if the old stream must be fully replaced.
 - **FR-015 (Position advances past drops)**: When a transformation drops an event, the tracking
   token MUST still advance. A restarting tracking processor MUST NOT reprocess dropped events.
   _Traces to: US4 scenario 3._
-- **FR-016 (Exception propagation)**: If a transformation throws, the framework MUST propagate the
-  exception immediately to the caller (entity load, DCB read, or processor read) and halt. Silent
-  skipping or logging-and-continuing is prohibited. The propagated exception MUST identify the
-  failing transformation, the event's name and version, and its stream position.
+- **FR-016 (Exception propagation)**: If any step in applying a transformation throws -- the
+  transformation function itself OR the framework's pre-invocation conversion to the declared
+  target type (e.g., malformed stored payload) -- the framework MUST propagate the exception
+  immediately to the caller (entity load, DCB read, or processor read) and halt. Silent skipping
+  or logging-and-continuing is prohibited. The propagated exception MUST identify the failing
+  transformation, the event's name and version, and its stream position. For 1:N splits,
+  `MessageStream` is pull-based and lazy -- already-emitted siblings (events 0..K-1) stay
+  delivered; the stream terminates at the failing element K and the framework does NOT roll back
+  earlier emissions. Callers needing atomic-all-or-nothing semantics must layer that on top.
   _Traces to: US6 scenario 7._
 - **FR-017 (Legacy unversioned events)**: Events stored without an explicit version MUST be
   treated as version `0.0.1` (the AF5 `MessageType` default). Transformations targeting `0.0.1`
@@ -720,7 +725,9 @@ a last resort if the old stream must be fully replaced.
   output identity, stream position). The framework MUST NOT silently coerce. The check is
   satisfied trivially for pure renames (FR-002) -- the framework's rename factory sets the
   output identity itself. It does NOT apply to 1:N/1:0 transformations -- output identities are
-  rule-determined by design.
+  rule-determined by design, and the developer has full responsibility for each replacement
+  event's identity (the framework does not validate that the chosen identity is meaningful or
+  subscribed to).
   _Traces to: US1, US6 scenario 8._
 - **FR-020 (Commands and queries)**: The transformer mechanism MUST support commands and queries
   in addition to events -- it is a decorator around the message converter and applies to any
@@ -735,11 +742,22 @@ a last resort if the old stream must be fully replaced.
   `SemverComparator`. Users MAY supply a custom comparator (e.g., date-based) or opt out with
   `VersionComparator.disabled()`. The comparator ENFORCES version order at `.build()` lock time:
   registering `v2->v3` before `v1->v2` for the same `from` name under `SemverComparator` raises
-  an error identifying the offending pair and the inferred correct order. This complements the
-  structural checks in FR-009. Matching remains exact `(name, version)` per FR-005; cycle
-  detection stays structural and is independent of the comparator. The comparator also orders
-  transformations in INFO/DEBUG logs (FR-014) and error messages.
+  an error identifying the offending pair and the inferred correct order. When
+  `SemverComparator` encounters a non-parseable version (e.g., `"rev42"`, `"20250515"`), it MUST
+  throw at `.build()` lock listing the bad versions and the three remediation paths: fix to
+  semver, supply a custom `VersionComparator`, or register `VersionComparator.disabled()`. No
+  silent lexicographic fallback. This complements the structural checks in FR-009. Matching
+  remains exact `(name, version)` per FR-005; cycle detection stays structural and is independent
+  of the comparator. The comparator also orders transformations in INFO/DEBUG logs (FR-014) and
+  error messages.
   _Traces to: FR-004, FR-009._
+- **FR-022 (Data-protection ordering)**: Data-protection mechanisms (PII redaction, field-level
+  masking, payload decryption, etc.) MUST operate downstream of the transformation chain.
+  Transformations operate on the unprotected message; protection is applied to the final shape
+  the handler receives. AF5 ships no built-in data-protection component -- when a developer
+  adds one (typically as a `MessageHandlerInterceptor`), it sits after the transformer in the
+  read pipeline. This ordering is a framework invariant, not a developer responsibility.
+  _Traces to: (no user story -- security/threat-model invariant)._
 
 ## Key Entities
 
@@ -763,10 +781,10 @@ a last resort if the old stream must be fully replaced.
 
 ## Success Criteria
 - **SC-001 (Ergonomics)**: A complete 1:1 structural transformation (US1's `CourseCreated`
-  v1.0.0 -> v2.0.0) can be implemented and registered in **no more than 10 lines of Java** --
-  import-stripped, counting `MessageType` constants and the transformation lambda. AF4's
-  equivalent requires materially more code; the AF4-to-AF5 migration guide (SC-006) captures the
-  side-by-side count.
+  v1.0.0 -> v2.0.0) MUST require materially fewer lines of Java than the AF4 equivalent (one
+  `SingleEventUpcaster` subclass plus Spring `@Configuration` wiring). The exact line-count
+  target is set in plan.md; the AF4-to-AF5 migration guide (SC-006) captures the side-by-side
+  count.
 - **SC-002 (Order)**: 100% of registered transformations are applied in registration order,
   verifiable across all in-scope use cases. Verifies FR-004.
 - **SC-004 (Conflicts)**: Every conflict class in FR-009 is detected and reported before any
@@ -787,8 +805,15 @@ a last resort if the old stream must be fully replaced.
 - **SC-009 (Identity check)**: A 1:1 transformation whose output `MessageType` differs from the
   declared `to` produces a runtime error naming the transformation, the declared `to`, and the
   actual output identity. 100% surface the error; 0% silently coerce. Verifies FR-019.
-- **SC-010 (Concurrency)**: A transformation invoked from N >= 8 concurrent threads on the same
-  input produces N identical outputs with no external synchronization. Verifies FR-006.
+- **SC-010 (Concurrency)**: A transformation invoked from multiple concurrent threads with
+  sufficient iteration count to exercise real thread interleaving produces identical outputs
+  across all invocations with no external synchronization. Specific thread and iteration counts
+  are set in plan.md. Verifies FR-006.
+- **SC-011 (Observability)**: An INFO log entry is emitted once when the chain is built, listing
+  the count and `from`/`to` of every registered transformation. A DEBUG log entry is emitted each
+  time a transformation matches an event, identifying the transformation and the event's name,
+  version, and stream position. Both verified by automated test against the framework's logging
+  API. Verifies FR-014.
 
 ## Assumptions
 
@@ -796,10 +821,5 @@ a last resort if the old stream must be fully replaced.
   Framework 5, comfortable with Java and basic event-sourcing concepts.
 - Transformations apply at read time only; the event store is append-only and stored events are
   never modified on disk.
-- Data protection (PII redaction, field-level masking, payload decryption, etc.) is applied
-  AFTER transformation. AF5 ships no built-in data-protection mechanism; when a developer adds
-  one -- typically as a `MessageHandlerInterceptor` -- it sits downstream of the transformer
-  chain. The transformer sees the unprotected message; protection is applied to the final
-  shape the handler receives.
 - The university demo (`examples/university-demo`, plain Java, no Spring) is the target for
   demonstrating all in-scope use cases. Spring Boot integration is follow-on work.
