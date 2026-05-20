@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventhandling.processing.streaming.token.sto
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.conversion.Converter;
@@ -46,7 +47,6 @@ import java.util.stream.Collectors;
 import static java.lang.String.format;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.DateTimeUtils.formatInstant;
-import static org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry.clock;
 
 /**
  * Implementation of a token store that uses JPA to save and load tokens. This implementation uses {@link TokenEntry}
@@ -262,7 +262,7 @@ public class JpaTokenStore implements TokenStore {
                             .setParameter(PROCESSOR_NAME_PARAM, processorName)
                             .setParameter(SEGMENT_PARAM, segment)
                             .setParameter(OWNER_PARAM, nodeId)
-                            .setParameter("timestamp", formatInstant(clock.instant()))
+                            .setParameter("timestamp", formatInstant(ClockUtils.instant()))
                             .executeUpdate();
 
             if (updates == 0) {

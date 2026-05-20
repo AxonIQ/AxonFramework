@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.jdbc.JdbcException;
 import org.axonframework.common.tx.TransactionalExecutor;
@@ -812,7 +813,7 @@ public class JdbcTokenStore implements TokenStore {
                         " = ? AND " + schema.ownerColumn() + " = ?";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setString(1, null);
-        preparedStatement.setString(2, formatInstant(JdbcTokenEntry.clock.instant()));
+        preparedStatement.setString(2, formatInstant(ClockUtils.instant()));
         preparedStatement.setString(3, processorName);
         preparedStatement.setInt(4, segment);
         preparedStatement.setString(5, nodeId);

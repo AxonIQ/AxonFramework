@@ -297,7 +297,8 @@ class MergeTaskTest {
 
         MergeTask mergeFromSegmentOne = new MergeTask(
                 new CompletableFuture<>(), PROCESSOR_NAME, SEGMENT_TO_BE_MERGED, workPackages,
-                releasesDeadlines, tokenStore, new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE), clock
+                releasesDeadlines, tokenStore, new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE),
+                ClockUtils.get()
         );
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
                 .thenReturn(completedFuture(tokenForSegment0));
