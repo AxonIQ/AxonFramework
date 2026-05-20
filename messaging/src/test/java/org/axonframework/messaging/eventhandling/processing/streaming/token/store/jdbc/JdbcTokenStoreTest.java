@@ -423,7 +423,7 @@ class JdbcTokenStoreTest {
 
         transactionManager.executeInTransaction(
                 () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, null)));
-        ClockUtils.set(Clock.offset(Clock.systemUTC(), Duration.ofHours(1)));
+        ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofHours(1)));
         TrackingToken token = transactionManager.fetchInTransaction(
                 () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, null)));
         assertNull(token);

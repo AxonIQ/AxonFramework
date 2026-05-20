@@ -44,6 +44,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
@@ -170,16 +171,17 @@ class JdbcEventStorageEngineIT
 
     @Test
     void gapsForVeryOldEventsAreNotIncluded() throws SQLException {
-        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone()));
+        Instant now = ClockUtils.instant();
+        ClockUtils.set(Clock.fixed(now.minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-1), createDomainEvent(0));
 
-        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone()));
+        ClockUtils.set(Clock.fixed(now.minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-2), createDomainEvent(1));
 
-        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant().minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone()));
+        ClockUtils.set(Clock.fixed(now.minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-3), createDomainEvent(2));
 
-        ClockUtils.set(Clock.fixed(Clock.systemUTC().instant(), Clock.systemUTC().getZone()));
+        ClockUtils.set(Clock.fixed(now, Clock.systemUTC().getZone()));
         testSubject.appendEvents(createDomainEvent(-4), createDomainEvent(3));
 
         try (Connection conn = dataSource.getConnection()) {
@@ -196,14 +198,15 @@ class JdbcEventStorageEngineIT
     void oldGapsAreRemovedFromProvidedTrackingToken() throws SQLException {
         testSubject = createEngine(engineBuilder -> engineBuilder.gapTimeout(50001).gapCleaningThreshold(50));
 
-        Instant now = Clock.systemUTC().instant();
-        ClockUtils.set(Clock.fixed(now.minus(1, ChronoUnit.HOURS), Clock.systemUTC().getZone()));
+        Instant now = ClockUtils.instant();
+        ClockUtils.set(Clock.fixed(now.minus(1, ChronoUnit.HOURS), ZoneOffset.UTC));
         testSubject.appendEvents(createDomainEvent(-1), createDomainEvent(0)); // index 0 and 1
-        ClockUtils.set(Clock.fixed(now.minus(2, ChronoUnit.MINUTES), Clock.systemUTC().getZone()));
+
+        ClockUtils.set(Clock.fixed(now.minus(2, ChronoUnit.MINUTES), ZoneOffset.UTC));
         testSubject.appendEvents(createDomainEvent(-2), createDomainEvent(1)); // index 2 and 3
-        ClockUtils.set(Clock.fixed(now.minus(50, ChronoUnit.SECONDS), Clock.systemUTC().getZone()));
+        ClockUtils.set(Clock.fixed(now.minus(50, ChronoUnit.SECONDS), ZoneOffset.UTC));
         testSubject.appendEvents(createDomainEvent(-3), createDomainEvent(2)); // index 4 and 5
-        ClockUtils.set(Clock.fixed(now, Clock.systemUTC().getZone()));
+        ClockUtils.set(Clock.fixed(now, ZoneOffset.UTC));
         testSubject.appendEvents(createDomainEvent(-4), createDomainEvent(3)); // index 6 and 7
 
         try (Connection conn = dataSource.getConnection()) {
