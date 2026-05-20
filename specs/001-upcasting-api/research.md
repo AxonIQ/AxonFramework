@@ -249,18 +249,73 @@ POJO` automatically).
 
 ---
 
-## R-8. Snapshot upcasting hook point (deferred)
+## R-8. Snapshot upcasting (deferred to US5)
 
-**Decision**: document the hook in `StoreBackedSnapshotter` but do NOT implement snapshot
-upcasting in 5.2.0 (FR-008, US5). The version-mismatch branch (logs warning, returns
-`null`, forces discard-and-replay) stays as-is.
+**Decision**: ship event upcasting in 5.2.0; defer snapshot upcasting to US5 (future
+release). The 5.2.0 implementation uses a **parallel hierarchy** under
+`eventsourcing/snapshotting/upcasting/` (when US5 ships) -- no shared root with
+`Upcaster<M extends Message<?>>` for now.
 
-**Rationale**: Constitution Gate VI and spec Part C make the deferral explicit. The hook
-point exists at `StoreBackedSnapshotter.load()`'s version-mismatch branch; a future
-`SnapshotUpcaster` plugs in there without changing the event upcasting interface.
+**What the team converged on (2026-05-19)**: (a) snapshot upcasting deferred from 5.2.0;
+(b) the 5.2.0 integration is event-specific. The broader question -- whether snapshots
+later share a common API-level root with events or remain a parallel hierarchy forever --
+was discussed but deliberately left open. At the API surface an upcaster needs only
+payload + name + version + optional target version, so a generic shared root is feasible
+in principle. Parallel hierarchies are chosen as the 5.2.0 starting point because Gate II
+forbids shipping an abstraction with only one concrete user, and the right shared
+identity contract for snapshots is not yet known. A shared root remains possible as a
+future internal refactor -- non-breaking for 5.2.0 customers either way (see table
+below).
 
-**Alternative**: ship a stub interface to "future-proof" — rejected; introduces unused
-types and a refactoring tax.
+**Parallel hierarchy commitments** (the contract US5 must honour):
+
+| Aspect | Commitment |
+|--------|-----------|
+| Location | `eventsourcing/snapshotting/upcasting/` (parallel to event-side `eventsourcing/upcasting/`) |
+| Root | `SnapshotUpcaster` -- standalone interface, no shared parent with `Upcaster<M extends Message<?>>` |
+| Cardinality | 1:1 only. `SingleSnapshotUpcaster` is the only subtype (sealed hierarchy enforces it). No splits, no drops -- domain rule (snapshots are state, not events). |
+| Identity | New `SnapshotType` record -- parallel shape to `MessageType` (`QualifiedName` + version), distinct type. `Snapshot` is NOT a `Message`; reusing `MessageType` would be semantically wrong. |
+| Builder DSL | Isomorphic in shape to `EventUpcaster.from(...).to(...).reading(...).producing(...).apply(...)` for mental-model transfer. |
+| Registration | `EventSourcingConfigurer.registerSnapshotUpcaster(ComponentBuilder<SnapshotUpcaster>)` -- parallel to `registerEventUpcaster`. |
+| Integration hook | `StoreBackedSnapshotter.load()`'s version-mismatch branch -- separate from event-side `EventStorageEngine` decorator. |
+
+**Non-breaking guarantee for 5.2.0 customers**:
+
+| Future change (US5) | Breaks 5.2.0 customers? | Why |
+|---------------------|-------------------------|-----|
+| Adding `SnapshotUpcaster` and related types | No | Pure additions; no existing references |
+| Adding `registerSnapshotUpcaster(...)` to existing configurer | No | New method on existing class is binary-compatible |
+| Adding `SnapshotType` record | No | New type, no existing references |
+| Optional later "Path Y collapse" (shared marker `BaseUpcaster` root) | No | Adding a parent interface with no methods is binary-compatible |
+| Event upcaster API shipped in 5.2.0 | Untouched | No changes to `Upcaster`, `EventUpcaster`, builders, or registration needed |
+
+The only adjacent change that COULD be breaking is evolving the `Snapshot` record itself
+when US5 lands (e.g., to carry `SnapshotType`). That is decoupled from the upcaster API
+and is a US5 scope decision -- 5.2.0 customers using upcasters never touch `Snapshot`
+directly.
+
+**Why parallel, not a shared root**:
+
+- Constitution Gate II: abstractions need at least one concrete scenario. A shared root
+  (e.g., `Upcaster<M extends HasMessageType>`) has only one concrete user (events) in
+  5.2.0 -- premature.
+- `Snapshot` is NOT a `Message<?>`. Forcing them under a shared root requires either
+  putting `MessageType` on `Snapshot` (semantically wrong) or specifying a new shared
+  identity contract before the snapshot side is specced -- under-specified.
+- N:1, splits, and drops do not apply to snapshots. A shared root that exposes all four
+  cardinalities would over-promise on the snapshot side; sealing `SnapshotUpcaster` to
+  1:1 only is a domain-level guarantee that a shared root would weaken.
+
+A code sketch of how a shared root could be added LATER non-breakingly is in spec.md
+(Snapshot Upcasting `[Deferred]` section). Confirms the 5.2.0 decision is consistent
+with eventual unification when US5 lands.
+
+**Hook point for US5**: `StoreBackedSnapshotter.load()` version-mismatch branch -- today
+returns `null` to force full event replay; US5 plugs `SnapshotUpcasterChain.apply(...)`
+there.
+
+**Alternative rejected**: pre-ship a stub `SnapshotUpcaster` interface to "future-proof"
+-- introduces unused public types and a refactoring tax (Gate II).
 
 ---
 
@@ -331,7 +386,7 @@ surfaces.
 | R-5 | Payload access | Two entry points: declarative builder, message-level `Converter` access |
 | R-6 | Chain execution | Lazy, registration-ordered; output flows to **next** upcaster |
 | R-7 | Converter type | `org.axonframework.conversion.Converter` |
-| R-8 | Snapshot upcasting | Deferred; hook documented in `StoreBackedSnapshotter`; no API stub |
+| R-8 | Snapshot upcasting | Deferred to US5; parallel hierarchy + distinct `SnapshotType` committed; non-breaking for 5.2.0 customers |
 | R-9 | Matching | `Map<MessageType, List<EventUpcaster>>` for O(1) lookup |
 | R-10 | Observability | INFO at build, DEBUG per applied transformation |
 | R-11 | Decision tree | One AsciiDoc page with two-way cross-references |

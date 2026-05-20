@@ -988,50 +988,95 @@ this can be added in issue #746 without breaking the event upcasting API introdu
 
 **The use case**: An entity with a large event history (tens of thousands of events) uses
 snapshots to avoid expensive full replays. When the entity's state schema changes – e.g.,
-`capacity` is renamed to `maxCapacity` – stored snapshots at the old schema cannot be deserialized.
-The current fallback discards the snapshot and replays all events from the beginning, which for
-large entities can take seconds to minutes.
+`capacity` renamed to `maxCapacity` – stored snapshots cannot be deserialized. The current
+fallback discards the snapshot and replays all events from the beginning, which for large
+entities can take seconds to minutes.
 
-Snapshot upcasting would let a developer register a `Snapshot → Snapshot` transformation for a
-specific snapshot version, so the framework can transform the old snapshot into the current format
-and avoid the expensive replay.
+Snapshot upcasting would let a developer register a `Snapshot → Snapshot` transformation,
+avoiding the expensive replay.
 
-**Why not in 5.2.0**:
+**Why not in 5.2.0**: Gregory Young's guidance is to **rebuild the snapshot from events**, not
+upcast it. Snapshots are a cache, not a source of truth; discarding and replaying is correct
+behavior, not a fallback of last resort.
 
-Gregory Young's own guidance is that the normal way to handle snapshot schema changes is to
-**rebuild the snapshot from events** – not to upcast it. Snapshots are a cache, not a source of
-truth. The event stream is always the source of truth; a snapshot is just an optimization. Discarding
-a stale snapshot and replaying is correct behavior, not a fallback of last resort.
-
-Snapshot upcasting is only justified when all three of these are simultaneously true:
+Snapshot upcasting is only justified when ALL three hold simultaneously:
 1. The entity has a huge event history (tens of thousands of events or more).
-2. A full replay from the discarded snapshot position takes an unacceptable amount of time.
+2. Replay from the discarded snapshot position takes an unacceptable amount of time.
 3. The entity's state schema changed and stored snapshots are incompatible.
 
-This is a rare combination. Most teams deploying AF5 will not hit all three conditions at once.
-And even when they do, a one-time migration script that re-creates snapshots in the new format
-is often simpler than ongoing snapshot upcasting infrastructure.
+A rare combination. Even when it hits, a one-time migration script is often simpler than
+ongoing upcasting infrastructure. Delivering event upcasting first keeps 5.2.0 focused.
 
-Delivering event upcasting first (the far more common need) keeps 5.2.0 focused.
+**Direction confirmed by team (2026-05-19)**:
+- Snapshot upcasting deferred from 5.2.0.
+- 5.2.0 integration is event-specific — `Upcaster<M extends Message<?>>` scoped to messages.
+- Future hook point: `StoreBackedSnapshotter.load()` version-mismatch branch (today returns
+  `null` and forces replay).
 
-**What keeps the door open**:
+**Shared root vs parallel hierarchies — short comparison**:
 
-The hook point is already identified: `StoreBackedSnapshotter.load()` has an explicit version
-mismatch branch (currently logs a warning and returns `null`). A future snapshot upcasting feature
-would slot in exactly there, with no changes to the event upcasting API introduced in this release.
+| | Shared root (`Upcaster<T extends HasTypeIdentifier>`) | Parallel hierarchies (5.2.0 choice) |
+|--|--------------------------------------------------------|--------------------------------------|
+| **Pros** | One mental model across events + snapshots; symmetric API; cross-cutting features (metrics, lifecycle) can be generic | Gate II compliant (each abstraction has >=1 concrete user); snapshot identity contract designed when US5 ships, not guessed; cardinality (snapshots = 1:1 only -- never split, never dropped) compiler-enforced; semantically honest (distinct `MessageType` vs `SnapshotType` -- `Snapshot` is not a `Message`) |
+| **Cons** | Premature abstraction (only events ship in 5.2.0); guesses snapshot identity contract; loose cardinality exposes splits/drops to snapshots | Some code duplication if US5 ships (builder, registry, chain); API drift risk over time (mitigated by R-8 commitment to isomorphic DSL) |
+| **Future** | Already committed at API surface | Shared root remains possible as a future internal refactor — non-breaking for 5.2.0 customers (see proposal below) |
 
-The snapshot transformation interface would operate on `Snapshot` objects directly (not on `Message`)
-– a simple `Snapshot → Snapshot` function registered by entity type and snapshot version. It does
-not need to share an interface with event transformations because snapshots are never split, never
-dropped, and carry no event identity (name + version together) – only a version string.
+**Non-breaking guarantee for 5.2.0 customers**:
 
-**Team decision (2026-05-19)**: The team confirmed this direction explicitly. `Snapshot` is not a
-`Message<?>` subtype, so forcing it into the `Upcaster<M extends Message<?>>` hierarchy would be
-unnatural -- several envelope fields (tracking token, entity identifier) have no clear analogue in
-a snapshot context. The accepted direction is a SEPARATE
-interface hierarchy for snapshot upcasting, generic at its own level but not sharing a parent with
-`Upcaster<M>`. This has no impact on the 5.2.0 deliverables: the `messaging/upcasting` generic root
-introduced here is scoped to `Message<?>` subtypes only.
+| Future change (US5) | Breaks 5.2.0? | Why |
+|---------------------|----------------|-----|
+| Add `SnapshotUpcaster` types + `registerSnapshotUpcaster(...)` + `SnapshotType` | No | Pure additions; new method on existing class is binary-compatible |
+| Optional later shared root via `TypeIdentifier` / `HasTypeIdentifier` (proposal below) | No | Adding a parent interface satisfied by covariant return is binary-compatible; relaxing a generic bound is binary-compatible |
+| Event upcaster API shipped in 5.2.0 | Untouched | No changes ever required |
+
+Anyone who writes event upcasters in 5.2.0 keeps compiling and running in 5.3.0+ — no migration,
+no deprecation, no rewrites.
+
+**Future shared root proposal (non-breaking refactor when US5 lands)**:
+
+A concrete proposal — not committed for 5.2.0 (Gate II: only one concrete user today). The shape
+may evolve when snapshots are specced with full understanding of their needs. Each step below is
+binary-compatible.
+
+```java
+// Step 1: minimal shared abstraction (new public types)
+public interface TypeIdentifier {
+    QualifiedName qualifiedName();
+    String version();
+}
+public interface HasTypeIdentifier {
+    TypeIdentifier type();
+}
+
+// Step 2: retrofit Message side (source-compatible via covariant return)
+public record MessageType(QualifiedName qualifiedName, String version)
+        implements TypeIdentifier {}
+public interface Message<P> extends HasTypeIdentifier {
+    @Override MessageType type();   // existing callers still see MessageType
+}
+
+// Step 3: snapshot side (distinct identity)
+public record SnapshotType(QualifiedName qualifiedName, String version)
+        implements TypeIdentifier {}
+public record Snapshot(...) implements HasTypeIdentifier {
+    @Override SnapshotType type();
+}
+
+// Step 4: relax the upcaster root bound
+public interface Upcaster<T extends HasTypeIdentifier> {
+    TypeIdentifier from();
+}
+
+// Step 5: subtypes unchanged at the call site (covariant return)
+public sealed interface EventUpcaster extends Upcaster<EventMessage>
+        permits SingleEventUpcaster, MultiEventUpcaster {
+    @Override MessageType from();
+}
+public sealed interface SnapshotUpcaster extends Upcaster<Snapshot>
+        permits SingleSnapshotUpcaster {     // 1:1 only -- domain rule
+    @Override SnapshotType from();
+}
+```
 
 **Acceptance scenarios (preserved for future spec)**:
 

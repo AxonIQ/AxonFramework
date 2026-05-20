@@ -15,9 +15,10 @@ operate on typed Java payloads, with a `Converter` available for advanced cases.
 
 **Technical approach** (full rationale in [research.md](research.md)):
 
-- **Single convergence point**: wrap the `EventConverter`-backed materialisation inside
-  `EventStorageEngine`. All three reading contexts (entity loads, DCB reads, tracking
-  processors) flow through it — FR-013 falls out for free.
+- **Single convergence point**: `UpcasterChain` implements `EventStorageEngine` as a
+  decorator and `flatMap`s the `MessageStream` returned by `source(...)` / `stream(...)`.
+  All three reading contexts (entity loads, DCB reads, tracking processors) flow through
+  this one boundary — FR-013 falls out for free. Engines themselves are not modified.
 - **Public surface**: `EventUpcaster` with two subtypes (`SingleEventUpcaster`,
   `MultiEventUpcaster`) and a small builder for the declarative entry point. The generic
   root `Upcaster<M extends Message<?>>` lives in `messaging/upcasting/` so #746 can extend
@@ -31,18 +32,17 @@ operate on typed Java payloads, with a `Converter` available for advanced cases.
 
 ### Design Decision: generic root bound and snapshot upcasting (2026-05-19)
 
-**Context**: team meeting (Jakob Hatzl, Laura Devriendt, Steven van Beelen) confirmed that
-`Snapshot` is NOT a `Message<?>` subtype — envelope fields (tracking token, entity id)
-have no clear snapshot analogue. Steven proposed a single generic root covering events,
-commands, queries, and snapshots.
+**Context**: team meeting confirmed that `Snapshot` is NOT a `Message<?>` subtype --
+envelope fields (tracking token, entity id) have no clear snapshot analogue. A single
+generic root covering events, commands, queries, and snapshots was proposed.
 
 **Options evaluated** for `Upcaster<M>`:
 
 - **A. Remove the bound (`Upcaster<M>`)**: `Upcaster<String>` becomes valid. **Rejected**
   on type safety.
 - **D. Shared minimal interface (`Upcaster<M extends HasMessageType>`)**: introduce a new
-  `HasMessageType` covering both `Message<?>` and `Snapshot`. Honors Steven's vision but
-  bakes a new public-API interface for zero concrete 5.2.0 callers; the right identity
+  `HasMessageType` covering both `Message<?>` and `Snapshot`. Honors the single-root
+  vision but bakes a new public-API interface for zero concrete 5.2.0 callers; the right identity
   contract for `Snapshot.type()` is not yet known. Violates Constitution Gate II
   (abstractions need at least one concrete scenario). **Rejected for 5.2.0.**
 - **C. Parallel hierarchies (chosen)**: keep `Upcaster<M extends Message<?>>` scoped to
@@ -51,6 +51,18 @@ commands, queries, and snapshots.
   can be introduced with a real contract for `Snapshot.type()`.
 
 **Decision**: Option C. No changes to 5.2.0 deliverables.
+
+**Non-breaking guarantee for 5.2.0 customers** (full table in research.md R-8):
+
+| Future change (US5) | Breaks 5.2.0 customers? | Why |
+|---------------------|-------------------------|-----|
+| Adding `SnapshotUpcaster` types + `registerSnapshotUpcaster(...)` + `SnapshotType` | No | Pure additions; new method on existing class is binary-compatible |
+| Optional later shared marker `BaseUpcaster` root | No | Adding a parent interface with no methods is binary-compatible |
+| Event upcaster API shipped in 5.2.0 | Untouched | No changes ever required to support snapshot work |
+
+Shipping event upcasting first commits to nothing about snapshots except "they will be
+additive, parallel, and learnable." See research.md R-8 for the full parallel-hierarchy
+commitments US5 must honour.
 
 ## Technical Context
 
@@ -132,10 +144,10 @@ eventsourcing/
     │   │   ├── UpcasterRegistrationException.java
     │   │   ├── UpcasterApplicationException.java
     │   │   └── package-info.java
-    │   ├── configuration/
-    │   │   └── EventSourcingConfigurer.java         # MODIFIED: registerEventUpcaster(...)
-    │   └── eventstore/
-    │       └── AggregateBasedJpaEventStorageEngine.java  # MODIFIED: wrap materialisation
+    │   └── configuration/
+    │       └── EventSourcingConfigurer.java         # MODIFIED: registerEventUpcaster(...)
+    │                                                # (UpcasterChain decorates EventStorageEngine
+    │                                                #  via ConfigurationEnhancer — no engine code modified)
     │
     └── test/java/org/axonframework/eventsourcing/
         ├── upcasting/

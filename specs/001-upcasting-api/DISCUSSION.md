@@ -1,26 +1,44 @@
 # Event Upcasting API -- Team Discussion Guide
 **Feature**: issue #3597 | **Target**: AF 5.2.0 | **Full spec**: spec.md
 
+> Everything in this document is a **proposal for team discussion**, not a confirmed
+> decision. User stories, FRs, design choices, and scope exclusions all need explicit
+> team confirmation before any are locked in. Dates marked in items below indicate when
+> the proposal was written or last adapted, not when it was approved.
+
 ---
 
 ## The problem
 
 AF5 already handles many versioning scenarios automatically. Upcasters cover the rest -- where the stored event stream itself must change.
 
-**AF5 handles these automatically -- no upcaster needed:**
+**AF5 handles these scenarios automatically -- no upcaster needed:**
 
-The mechanism depends on the serialization format. AF5 ships three: `Jackson2Converter` (Jackson 2),
-`JacksonConverter` (Jackson 3, covers JSON and CBOR), and `AvroConverter` (Avro binary).
+How depends on the serialization format. AF5 ships three converters out of the box:
+`Jackson2Converter` (Jackson 2), `JacksonConverter` (Jackson 3 -- JSON / CBOR), and
+`AvroConverter` (Avro binary). User-supplied converters (e.g. XML via JAXB or Jackson
+XML, Protobuf, or any custom format) plug into the same `EventConverter` infrastructure
+and follow the same principle: **handle backward / forward compatibility at the
+serialization layer, not via upcasters**.
 
-| Scenario | Jackson / CBOR | Avro |
-|---|---|---|
-| Added a new field | New field defaults to `null` | New field receives its Avro schema default |
-| Removed a field | Ignored via `@JsonIgnoreProperties(ignoreUnknown = true)` | Writer-only fields dropped automatically by schema resolution |
-| Renamed a field | `@JsonProperty("oldName")` on the new field | `"aliases": ["oldName"]` on the reader schema field |
-| Compatible type change | Jackson coerces automatically (e.g. `int` -> `long`) | Avro schema resolution promotes compatible types automatically |
-| Renamed the Java class | `@Event(name = "OldName")` -- format-independent | Same -- `MessageType` routing is format-independent |
-| Handler wants different representation | Declare `JsonNode` or concrete class | Declare `GenericRecord` or generated class |
-| Switched serialization format | Reconfigure `EventConverter`; event classes unchanged | Same -- only the converter configuration changes |
+The table shows what each shipped converter does; user-supplied converters use their
+own format's equivalent mechanisms (examples in the third column).
+
+| Scenario | Jackson / CBOR (shipped) | Avro (shipped) | User-supplied (e.g. XML) |
+|---|---|---|---|
+| Added a new field | New field defaults to `null` | New field receives its Avro schema default | Library-specific (e.g. JAXB tolerates missing elements; new fields default to null/library default) |
+| Removed a field | `@JsonIgnoreProperties(ignoreUnknown = true)` | Writer-only fields dropped automatically by schema resolution | Library-specific (e.g. JAXB ignores unknown elements by default) |
+| Renamed a field | `@JsonProperty("oldName")` on the new field | `"aliases": ["oldName"]` on the reader schema field | Library-specific (e.g. JAXB `@XmlElement(name="oldName")`, Jackson XML `@JacksonXmlProperty(localName=...)`) |
+| Compatible type change | Jackson coerces automatically (e.g. `int` -> `long`) | Avro schema resolution promotes compatible types automatically | Library-specific (e.g. JAXB type adapters) |
+| Renamed the Java class | `@Event(name = "OldName")` -- format-independent | Same -- `MessageType` routing is format-independent | Same -- format-independent |
+| Handler wants different representation | Declare `JsonNode` or concrete class | Declare `GenericRecord` or generated class | Library-specific typed representation (e.g. DOM `Document`, JAXB-bound class) |
+| Switched serialization format | Reconfigure `EventConverter`; event classes unchanged | Same -- only the converter configuration changes | Same -- only the converter configuration changes |
+
+Note on XML in particular: order of elements / attributes IS significant (unlike JSON
+where field order is irrelevant). Schema migration on element ordering may require an
+upcaster even when nothing else changes. Avro has its own incompatibility levels
+(BACKWARD / FORWARD / FULL / NONE) summarised in the [Confluent
+documentation](https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html).
 
 **Upcasters are needed when** the stored event stream itself must change: payload restructured, event renamed at MessageType level, one event split into many, or an event suppressed entirely.
 
@@ -41,26 +59,13 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 ---
 
-## Key design decisions
-
-| Decision | What we chose | Why |
-|---|---|---|
-| Declaration patterns | Two: 1:1 (source + target identity) and 1:N/1:0 (source identity + replacement rule) | Split and drop cannot declare a fixed target |
-| Chain ordering | Declaration order IS chain order | No `@Order`, no Spring Bean ordering |
-| Payload access | Typed Java objects, converted on-demand | Avoids raw bytes and the AF4 `IntermediateEventRepresentation` problem |
-| Event name format | Fully qualified (namespace + local name) | Prevents silent non-matches when two modules share a local name |
-| Version format | Semver (major.minor.patch), enforced at registration | `"1.0"` vs `"1.0.0"` would silently never match |
-| Registration timing | Startup-only; chain is immutable once processing begins | Runtime registration causes inconsistent results across the same stream |
-
----
-
-## What is explicitly out of scope
+## Proposed scope exclusions (need team confirmation)
 
 | Scenario | Why | Future path |
 |---|---|---|
 | N-to-1 merge | Requires stateful context; scope inconsistent across bounded/unbounded streams | Revisit after streaming model stabilises |
 | Moving data between events | Same context-scope problem as AF4 context-aware upcasters | Same |
-| Snapshot upcasting | Discard-and-replay is the correct primary strategy; niche use case | Hook point in `StoreBackedSnapshotter` identified |
+| Snapshot upcasting | Discard-and-replay is the correct primary strategy; niche use case | Hook point in `StoreBackedSnapshotter` identified; concrete future shared-root proposal sketched in spec.md `[Deferred]` section -- non-breaking refactor when US5 lands |
 | Command / query upcasting | Rolling deployment concern; different pipeline | Issue #746; API designed to support it without breaking changes |
 | Annotation-based registration | Risks reintroducing AF4's ordering problem | Add on top of programmatic API once demand is proven |
 | AF4 migration tooling (OpenRewrite / compatibility layer) | Compat layer would pull back `IntermediateEventRepresentation`; structural rewrites are a non-trivial up-front investment | 5.2.0 ships a manual migration guide with worked examples; OpenRewrite recipes added later if community asks |
@@ -98,9 +103,12 @@ The mechanism depends on the serialization format. AF5 ships three: `Jackson2Con
 
 | # | Question |
 |---|---|
-| 0 | **#746 alignment -- universal Message API** -- **DECIDED (2026-05-19)**: a non-sealed `Upcaster<M extends Message<?>>` root interface is introduced in `org.axonframework.messaging.upcasting`. It carries only `MessageType from()`. The event-specific sealed hierarchy (`EventUpcaster`, `SingleEventUpcaster`, `MultiEventUpcaster`) extends it. The public 5.2.0 API surface is event-only; #746 can add command/query subtypes later without breaking the event API. Envelope asymmetry (tracking token, sequence number, entity id) is event-only and stays on `EventUpcaster`; the generic root holds only the cross-cutting `from()` contract. No further team input needed on this item. |
+| 0 | **#746 alignment -- universal Message API (current proposal, team confirmation needed)**: a non-sealed `Upcaster<M extends Message<?>>` root interface in `org.axonframework.messaging.upcasting`, carrying only `MessageType from()`. The event-specific sealed hierarchy (`EventUpcaster`, `SingleEventUpcaster`, `MultiEventUpcaster`) extends it. Public 5.2.0 API surface is event-only; #746 can add command/query subtypes later without breaking the event API. Envelope asymmetry (tracking token, sequence number, entity id) stays on `EventUpcaster`; the generic root holds only the cross-cutting `from()` contract. **Does the team agree with this shape, or should the generic root carry more (or less)?** Steven's 2026-05-19 suggestion that the root could also span snapshots is captured in questions 6 + 7 below. |
 | 1 | **Two declaration patterns** -- 1:1 uses source + target; split/drop uses source + replacement rule. Does this feel right, or should split/drop also declare a target set? |
 | 2 | **Startup-only registration** -- chain locked once processing begins. Is there a valid use case for runtime registration we have not considered? |
 | 3 | **Fully qualified name requirement** -- forces namespace inclusion. Is this a breaking ergonomics concern for developers coming from AF4? |
 | 4 | **Deferred scope** -- snapshot upcasting, command/query upcasting all deferred. Is any of these P1 for 5.2.0 given the team's current projects? |
 | 5 | **Simpler than AF4** -- do we have an agreed baseline for what AF4 required, or do we need a comparison example? |
+| 6 | **Snapshot direction for 5.2.0** (spec.md `[Deferred]` section) -- 5.2.0 ships parallel hierarchies: `Upcaster<M extends Message<?>>` stays scoped to messages; snapshot upcasting (deferred) gets its own root with distinct `SnapshotType`. The spec now contains a side-by-side comparison (shared root vs parallel) and a non-breaking guarantee table for 5.2.0 customers. **Does the team agree** with (a) the parallel-hierarchies choice for 5.2.0, (b) the comparison framing, (c) the customer reassurance ("compiling and running unchanged, no migration, no rewrites")? |
+| 7 | **Future shared root proposal -- concrete 5-step code sketch** (spec.md `[Deferred]` section) -- the proposal: introduce `TypeIdentifier` + `HasTypeIdentifier`, retrofit `Message`/`MessageType` via covariant return, add `Snapshot`/`SnapshotType`, relax the upcaster bound to `Upcaster<T extends HasTypeIdentifier>`. Each step is binary-compatible. Marked as "starting point, not committed -- shape may evolve when snapshots are specced." **Does the proposed shape look right**? Any concerns about publishing a concrete sketch now vs leaving the door open without specifying a shape? |
+| 8 | **FR-005 -- predicate / matcher registration** (open). Spec currently uses exact `(name, version)` match. A predicate-based form (e.g. "any version of EventX") would be more expressive but makes FR-009 cycle/overlap detection harder -- with arbitrary lambdas, overlap can't always be detected statically. Pick an option: (A) keep exact match for 5.2.0, add predicates later if demand surfaces; (B) predicates only for 1:0 drop (no `to`, no chaining, no cycle concern); (C) allow predicates broadly with runtime enforcement -- framework throws if an event matches more than one transformation path; (D) explicit naming -- upcasters register with unique names, runtime resolution uses names to disambiguate; (E) other. |
