@@ -776,7 +776,7 @@ a last resort if the old stream must be fully replaced.
   (e.g., `"rev42"`, `"20250515"`), it MUST throw at `.build()` lock listing the bad versions and
   the two remediation paths: fix to semver, or supply a custom `VersionComparator`. No silent
   lexicographic fallback. **When omitted (the default)**, registration order alone determines
-  apply order -- matching AF4 semantics and keeping registration concise (SC-001). Matching
+  apply order -- matching AF4 semantics and keeping registration concise. Matching
   remains exact `MessageType` per FR-005; cycle detection stays structural and is independent
   of the comparator. When a comparator is registered, it also orders transformations in
   DEBUG/TRACE logs (FR-014) and error messages.
@@ -812,11 +812,6 @@ a last resort if the old stream must be fully replaced.
   processor reads).
 
 ## Success Criteria
-- **SC-001 (Ergonomics)**: A complete 1:1 structural transformation (US1's `CourseCreated`
-  v1.0.0 -> v2.0.0) MUST require materially fewer lines of Java than the AF4 equivalent (one
-  `SingleEventUpcaster` subclass plus Spring `@Configuration` wiring). The exact line-count
-  target is set in plan.md; the AF4-to-AF5 migration guide (SC-006) captures the side-by-side
-  count.
 - **SC-002 (Order)**: 100% of registered transformations are applied in registration order,
   verifiable across all in-scope use cases. Verifies FR-004.
 - **SC-004 (Conflicts)**: Every conflict class in FR-009 is detected and reported before any

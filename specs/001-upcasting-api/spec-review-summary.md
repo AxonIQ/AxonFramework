@@ -76,7 +76,6 @@ as on the change itself.** A loose configuration absorbs more; a strict one reje
 
 ## Success Criteria (highlights)
 
-- **SC-001**: A US1 transformation requires materially fewer lines than the AF4 equivalent (exact target in plan.md).
 - **SC-004**: Every FR-009 conflict class detected before any event processed.
 - **SC-005**: All in-scope use cases demonstrated in `examples/university-demo` with passing CI tests.
 - **SC-010**: Concurrency test — multiple threads × sufficient iterations produce identical outputs (specific N/M in plan.md).
