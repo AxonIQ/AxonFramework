@@ -56,21 +56,22 @@ as on the change itself.** A loose configuration absorbs more; a strict one reje
 
 - **FR-001/002/003**: 1:1 transformations (source + target + optional rule), pure renames (no rule), and 1:N/1:0 (split/drop) patterns.
 - **FR-004**: Registration is programmatic and startup-only; chain locks once processing begins; registration order = application order.
-- **FR-005**: Exact `(fully qualified name, version)` matching; non-matching events pass through.
+- **FR-005**: Exact `MessageType` (`QualifiedName` + `version`) matching, by string equality; non-matching events pass through. Naming consistency with the configured `MessageTypeResolver` is the user's responsibility -- the framework does not enforce a naming convention.
 - **FR-006**: Transformations must be deterministic and thread-safe (contract, not enforced).
-- **FR-009**: Five hard-error classes detected before any event is processed — duplicate `from`, self-loop, unqualified name (at `register()`), and multi-step cycle, version-order violation (at `.build()` lock).
-- **FR-010**: Typed payload access via declared target type *or* injected `Converter`.
-- **FR-011**: Envelope (entity id, token, sequence) preserved; metadata may be modified.
+- **FR-009**: Four hard-error classes detected before any event is processed — duplicate `from`, self-loop (at `register()`), multi-step cycle, version-order violation (at `.build()` lock). Naming mismatches are not detectable at startup and are the user's responsibility.
+- **FR-007**: Per-`QualifiedName` sub-chains; non-matching events skip the chain (O(1)); 1:N outputs re-enter their own sub-chain.
+- **FR-010**: Developer-chosen target type resolved via `Converter` (typically structured: `JsonNode`, POJO; `byte[]` permitted).
+- **FR-011**: Message envelope (entity id, token, sequence) preserved; 1:N outputs share input's token + sequence (no renumber); metadata may be modified.
 - **FR-012**: Lazy deserialization — non-matching events never deserialized; O(1) per-event lookup, no allocations on the non-matching path (benchmark thresholds in plan.md).
 - **FR-013**: Same output across all three read contexts (entity load, DCB read, tracking processor).
-- **FR-014**: INFO once at startup; DEBUG per applied transformation.
+- **FR-014**: DEBUG once at startup; TRACE per applied transformation; observability can be disabled entirely.
 - **FR-015**: Tracking token advances past dropped events.
 - **FR-016**: Exceptions propagate immediately with full context; no silent skip.
 - **FR-017**: Unversioned legacy events treated as version `0.0.1`.
 - **FR-018**: Unit-testable without bootstrapping the framework.
 - **FR-019**: Output identity verified against declared `to`; no silent coercion (1:1 only).
 - **FR-020**: Mechanism extends to commands and queries; splits/drops rejected for those.
-- **FR-021**: Required `VersionComparator` per chain (default `SemverComparator`); enforces version-order at lock time; opt out with `VersionComparator.disabled()`.
+- **FR-021**: Optional `VersionComparator` (default: registration order alone); `SemverComparator` ships as a builder convenience; when registered, enforces version-order at lock time.
 - **FR-022**: Data-protection (PII redaction etc.) runs *after* the transformer.
 
 ## Success Criteria (highlights)
@@ -79,7 +80,7 @@ as on the change itself.** A loose configuration absorbs more; a strict one reje
 - **SC-004**: Every FR-009 conflict class detected before any event processed.
 - **SC-005**: All in-scope use cases demonstrated in `examples/university-demo` with passing CI tests.
 - **SC-010**: Concurrency test — multiple threads × sufficient iterations produce identical outputs (specific N/M in plan.md).
-- **SC-011**: INFO + DEBUG observability verified by automated tests.
+- **SC-011**: DEBUG (startup) + TRACE (per applied) observability + disable mechanism verified by automated tests.
 
 ## Key design choices worth a reviewer's attention
 
