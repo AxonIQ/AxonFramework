@@ -10,7 +10,7 @@ Event-sourced systems store events permanently and immutably, but applications e
 1. **Message converter** — handles representation changes (adding optional fields, renaming via aliases, type coercion, etc.) automatically.
 2. **Message transformer** *(this spec)* — handles structural changes the converter can't (splits, drops, required fields, payload restructuring).
 
-The transformer is a decorator around the converter, so the same mechanism works for events, commands, and queries.
+The transformer is wired in front of routing/dispatch at three sites: a decorator around the event storage engine for events, around the command bus connector for incoming commands, around the query bus connector for incoming queries. The same SPI shape (`MessageStream<M> -> MessageStream<M>`) handles all three. Ships from `axoniq-framework` (commercial).
 
 ## Scope (the three-part structure)
 
@@ -23,7 +23,7 @@ The transformer is a decorator around the converter, so the same mechanism works
 The converter absorbs most schema evolution on its own through two mechanisms: **payload
 conversion at handling time** (each handler declares its preferred Java type and the converter
 produces it from the stored payload) and **converter-level compatibility configuration** (Jackson
-annotations, Avro reader/writer schemas, JAXB bindings, defaults, ignore-unknown settings -- all
+annotations, Avro reader/writer schemas, JAXB bindings, defaults, ignore-unknown settings, all
 on the converter, never on the transformation chain).
 
 So **whether a change requires a transformer depends as much on how your converter is configured
@@ -56,7 +56,7 @@ as on the change itself.** A loose configuration absorbs more; a strict one reje
 
 - **FR-001/002/003**: 1:1 transformations (source + target + optional rule), pure renames (no rule), and 1:N/1:0 (split/drop) patterns.
 - **FR-004**: Registration is programmatic and startup-only; chain locks once processing begins; registration order = application order.
-- **FR-005**: Exact `MessageType` (`QualifiedName` + `version`) matching, by string equality; non-matching events pass through. Naming consistency with the configured `MessageTypeResolver` is the user's responsibility -- the framework does not enforce a naming convention.
+- **FR-005**: Exact `MessageType` (`QualifiedName` + `version`) matching, by string equality; non-matching events pass through. Naming consistency with the configured `MessageTypeResolver` is the user's responsibility; the framework does not enforce a naming convention.
 - **FR-006**: Transformations must be deterministic and thread-safe (contract, not enforced).
 - **FR-009**: Four hard-error classes detected before any event is processed — duplicate `from`, self-loop (at `register()`), multi-step cycle, version-order violation (at `.build()` lock). Naming mismatches are not detectable at startup and are the user's responsibility.
 - **FR-007**: Per-`QualifiedName` sub-chains; non-matching events skip the chain (O(1)); 1:N outputs re-enter their own sub-chain.
@@ -77,15 +77,16 @@ as on the change itself.** A loose configuration absorbs more; a strict one reje
 ## Success Criteria (highlights)
 
 - **SC-004**: Every FR-009 conflict class detected before any event processed.
-- **SC-005**: All in-scope use cases demonstrated in `examples/university-demo` with passing CI tests.
+- **SC-005**: All in-scope use cases demonstrated in `axoniq-framework/examples/` with passing CI tests.
 - **SC-010**: Concurrency test — multiple threads × sufficient iterations produce identical outputs (specific N/M in plan.md).
 - **SC-011**: DEBUG (startup) + TRACE (per applied) observability + disable mechanism verified by automated tests.
 
 ## Key design choices worth a reviewer's attention
 
 1. **Programmatic registration only** for 5.2.0 — explicit reaction to AF4's Spring-Bean ordering issues. Annotations deferred.
-2. **Fail-fast philosophy** — five misconfiguration classes caught at startup, not runtime.
+2. **Fail-fast philosophy** — three FR-009 misconfiguration classes caught at startup (`register()` + `.build()` lock); a fourth class (version-order violation) is added when an optional `VersionComparator` is registered (FR-021).
 3. **No context-aware transformations** — N-to-1 merge and field-borrowing across events deferred because per-entity vs. cross-entity memory scope was a known AF4 bug source.
-4. **Single mechanism for events, commands, queries** — via the converter-decorator architecture; split/drop restricted to events.
+4. **Single SPI for events, commands, queries** — `MessageTransformer<M extends Message<?>>` operating on `MessageStream<M>`, wired in front of routing/dispatch at three sites (event storage engine + command/query bus connectors). Split/drop restricted to events.
 5. **Snapshots architecturally ready but deferred** — design must not preclude future snapshot transformations without redesign.
+6. **Commercial-only feature** — ships from `axoniq-framework`; pure Axon Framework users must add the dependency. `axon-framework` itself stays untouched except for one small `MessageStream.flatMap` addition needed by the chain implementation.
 
