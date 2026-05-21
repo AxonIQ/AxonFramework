@@ -157,7 +157,7 @@ on this foundation.
 
 #### User Story 2 -- MessageType Change / Rename (Priority: P2)
 
-**Plain-English explanation**: an event's `MessageType` (fully qualified name + version) needs
+**Plain-English explanation**: an event's `MessageType` (`QualifiedName` + version) needs
 to change while the payload stays the same. Common cases: rename the event (e.g., `CourseOpened`
 becomes `CourseCreated` after a domain-modelling refinement), bump only the version, or change
 both name and version. Declare a rename from the old `MessageType` to the new one -- no payload
@@ -179,7 +179,7 @@ only the label changes, not the data, so the registration should require minimal
    **Then** it does not receive the renamed event (the old `MessageType` no longer matches
    after transformation).
 
-3. **Given** only a version bump is needed (same fully qualified name, version incremented
+3. **Given** only a version bump is needed (same `QualifiedName`, version incremented
    from `1.0.0` to `2.0.0`),
    **When** a version-only rename is declared,
    **Then** handlers registered for the new version receive the event with the original payload.
@@ -219,6 +219,13 @@ consumers.
    **Then** the split fires first producing `StudentEnrolled` v1.0.0 and `CourseCapacityUpdated` v1.0.0,
    and the subsequent transformation then applies to the `StudentEnrolled` output event -- both output
    events from the split flow through the remainder of the chain.
+
+5. **Given** a stored `StudentEnrolledAndCourseUpdated` event with sequence number S and tracking
+   token T,
+   **When** the split transformation produces N output events,
+   **Then** all N output events share sequence number S and tracking token T -- the framework MUST
+   NOT renumber. The order among the N outputs is the order returned by the transformation
+   function.
 
 ---
 
@@ -278,36 +285,40 @@ version requires updating all previous transformations.
    **When** the same chain is applied,
    **Then** neither transformation applies and the handler receives the event unchanged.
 
-4. **Given** two transformations registered in the wrong order (v2->v3 before v1->v2) under
-   the default `SemverComparator` (or any user-supplied `VersionComparator`),
+4. **Given** two transformations registered in the wrong order (v2->v3 before v1->v2) **and**
+   a `VersionComparator` registered (e.g., `SemverComparator` or a user-supplied comparator),
    **When** the configurer's `.build()` step locks the chain,
    **Then** the framework raises an error identifying the misordered pair and the inferred
    correct order (v1->v2 then v2->v3), and no event processing occurs.
 
-5. **Given** the same misordered registration (v2->v3 before v1->v2), but with
-   `VersionComparator.disabled()` registered,
+5. **Given** the same misordered registration (v2->v3 before v1->v2) **and no `VersionComparator`
+   registered** (the default),
    **When** the chain is built and a v1.0.0 event is read,
    **Then** the v2->v3 transformation does not match v1.0.0 (input version does not match),
    the v1->v2 transformation applies, and the handler receives version 2.0.0 -- demonstrating
-   that disabling the Comparator returns full responsibility for chain ordering to the
-   developer, and incorrect ordering silently leads to incomplete transformation.
+   that without a comparator the developer retains full responsibility for chain ordering, and
+   incorrect ordering silently leads to incomplete transformation.
 
 #### User Story 6 -- Feedback on Misconfiguration and Runtime Failures (Priority: P1)
 
 **Plain-English explanation**: developers misconfigure transformations in predictable ways:
-duplicate `from` identity (copy-paste mistake), `from == to` (infinite loop), non-qualified
-name (silent never-matches), two 1:1 transformations forming a cycle, or registering the same
-event's version hops in the wrong order (e.g., v2->v3 before v1->v2). The registered
-`VersionComparator` (default `SemverComparator`, FR-021) detects the last case and rejects it.
-Without early detection these become hard-to-diagnose silent runtime bugs.
+duplicate `from` identity (copy-paste mistake), `from == to` (infinite loop), two 1:1
+transformations forming a cycle, or registering the same event's version hops in the wrong
+order (e.g., v2->v3 before v1->v2). The last case is detected only when an optional
+`VersionComparator` is registered (FR-021); without one, registration order alone determines
+apply order. Without early detection these become hard-to-diagnose silent runtime bugs.
 
-The framework catches all five hard-error classes BEFORE any event is read. Three are
-detected at each `register(...)` call (duplicate, self-loop, non-qualified name). Two -- the
-multi-step cycle and the `VersionComparator` order violation -- are detected at chain `lock()`
-during `.build()`, because both only become visible once the full chain is known. Runtime
-transformation failures (exceptions thrown during processing) also propagate immediately with
-full context -- no silent skip. Developers who explicitly opt out of the order check (by
-registering `VersionComparator.disabled()`) accept full responsibility for registration order.
+The framework catches three structural hard-error classes BEFORE any event is read. Two are
+detected at each `register(...)` call (duplicate, self-loop). The multi-step cycle is detected
+at chain `lock()` during `.build()`, because it only becomes visible once the full chain is
+known. When a `VersionComparator` is registered (opt-in), a fourth class -- version-order
+violation -- is also detected at `.build()` lock. Runtime transformation failures (exceptions
+thrown during processing) also propagate immediately with full context -- no silent skip.
+
+Naming mistakes (e.g., a `from.qualifiedName()` that does not match the names produced by the
+configured `MessageTypeResolver`) cannot be detected at startup -- the framework has no
+knowledge of which `MessageType`s will appear in the stream. Such mismatches silently
+pass-through (FR-005); they are the developer's responsibility to verify (see FR-018).
 
 **Why this priority**: silent misconfiguration is the highest-cost failure mode for a
 startup-only API. A clear error at startup costs nothing; a runtime corruption of projections
@@ -315,7 +326,7 @@ takes hours to diagnose.
 
 **Acceptance Scenarios**:
 
-1. **Given** two transformations registered with the same `from` identity (same fully qualified name
+1. **Given** two transformations registered with the same `from` identity (same `QualifiedName`
    AND same version),
    **When** the second registration is attempted,
    **Then** the framework raises an error at registration time identifying the conflicting `from`
@@ -327,44 +338,39 @@ takes hours to diagnose.
    event processing occurs.
 
 3. **Given** two transformations for the same event name registered in an order that
-   disagrees with the registered `VersionComparator` (e.g., v2->v3 registered before v1->v2
-   under the default `SemverComparator`),
+   disagrees with a registered `VersionComparator` (e.g., v2->v3 registered before v1->v2 with
+   `SemverComparator`),
    **When** the chain is built (`.build()` lock),
    **Then** the framework raises an error naming the suspicious pair and the inferred correct
-   order, and no event processing occurs. Developers who want to disable this check register
-   `VersionComparator.disabled()` and accept full responsibility for registration order.
+   order, and no event processing occurs. When no `VersionComparator` is registered (the
+   default), this check does not run and the developer retains full responsibility for
+   registration order.
 
-4. **Given** a transformation registered with a non-fully-qualified event name (e.g., `"CourseCreated"`
-   instead of `"com.example.CourseCreated"`),
-   **When** the registration is attempted,
-   **Then** the framework raises an error at registration time identifying the invalid name, and no
-   event processing occurs.
-
-5. **Given** two 1:1 transformations forming a cycle (transformation A maps `X@1.0.0 -> X@2.0.0`
+4. **Given** two 1:1 transformations forming a cycle (transformation A maps `X@1.0.0 -> X@2.0.0`
    and transformation B maps `X@2.0.0 -> X@1.0.0`),
    **When** the configurer's `.build()` step locks the chain,
    **Then** the framework raises an error at lock time enumerating the full cycle
    (`X@1.0.0 -> X@2.0.0 -> X@1.0.0`), and no event processing occurs. The framework MUST NOT attempt
    to silently break the cycle or apply only part of it.
 
-6. **Given** a correctly configured transformation chain that has already started processing events,
+5. **Given** a correctly configured transformation chain that has already started processing events,
    **When** an attempt is made to register an additional transformation at runtime,
    **Then** the framework rejects the registration immediately with a clear error stating that the
    chain is immutable once event processing has begun, and the chain remains unchanged.
 
-7. **Given** a transformation whose function throws an exception when applied to a specific event,
+6. **Given** a transformation whose function throws an exception when applied to a specific event,
    **When** that event is read from the event store,
    **Then** the framework propagates the exception immediately to the caller -- the event-sourced entity load,
    DCB read, or tracking processor -- halting processing. The exception clearly identifies which
    transformation failed and the name, version, and stream position of the event that triggered it.
    The framework MUST NOT silently skip the failed event or log-and-continue.
 
-8. **Given** a 1:1 transformation declared with `to = (com.example.CourseCreated, 2.0.0)` whose
+7. **Given** a 1:1 transformation declared with `to = (com.example.CourseCreated, 2.0.0)` whose
    function returns a payload of a different type (e.g. `OrderPlacedV2`) or a payload whose
    resolved `MessageType` does not match the declared `to` (e.g. version `3.0.0` or name
    `com.example.CourseScheduled`),
    **When** the event is read from the event store and the transformation is applied,
-   **Then** the framework propagates a runtime failure under the same path as scenario 7, with a
+   **Then** the framework propagates a runtime failure under the same path as scenario 6, with a
    message identifying the offending transformation, the declared `to`, and the actual output
    `MessageType`. The framework MUST NOT silently coerce the output identity to match the declared
    `to`, and MUST NOT let the wrong-typed output flow into the rest of the chain.
@@ -374,10 +380,10 @@ takes hours to diagnose.
 #### User Story 7 - Startup Observability for the Transformation Chain (Priority: P2)
 
 **Plain-English explanation**: a developer needs to confirm at deploy time that registered
-transformations were actually picked up by the framework (without enabling debug logs
-system-wide), and during an incident needs detailed per-event logging to diagnose whether the
-chain caused incorrect projection state. INFO at startup confirms wiring; DEBUG per-application
-traces execution.
+transformations were actually picked up by the framework, and during an incident needs
+detailed per-event logging to diagnose whether the chain caused incorrect projection state.
+DEBUG at startup confirms wiring; TRACE per-application traces execution. Observability is
+opt-out: developers MAY disable all chain logging on performance-critical paths.
 
 **Why this priority**: registration is a startup-time concern -- a developer cannot inspect the
 chain at runtime the way they can inspect a handler registry. Log output is the only way to
@@ -387,18 +393,23 @@ confirm correct wiring in production.
 
 1. **Given** two transformations registered at startup,
    **When** the transformation chain is built,
-   **Then** a single INFO-level log entry is emitted listing the number of registered transformations
-   and their `from` identities, without requiring DEBUG logging to be enabled.
+   **Then** a single DEBUG-level log entry is emitted listing the number of registered transformations
+   and their `from` identities.
 
 2. **Given** a stored event that matches a registered transformation,
    **When** the transformation is applied,
-   **Then** a DEBUG-level log entry is emitted identifying which transformation ran and the name and
+   **Then** a TRACE-level log entry is emitted identifying which transformation ran and the name and
    version of the event it was applied to.
 
 3. **Given** a stored event that does not match any registered transformation,
    **When** it passes through the chain,
-   **Then** no DEBUG log entry for a transformation being applied is emitted for that event (the
-   chain is silent for non-matching events at DEBUG level).
+   **Then** no TRACE log entry for a transformation being applied is emitted for that event (the
+   chain is silent for non-matching events at TRACE level).
+
+4. **Given** a chain built with observability disabled,
+   **When** transformations are registered and applied,
+   **Then** no log entries are emitted by the chain at any level (neither startup DEBUG nor
+   per-applied TRACE).
 
 ---
 
@@ -565,6 +576,11 @@ reintroducing that problem through a different path. Programmatic registration k
 guarantee trivially enforceable: the order of the API calls is the chain order, with no scanning,
 no priority attributes, and no framework magic.
 
+**Forward direction (informational)**: when annotations return, ordering MUST be expressed
+through an explicit `EventTransformationChain` registry or equivalent bean -- not inferred
+from bean-discovery order. This preserves the deterministic-order guarantee that programmatic
+registration provides today.
+
 #### Semantic Meaning of a Field Changed Silently `[Wrong tool]`
 
 **Scenario**: a field's name and type stay the same, but its meaning changes. For example,
@@ -605,10 +621,10 @@ a last resort if the old stream must be fully replaced.
 
 ## Requirements
 
-- **FR-001 (1:1 transformations)**: Developers MUST declare a source identity (`from`: fully
-  qualified name + version) and a target identity (`to`: same shape), plus an optional payload
-  rule. With no rule the payload passes through unchanged. Fully qualified names follow
-  `MessageType` resolution and apply to any message type (event, command, query).
+- **FR-001 (1:1 transformations)**: Developers MUST declare a source identity (`from`: a
+  `MessageType`, i.e. `QualifiedName` + `version`) and a target identity (`to`: same shape),
+  plus an optional payload rule. With no rule the payload passes through unchanged. The
+  mechanism applies to any message type (event, command, query).
   _Traces to: US1, US2._
 - **FR-002 (Rename)**: A pure rename is FR-001 with no payload rule -- no separate API needed.
   _Traces to: US2._
@@ -622,10 +638,13 @@ a last resort if the old stream must be fully replaced.
   framework MUST NOT reorder. Registration is programmatic and valid only at application startup;
   the chain locks once event processing begins. Late registration MUST be rejected with a clear
   "chain is locked" error. Annotation-based registration is out of scope for this release.
-  _Traces to: US1, US5, US6 scenario 6._
-- **FR-005 (Exact matching)**: Each transformation MUST target exactly one `(fully qualified name,
-  version)` pair. Both components must match the stored event's `MessageType` precisely;
-  non-matching events pass through unchanged.
+  _Traces to: US1, US5, US6 scenario 5._
+- **FR-005 (Exact matching)**: Each transformation MUST target exactly one `MessageType`
+  (`QualifiedName` + `version`). Both components are compared by string equality against the
+  stored event's `MessageType`; non-matching events pass through unchanged. Naming consistency
+  between transformation `from` identities and the names produced by the configured
+  `MessageTypeResolver` is the user's responsibility -- the framework does not enforce a
+  naming convention (e.g., does not require dot-separated namespaces).
   _Traces to: US1 scenario 3, US5._
 - **FR-006 (Determinism and thread-safety)**: Transformations MUST be deterministic and
   thread-safe -- same input always produces the same output, and the framework MAY invoke them
@@ -634,9 +653,14 @@ a last resort if the old stream must be fully replaced.
   (e.g., a constant lookup `Map`). This is a contract for documentation; the framework does not
   enforce it at runtime.
   _Traces to: US1 scenarios 4 and 6, US5 scenario 1._
-- **FR-007 (Chain composition)**: Each transformation's output MUST feed into the next as input.
-  For 1:N splits, every replacement event MUST continue through the remaining chain
-  independently.
+- **FR-007 (Chain composition)**: The framework MUST build per-`QualifiedName` sub-chains at
+  `.build()` lock time: registered transformations are grouped by `from.qualifiedName()`, and an
+  incoming event is routed only to the sub-chain matching its own `QualifiedName`. Events whose
+  `QualifiedName` matches no registered transformation skip the chain entirely (O(1) lookup,
+  no allocations -- FR-012). Within a sub-chain, transformations are applied in registration
+  order, filtering by `version`. Each transformation's output MUST feed into the next as input.
+  For 1:N splits, every replacement event MUST re-enter routing at its own `QualifiedName`
+  sub-chain and continue through the remaining chain independently.
   _Traces to: US1 scenario 4, US3 scenario 4, US5._
 - **FR-009 (Conflict detection)**: The framework MUST detect and report the following conflicts
   before any event is processed -- none are deferred to event-processing time:
@@ -644,17 +668,17 @@ a last resort if the old stream must be fully replaced.
     Detected at `register(...)`.
   - **Self-loop** -- `from` and `to` identical on a single transformation. Detected at
     `register(...)`.
-  - **Unqualified name** -- `from` or `to` missing the namespace (e.g., `"CourseCreated"`
-    instead of `"com.example.CourseCreated"`). Unqualified names would silently never match
-    stored events. Detected at `register(...)`.
   - **Multi-step cycle** -- a cycle in the graph of declared 1:1 `from -> to` edges (e.g.,
     `X@1.0.0 -> X@2.0.0` then `X@2.0.0 -> X@1.0.0`). Detected at chain `lock()` (`.build()`);
     the error MUST surface the full edge list. 1:N/1:0 transformations are excluded -- their
     replacement identities are rule-determined and cannot be inspected statically.
   _Traces to: US6._
-- **FR-010 (Typed payload access)**: Transformations MUST operate on structured, typed objects,
-  never raw bytes or wire formats. The framework offers two entry points; the developer chooses
-  one per transformation:
+- **FR-010 (Typed payload access)**: Transformations operate on a developer-chosen target type,
+  resolved via the registered `Converter`. Typical choices are structured types (`JsonNode`,
+  `GenericRecord`, POJO); `byte[]` is permitted for advanced cases (e.g., custom binary
+  formats). The framework does not prescribe an intermediate format -- that decision belongs to
+  the developer and their `Converter`. The framework offers two entry points; the developer
+  chooses one per transformation:
   - **Declarative target type**: the transformation declares a target Java type at registration;
     the framework resolves the stored payload to that type via the registered `Converter` before
     invocation.
@@ -665,15 +689,16 @@ a last resort if the old stream must be fully replaced.
   Valid target types are whatever the registered `Converter` for the stored event's format can
   produce.
   _Traces to: US1, US3, US4._
-- **FR-011 (Envelope and metadata)**: The event envelope -- entity type, entity identifier,
+- **FR-011 (Envelope and metadata)**: The message envelope -- entity type, entity identifier,
   tracking token, sequence number -- MUST be preserved unchanged by every transformation; any
   attempt to modify it is overridden by the framework before delivery. Metadata MAY be modified
   via the message-level entry point (the transformation returns a complete `EventMessage`); the
   payload-only entry point carries metadata forward unchanged. For 1:N splits, every output event
-  inherits the input's envelope and metadata by default; the rule MAY override metadata per
-  output. The event store remains append-only -- modifications only affect the in-memory
-  `EventMessage` flowing downstream.
-  _Traces to: US1 scenario 1, US3 scenario 1._
+  inherits the input's envelope unchanged -- the framework MUST NOT renumber: all N outputs share
+  the input's tracking token and sequence number. Per-output metadata MAY differ when the rule
+  provides distinct values. The event store remains append-only -- modifications only affect the
+  in-memory `EventMessage` flowing downstream.
+  _Traces to: US1 scenario 1, US3 scenario 1, US3 scenario 5._
 - **FR-012 (Lazy deserialization and chain cost)**: The framework MUST NOT deserialize a payload
   unless the event matches at least one registered transformation. Non-matching events MUST pass
   through without conversion. Per-event work on the non-matching path MUST be `O(1)` in chain
@@ -688,16 +713,21 @@ a last resort if the old stream must be fully replaced.
   which events match -- use Copy and Replace if the stored stream itself must change.
   _Traces to: US1 scenario 4._
 - **FR-014 (Observability)**: The framework MUST emit:
-  - **INFO once at startup**: total transformation count and each transformation's `from` (and
+  - **DEBUG once at startup**: total transformation count and each transformation's `from` (and
     `to` for 1:1).
-  - **DEBUG per applied transformation**: transformation identifier (implementation class name,
+  - **TRACE per applied transformation**: transformation identifier (implementation class name,
     or the `from` identity for builder-based registrations, which is unique by FR-009 conflict
     1), the matched `from`, and the event's stream position (sequence number or tracking token).
+
+  The framework MUST provide a mechanism to disable observability entirely (e.g.,
+  `chain.observability(Observability.disabled())` or equivalent). When disabled, no startup or
+  per-applied log entries are emitted by the chain at any level.
+
   Log message format is framework-internal; the listed fields MUST be present so log-scraping
-  remains reliable across releases. No public API changes.
+  remains reliable across releases. No public API changes beyond the disable mechanism.
   _Traces to: US7._
 - **FR-015 (Position advances past drops)**: When a transformation drops an event, the tracking
-  token MUST still advance. A restarting tracking processor MUST NOT reprocess dropped events.
+  token MUST still advance. A restarting streaming processor MUST NOT reprocess dropped events.
   _Traces to: US4 scenario 3._
 - **FR-016 (Exception propagation)**: If any step in applying a transformation throws -- the
   transformation function itself OR the framework's pre-invocation conversion to the declared
@@ -708,7 +738,7 @@ a last resort if the old stream must be fully replaced.
   `MessageStream` is pull-based and lazy -- already-emitted siblings (events 0..K-1) stay
   delivered; the stream terminates at the failing element K and the framework does NOT roll back
   earlier emissions. Callers needing atomic-all-or-nothing semantics must layer that on top.
-  _Traces to: US6 scenario 7._
+  _Traces to: US6 scenario 6._
 - **FR-017 (Legacy unversioned events)**: Events stored without an explicit version MUST be
   treated as version `0.0.1` (the AF5 `MessageType` default). Transformations targeting `0.0.1`
   apply to these events; no special API is required.
@@ -728,7 +758,7 @@ a last resort if the old stream must be fully replaced.
   rule-determined by design, and the developer has full responsibility for each replacement
   event's identity (the framework does not validate that the chosen identity is meaningful or
   subscribed to).
-  _Traces to: US1, US6 scenario 8._
+  _Traces to: US1, US6 scenario 7._
 - **FR-020 (Commands and queries)**: The transformer mechanism MUST support commands and queries
   in addition to events -- it is a decorator around the message converter and applies to any
   `Message` subtype. The 1:1 patterns (FR-001, FR-002) apply to all three message types. The 1:N
@@ -737,19 +767,19 @@ a last resort if the old stream must be fully replaced.
   command or query types. Downcasting is out of scope (Part C).
   _Traces to: US8, US9._
 - **FR-021 (VersionComparator)**: Version strings are arbitrary non-empty strings -- AF4
-  compatibility (`@Revision` accepted any string) precludes format enforcement. The framework
-  REQUIRES a `VersionComparator extends Comparator<String>` per chain. Default:
-  `SemverComparator`. Users MAY supply a custom comparator (e.g., date-based) or opt out with
-  `VersionComparator.disabled()`. The comparator ENFORCES version order at `.build()` lock time:
-  registering `v2->v3` before `v1->v2` for the same `from` name under `SemverComparator` raises
-  an error identifying the offending pair and the inferred correct order. When
-  `SemverComparator` encounters a non-parseable version (e.g., `"rev42"`, `"20250515"`), it MUST
-  throw at `.build()` lock listing the bad versions and the three remediation paths: fix to
-  semver, supply a custom `VersionComparator`, or register `VersionComparator.disabled()`. No
-  silent lexicographic fallback. This complements the structural checks in FR-009. Matching
-  remains exact `(name, version)` per FR-005; cycle detection stays structural and is independent
-  of the comparator. The comparator also orders transformations in INFO/DEBUG logs (FR-014) and
-  error messages.
+  compatibility (`@Revision` accepted any string) precludes format enforcement. A chain MAY
+  accept an optional `VersionComparator extends Comparator<String>`. **When provided**, the
+  comparator ENFORCES version order at `.build()` lock time: registering `v2->v3` before
+  `v1->v2` for the same `from` name raises an error identifying the offending pair and the
+  inferred correct order. `SemverComparator` ships as a convenience (e.g.,
+  `chain.versionOrder(VersionComparator.semver())`); when it encounters a non-parseable version
+  (e.g., `"rev42"`, `"20250515"`), it MUST throw at `.build()` lock listing the bad versions and
+  the two remediation paths: fix to semver, or supply a custom `VersionComparator`. No silent
+  lexicographic fallback. **When omitted (the default)**, registration order alone determines
+  apply order -- matching AF4 semantics and keeping registration concise. Matching
+  remains exact `MessageType` per FR-005; cycle detection stays structural and is independent
+  of the comparator. When a comparator is registered, it also orders transformations in
+  DEBUG/TRACE logs (FR-014) and error messages.
   _Traces to: FR-004, FR-009._
 - **FR-022 (Data-protection ordering)**: Data-protection mechanisms (PII redaction, field-level
   masking, payload decryption, etc.) MUST operate downstream of the transformation chain.
@@ -767,24 +797,21 @@ a last resort if the old stream must be fully replaced.
   drop). Detailed contract: FR-001 to FR-003.
 - **Transformation chain**: The ordered sequence of registered transformations applied when
   reading messages. Order = registration sequence (FR-004).
-- **MessageType / Event identity**: Fully qualified name (namespace + local name, e.g.,
-  `com.example.CourseCreated`) + arbitrary non-empty version string (e.g., `1.0.0`). Both
-  components always present. Unversioned legacy events default to `0.0.1` (FR-017). Registration
-  uses the fully qualified name; local-only names silently never match.
-- **VersionComparator**: Required `Comparator<String>` that enforces chain version order at
-  `.build()` lock. Default `SemverComparator`; opt out via `VersionComparator.disabled()`
-  (FR-021).
+- **MessageType / Event identity**: `QualifiedName` (arbitrary non-empty string, typically
+  built from a namespace + local name like `com.example.CourseCreated`) + arbitrary non-empty
+  version string (e.g., `1.0.0`). Both components always present. Unversioned legacy events
+  default to `0.0.1` (FR-017). Registration uses the `QualifiedName` produced by the configured
+  `MessageTypeResolver`; mismatches between registered names and stream names silently
+  pass-through.
+- **VersionComparator**: Optional `Comparator<String>` that enforces chain version order at
+  `.build()` lock when registered. Default: no comparator -- registration order alone
+  determines apply order. `SemverComparator` ships as a builder convenience (FR-021).
 - **DCB read (`SourcingCondition`)**: Dynamic Consistency Boundary -- AF5's mechanism for
   command-side consistency without a fixed aggregate root. Bounded stream that may span multiple
   entities. One of the three reading contexts in FR-013 (alongside entity loads and tracking
   processor reads).
 
 ## Success Criteria
-- **SC-001 (Ergonomics)**: A complete 1:1 structural transformation (US1's `CourseCreated`
-  v1.0.0 -> v2.0.0) MUST require materially fewer lines of Java than the AF4 equivalent (one
-  `SingleEventUpcaster` subclass plus Spring `@Configuration` wiring). The exact line-count
-  target is set in plan.md; the AF4-to-AF5 migration guide (SC-006) captures the side-by-side
-  count.
 - **SC-002 (Order)**: 100% of registered transformations are applied in registration order,
   verifiable across all in-scope use cases. Verifies FR-004.
 - **SC-004 (Conflicts)**: Every conflict class in FR-009 is detected and reported before any
@@ -809,11 +836,11 @@ a last resort if the old stream must be fully replaced.
   sufficient iteration count to exercise real thread interleaving produces identical outputs
   across all invocations with no external synchronization. Specific thread and iteration counts
   are set in plan.md. Verifies FR-006.
-- **SC-011 (Observability)**: An INFO log entry is emitted once when the chain is built, listing
-  the count and `from`/`to` of every registered transformation. A DEBUG log entry is emitted each
+- **SC-011 (Observability)**: A DEBUG log entry is emitted once when the chain is built, listing
+  the count and `from`/`to` of every registered transformation. A TRACE log entry is emitted each
   time a transformation matches an event, identifying the transformation and the event's name,
-  version, and stream position. Both verified by automated test against the framework's logging
-  API. Verifies FR-014.
+  version, and stream position. With observability disabled, no log entries are emitted. All
+  three behaviors verified by automated test against the framework's logging API. Verifies FR-014.
 
 ## Assumptions
 
