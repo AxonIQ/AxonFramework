@@ -31,14 +31,20 @@ import org.openrewrite.marker.Markers;
  * Java/Kotlin advisory recipe for AF4 {@code EventProcessingConfigurer#registerSequencingPolicy(...)}
  * calls.
  * <p>
- * AF5 dropped the declarative-API registration of sequencing policies. The decision now lives on
- * the event-handler class via {@code @SequencingPolicy} from
- * {@code org.axonframework.messaging.core.annotation}. Rewriting the configurer call into the
- * annotation move is non-mechanical: the policy {@code Function<Configuration, SequencingPolicy>}
- * may produce any policy at runtime and the recipe cannot infer which handler class should carry
- * the annotation. Deleting the call mechanically would silently lose configuration, so this
- * recipe annotates the call site with a {@code // TODO(axon4to5):} comment that names the
- * replacement API.
+ * AF5 dropped the AF4 {@code EventProcessingConfigurer} sequencing-policy hook. Two replacements
+ * exist:
+ * <ul>
+ *   <li>{@code @SequencingPolicy} on the event-handling class
+ *       ({@code org.axonframework.messaging.core.annotation.SequencingPolicy}).</li>
+ *   <li>Declarative configuration through
+ *       {@code EventProcessorDefinition} ({@code org.axonframework.extension.spring.config}),
+ *       customised with
+ *       {@code .customized(c -> c.sequencingPolicy(...))} on the processor configuration.</li>
+ * </ul>
+ * Picking between the two needs human judgement (which handler class, which processor name) and
+ * the policy {@code Function<Configuration, SequencingPolicy>} may produce any policy at runtime,
+ * so the recipe cannot rewrite the call mechanically. Deleting the call silently would lose
+ * configuration; this recipe leaves a {@code // TODO(axon4to5):} comment instead.
  * <p>
  * Idempotent — the comment carries a stable marker substring, and the visitor skips invocations
  * whose immediate prefix already contains it.
@@ -65,10 +71,13 @@ public class AnnotateProgrammaticSequencingPolicyRegistration extends Recipe {
             new MethodMatcher(AF4_MODULE_CONFIGURER + " registerSequencingPolicy(..)");
 
     private static final String COMMENT_MARKER =
-            "TODO(axon4to5): declarative sequencing-policy registration is no longer supported";
+            "TODO(axon4to5): EventProcessingConfigurer#registerSequencingPolicy is gone in AF5";
     private static final String COMMENT_TEXT = " " + COMMENT_MARKER
-            + ". Move the policy onto the event handler class via @SequencingPolicy "
-            + "(org.axonframework.messaging.core.annotation.SequencingPolicy).";
+            + ". Replace with either @SequencingPolicy on the event handler class "
+            + "(org.axonframework.messaging.core.annotation.SequencingPolicy) or, "
+            + "for processor-level configuration, EventProcessorDefinition…"
+            + ".customized(c -> c.sequencingPolicy(...)) "
+            + "(org.axonframework.extension.spring.config.EventProcessorDefinition).";
 
     @Override
     public String getDisplayName() {

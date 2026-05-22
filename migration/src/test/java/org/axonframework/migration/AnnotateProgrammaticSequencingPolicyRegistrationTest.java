@@ -65,7 +65,7 @@ class AnnotateProgrammaticSequencingPolicyRegistrationTest implements RewriteTes
                         import org.axonframework.config.EventProcessingConfigurer;
                         class Config {
                             void configure(EventProcessingConfigurer configurer) {
-                                // TODO(axon4to5): declarative sequencing-policy registration is no longer supported. Move the policy onto the event handler class via @SequencingPolicy (org.axonframework.messaging.core.annotation.SequencingPolicy).
+                                // TODO(axon4to5): EventProcessingConfigurer#registerSequencingPolicy is gone in AF5. Replace with either @SequencingPolicy on the event handler class (org.axonframework.messaging.core.annotation.SequencingPolicy) or, for processor-level configuration, EventProcessorDefinition….customized(c -> c.sequencingPolicy(...)) (org.axonframework.extension.spring.config.EventProcessorDefinition).
                                 configurer.registerSequencingPolicy("orders", cfg -> new Object());
                             }
                         }
@@ -95,7 +95,7 @@ class AnnotateProgrammaticSequencingPolicyRegistrationTest implements RewriteTes
                         import org.axonframework.config.EventProcessingConfigurer;
                         class Config {
                             void configure(EventProcessingConfigurer configurer) {
-                                // TODO(axon4to5): declarative sequencing-policy registration is no longer supported. Move the policy onto the event handler class via @SequencingPolicy (org.axonframework.messaging.core.annotation.SequencingPolicy).
+                                // TODO(axon4to5): EventProcessingConfigurer#registerSequencingPolicy is gone in AF5. Replace with either @SequencingPolicy on the event handler class (org.axonframework.messaging.core.annotation.SequencingPolicy) or, for processor-level configuration, EventProcessorDefinition….customized(c -> c.sequencingPolicy(...)) (org.axonframework.extension.spring.config.EventProcessorDefinition).
                                 configurer.registerSequencingPolicy("orders", cfg -> new Object());
                             }
                         }

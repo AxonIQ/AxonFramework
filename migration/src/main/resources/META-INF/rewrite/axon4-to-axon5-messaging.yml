@@ -117,10 +117,11 @@ recipeList:
   # `(e, ctx) -> Optional.ofNullable(body)`.
   - org.axonframework.migration.MigrateSequencingPolicyLambda
 
-  # AF4's `EventProcessingConfigurer#registerSequencingPolicy(...)` is gone in AF5 —
-  # the decision moves onto the handler class via `@SequencingPolicy`. We cannot
-  # mechanically infer which handler class should receive the annotation, so this
-  # recipe just prepends a `// TODO(axon4to5):` comment above every call site.
+  # AF4's `EventProcessingConfigurer#registerSequencingPolicy(...)` is gone in AF5.
+  # Two replacements exist: `@SequencingPolicy` on the handler class, or declarative
+  # configuration via `EventProcessorDefinition...customized(c -> c.sequencingPolicy(...))`.
+  # Picking between them needs human judgement, so this recipe just prepends a
+  # `// TODO(axon4to5):` comment above every call site.
   - org.axonframework.migration.AnnotateProgrammaticSequencingPolicyRegistration
 
   # ── Query gateway moved into its own gateway subpackage ─────────────────
