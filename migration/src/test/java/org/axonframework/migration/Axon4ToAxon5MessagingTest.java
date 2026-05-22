@@ -893,8 +893,8 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     void renamesEventProcessorShutDownToShutdown() {
         // Verifies the AF5 camelCase normalisation: an AF4 `eventProcessor.shutDown()` call site
         // is rewritten to `shutdown()` while the receiver type binding is moved into the
-        // AF5 `org.axonframework.messaging.eventhandling` namespace by the surrounding
-        // package-rename rules.
+        // AF5 `org.axonframework.messaging.eventhandling.processing` namespace by the
+        // chained package-rename and ChangeType rules.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(
@@ -909,7 +909,9 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
                         """,
                         """
                         package com.example;
-                        import org.axonframework.messaging.eventhandling.EventProcessor;
+
+                        import org.axonframework.messaging.eventhandling.processing.EventProcessor;
+
                         class Lifecycle {
                             void stop(EventProcessor processor) {
                                 processor.shutdown();

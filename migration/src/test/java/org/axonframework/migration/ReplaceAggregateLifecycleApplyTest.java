@@ -113,4 +113,81 @@ class ReplaceAggregateLifecycleApplyTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void rewritesKotlinAliasedStaticApplyImport() {
+        // Kotlin source can rename a static import with `as`. The Kotlin parser keeps the
+        // local identifier on the call site, and the MethodMatcher can't resolve the underlying
+        // method through the alias — the recipe falls back to scanning the imports for the
+        // alias name and treats matching local identifiers as apply calls.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flattensApplyAndThenChainInKotlin() {
+        // AF4 callers can chain `apply(...).andThen { … }` to run extra logic after the
+        // first event is published. AF5 `EventAppender#append` returns `void`, so we
+        // flatten the chain into sequential statements: the rewritten append plus the
+        // lambda body's own statements (any inner `apply(...)` calls inside the lambda
+        // are rewritten by the regular visitor pass).
+        //
+        // Indentation inside nested blocks that were originally a level deeper inside the
+        // lambda body keeps the deeper indent in the printed output — the test pins that
+        // behavior. The transformation is functionally correct; running the IDE's
+        // reformatter post-migration restores tidy indentation.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply
+
+                        class Intervention {
+                            fun handle(cmd: Any, batchId: String?) {
+                                apply(cmd).andThen {
+                                    if (batchId != null) {
+                                        apply(batchId)
+                                    }
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Intervention {
+                            fun handle(cmd: Any, batchId: String?, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                                if (batchId != null) {
+                                        eventAppender.append(batchId)
+                                    }
+                            }
+                        }
+                        """
+                )
+        );
+    }
 }

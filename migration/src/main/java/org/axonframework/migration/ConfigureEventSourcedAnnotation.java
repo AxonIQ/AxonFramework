@@ -84,7 +84,10 @@ public class ConfigureEventSourcedAnnotation
     private static final String TODO_COMMENT =
             " /* TODO(axon4to5): set to actual id type, e.g. String.class or UUID.class */";
     private static final String TODO_FALLBACK = "Object.class" + TODO_COMMENT;
-    private static final String TODO_FALLBACK_KOTLIN = "Object::class.java" + TODO_COMMENT;
+    // Kotlin annotations expect a `KClass<?>` literal (the Kotlin compiler converts it to a Java
+    // `Class<?>` for the underlying Java annotation parameter). Writing `::class.java` here would
+    // produce a `Class<?>` expression, which is not assignable to the annotation's `KClass<?>` slot.
+    private static final String TODO_FALLBACK_KOTLIN = "Object::class" + TODO_COMMENT;
 
     /** Records {@code enclosingClassFqn → idTypeFqn} for every {@code @AggregateIdentifier} field. */
     public static class Accumulator {
@@ -199,7 +202,7 @@ public class ConfigureEventSourcedAnnotation
                     idTypeImport = null;
                 } else {
                     String simpleName = idTypeFqn.substring(idTypeFqn.lastIndexOf('.') + 1);
-                    idTypeExpr = simpleName + (kotlin ? "::class.java" : ".class");
+                    idTypeExpr = simpleName + (kotlin ? "::class" : ".class");
                     // java.lang types are auto-imported.
                     idTypeImport = idTypeFqn.startsWith("java.lang.") ? null : idTypeFqn;
                 }

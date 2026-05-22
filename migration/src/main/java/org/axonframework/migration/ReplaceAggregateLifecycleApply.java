@@ -32,7 +32,9 @@ import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Replaces calls to {@code AggregateLifecycle.apply(...)} with calls to {@code eventAppender.append(...)} on an
@@ -92,6 +94,42 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         return new JavaIsoVisitor<ExecutionContext>() {
 
+            /**
+             * Per-compilation-unit cache of Kotlin import aliases for
+             * {@code AggregateLifecycle.apply}. In Kotlin a call site through an aliased import
+             * (e.g. {@code import …apply as lifecycleApply}) keeps the local identifier
+             * ({@code lifecycleApply}) on the {@link J.MethodInvocation}; the parser does not
+             * always rewrite the simple name back to {@code apply} or attach a methodType that
+             * {@link MethodMatcher} can resolve, so the matcher misses these calls. By
+             * collecting the alias identifiers up front we can fall back to a simple-name match.
+             */
+            private final Set<String> applyAliasNames = new HashSet<>();
+            private boolean aliasesScanned = false;
+
+            @Override
+            public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
+                scanApplyAliases(cu);
+                return super.visitCompilationUnit(cu, ctx);
+            }
+
+            private void scanApplyAliases(J.CompilationUnit cu) {
+                if (aliasesScanned) {
+                    return;
+                }
+                aliasesScanned = true;
+                for (J.Import imp : cu.getImports()) {
+                    String fqn = imp.getQualid().printTrimmed(getCursor());
+                    if (!(fqn.equals(AF4_AGGREGATE_LIFECYCLE_FQN + ".apply")
+                            || fqn.equals(AF5_AGGREGATE_LIFECYCLE_FQN + ".apply"))) {
+                        continue;
+                    }
+                    J.Identifier alias = imp.getAlias();
+                    if (alias != null) {
+                        applyAliasNames.add(alias.getSimpleName());
+                    }
+                }
+            }
+
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
                 // Constructors are never the right injection target. In AF5 the entity is being
@@ -133,9 +171,39 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
                 J.MethodDeclaration finalMd = md;
                 J.MethodDeclaration result = (J.MethodDeclaration) new JavaIsoVisitor<ExecutionContext>() {
                     @Override
+                    public J.Block visitBlock(J.Block block, ExecutionContext c) {
+                        // Flatten `apply(X).andThen { ... }` statements into sequential
+                        // statements. AF4's `apply()` returned an `ApplyMore` that exposed
+                        // `andThen`, letting callers chain follow-up events. AF5's
+                        // `EventAppender#append` returns `void`, so the chain has no
+                        // direct equivalent — the closest faithful translation is to
+                        // unwrap the lambda body and emit its statements as siblings.
+                        // Done at the block level because replacing one statement with
+                        // multiple requires reshaping the surrounding statement list.
+                        J.Block b = super.visitBlock(block, c);
+                        List<Statement> originalStatements = b.getStatements();
+                        List<Statement> rewritten = null;
+                        for (int i = 0; i < originalStatements.size(); i++) {
+                            Statement stmt = originalStatements.get(i);
+                            List<Statement> flattened = tryFlattenAndThen(stmt);
+                            if (flattened == null) {
+                                if (rewritten != null) {
+                                    rewritten.add(stmt);
+                                }
+                                continue;
+                            }
+                            if (rewritten == null) {
+                                rewritten = new ArrayList<>(originalStatements.subList(0, i));
+                            }
+                            rewritten.addAll(flattened);
+                        }
+                        return rewritten == null ? b : b.withStatements(rewritten);
+                    }
+
+                    @Override
                     public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, ExecutionContext c) {
                         J.MethodInvocation invocation = super.visitMethodInvocation(mi, c);
-                        if (!APPLY_AF4.matches(invocation) && !APPLY_AF5.matches(invocation)) {
+                        if (!isApplyCall(invocation)) {
                             return invocation;
                         }
                         if (invocation.getArguments().isEmpty()
@@ -159,6 +227,101 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
                                        appenderName,
                                        invocation.getArguments().get(0));
                     }
+
+                    /**
+                     * If {@code stmt} is a top-level expression statement of the form
+                     * {@code apply(X).andThen { body }} (possibly with chained {@code andThen}s),
+                     * returns the flattened replacement: the rewritten {@code eventAppender.append(X)}
+                     * call followed by the lambda body's statements (which themselves may already
+                     * have had their {@code apply(...)} calls rewritten by
+                     * {@link #visitMethodInvocation}). Returns {@code null} when the statement does
+                     * not match the pattern, leaving it for the regular visitor pass.
+                     */
+                    private @org.jspecify.annotations.Nullable List<Statement> tryFlattenAndThen(Statement stmt) {
+                        if (!(stmt instanceof J.MethodInvocation)) {
+                            return null;
+                        }
+                        J.MethodInvocation invocation = (J.MethodInvocation) stmt;
+                        if (!"andThen".equals(invocation.getSimpleName())) {
+                            return null;
+                        }
+                        // The select of `apply(X).andThen { … }` is the (already-rewritten) apply
+                        // call; an EventAppender.append(...) invocation at this point.
+                        if (!(invocation.getSelect() instanceof J.MethodInvocation)) {
+                            return null;
+                        }
+                        J.MethodInvocation select = (J.MethodInvocation) invocation.getSelect();
+                        if (!isAppendOrApply(select)) {
+                            return null;
+                        }
+                        if (invocation.getArguments().isEmpty()) {
+                            return null;
+                        }
+                        // The lambda is the sole argument of `andThen`. Accept both Kotlin-style
+                        // trailing lambdas and explicit `andThen(lambda)` forms — the parser
+                        // surfaces both as a `J.Lambda` argument.
+                        J last = invocation.getArguments().get(invocation.getArguments().size() - 1);
+                        if (!(last instanceof J.Lambda)) {
+                            return null;
+                        }
+                        J.Lambda lambda = (J.Lambda) last;
+                        List<Statement> bodyStatements;
+                        if (lambda.getBody() instanceof J.Block) {
+                            bodyStatements = ((J.Block) lambda.getBody()).getStatements();
+                        } else if (lambda.getBody() instanceof Statement) {
+                            bodyStatements = java.util.Collections.singletonList((Statement) lambda.getBody());
+                        } else {
+                            return null;
+                        }
+                        List<Statement> out = new ArrayList<>(1 + bodyStatements.size());
+                        // Preserve the original statement's prefix on the rewritten append so the
+                        // flattened version keeps the indentation/blank-line layout the developer
+                        // wrote around the `apply(...).andThen { ... }` block. The lambda body's
+                        // statements originally lived one indent-level deeper inside the lambda
+                        // braces; reusing the outer statement's prefix on each of them realigns
+                        // them with the surrounding block.
+                        org.openrewrite.java.tree.Space outerPrefix = invocation.getPrefix();
+                        out.add(select.withPrefix(outerPrefix));
+                        for (Statement bodyStmt : bodyStatements) {
+                            out.add(bodyStmt.withPrefix(outerPrefix));
+                        }
+                        // Recursively unfold further chained `.andThen { ... }` calls that surface
+                        // as the head of the body (rare in practice but possible).
+                        List<Statement> recursed = null;
+                        for (int i = 0; i < out.size(); i++) {
+                            List<Statement> sub = tryFlattenAndThen(out.get(i));
+                            if (sub == null) {
+                                if (recursed != null) {
+                                    recursed.add(out.get(i));
+                                }
+                                continue;
+                            }
+                            if (recursed == null) {
+                                recursed = new ArrayList<>(out.subList(0, i));
+                            }
+                            recursed.addAll(sub);
+                        }
+                        return recursed == null ? out : recursed;
+                    }
+
+                    /**
+                     * After {@link #visitMethodInvocation} runs, an {@code apply(X)} that lived as
+                     * the {@code select} of an {@code andThen} call has already been rewritten to
+                     * {@code eventAppender.append(X)}. Match either shape so the flatten step
+                     * remains idempotent and works regardless of visitor ordering.
+                     */
+                    private boolean isAppendOrApply(J.MethodInvocation mi) {
+                        if (isApplyCall(mi)) {
+                            return true;
+                        }
+                        if (!"append".equals(mi.getSimpleName())) {
+                            return false;
+                        }
+                        if (!(mi.getSelect() instanceof J.Identifier)) {
+                            return false;
+                        }
+                        return appenderName.equals(((J.Identifier) mi.getSelect()).getSimpleName());
+                    }
                 }.visitNonNull(finalMd, ctx, getCursor().getParentOrThrow());
 
                 maybeAddImport(EVENT_APPENDER_FQN, false);
@@ -177,13 +340,32 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
                 new JavaIsoVisitor<ExecutionContext>() {
                     @Override
                     public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, ExecutionContext c) {
-                        if (APPLY_AF4.matches(mi) || APPLY_AF5.matches(mi)) {
+                        if (isApplyCall(mi)) {
                             found[0] = true;
                         }
                         return super.visitMethodInvocation(mi, c);
                     }
                 }.visit(md.getBody(), ctx);
                 return found[0];
+            }
+
+            /**
+             * Matches calls to {@code AggregateLifecycle.apply(...)} via the AF4 or AF5 FQN.
+             * Also matches calls that go through a Kotlin aliased static import
+             * ({@code import …AggregateLifecycle.apply as foo}) by checking the simple identifier
+             * against the alias names collected at compilation-unit entry — those calls keep the
+             * alias identifier on the LST and the {@link MethodMatcher} can fail to resolve
+             * the underlying method when the Kotlin parser doesn't bind the methodType through
+             * the alias.
+             */
+            private boolean isApplyCall(J.MethodInvocation invocation) {
+                if (APPLY_AF4.matches(invocation) || APPLY_AF5.matches(invocation)) {
+                    return true;
+                }
+                if (applyAliasNames.isEmpty() || invocation.getSelect() != null) {
+                    return false;
+                }
+                return applyAliasNames.contains(invocation.getSimpleName());
             }
 
             /**
