@@ -1,0 +1,76 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Reactor extension (axon-reactor / axon-reactor-spring-boot-starter):
+# package move + sub-package interpolation + deprecated-starter rewrite.
+#
+# AF4: org.axonframework.extensions.reactor.{commandhandling,eventhandling,
+#      queryhandling}.gateway.* and .messaging.* (plural `extensions`).
+# AF5: org.axonframework.extension.reactor.messaging.{commandhandling,
+#      eventhandling,queryhandling}.gateway.* and
+#      .messaging.core.* (singular `extension`, `messaging.` inserted
+#      to mirror the core OSS messaging restructure).
+#
+# Build-tool coordinate move: AF5 ships only
+# `org.axonframework.extensions.reactor:axon-reactor`; the AF4 sibling
+# `axon-reactor-spring-boot-starter` was dropped (no Spring Boot autoconfig is
+# published for AF5 yet). The unified `java.dependencies.ChangeDependency`
+# recipe rewrites the deprecated starter coordinate to the bare `axon-reactor`
+# module across Maven (`pom.xml`), Gradle Groovy (`build.gradle`), and Gradle
+# Kotlin DSL (`build.gradle.kts`) in one step. The remaining version bump for
+# `axon-reactor` is handled by the top-level UpgradeDependencyVersion step in
+# `axon4-to-axon5.yml`. Reactive autoconfig must be wired manually in AF5 —
+# this is intentional and surfaces in the recipe diff/output.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5ReactorExtension
+displayName: Migrate the Reactor extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.extensions.reactor.*` to
+  `org.axonframework.extension.reactor.*` (singular `extension`) and inserts
+  the `messaging.` segment in front of the `commandhandling`, `eventhandling`,
+  and `queryhandling` subpackages. The bare `extensions.reactor.messaging.*`
+  package (which holds `ReactorMessageDispatchInterceptor` and the
+  interceptor chain) is moved under `extension.reactor.messaging.core.*`.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.commandhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.commandhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.eventhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.eventhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.queryhandling
+      newPackageName: org.axonframework.extension.reactor.messaging.queryhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.extensions.reactor.messaging
+      newPackageName: org.axonframework.extension.reactor.messaging.core
+      recursive: true
+  # Rewrites the deprecated AF4 `axon-reactor-spring-boot-starter` coordinate to
+  # the bare `axon-reactor` module across Maven and Gradle. groupId is unchanged;
+  # only the artifactId moves. Version is intentionally omitted here so the
+  # entry stays BOM-managed where applicable; the umbrella's wildcard
+  # `UpgradeDependencyVersion: org.axonframework.extensions.reactor:*` lifts it
+  # to the AF5 line afterwards.
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework.extensions.reactor
+      oldArtifactId: axon-reactor-spring-boot-starter
+      newGroupId: org.axonframework.extensions.reactor
+      newArtifactId: axon-reactor

@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.configuration;
 
 import org.axonframework.common.Assert;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ConstructorUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.BaseModule;
@@ -27,6 +28,8 @@ import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
+import org.axonframework.eventsourcing.annotation.Snapshotting;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
@@ -36,6 +39,7 @@ import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -56,6 +60,7 @@ import static org.axonframework.common.ReflectionUtils.collectSealedHierarchyIfS
  * @param <E> The type of the event-sourced entity being built.
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 class AnnotatedEventSourcedEntityModule<I, E>
@@ -77,15 +82,32 @@ class AnnotatedEventSourcedEntityModule<I, E>
                 .orElseThrow(() -> new IllegalArgumentException("The given class is not an @EventSourcedEntity."));
         this.concreteTypes = getConcreteEntityTypes(annotationAttributes);
 
-        componentRegistry(cr -> cr.registerModule(
-                EventSourcedEntityModule
-                        .declarative(idType, entityType)
-                        .messagingModel((c, b) -> this.buildMetaModel(c))
-                        .entityFactory(entityFactory(annotationAttributes, concreteTypes))
-                        .criteriaResolver(criteriaResolver(annotationAttributes))
-                        .entityIdResolver(entityIdResolver(annotationAttributes))
-                        .build()
-        ));
+        OptionalPhase<I, E> phase = EventSourcedEntityModule
+                .declarative(idType, entityType)
+                .messagingModel((c, b) -> this.buildMetaModel(c))
+                .entityFactory(entityFactory(annotationAttributes, concreteTypes))
+                .criteriaResolver(criteriaResolver(annotationAttributes))
+                .entityIdResolver(entityIdResolver(annotationAttributes));
+
+        boolean hasSnapshottingAnnotation = AnnotationUtils
+                .findAnnotationAttributes(entityType, Snapshotting.class)
+                .isPresent();
+
+        if (hasSnapshottingAnnotation) {
+            Map<String, Object> resolved = AnnotationUtils
+                    .findAnnotationAttributesOnType(entityType, Snapshotting.class,
+                                                   AnnotatedEventSourcedEntityModule::hasConcreteSnapshotValue)
+                    .orElseThrow(() -> new AxonConfigurationException(
+                            "@Snapshotting on [" + entityType.getName()
+                                    + "] could not resolve a concrete trigger. "
+                                    + "Configure afterEvents or afterSourcingTime on the annotation or a "
+                                    + "higher-level annotation on an enclosing class, package, or module."
+                    ));
+            SnapshotPolicy policy = buildSnapshotPolicy(entityType, resolved);
+            phase.snapshotPolicy(c -> policy);
+        }
+
+        componentRegistry(cr -> cr.registerModule(phase.build()));
     }
 
     private AnnotatedEntityMetamodel<E> buildMetaModel(Configuration c) {
@@ -133,6 +155,37 @@ class AnnotatedEventSourcedEntityModule<I, E>
             var component = (AnnotatedEntityMetamodel<E>) c.getComponent(EntityMetamodel.class, entityName());
             return definition.createIdResolver(entityType, idType, component, c);
         };
+    }
+
+    private static boolean hasConcreteSnapshotValue(Map<String, Object> attrs) {
+        return (int) attrs.get("afterEvents") != Snapshotting.USE_DEFAULT
+                || !Snapshotting.USE_DEFAULT_DURATION.equals(attrs.get("afterSourcingTime"));
+    }
+
+    private static SnapshotPolicy buildSnapshotPolicy(Class<?> entityType, Map<String, Object> attrs) {
+        int afterEvents = (int) attrs.get("afterEvents");
+        String afterSourcingTime = (String) attrs.get("afterSourcingTime");
+
+        SnapshotPolicy policy = null;
+
+        if (afterEvents > 0) {
+            policy = SnapshotPolicy.afterEvents(afterEvents);
+        }
+
+        if (!Snapshotting.USE_DEFAULT_DURATION.equals(afterSourcingTime)) {
+            SnapshotPolicy timePart = SnapshotPolicy.whenSourcingTimeExceeds(Duration.parse(afterSourcingTime));
+
+            policy = policy == null ? timePart : policy.or(timePart);
+        }
+
+        if (policy == null) {
+            throw new AxonConfigurationException(
+                    "@Snapshotting on [" + entityType.getName() + "] has no active trigger: afterEvents is 0 and "
+                            + "afterSourcingTime is not configured. Remove the annotation or configure at least one trigger."
+            );
+        }
+
+        return policy;
     }
 
     /**

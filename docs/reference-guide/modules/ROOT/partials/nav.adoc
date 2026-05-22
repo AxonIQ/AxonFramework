@@ -22,6 +22,10 @@ include::monitoring:partial$nav.adoc[]
 
 * xref:ROOT:spring-boot-integration.adoc[]
 
+ifdef::advanced-framework[]
+include::ROOT:partial$nav-framework-comparison.adoc[]
+endif::[]
+
 * xref:ROOT:modules.adoc[]
 
 include::release-notes:partial$nav.adoc[]

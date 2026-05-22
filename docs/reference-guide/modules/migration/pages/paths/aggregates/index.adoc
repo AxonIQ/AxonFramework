@@ -19,6 +19,9 @@ No more command handling constructors.
 xref:migration:paths/aggregates/index.adoc#eventappender-instead-of-aggregatelifecycle[EventAppender vs. AggregateLifecycle]::
 Do not use static/thread local references any more.
 
+xref:migration:paths/aggregates/event-tagging.adoc[Event tagging with @EventTag]::
+How events are now linked to their entity through `@EventTag` instead of `@AggregateIdentifier`.
+
 xref:migration:paths/aggregates/index.adoc#entitycreator-annotation[The @EntityCreator annotation]::
 Required for entity construction.
 

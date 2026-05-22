@@ -1,0 +1,35 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Spring AOT extension: AF4 `org.axonframework.extensions.spring-aot:axon-spring-aot`
+# has no Axon Framework 5 port. Drop the dependency so the project builds. If
+# native-image / AOT support against AF5 is needed, that surface area must be
+# re-evaluated manually — there is no drop-in replacement.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringAotExtension
+displayName: Remove the unported axon-spring-aot extension
+description: >-
+  The `org.axonframework.extensions.spring-aot:axon-spring-aot` extension has
+  no Axon Framework 5 port. Removes the dependency so the project compiles
+  against AF5. Projects that need Spring AOT / native-image support against
+  AF5 must reintroduce equivalent functionality manually — there is no
+  drop-in replacement.
+recipeList:
+  - org.openrewrite.java.dependencies.RemoveDependency:
+      groupId: org.axonframework.extensions.spring-aot
+      artifactId: axon-spring-aot

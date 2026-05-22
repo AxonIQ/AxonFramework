@@ -151,4 +151,4 @@ public class OrderCreatedEvent {
 ----
 
 This tagging is crucial for maintaining the link between the event and its entity, enabling correct event sourcing and consistency boundary protection in AF5.
-For more details on how tagging works, see the xref:events:event-publishing.adoc#event_tagging[Event tagging] section.
+For more details on migrating to event tagging, see xref:migration:paths/aggregates/event-tagging.adoc[Event tagging migration guide].

@@ -49,19 +49,21 @@ import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.Repository;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Test suite for the {@link SnapshottingEntityLifecycleHandler}.
@@ -151,11 +153,16 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         {   // Expect a full evolution of the entity at first:
             evolveCalls = 0;
 
-            Account account = loadAccount(ACCOUNT_ID);
+            Account account = loadAccount(ACCOUNT_ID);   // 5th evolve call during load triggers the snapshot
 
             assertThat(evolveCalls).isEqualTo(8);
             assertThat(account.balance).isEqualTo(16044);
         }
+
+        // snapshot might be written async, so we need to await the snapshot to be present
+        await().atMost(Duration.ofSeconds(2))
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+                                                            .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
             evolveCalls = 0;
@@ -204,11 +211,16 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         {   // Expect a full evolution of the entity at first:
             evolveCalls = 0;
 
-            Account account = loadAccount(ACCOUNT_ID);
+            Account account = loadAccount(ACCOUNT_ID); // evolve call for "been bad" during load triggers snapshot
 
             assertThat(evolveCalls).isEqualTo(4);
             assertThat(account.balance).isEqualTo(11050);
         }
+
+        // snapshot might be written async, so we need to await the snapshot to be present
+        await().atMost(Duration.ofSeconds(2))
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+                                                            .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
             evolveCalls = 0;
@@ -271,6 +283,11 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
             assertThat(evolveCalls).isEqualTo(6);
             assertThat(account.balance).isEqualTo(14050);
         }
+
+        // snapshot might be written async, so we need to await the snapshot to be present
+        await().atMost(Duration.ofSeconds(2))
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+                                                            .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {   // New snapshot (overwriting the bad one) should be available now
             evolveCalls = 0;
