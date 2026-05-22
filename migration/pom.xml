@@ -42,7 +42,7 @@
              root `${revision}`); this property is the single source of truth
              for the *commercial* coordinates the recipes migrate to. Bump
              here when re-targeting the migration to a newer Axoniq release. -->
-        <axoniq.version>5.1.1-SNAPSHOT</axoniq.version>
+        <axoniq.version>5.1.1</axoniq.version>
     </properties>
 
     <dependencyManagement>
