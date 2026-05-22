@@ -272,7 +272,11 @@ public class MigrateMessageInterceptorLambda extends Recipe {
                 if (alreadyMarked(prefix)) {
                     return lambda;
                 }
-                TextComment todo = new TextComment(false, TODO_TEXT, " ", Markers.EMPTY);
+                // Block comment (`/* … */`) rather than a line comment: lambda prefixes often
+                // have no surrounding newline (initializer on the same line as the `=`), and
+                // a line comment would consume the rest of the line — including the lambda
+                // it is supposed to annotate.
+                TextComment todo = new TextComment(true, TODO_TEXT, " ", Markers.EMPTY);
                 return lambda.withPrefix(
                         prefix.withComments(ListUtils.concat(prefix.getComments(), todo)));
             }
