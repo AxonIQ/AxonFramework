@@ -147,6 +147,56 @@ class ReplaceAggregateLifecycleApplyTest implements RewriteTest {
     }
 
     @Test
+    void aliasStateIsResetBetweenCompilationUnits() {
+        // OpenRewrite reuses the visitor instance across all compilation units in a recipe
+        // run. If alias-name state from one file leaked into another, an unrelated function
+        // happening to share the alias name (here: `lifecycleApply` defined as a regular
+        // function) would be misidentified as a call to `AggregateLifecycle.apply` and
+        // rewritten. The recipe must rescan imports for each compilation unit.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example.first
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """,
+                        """
+                        package com.example.first
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                            }
+                        }
+                        """
+                ),
+                kotlin(
+                        // No AggregateLifecycle import here — `lifecycleApply` is an unrelated
+                        // top-level function. Its calls must be left alone even though the
+                        // identifier matches the alias used in the file above.
+                        """
+                        package com.example.second
+
+                        fun lifecycleApply(payload: Any) {
+                        }
+
+                        class UsesLocal {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void flattensApplyAndThenChainInKotlin() {
         // AF4 callers can chain `apply(...).andThen { … }` to run extra logic after the
         // first event is published. AF5 `EventAppender#append` returns `void`, so we

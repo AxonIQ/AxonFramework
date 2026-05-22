@@ -98,32 +98,20 @@ public class AnnotateProgrammaticSequencingPolicyRegistration extends Recipe {
         return new JavaIsoVisitor<ExecutionContext>() {
 
             /**
-             * Statement-level visitor: the TODO comment must attach to whatever statement
-             * encloses the invocation (e.g. a `J.MethodInvocation` standalone statement or an
-             * expression statement wrapping it). Walking at the method-invocation level would
-             * land the comment inline, which the rewrite engine often prints in awkward positions.
+             * Attaches the TODO comment to the call site's own prefix. {@code J.MethodInvocation}
+             * implements {@link org.openrewrite.java.tree.Statement}, so the invocation itself is
+             * the relevant statement when it appears in a block; OpenRewrite prints comments
+             * stored on a statement's prefix on the line above the statement, which is exactly
+             * the placement this recipe wants.
              */
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation,
                                                              ExecutionContext ctx) {
                 J.MethodInvocation mi = super.visitMethodInvocation(invocation, ctx);
-                if (!isTargetCall(mi)) {
+                if (!isTargetCall(mi) || hasMarkerComment(mi.getPrefix())) {
                     return mi;
                 }
-                // Prefer attaching the comment to the enclosing statement so it renders on its
-                // own line above the call rather than getting inlined between operands.
-                J enclosingStmt = getCursor().firstEnclosing(org.openrewrite.java.tree.Statement.class);
-                if (enclosingStmt instanceof J.MethodInvocation
-                        && enclosingStmt == mi) {
-                    if (hasMarkerComment(mi.getPrefix())) {
-                        return mi;
-                    }
-                    return mi.withPrefix(prependLineComment(mi.getPrefix()));
-                }
-                // Fall-through: leave to the statement-level visitor below (visitStatement) to
-                // place the comment on the surrounding J node. visitMethodInvocation alone covers
-                // the simplest case where the invocation IS the statement.
-                return mi;
+                return mi.withPrefix(prependLineComment(mi.getPrefix()));
             }
 
             private boolean isTargetCall(J.MethodInvocation mi) {

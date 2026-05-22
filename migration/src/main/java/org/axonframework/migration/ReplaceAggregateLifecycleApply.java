@@ -102,21 +102,18 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
              * always rewrite the simple name back to {@code apply} or attach a methodType that
              * {@link MethodMatcher} can resolve, so the matcher misses these calls. By
              * collecting the alias identifiers up front we can fall back to a simple-name match.
+             * <p>
+             * OpenRewrite reuses the same visitor instance across every compilation unit in a
+             * recipe run, so the set is rescanned on every {@code visitCompilationUnit} entry.
+             * Without that reset, alias names from one file would leak into the next and an
+             * unrelated function happening to share the alias name would be misidentified as
+             * {@code apply} and rewritten.
              */
             private final Set<String> applyAliasNames = new HashSet<>();
-            private boolean aliasesScanned = false;
 
             @Override
             public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
-                scanApplyAliases(cu);
-                return super.visitCompilationUnit(cu, ctx);
-            }
-
-            private void scanApplyAliases(J.CompilationUnit cu) {
-                if (aliasesScanned) {
-                    return;
-                }
-                aliasesScanned = true;
+                applyAliasNames.clear();
                 for (J.Import imp : cu.getImports()) {
                     String fqn = imp.getQualid().printTrimmed(getCursor());
                     if (!(fqn.equals(AF4_AGGREGATE_LIFECYCLE_FQN + ".apply")
@@ -128,6 +125,7 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
                         applyAliasNames.add(alias.getSimpleName());
                     }
                 }
+                return super.visitCompilationUnit(cu, ctx);
             }
 
             @Override
