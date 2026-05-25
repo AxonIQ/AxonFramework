@@ -168,15 +168,55 @@ If there's currently no span active, the new span will become the root span of a
 During invocations which are normally synchronous, Axon Framework will create normal spans which become a child of the currently active one.
 For example, publishing an event from a command is synchronous, and therefore the publishing span becomes a child of the command handling span.
 
-When it comes to asynchronous invocations, the framework forces a new root trace to be created.
-For example, a streaming event processor that processes an event will not be a child of the command handling span.
-Instead, it will become its own root trace.
-This is a measure to prevent traces from becoming too time-spread, making them unreadable.
+Asynchronous invocations come in two flavours, and the framework handles them differently:
 
-Some standards, like OpenTelemetry, support linking.
-By linking one span to another, they become correlated despite being part of a different trace.
-Tooling that supports this creates links for the user to click, allowing for easy navigation between related traces.
-This is incredibly useful to see causation within your system.
+* *Network-asynchronous, caller-synchronous*: the call crosses a network boundary (typically Axon Server gRPC) but the caller still waits for a reply. Distributed commands and distributed queries fall into this category.
+* *Fire-and-forget asynchronous*: the call is dispatched and may be handled minutes, hours, or days later, often during a replay. Streaming event processors, deadline firing and subscription query updates fall into this category.
+
+For the first flavour, the receiving side joins the dispatcher's trace by default, because the caller is actively waiting and benefits from seeing the whole path. For the second flavour, the framework starts a new root trace by default, because folding a long-deferred handler into the original trace would spread that trace over arbitrary time spans and make it unreadable.
+
+The exact default per component:
+
+[cols="<,<,<,<"]
+|===
+|Component |Default behaviour |Override
+
+|Distributed command (over Axon Server)
+|Joins dispatcher's trace as a child
+|`axon.tracing.commandBus.distributedInSameTrace=false` to start a new root on the receiving side
+
+|Distributed query (over Axon Server)
+|Joins dispatcher's trace as a child
+|`axon.tracing.queryBus.distributedInSameTrace=false` to start a new root on the receiving side
+
+|Streaming event processor
+|New root trace per batch (`…batch` span), with each event handler as a child
+|`axon.tracing.eventProcessor.distributedInSameTrace=true` to nest handlers under the publishing trace (within `…distributedInSameTraceTimeLimit`, default 2 minutes); `axon.tracing.eventProcessor.disableBatchTrace=true` to drop the `…batch` span and start a separate root per event with a link back to the publishing span
+
+|Subscribing event processor
+|Child of the publishing span (synchronous invocation)
+|None (handler runs inside the publishing unit of work)
+
+|Deadline firing
+|New root trace with an OpenTelemetry link back to the scheduling span
+|Not configurable
+
+|Subscription query updates
+|New root trace with an OpenTelemetry link back to the listening query span
+|Not configurable
+
+|Snapshot creation
+|Child of the trigger's trace (command that prompted the snapshot)
+|`axon.tracing.snapshotter.separateTrace=true` to start a new root for snapshot creation
+
+|Saga
+|Same as the underlying event processor (a saga is invoked by an event processor)
+|See streaming/subscribing event processor rows
+|===
+
+Some standards, like OpenTelemetry, support *linking*. By linking one span to another, they become correlated despite being part of a different trace. Tooling that supports this creates links the user can click, allowing for easy navigation between related traces. This is incredibly useful to see causation within your system. Components in the table above marked "link back to..." rely on this feature.
+
+For OpenTelemetry-based setups, propagation across these boundaries depends on the W3C trace context being injected into the message metadata at dispatch time and extracted again at handling time. The `OpenTelemetrySpanFactory` does this automatically via its `TextMapPropagator`. Make sure the factory is wired with a real propagator (see <<Activation paths>>). Without it, none of the same-trace nesting or span-link behaviour above is observable, because the parent span context never reaches the handler. Every property described here is also listed in the <<Configuration>> table together with the rest of the Spring Boot tracing settings.
 
 === Span attribute providers
 
@@ -275,6 +315,27 @@ For example, when a Spring REST endpoint is called it will automatically start a
 With the `axon-tracing-opentelemetry` module, this trace will be propagated to all subsequent Axon Framework messages.
 For example, if the REST call produces a command which is sent over Axon Server, handling the command will be included in the same trace as the original REST call.
 
+=== Activation paths
+
+There are three common ways to put an OpenTelemetry SDK in place. They all work with Axon Framework, but they differ in how the SDK is exposed to `OpenTelemetrySpanFactory`:
+
+[cols="<,<,<"]
+|===
+|Path |How the SDK is exposed |What Axon needs
+
+|*OpenTelemetry Java agent* (`-javaagent:opentelemetry-javaagent.jar`)
+|The agent registers an `OpenTelemetrySdk` on `GlobalOpenTelemetry` at JVM startup. No code changes.
+|`OpenTelemetrySpanFactory.builder().build()` picks up the agent-installed SDK via `GlobalOpenTelemetry`. Works out of the box.
+
+|*Manual SDK setup with `buildAndRegisterGlobal()`* (the path described in the OpenTelemetry "Getting Started" guide)
+|The application calls `OpenTelemetrySdk.builder()…buildAndRegisterGlobal()`, populating `GlobalOpenTelemetry` programmatically.
+|Same as the Java agent: builder defaults find the SDK via `GlobalOpenTelemetry`. Works out of the box.
+
+|*Spring Boot 3 with `micrometer-tracing-bridge-otel`* (the path Spring Boot's https://docs.spring.io/spring-boot/reference/actuator/observability.html[observability documentation] recommends)
+|Spring Boot creates an `OpenTelemetry` bean and exposes it via dependency injection. It is intentionally **not** registered on `GlobalOpenTelemetry` to avoid hidden static state in the container.
+|The auto-configuration injects the Spring-managed `OpenTelemetry` bean and wires its `Tracer` and `TextMapPropagator` into the `OpenTelemetrySpanFactory` builder explicitly. If no such bean is present, the builder falls back to `GlobalOpenTelemetry` (compatible with the previous two paths).
+|===
+
 === Configuration
 
 To get OpenTelemetry support enabled you will need to add the following dependency to your application's dependencies:
@@ -316,7 +377,22 @@ The following table contains all configurable settings, their defaults, and what
 |`axon.tracing.attributeProviders.messageType` |`true` |Whether to add the message type as a label when handling a message
 |`axon.tracing.attributeProviders.payloadType` |`true` |Whether to add the payload type as a label when handling a message
 |`axon.tracing.attributeProviders.metadata` |`true` |Whether to add the metadata properties as labels when handling a message
+|`axon.tracing.commandBus.distributedInSameTrace` |`true` |Whether distributed commands (handled remotely after a hop through Axon Server) should be part of the same trace as the dispatching span. Set to `false` to make the receiving side start a new root trace.
+|`axon.tracing.queryBus.distributedInSameTrace` |`true` |Whether distributed queries should be part of the same trace as the dispatching span. Set to `false` to make the receiving side start a new root trace.
+|`axon.tracing.eventProcessor.distributedInSameTrace` |`false` |Whether the spans of a `StreamingEventProcessor` handling an event should be nested under the trace that published the event (when handled within `distributedInSameTraceTimeLimit`). Off by default to keep traces from spreading over arbitrarily long time spans.
+|`axon.tracing.eventProcessor.distributedInSameTraceTimeLimit` |`PT2M` (2 minutes) |Time limit between an event being published and being processed by a `StreamingEventProcessor` for the spans to be considered part of the same trace. Only used when `distributedInSameTrace` is `true`. Events handled later than this start a new root trace.
+|`axon.tracing.eventProcessor.disableBatchTrace` |`false` |By default, a `StreamingEventProcessor` wraps a whole batch of events in a single `…batch` root span, with each event handler as a child. Set to `true` to disable the batch span and let each event handler start its own root trace, with an OpenTelemetry link back to the publishing span (clickable cause/effect navigation in the APM UI).
+|`axon.tracing.deadlineManager.deadlineIdAttributeName` |`axon.deadlineId` |Name of the span attribute used to record the deadline id.
+|`axon.tracing.deadlineManager.deadlineScopeAttributeName` |`axon.scope` |Name of the span attribute used to record the deadline scope.
+|`axon.tracing.sagaManager.sagaIdentifierAttributeName` |`axon.sagaIdentifier` |Name of the span attribute used to record the saga identifier.
+|`axon.tracing.snapshotter.separateTrace` |`false` |Whether snapshot creation should run in its own root trace instead of being a child of the command that triggered it.
+|`axon.tracing.snapshotter.aggregateTypeInSpanName` |`true` |Whether the aggregate type should appear in the `Snapshotter` span name.
 |===
+
+[NOTE]
+====
+The defaults are deliberately asymmetric: command and query buses default to *same-trace propagation* because a caller is actively waiting for a synchronous reply and benefits from seeing the whole path in a single trace. Streaming event processors default to *new root trace per event* because events can be processed far in the future (during replays, slow consumers, segment claim transfer, …) and folding them into the original trace would spread a single trace over arbitrary time spans, making it unreadable. Enable `eventProcessor.distributedInSameTrace` (with a sensible `distributedInSameTraceTimeLimit`) when you primarily care about the happy-path causal chain rather than long-running replays.
+====
 
 ==== Manual configuration
 
@@ -426,7 +502,8 @@ Please refer to the specific sections of this functionality for more information
 
 When publishing events, spans are created to indicate the event being published.
 Each event that is being published has its own specific publishing span.
-Any streaming event processor or saga handling the event in the future will be linked to the publishing spans, allowing easy click-through.
+Subscribing event processors handle the event synchronously inside the same trace.
+For streaming event processors (and sagas backed by one), the relationship to the publishing span depends on configuration: by default each batch of events forms its own root trace with no link back; setting `axon.tracing.eventProcessor.disableBatchTrace=true` makes each handler invocation a separate root trace with an OpenTelemetry link back to the publishing span (clickable in the APM UI); setting `axon.tracing.eventProcessor.distributedInSameTrace=true` makes the handler a child of the publishing trace (within the configured time limit). See <<Span nesting>> for the full matrix.
 
 |===
 |Trace name |Description
@@ -438,7 +515,7 @@ Any streaming event processor or saga handling the event in the future will be l
 === Event processors
 
 Event processor invocations are traced as well.
-Since Streaming Event Processors are asynchronous, a new root trace is created for each event.
+Since Streaming Event Processors are asynchronous, a new root trace is created for each event *by default*.
 Subscribing event processors, on the other hand, will become part of the current trace because they are invoked synchronously.
 
 ==== Streaming event processors
@@ -448,14 +525,21 @@ Subscribing event processors, on the other hand, will become part of the current
 
 |`$\{ProcessorType\}[$\{processorName\}]($\{EventClass\})` |Root trace of handling the event, includes all interceptor invocations.
 |`$\{ProcessorType\}[$\{processorName\}].process($\{EventClass\})` |Inner span of handling the event, after all interceptors have been invoked.
+|`$\{ProcessorType\}[$\{processorName\}].batch` |Wraps a batch of events handled by the processor in a single trace, with each `.process(…)` span as a child. Produced when `axon.tracing.eventProcessor.disableBatchTrace` is `false` (the default).
 |===
+
+Streaming event processor tracing exposes three configurable behaviours, controlled via the properties listed in <<Span nesting>>:
+
+* `axon.tracing.eventProcessor.distributedInSameTrace` (default `false`): when enabled, a `…process($\{EventClass\})` span becomes a child of the trace that published the event, *provided* the event is handled within `…distributedInSameTraceTimeLimit` (default 2 minutes). Older events still start a new root trace so that long-running replays do not produce arbitrarily long traces.
+* `axon.tracing.eventProcessor.disableBatchTrace` (default `false`): disables the `…batch` parent span. Each event handler then starts its own root trace, with an OpenTelemetry link back to the publishing span. Choose this when you want clickable cause/effect navigation per event in the APM UI without bundling unrelated events into one batch span.
+* These two are independent. Setting both to `false` (the default) gives you the traditional behaviour: each batch wrapped in a `…batch` root span. Setting `distributedInSameTrace=true` typically also requires `disableBatchTrace=true` to avoid a confusing mix of a batch root and same-trace nesting.
 
 ==== Subscribing event processors
 
 |===
 |Trace name |Description
 
-|`$\{ProcessorType\}[$\{processorName\}].process($\{EventClass\})` |The event is being handled by the subscribing event processor.
+|`$\{ProcessorType\}[$\{processorName\}].process($\{EventClass\})` |The event is being handled by the subscribing event processor. Always a child span of the current trace (subscribing processors are invoked synchronously inside the publishing unit of work).
 |===
 
 === Deadlines
@@ -476,9 +560,9 @@ The handling span of a deadline will be linked to the scheduling span for easy n
 
 === Snapshotting
 
-Snapshotting is done in a separate root trace, due to the fact that it's an asynchronous action and has no user impact.
-However, it can still be useful to measure the performance of snapshotting and see when it is triggered.
-The root trace of the `Snapshotter` invocation will be linked to the command handling span after which the snapshot was scheduled to be created.
+By default, the snapshot creation spans are part of the same trace as the command that triggered them. This matches the framework's runtime behaviour, where the snapshot is created right after the command's unit of work commits, and keeps the cause (the command) and the effect (snapshot creation, including its performance characteristics) visible together in a single trace.
+
+Set `axon.tracing.snapshotter.separateTrace=true` to put snapshot creation into its own root trace, linked back to the triggering command's span. This is useful when snapshot creation runs on a separate executor that you'd rather not see folded into command latency. The trade-off is the extra click to navigate from the command to the snapshot creation. See the <<Configuration>> table for the property reference.
 
 |===
 |Trace name |Description
@@ -487,7 +571,7 @@ The root trace of the `Snapshotter` invocation will be linked to the command han
 |`$\{SnapshotterClass\}.createSnapshot($aggregateClass, $aggregateIdentifier)` |The `Snapshotter` is now creating the snapshot.
 |===
 
-The root trace does not contain the aggregate identifier so the APM tool groups any `Snapshotter` calls of the same aggregate type together.
+When `separateTrace=true`, the `…createSnapshot($aggregateClass)` span becomes the root of the snapshot trace and does not contain the aggregate identifier, so the APM tool groups any `Snapshotter` calls of the same aggregate type together.
 
 === Sagas
 
