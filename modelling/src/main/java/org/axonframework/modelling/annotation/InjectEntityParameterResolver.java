@@ -24,8 +24,10 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.EntityIdResolutionException;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElseGet;
@@ -35,7 +37,9 @@ import static java.util.Objects.requireNonNullElseGet;
  * {@link Configuration}.
  * <p>
  * The entity is loaded based on the id resolved from the message using the given {@link EntityIdResolver}. Can either
- * load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself.
+ * load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself. Will return
+ * {@code null} if the entity loading resulted in a {@link EntityNotFoundException}, allowing the users to validate if
+ * the given entity existed already themselves.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
@@ -89,8 +93,18 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
                 return castCompletableFuture;
             }
             @SuppressWarnings("unchecked")
-            CompletableFuture<Object> castCompletableFuture = (CompletableFuture<Object>) stateManager.loadEntity(type, resolvedId, context);
-            return castCompletableFuture;
+            CompletableFuture<Object> castCompletableFuture =
+                    (CompletableFuture<Object>) stateManager.loadEntity(type, resolvedId, context);
+            return castCompletableFuture.exceptionally(e -> {
+                Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
+                if (cause instanceof EntityNotFoundException) {
+                    return null;
+                }
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new CompletionException(e);
+            });
         } catch (EntityIdResolutionException e) {
             return CompletableFuture.failedFuture(
                     new IllegalStateException(
