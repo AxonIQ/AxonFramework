@@ -17,7 +17,6 @@
 package org.axonframework.examples.demo.coursecatalog.catalog;
 
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
-import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.examples.demo.coursecatalog.catalog.automation.overbookingnotifier.OverbookingNotifierConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CatalogViewConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.seed.LegacyEventSeedConfiguration;
@@ -47,12 +46,6 @@ public final class CourseCatalogModuleConfiguration {
         configurer = configurer.componentRegistry(registry -> registry
                 .registerComponent(EventTransformerChain.class,
                                    config -> CourseCatalogTransformations.chain())
-                // Override the default ClassBased fallback so mapper outputs like
-                // ObjectNode / Map / byte[] resolve to Optional.empty() and the
-                // chain's output-identity check skips them per its resolver-permitting
-                // contract.
-                .registerComponent(MessageTypeResolver.class,
-                                   config -> new CourseCatalogMessageTypeResolver())
         );
         // Write slices
         configurer = PublishCourseConfiguration.configure(configurer);
