@@ -476,14 +476,14 @@ class CoordinatorTest {
     }
 
     /**
-     * Tests for the {@code createWorkPackage} method, specifically the error-handling path
-     * in which the {@link SegmentChangeListener#onSegmentClaimed} callback throws.
+     * Tests for the claim-loop error-handling path in which the
+     * {@link SegmentChangeListener#onSegmentClaimed} callback throws.
      */
     @Nested
     class CreateWorkPackage {
 
         @Test
-        void stillRegistersWorkPackageWhenOnSegmentClaimedFails() {
+        void doesNotRegisterWorkPackageWhenOnSegmentClaimedFails() {
             // given - coordinator with a claim listener that always fails
             GlobalSequenceTrackingToken token = new GlobalSequenceTrackingToken(0);
             Coordinator coordinator = Coordinator.builder()
@@ -505,6 +505,120 @@ class CoordinatorTest {
             doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
                                                              .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
             doReturn(completedFuture(token)).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(MessageStream.fromIterable(Collections.emptyList()))
+                    .when(messageSource).open(any(StreamingCondition.class), isNull());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the listener failure aborts the claim; the work package must not be scheduled
+            verify(workPackage, never()).scheduleWorker();
+        }
+    }
+
+    /**
+     * Tests for the reset behavior added to
+     * {@link SegmentChangeListener#onSegmentClaimed(Segment) onSegmentClaimed}: when a listener returns a
+     * reset position strictly behind the stored tracking token, the coordinator wraps that token in a
+     * {@link ReplayToken} so the segment streams from the reset position.
+     */
+    @Nested
+    class Reset {
+
+        @Test
+        void resetPositionStrictlyBehindStoredTokenWrapsInReplayToken() {
+            // given - stored token at position 5, reset position at position 2
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(5);
+            GlobalSequenceTrackingToken resetPosition = new GlobalSequenceTrackingToken(2);
+            AtomicReference<TrackingToken> capturedToken = new AtomicReference<>();
+            Coordinator coordinator = coordinatorWith(resetListener(resetPosition), capturedToken);
+
+            stubClaimFor(storedToken);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the work package was created with a ReplayToken: stored token as target,
+            //        reset position as starting position
+            TrackingToken token = capturedToken.get();
+            assertNotNull(token);
+            assertThat(token).isInstanceOf(ReplayToken.class);
+            ReplayToken replayToken = (ReplayToken) token;
+            assertThat(replayToken.getTokenAtReset()).isEqualTo(storedToken);
+            assertThat(replayToken.getCurrentToken()).isEqualTo(resetPosition);
+        }
+
+        @Test
+        void resetPositionAtOrAheadOfStoredTokenLeavesTokenUnchanged() {
+            // given - stored token at position 2, reset position at position 5 (ahead)
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(2);
+            GlobalSequenceTrackingToken resetPosition = new GlobalSequenceTrackingToken(5);
+            AtomicReference<TrackingToken> capturedToken = new AtomicReference<>();
+            Coordinator coordinator = coordinatorWith(resetListener(resetPosition), capturedToken);
+
+            stubClaimFor(storedToken);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - reset position is ignored; work package gets the stored token unchanged
+            assertThat(capturedToken.get()).isEqualTo(storedToken);
+        }
+
+        @Test
+        void resetPositionEqualToStoredTokenLeavesTokenUnchanged() {
+            // given - stored token and reset position are the same position
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(5);
+            GlobalSequenceTrackingToken resetPosition = new GlobalSequenceTrackingToken(5);
+            AtomicReference<TrackingToken> capturedToken = new AtomicReference<>();
+            Coordinator coordinator = coordinatorWith(resetListener(resetPosition), capturedToken);
+
+            stubClaimFor(storedToken);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - bidirectional coverage means reset position is not strictly behind; no wrapping
+            assertThat(capturedToken.get()).isEqualTo(storedToken);
+        }
+
+        @Test
+        void noResetPositionDoesNotWrapToken() {
+            // given - listener returns no reset position
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(5);
+            AtomicReference<TrackingToken> capturedToken = new AtomicReference<>();
+            Coordinator coordinator = coordinatorWith(SegmentChangeListener.noOp(), capturedToken);
+
+            stubClaimFor(storedToken);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - work package gets the stored token unchanged
+            assertThat(capturedToken.get()).isEqualTo(storedToken);
+        }
+
+        @Test
+        void firstEverClaimInvokesListenerButIgnoresReset() {
+            // given - stored token is null (first-ever claim) but listener returns a reset position
+            GlobalSequenceTrackingToken resetPosition = new GlobalSequenceTrackingToken(2);
+            GlobalSequenceTrackingToken resolvedFirstToken = new GlobalSequenceTrackingToken(0);
+            AtomicReference<TrackingToken> capturedToken = new AtomicReference<>();
+            AtomicBoolean listenerInvoked = new AtomicBoolean(false);
+            SegmentChangeListener listener = SegmentChangeListener.onClaimWithReset(segment -> {
+                listenerInvoked.set(true);
+                return completedFuture(resetPosition);
+            });
+            Coordinator coordinator = coordinatorWith(listener, capturedToken);
+
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                             .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(null)).when(tokenStore)
+                                            .fetchToken(eq(PROCESSOR_NAME), any(Segment.class), any());
+            // override default so firstToken resolves to a real token
+            doReturn(completedFuture(resolvedFirstToken)).when(messageSource).firstToken(null);
             doReturn(SEGMENT_ZERO).when(workPackage).segment();
             doReturn(false).when(workPackage).isAbortTriggered();
             doReturn(true).when(workPackage).hasRemainingCapacity();
@@ -516,8 +630,49 @@ class CoordinatorTest {
             // when
             awaitStart(coordinator);
 
-            // then - the work package is still registered and scheduled despite the failing claim listener
-            verify(workPackage).scheduleWorker();
+            // then - listener was invoked, but the captured token is null (reset position ignored)
+            assertTrue(listenerInvoked.get(), "Listener should still be invoked on first-ever claim");
+            assertNull(capturedToken.get(), "Reset position must be ignored when stored token is null");
+        }
+
+        private Coordinator coordinatorWith(SegmentChangeListener listener,
+                                            AtomicReference<TrackingToken> capturedToken) {
+            return Coordinator.builder()
+                              .name(PROCESSOR_NAME)
+                              .eventSource(messageSource)
+                              .tokenStore(tokenStore)
+                              .unitOfWorkFactory(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE))
+                              .executorService(executorService)
+                              .workPackageFactory((segment, trackingToken) -> {
+                                  capturedToken.set(trackingToken);
+                                  return workPackage;
+                              })
+                              .processingStatusUpdater((id, updater) -> {})
+                              .initialToken(es -> es.firstToken(null).thenApply(ReplayToken::createReplayToken))
+                              .maxSegmentProvider(e -> SEGMENTS.size())
+                              .segmentChangeListener(listener)
+                              .build();
+        }
+
+        private SegmentChangeListener resetListener(TrackingToken resetPosition) {
+            return SegmentChangeListener.onClaimWithReset(
+                    segment -> completedFuture(resetPosition)
+            );
+        }
+
+        private void stubClaimFor(TrackingToken storedToken) {
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                             .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(storedToken)).when(tokenStore)
+                                                   .fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(false).when(workPackage).isAbortTriggered();
+            doReturn(true).when(workPackage).hasRemainingCapacity();
+            doReturn(false).when(workPackage).isDone();
+            doReturn(MessageStream.fromIterable(Collections.emptyList()))
+                    .when(messageSource).open(any(StreamingCondition.class), isNull());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
         }
     }
 
