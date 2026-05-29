@@ -40,7 +40,6 @@
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
         <junit.version>6.1.0</junit.version>
-        <jackson.version>2.21.3</jackson.version>
         <logback.version>1.5.32</logback.version>
         <!--
         The axoniq-framework-bom imported by examples/pom.xml is at 5.1.1-SNAPSHOT and
@@ -49,18 +48,6 @@
         -->
         <axoniq-message-transformation.version>5.2.0-SNAPSHOT</axoniq-message-transformation.version>
     </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>${jackson.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Axon Framework Dependencies -->
@@ -94,12 +81,6 @@
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-message-transformation</artifactId>
             <version>${axoniq-message-transformation.version}</version>
-        </dependency>
-
-        <!-- Serialization Dependencies -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- Logging Dependencies -->

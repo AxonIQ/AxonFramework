@@ -107,7 +107,7 @@ public final class TransformationTester {
         }
 
         /**
-         * @param payload the input payload (typically a {@link com.fasterxml.jackson.databind.JsonNode}
+         * @param payload the input payload (typically a {@link tools.jackson.databind.JsonNode}
          *                or {@link java.util.Map})
          * @return this builder
          */

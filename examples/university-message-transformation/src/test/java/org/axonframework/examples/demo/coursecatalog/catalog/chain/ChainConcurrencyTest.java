@@ -16,7 +16,7 @@
 
 package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
 import org.axonframework.examples.demo.coursecatalog.catalog.testing.ChainTester;
 import org.axonframework.examples.demo.coursecatalog.catalog.testing.JsonAssertions;
