@@ -79,46 +79,46 @@ real Axon Server with DCB support.
 
 ### In-memory (no infrastructure)
 
-```bash
-mvn -pl examples/university-message-transformation -am compile exec:java \
-    -Dexec.mainClass=org.axonframework.examples.demo.coursecatalog.CourseCatalogApplication
-```
+Run `CourseCatalogApplication#main` from your IDE. The bootstrap seeds the legacy
+history, dispatches a few sample commands, awaits the projection, prints the resulting
+catalog view, and shuts down.
 
-Equivalent: run `CourseCatalogApplication#main` from your IDE.
-
-The bootstrap seeds the legacy history, dispatches a few sample commands, awaits the
-projection, prints the resulting catalog view, and shuts down. The chain build log
-appears at `DEBUG` level — set `org.axonframework=DEBUG` in `logback.xml` to see it.
+The bundled `logback.xml` already enables `DEBUG` for
+`io.axoniq.framework.messaging.transformation` so the one-line chain build log naming
+every registered transformer shows up on startup.
 
 ### Against Axon Server
 
-```bash
-docker compose up -d                           # boots Axon Server with DCB enabled
-# Toggle src/main/resources/application.properties: axon.server.enabled=true
-mvn -pl examples/university-message-transformation -am compile exec:java \
-    -Dexec.mainClass=org.axonframework.examples.demo.coursecatalog.CourseCatalogApplication
-```
+1. `docker compose up -d` (in this module's directory) — boots Axon Server with DCB enabled.
+2. Edit `src/main/resources/application.properties` and flip `axon.server.enabled` to `true`.
+3. Re-run `CourseCatalogApplication#main`.
 
 The Axon Server UI is at <http://localhost:8024>. You'll see the historic events as
 they were written — the chain runs on the **read** path, so the store carries the
 original `CoursePublished#1.0.0` payloads while handlers receive `#3.0.0`.
 
+### Keep the JVM running after the demo (e.g. to inspect Axon Server)
+
+Pass `--keep-alive` as the first program argument. After the catalog view is printed
+the JVM blocks until you Ctrl+C, so the projection, command handlers, and Axon Server
+view stay reachable for poking around.
+
 ## Testing
 
 `mvn -pl examples/university-message-transformation -am test`
 
-The test pyramid runs four layers, mirroring the holixon convention:
+The test pyramid runs four layers:
 
 | Layer | Subject | Examples |
 |---|---|---|
 | **L1 — unit** | each transformer in isolation | `CoursePublishedV1ToV2Test`, `WelcomeMessageBetaCleanupTest` |
 | **L2 — chain** | the composed chain | `MultiHopChainTesterTest`, `ChainBuildLogTest`, `ChainLockingTest`, `OutputIdentityCheckTest`, `MessageTypesConsistencyTest`, `ChainConcurrencyTest`, `DecorationOrderTest` |
-| **L3 — slice** | each slice with the full app fixture | `PublishCourseAxonFixtureTest`, `EnrollStudentAxonFixtureTest`, `CatalogViewProjectionAxonFixtureTest`, `OverbookingNotifierAxonFixtureTest` |
+| **L3 — slice** | each slice with the full app fixture | `PublishCourseAxonFixtureTest`, `UpdateCourseCapacityAxonFixtureTest`, `EnrollStudentAxonFixtureTest`, `CatalogViewProjectionAxonFixtureTest`, `OverbookingNotifierAxonFixtureTest` |
 | **L4 — end-to-end** | the chain on top of the real store | `HistoricEventsUpcastingIntegrationTest`, `MainSmokeTest` |
 
 L1 transformer tests use a small `TransformationTester`/`ChainTester` pair plus
-golden JSON files under `src/test/resources/golden/` so the assertions read like
-*"this stored shape becomes this current shape"* rather than dense fluent chains.
+fixture JSON files under `src/test/resources/transformations/` so the assertions read
+like *"this stored shape becomes this current shape"* rather than dense fluent chains.
 
 ## Read contexts exercised
 

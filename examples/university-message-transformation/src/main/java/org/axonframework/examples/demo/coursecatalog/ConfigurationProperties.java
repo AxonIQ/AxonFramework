@@ -16,11 +16,12 @@
 
 package org.axonframework.examples.demo.coursecatalog;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Runtime configuration toggles loaded from {@code application.properties}.
@@ -28,7 +29,7 @@ import java.util.logging.Logger;
  */
 public final class ConfigurationProperties {
 
-    private static final Logger logger = Logger.getLogger(ConfigurationProperties.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(ConfigurationProperties.class);
 
     boolean axonServerEnabled = false;
 
@@ -61,7 +62,7 @@ public final class ConfigurationProperties {
                 return properties;
             }
         } catch (IOException e) {
-            logger.log(Level.WARNING, "Error loading application.properties: " + e.getMessage());
+            logger.warn("Error loading application.properties: {}", e.getMessage(), e);
         }
         return null;
     }

@@ -83,6 +83,17 @@
             <version>${logback.version}</version>
         </dependency>
 
+        <!--
+        Used by CourseCatalogApplication#main to await projection catch-up before
+        printing the catalog view. Kept on the main classpath so the bootstrap code
+        reads the same as the slice tests that already use Awaitility.
+        -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>${awaitility.version}</version>
+        </dependency>
+
         <!-- Test Dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -110,12 +121,6 @@
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-testcontainer</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
-            <version>${awaitility.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

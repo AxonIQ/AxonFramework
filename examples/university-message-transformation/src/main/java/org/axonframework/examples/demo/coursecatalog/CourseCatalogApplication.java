@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.coursecatalog;
 
 import io.axoniq.framework.axonserver.connector.api.AxonServerConfiguration;
 import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
+import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogModuleConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.Ids;
@@ -37,8 +38,9 @@ import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
 import java.util.function.UnaryOperator;
 
 /**
@@ -83,11 +85,18 @@ public class CourseCatalogApplication {
     /**
      * Entry point: starts the configurer, seeds historic events, dispatches a few
      * sample commands, waits for the projection to catch up, prints the catalog view,
-     * and shuts down.
+     * then either shuts down or — if {@code --keep-alive} is passed — blocks until the
+     * JVM receives a termination signal so the running application can be inspected.
      *
-     * @param args ignored
+     * @param args supports {@code --keep-alive} to keep the JVM running after the demo run
      */
     public static void main(String[] args) {
+        boolean keepAlive = false;
+        for (String arg : args) {
+            if ("--keep-alive".equals(arg)) {
+                keepAlive = true;
+            }
+        }
         ConfigurationProperties props = ConfigurationProperties.load();
         AxonConfiguration configuration = new CourseCatalogApplication()
                 .configurer(props, CourseCatalogModuleConfiguration::configure)
@@ -97,6 +106,9 @@ public class CourseCatalogApplication {
             runSampleCommands(configuration);
             awaitProjectionCatchUp(configuration);
             printCatalogView(configuration);
+            if (keepAlive) {
+                blockUntilShutdownSignal();
+            }
         } finally {
             configuration.shutdown();
         }
@@ -122,14 +134,17 @@ public class CourseCatalogApplication {
     private static void awaitProjectionCatchUp(AxonConfiguration configuration) {
         // Expect 5 historic CoursePublished + 1 sample published course = 6 courses
         // in the view, plus the 1 system announcement seeded.
-        awaitWithin(10, TimeUnit.SECONDS, () -> {
-            CourseCatalogView v = queryView(configuration);
-            logger.debug("Waiting for projection: courses={}, announcements={}, registeredStudents={}",
-                         v.courses().size(), v.announcements().size(), v.registeredStudents());
-            return v.courses().size() >= 6
-                    && v.announcements().size() >= 1
-                    && v.registeredStudents() >= 4;
-        });
+        Awaitility.await("catalog projection catch-up")
+                  .atMost(Duration.ofSeconds(10))
+                  .pollInterval(Duration.ofMillis(100))
+                  .until(() -> {
+                      CourseCatalogView v = queryView(configuration);
+                      logger.debug("Waiting for projection: courses={}, announcements={}, registeredStudents={}",
+                                   v.courses().size(), v.announcements().size(), v.registeredStudents());
+                      return v.courses().size() >= 6
+                              && v.announcements().size() >= 1
+                              && v.registeredStudents() >= 4;
+                  });
     }
 
     private static void printCatalogView(AxonConfiguration configuration) {
@@ -160,19 +175,15 @@ public class CourseCatalogApplication {
                             .join();
     }
 
-    private static void awaitWithin(long timeout, TimeUnit unit, BooleanSupplier condition) {
-        long deadline = System.nanoTime() + unit.toNanos(timeout);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for projection to catch up", e);
-            }
+    private static void blockUntilShutdownSignal() {
+        CountDownLatch latch = new CountDownLatch(1);
+        Runtime.getRuntime().addShutdownHook(new Thread(latch::countDown, "course-catalog-shutdown-signal"));
+        logger.info("--keep-alive set; press Ctrl+C to shut down. "
+                            + "If running against Axon Server, the dashboard is at http://localhost:8024.");
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
-        throw new IllegalStateException("Projection did not catch up within " + timeout + " " + unit);
     }
 }
