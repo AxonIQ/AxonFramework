@@ -16,6 +16,8 @@
 
 package org.axonframework.examples.demo.coursecatalog.shared.notifier;
 
+import org.jspecify.annotations.NonNull;
+
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -28,7 +30,7 @@ public final class RecordingNotificationService implements NotificationService {
     private final List<Notification> received = new CopyOnWriteArrayList<>();
 
     @Override
-    public void send(Notification notification) {
+    public void send(@NonNull Notification notification) {
         received.add(notification);
     }
 

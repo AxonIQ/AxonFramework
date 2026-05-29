@@ -18,16 +18,18 @@ package org.axonframework.examples.demo.coursecatalog;
 
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+
 /**
  * End-to-end smoke test: invokes {@link CourseCatalogApplication#main(String[])} and
- * relies on its own internal post-conditions (projection catch-up, no exceptions,
- * clean shutdown) to assert success.
+ * asserts that the seed → command dispatch → projection catch-up → view print →
+ * shutdown sequence completes without surfacing an exception.
  */
 class MainSmokeTest {
 
     @Test
-    void mainRunsToCompletion() {
-        // given / when / then
-        CourseCatalogApplication.main(new String[0]);
+    void mainRunsToCompletionWithoutThrowing() {
+        assertThatCode(() -> CourseCatalogApplication.main(new String[0]))
+                .doesNotThrowAnyException();
     }
 }
