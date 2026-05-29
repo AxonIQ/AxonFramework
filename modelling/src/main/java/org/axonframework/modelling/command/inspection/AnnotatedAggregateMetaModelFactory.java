@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2023. Axon Framework
+ * Copyright (c) 2010-2026. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,6 +68,7 @@ import static org.axonframework.common.annotation.AnnotationUtils.findAnnotation
  * meta-model of the aggregate.
  *
  * @author Allard Buijze
+ * @author Mateusz Nowak
  * @since 3.1
  */
 public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFactory {
@@ -152,6 +153,25 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
                                                          Set<Class<? extends T>> subtypes) {
         return new AnnotatedAggregateMetaModelFactory(parameterResolverFactory, handlerDefinition)
                 .createModel(aggregateType, subtypes);
+    }
+
+    /**
+     * Resolves the declared type of the given aggregate {@code type}. This is the {@link AggregateRoot#type()} when it
+     * is present and non-empty, and otherwise the {@link Class#getSimpleName() simple name} of the {@code type}.
+     * <p>
+     * The declared type is the value used to identify an aggregate's snapshots and events (it is stored as the
+     * {@link org.axonframework.eventhandling.DomainEventData#getType() type} of a snapshot). As such, it is the value a
+     * {@code SnapshotFilter} should match against.
+     *
+     * @param type the aggregate class to resolve the declared type for
+     * @return the declared type of the given aggregate {@code type}
+     * @since 4.13.2
+     */
+    public static String declaredTypeOf(Class<?> type) {
+        return findAnnotationAttributes(type, AggregateRoot.class)
+                .map(attributes -> (String) attributes.get("type"))
+                .filter(declaredType -> !declaredType.isEmpty())
+                .orElse(type.getSimpleName());
     }
 
     /**
@@ -348,16 +368,10 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
 
         private void inspectAggregateTypes() {
             for (Class<?> type : handlerInspector.getAllHandlers().keySet()) {
-                String declaredType = findDeclaredType(type);
+                String declaredType = declaredTypeOf(type);
                 types.put(declaredType, type);
                 declaredTypes.put(type, declaredType);
             }
-        }
-
-        private String findDeclaredType(Class<?> type) {
-            return findAnnotationAttributes(type, AggregateRoot.class)
-                    .map(map -> (String) map.get("type")).filter(i -> i.length() > 0)
-                    .orElse(type.getSimpleName());
         }
 
         private void inspectFieldsAndMethods() {
