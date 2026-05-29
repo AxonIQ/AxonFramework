@@ -16,18 +16,19 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.entity.EntityMetamodel;
 import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 
@@ -41,11 +42,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
 import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletion;
+import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link DefaultEventStoreTransaction}.
@@ -169,6 +170,35 @@ class DefaultEventStoreTransactionTest {
 
             appendEventForTag(existentTag);
             testCanCommitTag(nonExistingCriteria, existingCriteria, existentTag);
+        }
+
+        @Test
+        void appendEventCreatesAppendConditionFromTagsWhenNoneExists() {
+            // given
+            Tag eventTag = new Tag("myTag", "myValue");
+            var event = new GenericEventMessage(new MessageType(String.class), "tagged payload");
+
+            // when
+            var afterCommitEvents = new AtomicReference<MessageStream<? extends EventMessage>>();
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                   // No source() call — the AppendCondition should be created by appendEvent
+                   context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, m -> Set.of(eventTag));
+                   transaction.appendEvent(event);
+               })
+               .whenComplete(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                   afterCommitEvents.set(
+                           transaction.source(SourcingCondition.conditionFor(EventCriteria.havingTags(eventTag)))
+                   );
+               });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            StepVerifier.create(FluxUtils.of(afterCommitEvents.get()))
+                        .assertNext(entry -> assertEquals("tagged payload", entry.message().payload()))
+                        .verifyComplete();
         }
 
         private ConsistencyMarker appendEventForTag(Tag tag) {

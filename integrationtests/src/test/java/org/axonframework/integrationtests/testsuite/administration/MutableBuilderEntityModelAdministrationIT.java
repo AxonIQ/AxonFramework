@@ -96,14 +96,14 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
                         MutableEmployee.class, eventConverter, typeResolver
                 ))
-                .instanceCommandHandler(typeResolver.resolveOrThrow(CreateEmployee.class).qualifiedName(),
-                                        ((command, entity, context) -> {
-                                            EventAppender eventAppender = EventAppender.forContext(context);
-                                            CreateEmployee convertedPayload =
-                                                    command.payloadAs(CreateEmployee.class);
-                                            entity.handle(convertedPayload, eventAppender);
-                                            return MessageStream.empty().cast();
-                                        }))
+                .creationalCommandHandler(typeResolver.resolveOrThrow(CreateEmployee.class).qualifiedName(),
+                                          ((command, context) -> {
+                                              MutableEmployee.handle(
+                                                      command.payloadAs(CreateEmployee.class),
+                                                      EventAppender.forContext(context)
+                                              );
+                                              return MessageStream.empty().cast();
+                                          }))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(AssignTaskCommand.class).qualifiedName(),
                                         ((command, entity, context) -> {
                                             EventAppender eventAppender = EventAppender.forContext(context);
@@ -159,15 +159,16 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
                         MutableCustomer.class, eventConverter, typeResolver
                 ))
-                .instanceCommandHandler(
+                .creationalCommandHandler(
                         typeResolver.resolveOrThrow(CreateCustomer.class).qualifiedName(),
-                        ((command, entity, context) -> {
-                            EventAppender eventAppender = EventAppender.forContext(context);
-                            CreateCustomer convertedPayload =
-                                    command.payloadAs(CreateCustomer.class);
-                            entity.handle(convertedPayload, eventAppender);
+                        ((command, context) -> {
+                            MutableCustomer.handle(
+                                    command.payloadAs(CreateCustomer.class),
+                                    EventAppender.forContext(context)
+                            );
                             return MessageStream.empty().cast();
-                        }))
+                        })
+                )
                 .build();
 
         // Person is the polymorphic entity type

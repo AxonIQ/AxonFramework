@@ -16,19 +16,25 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.common.ObjectUtils;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.entity.EntityMetamodel;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
@@ -156,8 +162,37 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                     return new CopyOnWriteArrayList<>();
                 }
         );
-        eventQueue.add(eventTagger.apply(eventMessage));
+        TaggedEventMessage<?> taggedEvent = eventTagger.apply(eventMessage);
+        eventQueue.add(taggedEvent);
+        Set<Tag> tags = taggedEvent.tags();
+        if (appendingWithoutSourcing() && !tags.isEmpty()) {
+            // No AppendCondition is present, but the event contains tags.
+            // Tags make no sense without an AppendCondition, so let's create an ORIGIN call
+            processingContext.computeResourceIfAbsent(
+                    appendConditionKey,
+                    () -> new DefaultAppendCondition(ConsistencyMarker.ORIGIN, EventCriteria.havingTags(tags))
+            );
+        }
         callbacks.forEach(callback -> callback.accept(eventMessage));
+    }
+
+    /**
+* Returns {@code true} if the {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is set to {@code true}.
+     * <p>
+     * Typically, the {@code DefaultEventStoreTransaction} constructs an {@link AppendCondition} based on a
+     * {@link SourcingCondition}, thus it creates the {@code AppendCondition} as a result from <b>loading</b> an entity.
+     * Whenever a creational command is <b>not</b> instructed to load an entity (e.g. because no
+     * {@link org.axonframework.modelling.annotation.TargetEntityId} is used), the use of an {@code AppendCondition} is
+     * still required in some cases.
+     * <p>
+     * One of these is when {@link EntityMetamodel#handleCreate(CommandMessage, ProcessingContext)} is invoked on the
+     * {@link EntityMetamodel} without loading first. The {@code CREATE_WITHOUT_LOAD} {@link ResourceKey} signals these
+     * scenarios.
+     *
+     * @return {@code true} if {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is {@code true}, {@code false} otherwise
+     */
+    private boolean appendingWithoutSourcing() {
+        return ObjectUtils.getOrDefault(processingContext.getResource(EntityMetamodel.CREATE_WITHOUT_LOAD), false);
     }
 
     private void attachAppendEventsStep() {
@@ -167,7 +202,8 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
 
                     context.putResource(prepareCommitExecuted, true);
 
-                    List<TaggedEventMessage<?>> eventQueue = context.getResource(eventQueueKey);
+                    List<TaggedEventMessage<?>> eventQueue =
+                            Objects.requireNonNullElse(context.getResource(eventQueueKey), Collections.emptyList());
 
                     return eventStorageEngine.appendEvents(appendCondition, processingContext, eventQueue)
                                              .thenApply(DefaultEventStoreTransaction::castTransaction)

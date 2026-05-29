@@ -17,10 +17,8 @@
 package org.axonframework.integrationtests.testsuite.administration.commands;
 
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
-import org.axonframework.modelling.annotation.TargetEntityId;
 
 public record CreateEmployee(
-        @TargetEntityId
         PersonIdentifier identifier,
         String emailAddress,
         String role,

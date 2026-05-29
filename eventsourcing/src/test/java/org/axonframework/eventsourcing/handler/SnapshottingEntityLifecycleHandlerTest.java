@@ -42,7 +42,8 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.repository.ManagedEntity;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Type;
 import java.time.Instant;
@@ -179,10 +180,20 @@ class SnapshottingEntityLifecycleHandlerTest {
 
     @Nested
     @LoggerContextSource("log4j2-list-appender.xml")
-    class WhenSnapshotVersionMismatches {
+    class WhenObservingLogOutput {
 
         @Test
-        void fallsBackToFullReconstructionAndLogsWarning(@Named("TestAppender") ListAppender appender) {
+        void noWarningWhenNoSnapshotExists(@Named("TestAppender") ListAppender appender) {
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
+
+            appender.clear();
+            source();
+
+            assertThat(appender.getEvents()).isEmpty();
+        }
+
+        @Test
+        void fallsBackToFullReconstructionAndLogsWarningOnVersionMismatch(@Named("TestAppender") ListAppender appender) {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
             storeSnapshot(new Account(ACCOUNT_ID, "Alice", 999), GlobalIndexPositions.of(2), "42.0");
 
@@ -199,14 +210,9 @@ class SnapshottingEntityLifecycleHandlerTest {
                         + ACCOUNT_ID + " had unsupported version: 42.0"
                 );
         }
-    }
-
-    @Nested
-    @LoggerContextSource("log4j2-list-appender.xml")
-    class WhenSnapshotPayloadIsIncompatible {
 
         @Test
-        void fallsBackToFullReconstructionAndLogsWarning(@Named("TestAppender") ListAppender appender) {
+        void fallsBackToFullReconstructionAndLogsWarningOnIncompatiblePayload(@Named("TestAppender") ListAppender appender) {
             publish(
                 new AccountCreated(ACCOUNT_ID, "Alice"),
                 new FundsDeposited(ACCOUNT_ID, 100)

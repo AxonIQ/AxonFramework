@@ -88,11 +88,17 @@ For Spring Boot applications, snapshotting can be enabled by adding `@Snapshotti
 [source,java]
 ----
 @EventSourced
-@Snapshotting
+@Snapshotting(afterEvents = 100)
 public class Account { ... }
 ----
 
-At least one threshold must be configured, either on the annotation directly or via a higher-level annotation on an enclosing class, package, or module.
+The annotation supports two threshold attributes:
+
+* `afterEvents`: trigger a snapshot after a fixed number of events have been applied during sourcing.
+* `afterSourcingTime`: trigger a snapshot when the total sourcing time exceeds the given ISO-8601 duration (for example, `"PT5S"` for five seconds).
+
+When both attributes are set, either condition independently triggers a snapshot.
+Use a bare `@Snapshotting` (no attributes) when the threshold is inherited from a higher-level annotation on an enclosing class, package, or module.
 See xref:tuning:snapshotting.adoc#_annotation_based_configuration[annotation-based configuration] for details.
 
 For more complex policies that require payload inspection, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` programmatically.

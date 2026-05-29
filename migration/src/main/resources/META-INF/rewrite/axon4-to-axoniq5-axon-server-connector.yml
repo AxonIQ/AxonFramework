@@ -1,0 +1,47 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Server connector — moved from open-source Axon Framework into the
+# Axoniq commercial offering. Class names are largely preserved; only the
+# top-level package changes.
+#
+# AF4: org.axonframework:axon-server-connector (org.axonframework.axonserver.*)
+# AF5: io.axoniq.framework:axon-server-connector (io.axoniq.framework.axonserver.*)
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: io.axoniq.framework.migration.Axon4ToAxoniq5AxonServerConnector
+displayName: Migrate the Axon Server connector to Axoniq Framework 5
+description: >-
+  Relocates the Axon Server connector from
+  `org.axonframework.axonserver.connector` to
+  `io.axoniq.framework.axonserver.connector`. The connector now lives in the
+  Axoniq commercial offering (`io.axoniq.framework:axon-server-connector`).
+  Class names are mostly preserved.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.axonserver
+      newPackageName: io.axoniq.framework.axonserver
+      recursive: true
+  # Build-tool coordinate move: org.axonframework:axon-server-connector →
+  # io.axoniq.framework:axon-server-connector. ArtifactId unchanged; only
+  # the groupId moves to the Axoniq commercial namespace. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven and Gradle.
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-server-connector
+      newGroupId: io.axoniq.framework
+      newArtifactId: axon-server-connector
