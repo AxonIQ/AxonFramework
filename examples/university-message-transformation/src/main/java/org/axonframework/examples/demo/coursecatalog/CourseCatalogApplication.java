@@ -18,19 +18,38 @@ package org.axonframework.examples.demo.coursecatalog;
 
 import io.axoniq.framework.axonserver.connector.api.AxonServerConfiguration;
 import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogModuleConfiguration;
+import org.axonframework.examples.demo.coursecatalog.catalog.Ids;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CatalogViewReadModel;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CourseCatalogView;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.GetCourseCatalogView;
+import org.axonframework.examples.demo.coursecatalog.catalog.seed.SeedCatalog;
+import org.axonframework.examples.demo.coursecatalog.catalog.values.CapacityRange;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.enrollstudent.EnrollStudent;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.publishcourse.PublishCourse;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.updatecoursecapacity.UpdateCourseCapacity;
+import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
+import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.UnaryOperator;
 
 /**
  * Bootstraps the course-catalog demo. Builds an {@link EventSourcingConfigurer} with
  * Axon Server connection toggled by {@link ConfigurationProperties#axonServerEnabled()}
- * and the catalog module wired in. The {@code main()} entry point (with seeding +
- * sample commands) lands in a later step.
+ * and the catalog module wired in. The {@code main()} entry point seeds historic events,
+ * runs a few sample commands, prints the resulting catalog view, then shuts down.
  */
 public class CourseCatalogApplication {
 
+    private static final Logger logger = LoggerFactory.getLogger(CourseCatalogApplication.class);
     private static final String CONTEXT = "default";
 
     /** @return the configurer wired with default properties and the full catalog module */
@@ -59,5 +78,101 @@ public class CourseCatalogApplication {
         }
         configurer = customization.apply(configurer);
         return configurer;
+    }
+
+    /**
+     * Entry point: starts the configurer, seeds historic events, dispatches a few
+     * sample commands, waits for the projection to catch up, prints the catalog view,
+     * and shuts down.
+     *
+     * @param args ignored
+     */
+    public static void main(String[] args) {
+        ConfigurationProperties props = ConfigurationProperties.load();
+        AxonConfiguration configuration = new CourseCatalogApplication()
+                .configurer(props, CourseCatalogModuleConfiguration::configure)
+                .start();
+        try {
+            seedHistoricEvents(configuration);
+            runSampleCommands(configuration);
+            awaitProjectionCatchUp(configuration);
+            printCatalogView(configuration);
+        } finally {
+            configuration.shutdown();
+        }
+    }
+
+    private static void seedHistoricEvents(AxonConfiguration configuration) {
+        logger.info("Seeding historic events (idempotent)...");
+        configuration.getComponent(CommandGateway.class).sendAndWait(new SeedCatalog(Ids.CATALOG_ID));
+    }
+
+    private static void runSampleCommands(AxonConfiguration configuration) {
+        logger.info("Dispatching sample commands...");
+        var commandGateway = configuration.getComponent(CommandGateway.class);
+
+        // Publish a brand-new course (current shape v3), update its capacity, enrol a student.
+        CourseId courseId = CourseId.of("microservices-101");
+        StudentId studentId = StudentId.of("alice");
+        commandGateway.sendAndWait(new PublishCourse(courseId, "Microservices 101", new CapacityRange(5, 25)));
+        commandGateway.sendAndWait(new UpdateCourseCapacity(courseId, new CapacityRange(10, 30)));
+        commandGateway.sendAndWait(new EnrollStudent(courseId, studentId));
+    }
+
+    private static void awaitProjectionCatchUp(AxonConfiguration configuration) {
+        // Expect 5 historic CoursePublished + 1 sample published course = 6 courses
+        // in the view, plus the 1 system announcement seeded.
+        awaitWithin(10, TimeUnit.SECONDS, () -> {
+            CourseCatalogView v = queryView(configuration);
+            logger.debug("Waiting for projection: courses={}, announcements={}, registeredStudents={}",
+                         v.courses().size(), v.announcements().size(), v.registeredStudents());
+            return v.courses().size() >= 6
+                    && v.announcements().size() >= 1
+                    && v.registeredStudents() >= 4;
+        });
+    }
+
+    private static void printCatalogView(AxonConfiguration configuration) {
+        CourseCatalogView view = queryView(configuration);
+        StringBuilder report = new StringBuilder();
+        report.append("\n--- Course Catalog View ---\n");
+        report.append("Registered students: ").append(view.registeredStudents()).append('\n');
+        report.append("Courses (").append(view.courses().size()).append("):\n");
+        for (CatalogViewReadModel course : view.courses()) {
+            report.append("  - ").append(course.courseId().toString())
+                  .append(" \"").append(course.name()).append("\"")
+                  .append(" range=").append(course.range())
+                  .append(" enrolments=").append(course.enrolments())
+                  .append(course.registrationClosed() ? " [closed]" : "")
+                  .append('\n');
+        }
+        report.append("Announcements (").append(view.announcements().size()).append("):\n");
+        for (String announcement : view.announcements()) {
+            report.append("  - ").append(announcement).append('\n');
+        }
+        logger.info(report.toString());
+    }
+
+    private static CourseCatalogView queryView(AxonConfiguration configuration) {
+        return configuration.getComponent(QueryGateway.class)
+                            .query(new GetCourseCatalogView(), CourseCatalogView.class, null)
+                            .orTimeout(5, TimeUnit.SECONDS)
+                            .join();
+    }
+
+    private static void awaitWithin(long timeout, TimeUnit unit, BooleanSupplier condition) {
+        long deadline = System.nanoTime() + unit.toNanos(timeout);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for projection to catch up", e);
+            }
+        }
+        throw new IllegalStateException("Projection did not catch up within " + timeout + " " + unit);
     }
 }

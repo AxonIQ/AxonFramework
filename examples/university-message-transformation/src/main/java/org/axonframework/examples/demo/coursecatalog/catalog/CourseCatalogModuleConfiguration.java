@@ -17,9 +17,14 @@
 package org.axonframework.examples.demo.coursecatalog.catalog;
 
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.examples.demo.coursecatalog.catalog.automation.overbookingnotifier.OverbookingNotifierConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CatalogViewConfiguration;
+import org.axonframework.examples.demo.coursecatalog.catalog.seed.LegacyEventSeedConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CourseCatalogTransformations;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.enrollstudent.EnrollStudentConfiguration;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.publishcourse.PublishCourseConfiguration;
+import org.axonframework.examples.demo.coursecatalog.catalog.write.updatecoursecapacity.UpdateCourseCapacityConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 
 /**
@@ -39,12 +44,29 @@ public final class CourseCatalogModuleConfiguration {
      * @return the configurer with the catalog wired in
      */
     public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        configurer = configurer.componentRegistry(
-                registry -> registry.registerComponent(EventTransformerChain.class,
-                                                       config -> CourseCatalogTransformations.chain())
+        configurer = configurer.componentRegistry(registry -> registry
+                .registerComponent(EventTransformerChain.class,
+                                   config -> CourseCatalogTransformations.chain())
+                // Override the default ClassBased fallback so mapper outputs like
+                // ObjectNode / Map / byte[] resolve to Optional.empty() and the
+                // chain's output-identity check skips them per its resolver-permitting
+                // contract.
+                .registerComponent(MessageTypeResolver.class,
+                                   config -> new CourseCatalogMessageTypeResolver())
         );
+        // Write slices
+        configurer = PublishCourseConfiguration.configure(configurer);
+        configurer = UpdateCourseCapacityConfiguration.configure(configurer);
+        configurer = EnrollStudentConfiguration.configure(configurer);
+
+        // Read slice
         configurer = CatalogViewConfiguration.configure(configurer);
+
+        // Automation
         configurer = OverbookingNotifierConfiguration.configure(configurer);
+
+        // Seed (idempotent)
+        configurer = LegacyEventSeedConfiguration.configure(configurer);
         return configurer;
     }
 }

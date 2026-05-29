@@ -32,7 +32,7 @@ class PublishCourseAxonFixtureTest {
 
     @BeforeEach
     void beforeEach() {
-        fixture = CourseCatalogAxonTestFixture.slice(PublishCourseConfiguration::configure);
+        fixture = CourseCatalogAxonTestFixture.app();
     }
 
     @AfterEach
