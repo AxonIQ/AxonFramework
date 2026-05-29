@@ -1,0 +1,7 @@
+{
+  "catalogId": "Catalog:axoniq-university",
+  "courseId": "Course:event-sourcing-101",
+  "name": "Event Sourcing in Practice",
+  "minCapacity": 30,
+  "maxCapacity": 30
+}
