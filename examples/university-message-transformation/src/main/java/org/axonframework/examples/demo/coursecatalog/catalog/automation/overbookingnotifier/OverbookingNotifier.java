@@ -1,0 +1,58 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.examples.demo.coursecatalog.catalog.automation.overbookingnotifier;
+
+import org.axonframework.examples.demo.coursecatalog.catalog.events.CoursePublished;
+import org.axonframework.examples.demo.coursecatalog.shared.notifier.NotificationService;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.conversion.MessageConverter;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+
+/**
+ * Reacts to every {@link CoursePublished} that reaches a handler. When the published
+ * capacity range is unusually wide (more than {@value #WIDE_RANGE_THRESHOLD} between
+ * min and max), sends an overbooking-risk notification via {@link NotificationService}.
+ * <p>
+ * Receives the current-shape ({@code 3.0.0}) {@link CoursePublished} even when the
+ * stored event was an older shape: the transformation chain lifts events before any
+ * handler sees them.
+ */
+final class OverbookingNotifier {
+
+    static final int WIDE_RANGE_THRESHOLD = 20;
+    static final String OVERBOOKING_TOPIC = "overbooking-risk";
+
+    private OverbookingNotifier() {
+    }
+
+    static MessageStream.Empty<Message> react(EventMessage event, ProcessingContext context) {
+        MessageConverter converter = context.component(MessageConverter.class);
+        CoursePublished published = event.payloadAs(CoursePublished.class, converter);
+        int span = published.range().max() - published.range().min();
+        if (span > WIDE_RANGE_THRESHOLD) {
+            NotificationService notifier = context.component(NotificationService.class);
+            notifier.send(new NotificationService.Notification(
+                    OVERBOOKING_TOPIC,
+                    "Overbooking risk on course '" + published.name()
+                            + "' (capacity range spans " + span + " seats)"
+            ));
+        }
+        return MessageStream.empty();
+    }
+}

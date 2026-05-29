@@ -17,11 +17,14 @@
 package org.axonframework.examples.demo.coursecatalog.catalog;
 
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
+import org.axonframework.examples.demo.coursecatalog.catalog.automation.overbookingnotifier.OverbookingNotifierConfiguration;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CatalogViewConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CourseCatalogTransformations;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 
 /**
- * Wires the course-catalog bounded context into an {@link EventSourcingConfigurer}.
+ * Wires the course-catalog bounded context into an {@link EventSourcingConfigurer}:
+ * the transformation chain, read slice, and overbooking-notifier automation.
  * Registering the chain as a component is enough to engage the framework's
  * {@code EventTransformationConfigurationEnhancer}, which discovers it via
  * {@code ServiceLoader} and installs the {@code TransformingEventStore} decorator.
@@ -33,12 +36,15 @@ public final class CourseCatalogModuleConfiguration {
 
     /**
      * @param configurer the configurer to extend
-     * @return the configurer with the catalog chain registered
+     * @return the configurer with the catalog wired in
      */
     public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        return configurer.componentRegistry(
+        configurer = configurer.componentRegistry(
                 registry -> registry.registerComponent(EventTransformerChain.class,
                                                        config -> CourseCatalogTransformations.chain())
         );
+        configurer = CatalogViewConfiguration.configure(configurer);
+        configurer = OverbookingNotifierConfiguration.configure(configurer);
+        return configurer;
     }
 }
