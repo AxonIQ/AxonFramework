@@ -16,6 +16,9 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.segmenting;
 
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -28,27 +31,25 @@ import java.util.function.Function;
  */
 public class SimpleSegmentChangeListener implements SegmentChangeListener {
 
-    private final Function<Segment, CompletableFuture<Void>> onClaim;
+    private final Function<Segment, CompletableFuture<@Nullable TrackingToken>> onClaim;
     private final Function<Segment, CompletableFuture<Void>> onRelease;
 
     /**
      * Creates a listener with explicit claim and release handlers.
      *
-     * @param onClaim   The claim handler.
-     * @param onRelease The release handler.
+     * @param onClaim   the claim handler returning a reset position (or {@code null})
+     * @param onRelease the release handler
      */
     public SimpleSegmentChangeListener(
-            Function<Segment, CompletableFuture<Void>> onClaim,
+            Function<Segment, CompletableFuture<@Nullable TrackingToken>> onClaim,
             Function<Segment, CompletableFuture<Void>> onRelease
     ) {
-        Objects.requireNonNull(onClaim, "Claim listener may not be null");
-        Objects.requireNonNull(onRelease, "Release listener may not be null");
-        this.onClaim = onClaim;
-        this.onRelease = onRelease;
+        this.onClaim = Objects.requireNonNull(onClaim, "Claim listener may not be null");
+        this.onRelease = Objects.requireNonNull(onRelease, "Release listener may not be null");
     }
 
     @Override
-    public CompletableFuture<Void> onSegmentClaimed(Segment segment) {
+    public CompletableFuture<@Nullable TrackingToken> onSegmentClaimed(Segment segment) {
         return onClaim.apply(segment);
     }
 
