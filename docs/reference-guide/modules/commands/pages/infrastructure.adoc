@@ -23,7 +23,7 @@ Repositories handle several concerns for you:
 * **Persistence**: Save state changes when command processing completes
 * **Coordination**: Ensure changes are committed as part of the processing context
 
-Without a repository, you'd need to manually load entities, track changes, and persist them; repositories do all of this automatically.
+Without a repository, you would need to manually load entities, track changes, and persist them. Repositories do all of this automatically.
 
 === Async-native API
 

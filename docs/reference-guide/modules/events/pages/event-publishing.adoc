@@ -27,7 +27,7 @@ Event publication only results in event storage if an xref:infrastructure.adoc#e
 [#event_appender]
 == Event Appender: Publishing events from an entity
 
-The xref:commands:modeling/aggregate.adoc[Entity] or its xref:commands:modeling/multi-entity-aggregates.adoc[child entities] are typically the starting point of all event messages.
+The xref:commands:entities/index.adoc[Entity] or its xref:commands:entities/entity-hierarchies.adoc[child entities] are typically the starting point of all event messages.
 The event simply is the notification that a decision has been made: a successful resolution of handling a command.
 Note that <<event_tagging,tagging>> is a hard requirement to ensure the published event as associated with your entity or entities.
 
@@ -127,7 +127,7 @@ When the event is a plain object (not a `Message`), the provided `Metadata` is s
 [#event_gateway]
 == Event Gateway: Publishing events from a non-entity
 
-In the vast majority of cases, xref:commands:modeling/aggregate.adoc[entities] will publish events by appending them.
+In the vast majority of cases, xref:commands:entities/index.adoc[entities] will publish events by appending them.
 However, occasionally, it is necessary to publish an event directly to the `EventSink`, possibly from within another component such as an event handler or a regular service.
 
 The `EventGateway` provides a convenient API for publishing events from components that are not entities:

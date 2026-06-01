@@ -85,7 +85,7 @@
         <dependency>
             <groupId>io.github.oshai</groupId>
             <artifactId>kotlin-logging-jvm</artifactId>
-            <version>8.0.03</version>
+            <version>8.0.4</version>
         </dependency>
         <!-- endregion [Kotlin] -->
 

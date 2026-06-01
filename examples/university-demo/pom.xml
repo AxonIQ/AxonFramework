@@ -35,7 +35,7 @@
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
         <junit.version>6.1.0</junit.version>
-        <jackson.version>2.21.3</jackson.version>
+        <jackson.version>2.21.4</jackson.version>
         <log4j.version>2.26.0</log4j.version>
     </properties>
 
