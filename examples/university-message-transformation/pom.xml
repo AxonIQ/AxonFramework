@@ -96,7 +96,7 @@
 
         <!--
         Provides arrow-key history, line editing, and ANSI handling for the
-        InteractiveShell that runs with --keep-alive.
+        InteractiveShell that runs when the keep-alive flag is set.
         -->
         <dependency>
             <groupId>org.jline</groupId>

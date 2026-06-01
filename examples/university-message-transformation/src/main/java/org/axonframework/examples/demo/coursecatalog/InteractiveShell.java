@@ -28,143 +28,205 @@ import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Tiny stdin REPL that lets a user keep the demo application running and send
- * commands to it. Started by {@link CourseCatalogApplication} when the
- * {@code --keep-alive} program argument is set. Exits on {@code exit}, {@code quit},
- * or EOF (Ctrl+D), after which {@code CourseCatalogApplication#main} runs its
- * normal {@code finally} block and shuts the configuration down.
+ * Interactive stdin REPL with arrow-key history and line editing. Started by
+ * {@link CourseCatalogApplication} when the {@code --keep-alive} program argument
+ * is set. Exits on {@code exit}, {@code quit}, Ctrl+D, or Ctrl+C, after which
+ * {@code CourseCatalogApplication#main} runs its normal {@code finally} block and
+ * shuts the configuration down.
  */
 final class InteractiveShell {
 
     private static final Logger logger = LoggerFactory.getLogger(InteractiveShell.class);
+    private static final String PROMPT = "course-catalog> ";
 
-    private InteractiveShell() {
+    private final LineReader reader;
+    private final PrintWriter out;
+    private final CommandGateway commands;
+    private final QueryGateway queries;
+
+    /**
+     * Opens a terminal, builds a shell on it, and runs the REPL until the user exits.
+     *
+     * @param configuration the running Axon configuration to dispatch against
+     */
+    static void run(AxonConfiguration configuration) {
+        try (Terminal terminal = TerminalBuilder.builder().system(true).build()) {
+            new InteractiveShell(terminal, configuration).loop();
+        } catch (IOException e) {
+            logger.warn("Could not open interactive terminal, exiting shell: {}", e.getMessage());
+        }
     }
 
-    static void run(AxonConfiguration configuration) {
-        printBanner();
-        CommandGateway commands = configuration.getComponent(CommandGateway.class);
-        QueryGateway queries = configuration.getComponent(QueryGateway.class);
+    private InteractiveShell(Terminal terminal, AxonConfiguration configuration) {
+        this.reader = LineReaderBuilder.builder().terminal(terminal).build();
+        this.out = terminal.writer();
+        this.commands = configuration.getComponent(CommandGateway.class);
+        this.queries = configuration.getComponent(QueryGateway.class);
+    }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+    private void loop() {
+        printBanner();
         while (true) {
-            System.out.print("course-catalog> ");
-            System.out.flush();
-            String line;
-            try {
-                line = reader.readLine();
-            } catch (java.io.IOException e) {
-                logger.warn("Stdin read failed, exiting shell: {}", e.getMessage());
-                return;
-            }
+            String line = readLine();
             if (line == null) {
-                // EOF (Ctrl+D)
-                System.out.println();
                 return;
             }
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) {
+            if (line.isEmpty()) {
                 continue;
             }
-            try {
-                if (!handle(trimmed, commands, queries)) {
-                    return;
-                }
-            } catch (RuntimeException e) {
-                System.out.println("[error] " + e.getMessage());
+            if (!dispatchSafely(line)) {
+                return;
             }
+        }
+    }
+
+    /** @return the trimmed input line, or {@code null} when the user signals exit (Ctrl+C / Ctrl+D) */
+    private String readLine() {
+        try {
+            String raw = reader.readLine(PROMPT);
+            return raw == null ? null : raw.trim();
+        } catch (UserInterruptException | EndOfFileException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Dispatches one command and turns any thrown {@link RuntimeException} into a
+     * printed {@code [error]} line so the REPL stays alive.
+     *
+     * @param line the trimmed command line
+     * @return false to exit the shell, true to keep going
+     */
+    private boolean dispatchSafely(String line) {
+        try {
+            return dispatch(line);
+        } catch (RuntimeException e) {
+            print("[error] " + e.getMessage());
+            return true;
         }
     }
 
     /** @return false to exit the shell, true to keep going */
-    private static boolean handle(String line, CommandGateway commands, QueryGateway queries) {
+    private boolean dispatch(String line) {
         List<String> tokens = tokenize(line);
         String head = tokens.get(0);
-        switch (head) {
-            case "help":
-            case "?":
-                printHelp();
-                return true;
-            case "view":
-                printView(queries);
-                return true;
-            case "publish":
-                require(tokens, 5, "publish <courseId> \"<name>\" <min> <max>");
-                commands.sendAndWait(new PublishCourse(
-                        CourseId.of(tokens.get(1)),
-                        tokens.get(2),
-                        new CapacityRange(Integer.parseInt(tokens.get(3)), Integer.parseInt(tokens.get(4)))));
-                System.out.println("[ok] published " + tokens.get(1));
-                return true;
-            case "capacity":
-                require(tokens, 4, "capacity <courseId> <min> <max>");
-                commands.sendAndWait(new UpdateCourseCapacity(
-                        CourseId.of(tokens.get(1)),
-                        new CapacityRange(Integer.parseInt(tokens.get(2)), Integer.parseInt(tokens.get(3)))));
-                System.out.println("[ok] capacity updated for " + tokens.get(1));
-                return true;
-            case "enroll":
-                require(tokens, 3, "enroll <courseId> <studentId>");
-                commands.sendAndWait(new EnrollStudent(CourseId.of(tokens.get(1)), StudentId.of(tokens.get(2))));
-                System.out.println("[ok] enrolled " + tokens.get(2) + " in " + tokens.get(1));
-                return true;
-            case "exit":
-            case "quit":
-                return false;
-            default:
-                System.out.println("[error] unknown command '" + head + "'. Type 'help' for the list.");
-                return true;
+        return switch (head) {
+            case "help", "?" -> { printHelp(); yield true; }
+            case "view" -> { printView(); yield true; }
+            case "publish" -> { publish(tokens); yield true; }
+            case "capacity" -> { capacity(tokens); yield true; }
+            case "enroll" -> { enroll(tokens); yield true; }
+            case "exit", "quit" -> false;
+            default -> { unknown(head); yield true; }
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // Command handlers
+    // ------------------------------------------------------------------------
+
+    private void publish(List<String> tokens) {
+        requireArgs(tokens, 5, "publish <courseId> \"<name>\" <min> <max>");
+        commands.sendAndWait(new PublishCourse(
+                CourseId.of(tokens.get(1)),
+                tokens.get(2),
+                new CapacityRange(parseInt(tokens.get(3)), parseInt(tokens.get(4)))));
+        print("[ok] published " + tokens.get(1));
+    }
+
+    private void capacity(List<String> tokens) {
+        requireArgs(tokens, 4, "capacity <courseId> <min> <max>");
+        commands.sendAndWait(new UpdateCourseCapacity(
+                CourseId.of(tokens.get(1)),
+                new CapacityRange(parseInt(tokens.get(2)), parseInt(tokens.get(3)))));
+        print("[ok] capacity updated for " + tokens.get(1));
+    }
+
+    private void enroll(List<String> tokens) {
+        requireArgs(tokens, 3, "enroll <courseId> <studentId>");
+        commands.sendAndWait(new EnrollStudent(CourseId.of(tokens.get(1)), StudentId.of(tokens.get(2))));
+        print("[ok] enrolled " + tokens.get(2) + " in " + tokens.get(1));
+    }
+
+    private void unknown(String head) {
+        print("[error] unknown command '" + head + "'. Type 'help' for the list.");
+    }
+
+    // ------------------------------------------------------------------------
+    // Output helpers
+    // ------------------------------------------------------------------------
+
+    private void printBanner() {
+        print("");
+        print("Interactive shell ready. Type 'help' for available commands, 'exit' to shut down.");
+        print("Use the up and down arrows to navigate previous commands.");
+    }
+
+    private void printHelp() {
+        print("Commands:");
+        print("  publish  <courseId> \"<name>\" <min> <max>   Publish a new course");
+        print("  capacity <courseId> <min> <max>             Update a course's capacity range");
+        print("  enroll   <courseId> <studentId>             Enroll a student in a course");
+        print("  view                                        Print the catalog view");
+        print("  help                                        Show this message");
+        print("  exit                                        Shut down");
+    }
+
+    private void printView() {
+        CourseCatalogView view = queries.query(new GetCourseCatalogView(), CourseCatalogView.class, null)
+                                        .orTimeout(5, TimeUnit.SECONDS)
+                                        .join();
+        print("Registered students: " + view.registeredStudents());
+        print("Courses (" + view.courses().size() + "):");
+        for (CatalogViewReadModel course : view.courses()) {
+            print("  - " + course.courseId()
+                          + " \"" + course.name() + "\""
+                          + " range=" + course.range()
+                          + " enrolments=" + course.enrolments()
+                          + (course.registrationClosed() ? " [closed]" : ""));
+        }
+        print("Announcements (" + view.announcements().size() + "):");
+        for (String announcement : view.announcements()) {
+            print("  - " + announcement);
         }
     }
 
-    private static void require(List<String> tokens, int expected, String usage) {
+    private void print(String line) {
+        out.println(line);
+        out.flush();
+    }
+
+    // ------------------------------------------------------------------------
+    // Parsing helpers
+    // ------------------------------------------------------------------------
+
+    private static void requireArgs(List<String> tokens, int expected, String usage) {
         if (tokens.size() != expected) {
             throw new IllegalArgumentException("usage: " + usage);
         }
     }
 
-    private static void printBanner() {
-        System.out.println();
-        System.out.println("Interactive shell ready. Type 'help' for available commands, 'exit' to shut down.");
-    }
-
-    private static void printHelp() {
-        System.out.println("Commands:");
-        System.out.println("  publish  <courseId> \"<name>\" <min> <max>   Publish a new course");
-        System.out.println("  capacity <courseId> <min> <max>             Update a course's capacity range");
-        System.out.println("  enroll   <courseId> <studentId>             Enroll a student in a course");
-        System.out.println("  view                                        Print the catalog view");
-        System.out.println("  help                                        Show this message");
-        System.out.println("  exit                                        Shut down");
-    }
-
-    private static void printView(QueryGateway queries) {
-        CourseCatalogView view = queries.query(new GetCourseCatalogView(), CourseCatalogView.class, null)
-                                        .orTimeout(5, TimeUnit.SECONDS)
-                                        .join();
-        System.out.println("Registered students: " + view.registeredStudents());
-        System.out.println("Courses (" + view.courses().size() + "):");
-        for (CatalogViewReadModel course : view.courses()) {
-            System.out.println("  - " + course.courseId()
-                                       + " \"" + course.name() + "\""
-                                       + " range=" + course.range()
-                                       + " enrolments=" + course.enrolments()
-                                       + (course.registrationClosed() ? " [closed]" : ""));
-        }
-        System.out.println("Announcements (" + view.announcements().size() + "):");
-        for (String announcement : view.announcements()) {
-            System.out.println("  - " + announcement);
+    private static int parseInt(String token) {
+        try {
+            return Integer.parseInt(token);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("'" + token + "' is not an integer", e);
         }
     }
 
