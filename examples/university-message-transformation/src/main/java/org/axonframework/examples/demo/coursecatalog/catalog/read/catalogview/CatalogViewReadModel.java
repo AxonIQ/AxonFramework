@@ -44,9 +44,12 @@ public record CatalogViewReadModel(
         return new CatalogViewReadModel(courseId, name, newRange, enrolments, registrationClosed);
     }
 
-    /** @return a copy with the enrolment count incremented by one */
-    public CatalogViewReadModel withEnrolmentIncrement() {
-        return new CatalogViewReadModel(courseId, name, range, enrolments + 1, registrationClosed);
+    /**
+     * @param newEnrolments the absolute enrolment count for the copy
+     * @return a copy with the given enrolment count
+     */
+    public CatalogViewReadModel withEnrolments(int newEnrolments) {
+        return new CatalogViewReadModel(courseId, name, range, newEnrolments, registrationClosed);
     }
 
     /** @return a copy marked as closed for registration */

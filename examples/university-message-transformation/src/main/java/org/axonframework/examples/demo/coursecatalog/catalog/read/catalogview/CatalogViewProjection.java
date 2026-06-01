@@ -57,9 +57,7 @@ class CatalogViewProjection {
 
     @EventHandler
     void on(StudentEnrolledInCourse event) {
-        repository.findCourse(event.courseId())
-                  .map(CatalogViewReadModel::withEnrolmentIncrement)
-                  .ifPresent(repository::saveCourse);
+        repository.recordEnrolment(event.courseId(), event.studentId());
     }
 
     @EventHandler
@@ -71,7 +69,7 @@ class CatalogViewProjection {
 
     @EventHandler
     void on(StudentRegistered event) {
-        repository.incrementRegisteredStudents();
+        repository.registerStudent(event.studentId());
     }
 
     @EventHandler

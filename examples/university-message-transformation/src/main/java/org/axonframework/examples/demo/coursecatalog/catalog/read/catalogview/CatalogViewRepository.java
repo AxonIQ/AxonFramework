@@ -17,13 +17,13 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview;
 
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
+import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
 
 import java.util.Optional;
 
 /**
- * Hexagonal port for the catalog view's read model. Implementations hold a single
- * mutable snapshot of the whole catalog; the projection writes into it and the
- * query handler reads from it.
+ * Hexagonal port for the catalog view's read model. Mutations are idempotent so the
+ * projection survives an event replay.
  */
 public interface CatalogViewRepository {
 
@@ -36,11 +36,17 @@ public interface CatalogViewRepository {
      */
     Optional<CatalogViewReadModel> findCourse(CourseId courseId);
 
-    /** @param announcement the announcement body to append */
+    /** @param announcement the announcement body to record (duplicate text is a no-op) */
     void addAnnouncement(String announcement);
 
-    /** Increments the registered-students counter by one. */
-    void incrementRegisteredStudents();
+    /** @param studentId the registered student (re-registering the same id is a no-op) */
+    void registerStudent(StudentId studentId);
+
+    /**
+     * @param courseId  the course the student enrolled in
+     * @param studentId the enrolled student (re-enrolling the same id is a no-op)
+     */
+    void recordEnrolment(CourseId courseId, StudentId studentId);
 
     /** @return the full snapshot of the catalog */
     CourseCatalogView snapshot();
