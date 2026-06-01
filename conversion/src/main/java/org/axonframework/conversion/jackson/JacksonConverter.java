@@ -164,10 +164,10 @@ public class JacksonConverter implements Converter {
     }
 
     /**
-     * Returns {@code true} when {@code type} extends Jackson 2's
-     * {@code com.fasterxml.jackson.databind.JsonNode}. Detected by walking the class
-     * hierarchy and matching the fully-qualified name so this class does not need a
-     * compile-time dependency on Jackson 2.
+     * Returns {@code true} when {@code type} is, or extends, Jackson 2's
+     * {@code com.fasterxml.jackson.databind.JsonNode}. The Jackson 2 type is resolved through
+     * {@code type}'s own class loader, so this class needs no compile-time dependency on Jackson 2;
+     * when Jackson 2 is absent the input cannot be one of its tree nodes and {@code false} is returned.
      * <p>
      * Jackson 3's {@code ObjectMapper} does not recognize Jackson 2 tree nodes; it falls
      * back to bean introspection which produces a wrong map (keys like {@code isArray},
@@ -175,13 +175,13 @@ public class JacksonConverter implements Converter {
      * these inputs early lets us replace silent wrong output with a clear failure.
      */
     private static boolean isForeignJacksonTreeNode(Class<?> type) {
-        Class<?> current = type;
-        while (current != null && current != Object.class) {
-            if ("com.fasterxml.jackson.databind.JsonNode".equals(current.getName())) {
-                return true;
-            }
-            current = current.getSuperclass();
+        try {
+            Class<?> jackson2JsonNodeType = Class.forName("com.fasterxml.jackson.databind.JsonNode",
+                                                          false,
+                                                          type.getClassLoader());
+            return jackson2JsonNodeType.isAssignableFrom(type);
+        } catch (ClassNotFoundException jackson2NotOnClasspath) {
+            return false;
         }
-        return false;
     }
 }

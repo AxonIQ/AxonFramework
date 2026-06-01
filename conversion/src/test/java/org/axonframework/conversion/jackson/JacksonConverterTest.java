@@ -112,8 +112,9 @@ class JacksonConverterTest extends ConverterTestSuite<JacksonConverter> {
         com.fasterxml.jackson.databind.JsonNode jackson2TreeNode = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree("{\"firstName\":\"Alice\",\"lastName\":\"Hopper\"}");
         JacksonConverter testSubject = buildConverter();
+        var targetType = mapType.getType();
 
-        assertThatThrownBy(() -> testSubject.convert(jackson2TreeNode, mapType.getType()))
+        assertThatThrownBy(() -> testSubject.convert(jackson2TreeNode, targetType))
                 .isExactlyInstanceOf(ConversionException.class)
                 .hasMessageContaining("Jackson 3")
                 .hasMessageContaining("Jackson 2")
