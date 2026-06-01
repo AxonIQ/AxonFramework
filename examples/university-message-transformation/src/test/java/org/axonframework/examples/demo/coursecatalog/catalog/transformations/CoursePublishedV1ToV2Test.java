@@ -17,28 +17,22 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
-import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.testutil.TransformationTester;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class CoursePublishedV1ToV2Test {
 
     @Test
     void liftsV1PayloadToV2() {
-        // given / when
-        EventMessage output = TransformationTester.forTransformation(CoursePublishedV1ToV2.build())
-                                                  .given()
-                                                  .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
-                                                  .payloadFromResource("/transformations/coursepublished/v1.json")
-                                                  .whenTransformed()
-                                                  .output();
-
-        // then
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "2.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/coursepublished/v2.json"));
+        TransformationTester.forTransformation(CoursePublishedV1ToV2.build())
+                            .given()
+                            .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
+                            .payloadFromResource("/transformations/coursepublished/v1.json")
+                            .when()
+                            .then()
+                            .success()
+                            .outputType(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "2.0.0"))
+                            .outputPayloadFromResource("/transformations/coursepublished/v2.json");
     }
 }

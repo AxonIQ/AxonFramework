@@ -35,6 +35,17 @@ public final class JsonAssertions {
     }
 
     /**
+     * Converts an arbitrary payload (Map, JsonNode, POJO) into a {@link JsonNode}
+     * so structural comparison against a fixture JSON tree is type-insensitive.
+     *
+     * @param payload the value to convert
+     * @return the corresponding JSON tree
+     */
+    public static JsonNode toJsonTree(Object payload) {
+        return MAPPER.valueToTree(payload);
+    }
+
+    /**
      * @param resourcePath classpath-relative path beginning with a slash
      * @return the parsed JSON tree
      * @throws IllegalArgumentException if the resource cannot be found or parsed

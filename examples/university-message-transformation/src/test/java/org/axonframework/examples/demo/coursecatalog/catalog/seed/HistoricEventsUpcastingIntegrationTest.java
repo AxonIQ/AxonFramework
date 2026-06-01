@@ -62,8 +62,8 @@ class HistoricEventsUpcastingIntegrationTest {
                .events(new LegacyEventSeeder.CoursePublishedV1(
                        Ids.CATALOG_ID, courseId, "Year-1 Course", 20))
                .then()
-               .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "Year-1 Course", new CapacityRange(20, 20), 0, false)));
+               .await(r -> r.expect(cfg -> assertViewContainsClosedCourseWithoutEnrollments(
+                       cfg, courseId, "Year-1 Course", new CapacityRange(20, 20))));
     }
 
     @Test
@@ -73,8 +73,8 @@ class HistoricEventsUpcastingIntegrationTest {
                .events(new LegacyEventSeeder.CoursePublishedV2(
                        Ids.CATALOG_ID, courseId, "Year-2 Course", 5, 25))
                .then()
-               .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "Year-2 Course", new CapacityRange(5, 25), 0, false)));
+               .await(r -> r.expect(cfg -> assertViewContainsClosedCourseWithoutEnrollments(
+                       cfg, courseId, "Year-2 Course", new CapacityRange(5, 25))));
     }
 
     @Test
@@ -102,7 +102,7 @@ class HistoricEventsUpcastingIntegrationTest {
     void seedingTheFullHistoryProducesAllExpectedUpcastedRows() {
         // The seeder writes the full year-1/year-2/year-3 history in one shot.
         // Verifies all five historic courses, every legacy StudentRegistered,
-        // and the unversioned announcement arrive at the projection in current shape.
+        // and the unversioned announcement arrives at the projection in current shape.
         fixture.given()
                .command(new SeedCatalog(Ids.CATALOG_ID))
                .then()
@@ -124,7 +124,7 @@ class HistoricEventsUpcastingIntegrationTest {
 
     @Test
     void seedingIsIdempotentSoCallingSeedTwiceLeavesViewUnchanged() {
-        // First call writes the history; second call sees the marker and emits nothing.
+        // The first call writes the history; the second call sees the marker and emits nothing.
         fixture.given()
                .command(new SeedCatalog(Ids.CATALOG_ID))
                .when()
@@ -138,16 +138,14 @@ class HistoricEventsUpcastingIntegrationTest {
                }));
     }
 
-    private static void assertViewContainsCourse(
+    private static void assertViewContainsClosedCourseWithoutEnrollments(
             Configuration configuration,
             CourseId courseId,
             String name,
-            CapacityRange range,
-            int enrolments,
-            boolean registrationClosed
+            CapacityRange range
     ) {
         CourseCatalogView view = queryView(configuration);
-        CatalogViewReadModel expected = new CatalogViewReadModel(courseId, name, range, enrolments, registrationClosed);
+        CatalogViewReadModel expected = new CatalogViewReadModel(courseId, name, range, 0, false);
         assertThat(view.courses())
                 .as("catalog view should contain course %s after upcasting", courseId)
                 .contains(expected);

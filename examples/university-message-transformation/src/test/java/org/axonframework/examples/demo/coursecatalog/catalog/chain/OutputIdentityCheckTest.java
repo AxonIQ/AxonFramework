@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class OutputIdentityCheckTest {
 
@@ -38,7 +38,6 @@ class OutputIdentityCheckTest {
 
     @Test
     void misconfiguredMapperOutputIdentityRaisesChainConfigurationException() {
-        // given
         // A 1:1 transformer whose mapper returns a typed POJO that the configured resolver
         // resolves to a MessageType other than the declared `to`. The chain MUST refuse it.
         EventTransformer misconfiguredTransformer = EventTransformation
@@ -48,25 +47,22 @@ class OutputIdentityCheckTest {
 
         EventTransformerChain chain = EventTransformerChain.builder().register(misconfiguredTransformer).build();
 
-        // when / then
-        // Resolver maps the mapper's actual output class to a MessageType that differs from `to`.
-        ChainTester tester = ChainTester.forChain(chain)
-                                        .usingTypeResolver(cls -> cls == WrongPayload.class
-                                                ? Optional.of(RESOLVED_MISMATCH)
-                                                : Optional.empty())
-                                        .usingConverter(new NeverInvokedConverter());
-        assertThatThrownBy(() ->
-                tester.given()
-                      .messageType("coursecatalog.SamplePayload", "1.0.0")
-                      .payload(JsonNodeFactory.instance.objectNode())
-                      .whenChainApplied()
-                      .output()
-        )
-                .isInstanceOf(CompletionException.class)
-                .cause()
-                .isInstanceOf(ChainConfigurationException.class)
-                .hasMessageContaining(DECLARED_TO.toString())
-                .hasMessageContaining(WrongPayload.class.getName());
+        ChainTester.forChain(chain)
+                   .usingTypeResolver(cls -> cls == WrongPayload.class
+                           ? Optional.of(RESOLVED_MISMATCH)
+                           : Optional.empty())
+                   .usingConverter(new NeverInvokedConverter())
+                   .given()
+                   .messageType("coursecatalog.SamplePayload", "1.0.0")
+                   .payload(JsonNodeFactory.instance.objectNode())
+                   .when()
+                   .then()
+                   .exceptionSatisfies(ex -> assertThat(ex)
+                           .isInstanceOf(CompletionException.class)
+                           .cause()
+                           .isInstanceOf(ChainConfigurationException.class)
+                           .hasMessageContaining(DECLARED_TO.toString())
+                           .hasMessageContaining(WrongPayload.class.getName()));
     }
 
     /** Output payload whose runtime class the resolver maps to a non-matching MessageType. */

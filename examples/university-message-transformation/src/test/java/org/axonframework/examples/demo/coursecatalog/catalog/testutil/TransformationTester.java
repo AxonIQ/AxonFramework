@@ -19,33 +19,35 @@ package org.axonframework.examples.demo.coursecatalog.catalog.testutil;
 import io.axoniq.framework.messaging.transformation.events.EventTransformer;
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
 import org.axonframework.conversion.jackson.JacksonConverter;
-import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fluent harness for invoking a single {@link EventTransformer} on a test input.
- * Returns the transformed {@link EventMessage} via {@link When#output()}; tests then
- * assert against it with plain AssertJ so the assertions stay visible to the IDE.
+ * Mirrors the {@code given -> when -> then} shape of the {@code AxonTestFixture},
+ * so transformer tests read the same as slice tests.
  *
  * <pre>{@code
- * EventMessage output = TransformationTester.forTransformation(CoursePublishedV1ToV2.build())
+ * TransformationTester.forTransformation(CoursePublishedV1ToV2.build())
  *     .given()
  *         .messageType(COURSE_PUBLISHED, "1.0.0")
  *         .payloadFromResource("/transformations/coursepublished/v1.json")
- *     .whenTransformed()
- *     .output();
- *
- * assertThat(output.type()).isEqualTo(new MessageType(COURSE_PUBLISHED, "2.0.0"));
- * assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/coursepublished/v2.json"));
+ *     .when()
+ *     .then()
+ *         .success()
+ *         .outputType(new MessageType(COURSE_PUBLISHED, "2.0.0"))
+ *         .outputPayloadFromResource("/transformations/coursepublished/v2.json");
  * }</pre>
  */
 public final class TransformationTester {
@@ -86,15 +88,15 @@ public final class TransformationTester {
         return this;
     }
 
-    /** @return the {@code given()} builder collecting input data */
+    /** @return the {@code given} phase collecting input data */
     public Given given() {
         return new Given();
     }
 
     /** Builder collecting the input event under test. */
     public final class Given {
-        private MessageType inputType;
-        private Object inputPayload;
+        private @Nullable MessageType inputType;
+        private @Nullable Object inputPayload;
 
         /**
          * @param qualifiedName qualified name of the input event
@@ -117,7 +119,7 @@ public final class TransformationTester {
         }
 
         /**
-         * @param resourcePath classpath-relative path to a golden JSON resource
+         * @param resourcePath classpath-relative path to a fixture JSON resource
          * @return this builder
          */
         public Given payloadFromResource(String resourcePath) {
@@ -125,57 +127,145 @@ public final class TransformationTester {
             return this;
         }
 
-        /** @return the {@code when} stage holding the transformation result */
-        public When whenTransformed() {
+        /** @return the {@code when} phase, after running the transformer on the given input */
+        public When when() {
             if (inputType == null) {
                 throw new IllegalStateException("given().messageType(...) was not set");
             }
             if (inputPayload == null) {
                 throw new IllegalStateException("given().payload(...) or .payloadFromResource(...) was not set");
             }
-            EventMessage input = new GenericEventMessage(inputType, inputPayload);
             EventTransformerChain chain = EventTransformerChain.builder().register(transformer).build();
-            List<EventMessage> outputs = collect(chain.transform(
-                    MessageStream.fromIterable(List.of(input)),
-                    null,
-                    converter,
-                    typeResolver
-            ));
-            return new When(outputs);
+            return new When(TransformationOutcome.run(chain, inputType, inputPayload, converter, typeResolver));
         }
     }
 
-    /** Holds the transformation's output(s) for assertions in the test. */
+    /** Holds the outcome of running the transformer. Use {@link #then()} to assert against it. */
     public static final class When {
-        private final List<EventMessage> outputs;
+        private final TransformationOutcome outcome;
 
-        private When(List<EventMessage> outputs) {
-            this.outputs = outputs;
+        private When(TransformationOutcome outcome) {
+            this.outcome = outcome;
+        }
+
+        /** @return the {@code then} phase exposing chainable assertions */
+        public Then then() {
+            return new Then(outcome);
+        }
+    }
+
+    /**
+     * Chainable assertions on the transformer's outcome. Each method either succeeds and
+     * returns {@code this} for further chaining, or fails the test by throwing an
+     * {@link AssertionError}.
+     */
+    public static final class Then {
+        private final TransformationOutcome outcome;
+
+        private Then(TransformationOutcome outcome) {
+            this.outcome = outcome;
+        }
+
+        /** @return this, after asserting no exception was thrown */
+        public Then success() {
+            outcome.requireSuccess();
+            return this;
+        }
+
+        /** @return this, after asserting exactly zero output events */
+        public Then noOutput() {
+            outcome.requireSuccess();
+            assertThat(outcome.outputs()).as("transformer output").isEmpty();
+            return this;
+        }
+
+        /** @return this, after asserting exactly one output event */
+        public Then singleOutput() {
+            outcome.requireSuccess();
+            assertThat(outcome.outputs()).as("transformer output").hasSize(1);
+            return this;
         }
 
         /**
+         * Asserts the single output event's type matches.
+         *
+         * @param expected the expected {@link MessageType}
+         * @return this
+         */
+        public Then outputType(MessageType expected) {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().type()).as("output type").isEqualTo(expected);
+            return this;
+        }
+
+        /**
+         * Asserts the single output event's payload equals the expected value.
+         *
+         * @param expected the expected payload
+         * @return this
+         */
+        public Then outputPayload(Object expected) {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().payload()).as("output payload").isEqualTo(expected);
+            return this;
+        }
+
+        /**
+         * Asserts the single output event's payload equals the JSON at the given resource.
+         *
+         * @param resourcePath classpath-relative path to a fixture JSON resource
+         * @return this
+         */
+        public Then outputPayloadFromResource(String resourcePath) {
+            return outputPayload(JsonAssertions.loadJson(resourcePath));
+        }
+
+        /**
+         * Asserts the single output event's payload structurally matches the JSON at the
+         * given resource. The actual payload is converted to a {@code JsonNode} first, so
+         * the comparison works even when the mapper returns a {@code Map} or other
+         * non-{@code JsonNode} representation.
+         *
+         * @param resourcePath classpath-relative path to a fixture JSON resource
+         * @return this
+         */
+        public Then outputPayloadStructurallyEquals(String resourcePath) {
+            singleOutput();
+            assertThat(JsonAssertions.toJsonTree(Objects.requireNonNull(outcome.outputs().getFirst().payload())))
+                    .as("output payload (structural)")
+                    .isEqualTo(JsonAssertions.loadJson(resourcePath));
+            return this;
+        }
+
+        /**
+         * Asserts an exception was thrown and runs the given consumer against it.
+         *
+         * @param assertion AssertJ-style assertion on the captured throwable
+         * @return this
+         */
+        public Then exceptionSatisfies(Consumer<Throwable> assertion) {
+            assertion.accept(outcome.requireException());
+            return this;
+        }
+
+        /**
+         * Escape hatch for ad-hoc assertions.
+         *
          * @return the single output event
-         * @throws AssertionError if the transformation produced more or fewer than one event
          */
         public EventMessage output() {
-            if (outputs.size() != 1) {
-                throw new AssertionError("Expected exactly one output event but got " + outputs.size());
-            }
-            return outputs.getFirst();
+            singleOutput();
+            return outcome.outputs().getFirst();
         }
 
-        /** @return all output events; useful for split / drop scenarios */
+        /**
+         * Escape hatch for ad-hoc assertions.
+         *
+         * @return all output events
+         */
         public List<EventMessage> outputs() {
-            return List.copyOf(outputs);
+            outcome.requireSuccess();
+            return outcome.outputs();
         }
-    }
-
-    private static List<EventMessage> collect(MessageStream<? extends EventMessage> stream) {
-        List<EventMessage> collected = new ArrayList<>();
-        stream.<Void>reduce(null, (acc, entry) -> {
-            collected.add(entry.message());
-            return null;
-        }).join();
-        return collected;
     }
 }

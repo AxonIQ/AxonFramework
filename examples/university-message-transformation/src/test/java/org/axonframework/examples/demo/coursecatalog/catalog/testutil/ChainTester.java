@@ -18,22 +18,25 @@ package org.axonframework.examples.demo.coursecatalog.catalog.testutil;
 
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
 import org.axonframework.conversion.jackson.JacksonConverter;
-import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fluent harness for running a full {@link EventTransformerChain} on a test input.
- * Mirrors {@link TransformationTester}'s shape; use this when verifying multi-hop
- * scenarios or full-chain behaviour rather than a single transformation.
+ * Mirrors the {@code given -> when -> then} shape of the {@code AxonTestFixture};
+ * use this for multi-hop scenarios or full-chain behavior, and
+ * {@link TransformationTester} for single-transformer tests.
  */
 public final class ChainTester {
 
@@ -71,15 +74,15 @@ public final class ChainTester {
         return this;
     }
 
-    /** @return the {@code given()} builder collecting input data */
+    /** @return the {@code given} phase collecting input data */
     public Given given() {
         return new Given();
     }
 
     /** Builder collecting the input event under test. */
     public final class Given {
-        private MessageType inputType;
-        private Object inputPayload;
+        private @Nullable MessageType inputType;
+        private @Nullable Object inputPayload;
 
         /**
          * @param qualifiedName qualified name of the input event
@@ -101,7 +104,7 @@ public final class ChainTester {
         }
 
         /**
-         * @param resourcePath classpath-relative path to a golden JSON resource
+         * @param resourcePath classpath-relative path to a fixture JSON resource
          * @return this builder
          */
         public Given payloadFromResource(String resourcePath) {
@@ -109,56 +112,144 @@ public final class ChainTester {
             return this;
         }
 
-        /** @return the {@code when} stage holding the chain result */
-        public When whenChainApplied() {
+        /** @return the {@code when} phase, after running the chain on the given input */
+        public When when() {
             if (inputType == null) {
                 throw new IllegalStateException("given().messageType(...) was not set");
             }
             if (inputPayload == null) {
                 throw new IllegalStateException("given().payload(...) or .payloadFromResource(...) was not set");
             }
-            EventMessage input = new GenericEventMessage(inputType, inputPayload);
-            List<EventMessage> outputs = collect(chain.transform(
-                    MessageStream.fromIterable(List.of(input)),
-                    null,
-                    converter,
-                    typeResolver
-            ));
-            return new When(outputs);
+            return new When(TransformationOutcome.run(chain, inputType, inputPayload, converter, typeResolver));
         }
     }
 
-    /** Holds the chain's output(s) for assertions in the test. */
+    /** Holds the chain's outcome. Use {@link #then()} to assert against it. */
     public static final class When {
-        private final List<EventMessage> outputs;
+        private final TransformationOutcome outcome;
 
-        private When(List<EventMessage> outputs) {
-            this.outputs = outputs;
+        private When(TransformationOutcome outcome) {
+            this.outcome = outcome;
+        }
+
+        /** @return the {@code then} phase exposing chainable assertions */
+        public Then then() {
+            return new Then(outcome);
+        }
+    }
+
+    /**
+     * Chainable assertions on the chain's outcome. Each method either succeeds and
+     * returns {@code this} for further chaining, or fails the test by throwing an
+     * {@link AssertionError}.
+     */
+    public static final class Then {
+        private final TransformationOutcome outcome;
+
+        private Then(TransformationOutcome outcome) {
+            this.outcome = outcome;
+        }
+
+        /** @return this, after asserting no exception, was thrown */
+        public Then success() {
+            outcome.requireSuccess();
+            return this;
+        }
+
+        /** @return this, after asserting exactly zero output events */
+        public Then noOutput() {
+            outcome.requireSuccess();
+            assertThat(outcome.outputs()).as("chain output").isEmpty();
+            return this;
+        }
+
+        /** @return this, after asserting exactly one output event */
+        public Then singleOutput() {
+            outcome.requireSuccess();
+            assertThat(outcome.outputs()).as("chain output").hasSize(1);
+            return this;
         }
 
         /**
+         * Asserts the single output event's type matches.
+         *
+         * @param expected the expected {@link MessageType}
+         * @return this
+         */
+        public Then outputType(MessageType expected) {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().type()).as("output type").isEqualTo(expected);
+            return this;
+        }
+
+        /**
+         * Asserts the single output event's payload equals the expected value.
+         *
+         * @param expected the expected payload
+         * @return this
+         */
+        public Then outputPayload(Object expected) {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().payload()).as("output payload").isEqualTo(expected);
+            return this;
+        }
+
+        /**
+         * Asserts the single output event's payload equals the JSON at the given resource.
+         *
+         * @param resourcePath classpath-relative path to a fixture JSON resource
+         * @return this
+         */
+        public Then outputPayloadFromResource(String resourcePath) {
+            return outputPayload(JsonAssertions.loadJson(resourcePath));
+        }
+
+        /**
+         * Asserts the single output event's payload structurally matches the JSON at the
+         * given resource. The actual payload is converted to a {@code JsonNode} first, so
+         * the comparison works even when the mapper returns a {@code Map} or other
+         * non-{@code JsonNode} representation.
+         *
+         * @param resourcePath classpath-relative path to a fixture JSON resource
+         * @return this
+         */
+        public Then outputPayloadStructurallyEquals(String resourcePath) {
+            singleOutput();
+            assertThat(JsonAssertions.toJsonTree(Objects.requireNonNull(outcome.outputs().getFirst().payload())))
+                    .as("output payload (structural)")
+                    .isEqualTo(JsonAssertions.loadJson(resourcePath));
+            return this;
+        }
+
+        /**
+         * Asserts an exception was thrown and runs the given consumer against it.
+         *
+         * @param assertion AssertJ-style assertion on the captured throwable
+         * @return this
+         */
+        public Then exceptionSatisfies(Consumer<Throwable> assertion) {
+            assertion.accept(outcome.requireException());
+            return this;
+        }
+
+        /**
+         * Escape hatch for ad-hoc assertions.
+         *
          * @return the single output event
-         * @throws AssertionError if the chain produced more or fewer than one event
          */
         public EventMessage output() {
-            if (outputs.size() != 1) {
-                throw new AssertionError("Expected exactly one output event but got " + outputs.size());
-            }
-            return outputs.getFirst();
+            singleOutput();
+            return outcome.outputs().getFirst();
         }
 
-        /** @return all output events */
+        /**
+         * Escape hatch for ad-hoc assertions.
+         *
+         * @return all output events
+         */
         public List<EventMessage> outputs() {
-            return List.copyOf(outputs);
+            outcome.requireSuccess();
+            return outcome.outputs();
         }
-    }
-
-    private static List<EventMessage> collect(MessageStream<? extends EventMessage> stream) {
-        List<EventMessage> collected = new ArrayList<>();
-        stream.<Void>reduce(null, (acc, entry) -> {
-            collected.add(entry.message());
-            return null;
-        }).join();
-        return collected;
     }
 }

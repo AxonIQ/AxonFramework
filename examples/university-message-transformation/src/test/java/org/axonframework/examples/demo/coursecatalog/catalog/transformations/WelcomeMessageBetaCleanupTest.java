@@ -17,43 +17,42 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
-import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.testutil.TransformationTester;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class WelcomeMessageBetaCleanupTest {
 
+    private static final MessageType EXPECTED_TYPE =
+            new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0");
+
     @Test
     void liftsBetaV0_5ToV1() {
-        EventMessage output = runCleanup("0.5", "/transformations/welcomemessagesent/v0_5.json");
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/welcomemessagesent/v1_alice.json"));
+        runCleanup("0.5", "/transformations/welcomemessagesent/v0_5.json",
+                   "/transformations/welcomemessagesent/v1_alice.json");
     }
 
     @Test
     void liftsBetaV0_7ToV1() {
-        EventMessage output = runCleanup("0.7", "/transformations/welcomemessagesent/v0_7.json");
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/welcomemessagesent/v1_bob.json"));
+        runCleanup("0.7", "/transformations/welcomemessagesent/v0_7.json",
+                   "/transformations/welcomemessagesent/v1_bob.json");
     }
 
     @Test
     void liftsBetaV0_9ToV1() {
-        EventMessage output = runCleanup("0.9", "/transformations/welcomemessagesent/v0_9.json");
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/welcomemessagesent/v1_carol.json"));
+        runCleanup("0.9", "/transformations/welcomemessagesent/v0_9.json",
+                   "/transformations/welcomemessagesent/v1_carol.json");
     }
 
-    private static EventMessage runCleanup(String betaVersion, String inputResource) {
-        return TransformationTester.forTransformation(WelcomeMessageBetaCleanup.build())
-                                   .given()
-                                   .messageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, betaVersion)
-                                   .payloadFromResource(inputResource)
-                                   .whenTransformed()
-                                   .output();
+    private static void runCleanup(String betaVersion, String inputResource, String expectedResource) {
+        TransformationTester.forTransformation(WelcomeMessageBetaCleanup.build())
+                            .given()
+                            .messageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, betaVersion)
+                            .payloadFromResource(inputResource)
+                            .when()
+                            .then()
+                            .success()
+                            .outputType(EXPECTED_TYPE)
+                            .outputPayloadFromResource(expectedResource);
     }
 }

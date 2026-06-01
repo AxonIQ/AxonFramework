@@ -56,7 +56,8 @@ class ChainConcurrencyTest {
                                                          .given()
                                                          .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
                                                          .payloadFromResource("/transformations/coursepublished/v1.json")
-                                                         .whenChainApplied()
+                                                         .when()
+                                                         .then()
                                                          .output();
                         JsonNode observed = Objects.requireNonNull(
                                 (JsonNode) output.payload(), "chain produced a null payload");

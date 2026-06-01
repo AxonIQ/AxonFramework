@@ -18,59 +18,52 @@ package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
 import org.axonframework.examples.demo.coursecatalog.catalog.testutil.ChainTester;
-import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CourseCatalogTransformations;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class MultiHopChainTesterTest {
 
+    private static final MessageType V3_TYPE = new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0");
+    private static final String V3_FIXTURE = "/transformations/coursepublished/v3.json";
+
     @Test
     void v1CoursePublishedReachesHandlerAsV3() {
-        // given / when
         // The chain has both v1 to v2 and v2 to v3 registered; fixed-point iteration applies them in order.
-        EventMessage output = ChainTester.forChain(CourseCatalogTransformations.chain())
-                                         .given()
-                                         .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
-                                         .payloadFromResource("/transformations/coursepublished/v1.json")
-                                         .whenChainApplied()
-                                         .output();
-
-        // then
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/coursepublished/v3.json"));
+        ChainTester.forChain(CourseCatalogTransformations.chain())
+                   .given()
+                   .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
+                   .payloadFromResource("/transformations/coursepublished/v1.json")
+                   .when()
+                   .then()
+                   .success()
+                   .outputType(V3_TYPE)
+                   .outputPayloadFromResource(V3_FIXTURE);
     }
 
     @Test
     void v2CoursePublishedReachesHandlerAsV3() {
-        // given / when
-        EventMessage output = ChainTester.forChain(CourseCatalogTransformations.chain())
-                                         .given()
-                                         .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "2.0.0")
-                                         .payloadFromResource("/transformations/coursepublished/v2.json")
-                                         .whenChainApplied()
-                                         .output();
-
-        // then
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/coursepublished/v3.json"));
+        ChainTester.forChain(CourseCatalogTransformations.chain())
+                   .given()
+                   .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "2.0.0")
+                   .payloadFromResource("/transformations/coursepublished/v2.json")
+                   .when()
+                   .then()
+                   .success()
+                   .outputType(V3_TYPE)
+                   .outputPayloadFromResource(V3_FIXTURE);
     }
 
     @Test
     void v3CoursePublishedPassesThroughUnchanged() {
-        // given / when
-        EventMessage output = ChainTester.forChain(CourseCatalogTransformations.chain())
-                                         .given()
-                                         .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0")
-                                         .payloadFromResource("/transformations/coursepublished/v3.json")
-                                         .whenChainApplied()
-                                         .output();
-
-        // then
-        assertThat(output.type()).isEqualTo(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0"));
-        assertThat(output.payload()).isEqualTo(JsonAssertions.loadJson("/transformations/coursepublished/v3.json"));
+        ChainTester.forChain(CourseCatalogTransformations.chain())
+                   .given()
+                   .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "3.0.0")
+                   .payloadFromResource(V3_FIXTURE)
+                   .when()
+                   .then()
+                   .success()
+                   .outputType(V3_TYPE)
+                   .outputPayloadFromResource(V3_FIXTURE);
     }
 }

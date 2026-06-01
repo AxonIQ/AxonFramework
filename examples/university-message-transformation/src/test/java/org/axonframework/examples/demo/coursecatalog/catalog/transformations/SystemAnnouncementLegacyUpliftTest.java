@@ -17,31 +17,23 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
-import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.testutil.TransformationTester;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class SystemAnnouncementLegacyUpliftTest {
 
     @Test
     void liftsUnversionedAnnouncementToV1() {
-        // given / when
         // Unversioned events default to "0.0.1" in AF5.
-        EventMessage output = TransformationTester.forTransformation(SystemAnnouncementLegacyUplift.build())
-                                                  .given()
-                                                  .messageType(CourseCatalogMessageNames.SYSTEM_ANNOUNCEMENT, "0.0.1")
-                                                  .payloadFromResource("/transformations/systemannouncement/unversioned.json")
-                                                  .whenTransformed()
-                                                  .output();
-
-        // then
-        assertThat(output.type())
-                .isEqualTo(new MessageType(CourseCatalogMessageNames.SYSTEM_ANNOUNCEMENT, "1.0.0"));
-        assertThat(output.payload())
-                .isEqualTo(JsonAssertions.loadJson("/transformations/systemannouncement/v1.json"));
+        TransformationTester.forTransformation(SystemAnnouncementLegacyUplift.build())
+                            .given()
+                            .messageType(CourseCatalogMessageNames.SYSTEM_ANNOUNCEMENT, "0.0.1")
+                            .payloadFromResource("/transformations/systemannouncement/unversioned.json")
+                            .when()
+                            .then()
+                            .success()
+                            .outputType(new MessageType(CourseCatalogMessageNames.SYSTEM_ANNOUNCEMENT, "1.0.0"))
+                            .outputPayloadFromResource("/transformations/systemannouncement/v1.json");
     }
 }
