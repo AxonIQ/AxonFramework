@@ -41,6 +41,89 @@ class AddCommandAnnotationJavaRecordTest implements RewriteTest {
     }
 
     @Test
+    void liftsRoutingKeyFromTargetAggregateIdentifierOnJavaRecord() {
+        // The AF4 `@TargetAggregateIdentifier` field annotation is treated as a routing-key
+        // source on top of the explicit `@RoutingKey`. The field annotation itself is
+        // preserved (the rename to `@TargetEntityId` is owned by `Axon4ToAxon5Modelling`,
+        // which is not active in this isolation test).
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                        public record NoteAddCommand(@TargetAggregateIdentifier String id, String body) {
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+                        import org.axonframework.messaging.commandhandling.annotation.Command;
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                        @Command(routingKey = "id")
+                        public record NoteAddCommand(@TargetAggregateIdentifier String id, String body) {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+
+                        class NoteHandler {
+                            @CommandHandler
+                            void on(NoteAddCommand cmd) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void liftsRoutingKeyFromTargetEntityIdOnJavaRecord() {
+        // Post-`Axon4ToAxon5Modelling` shape — the field annotation has already been renamed
+        // to `@TargetEntityId`. `AddCommandAnnotation` still detects it and lifts the
+        // routing key onto the class.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+                        import org.axonframework.modelling.annotation.TargetEntityId;
+
+                        public record NoteAddCommand(@TargetEntityId String id, String body) {
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+                        import org.axonframework.messaging.commandhandling.annotation.Command;
+                        import org.axonframework.modelling.annotation.TargetEntityId;
+
+                        @Command(routingKey = "id")
+                        public record NoteAddCommand(@TargetEntityId String id, String body) {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.commandhandling.CommandHandler;
+
+                        class NoteHandler {
+                            @CommandHandler
+                            void on(NoteAddCommand cmd) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void liftsRoutingKeyFromJavaRecordComponent() {
         rewriteRun(
                 java(

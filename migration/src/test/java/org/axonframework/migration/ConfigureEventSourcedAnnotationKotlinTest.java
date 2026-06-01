@@ -26,7 +26,7 @@ import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
  * Verifies that {@link ConfigureEventSourcedAnnotation} emits Kotlin-shaped class literals
- * ({@code X::class.java}) when the source is Kotlin. Java sources keep producing
+ * ({@code X::class}) when the source is Kotlin. Java sources keep producing
  * {@code X.class} — covered by the Java test suite.
  */
 class ConfigureEventSourcedAnnotationKotlinTest implements RewriteTest {
@@ -67,7 +67,7 @@ class ConfigureEventSourcedAnnotationKotlinTest implements RewriteTest {
                         import org.axonframework.eventsourcing.annotation.reflection.EntityCreator
                         import org.axonframework.extension.spring.stereotype.EventSourced
 
-                        @EventSourced(tagKey = "Astrologers", idType = String::class.java)
+                        @EventSourced(tagKey = "Astrologers", idType = String::class)
                         class Astrologers {
                             private lateinit var astrologersId: String
 
@@ -86,7 +86,7 @@ class ConfigureEventSourcedAnnotationKotlinTest implements RewriteTest {
         // a no-arg `private constructor()`, a multi-arg @CommandHandler constructor, and a
         // non-constructor @CommandHandler that calls `AggregateLifecycle.apply(...)`. The umbrella
         // recipe must:
-        //  - rename @Aggregate → @EventSourced(tagKey="Auction", idType=String::class.java) (Kotlin
+        //  - rename @Aggregate → @EventSourced(tagKey="Auction", idType=String::class) (Kotlin
         //    class-literal, not Java's `String.class`)
         //  - leave the `winningBid` getter alone (must not pick up @EntityCreator)
         //  - lift the @CommandHandler constructor into a `companion object` with @JvmStatic
@@ -139,7 +139,7 @@ class ConfigureEventSourcedAnnotationKotlinTest implements RewriteTest {
                         import org.axonframework.messaging.commandhandling.annotation.CommandHandler
                         import org.axonframework.messaging.eventhandling.gateway.EventAppender
 
-                        @EventSourced(tagKey = "Auction", idType = String::class.java)
+                        @EventSourced(tagKey = "Auction", idType = String::class)
                         class Auction {
                             private lateinit var id: String
                             private val bids = mutableListOf<Bid>()
@@ -196,7 +196,7 @@ class ConfigureEventSourcedAnnotationKotlinTest implements RewriteTest {
                         import org.axonframework.eventsourcing.annotation.reflection.EntityCreator
                         import org.axonframework.extension.spring.stereotype.EventSourced
 
-                        @EventSourced(tagKey = "Foo", idType = Object::class.java /* TODO(axon4to5): set to actual id type, e.g. String.class or UUID.class */)
+                        @EventSourced(tagKey = "Foo", idType = Object::class /* TODO(axon4to5): set to actual id type, e.g. String.class or UUID.class */)
                         class Foo {
                             @EntityCreator
                             private constructor()

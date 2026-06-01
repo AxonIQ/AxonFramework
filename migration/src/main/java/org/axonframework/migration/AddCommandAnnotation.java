@@ -67,6 +67,20 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
     private static final String COMMAND_FQN = "org.axonframework.messaging.commandhandling.annotation.Command";
     private static final String ROUTING_KEY_AF4 = "org.axonframework.commandhandling.RoutingKey";
     private static final String ROUTING_KEY_AF5 = "org.axonframework.messaging.commandhandling.RoutingKey";
+    // @TargetAggregateIdentifier (AF4) marks the field that resolves the entity to route the
+    // command to. AF5 splits this into two annotations: @TargetEntityId on the field stays
+    // (renamed via ChangeType), and a class-level @Command(routingKey = "<fieldName>") declares
+    // which field carries the routing key for the command bus. If a class lacks an explicit
+    // @RoutingKey but has a @TargetAggregateIdentifier / @TargetEntityId field, we lift that
+    // field's name onto @Command#routingKey so routing keeps working.
+    private static final String TARGET_AGGREGATE_ID_AF4 =
+            "org.axonframework.modelling.command.TargetAggregateIdentifier";
+    // Post-ChangePackage (modelling.command → modelling.entity) shape.
+    private static final String TARGET_AGGREGATE_ID_AF5_INTERMEDIATE =
+            "org.axonframework.modelling.entity.TargetAggregateIdentifier";
+    // Post-rename (TargetAggregateIdentifier → TargetEntityId) shape — the AF5 target.
+    private static final String TARGET_ENTITY_ID_AF5 =
+            "org.axonframework.modelling.annotation.TargetEntityId";
     private static final String ROUTING_KEY_FIELD_MESSAGE = "axon4to5.routingKeyField";
 
     public static class Accumulator {
@@ -303,7 +317,7 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
 
     private static boolean hasRoutingKeyAnnotation(J.VariableDeclarations vd) {
         for (J.Annotation ann : vd.getLeadingAnnotations()) {
-            if (isRoutingKey(ann)) {
+            if (isRoutingKey(ann) || isTargetIdentifier(ann)) {
                 return true;
             }
         }
@@ -318,6 +332,25 @@ public class AddCommandAnnotation extends ScanningRecipe<AddCommandAnnotation.Ac
         if (ann.getAnnotationType() instanceof J.Identifier) {
             return "RoutingKey".equals(
                     ((J.Identifier) ann.getAnnotationType()).getSimpleName());
+        }
+        return false;
+    }
+
+    /**
+     * Matches the AF4 {@code @TargetAggregateIdentifier} and its post-rename AF5
+     * {@code @TargetEntityId} successor (including the transient post-{@code ChangePackage}
+     * shape). When this annotation is on a command field and no explicit {@code @RoutingKey}
+     * exists, the field name becomes the routing key on the class-level {@code @Command}.
+     */
+    private static boolean isTargetIdentifier(J.Annotation ann) {
+        if (TypeUtils.isOfClassType(ann.getType(), TARGET_AGGREGATE_ID_AF4)
+                || TypeUtils.isOfClassType(ann.getType(), TARGET_AGGREGATE_ID_AF5_INTERMEDIATE)
+                || TypeUtils.isOfClassType(ann.getType(), TARGET_ENTITY_ID_AF5)) {
+            return true;
+        }
+        if (ann.getAnnotationType() instanceof J.Identifier) {
+            String name = ((J.Identifier) ann.getAnnotationType()).getSimpleName();
+            return "TargetAggregateIdentifier".equals(name) || "TargetEntityId".equals(name);
         }
         return false;
     }

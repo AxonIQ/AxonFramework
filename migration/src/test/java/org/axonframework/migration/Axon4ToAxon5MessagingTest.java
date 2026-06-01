@@ -23,6 +23,7 @@ import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
  * Verifies the messaging-module migration: handler annotations move into
@@ -754,6 +755,67 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
         );
     }
 
+    @Test
+    void renamesMetaDataToMetadataAndRelocatesIntoCore() {
+        // AF4 `org.axonframework.messaging.MetaData` becomes AF5
+        // `org.axonframework.messaging.core.Metadata`. The rename covers the class itself
+        // and call sites such as `MetaData.emptyInstance()` (the factory method is preserved
+        // on the AF5 type, so the call site doesn't need a separate rewrite).
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.MetaData;
+                        class UsesMetaData {
+                            MetaData emptyMd() {
+                                return MetaData.emptyInstance();
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.core.Metadata;
+
+                        class UsesMetaData {
+                            Metadata emptyMd() {
+                                return Metadata.emptyInstance();
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void renamesMetaDataToMetadataInKotlinSources() {
+        // Mirror the Java rename for Kotlin: the AF4 `MetaData` import and call sites
+        // (e.g. `MetaData.emptyInstance()`) become `Metadata` referring to the AF5 core type.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.messaging.MetaData
+
+                        class UsesMetaData {
+                            fun emptyMd(): MetaData = MetaData.emptyInstance()
+                        }
+                        """,
+                        """
+                        package com.example
+
+                        import org.axonframework.messaging.core.Metadata
+
+                        class UsesMetaData {
+                            fun emptyMd(): Metadata = Metadata.emptyInstance()
+                        }
+                        """
+                )
+        );
+    }
+
     // ── EventProcessor lifecycle method rename: shutDown() → shutdown() ─────
 
     @Test
@@ -890,11 +952,125 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
     }
 
     @Test
+    void relocatesStreamingEventProcessorIntoProcessingStreamingSubpackage() {
+        // AF5 splits the EventProcessor family across `.processing` subpackages —
+        // streaming variants land at `.processing.streaming`. The wholesale package
+        // rename lands the type at `messaging.eventhandling.StreamingEventProcessor`;
+        // the subsequent ChangeType move surfaces it at the AF5 home.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.StreamingEventProcessor;
+                        class UsesStreaming {
+                            StreamingEventProcessor processor;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+
+                        class UsesStreaming {
+                            StreamingEventProcessor processor;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void relocatesSubscribingEventProcessorIntoProcessingSubscribingSubpackage() {
+        // The focus here is the type relocation only — the `shutDown` → `shutdown` rename is
+        // pinned by a separate test that exercises the base-type matcher with the right
+        // classpath set-up. Without `EventProcessor` on the classpath, OpenRewrite's
+        // `matchOverrides` cannot link the call to its declaring interface.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.SubscribingEventProcessor;
+                        class UsesSubscribing {
+                            SubscribingEventProcessor processor;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
+
+                        class UsesSubscribing {
+                            SubscribingEventProcessor processor;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void relocatesTimestampAnnotationIntoAnnotationSubpackage() {
+        // AF5 puts the `@Timestamp` handler-parameter annotation alongside the other
+        // annotation types in `messaging.eventhandling.annotation`.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.Timestamp;
+                        import java.time.Instant;
+                        class TimestampedHandler {
+                            void on(Object event, @Timestamp Instant ts) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.eventhandling.annotation.Timestamp;
+
+                        import java.time.Instant;
+
+                        class TimestampedHandler {
+                            void on(Object event, @Timestamp Instant ts) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void relocatesTrackingTokenIntoProcessingStreamingTokenSubpackage() {
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventhandling.TrackingToken;
+                        class UsesToken {
+                            TrackingToken last;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+
+                        class UsesToken {
+                            TrackingToken last;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void renamesEventProcessorShutDownToShutdown() {
         // Verifies the AF5 camelCase normalisation: an AF4 `eventProcessor.shutDown()` call site
         // is rewritten to `shutdown()` while the receiver type binding is moved into the
-        // AF5 `org.axonframework.messaging.eventhandling` namespace by the surrounding
-        // package-rename rules.
+        // AF5 `org.axonframework.messaging.eventhandling.processing` namespace by the
+        // chained package-rename and ChangeType rules.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(
@@ -909,7 +1085,9 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
                         """,
                         """
                         package com.example;
-                        import org.axonframework.messaging.eventhandling.EventProcessor;
+
+                        import org.axonframework.messaging.eventhandling.processing.EventProcessor;
+
                         class Lifecycle {
                             void stop(EventProcessor processor) {
                                 processor.shutdown();

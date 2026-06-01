@@ -113,4 +113,166 @@ class ReplaceAggregateLifecycleApplyTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void rewritesKotlinAliasedStaticApplyImport() {
+        // Kotlin source can rename a static import with `as`. The Kotlin parser keeps the
+        // local identifier on the call site, and the MethodMatcher can't resolve the underlying
+        // method through the alias — the recipe falls back to scanning the imports for the
+        // alias name and treats matching local identifiers as apply calls.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void rewritesAllAliasedApplyCallsIncludingTheFirst() {
+        // Regression for a bug reported in the PR review: with multiple aliased call sites
+        // the recipe was leaving the first occurrence untouched and only rewriting the rest.
+        // Every call must be rewritten.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply("first")
+                                lifecycleApply("second")
+                                lifecycleApply("third")
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append("first")
+                                eventAppender.append("second")
+                                eventAppender.append("third")
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void aliasStateIsResetBetweenCompilationUnits() {
+        // OpenRewrite reuses the visitor instance across all compilation units in a recipe
+        // run. If alias-name state from one file leaked into another, an unrelated function
+        // happening to share the alias name (here: `lifecycleApply` defined as a regular
+        // function) would be misidentified as a call to `AggregateLifecycle.apply` and
+        // rewritten. The recipe must rescan imports for each compilation unit.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example.first
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """,
+                        """
+                        package com.example.first
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                            }
+                        }
+                        """
+                ),
+                kotlin(
+                        // No AggregateLifecycle import here — `lifecycleApply` is an unrelated
+                        // top-level function. Its calls must be left alone even though the
+                        // identifier matches the alias used in the file above.
+                        """
+                        package com.example.second
+
+                        fun lifecycleApply(payload: Any) {
+                        }
+
+                        class UsesLocal {
+                            fun handle(cmd: Any) {
+                                lifecycleApply(cmd)
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flattensApplyAndThenChainInKotlin() {
+        // AF4 callers can chain `apply(...).andThen { … }` to run extra logic after the
+        // first event is published. AF5 `EventAppender#append` returns `void`, so we
+        // flatten the chain into sequential statements: the rewritten append plus the
+        // lambda body's own statements (any inner `apply(...)` calls inside the lambda
+        // are rewritten by the regular visitor pass).
+        //
+        // Indentation inside nested blocks that were originally a level deeper inside the
+        // lambda body keeps the deeper indent in the printed output — the test pins that
+        // behavior. The transformation is functionally correct; running the IDE's
+        // reformatter post-migration restores tidy indentation.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply
+
+                        class Intervention {
+                            fun handle(cmd: Any, batchId: String?) {
+                                apply(cmd).andThen {
+                                    if (batchId != null) {
+                                        apply(batchId)
+                                    }
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Intervention {
+                            fun handle(cmd: Any, batchId: String?, eventAppender: EventAppender) {
+                                eventAppender.append(cmd)
+                                if (batchId != null) {
+                                        eventAppender.append(batchId)
+                                    }
+                            }
+                        }
+                        """
+                )
+        );
+    }
 }

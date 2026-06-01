@@ -117,6 +117,13 @@ recipeList:
   # `(e, ctx) -> Optional.ofNullable(body)`.
   - org.axonframework.migration.MigrateSequencingPolicyLambda
 
+  # AF4's `EventProcessingConfigurer#registerSequencingPolicy(...)` is gone in AF5.
+  # Two replacements exist: `@SequencingPolicy` on the handler class, or declarative
+  # configuration via `EventProcessorDefinition...customized(c -> c.sequencingPolicy(...))`.
+  # Picking between them needs human judgement, so this recipe just prepends a
+  # `// TODO(axon4to5):` comment above every call site.
+  - org.axonframework.migration.AnnotateProgrammaticSequencingPolicyRegistration
+
   # ── Query gateway moved into its own gateway subpackage ─────────────────
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryGateway
@@ -158,6 +165,35 @@ recipeList:
       methodPattern: org.axonframework.messaging.eventhandling.EventProcessor shutDown()
       newMethodName: shutdown
       matchOverrides: true
+
+  # ── EventProcessor + subtypes moved into processing.* subpackages ────────
+  # The earlier `ChangePackage` (eventhandling → messaging.eventhandling) lands
+  # these types at `messaging.eventhandling.<Name>`, but AF5 actually relocates
+  # them to dedicated subpackages: EventProcessor itself goes under `.processing`,
+  # the streaming variant under `.processing.streaming`, and the subscribing
+  # variant under `.processing.subscribing`. Must run AFTER the shutDown rename
+  # so the method-pattern above can still resolve `messaging.eventhandling.EventProcessor`.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventProcessor
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.EventProcessor
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.StreamingEventProcessor
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.SubscribingEventProcessor
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor
+
+  # ── @Timestamp annotation relocated under .annotation ────────────────────
+  # AF5 puts the handler-parameter annotation alongside the other annotation
+  # types (`@MessageHandler`, etc.) in `messaging.eventhandling.annotation`.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.Timestamp
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.annotation.Timestamp
+
+  # ── TrackingToken moved into processing.streaming.token ──────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.TrackingToken
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken
 
   # ── Correlation providers moved under messaging.core.correlation ────────
   - org.openrewrite.java.ChangePackage:
@@ -223,6 +259,15 @@ recipeList:
   # to the migration path doc. Runs AFTER the FQN renames above so the AF5
   # supertypes are visible.
   - org.axonframework.migration.MigrateMessageInterceptorSignatures
+
+  # ── MessageHandlerInterceptor lambda rewrite ────────────────────────────
+  # The class-based migration above handles `class … implements MessageHandlerInterceptor<…>`.
+  # AF4 codebases also commonly assign the interceptor inline as a lambda
+  # (`MessageHandlerInterceptor<X> interceptor = (uow, chain) -> { ... }`). AF5 needs
+  # three parameters (`message`, `processingContext`, `chain`) and chain.proceed()
+  # must pass `(message, processingContext)`. This recipe rewrites those mechanical
+  # parts and leaves the body for the developer to finish.
+  - org.axonframework.migration.MigrateMessageInterceptorLambda
 
   # ── Message accessor renames: drop the AF4 `get` prefix, fix MetaData → Metadata ─
   # AF5 dropped JavaBean prefixes on Message accessors and renamed the metadata
