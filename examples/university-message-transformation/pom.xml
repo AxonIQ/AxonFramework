@@ -150,11 +150,6 @@
             <artifactId>axon-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-testcontainer</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>

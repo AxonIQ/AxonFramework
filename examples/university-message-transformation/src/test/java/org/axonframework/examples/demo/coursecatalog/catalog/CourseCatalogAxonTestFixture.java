@@ -16,20 +16,17 @@
 
 package org.axonframework.examples.demo.coursecatalog.catalog;
 
-import io.axoniq.framework.testcontainer.AxonServerContainerUtils;
 import org.axonframework.examples.demo.coursecatalog.ConfigurationProperties;
 import org.axonframework.examples.demo.coursecatalog.CourseCatalogApplication;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.test.fixture.AxonTestFixture;
 
-import java.io.IOException;
 import java.util.function.UnaryOperator;
 
 /**
- * Bootstraps {@link AxonTestFixture}s for per-slice tests. Loads the same
- * {@link ConfigurationProperties} the production application uses, applies the
- * catalog module configuration plus a caller-supplied per-slice customization,
- * and (when Axon Server is enabled) purges events between tests.
+ * Bootstraps {@link AxonTestFixture}s for per-slice tests. Always uses the in-memory
+ * event store so tests stay fast and deterministic, regardless of what the bootstrap
+ * application's {@code application.properties} says about Axon Server.
  */
 public final class CourseCatalogAxonTestFixture {
 
@@ -58,22 +55,7 @@ public final class CourseCatalogAxonTestFixture {
         UnaryOperator<EventSourcingConfigurer> withCatalog =
                 c -> CourseCatalogModuleConfiguration.configure(customization.apply(c));
         var application = new CourseCatalogApplication();
-        var configuration = ConfigurationProperties.load();
-        var configurer = application.configurer(configuration, withCatalog);
-        purgeAxonServerIfEnabled(configuration);
-        return AxonTestFixture.with(
-                configurer,
-                c -> configuration.axonServerEnabled() ? c.asIntegrationTest() : c
-        );
-    }
-
-    private static void purgeAxonServerIfEnabled(ConfigurationProperties configuration) {
-        if (configuration.axonServerEnabled()) {
-            try {
-                AxonServerContainerUtils.purgeEventsFromAxonServer("localhost", 8024, "default", true);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
+        var configurer = application.configurer(ConfigurationProperties.defaults(), withCatalog);
+        return AxonTestFixture.with(configurer);
     }
 }
