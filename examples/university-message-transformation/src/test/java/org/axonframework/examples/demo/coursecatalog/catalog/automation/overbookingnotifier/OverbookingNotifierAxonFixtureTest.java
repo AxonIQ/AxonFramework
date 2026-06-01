@@ -51,7 +51,6 @@ class OverbookingNotifierAxonFixtureTest {
 
     @Test
     void wideCapacityRangeEmitsOverbookingNotification() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .events(new CoursePublished(Ids.CATALOG_ID, courseId, "Mega Course", new CapacityRange(0, 50)))
@@ -63,7 +62,6 @@ class OverbookingNotifierAxonFixtureTest {
 
     @Test
     void narrowCapacityRangeDoesNotEmitNotification() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .events(new CoursePublished(Ids.CATALOG_ID, courseId, "Small Course", new CapacityRange(5, 15)))

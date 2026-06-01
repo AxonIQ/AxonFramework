@@ -42,7 +42,6 @@ class PublishCourseAxonFixtureTest {
 
     @Test
     void publishesNewCourse() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .noPriorActivity()
@@ -56,7 +55,6 @@ class PublishCourseAxonFixtureTest {
 
     @Test
     void republishingTheSameCourseIsANoOp() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .event(new CoursePublished(Ids.CATALOG_ID, courseId, "Existing Course", new CapacityRange(10, 30)))

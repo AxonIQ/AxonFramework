@@ -48,7 +48,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void enrolsStudentWhenCourseIsOpenAndStudentRegistered() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         StudentId studentId = StudentId.random();
         fixture.given()
@@ -63,7 +62,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void rejectsWhenCourseNotPublished() {
-        // given / when / then
         StudentId studentId = StudentId.random();
         fixture.given()
                .event(new StudentRegistered(Ids.CATALOG_ID, studentId, "Alice Hopper"))
@@ -75,7 +73,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void rejectsWhenStudentNotRegistered() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .event(new CoursePublished(Ids.CATALOG_ID, courseId, "ES in Practice", new CapacityRange(0, 30)))
@@ -88,7 +85,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void rejectsWhenRegistrationClosed() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         StudentId studentId = StudentId.random();
         fixture.given()
@@ -103,7 +99,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void rejectsWhenCourseFull() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         StudentId studentId = StudentId.random();
         fixture.given()
@@ -119,7 +114,6 @@ class EnrollStudentAxonFixtureTest {
 
     @Test
     void enrollingAnAlreadyEnrolledStudentIsANoOp() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         StudentId studentId = StudentId.random();
         fixture.given()

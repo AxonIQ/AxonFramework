@@ -50,7 +50,7 @@ public final class CourseCatalogAxonTestFixture {
      */
     public static AxonTestFixture slice(UnaryOperator<EventSourcingConfigurer> customization) {
         // Apply the caller's customization BEFORE the catalog module so any component
-        // the test registers (e.g. a RecordingNotificationService) is in place before
+        // the test registers (e.g., a RecordingNotificationService) is in place before
         // the catalog's registerIfNotPresent defaults run.
         UnaryOperator<EventSourcingConfigurer> withCatalog =
                 c -> CourseCatalogModuleConfiguration.configure(customization.apply(c));

@@ -40,6 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CatalogViewProjectionAxonFixtureTest {
 
+    private static final String COURSE_NAME = "ES in Practice";
+
     private AxonTestFixture fixture;
 
     @BeforeEach
@@ -56,47 +58,46 @@ class CatalogViewProjectionAxonFixtureTest {
 
     @Test
     void coursePublishedShowsUpInView() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
-               .events(new CoursePublished(Ids.CATALOG_ID, courseId, "ES in Practice", new CapacityRange(0, 30)))
+               .events(new CoursePublished(Ids.CATALOG_ID, courseId, COURSE_NAME, new CapacityRange(0, 30)))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "ES in Practice", new CapacityRange(0, 30), 0, false)));
+                       cfg, courseId, new CapacityRange(0, 30), 0, false)));
     }
 
     @Test
     void capacityChangeIsReflected() {
         CourseId courseId = CourseId.random();
         fixture.given()
-               .events(new CoursePublished(Ids.CATALOG_ID, courseId, "ES in Practice", new CapacityRange(0, 30)),
+               .events(new CoursePublished(Ids.CATALOG_ID, courseId, COURSE_NAME, new CapacityRange(0, 30)),
                        new CourseCapacityChanged(courseId, new CapacityRange(5, 40)))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "ES in Practice", new CapacityRange(5, 40), 0, false)));
+                       cfg, courseId, new CapacityRange(5, 40), 0, false)));
     }
 
     @Test
     void studentEnrolmentsAccumulate() {
         CourseId courseId = CourseId.random();
         fixture.given()
-               .events(new CoursePublished(Ids.CATALOG_ID, courseId, "ES in Practice", new CapacityRange(0, 30)),
+               .events(new CoursePublished(Ids.CATALOG_ID, courseId, COURSE_NAME, new CapacityRange(0, 30)),
                        new StudentEnrolledInCourse(courseId, StudentId.random()),
                        new StudentEnrolledInCourse(courseId, StudentId.random()))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "ES in Practice", new CapacityRange(0, 30), 2, false)));
+                       cfg, courseId, new CapacityRange(0, 30), 2, false)));
     }
 
     @Test
     void registrationClosedIsReflected() {
         CourseId courseId = CourseId.random();
         fixture.given()
-               .events(new CoursePublished(Ids.CATALOG_ID, courseId, "ES in Practice", new CapacityRange(0, 30)),
+               .events(new CoursePublished(Ids.CATALOG_ID, courseId, COURSE_NAME, new CapacityRange(0, 30)),
                        new RegistrationClosed(courseId))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsCourse(
-                       cfg, courseId, "ES in Practice", new CapacityRange(0, 30), 0, true)));
+                       cfg, courseId, new CapacityRange(0, 30), 0, true)));
     }
 
     @Test
@@ -125,13 +126,13 @@ class CatalogViewProjectionAxonFixtureTest {
     private static void assertViewContainsCourse(
             Configuration configuration,
             CourseId courseId,
-            String name,
             CapacityRange range,
             int enrolments,
             boolean registrationClosed
     ) {
         CourseCatalogView view = queryView(configuration);
-        CatalogViewReadModel expected = new CatalogViewReadModel(courseId, name, range, enrolments, registrationClosed);
+        CatalogViewReadModel expected =
+                new CatalogViewReadModel(courseId, COURSE_NAME, range, enrolments, registrationClosed);
         assertThat(view.courses())
                 .as("catalog view should contain course %s in expected shape", courseId)
                 .contains(expected);

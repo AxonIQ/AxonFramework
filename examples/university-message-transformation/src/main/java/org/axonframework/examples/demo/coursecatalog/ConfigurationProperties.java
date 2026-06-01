@@ -119,25 +119,29 @@ public final class ConfigurationProperties {
         try {
             List<String> lines = Files.readAllLines(dotenv);
             for (String raw : lines) {
-                String line = raw.trim();
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-                int eq = line.indexOf('=');
-                if (eq <= 0) {
-                    continue;
-                }
-                String key = line.substring(0, eq).trim();
-                String value = unquote(line.substring(eq + 1).trim());
-                if (!value.isEmpty()) {
-                    values.put(key, value);
-                }
+                parseDotenvLine(raw, values);
             }
             logger.info("Loaded {} key(s) from .env", values.size());
         } catch (IOException e) {
             logger.warn("Could not read .env: {}", e.getMessage(), e);
         }
         return values;
+    }
+
+    private static void parseDotenvLine(String raw, Map<String, String> sink) {
+        String line = raw.trim();
+        if (line.isEmpty() || line.startsWith("#")) {
+            return;
+        }
+        int eq = line.indexOf('=');
+        if (eq <= 0) {
+            return;
+        }
+        String key = line.substring(0, eq).trim();
+        String value = unquote(line.substring(eq + 1).trim());
+        if (!value.isEmpty()) {
+            sink.put(key, value);
+        }
     }
 
     private static String unquote(String value) {
@@ -170,15 +174,6 @@ public final class ConfigurationProperties {
     /** @return whether to connect to Axon Server */
     public boolean axonServerEnabled() {
         return axonServerEnabled;
-    }
-
-    /**
-     * @param axonServerEnabled overrides the loaded value (intended for tests)
-     * @return this instance
-     */
-    public ConfigurationProperties axonServerEnabled(boolean axonServerEnabled) {
-        this.axonServerEnabled = axonServerEnabled;
-        return this;
     }
 
     /** @return whether all three AxonIQ Platform credentials are present so the integration can be wired in */

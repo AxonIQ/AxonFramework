@@ -22,8 +22,10 @@ import org.axonframework.examples.demo.coursecatalog.catalog.testutil.ChainTeste
 import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CourseCatalogTransformations;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,10 +40,10 @@ class ChainConcurrencyTest {
     private static final int ITERATIONS_PER_THREAD = 10_000;
 
     @Test
-    void multiHopChainProducesIdenticalOutputAcrossThreads() throws Exception {
+    void multiHopChainProducesIdenticalOutputAcrossThreads() {
         // given
         JsonNode expectedV3 = JsonAssertions.loadJson("/transformations/coursepublished/v3.json");
-        AtomicReference<JsonNode> firstObservedPayload = new AtomicReference<>();
+        AtomicReference<@Nullable JsonNode> firstObservedPayload = new AtomicReference<>();
 
         // when
         ExecutorService executor = Executors.newFixedThreadPool(THREADS);
@@ -56,7 +58,8 @@ class ChainConcurrencyTest {
                                                          .payloadFromResource("/transformations/coursepublished/v1.json")
                                                          .whenChainApplied()
                                                          .output();
-                        JsonNode observed = (JsonNode) output.payload();
+                        JsonNode observed = Objects.requireNonNull(
+                                (JsonNode) output.payload(), "chain produced a null payload");
                         firstObservedPayload.compareAndSet(null, observed);
                         if (!observed.equals(expectedV3)) {
                             throw new AssertionError("payload drifted under concurrency: " + observed);

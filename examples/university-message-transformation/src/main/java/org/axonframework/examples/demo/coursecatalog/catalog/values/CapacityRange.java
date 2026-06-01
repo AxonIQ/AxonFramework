@@ -38,20 +38,4 @@ public record CapacityRange(int min, int max) {
             throw new IllegalArgumentException("max capacity (" + max + ") cannot be less than min (" + min + ")");
         }
     }
-
-    /**
-     * @param capacity fixed capacity
-     * @return a range where {@code min == max == capacity}
-     */
-    public static CapacityRange fixed(int capacity) {
-        return new CapacityRange(capacity, capacity);
-    }
-
-    /**
-     * @param count enrolment count to test
-     * @return whether {@code count} fits within the inclusive range
-     */
-    public boolean contains(int count) {
-        return count >= min && count <= max;
-    }
 }

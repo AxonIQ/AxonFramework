@@ -19,6 +19,11 @@ package org.axonframework.examples.demo.coursecatalog.catalog.write.enrollstuden
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
 
-/** Composite identifier scoping a DCB read to one course + one student. */
-record EnrolmentId(CourseId courseId, StudentId studentId) {
+/**
+ * Composite identifier scoping a consistency-boundary read to one course + one student.
+ *
+ * @param courseId  the course the student is enrolling in
+ * @param studentId the student being enrolled
+ */
+public record EnrolmentId(CourseId courseId, StudentId studentId) {
 }

@@ -16,7 +16,6 @@
 
 package org.axonframework.examples.demo.coursecatalog.shared.ids;
 
-import java.util.UUID;
 
 /**
  * Identifier of a course catalog, prefixed with {@code Catalog:}.
@@ -44,11 +43,6 @@ public record CatalogId(String value) {
      */
     public static CatalogId of(String value) {
         return new CatalogId(value);
-    }
-
-    /** @return a random catalog identifier */
-    public static CatalogId random() {
-        return new CatalogId(UUID.randomUUID().toString());
     }
 
     /** @return the prefixed value */

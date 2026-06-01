@@ -47,7 +47,6 @@ class UpdateCourseCapacityAxonFixtureTest {
 
     @Test
     void updatesCapacityOnPublishedCourse() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .event(new CoursePublished(Ids.CATALOG_ID, courseId, "Existing Course", new CapacityRange(10, 30)))
@@ -60,7 +59,6 @@ class UpdateCourseCapacityAxonFixtureTest {
 
     @Test
     void updatingToTheSameRangeEmitsNoEvent() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .event(new CoursePublished(Ids.CATALOG_ID, courseId, "Existing Course", new CapacityRange(10, 30)))
@@ -73,7 +71,6 @@ class UpdateCourseCapacityAxonFixtureTest {
 
     @Test
     void rejectsWhenCourseNotPublished() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .noPriorActivity()
@@ -85,7 +82,6 @@ class UpdateCourseCapacityAxonFixtureTest {
 
     @Test
     void rejectsWhenNewMaxIsBelowCurrentEnrolments() {
-        // given / when / then
         CourseId courseId = CourseId.random();
         fixture.given()
                .event(new CoursePublished(Ids.CATALOG_ID, courseId, "Existing Course", new CapacityRange(0, 40)))
