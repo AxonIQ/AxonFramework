@@ -205,6 +205,21 @@ public final class ChainTester {
         }
 
         /**
+         * Asserts that the single output event has the same identifier as the input
+         * event, proving the chain returned the original message rather than constructing
+         * a new one. Useful for verifying pass-through semantics.
+         *
+         * @return this
+         */
+        public Then outputPreservesInputIdentifier() {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().identifier())
+                    .as("output identifier should equal input identifier (pass-through)")
+                    .isEqualTo(outcome.input().identifier());
+            return this;
+        }
+
+        /**
          * Asserts the single output event's payload structurally matches the JSON at the
          * given resource. The actual payload is converted to a {@code JsonNode} first, so
          * the comparison works even when the mapper returns a {@code Map} or other

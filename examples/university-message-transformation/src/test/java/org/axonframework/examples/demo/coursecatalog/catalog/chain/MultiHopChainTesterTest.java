@@ -64,6 +64,7 @@ class MultiHopChainTesterTest {
                    .then()
                    .success()
                    .outputType(V3_TYPE)
-                   .outputPayloadFromResource(V3_FIXTURE);
+                   .outputPayloadFromResource(V3_FIXTURE)
+                   .outputPreservesInputIdentifier();
     }
 }

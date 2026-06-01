@@ -16,8 +16,12 @@
 
 package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
+import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
+import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
 import io.axoniq.framework.messaging.transformation.events.TransformingEventStore;
-import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
+import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,9 +30,25 @@ class DecorationOrderTest {
 
     @Test
     void transformingEventStoreWrapsOuterThanInterceptingEventStore() {
-        // The transformation chain must run on the event stream BEFORE any handler-side
-        // interceptor sees the events. ComponentRegistry applies higher order = outer wrap.
-        assertThat(TransformingEventStore.DECORATION_ORDER)
-                .isGreaterThan(InterceptingEventStore.DECORATION_ORDER);
+        // Boot a real configurer with the transformation chain registered, so the
+        // EventTransformationConfigurationEnhancer installs TransformingEventStore.
+        // Disable the Axon Server enhancer so the test runs in-memory.
+        EventSourcingConfigurer configurer = EventSourcingConfigurer.create()
+                .componentRegistry(r -> r
+                        .disableEnhancer(AxonServerConfigurationEnhancer.class)
+                        .registerComponent(EventTransformerChain.class,
+                                           cfg -> EventTransformerChain.builder().build()));
+
+        AxonConfiguration configuration = configurer.start();
+        try {
+            EventStore eventStore = configuration.getComponent(EventStore.class);
+            // Outermost wrap proves the chain runs on the event stream before any
+            // handler-side interceptor sees the events.
+            assertThat(eventStore)
+                    .as("outermost EventStore decorator")
+                    .isInstanceOf(TransformingEventStore.class);
+        } finally {
+            configuration.shutdown();
+        }
     }
 }

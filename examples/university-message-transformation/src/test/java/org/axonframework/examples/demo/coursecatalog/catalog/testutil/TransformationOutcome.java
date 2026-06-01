@@ -35,10 +35,12 @@ import java.util.List;
  */
 final class TransformationOutcome {
 
+    private final EventMessage input;
     private final List<EventMessage> outputs;
     private final @Nullable Throwable thrown;
 
-    private TransformationOutcome(List<EventMessage> outputs, @Nullable Throwable thrown) {
+    private TransformationOutcome(EventMessage input, List<EventMessage> outputs, @Nullable Throwable thrown) {
+        this.input = input;
         this.outputs = outputs;
         this.thrown = thrown;
     }
@@ -58,10 +60,14 @@ final class TransformationOutcome {
                     converter,
                     typeResolver
             ));
-            return new TransformationOutcome(collected, null);
+            return new TransformationOutcome(input, collected, null);
         } catch (RuntimeException e) {
-            return new TransformationOutcome(List.of(), e);
+            return new TransformationOutcome(input, List.of(), e);
         }
+    }
+
+    EventMessage input() {
+        return input;
     }
 
     List<EventMessage> outputs() {
