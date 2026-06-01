@@ -38,7 +38,7 @@ class EnrollStudentAxonFixtureTest {
 
     @BeforeEach
     void beforeEach() {
-        fixture = CourseCatalogAxonTestFixture.app();
+        fixture = CourseCatalogAxonTestFixture.slice(EnrollStudentConfiguration::configure);
     }
 
     @AfterEach

@@ -37,7 +37,7 @@ class UpdateCourseCapacityAxonFixtureTest {
 
     @BeforeEach
     void beforeEach() {
-        fixture = CourseCatalogAxonTestFixture.app();
+        fixture = CourseCatalogAxonTestFixture.slice(UpdateCourseCapacityConfiguration::configure);
     }
 
     @AfterEach

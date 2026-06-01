@@ -26,13 +26,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.write.publishcourse
 import org.axonframework.examples.demo.coursecatalog.catalog.write.updatecoursecapacity.UpdateCourseCapacityConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 
-/**
- * Wires the course-catalog bounded context into an {@link EventSourcingConfigurer}:
- * the transformation chain, read slice, and overbooking-notifier automation.
- * Registering the chain as a component is enough to engage the framework's
- * {@code EventTransformationConfigurationEnhancer}, which discovers it via
- * {@code ServiceLoader} and installs the {@code TransformingEventStore} decorator.
- */
+/** Wires the course-catalog bounded context into an {@link EventSourcingConfigurer}. */
 public final class CourseCatalogModuleConfiguration {
 
     private CourseCatalogModuleConfiguration() {
@@ -40,13 +34,11 @@ public final class CourseCatalogModuleConfiguration {
 
     /**
      * @param configurer the configurer to extend
-     * @return the configurer with the catalog wired in
+     * @return the configurer with shared infrastructure and every slice wired in
      */
     public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        configurer = configurer.componentRegistry(registry -> registry
-                .registerComponent(EventTransformerChain.class,
-                                   config -> CourseCatalogTransformations.chain())
-        );
+        configurer = configureSharedInfra(configurer);
+
         // Write slices
         configurer = PublishCourseConfiguration.configure(configurer);
         configurer = UpdateCourseCapacityConfiguration.configure(configurer);
@@ -61,5 +53,18 @@ public final class CourseCatalogModuleConfiguration {
         // Seed (idempotent)
         configurer = LegacyEventSeedConfiguration.configure(configurer);
         return configurer;
+    }
+
+    /**
+     * Registers the catalog's shared infrastructure (the transformation chain) without
+     * any slices.
+     *
+     * @param configurer the configurer to extend
+     * @return the configurer with shared infrastructure wired in
+     */
+    public static EventSourcingConfigurer configureSharedInfra(EventSourcingConfigurer configurer) {
+        return configurer.componentRegistry(registry -> registry
+                .registerComponent(EventTransformerChain.class,
+                                   config -> CourseCatalogTransformations.chain()));
     }
 }

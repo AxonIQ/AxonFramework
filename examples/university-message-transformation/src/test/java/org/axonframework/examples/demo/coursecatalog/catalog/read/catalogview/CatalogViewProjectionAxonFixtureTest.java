@@ -46,9 +46,7 @@ class CatalogViewProjectionAxonFixtureTest {
 
     @BeforeEach
     void beforeEach() {
-        // The catalog module already wires the read slice; use the full app() fixture
-        // rather than re-registering it via slice(...).
-        fixture = CourseCatalogAxonTestFixture.app();
+        fixture = CourseCatalogAxonTestFixture.slice(CatalogViewConfiguration::configure);
     }
 
     @AfterEach
