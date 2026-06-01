@@ -24,6 +24,8 @@ import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
+import java.util.Objects;
+
 /**
  * Reacts to every {@link CoursePublished} that reaches a handler. When the published
  * capacity range is unusually wide (more than {@value #WIDE_RANGE_THRESHOLD} between
@@ -43,7 +45,9 @@ final class OverbookingNotifier {
 
     static MessageStream.Empty<Message> react(EventMessage event, ProcessingContext context) {
         MessageConverter converter = context.component(MessageConverter.class);
-        CoursePublished published = event.payloadAs(CoursePublished.class, converter);
+        CoursePublished published = Objects.requireNonNull(
+                event.payloadAs(CoursePublished.class, converter),
+                "CoursePublished payload must not be null");
         int span = published.range().max() - published.range().min();
         if (span > WIDE_RANGE_THRESHOLD) {
             NotificationService notifier = context.component(NotificationService.class);

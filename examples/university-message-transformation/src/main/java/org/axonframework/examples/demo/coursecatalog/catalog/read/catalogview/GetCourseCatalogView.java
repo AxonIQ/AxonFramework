@@ -17,7 +17,8 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview;
 
 /**
- * Query returning the full {@link CourseCatalogView} snapshot.
+ * Query returning the full {@link CourseCatalogView} snapshot. Parameterless by design:
+ * the query routes solely by qualified name.
  */
-public record GetCourseCatalogView() {
+public record GetCourseCatalogView() { // NOSONAR java:S2094 — parameterless query record is the intended shape
 }

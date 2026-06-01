@@ -59,7 +59,7 @@ public final class StudentRegisteredV1ToV2 {
         return v2;
     }
 
-    private static String combine(Object first, Object last) {
+    private static String combine(@Nullable Object first, @Nullable Object last) {
         String f = first == null ? "" : first.toString().trim();
         String l = last == null ? "" : last.toString().trim();
         if (f.isEmpty()) return l;

@@ -26,7 +26,7 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
 /**
  * Tracking projection building the {@link CourseCatalogView}. Receives every
- * catalog event in the current shape: historic shapes on disk are lifted by the
+ * catalog event in the current shape: historic shapes on the disk are lifted by the
  * transformation chain before the projection sees them.
  */
 class CatalogViewProjection {

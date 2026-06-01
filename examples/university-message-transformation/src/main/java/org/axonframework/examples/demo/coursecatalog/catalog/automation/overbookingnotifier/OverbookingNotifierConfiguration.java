@@ -18,7 +18,6 @@ package org.axonframework.examples.demo.coursecatalog.catalog.automation.overboo
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.CoursePublished;
-import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.notifier.LoggingNotificationService;
 import org.axonframework.examples.demo.coursecatalog.shared.notifier.NotificationService;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
@@ -47,9 +46,9 @@ public final class OverbookingNotifierConfiguration {
     public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
         PooledStreamingEventProcessorModule automationProcessor = EventProcessorModule
                 .pooledStreaming("Automation_OverbookingNotifier_Processor")
-                .eventHandlingComponents(c -> c.declarative(cfg -> SimpleEventHandlingComponent.create(
-                        "SimpleEventHandlingComponent",
-                        new PropertySequencingPolicy<CoursePublished, CourseId>(
+                .eventHandlingComponents(c -> c.declarative("OverbookingNotifier", cfg -> SimpleEventHandlingComponent.create(
+                        "OverbookingNotifier",
+                        new PropertySequencingPolicy<>(
                                 CoursePublished.class,
                                 "courseId"
                         )

@@ -36,7 +36,10 @@ public record CatalogViewReadModel(
         boolean registrationClosed
 ) {
 
-    /** @return a copy with the given capacity range */
+    /**
+     * @param newRange the capacity range to set on the copy
+     * @return a copy with the given capacity range
+     */
     public CatalogViewReadModel withRange(CapacityRange newRange) {
         return new CatalogViewReadModel(courseId, name, newRange, enrolments, registrationClosed);
     }
