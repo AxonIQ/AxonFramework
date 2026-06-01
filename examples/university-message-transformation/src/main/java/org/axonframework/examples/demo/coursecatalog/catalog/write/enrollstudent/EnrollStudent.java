@@ -29,7 +29,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 public record EnrollStudent(CourseId courseId, StudentId studentId) {
 
     /**
-     * @return the composite identifier scoping the DCB read to this course + student pair
+     * @return the composite identifier scoping the DCB read to this course and student pair
      */
     @TargetEntityId
     public EnrolmentId enrolmentId() {

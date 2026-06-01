@@ -49,7 +49,7 @@ public final class SystemAnnouncementLegacyUplift {
     private static JsonNode map(JsonNode legacy, @Nullable ProcessingContext context) {
         ObjectNode v1 = JsonNodeFactory.instance.objectNode();
         v1.set("catalogId", legacy.get("catalogId"));
-        v1.put("text", legacy.get("message").asText());
+        v1.put("text", legacy.get("message").asString());
         return v1;
     }
 }

@@ -20,7 +20,7 @@ import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
 
 /**
- * Composite identifier scoping a consistency-boundary read to one course + one student.
+ * Composite identifier scoping a consistency-boundary read to one course and one student.
  *
  * @param courseId  the course the student is enrolling in
  * @param studentId the student being enrolled

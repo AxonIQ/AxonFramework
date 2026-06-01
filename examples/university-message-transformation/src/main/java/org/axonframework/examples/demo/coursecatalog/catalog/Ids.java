@@ -25,7 +25,7 @@ import org.axonframework.examples.demo.coursecatalog.shared.ids.CatalogId;
  */
 public final class Ids {
 
-    /** The catalog every demo command, projection and seeded event refers to. */
+    /** The catalog every demo command, projection, and seeded event refers to. */
     public static final CatalogId CATALOG_ID = CatalogId.of("axoniq-university");
 
     private Ids() {

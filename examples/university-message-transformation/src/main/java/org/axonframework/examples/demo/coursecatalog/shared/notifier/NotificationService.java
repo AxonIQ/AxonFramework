@@ -17,7 +17,7 @@
 package org.axonframework.examples.demo.coursecatalog.shared.notifier;
 
 /**
- * Outbound side-effect port for automations. The default
+ * Outbound side effect port for automations. The default
  * {@link LoggingNotificationService} just logs; tests substitute a recording
  * implementation to assert that the automation fired.
  */

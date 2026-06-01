@@ -29,8 +29,6 @@ import org.jspecify.annotations.Nullable;
 import java.util.function.Predicate;
 
 /**
- * Lifts every beta-versioned {@code WelcomeMessageSent} (versions starting with
- * {@code 0.}) into year-1, dropping the dropped-in-beta {@code subject} field.
  * Uses the predicate-based {@code from} overload to match any {@code 0.x} version
  * in a single transformer instead of one transformer per beta version.
  */
