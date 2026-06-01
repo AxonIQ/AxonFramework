@@ -17,8 +17,8 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
-import org.axonframework.examples.demo.coursecatalog.catalog.testing.ChainTester;
-import org.axonframework.examples.demo.coursecatalog.catalog.testing.JsonAssertions;
+import org.axonframework.examples.demo.coursecatalog.catalog.testutil.ChainTester;
+import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CourseCatalogTransformations;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.eventhandling.EventMessage;

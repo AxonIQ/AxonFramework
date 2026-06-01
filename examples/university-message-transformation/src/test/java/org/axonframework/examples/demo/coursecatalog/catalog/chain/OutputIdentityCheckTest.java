@@ -22,7 +22,7 @@ import io.axoniq.framework.messaging.transformation.ChainConfigurationException;
 import io.axoniq.framework.messaging.transformation.events.EventTransformation;
 import io.axoniq.framework.messaging.transformation.events.EventTransformer;
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
-import org.axonframework.examples.demo.coursecatalog.catalog.testing.ChainTester;
+import org.axonframework.examples.demo.coursecatalog.catalog.testutil.ChainTester;
 import org.axonframework.messaging.core.MessageType;
 import org.junit.jupiter.api.Test;
 

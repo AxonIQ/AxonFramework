@@ -1,144 +1,141 @@
-# Axon Framework 5 — Event Message Transformation Demo
+# Axon Framework 5 - Event Message Transformation Demo
 
-A worked example of the AxonIQ Framework 5.2 event message transformation chain on a
-realistic CQRS / DCB application — a course catalog that has evolved across three years
-of production and now ships a chain of five transformers to lift every legacy event
-into its current shape on read.
+An example of the event message transformation chain in AxonIQ Framework 5.2.
 
-The module follows the same architectural conventions as
-[`university-demo`](../university-demo): screaming-architecture vertical slices,
-DCB-based write side, `@EventSourcedEntity`-per-slice modelling, a tracking projection,
-and an automation slice.
+Stored events outlive the code that wrote them. The chain lifts each historic payload
+into its current shape on the read path, so it is easier for handlers to handle them.
 
-## What this demo shows
+This demo wires transformers into one chain on a course catalog that has gone
+through schema evolution, and exercises them end to end.
 
-The catalog has accumulated four kinds of legacy events that the current code can no
-longer consume directly. Five transformations, registered as one chain, lift them on
-the way out of the store so commands, projections, and automations all see today's shape.
+## The transformations
 
-| Transformation | From → to | Style | What it teaches |
-|---|---|---|---|
-| `CoursePublishedV1ToV2` | `CoursePublished#1.0.0` → `#2.0.0` | `JsonNode` mapper | Year-1 single `capacity` becomes year-2 `minCapacity`/`maxCapacity`. |
-| `CoursePublishedV2ToV3` | `CoursePublished#2.0.0` → `#3.0.0` | `JsonNode` mapper | Two-hop chain: a stored v1 event lands at handlers as v3 via this transformer. |
-| `StudentRegisteredV1ToV2` | `StudentRegistered#1.0.0` → `#2.0.0` | `TypeReference<Map<String,Object>>` overload | Generic carrier type — no Jackson dependency in user code. |
-| `SystemAnnouncementLegacyUplift` | `SystemAnnouncement#0.0.1` → `#1.0.0` | `JsonNode` mapper | Unversioned legacy events: `@Event` without a `version` defaults to `0.0.1`. |
-| `WelcomeMessageBetaCleanup` | `WelcomeMessageSent#0.*` → `#1.0.0` | predicate-based source | One transformer matches every beta version (`0.5`, `0.7`, `0.9`). |
+| Transformer | From / To | What it teaches |
+|---|---|---|
+| `CoursePublishedV1ToV2` | `CoursePublished#1.0.0` / `#2.0.0` | A single `capacity` field becomes `minCapacity` + `maxCapacity`. |
+| `CoursePublishedV2ToV3` | `CoursePublished#2.0.0` / `#3.0.0` | Two-hop chain: a stored v1 event reaches handlers as v3. |
+| `StudentRegisteredV1ToV2` | `StudentRegistered#1.0.0` / `#2.0.0` | `TypeReference<Map<String,Object>>` overload, no Jackson dependency in user code. |
+| `SystemAnnouncementLegacyUplift` | `SystemAnnouncement#0.0.1` / `#1.0.0` | Unversioned legacy events: `@Event` without a `version` defaults to `0.0.1`. |
+| `WelcomeMessageBetaCleanup` | `WelcomeMessageSent#0.*` / `#1.0.0` | Predicate-based source, one transformer matches every beta version. |
 
 The chain is composed in
-[`CourseCatalogTransformations`](src/main/java/org/axonframework/examples/demo/coursecatalog/catalog/transformations/CourseCatalogTransformations.java)
-and engaged automatically by registering it as an `EventTransformerChain` component —
-the framework's `EventTransformationConfigurationEnhancer` (discovered via
-`ServiceLoader`) installs the `TransformingEventStore` decorator on top of the store.
+[`CourseCatalogTransformations`](src/main/java/org/axonframework/examples/demo/coursecatalog/catalog/transformations/CourseCatalogTransformations.java).
+Registering it as an `EventTransformerChain` component is enough: the framework's
+`EventTransformationConfigurationEnhancer` (discovered via `ServiceLoader`) installs
+the `TransformingEventStore` decorator on top of the store.
 
-## Story: three years of course-catalog evolution
+[`LegacyEventSeeder`](src/main/java/org/axonframework/examples/demo/coursecatalog/catalog/seed/LegacyEventSeeder.java)
+writes the historic events on startup (idempotently), so the application boots into
+a state that actually exercises every transformer above.
 
-* **Year 1.** A `CoursePublished` event carries `name` + `capacity`. A
-  `SystemAnnouncement` event is written without an explicit `version`. A
-  `WelcomeMessageSent#0.5` event is sent to every new student (subject + body).
-* **Year 2.** Capacity becomes a range, so `CoursePublished` is split into
-  `minCapacity`/`maxCapacity`. `WelcomeMessageSent` continues its beta with `0.7` and
-  `0.9` while design iterates on the subject.
-* **Year 3 (today).** `CoursePublished` collapses capacity into a `CapacityRange` value
-  object. `StudentRegistered` replaces `firstName` + `lastName` with one `fullName`.
-  `SystemAnnouncement` becomes formally versioned at `1.0.0`. `WelcomeMessageSent` ships
-  GA at `1.0.0` with only `studentId` + `body`.
+The chain runs on all three read paths wired here: entity load on the write slices,
+the consistency check used by `EnrollStudent`, and the catalog projection.
 
-The seeder
-([`LegacyEventSeeder`](src/main/java/org/axonframework/examples/demo/coursecatalog/catalog/seed/LegacyEventSeeder.java))
-writes the historic events idempotently at startup so the application boots into a
-state that actually exercises every transformation.
-
-## Architecture
-
-Package layout mirrors the university-demo convention:
+## Layout
 
 ```
 org.axonframework.examples.demo.coursecatalog
-├── catalog
-│   ├── automation
-│   │   └── overbookingnotifier       — fires when capacity drops below current enrolments
-│   ├── events                        — current-shape event records (@Event-versioned)
-│   ├── read
-│   │   └── catalogview               — tracking projection + read model + query
-│   ├── seed                          — legacy event seeder (idempotent)
-│   ├── transformations               — the chain composition site + 5 transformers
-│   ├── values                        — CapacityRange value object
-│   └── write
-│       ├── publishcourse             — write slice (DCB, @EventSourcedEntity)
-│       ├── updatecoursecapacity      — write slice
-│       └── enrollstudent             — write slice (multi-tag DCB)
-└── shared
-    ├── ids                           — typed ids (CatalogId, CourseId, StudentId, EnrolmentId)
-    └── notifier                      — NotificationService port + logging adapter
++- catalog
+|  +- automation/overbookingnotifier
+|  +- events                          (current-shape event records)
+|  +- read/catalogview                (projection, read model, query)
+|  +- seed                            (legacy event seeder)
+|  +- transformations                 (chain composition + transformers)
+|  +- values                          (CapacityRange value object)
+|  +- write
+|     +- publishcourse
+|     +- updatecoursecapacity
+|     +- enrollstudent
++- shared
+   +- ids                             (typed ids)
+   +- notifier                        (NotificationService port + adapter)
 ```
 
-## Running the demo
-
-The demo can run either fully in-memory (the default — convenient for CI) or against a
-real Axon Server with DCB support.
+## Running
 
 ### In-memory (no infrastructure)
 
-Run `CourseCatalogApplication#main` from your IDE. The bootstrap seeds the legacy
-history, dispatches a few sample commands, awaits the projection, prints the resulting
-catalog view, and shuts down.
+From this module's directory:
 
-The bundled `logback.xml` already enables `DEBUG` for
-`io.axoniq.framework.messaging.transformation` so the one-line chain build log naming
-every registered transformer shows up on startup.
+```
+mvn compile exec:java
+```
+
+Or run `CourseCatalogApplication#main` from your IDE.
+
+The bootstrap seeds the legacy history, dispatches a few sample commands, awaits
+the projection, prints the resulting catalog view, and shuts down.
+
+The bundled `logback.xml` enables `DEBUG` for `io.axoniq.framework.messaging.transformation`,
+so the chain build log naming every registered transformer shows up on startup.
 
 ### Against Axon Server
 
-1. `docker compose up -d` (in this module's directory) — boots Axon Server with DCB enabled.
-2. Edit `src/main/resources/application.properties` and flip `axon.server.enabled` to `true`.
+1. `docker compose up -d` in this module's directory.
+2. Flip `axon.server.enabled` to `true` in `src/main/resources/application.properties`.
 3. Re-run `CourseCatalogApplication#main`.
 
-The Axon Server UI is at <http://localhost:8024>. You'll see the historic events as
-they were written — the chain runs on the **read** path, so the store carries the
-original `CoursePublished#1.0.0` payloads while handlers receive `#3.0.0`.
+The dashboard at <http://localhost:8024> shows the historic events as they were
+written. The chain runs on the read path, so the store keeps the original
+`CoursePublished#1.0.0` payload while handlers receive `#3.0.0`.
 
-### Keep the JVM running after the demo (e.g. to inspect Axon Server)
+### Interactive shell
 
-Pass `--keep-alive` as the first program argument. After the catalog view is printed
-the JVM blocks until you Ctrl+C, so the projection, command handlers, and Axon Server
-view stay reachable for poking around.
+Pass `--keep-alive` as the first program argument and the demo drops you into a
+small stdin prompt after the initial catalog view is printed:
+
+```
+mvn compile exec:java -Dexec.args=--keep-alive
+```
+
+You type a command, press enter, the application processes it, and the prompt
+comes back. Try this session:
+
+```
+course-catalog> publish ai-101 "AI Fundamentals" 10 40
+[ok] published ai-101
+
+course-catalog> enroll ai-101 alice
+[ok] enrolled alice in ai-101
+
+course-catalog> capacity ai-101 5 50
+[ok] capacity updated for ai-101
+
+course-catalog> view
+Registered students: 4
+Courses (7):
+  ...
+  - Course:ai-101 "AI Fundamentals" range=CapacityRange[min=5, max=50] enrolments=1
+  ...
+
+course-catalog> exit
+```
+
+The placeholders in `help` (`<courseId>`, `<name>`, `<min>`, `<max>`,
+`<studentId>`) are values you choose: any string for `courseId` and `studentId`,
+the course name in double quotes if it contains spaces, integers for `min` and
+`max`. Type `exit`, `quit`, or press Ctrl+D to shut down cleanly.
 
 ## Testing
 
-`mvn -pl examples/university-message-transformation -am test`
+From this module's directory:
 
-The test pyramid runs four layers:
+```
+mvn test
+```
 
-| Layer | Subject | Examples |
-|---|---|---|
-| **L1 — unit** | each transformer in isolation | `CoursePublishedV1ToV2Test`, `WelcomeMessageBetaCleanupTest` |
-| **L2 — chain** | the composed chain | `MultiHopChainTesterTest`, `ChainBuildLogTest`, `ChainLockingTest`, `OutputIdentityCheckTest`, `MessageTypesConsistencyTest`, `ChainConcurrencyTest`, `DecorationOrderTest` |
-| **L3 — slice** | each slice with the full app fixture | `PublishCourseAxonFixtureTest`, `UpdateCourseCapacityAxonFixtureTest`, `EnrollStudentAxonFixtureTest`, `CatalogViewProjectionAxonFixtureTest`, `OverbookingNotifierAxonFixtureTest` |
-| **L4 — end-to-end** | the chain on top of the real store | `HistoricEventsUpcastingIntegrationTest`, `MainSmokeTest` |
+Or open the module in IntelliJ and use the Maven tool window.
 
-L1 transformer tests use a small `TransformationTester`/`ChainTester` pair plus
-fixture JSON files under `src/test/resources/transformations/` so the assertions read
-like *"this stored shape becomes this current shape"* rather than dense fluent chains.
+Tests live next to the production code they cover, in the matching package:
 
-## Read contexts exercised
-
-The framework's `TransformingEventStore` decorator transforms events in **three**
-read contexts, all wired in this demo:
-
-1. **Entity load** — `@EventSourcedEntity` rebuilds in the write slices read upcasted
-   payloads when sourcing state from the store.
-2. **DCB consistency check** — the `EnrollStudent` handler's `@EventCriteriaBuilder`
-   query receives upcasted events when validating the consistency boundary.
-3. **Tracking projection** — the `CatalogView` projection's `@EventHandler`s receive
-   only current-shape events; legacy payloads never reach user code.
-
-## Conventions checklist
-
-The demo follows the same rules as the rest of `examples/`:
-
-* No `@SuppressWarnings`.
-* No blocking `future.join()` / `future.get()` without a timeout — `orTimeout(...).join()`
-  everywhere.
-* Generic `Type` is passed via `TypeReference<...>` constants, never raw `Class`.
-* Jackson 3 (`tools.jackson.*`) only — the framework's internal JSON binding.
-* Javadoc is consumer-facing: no `FR-XXX` / phase / plan references.
+| Where | What you'll find |
+|---|---|
+| `catalog/transformations/` | each transformer in isolation, with fixture JSON under `src/test/resources/transformations/` |
+| `catalog/chain/` | the composed chain (build log, locking, identity check, concurrency, decoration order) |
+| `catalog/write/<slice>/` | one write slice per package, full app fixture |
+| `catalog/read/catalogview/` | the catalog projection and query |
+| `catalog/automation/overbookingnotifier/` | the overbooking notifier |
+| `catalog/seed/` | the seeder plus the chain exercised end to end on the store |
+| `catalog/testutil/` | shared test helpers (`TransformationTester`, `ChainTester`, JSON assertions) |
+| `shared/notifier/` | a recording `NotificationService` for slice tests |
+| (root) | `MainSmokeTest`, `CourseCatalogApplicationTest` |

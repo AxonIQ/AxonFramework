@@ -17,8 +17,8 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
-import org.axonframework.examples.demo.coursecatalog.catalog.testing.JsonAssertions;
-import org.axonframework.examples.demo.coursecatalog.catalog.testing.TransformationTester;
+import org.axonframework.examples.demo.coursecatalog.catalog.testutil.JsonAssertions;
+import org.axonframework.examples.demo.coursecatalog.catalog.testutil.TransformationTester;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.junit.jupiter.api.Test;

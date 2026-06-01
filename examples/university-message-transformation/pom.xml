@@ -135,6 +135,18 @@
                     <argLine>-Daxon.axonserver.suppressDownloadMessage=true</argLine>
                 </configuration>
             </plugin>
+            <!--
+            Lets users boot the demo with `mvn exec:java` without needing to declare
+            the main class on the command line.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>org.axonframework.examples.demo.coursecatalog.CourseCatalogApplication</mainClass>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

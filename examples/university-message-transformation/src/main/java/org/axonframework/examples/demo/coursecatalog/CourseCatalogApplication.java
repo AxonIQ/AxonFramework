@@ -39,7 +39,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 
@@ -53,11 +52,6 @@ public class CourseCatalogApplication {
 
     private static final Logger logger = LoggerFactory.getLogger(CourseCatalogApplication.class);
     private static final String CONTEXT = "default";
-
-    /** @return the configurer wired with default properties and the full catalog module */
-    public EventSourcingConfigurer configurer() {
-        return configurer(ConfigurationProperties.load(), CourseCatalogModuleConfiguration::configure);
-    }
 
     /**
      * @param configProps   runtime configuration toggles
@@ -85,16 +79,18 @@ public class CourseCatalogApplication {
     /**
      * Entry point: starts the configurer, seeds historic events, dispatches a few
      * sample commands, waits for the projection to catch up, prints the catalog view,
-     * then either shuts down or — if {@code --keep-alive} is passed — blocks until the
-     * JVM receives a termination signal so the running application can be inspected.
+     * then either shuts down or, if {@code --keep-alive} is passed, drops the user into
+     * an {@link InteractiveShell} so commands can still be dispatched against the
+     * running application.
      *
-     * @param args supports {@code --keep-alive} to keep the JVM running after the demo run
+     * @param args supports {@code --keep-alive} to keep the JVM running with a stdin REPL
      */
     public static void main(String[] args) {
         boolean keepAlive = false;
         for (String arg : args) {
             if ("--keep-alive".equals(arg)) {
                 keepAlive = true;
+                break;
             }
         }
         ConfigurationProperties props = ConfigurationProperties.load();
@@ -107,7 +103,7 @@ public class CourseCatalogApplication {
             awaitProjectionCatchUp(configuration);
             printCatalogView(configuration);
             if (keepAlive) {
-                blockUntilShutdownSignal();
+                InteractiveShell.run(configuration);
             }
         } finally {
             configuration.shutdown();
@@ -142,7 +138,7 @@ public class CourseCatalogApplication {
                       logger.debug("Waiting for projection: courses={}, announcements={}, registeredStudents={}",
                                    v.courses().size(), v.announcements().size(), v.registeredStudents());
                       return v.courses().size() >= 6
-                              && v.announcements().size() >= 1
+                              && !v.announcements().isEmpty()
                               && v.registeredStudents() >= 4;
                   });
     }
@@ -165,7 +161,8 @@ public class CourseCatalogApplication {
         for (String announcement : view.announcements()) {
             report.append("  - ").append(announcement).append('\n');
         }
-        logger.info(report.toString());
+        String reportAsString = report.toString();
+        logger.info(reportAsString);
     }
 
     private static CourseCatalogView queryView(AxonConfiguration configuration) {
@@ -175,15 +172,4 @@ public class CourseCatalogApplication {
                             .join();
     }
 
-    private static void blockUntilShutdownSignal() {
-        CountDownLatch latch = new CountDownLatch(1);
-        Runtime.getRuntime().addShutdownHook(new Thread(latch::countDown, "course-catalog-shutdown-signal"));
-        logger.info("--keep-alive set; press Ctrl+C to shut down. "
-                            + "If running against Axon Server, the dashboard is at http://localhost:8024.");
-        try {
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
 }
