@@ -34,6 +34,7 @@ import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +98,7 @@ final class InteractiveShell {
     }
 
     /** @return the trimmed input line, or {@code null} when the user signals exit (Ctrl+C / Ctrl+D) */
-    private String readLine() {
+    private @Nullable String readLine() {
         try {
             String raw = reader.readLine(PROMPT);
             return raw == null ? null : raw.trim();
@@ -125,7 +126,7 @@ final class InteractiveShell {
     /** @return false to exit the shell, true to keep going */
     private boolean dispatch(String line) {
         List<String> tokens = tokenize(line);
-        String head = tokens.get(0);
+        String head = tokens.getFirst();
         return switch (head) {
             case "help", "?" -> { printHelp(); yield true; }
             case "view" -> { printView(); yield true; }
