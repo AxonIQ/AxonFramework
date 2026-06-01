@@ -79,6 +79,20 @@ The dashboard at <http://localhost:8024> shows the historic events as they were
 written. The chain runs on the read path, so the store keeps the original
 `CoursePublished#1.0.0` payload while handlers receive `#3.0.0`.
 
+### Against AxonIQ Platform (optional)
+
+Reports message flows, processors, and metrics to <https://console.axoniq.io>
+through the bundled `axoniq-platform-framework-client`.
+
+1. Create an environment at <https://console.axoniq.io> and open its Install
+   Guide; copy the environment id and access token.
+2. `cp .env.example .env` in this module's directory and paste them in.
+3. Run `CourseCatalogApplication#main`. The log line
+   `AxonIQ Platform reporting enabled for application '...'` confirms it.
+
+Real env vars (uppercase, same names) override `.env`. Without credentials the
+integration stays dormant.
+
 ### Interactive shell
 
 Pass `--keep-alive` as the first program argument and the demo drops you into a

@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.coursecatalog;
 
 import io.axoniq.framework.axonserver.connector.api.AxonServerConfiguration;
 import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
+import io.axoniq.platform.framework.AxoniqPlatformConfiguration;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogModuleConfiguration;
@@ -71,6 +72,15 @@ public class CourseCatalogApplication {
             }));
         } else {
             configurer.componentRegistry(r -> r.disableEnhancer(AxonServerConfigurationEnhancer.class));
+        }
+        if (configProps.platformEnabled()) {
+            configurer.componentRegistry(r -> r.registerComponent(
+                    AxoniqPlatformConfiguration.class,
+                    c -> new AxoniqPlatformConfiguration(
+                            configProps.platformEnvironmentId(),
+                            configProps.platformAccessToken(),
+                            configProps.platformApplicationName())));
+            logger.info("AxonIQ Platform reporting enabled for application '{}'", configProps.platformApplicationName());
         }
         configurer = customization.apply(configurer);
         return configurer;
