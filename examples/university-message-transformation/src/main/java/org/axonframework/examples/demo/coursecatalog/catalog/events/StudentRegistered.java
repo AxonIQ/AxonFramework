@@ -24,7 +24,7 @@ import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.messaging.eventhandling.annotation.Event;
 
 /**
- * A student was registered with the catalog. Year-2 shape: a single combined
+ * A student was registered with the catalog. Current shape (v2): a single combined
  * {@code fullName} (privacy review collapsed first and last name).
  *
  * @param catalogId the catalog the student is registered in

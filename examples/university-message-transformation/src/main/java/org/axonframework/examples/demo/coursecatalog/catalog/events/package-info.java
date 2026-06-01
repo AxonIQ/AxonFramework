@@ -15,7 +15,7 @@
  */
 
 /**
- * Current (year-3) shapes of every catalog event. Historic shapes the chain lifts
+ * Current-version shapes of every catalog event. Historic shapes the chain lifts
  * to these are not part of the application code; they live in the seeder.
  */
 @NullMarked

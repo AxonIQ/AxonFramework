@@ -26,9 +26,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Single in-memory snapshot of the catalog view. Synchronises on the courses map to
+ * Single in-memory snapshot of the catalog view. Synchronizes on the courses map to
  * keep mutation atomic; reads return defensive copies so callers cannot observe
- * mid-mutation state.
+ *  the mid-mutation state.
  */
 class InMemoryCatalogViewRepository implements CatalogViewRepository {
 

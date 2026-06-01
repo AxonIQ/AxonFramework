@@ -28,8 +28,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Lifts a year-1 {@code StudentRegistered} (separate {@code firstName} and
- * {@code lastName}) into the year-2 shape with a combined {@code fullName}, using
+ * Lifts a v1 {@code StudentRegistered} (separate {@code firstName} and
+ * {@code lastName}) into the v2 shape with a combined {@code fullName}, using
  * the generic {@code TypeReference<Map<String, Object>>} overload of
  * {@code EventTransformation.transform(...)}.
  */

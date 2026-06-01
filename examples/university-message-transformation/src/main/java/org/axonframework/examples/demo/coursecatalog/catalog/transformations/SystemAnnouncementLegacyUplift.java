@@ -28,8 +28,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Lifts an unversioned {@code SystemAnnouncement} (which AF5 treats as version
- * {@code 0.0.1}) into the year-1 shape. The legacy payload carried a single
- * {@code message} field; year-1 renamed it to {@code text}.
+ * {@code 0.0.1}) into the v1 shape. The legacy payload carried a single
+ * {@code message} field; v1 renamed it to {@code text}.
  */
 public final class SystemAnnouncementLegacyUplift {
 

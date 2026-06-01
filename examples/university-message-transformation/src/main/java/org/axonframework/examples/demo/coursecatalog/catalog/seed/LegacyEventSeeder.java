@@ -46,7 +46,7 @@ import java.util.UUID;
  * Idempotent: state-sourced from the catalog's {@link CatalogSeeded} marker. Calling
  * the {@link SeedCatalog} command a second time is a no-op.
  * <p>
- * The historic shapes live as private inner records so the production package list
+ * The historic shapes live as private inner records, so the production package list
  * is not polluted with classes a user would mistake for the current shape.
  */
 public class LegacyEventSeeder {

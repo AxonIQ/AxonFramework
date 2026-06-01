@@ -27,8 +27,8 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Lifts a year-1 {@code CoursePublished} (single {@code capacity} field) into the
- * year-2 shape with {@code minCapacity} and {@code maxCapacity}.
+ * Lifts a v1 {@code CoursePublished} (single {@code capacity} field) into the
+ * v2 shape with {@code minCapacity} and {@code maxCapacity}.
  */
 public final class CoursePublishedV1ToV2 {
 

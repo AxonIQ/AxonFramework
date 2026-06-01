@@ -25,7 +25,7 @@ import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.messaging.eventhandling.annotation.Event;
 
 /**
- * A course was published in the catalog. Year-3 shape: capacity is a
+ * A course was published in the catalog. Current shape (v3): capacity is a
  * {@link CapacityRange} value object.
  *
  * @param catalogId the catalog the course belongs to

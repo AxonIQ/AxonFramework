@@ -60,10 +60,10 @@ class HistoricEventsUpcastingIntegrationTest {
         CourseId courseId = CourseId.of("integration-v1");
         fixture.given()
                .events(new LegacyEventSeeder.CoursePublishedV1(
-                       Ids.CATALOG_ID, courseId, "Year-1 Course", 20))
+                       Ids.CATALOG_ID, courseId, "V1 Course", 20))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsClosedCourseWithoutEnrollments(
-                       cfg, courseId, "Year-1 Course", new CapacityRange(20, 20))));
+                       cfg, courseId, "V1 Course", new CapacityRange(20, 20))));
     }
 
     @Test
@@ -71,10 +71,10 @@ class HistoricEventsUpcastingIntegrationTest {
         CourseId courseId = CourseId.of("integration-v2");
         fixture.given()
                .events(new LegacyEventSeeder.CoursePublishedV2(
-                       Ids.CATALOG_ID, courseId, "Year-2 Course", 5, 25))
+                       Ids.CATALOG_ID, courseId, "V2 Course", 5, 25))
                .then()
                .await(r -> r.expect(cfg -> assertViewContainsClosedCourseWithoutEnrollments(
-                       cfg, courseId, "Year-2 Course", new CapacityRange(5, 25))));
+                       cfg, courseId, "V2 Course", new CapacityRange(5, 25))));
     }
 
     @Test
@@ -100,7 +100,7 @@ class HistoricEventsUpcastingIntegrationTest {
 
     @Test
     void seedingTheFullHistoryProducesAllExpectedUpcastedRows() {
-        // The seeder writes the full year-1/year-2/year-3 history in one shot.
+        // The seeder writes the full v1/v2/v3 history in one shot.
         // Verifies all five historic courses, every legacy StudentRegistered,
         // and the unversioned announcement arrives at the projection in current shape.
         fixture.given()
@@ -111,11 +111,11 @@ class HistoricEventsUpcastingIntegrationTest {
                    assertThat(view.courses()).hasSize(5);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).containsExactly("Catalog launched in 2023");
-                   // Year-1 single-capacity course: range collapses to [n,n]
+                   // V1 single-capacity course: range collapses to [n,n]
                    assertThat(view.courses()).contains(new CatalogViewReadModel(
                            CourseId.of("event-sourcing-101"), "Event Sourcing in Practice",
                            new CapacityRange(30, 30), 0, false));
-                   // Year-2 min/max course: range preserves both bounds
+                   // V2 min/max course: range preserves both bounds
                    assertThat(view.courses()).contains(new CatalogViewReadModel(
                            CourseId.of("hexagonal-architecture"), "Hexagonal Architecture",
                            new CapacityRange(10, 30), 0, false));

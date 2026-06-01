@@ -27,8 +27,8 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Lifts a year-2 {@code CoursePublished} (separate {@code minCapacity} and
- * {@code maxCapacity}) into the year-3 shape that wraps both into a single
+ * Lifts a v2 {@code CoursePublished} (separate {@code minCapacity} and
+ * {@code maxCapacity}) into the v3 shape that wraps both into a single
  * {@code range} value object.
  */
 public final class CoursePublishedV2ToV3 {

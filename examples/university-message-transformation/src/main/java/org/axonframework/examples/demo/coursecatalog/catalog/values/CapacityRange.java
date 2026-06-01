@@ -17,8 +17,8 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.values;
 
 /**
- * Inclusive minimum and maximum enrolment a course accepts. Year-3 evolution of what
- * was historically a single {@code capacity} integer.
+ * Inclusive minimum and maximum enrolment a course accepts. Current shape (v3) of what
+ * was historically a single {@code capacity} integer in earlier versions.
  *
  * @param min lower bound; must be non-negative and not exceed {@code max}
  * @param max upper bound; must be greater than or equal to {@code min}
