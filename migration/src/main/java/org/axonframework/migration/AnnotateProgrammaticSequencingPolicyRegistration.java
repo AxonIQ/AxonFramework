@@ -58,17 +58,30 @@ public class AnnotateProgrammaticSequencingPolicyRegistration extends Recipe {
             "org.axonframework.config.EventProcessingConfigurer";
     private static final String AF4_MODULE_CONFIGURER =
             "org.axonframework.config.EventProcessingModule";
+    // `Axon4ToAxon5Common` runs ahead of this recipe and renames the AF4 FQNs into the AF5
+    // configuration namespace. The MethodMatcher operates on the LST's bound type at the
+    // call site, so we must also match the post-rename FQN or the recipe silently no-ops
+    // on every codebase that ran the umbrella in order.
+    private static final String AF5_CONFIGURER =
+            "org.axonframework.messaging.eventhandling.configuration.EventProcessingConfigurer";
+    private static final String AF5_MODULE_CONFIGURER =
+            "org.axonframework.messaging.eventhandling.configuration.EventProcessingModule";
 
     /**
      * AF4 has the method on the configurer SPI and on the module that implements it; match both
      * so the recipe fires regardless of whether the calling code holds the interface or the impl.
      * Any-argument matcher (`..`) is intentional — both the {@code (String, Function)} and the
-     * default-policy {@code (Function)} overload should be flagged.
+     * default-policy {@code (Function)} overload should be flagged. We list AF4 and AF5 FQNs
+     * because the umbrella may run the type-rename before this recipe.
      */
-    private static final MethodMatcher SPI_MATCHER =
+    private static final MethodMatcher SPI_MATCHER_AF4 =
             new MethodMatcher(AF4_CONFIGURER + " registerSequencingPolicy(..)");
-    private static final MethodMatcher IMPL_MATCHER =
+    private static final MethodMatcher SPI_MATCHER_AF5 =
+            new MethodMatcher(AF5_CONFIGURER + " registerSequencingPolicy(..)");
+    private static final MethodMatcher IMPL_MATCHER_AF4 =
             new MethodMatcher(AF4_MODULE_CONFIGURER + " registerSequencingPolicy(..)");
+    private static final MethodMatcher IMPL_MATCHER_AF5 =
+            new MethodMatcher(AF5_MODULE_CONFIGURER + " registerSequencingPolicy(..)");
 
     private static final String COMMENT_MARKER =
             "TODO(axon4to5): EventProcessingConfigurer#registerSequencingPolicy is gone in AF5";
@@ -115,7 +128,8 @@ public class AnnotateProgrammaticSequencingPolicyRegistration extends Recipe {
             }
 
             private boolean isTargetCall(J.MethodInvocation mi) {
-                return SPI_MATCHER.matches(mi) || IMPL_MATCHER.matches(mi);
+                return SPI_MATCHER_AF4.matches(mi) || SPI_MATCHER_AF5.matches(mi)
+                        || IMPL_MATCHER_AF4.matches(mi) || IMPL_MATCHER_AF5.matches(mi);
             }
 
             private boolean hasMarkerComment(Space prefix) {

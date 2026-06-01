@@ -103,29 +103,98 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
              * {@link MethodMatcher} can resolve, so the matcher misses these calls. By
              * collecting the alias identifiers up front we can fall back to a simple-name match.
              * <p>
-             * OpenRewrite reuses the same visitor instance across every compilation unit in a
-             * recipe run, so the set is rescanned on every {@code visitCompilationUnit} entry.
-             * Without that reset, alias names from one file would leak into the next and an
-             * unrelated function happening to share the alias name would be misidentified as
-             * {@code apply} and rewritten.
+             * The map is keyed by the enclosing {@link SourceFile} so we don't leak state
+             * across files (OpenRewrite reuses the visitor instance across every compilation
+             * unit in a recipe run). {@link JavaIsoVisitor#visitCompilationUnit} only fires for
+             * {@code J.CompilationUnit}, not {@code K.CompilationUnit}; using the cursor to
+             * find the enclosing source file works for both languages.
              */
-            private final Set<String> applyAliasNames = new HashSet<>();
+            private final java.util.Map<SourceFile, Set<String>> applyAliasNamesPerFile =
+                    new java.util.IdentityHashMap<>();
 
-            @Override
-            public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
-                applyAliasNames.clear();
-                for (J.Import imp : cu.getImports()) {
-                    String fqn = imp.getQualid().printTrimmed(getCursor());
-                    if (!(fqn.equals(AF4_AGGREGATE_LIFECYCLE_FQN + ".apply")
-                            || fqn.equals(AF5_AGGREGATE_LIFECYCLE_FQN + ".apply"))) {
-                        continue;
-                    }
-                    J.Identifier alias = imp.getAlias();
-                    if (alias != null) {
-                        applyAliasNames.add(alias.getSimpleName());
+            private Set<String> aliasesFor(SourceFile sf) {
+                Set<String> cached = applyAliasNamesPerFile.get(sf);
+                if (cached != null) {
+                    return cached;
+                }
+                Set<String> aliases = new HashSet<>();
+                List<J.Import> imports = importsOf(sf);
+                if (imports != null) {
+                    for (J.Import imp : imports) {
+                        if (imp.getAlias() == null) {
+                            continue;
+                        }
+                        if (!isAggregateLifecycleApplyImport(imp.getQualid())) {
+                            continue;
+                        }
+                        aliases.add(imp.getAlias().getSimpleName());
                     }
                 }
-                return super.visitCompilationUnit(cu, ctx);
+                applyAliasNamesPerFile.put(sf, aliases);
+                return aliases;
+            }
+
+            private @org.jspecify.annotations.Nullable List<J.Import> importsOf(SourceFile sf) {
+                if (sf instanceof J.CompilationUnit) {
+                    return ((J.CompilationUnit) sf).getImports();
+                }
+                if (sf instanceof K.CompilationUnit) {
+                    return ((K.CompilationUnit) sf).getImports();
+                }
+                return null;
+            }
+
+            /**
+             * Walks the import's qualid {@link org.openrewrite.java.tree.J.FieldAccess} chain
+             * looking for {@code <some.package>.AggregateLifecycle.apply}. Returns {@code true}
+             * when the target is named {@code apply} and the parent chain ends in
+             * {@code AggregateLifecycle} with the AF4 or AF5 package prefix.
+             * <p>
+             * Walks the chain explicitly instead of comparing printed strings: the Kotlin parser
+             * sometimes wraps the head of the FQN in a {@link org.openrewrite.java.tree.J.Empty}
+             * target, and {@code printTrimmed} on the inner target can differ from the
+             * package-prefixed identifier form we'd otherwise compare to.
+             */
+            private boolean isAggregateLifecycleApplyImport(org.openrewrite.java.tree.Expression qualid) {
+                if (!(qualid instanceof org.openrewrite.java.tree.J.FieldAccess)) {
+                    return false;
+                }
+                org.openrewrite.java.tree.J.FieldAccess fa = (org.openrewrite.java.tree.J.FieldAccess) qualid;
+                if (!"apply".equals(fa.getSimpleName())) {
+                    return false;
+                }
+                String fqn = flattenFieldAccess(fa.getTarget());
+                if (fqn == null) {
+                    return false;
+                }
+                return fqn.equals(AF4_AGGREGATE_LIFECYCLE_FQN)
+                        || fqn.equals(AF5_AGGREGATE_LIFECYCLE_FQN);
+            }
+
+            /**
+             * Recursively flattens a {@link org.openrewrite.java.tree.J.FieldAccess} chain into a
+             * dotted FQN. Tolerates a {@link org.openrewrite.java.tree.J.Empty} target on the
+             * outermost FieldAccess (the shape the Kotlin parser uses for some import paths).
+             * Returns {@code null} when the expression is anything unexpected.
+             */
+            private @org.jspecify.annotations.Nullable String flattenFieldAccess(
+                    org.openrewrite.java.tree.Expression expr) {
+                if (expr instanceof org.openrewrite.java.tree.J.Identifier) {
+                    return ((org.openrewrite.java.tree.J.Identifier) expr).getSimpleName();
+                }
+                if (!(expr instanceof org.openrewrite.java.tree.J.FieldAccess)) {
+                    return null;
+                }
+                org.openrewrite.java.tree.J.FieldAccess fa = (org.openrewrite.java.tree.J.FieldAccess) expr;
+                org.openrewrite.java.tree.Expression target = fa.getTarget();
+                if (target instanceof org.openrewrite.java.tree.J.Empty) {
+                    return fa.getSimpleName();
+                }
+                String prefix = flattenFieldAccess(target);
+                if (prefix == null) {
+                    return null;
+                }
+                return prefix + "." + fa.getSimpleName();
             }
 
             @Override
@@ -351,19 +420,24 @@ public class ReplaceAggregateLifecycleApply extends Recipe {
              * Matches calls to {@code AggregateLifecycle.apply(...)} via the AF4 or AF5 FQN.
              * Also matches calls that go through a Kotlin aliased static import
              * ({@code import …AggregateLifecycle.apply as foo}) by checking the simple identifier
-             * against the alias names collected at compilation-unit entry — those calls keep the
-             * alias identifier on the LST and the {@link MethodMatcher} can fail to resolve
-             * the underlying method when the Kotlin parser doesn't bind the methodType through
-             * the alias.
+             * against the alias names collected from the enclosing source file's imports —
+             * those calls keep the alias identifier on the LST and the {@link MethodMatcher}
+             * can fail to resolve the underlying method when the Kotlin parser doesn't bind the
+             * methodType through the alias.
              */
             private boolean isApplyCall(J.MethodInvocation invocation) {
                 if (APPLY_AF4.matches(invocation) || APPLY_AF5.matches(invocation)) {
                     return true;
                 }
-                if (applyAliasNames.isEmpty() || invocation.getSelect() != null) {
+                if (invocation.getSelect() != null) {
                     return false;
                 }
-                return applyAliasNames.contains(invocation.getSimpleName());
+                SourceFile sf = getCursor().firstEnclosing(SourceFile.class);
+                if (sf == null) {
+                    return false;
+                }
+                Set<String> aliases = aliasesFor(sf);
+                return !aliases.isEmpty() && aliases.contains(invocation.getSimpleName());
             }
 
             /**

@@ -147,6 +147,41 @@ class ReplaceAggregateLifecycleApplyTest implements RewriteTest {
     }
 
     @Test
+    void rewritesAllAliasedApplyCallsIncludingTheFirst() {
+        // Regression for a bug reported in the PR review: with multiple aliased call sites
+        // the recipe was leaving the first occurrence untouched and only rewriting the rest.
+        // Every call must be rewritten.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.AggregateLifecycle.apply as lifecycleApply
+
+                        class Auth {
+                            fun handle(cmd: Any) {
+                                lifecycleApply("first")
+                                lifecycleApply("second")
+                                lifecycleApply("third")
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.messaging.eventhandling.gateway.EventAppender
+
+                        class Auth {
+                            fun handle(cmd: Any, eventAppender: EventAppender) {
+                                eventAppender.append("first")
+                                eventAppender.append("second")
+                                eventAppender.append("third")
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void aliasStateIsResetBetweenCompilationUnits() {
         // OpenRewrite reuses the visitor instance across all compilation units in a recipe
         // run. If alias-name state from one file leaked into another, an unrelated function

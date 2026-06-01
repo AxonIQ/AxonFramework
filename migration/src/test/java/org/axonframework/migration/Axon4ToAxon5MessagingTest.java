@@ -23,6 +23,7 @@ import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
  * Verifies the messaging-module migration: handler annotations move into
@@ -748,6 +749,67 @@ class Axon4ToAxon5MessagingTest implements RewriteTest {
                             CompletableFuture<String> findOne(Object payload) {
                                 return gateway.query("byId", payload, ResponseTypes.instanceOf(String.class));
                             }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void renamesMetaDataToMetadataAndRelocatesIntoCore() {
+        // AF4 `org.axonframework.messaging.MetaData` becomes AF5
+        // `org.axonframework.messaging.core.Metadata`. The rename covers the class itself
+        // and call sites such as `MetaData.emptyInstance()` (the factory method is preserved
+        // on the AF5 type, so the call site doesn't need a separate rewrite).
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.messaging.MetaData;
+                        class UsesMetaData {
+                            MetaData emptyMd() {
+                                return MetaData.emptyInstance();
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.messaging.core.Metadata;
+
+                        class UsesMetaData {
+                            Metadata emptyMd() {
+                                return Metadata.emptyInstance();
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void renamesMetaDataToMetadataInKotlinSources() {
+        // Mirror the Java rename for Kotlin: the AF4 `MetaData` import and call sites
+        // (e.g. `MetaData.emptyInstance()`) become `Metadata` referring to the AF5 core type.
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.messaging.MetaData
+
+                        class UsesMetaData {
+                            fun emptyMd(): MetaData = MetaData.emptyInstance()
+                        }
+                        """,
+                        """
+                        package com.example
+
+                        import org.axonframework.messaging.core.Metadata
+
+                        class UsesMetaData {
+                            fun emptyMd(): Metadata = Metadata.emptyInstance()
                         }
                         """
                 )
