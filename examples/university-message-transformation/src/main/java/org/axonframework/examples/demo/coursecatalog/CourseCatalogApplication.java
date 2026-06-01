@@ -108,6 +108,10 @@ public class CourseCatalogApplication {
         } finally {
             configuration.shutdown();
         }
+        if (keepAlive) {
+            // Force exit: non-daemon framework threads otherwise keep the JVM alive.
+            System.exit(0);
+        }
     }
 
     private static void seedHistoricEvents(AxonConfiguration configuration) {
