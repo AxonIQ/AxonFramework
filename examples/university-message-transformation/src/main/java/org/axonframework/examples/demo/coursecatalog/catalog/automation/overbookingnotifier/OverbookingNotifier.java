@@ -27,17 +27,19 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import java.util.Objects;
 
 /**
- * Reacts to every {@link CoursePublished} that reaches a handler. When the published
- * capacity range is unusually wide (more than {@value #WIDE_RANGE_THRESHOLD} between
- * min and max), sends an overbooking-risk notification via {@link NotificationService}.
+ * Flags a {@link CoursePublished} whose capacity range is wider than
+ * {@value #LOOSE_COMMITMENT_THRESHOLD_SEATS} seats between min and max. Such a loose
+ * commitment can leave students over-promised or faculty under-resourced; the notification
+ * gives operations a chance to confirm the cohort size before enrolment opens.
  * <p>
- * Receives the current-shape ({@code 3.0.0}) {@link CoursePublished} even when the
- * stored event was an older shape: the transformation chain lifts events before any
- * handler sees them.
+ * Receives the current-shape {@link CoursePublished} even when the stored event was an
+ * older shape: the transformation chain lifts events before any handler sees them.
  */
 final class OverbookingNotifier {
 
-    static final int WIDE_RANGE_THRESHOLD = 20;
+    /** Maximum span (max minus min seats) considered a tight capacity commitment. */
+    static final int LOOSE_COMMITMENT_THRESHOLD_SEATS = 20;
+
     static final String OVERBOOKING_TOPIC = "overbooking-risk";
 
     private OverbookingNotifier() {
@@ -48,13 +50,17 @@ final class OverbookingNotifier {
         CoursePublished published = Objects.requireNonNull(
                 event.payloadAs(CoursePublished.class, converter),
                 "CoursePublished payload must not be null");
-        int span = published.range().max() - published.range().min();
-        if (span > WIDE_RANGE_THRESHOLD) {
+        int min = published.range().min();
+        int max = published.range().max();
+        int span = max - min;
+        if (span > LOOSE_COMMITMENT_THRESHOLD_SEATS) {
             NotificationService notifier = context.component(NotificationService.class);
             notifier.send(new NotificationService.Notification(
                     OVERBOOKING_TOPIC,
-                    "Overbooking risk on course '" + published.name()
-                            + "' (capacity range spans " + span + " seats)"
+                    "Loose capacity commitment for course '" + published.name() + "': published with range "
+                            + min + "-" + max + " (" + span + " seats apart, threshold "
+                            + LOOSE_COMMITMENT_THRESHOLD_SEATS + "). "
+                            + "Operations should confirm the intended cohort size before enrolment opens."
             ));
         }
         return MessageStream.empty();
