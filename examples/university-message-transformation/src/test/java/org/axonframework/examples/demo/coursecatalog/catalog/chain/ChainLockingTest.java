@@ -17,6 +17,7 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
 import io.axoniq.framework.messaging.transformation.ChainConfigurationException;
+import io.axoniq.framework.messaging.transformation.events.EventTransformer;
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CoursePublishedV1ToV2;
 import org.axonframework.examples.demo.coursecatalog.catalog.transformations.CoursePublishedV2ToV3;
@@ -28,13 +29,12 @@ class ChainLockingTest {
 
     @Test
     void registrationAfterBuildThrowsChainConfigurationException() {
-        // given
         EventTransformerChain.Builder builder = EventTransformerChain.builder()
                                                                      .register(CoursePublishedV1ToV2.build());
         builder.build();
+        EventTransformer secondTransformer = CoursePublishedV2ToV3.build();
 
-        // when / then
-        assertThatThrownBy(() -> builder.register(CoursePublishedV2ToV3.build()))
+        assertThatThrownBy(() -> builder.register(secondTransformer))
                 .isInstanceOf(ChainConfigurationException.class)
                 .hasMessageContaining("locked");
     }

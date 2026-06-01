@@ -53,20 +53,18 @@ class ChainBuildLogTest {
 
     @Test
     void chainBuildEmitsOneDebugEntryNamingEveryRegisteredTransformer() {
-        // when
         CourseCatalogTransformations.chain();
 
-        // then
         List<ILoggingEvent> debugEntries = appender.list.stream()
                                                        .filter(e -> e.getLevel() == Level.DEBUG)
                                                        .toList();
         assertThat(debugEntries).hasSize(1);
-        String message = debugEntries.getFirst().getFormattedMessage();
-        assertThat(message).contains("5 transformation(s)");
-        assertThat(message).contains("coursecatalog.CoursePublished#1.0.0");
-        assertThat(message).contains("coursecatalog.CoursePublished#2.0.0");
-        assertThat(message).contains("coursecatalog.StudentRegistered#1.0.0");
-        assertThat(message).contains("coursecatalog.SystemAnnouncement#0.0.1");
-        assertThat(message).contains("coursecatalog.WelcomeMessageSent#1.0.0");
+        assertThat(debugEntries.getFirst().getFormattedMessage())
+                .contains("5 transformation(s)",
+                          "coursecatalog.CoursePublished#1.0.0",
+                          "coursecatalog.CoursePublished#2.0.0",
+                          "coursecatalog.StudentRegistered#1.0.0",
+                          "coursecatalog.SystemAnnouncement#0.0.1",
+                          "coursecatalog.WelcomeMessageSent#1.0.0");
     }
 }

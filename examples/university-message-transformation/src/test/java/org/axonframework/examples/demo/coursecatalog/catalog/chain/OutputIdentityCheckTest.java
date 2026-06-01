@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.demo.coursecatalog.catalog.chain;
 
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import io.axoniq.framework.messaging.transformation.ChainConfigurationException;
@@ -88,7 +89,7 @@ class OutputIdentityCheckTest {
         }
 
         @Override
-        public <T> T convert(Object input, java.lang.reflect.Type targetType) {
+        public <T> T convert(@Nullable Object input, java.lang.reflect.Type targetType) {
             throw new AssertionError("convert unexpectedly invoked");
         }
 

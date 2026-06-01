@@ -39,7 +39,7 @@ class OverbookingNotifierAxonFixtureTest {
     void beforeEach() {
         notifier = new RecordingNotificationService();
         // The customization registers the recording NotificationService BEFORE the slice's
-        // configure runs, so the slice's registerIfNotPresent leaves our recorder in place.
+        // configuring runs, so the slice's registerIfNotPresent leaves our recorder in place.
         fixture = CourseCatalogAxonTestFixture.slice(
                 OverbookingNotifierConfiguration::configure,
                 c -> c.componentRegistry(
