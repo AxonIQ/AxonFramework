@@ -20,6 +20,7 @@ import io.axoniq.framework.messaging.transformation.events.EventTransformerChain
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -52,7 +53,18 @@ final class TransformationOutcome {
             MessageConverter converter,
             MessageTypeResolver typeResolver
     ) {
-        EventMessage input = new GenericEventMessage(inputType, inputPayload);
+        return run(chain, inputType, inputPayload, Metadata.emptyInstance(), converter, typeResolver);
+    }
+
+    static TransformationOutcome run(
+            EventTransformerChain chain,
+            MessageType inputType,
+            Object inputPayload,
+            Metadata inputMetadata,
+            MessageConverter converter,
+            MessageTypeResolver typeResolver
+    ) {
+        EventMessage input = new GenericEventMessage(inputType, inputPayload, inputMetadata);
         try {
             List<EventMessage> collected = collect(chain.transform(
                     MessageStream.fromIterable(List.of(input)),

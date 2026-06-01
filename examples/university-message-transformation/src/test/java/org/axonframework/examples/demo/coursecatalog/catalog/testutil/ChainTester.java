@@ -20,6 +20,7 @@ import io.axoniq.framework.messaging.transformation.events.EventTransformerChain
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -83,6 +84,7 @@ public final class ChainTester {
     public final class Given {
         private @Nullable MessageType inputType;
         private @Nullable Object inputPayload;
+        private Metadata inputMetadata = Metadata.emptyInstance();
 
         /**
          * @param qualifiedName qualified name of the input event
@@ -112,6 +114,15 @@ public final class ChainTester {
             return this;
         }
 
+        /**
+         * @param metadata metadata to attach to the input event (defaults to empty)
+         * @return this builder
+         */
+        public Given metadata(Metadata metadata) {
+            this.inputMetadata = metadata;
+            return this;
+        }
+
         /** @return the {@code when} phase, after running the chain on the given input */
         public When when() {
             if (inputType == null) {
@@ -120,7 +131,8 @@ public final class ChainTester {
             if (inputPayload == null) {
                 throw new IllegalStateException("given().payload(...) or .payloadFromResource(...) was not set");
             }
-            return new When(TransformationOutcome.run(chain, inputType, inputPayload, converter, typeResolver));
+            return new When(TransformationOutcome.run(
+                    chain, inputType, inputPayload, inputMetadata, converter, typeResolver));
         }
     }
 
@@ -216,6 +228,20 @@ public final class ChainTester {
             assertThat(outcome.outputs().getFirst().identifier())
                     .as("output identifier should equal input identifier (pass-through)")
                     .isEqualTo(outcome.input().identifier());
+            return this;
+        }
+
+        /**
+         * Asserts that the single output event's metadata equals the input event's
+         * metadata, proving the chain preserves the envelope when rewriting the payload.
+         *
+         * @return this
+         */
+        public Then outputPreservesInputMetadata() {
+            singleOutput();
+            assertThat(outcome.outputs().getFirst().metadata())
+                    .as("output metadata should equal input metadata")
+                    .isEqualTo(outcome.input().metadata());
             return this;
         }
 
