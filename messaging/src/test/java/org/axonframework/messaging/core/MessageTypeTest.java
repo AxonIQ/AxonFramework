@@ -156,4 +156,41 @@ class MessageTypeTest {
     void fromStringRejectsMissingVersion() {
         assertThrows(IllegalArgumentException.class, () -> MessageType.fromString(NAME));
     }
+
+    /**
+     * Reproduction of <a href="https://github.com/AxonIQ/AxonFramework/issues/4625">#4625</a>.
+     * <p>
+     * Axon Framework 4 events and snapshots may be stored without a revision (the revision was nullable, and Axon
+     * Server stores it as an empty {@code String}). Reconstructing a {@link MessageType} from such stored data - as the
+     * Axon Server connector and the JPA event storage engine do via {@code new MessageType(payloadType, payloadRevision)}
+     * - currently fails because the compact constructor rejects an empty or {@code null} version.
+     * <p>
+     * These tests pin that current (broken) behavior. The chosen fix will determine whether and how these expectations
+     * change.
+     */
+    @Nested
+    class GivenStoredMessageWithoutVersion {
+
+        @Test
+        void rejectsEmptyVersion() {
+            IllegalArgumentException exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new MessageType(QUALIFIED_NAME, "")
+            );
+
+            assertEquals("The given version is unsupported because it is empty.", exception.getMessage());
+        }
+
+        @Test
+        void rejectsNullVersion() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class, () -> new MessageType(QUALIFIED_NAME, null));
+        }
+
+        @Test
+        void rejectsEmptyVersionThroughStringConstructorAsUsedByStorageEngines() {
+            // Exactly the call a storage engine makes when reading a stored event/snapshot with an absent revision.
+            assertThrows(IllegalArgumentException.class, () -> new MessageType(NAME, ""));
+        }
+    }
 }
