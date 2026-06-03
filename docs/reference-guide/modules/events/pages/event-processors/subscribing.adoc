@@ -253,5 +253,5 @@ Whenever the xref:event-processors/index.adoc#error-handling[error handler] reth
 Providing the exception to the event publisher allows the publishing component to deal with it accordingly.
 
 ifdef::advanced-framework[]
-include::connector:partial$persistent-streams.adoc[]
+include::connector:partial$subscribing-processors-persistent-streams.adoc[]
 endif::[]
