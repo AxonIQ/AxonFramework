@@ -312,19 +312,19 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
     void sourcingEventsWithMetadata() {
         AppendCondition appendCondition = AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA);
 
+        Metadata expectedMetadata = Metadata.with("key1", "value1")
+                                            .and("key2", "true")
+                                            .and("key3", "44");
         appendEvents(
                 appendCondition,
-                taggedEventMessage(
-                        "event-0",
-                        TEST_AGGREGATE_TAGS,
-                        Metadata.with("key1", "value1")
-                                .and("key2", "true")
-                                .and("key3", "44")
-                )
+                taggedEventMessage("event-0", TEST_AGGREGATE_TAGS, expectedMetadata)
         );
 
         StepVerifier.create(FluxUtils.of(testSubject.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))))
-                    .expectNextMatches(entryWithAggregateEvent("event-0", 0))
+                    .assertNext(entry -> {
+                        assertEquals("event-0", entry.message().payloadAs(String.class));
+                        assertEquals(expectedMetadata, entry.message().metadata());
+                    })
                     .expectNextMatches(AggregateBasedStorageEngineTestSuite::assertMarkerEntry)
                     .verifyComplete();
     }
