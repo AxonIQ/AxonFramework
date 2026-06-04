@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -339,6 +340,23 @@ public class AnnotatedHandlerInspector<T> {
                             .map(AnnotatedHandlerInspector::getAllInspectedTypes)
                             .forEach(inspectedTypes::addAll);
         return Collections.unmodifiableSet(inspectedTypes);
+    }
+
+    /**
+     * Resolves a behavior of the given {@code behaviorType} from the inspected {@code target}, on the target's behalf.
+     * <p>
+     * This is the model's seam for exposing behaviors of an annotated handler. Currently it resolves a behavior the
+     * {@code target} implements directly. In the future, behaviors declared purely through annotations (for example an
+     * {@code @SelfCheckpointing}-style annotation that does not require the target to implement the interface) can be
+     * synthesised here on the target's behalf, without the wrapping component needing to change.
+     *
+     * @param target       the inspected handler instance to resolve the behavior from
+     * @param behaviorType the behavior type to resolve
+     * @param <B>          the behavior type
+     * @return an {@link Optional} holding the resolved behavior, or empty if the {@code target} does not provide it
+     */
+    public <B> Optional<B> resolveBehavior(T target, Class<B> behaviorType) {
+        return behaviorType.isInstance(target) ? Optional.of(behaviorType.cast(target)) : Optional.empty();
     }
 
     record ExecutableSignature(String name, List<Class<?>> parameterTypes) {

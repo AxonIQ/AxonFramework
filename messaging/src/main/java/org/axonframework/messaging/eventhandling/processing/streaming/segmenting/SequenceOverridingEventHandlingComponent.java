@@ -108,6 +108,13 @@ public class SequenceOverridingEventHandlingComponent implements EventHandlingCo
     }
 
     @Override
+    public <C> Optional<C> unwrap(Class<C> componentType) {
+        return componentType.isInstance(this)
+                ? Optional.of(componentType.cast(this))
+                : delegate.unwrap(componentType);
+    }
+
+    @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeWrapperOf(delegate);
         descriptor.describeProperty("sequencingPolicy", sequencingPolicy);
