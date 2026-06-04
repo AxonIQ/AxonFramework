@@ -70,7 +70,8 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
                 taskName,
                 timeout,
                 warningThreshold,
-                warningInterval
+                warningInterval,
+                getClass()
         );
         task.start();
         try {

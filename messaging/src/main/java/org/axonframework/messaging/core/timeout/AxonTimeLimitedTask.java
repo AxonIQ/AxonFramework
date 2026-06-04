@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.core.timeout;
 
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.util.concurrent.Future;
@@ -46,12 +47,13 @@ class AxonTimeLimitedTask {
     private final String taskName;
     private final ScheduledExecutorService scheduledExecutorService;
     private final Logger logger;
+    @Nullable
+    private final String callerClassName; // stored as name to avoid getName() on every stack frame check
     private boolean completed = false;
     private boolean interrupted = false;
     private boolean interruptedExternally = false;
     private long startTimeMs = -1;
     private Future<?> currentScheduledFuture = null;
-    private String startStackTrace;
 
 
     /**
@@ -72,12 +74,37 @@ class AxonTimeLimitedTask {
                                int timeout,
                                int warningThreshold,
                                int warningInterval) {
+        this(taskName, timeout, warningThreshold, warningInterval, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null);
+    }
+
+    /**
+     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * {@code warningThreshold} and {@code warningInterval}. Runs the provided task on the current thread after
+     * scheduling a timeout and warnings on another thread.
+     * <p>
+     * The {@code callerClass} is used to trim the stack trace in timeout/warning logs, cutting off framework internals
+     * below the caller. If you do not need trimming, use
+     * {@link #AxonTimeLimitedTask(String, int, int, int)}.
+     *
+     * @param taskName         The task's name to be included in the logging
+     * @param timeout          The timeout in milliseconds
+     * @param warningThreshold The threshold in milliseconds after which a warning is logged. Setting this to a value
+     *                         equal or higher than {@code timeout} will disable warnings.
+     * @param warningInterval  The interval in milliseconds between warnings.
+     * @param callerClass      the class of the direct caller, used to trim the stack trace in timeout/warning logs
+     */
+    public AxonTimeLimitedTask(String taskName,
+                               int timeout,
+                               int warningThreshold,
+                               int warningInterval,
+                               Class<?> callerClass) {
         this(taskName,
              timeout,
              warningThreshold,
              warningInterval,
              AxonTaskJanitor.INSTANCE,
-             AxonTaskJanitor.LOGGER
+             AxonTaskJanitor.LOGGER,
+             callerClass
         );
     }
 
@@ -97,8 +124,8 @@ class AxonTimeLimitedTask {
      * @param warningThreshold         The threshold in milliseconds after which a warning is logged. Setting this to a
      *                                 value equal or higher than {@code timeout} will disable warnings.
      * @param warningInterval          The interval in milliseconds between warnings.
-     * @param scheduledExecutorService The executor service to schedule the timeout and warnings
-     * @param logger                   The logger to log the warnings and errors
+     * @param scheduledExecutorService the executor service to schedule the timeout and warnings
+     * @param logger                   the logger to log the warnings and errors
      */
     public AxonTimeLimitedTask(String taskName,
                                int timeout,
@@ -106,6 +133,36 @@ class AxonTimeLimitedTask {
                                int warningInterval,
                                ScheduledExecutorService scheduledExecutorService,
                                Logger logger) {
+        this(taskName, timeout, warningThreshold, warningInterval, scheduledExecutorService, logger, null);
+    }
+
+    /**
+     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * {@code warningThreshold} and {@code warningInterval}. For scheduling, the provided
+     * {@code scheduledExecutorService} will be used. To log warnings and errors, the provided {@code logger} will be
+     * used.
+     * <p>
+     * The {@code callerClass} is used to trim the stack trace in timeout/warning logs, cutting off framework internals
+     * below the caller. If you do not need trimming, use
+     * {@link #AxonTimeLimitedTask(String, int, int, int, ScheduledExecutorService, Logger)}.
+     *
+     * @param taskName                 The task's name to be included in the logging
+     * @param timeout                  The timeout in milliseconds
+     * @param warningThreshold         The threshold in milliseconds after which a warning is logged. Setting this to a
+     *                                 value equal or higher than {@code timeout} will disable warnings.
+     * @param warningInterval          The interval in milliseconds between warnings.
+     * @param scheduledExecutorService the executor service to schedule the timeout and warnings
+     * @param logger                   the logger to log the warnings and errors
+     * @param callerClass              the class of the direct caller, used to trim the stack trace in timeout/warning
+     *                                 logs
+     */
+    public AxonTimeLimitedTask(String taskName,
+                               int timeout,
+                               int warningThreshold,
+                               int warningInterval,
+                               ScheduledExecutorService scheduledExecutorService,
+                               Logger logger,
+                               Class<?> callerClass) {
         if (taskName == null || taskName.isEmpty()) {
             throw new IllegalArgumentException("Task name cannot be null or empty");
         }
@@ -115,6 +172,7 @@ class AxonTimeLimitedTask {
         this.warningInterval = warningInterval;
         this.scheduledExecutorService = scheduledExecutorService;
         this.logger = logger;
+        this.callerClassName = callerClass != null ? callerClass.getName() : null;
         this.thread = Thread.currentThread();
     }
 
@@ -130,7 +188,6 @@ class AxonTimeLimitedTask {
             throw new IllegalStateException("Task can only be run once");
         }
         startTimeMs = System.currentTimeMillis();
-        startStackTrace = thread.getStackTrace()[2].getClassName();
 
         if (warningThreshold < 0 || warningThreshold >= timeout) {
             scheduleImmediateInterrupt();
@@ -311,8 +368,7 @@ class AxonTimeLimitedTask {
         StringBuilder sb = new StringBuilder();
         for (StackTraceElement element : stackTrace) {
             sb.append(element).append("\n");
-            // This is the start of the stack trace of the framework internals calling the method
-            if (element.toString().contains(startStackTrace)) {
+            if (callerClassName != null && element.getClassName().equals(callerClassName)) {
                 break;
             }
         }
