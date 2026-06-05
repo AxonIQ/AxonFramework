@@ -1579,7 +1579,7 @@ The following sample Event Handling Component shows the available replay API:
 [source,java]
 ----
 @AllowReplay // <1>
-@ProcessingGroup("card-summary")
+@Namespace("card-summary")
 public class CardSummaryProjection {
     //...
     @EventHandler

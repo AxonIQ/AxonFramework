@@ -20,24 +20,88 @@ The `PooledStreamingEventProcessor` is a more robust and performant implementati
 
 For more information on how to configure and use the `PooledStreamingEventProcessor`, refer to the xref:events:event-processors/streaming.adoc[Streaming Event Processor] section in the regular documentation.
 
-== Removal of `@ProcessingGroup`
+== Replacing `@ProcessingGroup` with `@Namespace`
 
-The `@ProcessingGroup` annotation has been removed in Axon Framework 5.
-Previously, this annotation was used to group event handling components into a single event processor.
+The `@ProcessingGroup` annotation has been replaced in Axon Framework 5 by the `@Namespace` annotation (`org.axonframework.messaging.core.annotation.Namespace`).
+Previously, `@ProcessingGroup` was used to group event handling components into a single event processor.
 
-In Axon Framework 5, event handlers are registered directly to an event processor in the configuration.
-A replacement for `@ProcessingGroup` in the form of a "namespace" annotation is expected to be introduced soon.
+When using Spring Boot, `@Namespace` fulfills this same role: a component annotated with `@Namespace("my-processor")` is grouped into the event processor named `my-processor`.
+This annotation-driven processor assignment is a Spring Boot feature.
+Outside Spring Boot, event handling components are assigned to processors explicitly through the configuration API (see <<Event processor configuration>>), and `@Namespace` plays no part in that assignment.
+
+To migrate, replace the annotation and its import, keeping the same string value:
 
 [source,java]
 ----
 // AF4
+import org.axonframework.config.ProcessingGroup;
+
 @ProcessingGroup("my-processor")
 public class MyProjector {
     @EventHandler
     public void on(MyEvent event) { /* ... */ }
 }
 
-// AF5 - Declarative registration (Non-Spring)
+// AF5
+import org.axonframework.messaging.core.annotation.Namespace;
+
+@Namespace("my-processor")
+public class MyProjector {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+----
+
+The `@Namespace` annotation has a broader reach than `@ProcessingGroup`: besides being placed on the component class, it may be placed on an enclosing class, on a `package-info.java` file, or on a `module-info.java` file, declaring the namespace for many components at once.
+
+[WARNING]
+.The namespace value is a binding contract
+====
+The string passed to `@Namespace` must match the event processor name wherever that name is referenced — the configuration properties key (`axon.eventhandling.processors.<name>.*`), an `EventProcessorDefinition` (`pooledStreaming("<name>")` / `pooledStreamingMatching("<name>")`), or a `MessagingConfigurer.eventProcessing(...)` processor name.
+A mismatch silently routes events to a different processor, with no compile-time signal.
+====
+
+How the component is assigned to its processor differs between Spring Boot and the declarative configuration API:
+
+[tabs]
+====
+Spring Boot::
++
+--
+A component annotated with `@Namespace("my-processor")` is automatically assigned to the event processor named `my-processor`, overriding the package-name default.
+See xref:ROOT:spring-boot-integration.adoc#namespace-based-handler-selection[namespace-based handler selection].
+
+For explicit control, declare an `EventProcessorDefinition` bean and select the handlers with `EventHandlerSelector.matchesNamespaceOnType("my-processor")` (both reside in `org.axonframework.extension.spring.config`):
+
+[source,java]
+----
+import org.axonframework.extension.spring.config.EventHandlerSelector;
+import org.axonframework.extension.spring.config.EventProcessorDefinition;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class AxonConfig {
+
+    @Bean
+    public EventProcessorDefinition myProcessorDefinition() {
+        return EventProcessorDefinition.pooledStreaming("my-processor")
+                                       .assigningHandlers(EventHandlerSelector.matchesNamespaceOnType("my-processor"))
+                                       .notCustomized();
+    }
+}
+----
+
+See the xref:events:event-processors/streaming.adoc#configuring[streaming] and xref:events:event-processors/subscribing.adoc#configuring[subscribing] sections for the full configuration options.
+--
+
+Declarative - Configuration API::
++
+--
+There is no automatic namespace-based assignment; register the component directly against the named processor through `MessagingConfigurer.eventProcessing(...)`:
+
+[source,java]
+----
 public void configure(MessagingConfigurer configurer) {
     configurer.eventProcessing(
         eventProcessing -> eventProcessing.pooledStreaming(
@@ -48,6 +112,8 @@ public void configure(MessagingConfigurer configurer) {
     );
 }
 ----
+--
+====
 
 == Event processor configuration
 
