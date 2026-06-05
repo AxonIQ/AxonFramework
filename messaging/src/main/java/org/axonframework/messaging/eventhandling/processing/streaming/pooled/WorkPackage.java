@@ -127,7 +127,7 @@ class WorkPackage {
     private final AtomicReference<@Nullable CompletableFuture<Throwable>> abortFlag = new AtomicReference<>();
     private final AtomicReference<@Nullable Throwable> abortException = new AtomicReference<>();
     private @Nullable Runnable batchProcessedCallback;
-    private @Nullable volatile TrackingToken lastConsumedToken;
+    private volatile @Nullable TrackingToken lastConsumedToken;
     private final CheckpointTrigger checkpointTrigger = new CheckpointTrigger() {
         @Override
         public void requestCheckpoint() {
