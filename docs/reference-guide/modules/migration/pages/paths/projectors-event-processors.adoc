@@ -25,8 +25,7 @@ For more information on how to configure and use the `PooledStreamingEventProces
 The `@ProcessingGroup` annotation has been removed in Axon Framework 5.
 Previously, this annotation was used to group event handling components into a single event processor.
 
-In Axon Framework 5, event handlers are registered directly to an event processor in the configuration.
-A replacement for `@ProcessingGroup` in the form of a "namespace" annotation is expected to be introduced soon.
+In Axon Framework 5, you can use the `@Namespace` annotation to xref:events:event-processors/index.adoc#autodetected_config[assign an event handling component to an event processor].
 
 [source,java]
 ----
@@ -37,17 +36,16 @@ public class MyProjector {
     public void on(MyEvent event) { /* ... */ }
 }
 
-// AF5 - Declarative registration (Non-Spring)
-public void configure(MessagingConfigurer configurer) {
-    configurer.eventProcessing(
-        eventProcessing -> eventProcessing.pooledStreaming(
-            pooledStreaming -> pooledStreaming.defaultProcessor("my-processor",
-                components -> components.autodetected(cfg -> new MyProjector())
-            )
-        )
-    );
+// AF5
+@Namespace("my-processor")
+public class MyProjector {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
 }
+
 ----
+
+Alternatively, you can use the xref:events:event-processors/index.adoc#declarative_config[declarative configuration] to assign event handling components to processors.
 
 == Event processor configuration
 
