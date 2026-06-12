@@ -55,6 +55,9 @@ public interface CatalogViewRepository {
      */
     void recordWelcomeMessage(StudentId studentId, String body);
 
+    /** @param sequence the heartbeat's sequence number (re-recording the same sequence is a no-op) */
+    void recordHeartbeat(int sequence);
+
     /** @return the full snapshot of the catalog */
     CourseCatalogView snapshot();
 }

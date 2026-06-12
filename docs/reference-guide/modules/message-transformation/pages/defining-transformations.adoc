@@ -234,6 +234,39 @@ A type-filtering read for the new name still finds events stored under the old o
 So a projection that sources only `CoursePublished` events also receives the historic `CourseOffered` ones, and nothing is silently missed.
 ====
 
+[#_dropping_an_event]
+== Dropping an event
+
+Sometimes a stored event should no longer reach any handler at all.
+An old monitoring sidecar might have written `SystemHeartbeat` pings into the stream, or a class of event might now be regulated and must be suppressed from processing without being deleted from storage.
+`drop(...)` removes every matching event from the read stream:
+
+[source,java]
+----
+private static final MessageType FROM = new MessageType("coursecatalog.SystemHeartbeat", "1.0.0");
+
+public static EventTransformer build() {
+    return EventTransformer.drop(FROM); // <1>
+}
+----
+<1> `drop(from)` takes only the identity to match. There is no `to` and no mapper: a matched event produces no output, the 1:0 case.
+
+A drop matches its `from` by exact identity, like a concrete `from(...)`; it does not take a predicate.
+No payload conversion happens, because nothing is produced.
+
+The stored events stay exactly as they were written; only the read path is affected.
+A dropped event never reaches a handler, and surviving events keep their original tracking token: once a streaming processor reads an event after a drop, the dropped position is covered, so a restart does not reprocess it.
+
+Unlike a <<_renaming_an_event,rename>>, a drop declares no `to`, so it adds no read-time widening: a type-filtering read is never broadened to fetch a dropped event.
+
+[NOTE]
+.Dropping an event versus dropping a field
+====
+`drop(...)` removes a whole _event_ from the read stream.
+To drop a _field_ that handlers no longer read, let the xref:ROOT:conversion.adoc[converter] ignore it instead: that is a conversion concern, not a transformation.
+See xref:message-transformation:index.adoc[the overview] for when each applies.
+====
+
 == Next steps
 
 With your transformations defined, the next step is to assemble and register them.

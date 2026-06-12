@@ -28,12 +28,15 @@ import java.util.List;
  * @param announcements       every system announcement, in arrival order
  * @param registeredStudents  total number of students registered in the catalog
  * @param welcomeMessages     every welcome message, lifted to the current shape by the chain
+ * @param heartbeatsSeen      number of {@code SystemHeartbeat} pings the projection recorded; stays
+ *                            zero while the heartbeat drop is registered, even though pings are stored
  */
 public record CourseCatalogView(
         List<CatalogViewReadModel> courses,
         List<EnrolmentReadModel> enrolments,
         List<String> announcements,
         int registeredStudents,
-        List<WelcomeMessageView> welcomeMessages
+        List<WelcomeMessageView> welcomeMessages,
+        int heartbeatsSeen
 ) {
 }

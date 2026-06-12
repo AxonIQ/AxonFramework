@@ -202,6 +202,8 @@ public class CourseCatalogApplication {
         for (WelcomeMessageView message : view.welcomeMessages()) {
             report.append("  - ").append(message.studentId()).append(": ").append(message.body()).append('\n');
         }
+        report.append("System heartbeats seen by the projection: ").append(view.heartbeatsSeen())
+              .append(" (pings are stored but dropped on read, so none are processed)\n");
         String reportAsString = report.toString();
         logger.info(reportAsString);
     }

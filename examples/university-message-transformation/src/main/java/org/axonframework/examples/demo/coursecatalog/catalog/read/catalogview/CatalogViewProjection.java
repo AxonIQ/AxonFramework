@@ -22,6 +22,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.events.Registration
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentEnrolledInCourse;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentRegistered;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.SystemAnnouncement;
+import org.axonframework.examples.demo.coursecatalog.catalog.events.SystemHeartbeat;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.WelcomeMessageSent;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
@@ -81,5 +82,12 @@ class CatalogViewProjection {
     @EventHandler
     void on(WelcomeMessageSent event) {
         repository.recordWelcomeMessage(event.studentId(), event.body());
+    }
+
+    @EventHandler
+    void on(SystemHeartbeat event) {
+        // Never reached while the SystemHeartbeat drop is registered: the chain removes the ping
+        // before it gets here, so the recorded count stays at zero.
+        repository.recordHeartbeat(event.sequence());
     }
 }

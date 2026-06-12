@@ -245,6 +245,8 @@ final class InteractiveShell {
         for (WelcomeMessageView message : view.welcomeMessages()) {
             print("  - " + message.studentId() + ": " + message.body());
         }
+        print("System heartbeats seen by the projection: " + view.heartbeatsSeen()
+                      + " (stored but dropped on read, so none are processed)");
     }
 
     private CourseCatalogView queryCatalog() {

@@ -18,6 +18,7 @@ through schema evolution, and exercises them end to end.
 | `StudentRegisteredV1ToV2` | `StudentRegistered#1.0.0` / `#2.0.0` | `TypeReference<Map<String,Object>>` overload, no Jackson dependency in user code. |
 | `SystemAnnouncementLegacyUplift` | `SystemAnnouncement#0.0.1` / `#1.0.0` | Unversioned legacy events: `@Event` without a `version` defaults to `0.0.1`. |
 | `WelcomeMessageBetaCleanup` | `WelcomeMessageSent#0.*` / `#1.0.0` | Predicate-based source, one transformer matches every beta version. |
+| `SystemHeartbeatDrop` | `SystemHeartbeat#1.0.0` / _(none)_ | A drop (`EventTransformer.drop`): the event is removed from the read stream before any handler sees it, while staying in storage. The projection counts heartbeats, so the printed `System heartbeats seen: 0` shows the suppression (it would be non-zero without the drop). |
 
 The chain is composed in
 [`CourseCatalogTransformations`](src/main/java/org/axonframework/examples/demo/coursecatalog/catalog/transformations/CourseCatalogTransformations.java).
@@ -66,8 +67,9 @@ mvn compile exec:java
 Or run `CourseCatalogApplication#main` from your IDE.
 
 The bootstrap seeds the legacy history, dispatches a few sample commands, awaits
-the projection, prints the resulting catalog view, and shuts down. The printed
-view ends with a `Welcome messages` section: which shows which students were registered in the past.
+the projection, prints the resulting catalog view, and shuts down. The printed view ends with the
+`Welcome messages` section and a `System heartbeats seen: 0` line: the heartbeats are in storage, but
+the drop keeps the projection from ever counting them.
 
 The bundled `logback.xml` enables `DEBUG` for `io.axoniq.framework.messaging.transformation`,
 so the chain build log naming every registered transformer shows up on startup.
@@ -131,6 +133,7 @@ Welcome messages (3):
   - Student:alice: Welcome to the catalog, Alice.
   - Student:bob: Hi Bob, welcome to the catalog.
   - Student:carol: Welcome Carol.
+System heartbeats seen by the projection: 0 (stored but dropped on read, so none are processed)
 
 course-catalog> welcome alice
   Student:alice: Welcome to the catalog, Alice.

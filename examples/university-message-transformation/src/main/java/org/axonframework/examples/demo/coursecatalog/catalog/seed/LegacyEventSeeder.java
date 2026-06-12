@@ -19,6 +19,7 @@ package org.axonframework.examples.demo.coursecatalog.catalog.seed;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogTags;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.CatalogSeeded;
+import org.axonframework.examples.demo.coursecatalog.catalog.events.SystemHeartbeat;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CatalogId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
@@ -41,7 +42,8 @@ import java.util.UUID;
  * so the application boots into a state with v1/v2 {@code CoursePublished}
  * payloads, v1 {@code StudentRegistered} payloads, beta-versioned
  * {@code WelcomeMessageSent} payloads, and an unversioned {@code SystemAnnouncement}
- * waiting for the transformation chain to lift them on read.
+ * waiting for the transformation chain to lift them on read. It also writes a couple of
+ * {@code SystemHeartbeat} pings, which the chain drops on read so the projection never counts them.
  * <p>
  * Idempotent: state-sourced from the catalog's {@link CatalogSeeded} marker. Calling
  * the {@link SeedCatalog} command a second time is a no-op.
@@ -86,6 +88,11 @@ public class LegacyEventSeeder {
                                             "Welcome Carol."),
 
                 new SystemAnnouncementUnversioned(catalogId, "Catalog launched in 2023"),
+
+                // Operational noise from a retired monitoring sidecar. The projection counts heartbeats,
+                // but the SystemHeartbeat drop suppresses them on read, so the count stays at zero.
+                new SystemHeartbeat(catalogId, 1),
+                new SystemHeartbeat(catalogId, 2),
 
                 new CatalogSeeded(catalogId, UUID.randomUUID().toString())
         );

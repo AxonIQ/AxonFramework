@@ -17,12 +17,14 @@ public static EventTransformerChain chain() {
                                 .register(CoursePublishedV2ToV3.build())
                                 .register(StudentRegisteredV1ToV2.build())
                                 .register(WelcomeMessageBetaCleanup.build())
-                                .build();                             // <3>
+                                .register(SystemHeartbeatDrop.build())    // <3>
+                                .build();                             // <4>
 }
 ----
 <1> Start building the chain.
 <2> Each transformer runs in the order it is registered. See <<_why_ordering_matters>>.
-<3> `build()` produces an immutable chain, ready to register as a component.
+<3> A drop is registered like any other transformer; it removes its matching event from the read stream.
+<4> `build()` produces an immutable chain, ready to register as a component.
 
 Then make that chain available to your configuration as an `EventTransformerChain` component.
 You only ever supply the chain: a transformation enhancer detects that component and installs the event-store transformation for you, so there is nothing to wire on the event store itself.
@@ -63,7 +65,7 @@ Both approaches do the same thing: they provide one `EventTransformerChain` comp
 Register no chain and the event store is left untouched.
 
 The chain is built once at startup and is immutable afterwards.
-The `chain()` shown above is the one assembled in the xref:message-transformation:demo.adoc[course catalog example].
+The xref:message-transformation:demo.adoc[course catalog example] assembles a fuller chain the same way, adding a rename and more version hops alongside the drop shown here.
 
 [NOTE]
 .Transformation runs before interceptors

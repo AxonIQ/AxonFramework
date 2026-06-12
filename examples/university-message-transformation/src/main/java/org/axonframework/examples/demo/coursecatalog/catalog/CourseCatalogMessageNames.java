@@ -43,6 +43,8 @@ public final class CourseCatalogMessageNames {
     public static final String SYSTEM_ANNOUNCEMENT       = NAMESPACE + ".SystemAnnouncement";
     /** Qualified name of {@code WelcomeMessageSent}. */
     public static final String WELCOME_MESSAGE_SENT      = NAMESPACE + ".WelcomeMessageSent";
+    /** Qualified name of the legacy {@code SystemHeartbeat} event, dropped on read. */
+    public static final String SYSTEM_HEARTBEAT          = NAMESPACE + ".SystemHeartbeat";
     /** Qualified name of {@code CatalogSeeded}; written by the seeder as an idempotency marker. */
     public static final String CATALOG_SEEDED            = NAMESPACE + ".CatalogSeeded";
 
