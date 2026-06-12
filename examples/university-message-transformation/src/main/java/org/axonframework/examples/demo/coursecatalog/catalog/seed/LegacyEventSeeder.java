@@ -58,6 +58,9 @@ public class LegacyEventSeeder {
         }
         CatalogId catalogId = command.catalogId();
         appender.append(
+                new CourseOfferedV1(catalogId, CourseId.of("legacy-foundations"),
+                                    "Legacy Foundations", 40),
+
                 new CoursePublishedV1(catalogId, CourseId.of("event-sourcing-101"),
                                       "Event Sourcing in Practice", 30),
                 new CoursePublishedV1(catalogId, CourseId.of("ddd-fundamentals"),
@@ -119,6 +122,21 @@ public class LegacyEventSeeder {
     // that pretends to have been written years ago. Kept private to this seeder
     // so users browsing the codebase cannot mistake them for the current shape.
     // ------------------------------------------------------------------------
+
+    /**
+     * The catalog's earliest course event, written under the name {@code CourseOffered} before the
+     * domain renamed it to {@code CoursePublished}. Same payload shape as {@link CoursePublishedV1};
+     * a {@code rename(...)} reads it back as {@code CoursePublished} {@code 1.0.0}, which the version
+     * chain then lifts to the current shape.
+     */
+    @Event(namespace = CourseCatalogMessageNames.NAMESPACE, name = "CourseOffered", version = "1.0.0")
+    record CourseOfferedV1(
+            @EventTag(key = CourseCatalogTags.CATALOG_ID) CatalogId catalogId,
+            @EventTag(key = CourseCatalogTags.COURSE_ID) CourseId courseId,
+            String name,
+            int capacity
+    ) {
+    }
 
     @Event(namespace = CourseCatalogMessageNames.NAMESPACE, name = "CoursePublished", version = "1.0.0")
     record CoursePublishedV1(

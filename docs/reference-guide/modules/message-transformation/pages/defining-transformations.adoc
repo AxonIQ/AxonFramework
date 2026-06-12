@@ -37,23 +37,21 @@ public final class CoursePublishedV1ToV2 {
 <1> `from(...)` matches the stored event identity by its `MessageType`, a qualified name plus a version. Only events with this exact identity are passed to the mapper.
 <2> `to(...)` declares the identity of the event the mapper produces. It must keep the same qualified name as `from`, and only the version may change.
 <3> `transform(...)` converts the stored payload to the requested type before calling your mapper, which returns the new payload.
-<4> The mapper takes just the converted payload and returns the new one. Most mappers need nothing else; if yours does, see <<_reading_from_the_processing_context>>.
+<4> The mapper takes just the converted payload and returns the new one. Most mappers need nothing else. If yours does, see <<_reading_from_the_processing_context>>.
 
 [NOTE]
 The `JsonNode` used here is the Jackson 3 type (`tools.jackson.databind.JsonNode`), the same representation Axon Framework's default converter works with.
 
 [IMPORTANT]
-.Renaming an event is not supported
+.`transform(...)` changes the version, not the name
 ====
-A transformation may change an event's _version_ and _payload_, but not its qualified name.
-The `to` identity must share the qualified name of `from`.
+A `transform(...)` may change an event's _version_ and _payload_, but not its qualified name: the `to` identity must share the qualified name of `from`.
+To change the name itself, with the payload carried over unchanged, use a <<_renaming_an_event,rename>> instead.
 
-If they differ, the chain raises a `ChainConfigurationException`:
+If a `transform(...)`'s `from` and `to` qualified names differ, the chain raises a `ChainConfigurationException`:
 
 * with a concrete `from`, the mismatch is detected when the chain is built, so the failure surfaces at startup.
 * with a <<_matching_multiple_event_versions,predicate `from`>>, a match can only be resolved per event, so the failure surfaces when such an event is read.
-
-Keep the same qualified name on both sides and change only the version.
 ====
 
 == Working with generic payloads
@@ -124,7 +122,7 @@ record Id(String value) { }
 <2> The mapper works on named, typed fields and returns the current `CoursePublished` event, so a misspelled field or wrong type is now a compile error.
 <3> The schema `record` only describes the _stored_ shape. It mirrors the wire form exactly, including identifiers written as `{"value": ...}` objects, and stays free of the live value objects, which the mapper builds at the end.
 
-The schema record has no relation to the live event class; it exists solely to read the old payload safely.
+The schema record has no relation to the live event class. It exists solely to read the old payload safely.
 Because the mapper returns a typed event, Axon Framework resolves its identity and rejects a wrong-shaped output: if the produced event's identity does not match the declared `to`, the chain raises a `ChainConfigurationException`.
 A `JsonNode` or `Map` output skips that check, so the typed form catches a class of mistakes the untyped one cannot.
 
@@ -165,8 +163,8 @@ public static EventTransformer build() {
                               .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
 }
 ----
-<1> The predicate matches on version alone; the pre-filter takes care of the name.
-<2> `to` keeps the same qualified name, only bumping the version, since renaming an event is not supported.
+<1> The predicate matches on version alone. The pre-filter takes care of the name.
+<2> `to` keeps the same qualified name and bumps only the version. A `transform(...)` does not change the name (use a <<_renaming_an_event,rename>> for that).
 <3> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
 <4> `declaringFromTypes(...)` declares the names the predicate runs against. The predicate is only ever evaluated for events of these names, so a type-filtering read for `WelcomeMessageSent` stays scoped to that name rather than scanning every stored event.
 
@@ -195,7 +193,46 @@ Both forms produce the same result.
 Prefer `declaringFromTypes(...)`: the predicate stays simpler (version only), and a type-filtering read keeps its filter.
 Because the chain cannot look inside a predicate, the form without `declaringFromTypes(...)` drops the type filter on reads, a broader read that returns every stored event so the predicate can run against each.
 
-Keep the matched names aligned with the `to` identity's name either way, since renaming an event is not supported.
+Keep the matched names aligned with the `to` identity's name either way: a `transform(...)` changes the version, not the name (use a <<_renaming_an_event,rename>> to change the name).
+
+[#_renaming_an_event]
+== Renaming an event
+
+The transformations above change an event's payload and version while keeping its qualified name.
+When the _name itself_ must change and the payload stays the same, use `rename(...)` instead of `transform(...)`.
+
+An early version of the catalog published courses with a `CourseOffered` event. A later refinement renamed it to `CoursePublished`.
+A single `rename(...)` reads every stored `CourseOffered` back as a `CoursePublished`, with its payload untouched:
+
+[source,java]
+----
+private static final MessageType FROM = new MessageType("coursecatalog.CourseOffered", "1.0.0");
+private static final MessageType TO   = new MessageType("coursecatalog.CoursePublished", "1.0.0");
+
+public static EventTransformer build() {
+    return EventTransformer.rename(FROM, TO); // <1>
+}
+----
+<1> `rename(from, to)` takes the two identities and nothing else: there is no mapper, because the payload is carried over unchanged.
+
+A rename may change the qualified name, the version, or both.
+Handlers registered for the new identity receive the event. Handlers still on the old identity no longer match it.
+A `rename(...)` whose `from` and `to` are identical is rejected, since it would leave the event unchanged.
+
+[NOTE]
+.Renames compose with payload transformations
+====
+A renamed event keeps flowing through the chain.
+Renaming `CourseOffered` to `CoursePublished` `1.0.0` lets the existing `CoursePublished` `1.0.0` -> `2.0.0` -> `3.0.0` transformers apply in turn, so a stored `CourseOffered` reaches your handler as the current `CoursePublished`.
+Register the rename alongside those `transform(...)` steps and the chain applies them in sequence.
+====
+
+[NOTE]
+.Reads are widened to the old name
+====
+A type-filtering read for the new name still finds events stored under the old one: the chain widens the read to include every name that renames into a queried type, following the full rename chain.
+So a projection that sources only `CoursePublished` events also receives the historic `CourseOffered` ones, and nothing is silently missed.
+====
 
 == Next steps
 

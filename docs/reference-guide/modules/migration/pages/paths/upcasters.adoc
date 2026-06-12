@@ -106,6 +106,32 @@ Events stored without a version are treated as version `0.0.1` in Axon Framework
 Match that version in `from(...)` when lifting legacy events, as shown above.
 ====
 
+[#_renaming_an_event]
+== Renaming an event
+
+Axon Framework 4 keyed an event off its payload _class name_ (the `SerializedType` name defaulted to the fully qualified class name), so a name change had to be bridged at the serialization layer or by an upcaster that rewrote the stored `SerializedType`.
+Axon Framework 5 keys off a logical `MessageType` decoupled from the class, so a rename becomes a first-class operation: declare the old and new identity and the payload is carried over unchanged.
+
+A payload-mapping `transform(...)` may only change the version, never the name.
+A rename uses the dedicated `rename(...)` factory instead, with no mapper:
+
+[source,java]
+----
+public final class CourseOfferedToCoursePublished {
+
+    private static final MessageType FROM = new MessageType("coursecatalog.CourseOffered", "1.0.0");
+    private static final MessageType TO   = new MessageType("coursecatalog.CoursePublished", "1.0.0");
+
+    public static EventTransformer build() {
+        return EventTransformer.rename(FROM, TO); // <1>
+    }
+}
+----
+<1> `rename(from, to)` takes the two identities and nothing else: there is no mapper, because the payload is unchanged. The new identity may change the qualified name, the version, or both.
+
+A renamed event keeps flowing through the chain, so a rename can sit in front of the version-step transformations that lift it the rest of the way.
+See xref:message-transformation:defining-transformations.adoc#_renaming_an_event[Renaming an event] for the full detail.
+
 == Registering the transformations
 
 In Axon Framework 4 you registered upcasters with an `EventUpcasterChain`.
@@ -115,7 +141,7 @@ See xref:message-transformation:configuring-transformations.adoc[Configuring tra
 
 == What is different
 
-* A transformation is strictly one-to-one and keeps the event's qualified name: it may change the version and payload, but not the name. Renaming an event is not supported.
+* A payload-mapping transformation is one-to-one and keeps the event's qualified name: it may change the version and payload, but not the name. To change the name itself, use a <<_renaming_an_event,rename>>, which carries the payload over unchanged.
 * You map a _deserialized_ payload (`JsonNode`, `Map<String, Object>`, ...) instead of an `IntermediateEventRepresentation`.
 * Mappers must be deterministic and side-effect-free, exactly as upcasters were expected to be.
 

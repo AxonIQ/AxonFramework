@@ -29,6 +29,8 @@ public final class CourseCatalogMessageNames {
 
     /** Qualified name of {@code CoursePublished}. */
     public static final String COURSE_PUBLISHED          = NAMESPACE + ".CoursePublished";
+    /** Qualified name of the legacy {@code CourseOffered} event, renamed to {@code CoursePublished}. */
+    public static final String COURSE_OFFERED            = NAMESPACE + ".CourseOffered";
     /** Qualified name of {@code CourseCapacityChanged}. */
     public static final String COURSE_CAPACITY_CHANGED   = NAMESPACE + ".CourseCapacityChanged";
     /** Qualified name of {@code StudentRegistered}. */

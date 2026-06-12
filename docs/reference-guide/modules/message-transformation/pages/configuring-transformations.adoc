@@ -125,8 +125,8 @@ Swap the two registrations and the broad predicate would win for `0.9.0` instead
 [NOTE]
 .What the chain validates, and when
 ====
-A transformation that changes an event's qualified name (a rename) is rejected when the chain is built.
-With a predicate `from`, that rejection happens when a matching event is read instead.
+A `transform(...)` whose `to` changes the qualified name is rejected: at build time for a concrete `from`, or when a matching event is read for a predicate `from`.
+To change the name on purpose, use xref:defining-transformations.adoc#_renaming_an_event[`rename(...)`] instead.
 A typed mapper whose output identity differs from its declared `to`, and a cycle that exceeds the safety bound, are likewise reported as a `ChainConfigurationException`, but only when the offending event is read.
 Overlapping matches are not an error: they resolve by last-match-wins, as above.
 ====

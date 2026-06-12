@@ -9,11 +9,15 @@ Its link:https://github.com/AxonFramework/AxonFramework/blob/main/examples/unive
 
 == What it demonstrates
 
-The demo composes five transformers into one chain, each illustrating a technique covered here:
+The demo composes a chain of transformers, each illustrating a technique covered here:
 
 [cols="2,3,2", options="header"]
 |===
 | Transformer | Change | Technique
+
+| `CourseOfferedToCoursePublished`
+| the legacy `CourseOffered` event is renamed to `CoursePublished`
+| a xref:defining-transformations.adoc#_renaming_an_event[rename] whose output then flows through the `CoursePublished` version chain
 
 | `CoursePublishedV1ToV2`
 | a single `capacity` field becomes `minCapacity` and `maxCapacity`
@@ -21,11 +25,15 @@ The demo composes five transformers into one chain, each illustrating a techniqu
 
 | `CoursePublishedV2ToV3`
 | `minCapacity`/`maxCapacity` are wrapped into a `range`, producing the current `CoursePublished` event
-| a xref:defining-transformations.adoc#_mapping_to_a_typed_event[typed mapper] to the current event; with the previous transformer it shows xref:configuring-transformations.adoc#_why_ordering_matters[chaining in version order]
+| a xref:defining-transformations.adoc#_mapping_to_a_typed_event[typed mapper] to the current event that, with the previous transformer, shows xref:configuring-transformations.adoc#_why_ordering_matters[chaining in version order]
 
 | `StudentRegisteredV1ToV2`
 | separate `firstName` and `lastName` become a single `fullName`
 | the xref:defining-transformations.adoc[`TypeReference` overload], with no Jackson dependency in user code
+
+| `StudentRegisteredV2ToV3`
+| a `region` field, absent when the events were written, is backfilled
+| a mapper that xref:defining-transformations.adoc#_reading_from_the_processing_context[reads from the `ProcessingContext`]
 
 | `SystemAnnouncementLegacyUplift`
 | an unversioned legacy event is lifted onto `1.0.0`
@@ -36,6 +44,6 @@ The demo composes five transformers into one chain, each illustrating a techniqu
 | xref:defining-transformations.adoc#_matching_multiple_event_versions[a version-only predicate scoped with `declaringFromTypes`]
 |===
 
-A sixth class, `WelcomeMessageBetaCleanupWithoutPreFilter`, expresses that last rule without `declaringFromTypes(...)` to contrast the xref:defining-transformations.adoc#_matching_multiple_event_versions[two predicate-`from` styles]; it is not registered in the chain.
+A further class, `WelcomeMessageBetaCleanupWithoutPreFilter`, expresses that last rule without `declaringFromTypes(...)` to contrast the xref:defining-transformations.adoc#_matching_multiple_event_versions[two predicate-`from` styles]. It is not registered in the chain.
 
 The chain is assembled in `CourseCatalogTransformations` and registered as an `EventTransformerChain` component, exactly as shown in xref:configuring-transformations.adoc[Configuring transformations].

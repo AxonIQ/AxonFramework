@@ -32,20 +32,21 @@ import java.util.concurrent.CompletionException;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Event renaming (a qualified-name change) is not supported; only a same-name
- * version bump is. The chain rejects a rename because the transformation runs at read time,
- * after the store has filtered the stream by the stored (old) name, so the events a rename
- * targets are never surfaced. A concrete {@code from} is rejected at registration; a predicate
- * {@code from} only at read time, as its matched name is known per-event.
+ * A payload-mapping {@code transform(...)} may only change an event's version, not its qualified
+ * name. To change the name itself, use {@link EventTransformer#rename(MessageType, MessageType)}
+ * instead (see {@link RenameTest}). This test pins the guard: a {@code transform(...)} whose {@code to}
+ * changes the name is rejected, while a same-name version bump is allowed. A concrete {@code from} is
+ * rejected at registration; a predicate {@code from} only at read time, as its matched name is known
+ * per-event.
  */
-class RenameRejectedTest {
+class RenameViaTransformRejectedTest {
 
     @Nested
     class ConcreteFrom {
 
         @Test
-        void renamingOneEventTypeToAnotherIsRejectedAtRegistration() {
-            // given: a transformer that would rename CoursePublished into StudentRegistered
+        void changingTheNameViaTransformIsRejectedAtRegistration() {
+            // given: a transform that would change CoursePublished into StudentRegistered
             EventTransformer renameTransformer =
                     EventTransformer.from(new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0"))
                                        .to(new MessageType(CourseCatalogMessageNames.STUDENT_REGISTERED, "1.0.0"))
@@ -55,7 +56,7 @@ class RenameRejectedTest {
             // when / then
             assertThatThrownBy(() -> builder.register(renameTransformer))
                     .isInstanceOf(ChainConfigurationException.class)
-                    .hasMessageContaining("renaming")
+                    .hasMessageContaining("rename")
                     .hasMessageContaining(CourseCatalogMessageNames.COURSE_PUBLISHED)
                     .hasMessageContaining(CourseCatalogMessageNames.STUDENT_REGISTERED);
         }
@@ -79,9 +80,9 @@ class RenameRejectedTest {
     class PredicateFrom {
 
         @Test
-        void renamingViaPredicateIsRejectedAtReadTime() {
+        void changingTheNameViaTransformPredicateIsRejectedAtReadTime() {
             // given: registration is allowed because a predicate's matched source name is not
-            // known statically; the rename only surfaces once a CoursePublished event matches.
+            // known statically; the name change only surfaces once a CoursePublished event matches.
             MessageType coursePublishedV1 = new MessageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0");
             EventTransformer renameTransformer =
                     EventTransformer.from(type -> type.equals(coursePublishedV1))
@@ -91,7 +92,7 @@ class RenameRejectedTest {
                                                                .register(renameTransformer)
                                                                .build();
 
-            // when / then: the rename is rejected as the matching event flows through the chain
+            // when / then: the name change is rejected as the matching event flows through the chain
             ChainTester.forChain(chain)
                        .given()
                        .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "1.0.0")
@@ -102,7 +103,7 @@ class RenameRejectedTest {
                                .isInstanceOf(CompletionException.class)
                                .cause()
                                .isInstanceOf(ChainConfigurationException.class)
-                               .hasMessageContaining("renaming")
+                               .hasMessageContaining("rename")
                                .hasMessageContaining(CourseCatalogMessageNames.COURSE_PUBLISHED)
                                .hasMessageContaining(CourseCatalogMessageNames.STUDENT_REGISTERED));
         }

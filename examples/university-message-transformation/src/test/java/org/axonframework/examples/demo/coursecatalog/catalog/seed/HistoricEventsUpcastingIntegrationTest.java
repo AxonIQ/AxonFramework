@@ -79,6 +79,19 @@ class HistoricEventsUpcastingIntegrationTest {
     }
 
     @Test
+    void courseOfferedReadsAsCurrentCoursePublishedAfterRenameAndUpcast() {
+        // A historic CourseOffered event is renamed to CoursePublished, then lifted through the
+        // version chain, so it reaches the projection as a current course.
+        CourseId courseId = CourseId.of("integration-rename");
+        fixture.given()
+               .events(new LegacyEventSeeder.CourseOfferedV1(
+                       Ids.CATALOG_ID, courseId, "Offered Course", 15))
+               .then()
+               .await(r -> r.expect(cfg -> assertViewContainsClosedCourseWithoutEnrollments(
+                       cfg, courseId, "Offered Course", new CapacityRange(15, 15))));
+    }
+
+    @Test
     void studentRegisteredV1ContributesToCurrentCount() {
         fixture.given()
                .events(new LegacyEventSeeder.StudentRegisteredV1(
@@ -125,7 +138,7 @@ class HistoricEventsUpcastingIntegrationTest {
                .then()
                .await(r -> r.expect(cfg -> {
                    CourseCatalogView view = queryView(cfg);
-                   assertThat(view.courses()).hasSize(5);
+                   assertThat(view.courses()).hasSize(6);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).containsExactly("Catalog launched in 2023");
                    // Three beta WelcomeMessageSent versions (0.5 / 0.7 / 0.9) folded to 1.0.0,
@@ -136,6 +149,10 @@ class HistoricEventsUpcastingIntegrationTest {
                                    "Welcome to the catalog, Alice.",
                                    "Hi Bob, welcome to the catalog.",
                                    "Welcome Carol.");
+                   // Legacy CourseOffered renamed to CoursePublished, then upcast: range collapses to [40,40]
+                   assertThat(view.courses()).contains(new CatalogViewReadModel(
+                           CourseId.of("legacy-foundations"), "Legacy Foundations",
+                           new CapacityRange(40, 40), 0, false));
                    // V1 single-capacity course: range collapses to [n,n]
                    assertThat(view.courses()).contains(new CatalogViewReadModel(
                            CourseId.of("event-sourcing-101"), "Event Sourcing in Practice",
@@ -157,7 +174,7 @@ class HistoricEventsUpcastingIntegrationTest {
                .then()
                .await(r -> r.expect(cfg -> {
                    CourseCatalogView view = queryView(cfg);
-                   assertThat(view.courses()).hasSize(5);
+                   assertThat(view.courses()).hasSize(6);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).hasSize(1);
                }));

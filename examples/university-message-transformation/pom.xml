@@ -38,11 +38,12 @@
     <properties>
         <!-- AxonIQ Framework -->
         <!--
-        The axoniq-framework-bom imported by examples/pom.xml is at 5.1.1-SNAPSHOT and
-        does not yet manage axoniq-message-transformation (introduced in 5.2.0-SNAPSHOT).
-        Until the BOM catches up, declare the version explicitly here.
+        The event transformation feature lives in the 5.2.0-SNAPSHOT line, which is ahead of the
+        released Axon core the examples parent manages. The axoniq-framework BOM imported below
+        aligns every Axon module (org.axonframework core and io.axoniq.framework) on this version,
+        so the whole demo builds against one consistent line until 5.2.0 is the examples baseline.
         -->
-        <axoniq-message-transformation.version>5.2.0-SNAPSHOT</axoniq-message-transformation.version>
+        <axoniq-framework.version>5.2.0-SNAPSHOT</axoniq-framework.version>
         <axoniq-platform-framework-client.version>5.1.0</axoniq-platform-framework-client.version>
 
         <!-- Runtime libraries -->
@@ -57,6 +58,23 @@
         <!-- Build plugins -->
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+            Align every Axon module on ${axoniq-framework.version}, overriding the older line
+            managed by the examples parent. Required because the event transformation feature uses
+            APIs only present in the 5.2.0-SNAPSHOT line.
+            -->
+            <dependency>
+                <groupId>io.axoniq.framework</groupId>
+                <artifactId>axoniq-framework-bom</artifactId>
+                <version>${axoniq-framework.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Axon Framework Dependencies -->
@@ -79,11 +97,10 @@
             <artifactId>axon-server-connector</artifactId>
         </dependency>
 
-        <!-- The feature under demonstration -->
+        <!-- The feature under demonstration (version managed by the axoniq-framework BOM above) -->
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-message-transformation</artifactId>
-            <version>${axoniq-message-transformation.version}</version>
         </dependency>
 
         <!--

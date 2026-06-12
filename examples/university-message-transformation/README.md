@@ -12,6 +12,7 @@ through schema evolution, and exercises them end to end.
 
 | Transformer | From / To | What it teaches |
 |---|---|---|
+| `CourseOfferedToCoursePublished` | `CourseOffered#1.0.0` / `CoursePublished#1.0.0` | A rename (`EventTransformer.rename`): only the identity changes, the payload is carried over. The renamed event then flows through the `CoursePublished` version chain. |
 | `CoursePublishedV1ToV2` | `CoursePublished#1.0.0` / `#2.0.0` | A single `capacity` field becomes `minCapacity` + `maxCapacity`. |
 | `CoursePublishedV2ToV3` | `CoursePublished#2.0.0` / `#3.0.0` | Two-hop chain: a stored v1 event reaches handlers as v3. |
 | `StudentRegisteredV1ToV2` | `StudentRegistered#1.0.0` / `#2.0.0` | `TypeReference<Map<String,Object>>` overload, no Jackson dependency in user code. |
@@ -172,7 +173,7 @@ Tests live next to the production code they cover, in the matching package:
 | Where | What you'll find |
 |---|---|
 | `catalog/transformations/` | each transformer in isolation, with fixture JSON under `src/test/resources/transformations/` |
-| `catalog/chain/` | the composed chain (build log, locking, identity check, concurrency, decoration order) |
+| `catalog/chain/` | the composed chain (build log, locking, identity check, concurrency, decoration order, rename behavior) |
 | `catalog/write/<slice>/` | one write slice per package, full app fixture |
 | `catalog/read/catalogview/` | the catalog projection and query |
 | `catalog/automation/overbookingnotifier/` | the overbooking notifier |

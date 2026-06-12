@@ -72,6 +72,26 @@ class TypeFilteredSourcingUpcastIntegrationTest {
     }
 
     @Test
+    void historicCourseOfferedIsFoundWhenEnrollSourcesByTheRenamedType() {
+        // given: a course stored under the legacy CourseOffered name (renamed to CoursePublished)
+        // and a registered student
+        CourseId courseId = CourseId.of("sourcing-rename");
+        StudentId studentId = StudentId.of("linus");
+        fixture.given()
+               .event(new LegacyEventSeeder.CourseOfferedV1(
+                       Ids.CATALOG_ID, courseId, "Offered Course", 30))
+               .event(new StudentRegistered(Ids.CATALOG_ID, studentId, "Linus Torvalds"))
+               // when: enrolling sources the course through criteria filtered to CoursePublished; the
+               // read is widened to also fetch the old CourseOffered name so the rename is not missed
+               .when()
+               .command(new EnrollStudent(courseId, studentId))
+               // then: the renamed-and-upcast course is recognized as published
+               .then()
+               .success()
+               .events(new StudentEnrolledInCourse(courseId, studentId));
+    }
+
+    @Test
     void v1CapacityIsCarriedThroughTheUpcastSoEnrollingIntoAFullCourseIsRejected() {
         // given: a v1 course with capacity 1 (upcasts to range [1,1]) that already has one enrolment
         CourseId courseId = CourseId.of("sourcing-upcast-full");

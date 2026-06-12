@@ -5,7 +5,7 @@ When an event's stored structure no longer matches what your handlers and projec
 The stored events stay exactly as they were written.
 The transformation runs every time those events are read, handing each handler the shape it expects.
 
-A transformation is the tool for the structural changes that xref:events:event-versioning.adoc[payload conversion] cannot express on its own: combining two fields into one, wrapping values in a new object, or lifting a historic event onto a new version.
+A transformation is the tool for the structural changes that xref:events:event-versioning.adoc[payload conversion] cannot express on its own: combining two fields into one, wrapping values in a new object, lifting a historic event onto a new version, or renaming an event whose identity changed.
 
 == When to reach for a transformation
 
@@ -49,7 +49,7 @@ You register one transformer per version step and let Axon Framework apply them 
 
 From here:
 
-* xref:message-transformation:defining-transformations.adoc[] shows how to write the individual transformations, map straight to a typed event, work with generic payloads, and match several event versions at once.
+* xref:message-transformation:defining-transformations.adoc[] shows how to write the individual transformations, map straight to a typed event, work with generic payloads, match several event versions at once, and rename an event.
 * xref:message-transformation:configuring-transformations.adoc[] shows how to assemble them into a chain, register it, and test it.
 * xref:message-transformation:demo.adoc[] is a runnable example that exercises every technique on a course catalog end to end.
 
