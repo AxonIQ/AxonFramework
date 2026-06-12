@@ -27,6 +27,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.Ca
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CourseCatalogView;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.EnrolmentReadModel;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.GetCourseCatalogView;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.WelcomeMessageView;
 import org.axonframework.examples.demo.coursecatalog.catalog.seed.SeedCatalog;
 import org.axonframework.examples.demo.coursecatalog.shared.region.RequestRegion;
 import org.axonframework.examples.demo.coursecatalog.catalog.values.CapacityRange;
@@ -160,13 +161,15 @@ public class CourseCatalogApplication {
                   .pollInterval(Duration.ofMillis(100))
                   .until(() -> {
                       CourseCatalogView v = queryView(configuration);
-                      logger.debug("Waiting for projection: courses={}, enrolments={}, announcements={}, registeredStudents={}",
+                      logger.debug("Waiting for projection: courses={}, enrolments={}, announcements={}, "
+                                           + "registeredStudents={}, welcomeMessages={}",
                                    v.courses().size(), v.enrolments().size(), v.announcements().size(),
-                                   v.registeredStudents());
+                                   v.registeredStudents(), v.welcomeMessages().size());
                       return v.courses().size() >= 6
                               && v.enrolments().size() >= 2
                               && !v.announcements().isEmpty()
-                              && v.registeredStudents() >= 4;
+                              && v.registeredStudents() >= 4
+                              && v.welcomeMessages().size() >= 3;
                   });
     }
 
@@ -194,6 +197,10 @@ public class CourseCatalogApplication {
         report.append("Announcements (").append(view.announcements().size()).append("):\n");
         for (String announcement : view.announcements()) {
             report.append("  - ").append(announcement).append('\n');
+        }
+        report.append("Welcome messages (").append(view.welcomeMessages().size()).append("):\n");
+        for (WelcomeMessageView message : view.welcomeMessages()) {
+            report.append("  - ").append(message.studentId()).append(": ").append(message.body()).append('\n');
         }
         String reportAsString = report.toString();
         logger.info(reportAsString);

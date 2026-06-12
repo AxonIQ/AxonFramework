@@ -25,6 +25,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.events.Registration
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentEnrolledInCourse;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentRegistered;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.SystemAnnouncement;
+import org.axonframework.examples.demo.coursecatalog.catalog.events.WelcomeMessageSent;
 import org.axonframework.examples.demo.coursecatalog.catalog.values.CapacityRange;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
@@ -119,6 +120,16 @@ class CatalogViewProjectionAxonFixtureTest {
                        new StudentRegistered(Ids.CATALOG_ID, StudentId.random(), "Carol Davis"))
                .then()
                .await(r -> r.expect(cfg -> assertThat(queryView(cfg).registeredStudents()).isEqualTo(3)));
+    }
+
+    @Test
+    void welcomeMessageShowsUpInView() {
+        StudentId studentId = StudentId.random();
+        fixture.given()
+               .events(new WelcomeMessageSent(studentId, "Welcome to the catalog"))
+               .then()
+               .await(r -> r.expect(cfg -> assertThat(queryView(cfg).welcomeMessages())
+                       .containsExactly(new WelcomeMessageView(studentId, "Welcome to the catalog"))));
     }
 
     private static void assertViewContainsCourse(

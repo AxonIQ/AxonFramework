@@ -56,8 +56,8 @@ class ChainBuildLogTest {
         CourseCatalogTransformations.chain();
 
         List<ILoggingEvent> infoEntries = appender.list.stream()
-                                                       .filter(e -> e.getLevel() == Level.INFO)
-                                                       .toList();
+                                                      .filter(e -> e.getLevel() == Level.INFO)
+                                                      .toList();
         assertThat(infoEntries).hasSize(1);
         assertThat(infoEntries.getFirst().getFormattedMessage())
                 .contains("6 transformation(s)",

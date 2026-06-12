@@ -22,6 +22,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.Ids;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CatalogViewReadModel;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.CourseCatalogView;
 import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.GetCourseCatalogView;
+import org.axonframework.examples.demo.coursecatalog.catalog.read.catalogview.WelcomeMessageView;
 import org.axonframework.examples.demo.coursecatalog.catalog.values.CapacityRange;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.StudentId;
@@ -89,6 +90,22 @@ class HistoricEventsUpcastingIntegrationTest {
     }
 
     @Test
+    void betaWelcomeMessagesAreLiftedToCurrentShapeAndAppear() {
+        // Two different beta versions (0.5 and 0.9), each carrying a legacy 'subject' field.
+        // The beta cleanup folds both to 1.0.0 and drops 'subject', so only the body survives.
+        fixture.given()
+               .events(new LegacyEventSeeder.WelcomeMessageSentV0_5(
+                               StudentId.of("zoe"), "Hi there", "Welcome aboard, Zoe."),
+                       new LegacyEventSeeder.WelcomeMessageSentV0_9(
+                               StudentId.of("yann"), "Hello", "Glad to have you, Yann."))
+               .then()
+               .await(r -> r.expect(cfg -> assertThat(queryView(cfg).welcomeMessages())
+                       .containsExactlyInAnyOrder(
+                               new WelcomeMessageView(StudentId.of("zoe"), "Welcome aboard, Zoe."),
+                               new WelcomeMessageView(StudentId.of("yann"), "Glad to have you, Yann."))));
+    }
+
+    @Test
     void unversionedSystemAnnouncementIsLiftedAndAppears() {
         fixture.given()
                .events(new LegacyEventSeeder.SystemAnnouncementUnversioned(
@@ -111,6 +128,14 @@ class HistoricEventsUpcastingIntegrationTest {
                    assertThat(view.courses()).hasSize(5);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).containsExactly("Catalog launched in 2023");
+                   // Three beta WelcomeMessageSent versions (0.5 / 0.7 / 0.9) folded to 1.0.0,
+                   // each keeping only its body after the beta cleanup drops 'subject'.
+                   assertThat(view.welcomeMessages())
+                           .extracting(WelcomeMessageView::body)
+                           .containsExactlyInAnyOrder(
+                                   "Welcome to the catalog, Alice.",
+                                   "Hi Bob, welcome to the catalog.",
+                                   "Welcome Carol.");
                    // V1 single-capacity course: range collapses to [n,n]
                    assertThat(view.courses()).contains(new CatalogViewReadModel(
                            CourseId.of("event-sourcing-101"), "Event Sourcing in Practice",

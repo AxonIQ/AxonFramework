@@ -100,6 +100,16 @@ public sealed interface SourcingCondition extends EventsCondition permits Defaul
     }
 
     /**
+     * Returns a copy of {@code this SourcingCondition} with its {@link #criteria()} replaced by the given
+     * {@code criteria}, preserving the {@link #strategy() sourcing strategy} (and thus the start position).
+     *
+     * @param criteria the {@link EventCriteria} to use in place of the current {@link #criteria()}
+     * @return a copy of {@code this SourcingCondition} using the given {@code criteria}
+     * @throws NullPointerException if {@code criteria} is {@code null}
+     */
+    SourcingCondition withCriteria(EventCriteria criteria);
+
+    /**
      * Merges {@code this SourcingCondition} with the given {@code other SourcingCondition}, by combining their
      * {@link #criteria() search criteria} and {@link #strategy() sourcing strategies}.
      * <p>

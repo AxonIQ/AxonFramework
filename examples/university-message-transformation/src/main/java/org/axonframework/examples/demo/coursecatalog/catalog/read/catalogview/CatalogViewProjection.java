@@ -22,6 +22,7 @@ import org.axonframework.examples.demo.coursecatalog.catalog.events.Registration
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentEnrolledInCourse;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.StudentRegistered;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.SystemAnnouncement;
+import org.axonframework.examples.demo.coursecatalog.catalog.events.WelcomeMessageSent;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
 /**
@@ -75,5 +76,10 @@ class CatalogViewProjection {
     @EventHandler
     void on(SystemAnnouncement event) {
         repository.addAnnouncement(event.text());
+    }
+
+    @EventHandler
+    void on(WelcomeMessageSent event) {
+        repository.recordWelcomeMessage(event.studentId(), event.body());
     }
 }
