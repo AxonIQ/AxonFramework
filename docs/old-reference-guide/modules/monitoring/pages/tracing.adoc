@@ -177,7 +177,7 @@ For the first flavour, the receiving side joins the dispatcher's trace by defaul
 
 The exact default per component:
 
-[cols="<,<,<,<"]
+[cols="<,<,<"]
 |===
 |Component |Default behaviour |Override
 
