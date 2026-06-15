@@ -25,6 +25,7 @@ import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import org.axonframework.common.ReflectionUtils;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.tracing.SpanFactory;
@@ -39,8 +40,6 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableMBeanExport;
 import org.springframework.jmx.support.RegistrationPolicy;
-
-import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -79,13 +78,20 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
 
                     // The Spring-managed OpenTelemetry's tracer must be wired into the factory,
                     // not the no-op GlobalOpenTelemetry fallback.
-                    Tracer wiredTracer = readField(spanFactory, "tracer");
+                    Tracer wiredTracer = ReflectionUtils.getFieldValue(
+                            OpenTelemetrySpanFactory.class.getDeclaredField("tracer"),
+                            spanFactory
+                    );
                     assertSame(expectedTracer, wiredTracer,
                                "Factory must use the tracer from the Spring-managed OpenTelemetry bean");
 
                     // The Spring-managed OpenTelemetry's propagator must be wired into the factory,
                     // not the no-op GlobalOpenTelemetry fallback.
-                    TextMapPropagator wired = readField(spanFactory, "textMapPropagator");
+                    TextMapPropagator wired = ReflectionUtils.getFieldValue(
+                            OpenTelemetrySpanFactory.class.getDeclaredField("textMapPropagator"),
+                            spanFactory
+                    );
+
                     assertSame(expectedPropagator, wired,
                                "Factory must use the propagator from the Spring-managed OpenTelemetry bean");
 
@@ -116,16 +122,12 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
                     // Without a Spring-managed OpenTelemetry bean, the builder defaults apply —
                     // tracer and propagator come from GlobalOpenTelemetry (Java agent / manual SDK
                     // installations that call buildAndRegisterGlobal()).
-                    TextMapPropagator wired = readField(spanFactory, "textMapPropagator");
+                    TextMapPropagator wired = ReflectionUtils.getFieldValue(
+                            OpenTelemetrySpanFactory.class.getDeclaredField("textMapPropagator"),
+                            spanFactory
+                    );
                     assertNotNull(wired, "Propagator must be set (default from GlobalOpenTelemetry)");
                 });
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> T readField(Object target, String fieldName) throws Exception {
-        Field field = target.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        return (T) field.get(target);
     }
 
     @EnableAutoConfiguration(exclude = {
