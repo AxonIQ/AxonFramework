@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package org.axonframework.extension.spring.eventhandling.tokenstore.jpa;
+package org.axonframework.integrationtests.eventhandling.tokenstore;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Persistence;
 import org.axonframework.common.jpa.EntityManagerProvider;
-import org.axonframework.common.jpa.SimpleEntityManagerProvider;
-import org.axonframework.conversion.TestConverter;
-import org.axonframework.extension.spring.messaging.unitofwork.SpringTransactionManager;
+import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.transaction.jpa.EntityManagerTransactionManager;
 import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
@@ -38,28 +38,19 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Glob
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStoreConfiguration;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
-import org.hibernate.dialect.HSQLDialect;
-import org.hibernate.jpa.HibernatePersistenceProvider;
-import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.orm.jpa.JpaTransactionManager;
-import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
-import org.springframework.orm.jpa.SharedEntityManagerCreator;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -70,12 +61,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * End-to-end regression test for <a href="https://github.com/AxonIQ/AxonFramework/issues/4632">issue #4632</a>.
+ * Verifies a {@link PooledStreamingEventProcessor} on a JPA {@link JpaTokenStore} initializes its token segments when
+ * the initial token resolves on a foreign thread, as the Axon Server connector's gRPC callbacks do.
  * <p>
- * A {@link PooledStreamingEventProcessor} backed by a Spring-managed {@link JpaTokenStore} must initialize its token
- * segments even when the initial token resolves on a foreign thread, as the Axon Server connector does (it completes
- * the token future on a gRPC callback thread). Before the fix the persist ran on that thread, without the thread-bound
- * Spring transaction, and {@code start()} exhausted its retries.
+ * Reproduced with {@link EntityManagerTransactionManager} and a thread-bound {@link EntityManagerProvider}, the
+ * vendor-neutral stand-in for Spring's shared {@code EntityManager}.
  */
 class PooledStreamingEventProcessorJpaTokenStoreIT {
 
@@ -83,6 +73,7 @@ class PooledStreamingEventProcessorJpaTokenStoreIT {
     private static final String GRPC_THREAD_NAME = "axon-server-grpc-callback";
 
     private EntityManagerFactory entityManagerFactory;
+    private ThreadBoundEntityManagerProvider entityManagerProvider;
     private ExecutorService grpcCallbackExecutor;
     private ScheduledExecutorService coordinatorExecutor;
     private ScheduledExecutorService workerExecutor;
@@ -90,24 +81,17 @@ class PooledStreamingEventProcessorJpaTokenStoreIT {
 
     @BeforeEach
     void setUp() {
-        LocalContainerEntityManagerFactoryBean emfBean = new LocalContainerEntityManagerFactoryBean();
-        emfBean.setPersistenceProvider(new HibernatePersistenceProvider());
-        emfBean.setPackagesToScan(TokenEntry.class.getPackage().getName());
-        Map<String, Object> jpaProperties = new HashMap<>();
-        jpaProperties.put("hibernate.dialect", HSQLDialect.class.getName());
-        jpaProperties.put("hibernate.hbm2ddl.auto", "create-drop");
-        jpaProperties.put("hibernate.show_sql", "false");
-        jpaProperties.put("hibernate.connection.url", "jdbc:hsqldb:mem:bug4632-e2e-" + UUID.randomUUID());
-        emfBean.setJpaPropertyMap(jpaProperties);
-        emfBean.afterPropertiesSet();
-        entityManagerFactory = Objects.requireNonNull(emfBean.getObject(), "EntityManagerFactory");
+        entityManagerFactory = Persistence.createEntityManagerFactory("tokenStore");
 
-        // Spring's shared EntityManager: a persist requires a transaction bound to the current thread.
-        EntityManager sharedEntityManager = SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory);
-        UnitOfWorkFactory unitOfWorkFactory = getUnitOfWorkFactory(sharedEntityManager);
+        // A thread-bound EntityManager: a persist requires a transaction bound to the current thread, exactly like
+        // Spring's shared EntityManager, but without depending on Spring.
+        entityManagerProvider = new ThreadBoundEntityManagerProvider(entityManagerFactory);
+        UnitOfWorkFactory unitOfWorkFactory = new TransactionalUnitOfWorkFactory(
+                new EntityManagerTransactionManager(entityManagerProvider),
+                new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE));
 
         JpaTokenStore tokenStore = new JpaTokenStore(new JpaTransactionalExecutorProvider(entityManagerFactory),
-                                                     TestConverter.JACKSON.getConverter(),
+                                                     new JacksonConverter(),
                                                      JpaTokenStoreConfiguration.DEFAULT.nodeId("local"));
 
         grpcCallbackExecutor = Executors.newSingleThreadExecutor(runnable -> new Thread(runnable, GRPC_THREAD_NAME));
@@ -130,15 +114,6 @@ class PooledStreamingEventProcessorJpaTokenStoreIT {
                 configuration);
     }
 
-    private @NonNull UnitOfWorkFactory getUnitOfWorkFactory(EntityManager sharedEntityManager) {
-        EntityManagerProvider entityManagerProvider = new SimpleEntityManagerProvider(sharedEntityManager);
-        JpaTransactionManager platformTransactionManager = new JpaTransactionManager(entityManagerFactory);
-        SpringTransactionManager springTransactionManager =
-                new SpringTransactionManager(platformTransactionManager, entityManagerProvider, null);
-        return new TransactionalUnitOfWorkFactory(
-                springTransactionManager, new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE));
-    }
-
     @AfterEach
     void tearDown() {
         if (processor != null) {
@@ -157,6 +132,9 @@ class PooledStreamingEventProcessorJpaTokenStoreIT {
         if (grpcCallbackExecutor != null) {
             grpcCallbackExecutor.shutdownNow();
         }
+        if (entityManagerProvider != null) {
+            entityManagerProvider.closeAll();
+        }
         if (entityManagerFactory != null && entityManagerFactory.isOpen()) {
             entityManagerFactory.close();
         }
@@ -167,30 +145,64 @@ class PooledStreamingEventProcessorJpaTokenStoreIT {
         // when starting the processor on a fresh database; the initial token resolves on the gRPC callback thread
         CompletableFuture<Void> started = processor.start();
 
-        // then start completes and the segment is persisted. Before the fix the persist ran on the gRPC thread
-        // without a Spring transaction, so start() completed exceptionally with a ProcessRetriesExhaustedException.
+        // then start completes and the segment is persisted. Before the fix the persist ran on the gRPC thread,
+        // whose EntityManager has no bound transaction, so start() completed exceptionally after exhausting retries.
         assertThatCode(() -> started.orTimeout(20, TimeUnit.SECONDS).join())
                 .doesNotThrowAnyException();
         assertThat(persistedSegmentCount()).isEqualTo(1);
     }
 
     private long persistedSegmentCount() {
-        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
-            entityManager.getTransaction().begin();
-            Long count = entityManager.createQuery(
-                                              "SELECT COUNT(t) FROM TokenEntry t WHERE t.processorName = :processorName",
-                                              Long.class)
-                                      .setParameter("processorName", PROCESSOR_NAME)
-                                      .getSingleResult();
-            entityManager.getTransaction().commit();
-            return count;
+        EntityManager entityManager = entityManagerFactory.createEntityManager();
+        try {
+            return entityManager.createQuery(
+                                         "SELECT COUNT(t) FROM TokenEntry t WHERE t.processorName = :processorName",
+                                         Long.class)
+                                 .setParameter("processorName", PROCESSOR_NAME)
+                                 .getSingleResult();
+        } finally {
+            entityManager.close();
         }
     }
 
     /**
-     * A {@link StreamableEventSource} that completes its token futures on a foreign thread, mimicking the Axon Server
-     * connector's gRPC callbacks. The delay ensures the token-consuming continuation runs on that thread. The event
-     * stream is empty; this test only exercises token-store initialization.
+     * Hands every thread its own {@link EntityManager}, so a transaction begun on one thread is invisible to others.
+     */
+    @NullMarked
+    private static final class ThreadBoundEntityManagerProvider implements EntityManagerProvider {
+
+        private final EntityManagerFactory entityManagerFactory;
+        private final ThreadLocal<EntityManager> threadEntityManager = new ThreadLocal<>();
+        private final Queue<EntityManager> created = new ConcurrentLinkedQueue<>();
+
+        private ThreadBoundEntityManagerProvider(EntityManagerFactory entityManagerFactory) {
+            this.entityManagerFactory = entityManagerFactory;
+        }
+
+        @Override
+        public EntityManager getEntityManager() {
+            EntityManager entityManager = threadEntityManager.get();
+            if (entityManager == null || !entityManager.isOpen()) {
+                entityManager = entityManagerFactory.createEntityManager();
+                threadEntityManager.set(entityManager);
+                created.add(entityManager);
+            }
+            return entityManager;
+        }
+
+        private void closeAll() {
+            EntityManager entityManager;
+            while ((entityManager = created.poll()) != null) {
+                if (entityManager.isOpen()) {
+                    entityManager.close();
+                }
+            }
+        }
+    }
+
+    /**
+     * A {@link StreamableEventSource} whose token futures complete on a foreign thread, mimicking the Axon Server
+     * connector's gRPC callbacks. The stream itself is empty.
      */
     @NullMarked
     private record ForeignThreadInitialTokenEventSource(Executor grpcCallbackExecutor) implements StreamableEventSource {
