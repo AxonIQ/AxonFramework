@@ -156,4 +156,42 @@ class MessageTypeTest {
     void fromStringRejectsMissingVersion() {
         assertThrows(IllegalArgumentException.class, () -> MessageType.fromString(NAME));
     }
+
+    @Nested
+    class WithNestedClasses {
+
+        @Test
+        void classConstructorUsesPackageAndSimpleNameForNestedClasses() {
+            MessageType testSubject = new MessageType(NestedPayload.class);
+
+            assertEquals(NAMESPACE, testSubject.qualifiedName().namespace());
+            assertEquals("NestedPayload", testSubject.qualifiedName().localName());
+            assertEquals(NAMESPACE + ".NestedPayload", testSubject.name());
+        }
+
+        @Test
+        void classConstructorMatchesAnnotationBasedNamingForNestedClasses() {
+            // Annotation-based message type resolution (e.g. @Command/@Event defaults) derives a message's
+            // QualifiedName from getPackageName() + getSimpleName(), which excludes the enclosing class for
+            // nested classes. Constructing a MessageType from the same class must yield the same QualifiedName,
+            // otherwise the same nested payload class gets two different names within one application.
+            QualifiedName fromClassConstructor = new MessageType(NestedPayload.class).qualifiedName();
+            QualifiedName fromPackageAndSimpleName =
+                    new QualifiedName(NestedPayload.class.getPackageName(), NestedPayload.class.getSimpleName());
+
+            assertEquals(fromPackageAndSimpleName, fromClassConstructor);
+        }
+
+        @Test
+        void classConstructorMatchesAnnotationBasedNamingForTopLevelClasses() {
+            QualifiedName fromClassConstructor = new MessageType(MessageTypeTest.class).qualifiedName();
+            QualifiedName fromPackageAndSimpleName =
+                    new QualifiedName(MessageTypeTest.class.getPackageName(), MessageTypeTest.class.getSimpleName());
+
+            assertEquals(fromPackageAndSimpleName, fromClassConstructor);
+        }
+    }
+
+    private static class NestedPayload {
+    }
 }
