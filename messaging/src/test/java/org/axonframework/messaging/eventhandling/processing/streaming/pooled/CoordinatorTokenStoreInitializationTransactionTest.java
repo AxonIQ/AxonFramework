@@ -182,9 +182,9 @@ class CoordinatorTokenStoreInitializationTransactionTest {
         // when starting the processor
         CompletableFuture<Void> started = coordinator.start();
 
-        // then initialization completes successfully and the persist observed a bound transaction. The precise
-        // correctness invariant is that initializeTokenSegments runs on a thread that owns the transaction (which it
-        // began); any fix satisfying that passes, regardless of which thread that turns out to be.
+        // then initialization completes successfully and the persist observed a bound transaction. The persist is
+        // deliberately dispatched to the coordinator's executor (a thread we control), which keeps it off the
+        // connector's gRPC callback thread and co-locates begin, persist, and commit on the transaction-owning thread.
         assertThatCode(() -> started.orTimeout(5, TimeUnit.SECONDS).join())
                 .doesNotThrowAnyException();
         assertThat(transactionBoundDuringInitialize)

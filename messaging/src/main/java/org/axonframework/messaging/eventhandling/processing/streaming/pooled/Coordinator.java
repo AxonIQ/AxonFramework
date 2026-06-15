@@ -330,10 +330,11 @@ class Coordinator {
     }
 
     private CompletableFuture<Boolean> initializeTokenStore() {
-        // The initial TrackingToken can resolve on a foreign thread: the Axon Server connector completes its future on
-        // a gRPC callback thread. Persisting on that thread fails, because the unit of work's transaction is bound to
-        // the thread that began it (issue #4632). So we resolve the token first, then dispatch the persist to this
-        // coordinator's executor in its own unit of work, keeping begin-transaction, persist, and commit on one thread.
+        // The initial TrackingToken can resolve on a foreign thread (e.g. the Axon Server connector completes its
+        // future on a gRPC callback thread). A unit of work's transaction is bound to the thread that began it,
+        // so the persist may not run as a continuation inside a unit of work started on another thread.
+        //  Therefore, the token is resolved first, and the persist runs in its own unit of work, dispatched to this coordinator's executor,
+        //  so the database work never occupies the connector's callback thread.
         return unitOfWorkFactory.create()
                                 .executeWithResult(context -> tokenStore.fetchSegments(name, context))
                                 .thenCompose(segments -> {
