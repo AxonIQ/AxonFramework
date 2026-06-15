@@ -1,0 +1,129 @@
+= Upcaster Migration
+:navtitle: Upcaster Migration
+
+In Axon Framework 4, structural changes to stored events were handled by _upcasters_.
+The most common form was the `SingleEventUpcaster`: a one-to-one transform from one event revision to the next.
+Axon Framework 5 replaces the single-event upcaster with an xref:message-transformation:index.adoc[event transformation]: the same idea, rewriting a stored event on the way out, expressed through a small declarative API.
+
+This path covers migrating one-to-one `SingleEventUpcaster` implementations to event transformations.
+
+[NOTE]
+====
+Before migrating an upcaster, check whether you still need one.
+Axon Framework 5 converts stored events to the type each handler asks for at handling time, which covers many changes that previously required an upcaster.
+See xref:events:event-versioning.adoc[Event versioning] for the conversion-first approach, and reach for a transformation only for structural changes conversion cannot express.
+====
+
+== How the concepts map
+
+[cols="1,1", options="header"]
+|===
+| Axon Framework 4 (`SingleEventUpcaster`) | Axon Framework 5 (`EventTransformer`)
+
+| `canUpcast(...)`: decide whether this event matches
+| `from(MessageType)`, or `from(Predicate<MessageType>)` for a range of versions
+
+| The target type passed to `upcastPayload(...)`
+| `to(MessageType)`: declare the produced identity
+
+| `doUpcast(...)`: rewrite the serialized representation
+| `transform(type, mapper)`: map the deserialized payload
+
+| `SimpleSerializedType` (payload class name + revision)
+| `MessageType` (qualified name + version)
+
+| `IntermediateEventRepresentation`
+| a typed payload (`JsonNode`, `Map<String, Object>`, ...)
+
+| `EventUpcasterChain` and registration order
+| `EventTransformerChain.builder().register(...)` in order
+|===
+
+== Before and after
+
+Both versions below lift an unversioned `SystemAnnouncement` onto `1.0.0`, renaming the payload's `message` field to `text`.
+
+Axon Framework 4 single-event upcaster:
+
+[source,java]
+----
+public class SystemAnnouncement0_to_1Upcaster extends SingleEventUpcaster {
+
+    private static final SimpleSerializedType TARGET =
+            new SimpleSerializedType(SystemAnnouncementEvent.class.getTypeName(), null);
+
+    @Override
+    protected boolean canUpcast(IntermediateEventRepresentation rep) {
+        return rep.getType().equals(TARGET);
+    }
+
+    @Override
+    protected IntermediateEventRepresentation doUpcast(IntermediateEventRepresentation rep) {
+        return rep.upcastPayload(
+                new SimpleSerializedType(TARGET.getName(), "1.0.0"),
+                JsonNode.class,
+                legacy -> {
+                    ObjectNode v1 = JsonNodeFactory.instance.objectNode();
+                    v1.set("catalogId", legacy.get("catalogId"));
+                    v1.put("text", legacy.get("message").asText());
+                    return v1;
+                });
+    }
+}
+----
+
+Axon Framework 5 event transformation:
+
+[source,java]
+----
+public final class SystemAnnouncementLegacyUplift {
+
+    private static final MessageType FROM = new MessageType("coursecatalog.SystemAnnouncement", "0.0.1");
+    private static final MessageType TO   = new MessageType("coursecatalog.SystemAnnouncement", "1.0.0");
+
+    public static EventTransformer build() {
+        return EventTransformer.from(FROM)
+                                  .to(TO)
+                                  .transform(JsonNode.class, SystemAnnouncementLegacyUplift::map);
+    }
+
+    private static JsonNode map(JsonNode legacy) {
+        ObjectNode v1 = JsonNodeFactory.instance.objectNode();
+        v1.set("catalogId", legacy.get("catalogId"));
+        v1.put("text", legacy.get("message").asString());
+        return v1;
+    }
+}
+----
+
+The behavior is the same, but the Axon Framework 5 version drops the serialized-type plumbing and works with a typed payload directly.
+The identity also differs: Axon Framework 4 keyed off the payload's class name, while Axon Framework 5 keys off a logical qualified name that is decoupled from the class.
+
+[NOTE]
+.Unversioned events
+====
+Events stored without a version are treated as version `0.0.1` in Axon Framework 5.
+Match that version in `from(...)` when lifting legacy events, as shown above.
+====
+
+== Registering the transformations
+
+In Axon Framework 4 you registered upcasters with an `EventUpcasterChain`.
+In Axon Framework 5 you register transformations with an `EventTransformerChain`.
+Registration order still imposes the version order, so a v1 event reaches your handler as the current version.
+See xref:message-transformation:configuring-transformations.adoc[Configuring transformations] for the full setup, including the Spring Boot configuration.
+
+== What is different
+
+* A transformation is strictly one-to-one and keeps the event's qualified name: it may change the version and payload, but not the name. Renaming an event is not supported.
+* You map a _deserialized_ payload (`JsonNode`, `Map<String, Object>`, ...) instead of an `IntermediateEventRepresentation`.
+* Mappers must be deterministic and side-effect-free, exactly as upcasters were expected to be.
+
+[TIP]
+.Prefer a type-safe mapper where you can
+====
+The example above maps an untyped `JsonNode`, the closest equivalent to the Axon Framework 4 `IntermediateEventRepresentation`.
+When the hop produces an event you still have as a class, usually the current version, map straight to it instead and describe the old shape as a plain `record`.
+The mapper then works on named, typed fields, and a wrong-shaped output is caught for you.
+See xref:message-transformation:defining-transformations.adoc#_mapping_to_a_typed_event[Mapping to a typed event].
+====

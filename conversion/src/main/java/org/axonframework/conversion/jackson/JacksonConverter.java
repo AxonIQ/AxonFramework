@@ -46,6 +46,20 @@ public class JacksonConverter implements Converter {
 
     private static final Logger logger = LoggerFactory.getLogger(JacksonConverter.class);
 
+    private static final ClassValue<Boolean> IS_JACKSON_2_TREE_NODE = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            try {
+                Class<?> jackson2JsonNodeType = Class.forName("com.fasterxml.jackson.databind.JsonNode",
+                                                              false,
+                                                              type.getClassLoader());
+                return jackson2JsonNodeType.isAssignableFrom(type);
+            } catch (ClassNotFoundException jackson2NotOnClasspath) {
+                return false;
+            }
+        }
+    };
+
     private final ObjectMapper objectMapper;
     private final ChainingContentTypeConverter converter;
 
@@ -108,6 +122,16 @@ public class JacksonConverter implements Converter {
             return (T) input;
         }
 
+        if (isForeignJacksonTreeNode(sourceType)) {
+            throw new ConversionException("""
+                    Cannot convert input of type '%s' using JacksonConverter (which uses Jackson 3, \
+                    package 'tools.jackson.databind'). The input is a Jackson 2 tree node \
+                    ('com.fasterxml.jackson.databind.JsonNode'), which Jackson 3 does not recognize \
+                    as a tree and would silently introspect as a POJO, producing a wrong result. \
+                    Serialize the input to a JSON String or byte[] before conversion, or use a \
+                    Jackson 2-based Converter.""".formatted(sourceType.getName()));
+        }
+
         try {
             JavaType targetJavaType = objectMapper.constructType(targetType);
             if (converter.canConvert(sourceType, targetJavaType.getRawClass())) {
@@ -151,5 +175,21 @@ public class JacksonConverter implements Converter {
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("objectMapper", objectMapper);
         descriptor.describeProperty("chaining-content-type-converter", converter);
+    }
+
+    /**
+     * Returns {@code true} when {@code type} is, or extends, Jackson 2's
+     * {@code com.fasterxml.jackson.databind.JsonNode}. The Jackson 2 type is resolved through
+     * {@code type}'s own class loader, so this class needs no compile-time dependency on Jackson 2;
+     * when Jackson 2 is absent the input cannot be one of its tree nodes and {@code false} is returned.
+     * The result is cached per input {@code type} through {@link #IS_JACKSON_2_TREE_NODE}.
+     * <p>
+     * Jackson 3's {@code ObjectMapper} does not recognize Jackson 2 tree nodes; it falls
+     * back to bean introspection which produces a wrong map (keys like {@code isArray},
+     * {@code isObject}, ... derived from {@code JsonNode}'s accessor methods). Detecting
+     * these inputs early lets us replace silent wrong output with a clear failure.
+     */
+    private static boolean isForeignJacksonTreeNode(Class<?> type) {
+        return IS_JACKSON_2_TREE_NODE.get(type);
     }
 }
