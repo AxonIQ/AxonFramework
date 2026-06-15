@@ -118,8 +118,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * This method inspects the provided {@code delegate} in a non-blocking manner and translates its state into a
          * corresponding {@code FetchResult}:
          * <ul>
-         *     <li>If {@link MessageStream#hasNextAvailable()} returns {@code true}, this method
-         *     retrieves the next entry via {@link MessageStream#next()} and returns a
+         *     <li>If there is a {@link MessageStream#next()} element, it returns a
          *     {@link FetchResult.Value}.</li>
          *     <li>If no entry is currently available and the stream is not completed, a
          *     {@link FetchResult.NotReady} is returned.</li>
@@ -142,27 +141,25 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * @throws NullPointerException if {@code delegate} is {@code null}
          */
         static <M extends Message> FetchResult<Entry<M>> of(MessageStream<M> delegate) {
-            if (delegate.hasNextAvailable()) {
-                return FetchResult.of(delegate.next().orElse(null));
-            }
-
-            if (!delegate.isCompleted()) {
-                return FetchResult.notReady();
-            }
-
-            return delegate.error()
-                           .map(FetchResult::<Entry<M>>error)
-                           .orElse(FetchResult.completed());
+            return delegate.next()
+                .map(FetchResult::of)
+                .orElseGet(() -> delegate.isCompleted()
+                    ? delegate.error()
+                        .map(FetchResult::<Entry<M>>error)
+                        .orElse(FetchResult.completed())
+                    : FetchResult.notReady()
+                );
         }
 
         /**
          * Creates a {@code FetchResult} representing a successfully fetched value.
          *
          * @param <T>   the entry type
-         * @param value the non-{@code null} value
+         * @param value the value, cannot be {@code null}
          * @return a {@link Value} containing the given value, never {@code null}
+         * @throws NullPointerException if {@code value} is {@code null}
          */
-        static <T extends @Nullable Entry<?>> FetchResult<T> of(@Nullable T value) {
+        static <T extends Entry<?>> FetchResult<T> of(T value) {
             return new Value<>(value);
         }
 
@@ -172,6 +169,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * @param <T>   the entry type
          * @param error the non-{@code null} error
          * @return an {@link Error} representing the failure, never {@code null}
+         * @throws NullPointerException if {@code error} is {@code null}
          */
         static <T extends Entry<?>> FetchResult<T> error(Throwable error) {
             return new Error<>(error);
@@ -207,7 +205,17 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * @param <T>   the entry type
          * @param value the value
          */
-        record Value<T extends Entry<?>>(T value) implements FetchResult<T> {}
+        record Value<T extends Entry<?>>(T value) implements FetchResult<T> {
+
+            /**
+             * Compact constructor ensuring the given {@code value} is not {@code null}.
+             *
+             * @param value the non-{@code null} value
+             */
+            public Value {
+                Objects.requireNonNull(value, "value");
+            }
+        }
 
         /**
          * A {@link FetchResult} representing a terminal error in the stream.
@@ -549,6 +557,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     /**
      * Attempts to fetch the next available {@link Entry} from the underlying source.
      * <p>
+     * This method is invoked exclusively by the enclosing AbstractMessageStream implementation. Calls are
+     * serialized under a single internal lock; the method is never executed concurrently with itself or
+     * other lifecycle methods of this instance. Implementations may assume single-threaded access and do
+     * not need to provide their own synchronization for correctness of this method.
+     * <p>
      * This method is invoked by {@link #next()} when no previously peeked entry is available. Implementations must
      * return a {@link FetchResult} describing the current state of the stream:
      * <ul>
@@ -585,6 +598,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     /**
      * Callback invoked when the stream is about to transition to a completed state, either successfully or
      * exceptionally. Subclasses may override this method to perform custom actions on completion.
+     * <p>
+     * This method is invoked exclusively by the enclosing AbstractMessageStream implementation. Calls are
+     * serialized under a single internal lock; the method is never executed concurrently with itself or
+     * other lifecycle methods of this instance. Implementations may assume single-threaded access and do
+     * not need to provide their own synchronization for correctness of this method.
      * <p>
      * If the implementation throws an exception, the stream still completes, but it will complete with the thrown
      * exception. If the stream was about to complete with an error, and the callback fails as well, the exception is

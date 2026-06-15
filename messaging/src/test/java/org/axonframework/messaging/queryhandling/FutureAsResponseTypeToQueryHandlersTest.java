@@ -145,11 +145,8 @@ class FutureAsResponseTypeToQueryHandlersTest {
 
         MessageStream<QueryResponseMessage> query = queryBus.query(testQuery, null);
         queryBus.completeSubscriptions(s -> true, null);
-        List<String> result = query.reduce(new ArrayList<String>(), (list, entry) -> {
-                                          list.add(entry.message().payloadAs(String.class));
-                                          return list;
-                                      })
-                                      .get();
+        List<String> result = query.collect(ArrayList<String>::new, (list, message) -> list.add(message.payloadAs(String.class)))
+                                   .get();
         assertEquals(asList("Response1", "Response2"), result);
     }
 

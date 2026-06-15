@@ -48,7 +48,7 @@ class TruncateFirstMessageStream<M extends Message>
     }
 
     @Override
-    protected synchronized FetchResult<Entry<M>> fetchNext() {
+    protected FetchResult<Entry<M>> fetchNext() {
         if (consumed) {
             return FetchResult.completed();
         }

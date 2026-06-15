@@ -240,10 +240,7 @@ class AnnotatedQueryHandlingComponentTest {
         ProcessingContext testContext = StubProcessingContext.forMessage(testQuery);
         // when...
         List<Object> results = testSubject.handle(testQuery, testContext)
-                                          .reduce(new ArrayList<>(), (list, entry) -> {
-                                              list.add(entry.message().payload());
-                                              return list;
-                                          })
+                                          .collect(ArrayList::new, (list, message) -> list.add(message.payload()))
                                           .join();
         // then...
         assertThat(results.size()).isEqualTo(desiredResponsesCount);

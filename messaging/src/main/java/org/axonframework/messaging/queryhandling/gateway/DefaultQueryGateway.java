@@ -107,10 +107,7 @@ public class DefaultQueryGateway implements QueryGateway {
         QueryMessage queryMessage = asQueryMessage(query);
         MessageStream<QueryResponseMessage> resultStream = queryBus.query(queryMessage, context);
         CompletableFuture<List<R>> resultFuture =
-                resultStream.reduce(new ArrayList<>(), (list, entry) -> {
-                    list.add(entry.message().payloadAs(responseType, converter));
-                    return list;
-                });
+                resultStream.collect(ArrayList::new, (list, message) -> list.add(message.payloadAs(responseType, converter)));
         // We cannot chain the whenComplete call, as otherwise CompletableFuture#cancel is not propagated to the lambda.
         resultFuture.whenComplete((r, e) -> {
             if (!resultStream.isCompleted()) {
