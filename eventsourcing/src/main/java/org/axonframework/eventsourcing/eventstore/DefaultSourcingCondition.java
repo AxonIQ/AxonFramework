@@ -51,6 +51,11 @@ record DefaultSourcingCondition(
     }
 
     @Override
+    public SourcingCondition withCriteria(EventCriteria criteria) {
+        return new DefaultSourcingCondition(strategy, criteria);
+    }
+
+    @Override
     public Position start() {
         return switch (strategy) {
             case SourcingStrategy.Absolute(Position p) -> p;

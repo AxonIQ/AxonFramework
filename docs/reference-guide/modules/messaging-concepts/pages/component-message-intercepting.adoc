@@ -351,7 +351,7 @@ This makes it suitable for cross-cutting exception handling concerns such as log
 
 You can wire the exception and the full message (for example, `CommandMessage` or `EventMessage`) as parameters.
 The framework matches an exception handler based on which parameters it declares: the exception type must be assignable from the thrown exception, and the message type must be assignable from the message being handled.
-Omitting a parameter means it is not used for matching; any value is accepted.
+Omitting a parameter means it is not used for matching. Any value is accepted.
 
 You can introduce `@ExceptionHandler` annotated methods in any message handling component.
 
