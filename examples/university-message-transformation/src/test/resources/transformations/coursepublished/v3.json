@@ -1,0 +1,13 @@
+{
+  "catalogId": {
+    "value": "Catalog:axoniq-university"
+  },
+  "courseId": {
+    "value": "Course:event-sourcing-101"
+  },
+  "name": "Event Sourcing in Practice",
+  "range": {
+    "min": 30,
+    "max": 30
+  }
+}
