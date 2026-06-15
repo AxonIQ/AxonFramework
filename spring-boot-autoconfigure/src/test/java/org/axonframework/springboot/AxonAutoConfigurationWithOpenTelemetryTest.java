@@ -61,7 +61,7 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
     }
 
     @Test
-    void spanFactoryUsesSpringManagedOpenTelemetryWhenAvailable() throws Exception {
+    void spanFactoryUsesSpringManagedOpenTelemetryWhenAvailable() {
         TextMapPropagator expectedPropagator = W3CTraceContextPropagator.getInstance();
         OpenTelemetry openTelemetry = OpenTelemetrySdk.builder()
                                                       .setTracerProvider(SdkTracerProvider.builder().build())
@@ -105,7 +105,7 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
     }
 
     @Test
-    void spanFactoryFallsBackToGlobalOpenTelemetryWhenNoBeanAvailable() throws Exception {
+    void spanFactoryFallsBackToGlobalOpenTelemetryWhenNoBeanAvailable() {
         new ApplicationContextRunner()
                 .withUserConfiguration(Context.class)
                 .withPropertyValues("axon.axonserver.enabled=false")
