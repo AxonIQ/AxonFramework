@@ -26,6 +26,7 @@ import org.axonframework.messaging.eventhandling.replay.ReplayStatusChangedHandl
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -87,6 +88,24 @@ public interface EventHandlingComponent
      */
     default boolean supportsReset() {
         return true;
+    }
+
+    /**
+     * Resolves a capability of the given {@code componentType} from this component, following the decorator-unwrap
+     * convention used elsewhere in the framework (such as
+     * {@link org.axonframework.messaging.core.annotation.MessageHandlingMember#unwrap(Class)}).
+     * <p>
+     * By default a component resolves itself when it is an instance of {@code componentType}, and
+     * {@link Optional#empty()} otherwise. Decorating components forward this call through their delegate chain, and
+     * wrapping components may also expose the object they wrap.
+     *
+     * @param componentType The capability type to resolve.
+     * @param <C>           The capability type.
+     * @return An {@link Optional} holding the resolved capability, or empty if not available.
+     * @since 5.2.0
+     */
+    default <C> Optional<C> unwrap(Class<C> componentType) {
+        return componentType.isInstance(this) ? Optional.of(componentType.cast(this)) : Optional.empty();
     }
 
     @Override
