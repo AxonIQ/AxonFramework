@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2023. Axon Framework
+ * Copyright (c) 2010-2026. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlerInvocationException;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
-import org.axonframework.modelling.command.AggregateRoot;
 import org.axonframework.modelling.command.AggregateVersion;
 import org.axonframework.modelling.command.EntityId;
 import org.slf4j.Logger;
@@ -348,16 +347,10 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
 
         private void inspectAggregateTypes() {
             for (Class<?> type : handlerInspector.getAllHandlers().keySet()) {
-                String declaredType = findDeclaredType(type);
+                String declaredType = AggregateTypeUtils.declaredTypeOf(type);
                 types.put(declaredType, type);
                 declaredTypes.put(type, declaredType);
             }
-        }
-
-        private String findDeclaredType(Class<?> type) {
-            return findAnnotationAttributes(type, AggregateRoot.class)
-                    .map(map -> (String) map.get("type")).filter(i -> i.length() > 0)
-                    .orElse(type.getSimpleName());
         }
 
         private void inspectFieldsAndMethods() {
