@@ -262,18 +262,6 @@ class AnnotatedAggregateMetaModelFactoryTest {
     }
 
     @Test
-    void declaredTypeOfDefaultsToSimpleName() {
-        assertEquals("SomeAnnotatedHandlers",
-                     AnnotatedAggregateMetaModelFactory.declaredTypeOf(SomeAnnotatedHandlers.class));
-    }
-
-    @Test
-    void declaredTypeOfHonorsAggregateRootTypeOverride() {
-        assertEquals("SomeOtherName",
-                     AnnotatedAggregateMetaModelFactory.declaredTypeOf(SomeSubclass.class));
-    }
-
-    @Test
     void findGetterIdentifier() {
         AggregateModel<SomeGetterIdAnnotatedHandlers> inspector =
                 AnnotatedAggregateMetaModelFactory.inspectAggregate(SomeGetterIdAnnotatedHandlers.class);

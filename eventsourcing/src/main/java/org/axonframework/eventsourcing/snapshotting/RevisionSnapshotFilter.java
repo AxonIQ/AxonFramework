@@ -18,7 +18,7 @@ package org.axonframework.eventsourcing.snapshotting;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.eventhandling.DomainEventData;
-import org.axonframework.modelling.command.inspection.AnnotatedAggregateMetaModelFactory;
+import org.axonframework.modelling.command.inspection.AggregateTypeUtils;
 
 import java.util.Objects;
 
@@ -116,7 +116,7 @@ public class RevisionSnapshotFilter implements SnapshotFilter {
          * @return the current Builder instance, for fluent interfacing
          */
         public Builder type(Class<?> type) {
-            return type(AnnotatedAggregateMetaModelFactory.declaredTypeOf(type));
+            return type(AggregateTypeUtils.declaredTypeOf(type));
         }
 
         /**

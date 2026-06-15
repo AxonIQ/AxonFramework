@@ -29,7 +29,6 @@ import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandlerInvocationException;
 import org.axonframework.messaging.annotation.MessageHandlingMember;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
-import org.axonframework.modelling.command.AggregateRoot;
 import org.axonframework.modelling.command.AggregateVersion;
 import org.axonframework.modelling.command.EntityId;
 import org.slf4j.Logger;
@@ -153,25 +152,6 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
                                                          Set<Class<? extends T>> subtypes) {
         return new AnnotatedAggregateMetaModelFactory(parameterResolverFactory, handlerDefinition)
                 .createModel(aggregateType, subtypes);
-    }
-
-    /**
-     * Resolves the declared type of the given aggregate {@code type}. This is the {@link AggregateRoot#type()} when it
-     * is present and non-empty, and otherwise the {@link Class#getSimpleName() simple name} of the {@code type}.
-     * <p>
-     * The declared type is the value used to identify an aggregate's snapshots and events (it is stored as the
-     * {@link org.axonframework.eventhandling.DomainEventData#getType() type} of a snapshot). As such, it is the value a
-     * {@code SnapshotFilter} should match against.
-     *
-     * @param type the aggregate class to resolve the declared type for
-     * @return the declared type of the given aggregate {@code type}
-     * @since 4.13.2
-     */
-    public static String declaredTypeOf(Class<?> type) {
-        return findAnnotationAttributes(type, AggregateRoot.class)
-                .map(attributes -> (String) attributes.get("type"))
-                .filter(declaredType -> !declaredType.isEmpty())
-                .orElse(type.getSimpleName());
     }
 
     /**
@@ -368,7 +348,7 @@ public class AnnotatedAggregateMetaModelFactory implements AggregateMetaModelFac
 
         private void inspectAggregateTypes() {
             for (Class<?> type : handlerInspector.getAllHandlers().keySet()) {
-                String declaredType = declaredTypeOf(type);
+                String declaredType = AggregateTypeUtils.declaredTypeOf(type);
                 types.put(declaredType, type);
                 declaredTypes.put(type, declaredType);
             }
