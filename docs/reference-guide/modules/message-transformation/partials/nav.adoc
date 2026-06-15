@@ -1,0 +1,4 @@
+** xref:message-transformation:index.adoc[[.advanced-framework]#Event Transformation#]
+*** xref:message-transformation:defining-transformations.adoc[]
+*** xref:message-transformation:configuring-transformations.adoc[]
+*** xref:message-transformation:demo.adoc[]
