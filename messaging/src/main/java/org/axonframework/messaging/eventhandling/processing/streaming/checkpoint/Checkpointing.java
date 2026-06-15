@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.checkpoint;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -84,14 +85,30 @@ import java.util.concurrent.CompletableFuture;
  * A future completed exceptionally (whether from such a timeout or any other failure) fails the checkpoint without
  * storing, leaving the stored token where it is; the segment retries on the next cycle.
  * <p>
+ * <b>Transactional coupling within a batch.</b> The checkpoint is taken on the commit of the <em>same</em> transaction
+ * that processed the batch: the processor awaits the returned future while that transaction is still open. Two
+ * consequences follow. First, a slow or never-completing future does not merely stall progress -- it holds the batch's
+ * transaction open for the duration of the await. Second, if the checkpoint fails (the future completes exceptionally),
+ * the batch transaction rolls back, undoing the work of <em>every</em> handler in that batch, including ordinary
+ * (non-checkpointing) handlers and other checkpointing components sharing the segment. A misbehaving checkpointing
+ * component can therefore affect co-located handlers. For this reason, <b>a checkpointing component is best isolated in
+ * its own pooled streaming event processor</b> (one whose every handler is {@code Checkpointing}, so it runs
+ * fully-deferred) rather than mixed with ordinary handlers, both to avoid the rollback coupling and because in a mixed
+ * processor auto checkpointing wins and the component cannot actually defer its segment's token.
+ * <p>
  * The <b>only method that must be implemented</b> is {@link #onCheckpointAdvanced(Segment, TrackingToken)};
  * {@link #onSegmentClaimed(Segment, CheckpointTrigger)} and {@link #onSegmentReleased(Segment, TrackingToken)} have
  * sensible defaults (see each method).
+ * <p>
+ * <b>Internal API.</b> This interface is marked {@link Internal}: self-checkpointing is currently intended primarily
+ * for internal and advanced use, is not part of the documented public feature set, and its shape may change in a minor
+ * or patch release.
  *
  * @author Allard Buijze
  * @see CheckpointTrigger
  * @since 5.2.0
  */
+@Internal
 public interface Checkpointing {
 
     /**
@@ -101,6 +118,11 @@ public interface Checkpointing {
      * <p>
      * Defaults to a no-op: a unit that obtains its trigger another way -- typically through a {@link CheckpointTrigger}
      * handler-method parameter -- does not need to retain it here.
+     * <p>
+     * Invoked synchronously as part of claiming the segment. Throwing from this method fails the claim cycle: the
+     * segment is not claimed and the coordinator retries it (after a back-off). This is deliberate -- a component that
+     * never received its trigger could never checkpoint -- so signal a genuine inability to accept the claim by
+     * throwing, but do not throw for transient conditions that a retained trigger would handle later.
      *
      * @param segment The segment that was claimed.
      * @param trigger The handle to request checkpoints for {@code segment}.

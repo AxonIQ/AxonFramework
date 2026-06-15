@@ -1017,7 +1017,6 @@ class Coordinator {
         private CompletableFuture<WorkPackage> createWorkPackage(Segment segment, TrackingToken token) {
             WorkPackage workPackage = workPackageFactory.apply(segment, token);
             workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
-            // Hand the per-segment CheckpointTrigger to any self-checkpointing components on this segment.
             workPackage.notifySegmentClaimed();
             return segmentChangeListener.onSegmentClaimed(segment)
                                         .handle((ignored, e) -> {
@@ -1426,7 +1425,7 @@ class Coordinator {
                        .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(
                                // Persist the final safe token (onSegmentReleased -> store) WHILE the claim is still
                                // held, then release the claim LAST so no other node can resume past durable progress.
-                               context -> work.finalCheckpoint(context)
+                               context -> work.checkpointOnRelease(context)
                                               .thenCompose(r -> tokenStore.releaseClaim(name, segmentId, context))
                                               .thenCompose(r -> segmentChangeListener.onSegmentReleased(work.segment()))
                        ))

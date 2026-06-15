@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.checkpoint;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -39,11 +40,16 @@ import java.util.Optional;
  * owned by another node); a late async-write acknowledgement must therefore be a no-op rather than an error. The final
  * safe token for the claim comes solely from the return value of
  * {@link Checkpointing#onSegmentReleased(Segment, TrackingToken)}.
+ * <p>
+ * <b>Internal API.</b> This interface is marked {@link Internal}: it is part of the self-checkpointing support, which
+ * is currently intended primarily for internal and advanced use and whose shape may change in a minor or patch
+ * release.
  *
  * @author Allard Buijze
  * @see Checkpointing
  * @since 5.2.0
  */
+@Internal
 public interface CheckpointTrigger {
 
     /**

@@ -101,10 +101,10 @@ class WorkPackage {
     private final long claimExtensionThreshold;
     private final Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
     private final Supplier<ProcessingContext> schedulingProcessingContextProvider;
-    private final boolean autoMode;
+    private final boolean autoCheckpointing;
     @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
-    private final List<Checkpointing> participants;
+    private final List<Checkpointing> checkpointingParticipants;
     /**
      * The pending segment-scoped checkpoint request: the position any component declared safe, forward-merged via
      * {@link TrackingToken#upperBound(TrackingToken)}. Set from arbitrary threads through the {@link CheckpointTrigger}
@@ -163,8 +163,8 @@ class WorkPackage {
         this.claimExtensionThreshold = builder.claimExtensionThreshold;
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
         this.clock = builder.clock;
-        this.autoMode = builder.autoMode;
-        this.participants = List.copyOf(builder.participants);
+        this.autoCheckpointing = builder.autoCheckpointing;
+        this.checkpointingParticipants = List.copyOf(builder.checkpointingParticipants);
         this.lastConsumedToken = builder.initialToken;
         this.nextClaimExtension = new AtomicLong(now() + claimExtensionThreshold);
         this.processingEvents = new AtomicBoolean(false);
@@ -435,7 +435,7 @@ class WorkPackage {
         unitOfWork.runOnPreInvocation(ctx -> {
             ctx.putResource(Segment.RESOURCE_KEY, segment);
             ctx.putResource(TrackingToken.BATCH_END_RESOURCE_KEY, lastConsumedToken);
-            if (!participants.isEmpty()) {
+            if (!checkpointingParticipants.isEmpty()) {
                 // Expose the per-segment trigger so a handler may request checkpoints via a CheckpointTrigger parameter.
                 ctx.putResource(CheckpointTrigger.RESOURCE_KEY, checkpointTrigger);
             }
@@ -469,7 +469,7 @@ class WorkPackage {
         if (requestedCheckpoint.get() != null) {
             return true;
         }
-        return autoMode && lastStoredToken != lastConsumedToken && now() > nextClaimExtension.get();
+        return autoCheckpointing && lastStoredToken != lastConsumedToken && now() > nextClaimExtension.get();
     }
 
     /**
@@ -480,27 +480,24 @@ class WorkPackage {
      *     component co-located with an auto one is therefore forced to cover it.</li>
      *     <li><b>Fully-deferred mode</b> stores only when a component explicitly requested a checkpoint.</li>
      * </ul>
-     * When there are no self-checkpointing {@link #participants participants}, this stores the batch-end token directly
-     * (the verbatim auto behaviour). Otherwise it {@link #reconcile(Map) reconciles} the participants to a single agreed
-     * position and stores that, so no component is left ahead of the stored token. A store is skipped when nothing is to
-     * be checkpointed or the result does not advance beyond the last stored token.
+     * When there are no self-checkpointing {@link #checkpointingParticipants participants}, this stores the batch-end
+     * token directly (the verbatim auto behaviour). Otherwise it {@link #reconcile(Map) reconciles} the participants to a
+     * single agreed position and stores that, so no component is left ahead of the stored token. A store is skipped when
+     * nothing is to be checkpointed or the result does not advance beyond the last stored token.
      */
     private CompletableFuture<Void> checkpoint(ProcessingContext ctx) {
-        TrackingToken requested = requestedCheckpoint.getAndSet(null);
-        if (autoMode) {
-            // The auto component(s) are durable to the batch-end token within this transaction: cover at least there.
-            requested = requested == null || lastConsumedToken == null
-                    ? lastConsumedToken
-                    : requested.upperBound(lastConsumedToken);
-        }
+        TrackingToken pending = requestedCheckpoint.getAndSet(null);
+        // The auto component(s) are durable to the batch-end token within this transaction: cover at least there.
+        TrackingToken requested = autoCheckpointing
+                ? (pending == null || lastConsumedToken == null ? lastConsumedToken : pending.upperBound(lastConsumedToken))
+                : pending;
         if (requested == null) {
             return emptyCompletedFuture();
         }
-        if (participants.isEmpty()) {
+        if (checkpointingParticipants.isEmpty()) {
             return storeIfAdvanced(requested, ctx);
         }
-        TrackingToken target = requested;
-        return requestEach(participant -> requestAdvance(participant, target))
+        return requestEach(participant -> requestAdvance(participant, requested))
                 .thenCompose(this::reconcile)
                 .thenCompose(agreed -> storeIfAdvanced(agreed, ctx));
     }
@@ -602,22 +599,26 @@ class WorkPackage {
 
     /**
      * Hands the {@link CheckpointTrigger} for this package's {@link Segment} to every self-checkpointing
-     * {@link #participants participant}. Invoked by the {@link Coordinator} once the segment is claimed.
+     * {@link #checkpointingParticipants participant}. Invoked by the {@link Coordinator} once the segment is claimed.
      */
     void notifySegmentClaimed() {
-        participants.forEach(participant -> participant.onSegmentClaimed(segment, checkpointTrigger));
+        checkpointingParticipants.forEach(participant -> participant.onSegmentClaimed(segment, checkpointTrigger));
     }
 
     /**
      * Performs the final checkpoint for a segment being released: asks each self-checkpointing
-     * {@link #participants participant} to drain toward {@code lastConsumedToken} through
-     * {@link Checkpointing#onSegmentReleased(Segment, TrackingToken)}, then stores the
-     * {@link TrackingToken#lowerBound(TrackingToken) lowerBound} of the reported tokens within the given {@code ctx}
-     * (if it advances). Invoked by the {@link Coordinator} while the token-store claim is still held, before the claim
-     * is released. With no participant it is a no-op (the per-batch store already covered progress).
+     * {@link #checkpointingParticipants participant} to drain toward {@code lastConsumedToken} through
+     * {@link Checkpointing#onSegmentReleased(Segment, TrackingToken)}, then {@link #reconcile(Map) reconciles} their
+     * reported positions to a single agreed token -- the highest any participant reported, driving the others to reach
+     * it (exactly as {@link #checkpoint(ProcessingContext)} does) -- and stores that within the given {@code ctx} (if it
+     * advances). Only when reconciliation cannot be reached -- a lagging participant fails to cover the agreed position
+     * -- does it fall back to storing the {@link TrackingToken#lowerBound(TrackingToken) lowerBound} of the reported
+     * tokens, so the claim can still be released and the uncovered tail is simply reprocessed on the next claim.
+     * Invoked by the {@link Coordinator} while the token-store claim is still held, before the claim is released. With no
+     * participant it is a no-op (the per-batch store already covered progress).
      */
-    CompletableFuture<Void> finalCheckpoint(ProcessingContext ctx) {
-        if (participants.isEmpty()) {
+    CompletableFuture<Void> checkpointOnRelease(ProcessingContext ctx) {
+        if (checkpointingParticipants.isEmpty()) {
             return emptyCompletedFuture();
         }
         return requestEach(participant -> participant.onSegmentReleased(segment, lastConsumedToken)
@@ -651,7 +652,7 @@ class WorkPackage {
             Function<Checkpointing, CompletableFuture<TrackingToken>> request
     ) {
         Map<Checkpointing, CompletableFuture<TrackingToken>> futures = new LinkedHashMap<>();
-        participants.forEach(participant -> futures.put(participant, request.apply(participant)));
+        checkpointingParticipants.forEach(participant -> futures.put(participant, request.apply(participant)));
         return CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
                                 .thenApply(ignored -> {
                                     Map<Checkpointing, TrackingToken> reported = new LinkedHashMap<>();
@@ -780,7 +781,7 @@ class WorkPackage {
      */
     public CompletableFuture<Throwable> abort(@Nullable Throwable abortReason) {
         // Deactivate the CheckpointTrigger before the release sequence runs: any late requestCheckpoint becomes a
-        // no-op. The final safe token is taken solely from the onSegmentReleased return value (see finalCheckpoint).
+        // no-op. The final safe token is taken solely from the onSegmentReleased return value (see checkpointOnRelease).
         checkpointsReleased.set(true);
         if (abortReason != null) {
             logger.debug("Abort request received for Work Package [{}]-[{}].",
@@ -885,8 +886,8 @@ class WorkPackage {
         private @Nullable TrackingToken initialToken;
         private int batchSize = 1;
         private long claimExtensionThreshold = 5000;
-        private boolean autoMode = true;
-        private List<Checkpointing> participants = List.of();
+        private boolean autoCheckpointing = true;
+        private List<Checkpointing> checkpointingParticipants = List.of();
         private @Nullable Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
         @Deprecated(forRemoval = true, since = "5.2.0")
         private Clock clock = ClockUtils.get();
@@ -1014,12 +1015,12 @@ class WorkPackage {
          * checkpoint at the batch-end token is requested every batch on behalf of the auto component(s); {@code false}
          * (fully-deferred) means the stored token advances only on explicit {@link CheckpointTrigger} request.
          *
-         * @param autoMode {@code true} when at least one component is auto-checkpointing, {@code false} when every
-         *                 component is self-checkpointing
+         * @param autoCheckpointing {@code true} when at least one component is auto-checkpointing, {@code false} when
+         *                          every component is self-checkpointing
          * @return the current Builder instance, for fluent interfacing
          */
-        Builder autoMode(boolean autoMode) {
-            this.autoMode = autoMode;
+        Builder autoCheckpointing(boolean autoCheckpointing) {
+            this.autoCheckpointing = autoCheckpointing;
             return this;
         }
 
@@ -1027,11 +1028,11 @@ class WorkPackage {
          * The self-checkpointing units (resolved via {@code unwrap(Checkpointing.class)}) that participate in this
          * package's checkpoints. When empty, the {@code WorkPackage} takes the verbatim auto-checkpointing fast path.
          *
-         * @param participants the self-checkpointing units of this package's processor
+         * @param checkpointingParticipants the self-checkpointing units of this package's processor
          * @return the current Builder instance, for fluent interfacing
          */
-        Builder participants(List<Checkpointing> participants) {
-            this.participants = participants;
+        Builder checkpointingParticipants(List<Checkpointing> checkpointingParticipants) {
+            this.checkpointingParticipants = checkpointingParticipants;
             return this;
         }
 

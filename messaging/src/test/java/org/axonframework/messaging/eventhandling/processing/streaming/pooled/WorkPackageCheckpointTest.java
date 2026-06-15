@@ -43,7 +43,9 @@ import org.mockito.ArgumentCaptor;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -118,7 +120,7 @@ class WorkPackageCheckpointTest {
         void batchIsHandledButTokenIsNotStoredUntilAComponentRequestsACheckpoint() {
             // given
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -133,7 +135,7 @@ class WorkPackageCheckpointTest {
         void requestOnAnIdlePackageSchedulesAndStoresTheReportedToken() {
             // given -- no events scheduled, the worker is idle
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when -- an async write confirms durable up to position 5
@@ -155,7 +157,7 @@ class WorkPackageCheckpointTest {
             stuck.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(6L));
             RecordingCheckpointing leader = new RecordingCheckpointing();
             leader.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(8L));
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(stuck, leader)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(stuck, leader)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -172,7 +174,7 @@ class WorkPackageCheckpointTest {
             // given -- the participant reports a position BEHIND the requested one (contract violation)
             RecordingCheckpointing participant = new RecordingCheckpointing();
             participant.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(3L));
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -192,7 +194,7 @@ class WorkPackageCheckpointTest {
             lagging.advanceResult = requested -> CompletableFuture.completedFuture(
                     new GlobalSequenceTrackingToken(Math.max(requested.position().orElse(0L), 7L))
             );
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(leader, lagging)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(leader, lagging)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -226,7 +228,7 @@ class WorkPackageCheckpointTest {
             b.advanceResult = requested -> CompletableFuture.completedFuture(
                     new GlobalSequenceTrackingToken(Math.max(requested.position().orElse(0L), 10L))
             );
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(a, b)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(a, b)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -257,7 +259,7 @@ class WorkPackageCheckpointTest {
                 }
                 return CompletableFuture.completedFuture(requested);
             };
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -273,7 +275,7 @@ class WorkPackageCheckpointTest {
         void requestingACheckpointAtLatestResolvesToTheLastConsumedToken() {
             // given -- one event handled, so the last consumed token is at position 1 (deferred: nothing stored yet)
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
             testSubject.scheduleEvent(eventAt(1L));
             await().atMost(TIMEOUT).untilAsserted(() -> assertThat(batchProcessor.processed).hasSize(1));
@@ -294,7 +296,7 @@ class WorkPackageCheckpointTest {
         void requestingACheckpointWithoutATokenResolvesToTheLastConsumedToken() {
             // given -- one event handled, so the last consumed token is at position 1 (deferred: nothing stored yet)
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
             testSubject.scheduleEvent(eventAt(1L));
             await().atMost(TIMEOUT).untilAsserted(() -> assertThat(batchProcessor.processed).hasSize(1));
@@ -315,7 +317,7 @@ class WorkPackageCheckpointTest {
         void theCheckpointTriggerIsResolvableFromTheHandlingContext() {
             // given
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -330,7 +332,7 @@ class WorkPackageCheckpointTest {
         void theSegmentIsResolvableFromTheHandlingContext() {
             // given
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -345,7 +347,7 @@ class WorkPackageCheckpointTest {
         void aRequestAfterTheSegmentIsReleasedIsIgnored() {
             // given
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
             CheckpointTrigger trigger = participant.trigger;
 
@@ -366,9 +368,9 @@ class WorkPackageCheckpointTest {
 
         @Test
         void aCheckpointAtTheBatchEndTokenIsRequestedEveryBatch() {
-            // given -- a self-checkpointing component co-located with an auto component (autoMode = true)
+            // given -- a self-checkpointing component co-located with an auto component (autoCheckpointing = true)
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(true).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(true).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when
@@ -388,16 +390,16 @@ class WorkPackageCheckpointTest {
     class Release {
 
         @Test
-        void finalCheckpointStoresTheLowerBoundOfReleasedHighWaterMarks() {
-            // given
+        void checkpointOnReleaseStoresTheReconciledReleasePosition() {
+            // given -- a single participant reports position 9 on release
             RecordingCheckpointing participant = new RecordingCheckpointing();
             participant.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(9L));
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when -- the Coordinator drives the final checkpoint within a transaction it controls
             UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
-                                              .executeWithResult(testSubject::finalCheckpoint)
+                                              .executeWithResult(testSubject::checkpointOnRelease)
                                               .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
                                               .join();
 
@@ -407,18 +409,72 @@ class WorkPackageCheckpointTest {
         }
 
         @Test
+        void onReleaseALaggingParticipantIsReRequestedUpToTheLeaderAndTheHighestPositionIsStored() {
+            // given -- two participants report DIFFERENT positions on release: a leader at 10 and a laggard at 7 that
+            // can still advance to the agreed position when re-requested (via onCheckpointAdvanced)
+            RecordingCheckpointing leader = new RecordingCheckpointing();
+            leader.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(10L));
+            leader.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(10L));
+            RecordingCheckpointing lagging = new RecordingCheckpointing();
+            lagging.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(7L));
+            lagging.advanceResult = requested -> CompletableFuture.completedFuture(
+                    new GlobalSequenceTrackingToken(Math.max(requested.position().orElse(0L), 7L))
+            );
+            WorkPackage testSubject =
+                    builder.autoCheckpointing(false).checkpointingParticipants(List.of(leader, lagging)).build();
+            testSubject.notifySegmentClaimed();
+
+            // when -- the Coordinator drives the final checkpoint
+            UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                              .executeWithResult(testSubject::checkpointOnRelease)
+                                              .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                                              .join();
+
+            // then -- reconciliation drives the laggard up to the leader's 10 and stores that (the highest), NOT the
+            // lowerBound (7) which would leave the leader durably ahead of the stored token
+            verify(tokenStore).storeToken(eq(new GlobalSequenceTrackingToken(10L)), anyString(), anyInt(), any());
+            assertThat(lagging.advanced).containsExactly(new GlobalSequenceTrackingToken(10L));
+        }
+
+        @Test
+        void onReleaseAParticipantThatCannotReachTheAgreedPositionFallsBackToTheLowerBound() {
+            // given -- on release a leader reports 10 and a stuck participant reports 6 and CANNOT advance further when
+            // re-requested, so the positions cannot be reconciled
+            RecordingCheckpointing leader = new RecordingCheckpointing();
+            leader.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(10L));
+            leader.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(10L));
+            RecordingCheckpointing stuck = new RecordingCheckpointing();
+            stuck.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(6L));
+            stuck.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(6L));
+            WorkPackage testSubject =
+                    builder.autoCheckpointing(false).checkpointingParticipants(List.of(leader, stuck)).build();
+            testSubject.notifySegmentClaimed();
+
+            // when -- the Coordinator drives the final checkpoint
+            UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                              .executeWithResult(testSubject::checkpointOnRelease)
+                                              .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                                              .join();
+
+            // then -- reconciliation fails (the stuck participant cannot cover 10), but the claim must still be freed:
+            // the fallback stores the lowerBound of the reported release positions (6) and logs a warning, rather than
+            // failing outright. The uncovered tail (6, 10] is reprocessed on the next claim.
+            verify(tokenStore).storeToken(eq(new GlobalSequenceTrackingToken(6L)), anyString(), anyInt(), any());
+        }
+
+        @Test
         void aReleaseReturningLatestStoresTheLastConsumedToken() {
             // given -- one event handled (last consumed token at position 1), nothing checkpointed yet
             RecordingCheckpointing participant = new RecordingCheckpointing();
             participant.releaseResult = upTo -> CompletableFuture.completedFuture(TrackingToken.LATEST);
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
             testSubject.scheduleEvent(eventAt(1L));
             await().atMost(TIMEOUT).untilAsserted(() -> assertThat(batchProcessor.processed).hasSize(1));
 
             // when -- on release the component reports LATEST ("everything you gave me")
             UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
-                                              .executeWithResult(testSubject::finalCheckpoint)
+                                              .executeWithResult(testSubject::checkpointOnRelease)
                                               .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
                                               .join();
 
@@ -430,7 +486,7 @@ class WorkPackageCheckpointTest {
         void aReleaseTokenBehindTheLastCheckpointIsIgnoredAndDoesNotRegressTheStoredToken() {
             // given -- the stored checkpoint has advanced to position 5
             RecordingCheckpointing participant = new RecordingCheckpointing();
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
             participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(5L));
             await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
@@ -441,7 +497,7 @@ class WorkPackageCheckpointTest {
             // when -- on release the component reports a token BEHIND the last stored checkpoint (a regression)
             participant.releaseResult = upTo -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(3L));
             UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
-                                              .executeWithResult(testSubject::finalCheckpoint)
+                                              .executeWithResult(testSubject::checkpointOnRelease)
                                               .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
                                               .join();
 
@@ -455,20 +511,76 @@ class WorkPackageCheckpointTest {
             RecordingCheckpointing participant = new RecordingCheckpointing();
             participant.releaseResult =
                     upTo -> CompletableFuture.failedFuture(new IllegalStateException("flush failed"));
-            WorkPackage testSubject = builder.autoMode(false).participants(List.of(participant)).build();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
             testSubject.notifySegmentClaimed();
 
             // when -- the Coordinator drives the final checkpoint within a transaction it controls
             CompletableFuture<Void> result = UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
-                                                                              .executeWithResult(testSubject::finalCheckpoint)
+                                                                              .executeWithResult(testSubject::checkpointOnRelease)
                                                                               .orTimeout(TIMEOUT.toMillis(),
                                                                                          TimeUnit.MILLISECONDS);
 
-            // then -- finalCheckpoint completes normally (so the Coordinator still releases the claim) and stores nothing;
+            // then -- checkpointOnRelease completes normally (so the Coordinator still releases the claim) and stores nothing;
             // the uncovered tail is reprocessed from the last stored token on the next claim
             assertThat(result).succeedsWithin(TIMEOUT);
             assertThat(participant.released).containsExactly(initialToken);
             verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+    }
+
+    @Nested
+    class MultiSegmentTriggerKeying {
+
+        @Test
+        void eachSegmentReceivesItsOwnTriggerAndRequestsAreRoutedPerSegment() {
+            // given -- a SINGLE Checkpointing component shared across two segments (two WorkPackages). A component that
+            // keys its trigger by segment (rather than a naive `this.trigger = trigger`, which would clobber) must
+            // receive a distinct trigger for each segment.
+            Segment[] segments = Segment.ROOT_SEGMENT.split();
+            Segment segmentZero = segments[0];
+            Segment segmentOne = segments[1];
+            tokenStore.initializeSegment(initialToken, PROCESSOR_NAME, segmentOne, null);
+
+            SegmentKeyedCheckpointing participant = new SegmentKeyedCheckpointing();
+            WorkPackage packageZero = workPackageFor(segmentZero, participant);
+            WorkPackage packageOne = workPackageFor(segmentOne, participant);
+            packageZero.notifySegmentClaimed();
+            packageOne.notifySegmentClaimed();
+
+            // then -- a distinct trigger is handed for each segment
+            CheckpointTrigger triggerZero = participant.triggers.get(segmentZero);
+            CheckpointTrigger triggerOne = participant.triggers.get(segmentOne);
+            assertThat(triggerZero).isNotNull();
+            assertThat(triggerOne).isNotNull();
+            assertThat(triggerZero).isNotSameAs(triggerOne);
+
+            // when -- a checkpoint is requested on segment 0's trigger only
+            triggerZero.requestCheckpoint(new GlobalSequenceTrackingToken(5L));
+
+            // then -- the token is stored for segment 0 only; segment 1 is never touched
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(new GlobalSequenceTrackingToken(5L)), anyString(), eq(segmentZero.getSegmentId()), any()
+            ));
+            verify(tokenStore, never()).storeToken(any(), anyString(), eq(segmentOne.getSegmentId()), any());
+        }
+
+        private WorkPackage workPackageFor(Segment segment, Checkpointing participant) {
+            return WorkPackage.builder()
+                              .name(PROCESSOR_NAME)
+                              .tokenStore(tokenStore)
+                              .unitOfWorkFactory(UnitOfWorkTestUtils.SIMPLE_FACTORY)
+                              .executorService(executorService)
+                              .eventFilter((event, context, seg) -> true)
+                              .batchProcessor(new TestBatchProcessor())
+                              .segment(segment)
+                              .initialToken(initialToken)
+                              .batchSize(1)
+                              .claimExtensionThreshold(5000)
+                              .autoCheckpointing(false)
+                              .checkpointingParticipants(List.of(participant))
+                              .segmentStatusUpdater(op -> {
+                              })
+                              .build();
         }
     }
 
@@ -526,6 +638,26 @@ class WorkPackageCheckpointTest {
                                                                   @NonNull TrackingToken upTo) {
             released.add(upTo);
             return releaseResult.apply(upTo);
+        }
+    }
+
+    /**
+     * A {@link Checkpointing} unit that correctly retains the {@link CheckpointTrigger} <em>keyed by segment</em>, so a
+     * single instance can participate in multiple segments (multiple {@link WorkPackage}s) at once.
+     */
+    private static class SegmentKeyedCheckpointing implements Checkpointing {
+
+        private final Map<Segment, CheckpointTrigger> triggers = new ConcurrentHashMap<>();
+
+        @Override
+        public void onSegmentClaimed(@NonNull Segment segment, @NonNull CheckpointTrigger trigger) {
+            triggers.put(segment, trigger);
+        }
+
+        @Override
+        public CompletableFuture<TrackingToken> onCheckpointAdvanced(@NonNull Segment segment,
+                                                                     @NonNull TrackingToken requested) {
+            return CompletableFuture.completedFuture(requested);
         }
     }
 }
