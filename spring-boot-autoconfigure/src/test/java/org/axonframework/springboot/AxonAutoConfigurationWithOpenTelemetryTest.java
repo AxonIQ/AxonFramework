@@ -62,6 +62,7 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
     @Test
     void spanFactoryUsesSpringManagedOpenTelemetryWhenAvailable() {
         TextMapPropagator expectedPropagator = W3CTraceContextPropagator.getInstance();
+        //noinspection resource
         OpenTelemetry openTelemetry = OpenTelemetrySdk.builder()
                                                       .setTracerProvider(SdkTracerProvider.builder().build())
                                                       .setPropagators(ContextPropagators.create(expectedPropagator))
@@ -95,13 +96,12 @@ class AxonAutoConfigurationWithOpenTelemetryTest {
                     assertSame(expectedPropagator, wired,
                                "Factory must use the propagator from the Spring-managed OpenTelemetry bean");
 
-                    // Behavioural confirmation: propagateContext injects the W3C traceparent header.
+                    // Behavioral confirmation: propagateContext injects the W3C "traceparent" header.
                     Tracer tracer = openTelemetry.getTracer("test");
                     Span span = tracer.spanBuilder("root").startSpan();
                     EventMessage<String> propagated;
                     try (Scope ignored = span.makeCurrent()) {
-                        propagated = ((OpenTelemetrySpanFactory) spanFactory)
-                                .propagateContext(GenericEventMessage.asEventMessage("payload"));
+                        propagated = spanFactory.propagateContext(GenericEventMessage.asEventMessage("payload"));
                     } finally {
                         span.end();
                     }
