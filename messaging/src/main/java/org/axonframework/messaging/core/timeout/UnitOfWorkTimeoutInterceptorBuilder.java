@@ -165,7 +165,8 @@ public class UnitOfWorkTimeoutInterceptorBuilder {
                     warningThreshold,
                     warningInterval,
                     executorService,
-                    logger
+                    logger,
+                    UnitOfWorkTimeoutInterceptorBuilder.class
             );
             context.putResource(TRANSACTION_TIME_LIMIT_CONTEXT_RESOURCE_KEY, taskTimeout);
             taskTimeout.start();
