@@ -30,6 +30,10 @@
         Module providing support for auto-configuration of Axon Framework through Spring Boot.
     </description>
 
+    <properties>
+        <opentelemetry-sdk.test.version>1.52.0</opentelemetry-sdk.test.version>
+    </properties>
+
     <dependencies>
         <!-- Axon dependencies -->
         <dependency>
@@ -238,6 +242,15 @@
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Used by OpenTelemetry autoconfig tests to build a real OpenTelemetry bean
+             with a W3C TextMapPropagator and verify the autoconfig wires it correctly. -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+            <version>${opentelemetry-sdk.test.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
