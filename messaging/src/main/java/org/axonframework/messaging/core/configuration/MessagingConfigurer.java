@@ -21,6 +21,7 @@ import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Component;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentDecorator;
+import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
@@ -52,8 +53,9 @@ import org.axonframework.messaging.monitoring.configuration.MessageMonitorRegist
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
+import org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfigurer;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-
+import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -679,6 +681,41 @@ public class MessagingConfigurer implements ApplicationConfigurer {
     public MessagingConfigurer eventProcessing(Consumer<EventProcessingConfigurer> configurerTask) {
         Objects.requireNonNull(configurerTask, "The configurerTask may not be null");
         configurerTask.accept(eventProcessing);
+        return this;
+    }
+
+    /**
+     * Defines a named {@link QueryGateway} component using a {@link QueryGatewayConfigurer}.
+     * <p>
+     * Each call registers an independently configured {@link QueryGateway} under the given {@code name}. The gateway
+     * starts from a bare {@link org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway} sharing
+     * infrastructure with the main configuration (same {@link QueryBus},
+     * {@link org.axonframework.messaging.core.MessageTypeResolver},
+     * {@link org.axonframework.messaging.queryhandling.QueryPriorityCalculator}, and
+     * {@link org.axonframework.messaging.core.conversion.MessageConverter}), and is optionally wrapped with a
+     * {@link org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway} when shutdown specs are
+     * configured on the provided {@link QueryGatewayConfigurer}.
+     * <p>
+     * Example:
+     * <pre>{@code
+     * MessagingConfigurer.create()
+     *     .queryGateway("reporting", g -> g
+     *         .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(10)))
+     *         .cancellingStreamingQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(5)))
+     *     );
+     * }</pre>
+     *
+     * @param name           the name under which the {@link QueryGateway} is registered
+     * @param configurerTask lambda consuming the {@link QueryGatewayConfigurer}
+     * @return the current instance of the {@code Configurer} for a fluent API
+     */
+    public MessagingConfigurer queryGateway(String name, Consumer<QueryGatewayConfigurer> configurerTask) {
+        Objects.requireNonNull(name, "name must not be null");
+        Objects.requireNonNull(configurerTask, "configurerTask must not be null");
+        QueryGatewayConfigurer configurer = new QueryGatewayConfigurer(name);
+        configurerTask.accept(configurer);
+        ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
+        delegate.componentRegistry(cr -> cr.registerComponent(definition));
         return this;
     }
 

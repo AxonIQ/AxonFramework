@@ -35,6 +35,7 @@ org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaTransactionAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.NoOpTransactionAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.ObjectMapperAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.QueryShutdownAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.ReactorAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.SecurityAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.UpdateCheckerAutoConfiguration
