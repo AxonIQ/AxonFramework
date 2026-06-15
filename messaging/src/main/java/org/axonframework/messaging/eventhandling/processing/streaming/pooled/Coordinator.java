@@ -862,16 +862,25 @@ class Coordinator {
                                 for (Map.Entry<Segment, TrackingToken> entry : newSegments.entrySet()) {
                                     Segment segment = entry.getKey();
                                     TrackingToken token = entry.getValue();
-                                    TrackingToken otherUnwrapped = WrappedToken.unwrapLowerBound(token);
-                                    position.updateAndGet(p -> p == null || otherUnwrapped == null
-                                            ? null : p.lowerBound(otherUnwrapped));
                                     int segmentId = segment.getSegmentId();
-                                    if (!workPackages.containsKey(segmentId)) {
-                                        chain = chain.thenCompose(ignored ->
-                                                createWorkPackage(segment, token)
-                                                        .thenAccept(wp -> workPackages.putIfAbsent(segmentId, wp))
-                                        );
+                                    if (workPackages.containsKey(segmentId)) {
+                                        // Defensive: a work package for this segment already exists. Skip the
+                                        // listener and update the stream start position from the raw token.
+                                        TrackingToken otherUnwrapped = WrappedToken.unwrapLowerBound(token);
+                                        position.updateAndGet(p -> p == null || otherUnwrapped == null
+                                                ? null : p.lowerBound(otherUnwrapped));
+                                        continue;
                                     }
+                                    chain = chain.thenCompose(ignored ->
+                                            applyReset(segment, token).thenAccept(effectiveToken -> {
+                                                TrackingToken otherUnwrapped =
+                                                        WrappedToken.unwrapLowerBound(effectiveToken);
+                                                position.updateAndGet(p -> p == null || otherUnwrapped == null
+                                                        ? null : p.lowerBound(otherUnwrapped));
+                                                workPackages.putIfAbsent(segmentId,
+                                                                         createWorkPackage(segment, effectiveToken));
+                                            })
+                                    );
                                 }
                                 if (logger.isInfoEnabled() && !newSegments.isEmpty()) {
                                     logger.info(
@@ -1015,21 +1024,41 @@ class Coordinator {
             }
         }
 
-        private CompletableFuture<WorkPackage> createWorkPackage(Segment segment, TrackingToken token) {
+        private WorkPackage createWorkPackage(Segment segment, TrackingToken token) {
             WorkPackage workPackage = workPackageFactory.apply(segment, token);
             workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
+            return workPackage;
+        }
+
+        /**
+         * Invokes the {@link SegmentChangeListener#onSegmentClaimed(Segment) onSegmentClaimed} listener and
+         * applies the returned reset position: if it is strictly behind the stored {@code token}, the token is
+         * wrapped in a {@link ReplayToken} so the segment streams from the reset position. The returned future
+         * completes with the effective {@link TrackingToken} to use for the new work package.
+         * <p>
+         * On a first-ever claim ({@code token == null}) the listener is still invoked, but any returned reset
+         * position is ignored — a reset is only meaningful relative to a position the processor has already
+         * moved past.
+         */
+        private CompletableFuture<@Nullable TrackingToken> applyReset(Segment segment,
+                                                                      @Nullable TrackingToken token) {
             return segmentChangeListener.onSegmentClaimed(segment)
-                                        .handle((ignored, e) -> {
-                                            if (e != null) {
-                                                logger.info(
-                                                        "Processor [{}] (Coordination Task [{}]). An exception occurred while invoking claim listeners for [{}].",
-                                                        name,
-                                                        generation,
-                                                        segment,
-                                                        e
-                                                );
+                                        .thenApply(resetPosition -> {
+                                            if (token == null) {
+                                                return null;
                                             }
-                                            return workPackage;
+                                            if (resetPosition == null
+                                                    || !token.covers(resetPosition)
+                                                    || resetPosition.covers(token)) {
+                                                return token;
+                                            }
+                                            logger.info(
+                                                    "Processor [{}] (Coordination Task [{}]). Wrapping segment [{}] token with reset position [{}].",
+                                                    name,
+                                                    generation,
+                                                    segment,
+                                                    resetPosition);
+                                            return ReplayToken.createReplayToken(token, resetPosition);
                                         });
         }
 

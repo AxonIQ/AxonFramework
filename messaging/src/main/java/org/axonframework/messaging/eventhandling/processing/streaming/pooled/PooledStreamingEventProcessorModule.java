@@ -146,11 +146,16 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
     private void registerEventProcessor() {
         var processorComponentDefinition = ComponentDefinition
                 .ofTypeAndName(StreamingEventProcessor.class, processorName)
-                .withBuilder(cfg -> new PooledStreamingEventProcessor(
-                        processorName,
-                        getEventHandlingComponents(cfg),
-                        cfg.getComponent(PooledStreamingEventProcessorConfiguration.class)
-                ))
+                .withBuilder(cfg -> {
+                    var handlers = getEventHandlingComponents(cfg);
+                    var processorConfig = cfg.getComponent(PooledStreamingEventProcessorConfiguration.class);
+                    for (var customization : rootConfiguration(cfg)
+                            .getComponents(HandlerAwareProcessorCustomization.class)
+                            .values()) {
+                        processorConfig = customization.customize(cfg, processorName, handlers, processorConfig);
+                    }
+                    return new PooledStreamingEventProcessor(processorName, handlers, processorConfig);
+                })
                 .onStart(Phase.INBOUND_EVENT_CONNECTORS, (cfg, component) -> {
                     return component.start();
                 })
@@ -159,6 +164,22 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
                 });
 
         componentRegistry(cr -> cr.registerComponent(processorComponentDefinition));
+    }
+
+    /**
+     * Walks up the {@link Configuration#getParent() parent chain} to the root configuration.
+     * {@link Configuration#getComponents(Class)} only searches the current configuration and its module
+     * configurations, so an {@link HandlerAwareProcessorCustomization} registered at the top level is not
+     * visible when called from within a module's component builder. Looking up from the root makes them
+     * discoverable regardless of where they were registered.
+     */
+    private static Configuration rootConfiguration(Configuration cfg) {
+        Configuration current = cfg;
+        Configuration parent;
+        while ((parent = current.getParent()) != null) {
+            current = parent;
+        }
+        return current;
     }
 
     private void registerEventHandlingComponents() {
