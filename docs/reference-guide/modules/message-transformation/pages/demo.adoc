@@ -1,0 +1,39 @@
+= Course Catalog Example
+:navtitle: Example
+
+A runnable example application exercises the transformations from these pages end to end.
+The `university-message-transformation` demo models a course catalog that has evolved through several event-schema versions: historic events stay in the store exactly as they were written, and a chain of transformers lifts each one to its current shape on the read path.
+
+See the link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/university-message-transformation[`university-message-transformation` example] for the full source.
+Its link:https://github.com/AxonFramework/AxonFramework/blob/main/examples/university-message-transformation/README.md[README] covers running it in-memory or against Axon Server (optionally reporting to AxonIQ Platform), an interactive shell to play around with, and test-suite examples.
+
+== What it demonstrates
+
+The demo composes five transformers into one chain, each illustrating a technique covered here:
+
+[cols="2,3,2", options="header"]
+|===
+| Transformer | Change | Technique
+
+| `CoursePublishedV1ToV2`
+| a single `capacity` field becomes `minCapacity` and `maxCapacity`
+| a single xref:defining-transformations.adoc[structural transformation] on an untyped `JsonNode`
+
+| `CoursePublishedV2ToV3`
+| `minCapacity`/`maxCapacity` are wrapped into a `range`, producing the current `CoursePublished` event
+| a xref:defining-transformations.adoc#_mapping_to_a_typed_event[typed mapper] to the current event; with the previous transformer it shows xref:configuring-transformations.adoc#_why_ordering_matters[chaining in version order]
+
+| `StudentRegisteredV1ToV2`
+| separate `firstName` and `lastName` become a single `fullName`
+| the xref:defining-transformations.adoc[`TypeReference` overload], with no Jackson dependency in user code
+
+| `SystemAnnouncementLegacyUplift`
+| an unversioned legacy event is lifted onto `1.0.0`
+| matching unversioned events stored as `0.0.1`, see xref:migration:paths/upcasters.adoc[Upcaster migration]
+
+| `WelcomeMessageBetaCleanup`
+| every `0.x` beta version folds up to `1.0.0`
+| xref:defining-transformations.adoc#_matching_multiple_event_versions[a predicate matching multiple versions]
+|===
+
+The chain is assembled in `CourseCatalogTransformations` and registered as an `EventTransformerChain` component, exactly as shown in xref:configuring-transformations.adoc[Configuring transformations].
