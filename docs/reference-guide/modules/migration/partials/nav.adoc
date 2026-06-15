@@ -23,6 +23,7 @@
 *** xref:migration:paths/sequencing-policies.adoc[]
 *** xref:migration:paths/token-store.adoc[]
 ifdef::advanced-framework[]
+*** xref:migration:paths/upcasters.adoc[[.advanced-framework]#Upcaster Migration#]
 include::advanced-migration:partial$nav.adoc[]
 endif::[]
 ifdef::data-protection[]

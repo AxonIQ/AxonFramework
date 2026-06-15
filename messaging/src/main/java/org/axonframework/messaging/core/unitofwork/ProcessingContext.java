@@ -100,9 +100,17 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
     /**
      * If no resource is present for the given {@code key}, the given {@code resourceSupplier} is used to supply the
      * instance to register under this {@code key}.
+     * <p>
+     * The {@code resourceSupplier} MUST NOT call {@link #computeResourceIfAbsent(ResourceKey, Supplier)} or
+     * {@link #putResourceIfAbsent(ResourceKey, Object)} on this {@code ProcessingContext}. The backing resource store
+     * rejects re-entrant structural modification and will throw {@link IllegalStateException} (surfacing as a
+     * "Recursive update"). This matters when stacking decorators that each cache their wrapped instance per
+     * {@code ProcessingContext}: resolve the dependency on the delegate <em>before</em> entering the supplier, rather
+     * than from within it.
      *
      * @param key              The key to register the resource for.
-     * @param resourceSupplier The function to supply the resource to register.
+     * @param resourceSupplier The function to supply the resource to register. Must not call back into the resource
+     *                         store of this {@code ProcessingContext}.
      * @param <T>              The type of resource registered under given {@code key}.
      * @return The resource associated with the {@code key}.
      */

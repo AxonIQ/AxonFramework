@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.axonframework.examples</groupId>
+        <artifactId>axon-framework-examples</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>university-message-transformation</artifactId>
+    <name>Axon Example - Java - University Message Transformation</name>
+    <description>
+        Demonstrates the AxonIQ Framework 5.2 event message transformation chain on a
+        course catalog whose events have evolved through several schema versions:
+        structural transforms, predicate-based matching, legacy unversioned events,
+        TypeReference overloads, and a multi-hop chain.
+    </description>
+
+    <properties>
+        <!-- AxonIQ Framework -->
+        <!--
+        The event transformation feature lives in the 5.2.0-SNAPSHOT line, which is ahead of the
+        released Axon core the examples parent manages. The axoniq-framework BOM imported below
+        aligns every Axon module (org.axonframework core and io.axoniq.framework) on this version,
+        so the whole demo builds against one consistent line until 5.2.0 is the examples baseline.
+        -->
+        <axoniq-framework.version>5.2.0-SNAPSHOT</axoniq-framework.version>
+        <axoniq-platform-framework-client.version>5.1.0</axoniq-platform-framework-client.version>
+
+        <!-- Runtime libraries -->
+        <awaitility.version>4.3.0</awaitility.version>
+        <jline.version>3.27.0</jline.version>
+        <logback.version>1.5.32</logback.version>
+
+        <!-- Test libraries -->
+        <assertj.version>3.27.7</assertj.version>
+        <junit.version>6.1.0</junit.version>
+
+        <!-- Build plugins -->
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+            Align every Axon module on ${axoniq-framework.version}, overriding the older line
+            managed by the examples parent. Required because the event transformation feature uses
+            APIs only present in the 5.2.0-SNAPSHOT line.
+            -->
+            <dependency>
+                <groupId>io.axoniq.framework</groupId>
+                <artifactId>axoniq-framework-bom</artifactId>
+                <version>${axoniq-framework.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Axon Framework Dependencies -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-messaging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-modelling</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-eventsourcing</artifactId>
+        </dependency>
+
+        <!-- Event Store Dependencies -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+        </dependency>
+
+        <!-- The feature under demonstration (version managed by the axoniq-framework BOM above) -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-message-transformation</artifactId>
+        </dependency>
+
+        <!--
+        AxonIQ Platform client. Opt-in observability that reports message flows,
+        processors, and metrics to https://console.axoniq.io. Activated at runtime
+        only when credentials are provided (see CourseCatalogApplication / README).
+        -->
+        <dependency>
+            <groupId>io.axoniq.platform</groupId>
+            <artifactId>axoniq-platform-framework-client</artifactId>
+            <version>${axoniq-platform-framework-client.version}</version>
+        </dependency>
+
+        <!-- Logging Dependencies -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+        Used by CourseCatalogApplication#main to await projection catch-up before
+        printing the catalog view. Kept on the main classpath so the bootstrap code
+        reads the same as the slice tests that already use Awaitility.
+        -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>${awaitility.version}</version>
+        </dependency>
+
+        <!--
+        Provides arrow-key history, line editing, and ANSI handling for the
+        InteractiveShell that runs when the keep-alive flag is set.
+        -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline</artifactId>
+            <version>${jline.version}</version>
+        </dependency>
+
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <defaultGoal>clean package</defaultGoal>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-Daxon.axonserver.suppressDownloadMessage=true</argLine>
+                </configuration>
+            </plugin>
+            <!--
+            Lets users boot the demo with `mvn exec:java` without needing to declare
+            the main class on the command line.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <configuration>
+                    <mainClass>org.axonframework.examples.demo.coursecatalog.CourseCatalogApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
