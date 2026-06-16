@@ -19,8 +19,10 @@ package org.axonframework.messaging.core;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -453,6 +455,52 @@ public interface MessageStream<M extends Message> {
     }
 
     /**
+     * Returns a stream that maps each {@link Entry entry} from this stream to an inner {@link MessageStream} using the
+     * given {@code mapper}, then concatenates all inner stream entries in order.
+     * <p>
+     * Each outer entry produces exactly one inner stream. Inner streams are drained in sequence: the next inner stream
+     * is not started until the current one completes normally. If any inner stream completes with an error, that error
+     * is propagated and no further entries are emitted.
+     * <p>
+     * The returned stream completes the same way {@code this} stream completes, unless an inner stream completes with
+     * an error.
+     *
+     * @param <N>    the type of {@link Message} contained in the inner streams and the returned stream
+     * @param mapper the function mapping each {@link Entry} of type {@code M} to a {@link MessageStream} of type
+     *               {@code N}, cannot be {@code null}
+     * @return a stream that is the concatenation of all inner streams produced by {@code mapper}
+     * @throws NullPointerException when any argument is {@code null}
+     * @since 5.2.0
+     */
+    default <N extends Message> MessageStream<N> flatMap(
+            Function<? super Entry<M>, ? extends MessageStream<? extends N>> mapper) {
+        return new FlatMappedMessageStream<>(this, Objects.requireNonNull(mapper, "The mapper parameter must not be null."));
+    }
+
+    /**
+     * Returns a stream that maps each {@link Entry entry} from this stream to zero or more output entries of type
+     * {@code N}, using the given {@code mapper}.
+     * <p>
+     * For each input entry, {@code mapper} is called with the entry and a {@link Consumer} it may invoke zero or more
+     * times to emit output entries. All output entries for a given input are emitted synchronously during the same
+     * processing step, making this more efficient than {@link #flatMap(Function)} for the common case of synchronous
+     * 0-to-N expansion.
+     * <p>
+     * The returned stream completes the same way {@code this} stream completes.
+     *
+     * @param <N>    the type of {@link Message} contained in the returned stream's entries
+     * @param mapper a {@link BiConsumer} that receives each input {@link Entry} and a {@link Consumer} to push
+     *               zero or more output {@link Entry entries} of type {@code N} to, cannot be {@code null}
+     * @return a stream of output entries produced by {@code mapper} for each input entry
+     * @throws NullPointerException when any argument is {@code null}
+     * @since 5.2.0
+     */
+    default <N extends Message> MessageStream<N> mapMulti(
+            BiConsumer<? super Entry<M>, ? super Consumer<Entry<N>>> mapper) {
+        return new MapMultiMessageStream<>(this, Objects.requireNonNull(mapper, "The mapper parameter must not be null."));
+    }
+
+    /**
      * Returns a {@link CompletableFuture} of type {@code R}, using the given {@code identity} as the initial value for
      * the given {@code accumulator}. Throws an exception if this stream is unbounded.
      * <p>
@@ -473,6 +521,41 @@ public interface MessageStream<M extends Message> {
     default <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
                                                       BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator) {
         return MessageStreamUtils.reduce(this, identity, accumulator);
+    }
+
+    /**
+     * Returns a {@link CompletableFuture} containing the container produced by {@code containerSupplier}, populated
+     * by passing each message in this stream to {@code accumulator}.
+     * <p>
+     * Unlike {@link #reduce(Object, BiFunction)}, the accumulator receives the message directly (not the
+     * {@link Entry}), and its return value is ignored -- it is expected to mutate the container in place. This makes
+     * method references like {@code List::add} directly usable:
+     * <pre>{@code
+     * CompletableFuture<List<MyMessage>> result = stream.collect(ArrayList::new, List::add);
+     * }</pre>
+     * <p>
+     * Note that parallel processing <b>is not</b> supported.
+     *
+     * @param containerSupplier a {@link Supplier} that creates the initial container; invoked exactly once, cannot
+     *                          be {@code null}
+     * @param accumulator       a {@link BiConsumer} that receives the container and each message; expected to mutate
+     *                          the container in place, cannot be {@code null}
+     * @param <C>               the type of the result container
+     * @return a {@link CompletableFuture} carrying the populated container after all messages are consumed
+     * @throws UnsupportedOperationException if this stream is unbounded
+     * @throws NullPointerException when any argument is {@code null}
+     * @see #reduce(Object, BiFunction)
+     * @since 5.2.0
+     */
+    default <C> CompletableFuture<C> collect(Supplier<C> containerSupplier, BiConsumer<? super C, M> accumulator) {
+        Objects.requireNonNull(containerSupplier, "The containerSupplier parameter must not be null.");
+        Objects.requireNonNull(accumulator, "The accumulator parameter must not be null.");
+
+        return reduce(containerSupplier.get(), (container, entry) -> {
+            accumulator.accept(container, entry.message());
+
+            return container;
+        });
     }
 
     /**

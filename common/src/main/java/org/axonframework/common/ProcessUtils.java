@@ -16,10 +16,13 @@
 
 package org.axonframework.common;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Processing utilities.
@@ -69,10 +72,47 @@ public final class ProcessUtils {
     }
 
     /**
+     * Executes an action asynchronously, with potential retry in case the result is false. Exception handling should
+     * be taken care of within the action if needed.
+     *
+     * @param action        action to execute, will be executed until the result is {@code true} or max tries are
+     *                      reached
+     * @param retryInterval time in milliseconds to wait between retries of the action
+     * @param maxTries      maximum number of times the action is invoked
+     * @param executor      executor used to schedule the delay between retries
+     * @return a {@link CompletableFuture} that completes when the action returns {@code true}, or exceptionally with a
+     *         {@link ProcessRetriesExhaustedException} if max tries is reached
+     */
+    public static CompletableFuture<Void> executeUntilTrue(Supplier<CompletableFuture<Boolean>> action,
+                                                                 long retryInterval, long maxTries, Executor executor) {
+        return executeUntilTrue(action, retryInterval, maxTries, maxTries, executor);
+    }
+
+    private static CompletableFuture<Void> executeUntilTrue(Supplier<CompletableFuture<Boolean>> action,
+                                                                  long retryInterval, long originalMaxTries,
+                                                                  long attemptsLeft, Executor executor) {
+        if (attemptsLeft <= 0) {
+            return CompletableFuture.failedFuture(new ProcessRetriesExhaustedException(String.format(
+                    "Tried invoking the action for %d times, without the result being true", originalMaxTries
+            )));
+        }
+        return action.get().thenCompose(result -> {
+            if (Boolean.TRUE.equals(result)) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return CompletableFuture
+                    .runAsync(() -> {}, CompletableFuture.delayedExecutor(retryInterval, TimeUnit.MILLISECONDS,
+                                                                          executor))
+                    .thenCompose(ignored -> executeUntilTrue(action, retryInterval, originalMaxTries,
+                                                                  attemptsLeft - 1, executor));
+        });
+    }
+
+    /**
      * Executes an action, with potential retry in case the result is false. Exception handling should be taken care of
      * within the action if needed.
      *
-     * @param runnable      action to execute, will be executed till the result is true, or max tries is reached
+     * @param runnable      action to execute, will be executed till the result is true, or max tries are reached
      * @param retryInterval time to wait between retries of the action
      * @param maxTries      maximum number of times the action is invoked
      */

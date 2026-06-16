@@ -74,4 +74,27 @@ class DefaultAppendConditionTest {
         assertTrue(result.criteria().flatten().contains(TEST_CRITERIA));
         assertTrue(result.criteria().flatten().contains(OTHER_CRITERIA));
     }
+
+    @Nested
+    class ReplaceCriteria {
+
+        @Test
+        void preservesMarkerAndReplacesCriteria() {
+            // when
+            AppendCondition result = testSubject.replaceCriteria(OTHER_CRITERIA);
+
+            // then
+            assertEquals(TEST_CONSISTENCY_MARKER, result.consistencyMarker());
+            assertEquals(Set.of(OTHER_CRITERIA), result.criteria().flatten());
+        }
+
+        @Test
+        void returnsSameInstanceWhenCriteriaUnchanged() {
+            // when
+            AppendCondition result = testSubject.replaceCriteria(TEST_CRITERIA);
+
+            // then
+            assertSame(testSubject, result);
+        }
+    }
 }

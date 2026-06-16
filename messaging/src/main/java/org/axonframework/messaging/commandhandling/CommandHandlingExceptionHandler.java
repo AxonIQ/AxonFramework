@@ -32,7 +32,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  * the contract of {@link CommandHandler#handle(CommandMessage, ProcessingContext)}.
  * <p>
  * Register via
- * {@link org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule.CommandHandlerPhase#withExceptionHandler(CommandHandlingExceptionHandler)}.
+ * {@link org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule.CommandHandlerPhase#withExceptionHandler(org.axonframework.common.configuration.ComponentBuilder)}.
  *
  * @author Allard Buijze
  * @since 5.2.0

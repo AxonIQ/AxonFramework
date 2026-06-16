@@ -178,7 +178,6 @@ In addition to the Axon Framework modules and extensions and Axoniq Framework mo
 The BOM is provided to ensure the use of compatible framework and extension dependencies inside an Axon application.
 As such, it is the recommended approach towards defining the overall Axon version used inside of an application.
 
-// TODO anchor
 [#axon-framework-bom]
 === Axon Framework Bill of Materials
 
@@ -188,7 +187,7 @@ For the Axon Framework and extensions, we provide a BOM under the `org.axonframe
 |===
 |Module |Artifact Id |Group Id |Maven Central
 
-|<<Base Axon Framework Bill of Materials>> |`axon-framework-bom` |`org.axonframework` |https://central.sonatype.com/search?q=a:axon-framework-bom[available]
+|<<axon-framework-bom,Axon Framework Bill of Materials>> |`axon-framework-bom` |`org.axonframework` |https://central.sonatype.com/search?q=a:axon-framework-bom[available]
 |===
 
 For using the BOM, you would add the `axon-bom` dependency to your dependency management system:

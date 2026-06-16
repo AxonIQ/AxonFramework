@@ -368,8 +368,8 @@ public class OrderCommandHandler {
     // Surround-interceptor: full control over the chain
     @CommandHandlerInterceptor
     MessageStream<?> authorize(
-            CommandMessage<?> command,
-            MessageHandlerInterceptorChain<CommandMessage<?>> chain,
+            CommandMessage command,
+            MessageHandlerInterceptorChain<CommandMessage> chain,
             ProcessingContext context
     ) {
         if (!isAuthorized(command)) {
@@ -380,7 +380,7 @@ public class OrderCommandHandler {
 
     // Before-interceptor: runs before the handler, chain proceeds automatically
     @CommandHandlerInterceptor
-    void log(CommandMessage<?> command) {
+    void log(CommandMessage command) {
         logger.info("Handling command: {}", command.qualifiedName());
     }
 
@@ -392,22 +392,12 @@ public class OrderCommandHandler {
 ----
 ====
 
-The `payloadType` attribute narrows the interceptor to a specific payload type:
-
-[source,java]
-----
-@CommandHandlerInterceptor(payloadType = CancelOrderCommand.class)
-void validateCancellation(CommandMessage<?> command) {
-    // Only runs before CancelOrderCommand handlers
-}
-----
-
 For full documentation and examples for all three message types, see xref:messaging-concepts:component-message-intercepting.adoc[Component Message Intercepting].
 
 === Migration of `@ExceptionHandler`
 
 The `@ExceptionHandler` annotation works in Axon Framework 5 with the same intent as in Axon Framework 4: handling exceptions thrown from message handler methods in the same class.
-The main change is that exception handler methods no longer receive `CommandMessage<?>` as a parameter to identify the command context; instead, use the `payloadType` attribute.
+The `payloadType` attribute has been removed. Narrowing is now done solely by exception type via `resultType`, and optionally by message type (command, event, or query) via `messageType`.
 
 [tabs]
 ====
@@ -435,13 +425,10 @@ public class OrderCommandHandler {
         // Handle exception for all commands on this component
     }
 
-    // Narrow to a specific command type using payloadType
-    @ExceptionHandler(
-        resultType = IllegalStateException.class,
-        payloadType = PlaceOrderCommand.class
-    )
-    public void handlePlaceOrderIllegalState(IllegalStateException exception) {
-        // Only handles exceptions from PlaceOrderCommand handlers
+    // Narrow to a specific exception type
+    @ExceptionHandler(resultType = ValidationException.class)
+    public void handleValidation(ValidationException exception) {
+        // Only handles ValidationException (and its subtypes)
     }
 }
 ----

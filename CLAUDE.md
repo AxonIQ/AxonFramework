@@ -30,6 +30,26 @@ Axon Framework is a framework for building evolutionary, event-driven microservi
 - **Composition over Inheritance**: Favors composition patterns throughout the codebase
 - **Declarative Configuration**: Moving from annotation-heavy to declarative configuration approaches
 
+## Branching Strategy
+
+| Branch Pattern | Purpose |
+|---|---|
+| `main` | Next minor or major release. Always contains all commits — patch branch changes flow upward into `main`. |
+| `axon-[2-5].[0-12].x` | Patch release branches (e.g., `axon-5.0.x`). Changes to a patch branch are merged upward through higher patch branches and ultimately into `main`. |
+| `bug/[issue-number]/[name]` | Bug fixes. Prefix groups all bug branches together; issue number sub-groups related branches. |
+| `enhancement/[issue-number]/[name]` | Enhancements to existing features. |
+| `feature/[issue-number]/[name]` | New features. |
+| `documentation/[issue-number]/[name]` | Documentation-only changes. |
+| `dependency-upgrade/[issue-number]/[name]` | Dependency version upgrades. |
+
+## Commit Guidelines
+* use a subject line
+* separate the subject line from the description by an empty line
+* focus on the how and why in the description, not the what
+* use the actual issue number at the start of the subject line, for example `[#2343]`
+* reference any related issue numbers in the commit message
+* avoid including unrelated changes in the same commit
+
 ## Build Commands
 
 Maven wrapper is used (`./mvnw`). Key commands:
@@ -76,8 +96,8 @@ Maven wrapper is used (`./mvnw`). Key commands:
     - Do not add @DisplayName for test methods, try to make method names self-explanatory and add meaningful comments in given-when-then sections if needed
 
 Test naming conventions:
-- **Unit tests** (Surefire): `*Test.java`, `*Tests.java`, `*Test_*.java`, `*Tests_*.java`
-- **Integration tests** (Failsafe): `*IntegrationTest.java`, `*IntegrationTests.java`, `IT*.java`, `*IT.java`, `*ITCase.java`
+- **Unit tests** (Surefire): `*Test.java`, `*Tests.java`, `*TestCase.java`, `Test*.java`
+- **Integration tests** (Failsafe): `*IT.java`, `IT*.java`, `*ITCase.java`
 
 ## Module Dependency Hierarchy
 
@@ -252,6 +272,8 @@ BDD-style testing:
 - 4-space indentation, 120-character line limit, LF line endings, UTF-8
 - IntelliJ code style: import from `axon_code_style.xml` at repo root
 - Import threshold: `class_count_to_use_import_on_demand = 99` (effectively: no wildcard imports)
+- **ASCII only**: all source files (`.java`, `.adoc`, `.xml`, `.properties`, etc.) must contain only ASCII characters. Never use curly/smart quotes (`"` `"` `'` `'`), em-dashes (`—`), ellipsis (`…`), or any other non-ASCII Unicode. Use straight ASCII equivalents (`"`, `'`, `--` or `,`, `...`).
+- **LF line endings only**: never use CR (`\r`) or CRLF (`\r\n`). Configure your editor/IDE to write LF.
 
 ### Implementation Guidelines
 1. **Discover API essence** - Design for future flexibility over current completeness

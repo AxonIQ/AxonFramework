@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.jdbc.ConnectionExecutor;
 import org.axonframework.conversion.TestConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -100,7 +101,7 @@ class JdbcTokenStoreTest {
 
     @AfterEach
     void tearDown() {
-        JdbcTokenEntry.clock = Clock.systemUTC();
+        ClockUtils.reset();
     }
 
     @Test
@@ -422,7 +423,7 @@ class JdbcTokenStoreTest {
 
         transactionManager.executeInTransaction(
                 () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, null)));
-        JdbcTokenEntry.clock = Clock.offset(Clock.systemUTC(), Duration.ofHours(1));
+        ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofHours(1)));
         TrackingToken token = transactionManager.fetchInTransaction(
                 () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, null)));
         assertNull(token);
@@ -542,7 +543,7 @@ class JdbcTokenStoreTest {
                 () -> {
                     try (PreparedStatement ps = dataSource.getConnection()
                                                           .prepareStatement(
-                                                                  "INSERT INTO TokenEntry(processorName, segment, mask, tokenType, token) VALUES(?, ?, ?, ?, ?)");) {
+                                                                  "INSERT INTO TokenEntry(processorName, segment, mask, tokenType, token) VALUES(?, ?, ?, ?, ?)")) {
                         ps.setString(1, "__config");
                         ps.setInt(2, 0);
                         ps.setInt(3, 0);

@@ -22,6 +22,8 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
@@ -317,6 +319,7 @@ class SimpleQueryHandlingModuleTest {
             assertThat(invocationLog).isEmpty();
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void interceptorNullThrowsNullPointerException() {
             // given / when / then
@@ -356,7 +359,7 @@ class SimpleQueryHandlingModuleTest {
                                        .queryHandlers()
                                        .queryHandler(QUERY_NAME_LOCAL,
                                                      (q, ctx) -> MessageStream.failed(new RuntimeException("handler failed")))
-                                       .withExceptionHandler((q, ctx, error) -> {
+                                       .withExceptionHandler(c -> (q, ctx, error) -> {
                                            invocationLog.add("exceptionHandler");
                                            return MessageStream.empty();
                                        })
@@ -378,7 +381,7 @@ class SimpleQueryHandlingModuleTest {
                                        .queryHandlers()
                                        .queryHandler(QUERY_NAME_LOCAL,
                                                      (q, ctx) -> MessageStream.failed(new RuntimeException("handler failed")))
-                                       .withExceptionHandler((q, ctx, error) -> MessageStream.empty())
+                                       .withExceptionHandler(c -> (q, ctx, error) -> MessageStream.empty())
             );
 
             // when - exception handler returns empty, suppressing the error
@@ -397,7 +400,7 @@ class SimpleQueryHandlingModuleTest {
                                        .queryHandlers()
                                        .queryHandler(QUERY_NAME_LOCAL,
                                                      (q, ctx) -> MessageStream.failed(new RuntimeException("original")))
-                                       .withExceptionHandler((q, ctx, error) -> MessageStream.failed(new IOException("wrapped")))
+                                       .withExceptionHandler(c -> (q, ctx, error) -> MessageStream.failed(new IOException("wrapped")))
             );
 
             // when - exception handler returns a failed stream, the error propagates
@@ -417,7 +420,7 @@ class SimpleQueryHandlingModuleTest {
                                        .queryHandlers()
                                        .queryHandler(QUERY_NAME_LOCAL,
                                                      (q, ctx) -> MessageStream.failed(new RuntimeException("original")))
-                                       .withExceptionHandler((q, ctx, error) -> {
+                                       .withExceptionHandler(c -> (q, ctx, error) -> {
                                            throw new RuntimeException("unexpected");
                                        })
             );
@@ -432,7 +435,32 @@ class SimpleQueryHandlingModuleTest {
         }
 
         @Test
-        void firstRegisteredHandlerSeesExceptionFirst() {
+        void genericMessageExceptionHandlerCanBeRegistered() {
+            // given - a generic handler typed at Message that could be shared across all message types
+            List<String> invocationLog = new ArrayList<>();
+            MessageHandlingExceptionHandler<Message> genericHandler = (msg, ctx, error) -> {
+                invocationLog.add("generic:" + msg.type().name() + ":" + error.getMessage());
+                return MessageStream.empty();
+            };
+            var component = buildComponent(
+                    QueryHandlingModule.named("test-ex")
+                                       .queryHandlers()
+                                       .queryHandler(QUERY_NAME_LOCAL,
+                                                     (q, ctx) -> MessageStream.failed(new RuntimeException("boom")))
+                                       .withExceptionHandler(c -> genericHandler)
+            );
+
+            // when
+            var result = component.handle(SAMPLE_QUERY, STUB_PROCESSING_CONTEXT);
+            result.peek();
+
+            // then
+            assertThat(invocationLog).containsExactly("generic:test-query:boom");
+            assertThat(result.error()).isEmpty();
+        }
+
+        @Test
+        void lastRegisteredHandlerSeesExceptionFirst() {
             // given
             List<String> invocationLog = new ArrayList<>();
             var component = buildComponent(
@@ -440,14 +468,15 @@ class SimpleQueryHandlingModuleTest {
                                        .queryHandlers()
                                        .queryHandler(QUERY_NAME_LOCAL,
                                                      (q, ctx) -> MessageStream.failed(new RuntimeException("handler failed")))
-                                       .withExceptionHandler((q, ctx, error) -> {
-                                           // first registered: logs and propagates so second can also run
+                                       .withExceptionHandler(c -> (q, ctx, error) -> {
+                                           // first registered: outermost interceptor, runs after second propagates
                                            invocationLog.add("first");
-                                           return MessageStream.failed(error);
-                                       })
-                                       .withExceptionHandler((q, ctx, error) -> {
-                                           invocationLog.add("second");
                                            return MessageStream.empty();
+                                       })
+                                       .withExceptionHandler(c -> (q, ctx, error) -> {
+                                           // second registered: innermost interceptor (closest to handler), sees exception first
+                                           invocationLog.add("second");
+                                           return MessageStream.failed(error);
                                        })
             );
 
@@ -455,8 +484,8 @@ class SimpleQueryHandlingModuleTest {
             var result = component.handle(SAMPLE_QUERY, STUB_PROCESSING_CONTEXT);
             result.peek(); // force lazy evaluation of the onErrorContinue chain
 
-            // then - first registered handler runs first
-            assertThat(invocationLog).containsExactly("first", "second");
+            // then - last registered handler (innermost) runs first
+            assertThat(invocationLog).containsExactly("second", "first");
         }
     }
 }

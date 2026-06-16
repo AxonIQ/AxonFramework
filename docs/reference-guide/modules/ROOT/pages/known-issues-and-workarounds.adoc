@@ -41,7 +41,7 @@ Using xref:axon-server-reference::index.adoc[Axon Server] will, obviously, resol
 However, even when using Axon Server, the predicament remains for tokens and sagas.
 
 For those cases, it would be wise to adjust the Hibernate mapping.
-The most straightforward way, is to enforce the use of the `BYTEA` column type; with some additional steps, of course.
+The most straightforward way is to enforce the use of the `BYTEA` column type, with some additional steps.
 For a full explanation and walkthrough, please check the xref:tuning:rdbms-tuning.adoc#_postgresql_lob_annotated_columns_and_default_hibernate_mapping[PostegreSQL, LOB annotated columns, and default Hibernate mapping] tuning page.
 
 == Sequence generation issues with JPA Entities

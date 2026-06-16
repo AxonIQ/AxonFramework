@@ -183,7 +183,7 @@ public class AxonConfig {
 [#jpa-migration]
 == JPA event storage migration
 
-Axon Framework's JPA event store functionality solely supports the aggregate-based approach; so not DCB.
+Axon Framework's JPA event store functionality solely supports the aggregate-based approach, so it does not support DCB.
 To clarify this distinction, the `JpaEventStorageEngine` is renamed to the `AggregateBasedJpaEventStorageEngine`.
 
 Before we take a look at the <<configuring_jpa_storage_engine,configuration>>, we should cover the <<jpa_schema_changes,schema changes>> imposed on the JPA-based event storage solution:
@@ -248,7 +248,7 @@ Some field constraints have changed:
 
 | `version` (was `payloadRevision`)
 | No longer optional! Axon Framework 5 defaults to 0.0.1 when nothing's given
-| Enforced to ensure non-null versioning inside Axon Framework; foreseen to be used to support version-range registration of event handlers
+| Enforced to ensure non-null versioning inside Axon Framework. Foreseen to be used to support version-range registration of event handlers
 
 | `aggregateSequenceNumber` (was `sequenceNumber`)
 | Now optional

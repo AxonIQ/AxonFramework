@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.gateway;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
@@ -49,7 +50,7 @@ class EventPublishingUtils {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message, ClockUtils::instant);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),
@@ -77,7 +78,7 @@ class EventPublishingUtils {
             return e.andMetadata(metadata);
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message.andMetadata(metadata), () -> GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message.andMetadata(metadata), ClockUtils::instant);
         }
         return new GenericEventMessage(
                 messageTypeResolver.resolveOrThrow(event),

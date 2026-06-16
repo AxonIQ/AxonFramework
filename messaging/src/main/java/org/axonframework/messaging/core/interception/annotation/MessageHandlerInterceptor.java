@@ -47,12 +47,4 @@ public @interface MessageHandlerInterceptor {
      */
     Class<? extends Message> messageType() default Message.class;
 
-    /**
-     * Specifies the type of message payload that can be handled by the member method. The payload of the message should
-     * be assignable to this type. Defaults to any {@link Object}.
-     *
-     * @return The type of {@link Message#payload()} handled by the function annotated with
-     * {@code @MessageHandlerInterceptor}.
-     */
-    Class<?> payloadType() default Object.class;
 }

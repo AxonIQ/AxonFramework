@@ -289,6 +289,52 @@ When using multiple configuration approaches:
 To avoid conflicts, ensure each handler is matched by at most one `EventProcessorDefinition` using mutually exclusive selectors.
 ====
 
+[[lifecycle]]
+== Processor lifecycle
+
+The `PooledStreamingEventProcessor` follows the common xref:event-processors/index.adoc#lifecycle[Event Processor lifecycle] contract, with one important addition: `start()` performs initialization work before event processing can begin.
+
+[NOTE]
+====
+In most scenarios, you do not need to invoke `start()` manually.
+Axon Framework invokes `start()` automatically as part of its lifecycle management when the application starts up.
+Only invoke `start()` directly when you need explicit control over the startup sequence.
+====
+
+=== What start() does
+
+When `start()` is called, the processor performs the following steps in sequence before its returned `CompletableFuture<Void>` completes:
+
+1. Resolves the <<token_store,token store>> identifier from the configured `TokenStore`.
+2. Starts the internal `Coordinator`, which opens the event stream and begins claiming segments.
+
+Because `start()` is fully asynchronous, callers should await the returned future before interacting with any processor state that depends on a running processor:
+
+[source,java]
+----
+import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+
+public class ProcessorService {
+
+    private final AxonConfiguration configuration;
+
+    public ProcessorService(AxonConfiguration configuration) {
+        this.configuration = configuration;
+    }
+
+    public void startAndQueryIdentifier(String processorName) {
+        StreamingEventProcessor processor =
+                configuration.getComponent(StreamingEventProcessor.class, processorName);
+        processor.start()
+                 .thenRun(() -> {
+                     String identifier = processor.getTokenStoreIdentifier();
+                     System.out.println("Token store identifier: " + identifier);
+                 });
+    }
+}
+----
+
 [[error_mode]]
 == Error mode
 
@@ -296,7 +342,7 @@ Whenever the xref:event-processors/index.adoc#error-handling[error handler] reth
 
 The processor will retry processing using an incremental back-off period, starting at 1 second and doubling after each attempt until it reaches the maximum wait time of 60 seconds per attempt.
 
-Due to the <<Pooled streaming processor threading,two-pool threading architecture>>, the failed segment is likely to be picked up quickly by another thread within the same JVM.
+Due to the <<thread_configuration,two-pool threading architecture>>, the failed segment is likely to be picked up quickly by another thread within the same JVM.
 The back-off mechanism applies within the local JVM instance only.
 
 In a distributed environment with multiple PSEP instances, other instances will ignore the back-off and may immediately claim and process the failed segment, providing faster recovery from transient errors.
@@ -756,7 +802,7 @@ public class AxonConfig {
 
 Implementations of `TokenStore` might share state in the underlying storage.
 To ensure correct operation, a token store has a unique identifier that uniquely identifies the storage location of the tokens in that store.
-This identifier can be queried with the `retrieveStorageIdentifier` method of your event processor.
+This identifier is resolved eagerly during `start()`, but if queried before the processor has started, it is resolved lazily with a blocking call to the `TokenStore`.
 
 [source,java]
 ----

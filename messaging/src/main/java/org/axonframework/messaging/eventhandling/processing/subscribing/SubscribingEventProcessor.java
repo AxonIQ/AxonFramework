@@ -23,6 +23,8 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.SimpleEntry;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -157,7 +159,7 @@ public class SubscribingEventProcessor implements EventProcessor {
 
     private MessageStream.Empty<Message> processWithErrorHandling(List<EventMessage> events,
                                                                   ProcessingContext context) {
-        List<EventMessage> supportedEvents =
+        List<MessageStream.Entry<? extends EventMessage>> supportedEntries =
                 events.stream()
                       .filter(event -> {
                           boolean supported = eventHandlingComponents.supports(event.type().qualifiedName());
@@ -166,8 +168,8 @@ public class SubscribingEventProcessor implements EventProcessor {
                           }
                           return supported;
                       })
-                      .toList();
-        return eventHandlingComponents.handle(supportedEvents, context)
+                      .<MessageStream.Entry<? extends EventMessage>>map(event -> new SimpleEntry<>(event, Context.empty())).toList();
+        return eventHandlingComponents.handle(supportedEntries, context)
                                       .onErrorContinue(ex -> {
                                           try {
                                               errorHandler.handleError(new ErrorContext(name, ex, events, context));

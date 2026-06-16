@@ -16,6 +16,8 @@
 
 package org.axonframework.eventsourcing.configuration;
 
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
@@ -26,8 +28,12 @@ import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
+import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-import org.axonframework.eventsourcing.handler.SourcingHandler;
+import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
+import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
+import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -61,6 +67,7 @@ import static org.mockito.Mockito.verify;
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
  * @author Simon Zambrovski
+ * @author John Hendrikx
  */
 @ExtendWith(MockitoExtension.class)
 class AnnotatedEventSourcedEntityModuleTest {
@@ -122,7 +129,7 @@ class AnnotatedEventSourcedEntityModuleTest {
 
     @Test
     void customCriteriaResolverIsPresentOnResultingEventSourcingRepository(
-        @Captor ArgumentCaptor<SourcingHandler<CourseId, CustomCriteriaResolverCourse>> sourcingHandlerCaptor
+        @Captor ArgumentCaptor<EntityLifecycleHandler<CourseId, CustomCriteriaResolverCourse>> handlerCaptor
     ) {
         componentRegistry.registerModule(
                 EventSourcedEntityModule.autodetected(CourseId.class, CustomCriteriaResolverCourse.class)
@@ -140,15 +147,18 @@ class AnnotatedEventSourcedEntityModuleTest {
                           .isInstanceOf(EventSourcingRepository.class);
         result.describeTo(componentDescriptor);
 
-        verify(componentDescriptor).describeProperty(eq("sourcingHandler"), sourcingHandlerCaptor.capture());
+        verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), handlerCaptor.capture());
 
-        sourcingHandlerCaptor.getValue().describeTo(componentDescriptor);
+        handlerCaptor.getValue().describeTo(componentDescriptor);
 
         verify(componentDescriptor).describeProperty(eq("criteriaResolver"), isA(CustomCriteriaResolver.class));
     }
 
     @Test
-    void customEntityFactoryIsPresentOnResultingEventSourcingRepository() {
+    void customEntityFactoryIsPresentOnResultingEventSourcingRepository(
+        @Captor ArgumentCaptor<EntityLifecycleHandler<CourseId, CustomCriteriaResolverCourse>> handlerCaptor,
+        @Captor ArgumentCaptor<InitializingEntityEvolver<CourseId, CustomCriteriaResolverCourse>> evolverCaptor
+    ) {
         ComponentDescriptor componentDescriptor = mock(ComponentDescriptor.class);
         componentRegistry.registerModule(
                 EventSourcedEntityModule.autodetected(CourseId.class, CustomEntityFactoryCourse.class)
@@ -165,6 +175,15 @@ class AnnotatedEventSourcedEntityModuleTest {
                 .isNotNull()
                 .isInstanceOf(EventSourcingRepository.class);
         result.describeTo(componentDescriptor);
+
+        verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), handlerCaptor.capture());
+
+        handlerCaptor.getValue().describeTo(componentDescriptor);
+
+        verify(componentDescriptor).describeProperty(eq("evolver"), evolverCaptor.capture());
+
+        evolverCaptor.getValue().describeTo(componentDescriptor);
+
         verify(componentDescriptor).describeProperty(eq("entityFactory"), isA(CustomEventSourcedEntityFactory.class));
     }
 
@@ -283,5 +302,158 @@ class AnnotatedEventSourcedEntityModuleTest {
     @EventSourcedEntity(concreteTypes = {String.class})
     interface PolymorphicEventSourcedEntity {
 
+    }
+
+    @Nested
+    class WhenSnapshottingAnnotationIsPresent {
+        private ComponentDescriptor componentDescriptor = mock(ComponentDescriptor.class);
+
+        @Test
+        void allTriggersDisabledShouldThrowAxonConfigurationException() {
+            assertThatThrownBy(() -> EventSourcedEntityModule.autodetected(CourseId.class, AllTriggersDisabledCourse.class))
+                .isInstanceOf(AxonConfigurationException.class)
+                .hasMessageContaining("has no active trigger");
+        }
+
+        @Test
+        void afterEventsConfigurationShouldUseSnapshottingEntityLifecycleHandler() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(CourseId.class, AfterEventsCourse.class)))
+                .start();
+
+            Repository<CourseId, AfterEventsCourse> result = configuration.getComponent(StateManager.class)
+                .repository(AfterEventsCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+
+        @Test
+        void afterSourcingTimeConfigurationShouldUseSnapshottingEntityLifecycleHandler() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(CourseId.class, AfterSourcingTimeCourse.class)))
+                .start();
+
+            Repository<CourseId, AfterSourcingTimeCourse> result = configuration.getComponent(StateManager.class)
+                .repository(AfterSourcingTimeCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+
+        @Test
+        void combinedConditionsShouldUseSnapshottingEntityLifecycleHandler() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(CourseId.class, CombinedSnapshotCourse.class)))
+                .start();
+
+            Repository<CourseId, CombinedSnapshotCourse> result = configuration.getComponent(StateManager.class)
+                .repository(CombinedSnapshotCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+
+        @Test
+        void bareAnnotationWithoutThresholdsThrowsAxonConfigurationException() {
+            assertThatThrownBy(() -> EventSourcedEntityModule.autodetected(CourseId.class, DefaultSnapshotCourse.class))
+                .isInstanceOf(AxonConfigurationException.class)
+                .hasMessageContaining("could not resolve a concrete trigger");
+        }
+
+        @Test
+        void bareAnnotationResolvesDefaultFromEnclosingClass() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(CourseId.class,
+                                                          WithDefaultPolicy.EnclosedCourse.class)))
+                .start();
+
+            Repository<CourseId, WithDefaultPolicy.EnclosedCourse> result =
+                    configuration.getComponent(StateManager.class)
+                                 .repository(WithDefaultPolicy.EnclosedCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+
+        @Test
+        void metaAnnotatedSnapshottingShouldUseSnapshottingEntityLifecycleHandler() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(CourseId.class, MetaAnnotatedSnapshottingCourse.class)))
+                .start();
+
+            Repository<CourseId, MetaAnnotatedSnapshottingCourse> result =
+                    configuration.getComponent(StateManager.class)
+                                 .repository(MetaAnnotatedSnapshottingCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+    }
+
+    @EventSourcedEntity
+    @Snapshotting(afterEvents = 5)
+    record AfterEventsCourse(CourseId id) {
+        @EntityCreator public AfterEventsCourse {}
+    }
+
+    @EventSourcedEntity
+    @Snapshotting(afterSourcingTime = "PT5S")
+    record AfterSourcingTimeCourse(CourseId id) {
+        @EntityCreator public AfterSourcingTimeCourse {}
+    }
+
+    @EventSourcedEntity
+    @Snapshotting(afterEvents = 5, afterSourcingTime = "PT5S")
+    record CombinedSnapshotCourse(CourseId id) {
+        @EntityCreator public CombinedSnapshotCourse {}
+    }
+
+    @EventSourcedEntity
+    @Snapshotting
+    record DefaultSnapshotCourse(CourseId id) {
+        @EntityCreator public DefaultSnapshotCourse {}
+    }
+
+    @EventSourcedEntity
+    @Snapshotting(afterEvents = 0)
+    record AllTriggersDisabledCourse(CourseId id) {
+        @EntityCreator public AllTriggersDisabledCourse {}
+    }
+
+    @EventSourcedEntity
+    @MetaSnapshotting
+    record MetaAnnotatedSnapshottingCourse(CourseId id) {
+        @EntityCreator public MetaAnnotatedSnapshottingCourse {}
+    }
+
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    @Snapshotting(afterEvents = 10)
+    public @interface MetaSnapshotting {}
+
+    @Snapshotting(afterEvents = 20)
+    static class WithDefaultPolicy {
+
+        @EventSourcedEntity
+        @Snapshotting
+        record EnclosedCourse(CourseId id) {
+            @EntityCreator public EnclosedCourse {}
+        }
     }
 }

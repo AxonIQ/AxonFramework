@@ -31,6 +31,7 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.queryhandling.GenericQueryMessage;
@@ -38,6 +39,7 @@ import org.axonframework.messaging.queryhandling.NoHandlerForQueryException;
 import org.axonframework.messaging.queryhandling.QueryExecutionException;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
+import org.axonframework.messaging.queryhandling.interception.annotation.QueryHandlerInterceptor;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
@@ -238,10 +240,7 @@ class AnnotatedQueryHandlingComponentTest {
         ProcessingContext testContext = StubProcessingContext.forMessage(testQuery);
         // when...
         List<Object> results = testSubject.handle(testQuery, testContext)
-                                          .reduce(new ArrayList<>(), (list, entry) -> {
-                                              list.add(entry.message().payload());
-                                              return list;
-                                          })
+                                          .collect(ArrayList::new, (list, message) -> list.add(message.payload()))
                                           .join();
         // then...
         assertThat(results.size()).isEqualTo(desiredResponsesCount);
@@ -932,26 +931,6 @@ class AnnotatedQueryHandlingComponentTest {
         }
 
         @Test
-        void interceptorFilteredByPayloadTypeIsSkippedForNonMatchingQueries() {
-            // given - interceptor restricted to Integer payloads; component handles String queries
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @QueryHandlerInterceptor(payloadType = Integer.class)
-                void interceptIntegersOnly() { log.add("interceptor"); }
-                @QueryHandler
-                String handle(String payload) { log.add("handler"); return payload; }
-            };
-            var component = annotatedComponent(handler);
-            var query = queryMessage("hello");
-
-            // when
-            drainAndGetPayload(component.handle(query, StubProcessingContext.forMessage(query)));
-
-            // then - interceptor was skipped; handler ran normally
-            assertThat(log).doesNotContain("interceptor").contains("handler");
-        }
-
-        @Test
         void nonVoidInterceptorWithoutChainParamIsRejected() {
             // given - @QueryHandlerInterceptor on a non-void method with no chain parameter
             var handler = new Object() {
@@ -965,6 +944,44 @@ class AnnotatedQueryHandlingComponentTest {
             assertThatThrownBy(() -> annotatedComponent(handler))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("declare a parameter of type InterceptorChain");
+        }
+
+        @Test
+        void exceptionHandlerIsInvokedWhenQueryHandlerThrows() {
+            // given
+            var capturedExceptions = new ArrayList<Exception>();
+            var handler = new Object() {
+                @ExceptionHandler
+                void onException(RuntimeException e) { capturedExceptions.add(e); }
+                @QueryHandler
+                String handle(String payload) { throw new RuntimeException("handler failed"); }
+            };
+            var component = annotatedComponent(handler);
+            var query = queryMessage("hello");
+
+            // when - exception handler swallows the exception, so stream completes normally
+            component.handle(query, StubProcessingContext.forMessage(query))
+                     .first().asCompletableFuture().join();
+
+            // then
+            assertThat(capturedExceptions).hasSize(1);
+            assertThat(capturedExceptions.getFirst()).hasMessage("handler failed");
+        }
+
+        @Test
+        void exceptionHandlerWithChainParamIsRejected() {
+            // given - @ExceptionHandler is a result handler; combining it with a chain parameter is illegal
+            var handler = new Object() {
+                @ExceptionHandler
+                void handleException(Exception e, MessageHandlerInterceptorChain<?> chain) {}
+                @QueryHandler
+                String handle(String payload) { return payload; }
+            };
+
+            // when / then
+            assertThatThrownBy(() -> annotatedComponent(handler))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("acting on the invocation result must not declare a parameter of type InterceptorChain");
         }
     }
 }

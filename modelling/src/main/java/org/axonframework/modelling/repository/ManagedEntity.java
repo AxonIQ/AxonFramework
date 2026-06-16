@@ -16,6 +16,8 @@
 
 package org.axonframework.modelling.repository;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.function.UnaryOperator;
 
 /**
@@ -36,10 +38,11 @@ public interface ManagedEntity<ID, E> {
     ID identifier();
 
     /**
-     * The current state of the entity.
+     * The current state of the entity, {@code null} when nothing was loaded from the repository.
      *
-     * @return The current state of the entity.
+     * @return the current state of the entity
      */
+    @Nullable
     E entity();
 
     /**

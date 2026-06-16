@@ -20,6 +20,7 @@ import io.dropwizard.metrics5.Gauge;
 import io.dropwizard.metrics5.Metric;
 import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricSet;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
@@ -48,21 +49,24 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class EventProcessorLatencyMonitor implements MessageMonitor<EventMessage>, MetricSet {
 
+    @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
     private final AtomicLong processTime = new AtomicLong();
 
     /**
-     * Construct an {@link EventProcessorLatencyMonitor} using a {@link Clock#systemUTC()}.
+     * Construct an EventProcessorLatencyMonitor using {@link ClockUtils#get()}.
      */
     public EventProcessorLatencyMonitor() {
-        this(Clock.systemUTC());
+        this(ClockUtils.get());
     }
 
     /**
-     * Construct an {@link EventProcessorLatencyMonitor} using the given {@code clock}.
+     * Construct an EventProcessorLatencyMonitor using the given {@code clock}.
      *
      * @param clock defines the {@link Clock} used by this {@link MessageMonitor} implementation
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public EventProcessorLatencyMonitor(Clock clock) {
         this.clock = clock;
     }

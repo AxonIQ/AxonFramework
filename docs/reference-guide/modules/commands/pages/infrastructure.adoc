@@ -4,10 +4,10 @@ Command handling in Axon Framework involves several infrastructure components th
 
 This page covers the key infrastructure components you'll work with:
 
-* **Repositories** - Manage entity lifecycle and state persistence
-* **Command bus** - Routes and dispatches commands to handlers
-* **Command gateway** - Provides a convenient API for dispatching commands
-* **Command handling components** - Register and manage command handlers
+* **Repositories**: Manage entity lifecycle and state persistence
+* **Command bus**: Routes and dispatches commands to handlers
+* **Command gateway**: Provides a convenient API for dispatching commands
+* **Command handling components**: Register and manage command handlers
 
 == Repositories
 
@@ -18,12 +18,12 @@ When you use entities for stateful command handling (see xref:command-handlers.a
 
 Repositories handle several concerns for you:
 
-* **Loading entity state** - Fetch current state from storage (event store or database)
-* **Lifecycle management** - Track entity instances during command processing
-* **Persistence** - Save state changes when command processing completes
-* **Coordination** - Ensure changes are committed as part of the processing context
+* **Loading entity state**: Fetch current state from storage (event store or database)
+* **Lifecycle management**: Track entity instances during command processing
+* **Persistence**: Save state changes when command processing completes
+* **Coordination**: Ensure changes are committed as part of the processing context
 
-Without a repository, you'd need to manually load entities, track changes, and persist them - repositories do all of this automatically.
+Without a repository, you would need to manually load entities, track changes, and persist them. Repositories do all of this automatically.
 
 === Async-native API
 
@@ -153,9 +153,9 @@ The `SimpleCommandBus` is the standard command bus implementation.
 
 Key characteristics:
 
-* **Simple and reliable** - Straightforward processing model
-* **Good performance** - Low overhead for command handling
-* **Single JVM** - Cannot distribute commands across multiple instances
+* **Simple and reliable**: Straightforward processing model
+* **Good performance**: Low overhead for command handling
+* **Single JVM**: Cannot distribute commands across multiple instances
 
 Spring Boot automatically configures a `SimpleCommandBus` when using the Axon Spring Boot starter (unless Axon Server is configured).
 
@@ -211,8 +211,8 @@ The command bus supports interceptors for cross-cutting concerns like logging, m
 
 There are two types of interceptors:
 
-* **Dispatch interceptors** - Invoked when a command is dispatched, before routing
-* **Handler interceptors** - Invoked before the actual command handler, after routing
+* **Dispatch interceptors**: Invoked when a command is dispatched, before routing
+* **Handler interceptors**: Invoked before the actual command handler, after routing
 
 See xref:messaging-concepts:message-intercepting.adoc#command-interceptors[Command interceptors] for details on implementing and registering interceptors.
 

@@ -16,20 +16,19 @@
 
 package org.axonframework.messaging.core.interception.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageStream.Entry;
-import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
-import org.axonframework.messaging.core.annotation.InterceptorChainParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -45,7 +44,7 @@ import java.util.concurrent.CompletableFuture;
  * {@link ResultHandler}.
  *
  * @author Allard Buijze
- * @since 4.4.0, 5.2.0
+ * @since 4.4.0
  */
 public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefinition {
 
@@ -77,8 +76,9 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
                     "Only methods can be marked as MessageHandlerInterceptor. "
                             + "Violating handler: " + original.signature())
             );
-            boolean declaredInterceptorChain = Arrays.stream(method.getParameters())
-                                                     .anyMatch(p -> p.getType().equals(MessageHandlerInterceptorChain.class));
+            boolean declaredInterceptorChain =
+                    Arrays.stream(method.getParameters())
+                          .anyMatch(p -> p.getType().equals(MessageHandlerInterceptorChain.class));
             if (declaredInterceptorChain) {
                 throw new AxonConfigurationException(
                         "A MessageHandlerInterceptor acting on the invocation result must not "
@@ -95,8 +95,9 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
 
         @Override
         public boolean canHandle(Message message, ProcessingContext context) {
-            return ResultParameterResolverFactory.ignoringResultParameters(context,
-                                                                           pc -> super.canHandle(message, pc));
+            return ResultParameterResolverFactory.ignoringResultParameters(
+                    context, pc -> super.canHandle(message, pc)
+            );
         }
 
         @Override
@@ -150,8 +151,9 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
                     "Only methods can be marked as MessageHandlerInterceptor. "
                             + "Violating handler: " + original.signature())
             );
-            shouldInvokeInterceptorChain = Arrays.stream(method.getParameters())
-                                                 .noneMatch(p -> p.getType().equals(MessageHandlerInterceptorChain.class));
+            shouldInvokeInterceptorChain =
+                    Arrays.stream(method.getParameters())
+                          .noneMatch(p -> p.getType().equals(MessageHandlerInterceptorChain.class));
             if (shouldInvokeInterceptorChain && !Void.TYPE.equals(method.getReturnType())
                     && !CompletableFuture.class.isAssignableFrom(method.getReturnType())) {
                 throw new AxonConfigurationException(
@@ -167,6 +169,7 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
                 // Surround-interceptor: the method accepts a chain param and calls chain.proceed() itself
                 return super.handle(message, context, target);
             }
+
             // Before-interceptor: void method with no chain param.
             // Run the interceptor method first; if it fails the chain is broken.
             // If it completes normally, lazily proceed the chain via a supplier so that
@@ -184,8 +187,8 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
                 ));
             }
             return super.handle(message, context, target)
-                    .ignoreEntries()
-                    .concatWith(() -> chain.proceed(message, context).cast());
+                        .ignoreEntries()
+                        .concatWith(() -> chain.proceed(message, context).cast());
         }
     }
 }

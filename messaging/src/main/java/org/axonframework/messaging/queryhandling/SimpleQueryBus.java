@@ -265,7 +265,9 @@ public class SimpleQueryBus implements QueryBus {
 
     private CompletableFuture<Void> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
                                                                 Runnable updateTask) {
-        if (context != null) {
+        if (context == null || context.isCommitted()) {
+            updateTask.run();
+        } else if (!context.isCompleted()) {
             context.computeResourceIfAbsent(
                            UPDATE_TASKS_KEY,
                            () -> {
@@ -275,9 +277,8 @@ public class SimpleQueryBus implements QueryBus {
                            }
                    )
                    .add(updateTask);
-        } else {
-            updateTask.run();
         }
+        // else: context completed with error - drop the update
         return FutureUtils.emptyCompletedFuture();
     }
 

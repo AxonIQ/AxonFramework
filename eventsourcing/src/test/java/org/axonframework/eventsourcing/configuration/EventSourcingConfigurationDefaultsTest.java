@@ -22,8 +22,11 @@ import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
+import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.SubscribableEventSource;
@@ -122,6 +125,37 @@ class EventSourcingConfigurationDefaultsTest {
                                                       .getComponent(TagResolver.class);
 
         assertEquals(testTagResolver, configuredTagResolver);
+    }
+
+    @Test
+    void decoratesEventStorageEngineAsSnapshotCapableWhenSnapshotStoreIsPresent() {
+        ApplicationConfigurer configurer = EventSourcingConfigurer.create();
+        configurer.componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()));
+        Configuration resultConfig = configurer.build();
+
+        assertThat(resultConfig.getComponent(EventStorageEngine.class))
+                .isInstanceOf(SnapshotCapableEventStorageEngine.class);
+    }
+
+    @Test
+    void doesNotDecorateEventStorageEngineWhenNoSnapshotStoreIsPresent() {
+        ApplicationConfigurer configurer = EventSourcingConfigurer.create();
+        Configuration resultConfig = configurer.build();
+
+        assertThat(resultConfig.getComponent(EventStorageEngine.class))
+                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class);
+    }
+
+    @Test
+    void doesNotDecorateEventStorageEngineWhenItAlreadyImplementsSnapshotStore(
+            @Mock(extraInterfaces = SnapshotStore.class) InMemoryEventStorageEngine snapshotAwareEngine) {
+        ApplicationConfigurer configurer = EventSourcingConfigurer.create();
+        configurer.componentRegistry(cr -> cr.registerComponent(EventStorageEngine.class, c -> snapshotAwareEngine)
+                                             .registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()));
+        Configuration resultConfig = configurer.build();
+
+        assertThat(resultConfig.getComponent(EventStorageEngine.class))
+                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class);
     }
 
     @Test

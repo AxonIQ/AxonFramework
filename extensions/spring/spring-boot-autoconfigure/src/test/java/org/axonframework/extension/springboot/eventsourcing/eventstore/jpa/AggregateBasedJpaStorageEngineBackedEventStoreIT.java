@@ -57,7 +57,8 @@ import javax.sql.DataSource;
  */
 @SpringBootTest(classes = TestConfig.class)
 @ImportAutoConfiguration(JpaTransactionAutoConfiguration.class)
-class AggregateBasedJpaStorageEngineBackedEventStoreIT extends StorageEngineBackedEventStoreTestSuite<AggregateBasedJpaEventStorageEngine> {
+class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
+        StorageEngineBackedEventStoreTestSuite<AggregateBasedJpaEventStorageEngine> {
 
     private static AggregateBasedJpaEventStorageEngine engine;
 

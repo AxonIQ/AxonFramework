@@ -10,7 +10,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 119
+  milestone: 121
   groups:
     github-dependencies:
       update-types:
@@ -19,7 +19,9 @@ updates:
         - "major"
 
 - package-ecosystem: maven
-  directory: "/"
+  directories:
+    - "/"
+    - "!/examples/university-java-springboot-4"
   schedule:
     interval: weekly
     day: "sunday"
@@ -27,7 +29,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 119
+  milestone: 121
   groups:
     maven-dependencies:
       update-types:
@@ -46,6 +48,23 @@ updates:
     - dependency-name: "org.springframework.data:*"
       versions: [ "[2025.0.0,)" ]
 
+- package-ecosystem: maven
+  directory: "/examples/university-java-springboot-4"
+  schedule:
+    interval: weekly
+    day: "sunday"
+  open-pull-requests-limit: 5
+  labels:
+    - "Type: Dependency Upgrade"
+    - "Priority 1: Must"
+  milestone: 121
+  groups:
+    maven-dependencies:
+      update-types:
+        - "patch"
+        - "minor"
+        - "major"
+
 - package-ecosystem: npm
   directory: "/docs/_playbook"
   schedule:
@@ -55,7 +74,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 119
+  milestone: 121
   groups:
     antora-dependencies:
       update-types:

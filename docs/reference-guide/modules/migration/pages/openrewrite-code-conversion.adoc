@@ -1,0 +1,123 @@
+= OpenRewrite Code Conversion
+:navtitle: OpenRewrite Code Conversion
+
+Automated code conversion gives you a running head start on the migration by mechanically rewriting the parts of your Axon Framework 4 codebase that follow a predictable pattern.
+It handles the bulk of the rename and reshape work—package moves, annotation rewrites, accessor renames, and more—so you can focus your attention on the design decisions that genuinely require human judgment.
+
+[IMPORTANT]
+====
+Code conversion is a starting point, not a finishing line.
+After the recipes run, **your project will not compile**.
+That is intentional.
+The compile errors that remain, together with the `TODO(axon4to5)` markers left in the source, form a guided checklist of everything that still needs your attention.
+====
+
+Code conversion covers only source and build file transformations.
+It does not migrate event store data, token tables, dead-letter queue entries, saga state, or any other runtime or database content.
+The recipes have been validated on Java, Spring Boot, and Maven projects, but should work with Kotlin and Gradle as well.
+
+For the full list of available invocation options, see the link:https://github.com/AxonFramework/AxonFramework/tree/main/migration[`migration` module README] in the Axon Framework repository.
+
+== Choosing a recipe
+
+Two top-level recipes are available depending on whether you are targeting the free Axon Framework or the commercial Axoniq Framework:
+
+[cols="1,2,2"]
+|===
+| Recipe | Description | When to use
+
+| `org.axonframework.migration.UpgradeAxon4ToAxon5`
+| Migrates an Axon Framework 4 application to free Axon Framework 5.
+Renames packages and classes within the `org.axonframework.*` namespace and applies all core source rewrites.
+| You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, or `DistributedCommandBus`.
+*Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling—use `UpgradeAxon4ToAxoniq5` instead.
+
+| `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5`
+| Composes the free recipe, then layers commercial migrations on top and swaps the Spring Boot starter and BOM to the commercial coordinates.
+| Recommended for any AF4 application that uses Axon Server, the DLQ, or distributed messaging.
+|===
+
+== What gets converted
+
+The recipes handle the following categories of changes automatically:
+
+* **Build files**:BOM rename, Java source/target version bump, Spring Boot upgrade to 3.5, removal of dependencies with no Axon Framework 5 equivalent
+* **Package and class renames**:handler annotations, `EventBus` → `EventSink`, `ConfigurerModule` → `ConfigurationEnhancer`, extension packages
+* **Annotation rewrites**:`@Aggregate` → `@EventSourced`, `@AggregateRoot` → `@EventSourcedEntity`, `@TargetAggregateIdentifier` → `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` → `@Namespace`, `@EntityCreator` added to constructors
+* **Message API**:accessor method renames, `AggregateLifecycle.apply(...)` replaced with `EventAppender#append(...)`
+* **Command handling**:`@CommandHandler` constructors converted to static `handle(...)` methods, `CommandGateway` replaced with `CommandDispatcher`
+* **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
+* **Spring configuration**:`axon.serializer.*` properties renamed to `axon.converter.*`
+* **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten
+
+=== Migration markers
+
+Where a change cannot be automated safely, the recipe leaves a marker comment so the location is easy to find:
+
+* Java / Kotlin: `// TODO(axon4to5): <action>`
+* Properties / YAML: `# TODO(axon4to5): <action>`
+
+After running, collect all such markers with:
+
+[source,bash]
+----
+grep -r "TODO(axon4to5)" src/
+----
+
+== Running the recipe
+
+=== Maven
+
+Run the commercial recipe against your project:
+
+[source,bash]
+----
+mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
+  -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:<version> \
+  -Drewrite.activeRecipes=io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5
+----
+
+For the free (Apache 2.0) path, replace the active recipe with `org.axonframework.migration.UpgradeAxon4ToAxon5`.
+
+Replace `<version>` with the Axon Framework 5 release you are targeting (for example, `5.1.1`).
+
+=== Gradle
+
+Gradle projects do not carry the OpenRewrite plugin by default.
+The `init.gradle` script bundled with the `migration` module wires it in without modifying your build files.
+Copy `migration/init.gradle` into your target project (or reference it by absolute path), then run:
+
+[source,bash]
+----
+gradle rewriteRun --init-script init.gradle \
+  -Drewrite.activeRecipe=io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5
+----
+
+For the free (Apache 2.0) path, replace the active recipe with `org.axonframework.migration.UpgradeAxon4ToAxon5`.
+
+[IMPORTANT]
+====
+Do not combine the init script with a `rewrite { }` block in `build.gradle` or `build.gradle.kts`—the OpenRewrite Gradle plugin only supports one configuration source at a time.
+====
+
+To override the recipe artifact version, add `-Drewrite.axonMigrationVersion=<version>` to the command.
+For further background, see the link:https://docs.openrewrite.org/running-recipes/running-rewrite-on-a-gradle-project-without-modifying-the-build[OpenRewrite guide on running recipes on a Gradle project without modifying the build].
+
+== After running the recipe
+
+Once the recipes complete, the project state will look like this:
+
+1. Build files are updated—dependency versions, BOM coordinates, and Spring Boot version are aligned with Axon Framework 5.
+2. Many Java (and Kotlin) source files have been rewritten—renames, annotation rewrites, and API changes applied mechanically.
+3. **The project does not compile.** The remaining compile errors identify exactly which API changes require manual attention.
+4. `TODO(axon4to5)` markers in the source point to the locations where the recipe left work intentionally unfinished.
+
+Work through the compile errors and markers by consulting the xref:migration:paths/index.adoc[migration paths].
+
+== Scope and limitations
+
+The following are explicitly out of scope for code conversion:
+
+* **No data migration**:event store contents, token tables, dead-letter queue entries, and saga state are never touched.
+* **No compile guarantee**:a non-compiling project after the run is the expected outcome, not an error.
+* **Some Axon Framework 4 features have no Axon Framework 5 equivalent yet**:Sagas and Deadlines are not available in Axon Framework 5.0. See xref:migration:paths/index.adoc#_what_is_not_yet_there[what is not yet there] for the full list.

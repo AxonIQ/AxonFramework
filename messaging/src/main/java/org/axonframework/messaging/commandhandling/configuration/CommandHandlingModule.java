@@ -26,8 +26,11 @@ import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandHandlingExceptionHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -221,18 +224,38 @@ public interface CommandHandlingModule extends Module, ModuleBuilder<CommandHand
         }
 
         /**
-         * Wraps the command handling component with the given {@code exceptionHandler}. When a command handler throws,
-         * the exception handler is invoked. Return {@link org.axonframework.messaging.core.MessageStream#empty()} to
-         * suppress the error, {@link org.axonframework.messaging.core.MessageStream#failed(Throwable)} to propagate
-         * it, or a stream with a {@link org.axonframework.messaging.commandhandling.CommandResultMessage} to substitute
-         * a result.
+         * Wraps the command handling component with the exception handler built by the given {@code handlerBuilder}.
+         * When a command handler throws, the exception handler is invoked. Return
+         * {@link MessageStream#empty()} to suppress the error, {@link MessageStream#failed(Throwable)} to propagate
+         * it, or a stream with a {@link CommandResultMessage} to substitute a result.
          * <p>
-         * Multiple calls accumulate handlers in registration order: the first registered handler sees the exception
-         * first.
+         * Accepts either a {@link CommandHandlingExceptionHandler} (which narrows the return type for substituting a
+         * {@link CommandResultMessage}) or a generic {@link MessageHandlingExceptionHandler} typed at any supertype of
+         * {@link CommandMessage}, allowing a single handler implementation (such as a logger) to be reused across
+         * command, event, and query phases.
+         * <p>
+         * Multiple calls accumulate handlers; later-registered handlers are applied closer to the handler and see
+         * exceptions first.
          *
-         * @param exceptionHandler the exception handler to apply to the command handling component
+         * @param handlerBuilder builder for the exception handler to apply to the command handling component
          * @return this phase for further configuration
          */
-        CommandHandlerPhase withExceptionHandler(CommandHandlingExceptionHandler exceptionHandler);
+        default CommandHandlerPhase withExceptionHandler(
+                ComponentBuilder<? extends MessageHandlingExceptionHandler<? super CommandMessage>> handlerBuilder) {
+            requireNonNull(handlerBuilder, "The exception handler builder must not be null.");
+            return intercepted(c -> {
+                MessageHandlingExceptionHandler<? super CommandMessage> handler = handlerBuilder.build(c);
+                return (message, context, chain) ->
+                        chain.proceed(message, context)
+                             .cast()
+                             .onErrorContinue(error -> {
+                                 try {
+                                     return handler.handle(message, context, error);
+                                 } catch (Exception e) {
+                                     return MessageStream.failed(e);
+                                 }
+                             });
+            });
+        }
     }
 }

@@ -4,6 +4,6 @@ Axon Framework allows the use of methods annotated with `@ExceptionHandler` to p
 More specifically, this is a type of xref:component-message-intercepting.adoc[component-level interceptor] dedicated to reacting to exceptional results.
 
 An `@ExceptionHandler` method only handles exceptions thrown from message handling functions in the same class.
-It can react to all exceptions or narrow its scope using `payloadType` and `resultType` attributes.
+It can react to all exceptions or narrow its scope using the `resultType` attribute.
 
 For full documentation including examples for command handlers, query handlers, and event processors, see xref:component-message-intercepting.adoc#ExceptionHandler[Component Message Intercepting - @ExceptionHandler].

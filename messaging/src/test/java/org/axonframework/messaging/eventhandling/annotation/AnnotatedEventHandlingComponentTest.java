@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.annotation;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.LegacyResources;
@@ -33,13 +34,13 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.annotation.SourceId;
-import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.interception.annotation.EventHandlerInterceptor;
 import org.axonframework.messaging.eventhandling.replay.GenericReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
@@ -237,7 +238,7 @@ class AnnotatedEventHandlingComponentTest {
         @Test
         void resolvesTimestamps() {
             var timestamp = Instant.now();
-            GenericEventMessage.clock = Clock.fixed(timestamp, ZoneId.systemDefault());
+            ClockUtils.set(Clock.fixed(timestamp, ZoneId.systemDefault()));
 
             // given
             var event = eventMessage(0);
@@ -252,7 +253,7 @@ class AnnotatedEventHandlingComponentTest {
 
         @AfterEach
         void afterEach() {
-            GenericEventMessage.clock = Clock.systemUTC();
+            ClockUtils.reset();
         }
     }
 
@@ -1039,28 +1040,6 @@ class AnnotatedEventHandlingComponentTest {
         }
 
         @Test
-        void interceptorFilteredByPayloadTypeIsSkippedForNonMatchingEvents() {
-            // given - interceptor restricted to String payloads; component handles Integer events
-            var log = new ArrayList<String>();
-            var handler = new Object() {
-                @EventHandlerInterceptor(payloadType = String.class)
-                void interceptStringsOnly() { log.add("interceptor"); }
-                @EventHandler
-                void handle(Integer payload) { log.add("handler"); }
-            };
-            var component = annotatedEventHandlingComponent(handler);
-            var event = eventMessage(0);
-
-            // when
-            var result = component.handle(event, simpleContext(event));
-            drainStream(result);
-
-            // then - interceptor was skipped; handler ran normally
-            assertThat(log).doesNotContain("interceptor")
-                           .contains("handler");
-        }
-
-        @Test
         void nonVoidInterceptorWithoutChainParamIsRejected() {
             // given - @EventHandlerInterceptor on a non-void method with no chain parameter
             var handler = new Object() {
@@ -1076,26 +1055,6 @@ class AnnotatedEventHandlingComponentTest {
             assertThatThrownBy(() -> annotatedEventHandlingComponent(handler))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("declare a parameter of type InterceptorChain");
-        }
-
-        @Test
-        void exceptionHandlerWithChainParamIsRejected() {
-            // given - @ExceptionHandler is a result handler; combining it with a chain parameter is illegal
-            var handler = new Object() {
-                @ExceptionHandler
-                void handleException(Exception e, MessageHandlerInterceptorChain<?> chain) {
-                    // no-op; component needs a handler but invocation is never tested
-                }
-                @EventHandler
-                void handle(Integer payload) {
-                    // no-op; component needs a handler but invocation is never tested
-                }
-            };
-
-            // when / then
-            assertThatThrownBy(() -> annotatedEventHandlingComponent(handler))
-                    .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("acting on the invocation result must not declare a parameter of type InterceptorChain");
         }
 
         @Test

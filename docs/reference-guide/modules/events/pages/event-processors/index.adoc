@@ -30,7 +30,27 @@ Two processors with the same name are considered as two instances of the same pr
 Each event handler will belong to an event handling component.
 An event handling component can include any number of event handlers.
 These event handling components are attached to a processor, whose name by default is the package name of the event handler's class.
-Furthermore, the default processor implementation used by Axon is the xref:event-processors/streaming.adoc[PooledStreamingEventProcessor].
+
+[NOTE]
+.Consequences of assigning an event handling component to a processor
+====
+There are certain consequences of grouping event handling components with the same processors.
+All event handling components assigned to a single processor will share the same configuration (for example batch size, initial segment count and thread pool configuration) and scaling considerations (if for example you split the segments).
+
+If the same event is handled in multiple event handlers across different event handling components assigned to the same processor, they are still processed in the same transaction, sharing the same xref:messaging-concepts:processing-context.adoc[processing context].
+
+Finally, event handlers across all event handling components assigned to the same processor are xref:events:event-processors/streaming.adoc#sequential_processing[sequenced together], xref:events:event-processors/streaming.adoc#replaying-events[replayed together] and share xref:events:event-processors/streaming.adoc#thread_configuration[the same thread pool]
+ifndef::advanced-framework[.]
+ifdef::advanced-framework[]
+and
+xref:dead-letter-queue:index.adoc[dead letter queue].
+endif::[]
+
+Consider this when assigning handlers to processors.
+A good rule of thumb usually is: If you want to advance and replay multiple projections as a unit or isolate failures across them, assign them to the same processor.
+====
+
+The default processor implementation used by Axon is the xref:event-processors/streaming.adoc[PooledStreamingEventProcessor].
 The event processor type can be customized, as is shown in the xref:event-processors/subscribing.adoc#configuring[subscribing] and xref:event-processors/streaming.adoc#configuring[streaming] sections.
 
 There are two main approaches to configuring event processors and assigning handlers:
@@ -89,15 +109,68 @@ public class AxonConfig {
 [#autodetected_config]
 === Autodetected configuration
 
+Using the `@Namespace` annotation on an event handling component allows you to explicitly assign it to a processor when using the autodetected configuration.
+
 Assuming the autodetected approach is used, let us consider that the following event handling components have been registered:
 
-* `org.axonframework.example.eventhandling.MyHandler`
-* `org.axonframework.example.eventhandling.MyOtherHandler`
-* `org.axonframework.example.eventhandling.module.ModuleHandler`
+[source,java]
+----
+// MyHandler.java
+package org.axonframework.example.eventhandling;
+@Namespace("my-processor")
+public class MyHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
 
-Without any intervention, this will trigger the creation of two Streaming Processors, namely:
+// MyOtherHandler.java
+package org.axonframework.example.eventhandling;
+@Namespace("my-processor")
+public class MyOtherHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
 
-. `org.axonframework.example.eventhandling` with two event handling components called `MyHandler` and `MyOtherHandler`.
+// ModuleHandler.java
+package org.axonframework.example.eventhandling.module;
+@Namespace("my-processor")
+public class ModuleHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+----
+
+This configuration would result in the creation of a single Streaming Processor named `my-processor` with all three event handling components.
+
+Now consider the same autodetected setup, but with the following event handling components registered without the `@Namespace` annotation:
+
+[source,java]
+----
+// MyHandler.java
+package org.axonframework.example.eventhandling;
+public class MyHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+
+// MyOtherHandler.java
+package org.axonframework.example.eventhandling;
+public class MyOtherHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+
+// ModuleHandler.java
+package org.axonframework.example.eventhandling.module;
+public class ModuleHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+----
+
+*Without* having the `@Namespace` annotation applied to the event handling component class, this would trigger the creation of two Streaming Processors, based on the handler component's package names:
+
+. `org.axonframework.example.eventhandling` with two event handling components called `MyHandler` and `MyOtherHandler`, and
 . `org.axonframework.example.eventhandling.module` with the event handling component `ModuleHandler`.
 
 === Ordering event handling components within a processor
@@ -122,6 +195,54 @@ Furthermore, embracing an ordering approach might lead to place _all_ event hand
 
 In all, you are free to use an ordering, but we recommend using it sparingly.
 ====
+
+[[lifecycle]]
+== Processor lifecycle
+
+Every `EventProcessor` exposes a common set of lifecycle methods to start, stop, and inspect state.
+These methods are available on all processor implementations, including the xref:event-processors/subscribing.adoc[Subscribing] and xref:event-processors/streaming.adoc[Streaming] Event Processor.
+
+=== Starting and stopping
+
+`start()` and `shutdown()` both return a `CompletableFuture<Void>` that completes when the operation has fully finished.
+
+[NOTE]
+====
+In most scenarios, you do not need to invoke `start()` or `shutdown()` manually.
+Axon Framework manages the processor lifecycle automatically as part of application startup and shutdown.
+Only call these methods directly when you need explicit control, for example when triggering a programmatic replay or conditionally pausing processing.
+====
+
+=== Checking state
+
+Two synchronous methods allow you to inspect the current state of a processor at any point:
+
+* `isRunning()`: returns `true` when the processor is active and processing events.
+Returns `false` after a clean `shutdown()` or before `start()` has been called.
+* `isError()`: returns `true` when the processor has gone into error mode due to an unhandled exception.
+Returns `false` after a clean `shutdown()`.
+See xref:event-processors/streaming.adoc#error-mode[Error mode] for more on how the Streaming Event Processor handles errors.
+
+[source,java]
+----
+import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.messaging.eventhandling.processing.EventProcessor;
+
+public class ProcessorStateChecker {
+
+    private final AxonConfiguration configuration;
+
+    public ProcessorStateChecker(AxonConfiguration configuration) {
+        this.configuration = configuration;
+    }
+
+    public void printState(String processorName) {
+        EventProcessor processor = configuration.getComponent(EventProcessor.class, processorName);
+        System.out.println("Running: " + processor.isRunning());
+        System.out.println("Error:   " + processor.isError());
+    }
+}
+----
 
 [[error-handling]]
 == Error handling
@@ -301,10 +422,14 @@ public class AxonConfig {
     ) {
         return componentConfigurer.autodetected("orderHandler", cfg -> new OrderEventHandler())
                                   .autodetected("inventoryHandler", cfg -> new InventoryEventHandler())
-                                  .intercepted(cfg -> new AuditLoggingInterceptor());
+                                  .intercepted(cfg -> new AuditLoggingInterceptor())
+                                  .intercepted(cfg -> new TenantFilterInterceptor(tenantId));
     }
 }
 ----
+
+Component registration ends when the first `.intercepted(...)` is called.
+Additional interceptors can still be added with further `.intercepted(...)` calls and are applied in registration order.
 
 Use `withExceptionHandler()` to handle exceptions thrown by event handlers in all components managed by the configurer.
 Return `MessageStream.empty()` to suppress the exception and allow event processing to continue.
@@ -339,8 +464,6 @@ Two styles are supported:
 * A *surround-interceptor* declares a `MessageHandlerInterceptorChain` parameter and returns a `MessageStream`.
   It controls whether the handler is invoked by calling `chain.proceed(event, ctx)`.
   Returning without calling `proceed` short-circuits the chain.
-
-The optional `payloadType` attribute narrows the interceptor to events whose payload is assignable to a specific type.
 
 [source,java]
 ----

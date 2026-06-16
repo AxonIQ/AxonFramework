@@ -1,13 +1,16 @@
 {
   "devDependencies": {
     "@antora/atlas-extension": "^1.0.0-alpha.5",
-    "@antora/cli": "^3.2.0-alpha.11",
+    "@antora/cli": "^3.2.0-alpha.12",
     "@antora/lunr-extension": "^1.0.0-alpha.13",
-    "@antora/site-generator": "^3.2.0-alpha.11",
+    "@antora/site-generator": "^3.2.0-alpha.12",
     "@asciidoctor/tabs": "^1.0.0-beta.6",
     "@axoniq/antora-vale-extension": "^0.1.2",
     "asciidoctor-kroki": "^0.18.1",
     "chokidar": "^5.0.0",
     "express": "^5.2.1"
+  },
+  "dependencies": {
+    "serve-index": "^1.9.2"
   }
 }

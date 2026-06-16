@@ -161,13 +161,6 @@ class AbstractMessageStreamTest {
         }
 
         @Test
-        void whenNullValueAvailableThenReturnsEmptyOptional() {
-            stream.enqueue(FetchResult.of((Entry<Message>) null));
-
-            assertThat(stream.next()).isEmpty();
-        }
-
-        @Test
         void whenNotReadyThenReturnsEmptyAndDoesNotComplete() {
             assertThat(stream.next()).isEmpty();
             assertThat(stream.isCompleted()).isFalse();
@@ -577,6 +570,69 @@ class AbstractMessageStreamTest {
 
             assertThat(stream.isCompleted()).isTrue();
             assertThat(stream.error()).isEmpty();
+        }
+    }
+
+    @Nested
+    class WhenBridgingFromDelegate {
+
+        /*
+         * Tests for FetchResult.of(MessageStream<M> delegate) -- the static bridge that maps a
+         * delegate stream's current state to the FetchResult model.
+         */
+
+        @Test
+        void withValueAvailableThenReturnsValueResult() {
+            // given
+            ControllableStream delegate = new ControllableStream();
+            Entry<Message> entry = entryOf("msg");
+            delegate.enqueue(FetchResult.of(entry));
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isEqualTo(new FetchResult.Value<>(entry));
+        }
+
+        @Test
+        void withNoValueAndNotCompletedThenReturnsNotReady() {
+            // given: nothing enqueued, not closed -- next() returns empty while isCompleted()=false
+            ControllableStream delegate = new ControllableStream();
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then: must not throw, and must signal the stream is temporarily unavailable
+            assertThat(result).isEqualTo(FetchResult.notReady());
+        }
+
+        @Test
+        void withCompletedDelegateThenReturnsCompleted() {
+            // given
+            ControllableStream delegate = new ControllableStream();
+            delegate.close();
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isEqualTo(FetchResult.completed());
+        }
+
+        @Test
+        void withFailedDelegateThenReturnsError() {
+            // given: enqueue an error result; next() will process it, completing the stream exceptionally
+            ControllableStream delegate = new ControllableStream();
+            RuntimeException failure = new RuntimeException("stream failed");
+            delegate.enqueue(FetchResult.error(failure));
+
+            // when: bridge calls next() which processes the error; bridge then reads isCompleted()+error()
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isInstanceOf(FetchResult.Error.class);
+            assertThat(((FetchResult.Error<?>) result).error()).isSameAs(failure);
         }
     }
 }

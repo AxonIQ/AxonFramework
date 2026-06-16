@@ -19,7 +19,7 @@ package org.axonframework.integrationtests.testsuite.course;
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.AbstractIntegrationTest;
+import org.axonframework.integrationtests.testsuite.AbstractIT;
 import org.axonframework.integrationtests.testsuite.course.commands.CreateCourse;
 import org.axonframework.integrationtests.testsuite.course.commands.PublishCourse;
 import org.axonframework.integrationtests.testsuite.course.module.SealedClassCourseCommandHandlers;
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public abstract class SealedClassCourseIT extends AbstractIntegrationTest {
+public abstract class SealedClassCourseIT extends AbstractIT {
 
     protected UnitOfWorkFactory unitOfWorkFactory;
 

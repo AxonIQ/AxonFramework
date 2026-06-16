@@ -24,7 +24,7 @@ import org.axonframework.common.configuration.ComponentRegistry;
  * AxonServer via Testcontainers, pure in-memory, JDBC, etc.).
  * <p>
  * An implementation is provided by each concrete leaf test class via
- * {@link org.axonframework.integrationtests.testsuite.AbstractIntegrationTest#testInfrastructure()}. Leaf classes
+ * {@link org.axonframework.integrationtests.testsuite.AbstractIT#testInfrastructure()}. Leaf classes
  * typically return a {@code private static final} singleton, so {@link #start()} and {@link #stop()} are guaranteed to
  * receive the same object across test methods.
  *
@@ -50,7 +50,7 @@ public interface TestInfrastructure {
 
     /**
      * Purge persisted data so the next test starts with a clean slate. Opt-in — only tests that require a clean initial
-     * state need to call {@link org.axonframework.integrationtests.testsuite.AbstractIntegrationTest#purgeData()}.
+     * state need to call {@link org.axonframework.integrationtests.testsuite.AbstractIT#purgeData()}.
      * <p>
      * For in-memory backends this is typically a no-op because the configuration is recreated per test anyway.
      */

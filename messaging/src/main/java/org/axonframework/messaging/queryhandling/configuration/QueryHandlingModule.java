@@ -22,6 +22,8 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -33,6 +35,7 @@ import org.axonframework.messaging.queryhandling.QueryHandler;
 import org.axonframework.messaging.queryhandling.QueryHandlingComponent;
 import org.axonframework.messaging.queryhandling.QueryHandlingExceptionHandler;
 import org.axonframework.messaging.queryhandling.QueryMessage;
+import org.axonframework.messaging.queryhandling.QueryResponseMessage;
 import org.axonframework.messaging.queryhandling.annotation.AnnotatedQueryHandlingComponent;
 
 import java.util.function.Consumer;
@@ -223,18 +226,38 @@ public interface QueryHandlingModule extends Module, ModuleBuilder<QueryHandling
         }
 
         /**
-         * Wraps the query handling component with the given {@code exceptionHandler}. When a query handler throws, the
-         * exception handler is invoked. Return {@link org.axonframework.messaging.core.MessageStream#empty()} to
-         * suppress the error, {@link org.axonframework.messaging.core.MessageStream#failed(Throwable)} to propagate
-         * it, or a stream of {@link org.axonframework.messaging.queryhandling.QueryResponseMessage} items to substitute
-         * results.
+         * Wraps the query handling component with the exception handler built by the given {@code handlerBuilder}.
+         * When a query handler throws, the exception handler is invoked. Return {@link MessageStream#empty()} to
+         * suppress the error, {@link MessageStream#failed(Throwable)} to propagate it, or a stream of
+         * {@link QueryResponseMessage} items to substitute results.
          * <p>
-         * Multiple calls accumulate handlers in registration order: the first registered handler sees the exception
-         * first.
+         * Accepts either a {@link QueryHandlingExceptionHandler} (which narrows the return type for substituting
+         * {@link QueryResponseMessage} items) or a generic {@link MessageHandlingExceptionHandler} typed at any
+         * supertype of {@link QueryMessage}, allowing a single handler implementation (such as a logger) to be reused
+         * across command, event, and query phases.
+         * <p>
+         * Multiple calls accumulate handlers; later-registered handlers are applied closer to the handler and see
+         * exceptions first.
          *
-         * @param exceptionHandler the exception handler to apply to the query handling component
+         * @param handlerBuilder builder for the exception handler to apply to the query handling component
          * @return this phase for further configuration
          */
-        QueryHandlerPhase withExceptionHandler(QueryHandlingExceptionHandler exceptionHandler);
+        default QueryHandlerPhase withExceptionHandler(
+                ComponentBuilder<? extends MessageHandlingExceptionHandler<? super QueryMessage>> handlerBuilder) {
+            requireNonNull(handlerBuilder, "The exception handler builder must not be null.");
+            return intercepted(c -> {
+                MessageHandlingExceptionHandler<? super QueryMessage> handler = handlerBuilder.build(c);
+                return (message, context, chain) ->
+                        chain.proceed(message, context)
+                             .cast()
+                             .onErrorContinue(error -> {
+                                 try {
+                                     return handler.handle(message, context, error);
+                                 } catch (Exception e) {
+                                     return MessageStream.failed(e);
+                                 }
+                             });
+            });
+        }
     }
 }

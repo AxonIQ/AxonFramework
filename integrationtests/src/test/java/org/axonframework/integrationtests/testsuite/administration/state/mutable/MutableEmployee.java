@@ -16,14 +16,14 @@
 
 package org.axonframework.integrationtests.testsuite.administration.state.mutable;
 
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.modelling.entity.annotation.EntityMember;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskAssigned;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.modelling.entity.annotation.EntityMember;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,10 +37,7 @@ public class MutableEmployee extends MutablePerson {
     private List<MutableTask> taskList = new ArrayList<>();
 
     @CommandHandler
-    public void handle(CreateEmployee command, EventAppender eventAppender) {
-        if (identifier != null) {
-            throw new IllegalStateException("Employee is an existing entity");
-        }
+    public static void handle(CreateEmployee command, EventAppender eventAppender) {
         eventAppender.append(new EmployeeCreated(
                 command.identifier(),
                 command.emailAddress(),

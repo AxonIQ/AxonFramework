@@ -26,12 +26,10 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 /**
  * A {@link CoordinatorTask} implementation dedicated to claiming a token so that the {@link Coordinator} can start a
@@ -104,32 +102,25 @@ class ClaimTask extends CoordinatorTask {
             return CompletableFuture.completedFuture(true);
         }
         releasesDeadlines.remove(segmentId);
-        List<Segment> segments = joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
+        return unitOfWorkFactory.create().executeWithResult(
                 context -> tokenStore.fetchAvailableSegments(name, context)
-        ));
-        if (segments == null) {
-            logger.info("Processor [{}] cannot claim segment {}. It is not available.", name, segmentId);
-            return CompletableFuture.completedFuture(false);
-        }
+        ).thenCompose(segments -> {
+            Optional<Segment> segmentToClaim = segments.stream()
+                                                       .filter(segment -> segment.getSegmentId() == segmentId)
+                                                       .findFirst();
+            if (segmentToClaim.isEmpty()) {
+                logger.info("Processor [{}] cannot claim segment {}. It is not available.", name, segmentId);
+                return CompletableFuture.completedFuture(false);
+            }
 
-        Optional<Segment> segmentToClaim = segments.stream()
-                                                   .filter(segment -> segment.getSegmentId() == segmentId)
-                                                   .findFirst();
-        if (segmentToClaim.isEmpty()) {
-            logger.info("Processor [{}] cannot claim segment {}. It is not available.", name, segmentId);
-            return CompletableFuture.completedFuture(false);
-        }
-
-        try {
-            joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
+            return unitOfWorkFactory.create().executeWithResult(
                     context -> tokenStore.fetchToken(name, segmentId, context)
-            ));
-        } catch (Exception e) {
-            logger.warn("Processor [{}] cannot claim segment {} due to an error.", name, segmentId, e);
-            return CompletableFuture.completedFuture(false);
-        }
-
-        return CompletableFuture.completedFuture(true);
+            ).thenApply(token -> true)
+             .exceptionally(e -> {
+                 logger.warn("Processor [{}] cannot claim segment {} due to an error.", name, segmentId, e);
+                 return false;
+             });
+        });
     }
 
     @Override

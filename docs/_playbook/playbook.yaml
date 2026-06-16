@@ -4,7 +4,7 @@ site:
 content:
   sources:
   - url: ../..
-    start_paths: ['docs/*', '!docs/_*', '!docs/reference/*']
+    start_paths: ['docs/*', '!docs/_*']
 
 asciidoc:
   attributes:

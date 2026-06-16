@@ -28,7 +28,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  * caller. Return one or more {@link QueryResponseMessage} items to substitute results in place of the error.
  * <p>
  * Register via
- * {@link org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule.QueryHandlerPhase#withExceptionHandler(QueryHandlingExceptionHandler)}.
+ * {@link org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule.QueryHandlerPhase#withExceptionHandler(org.axonframework.common.configuration.ComponentBuilder)}.
  *
  * @author Allard Buijze
  * @since 5.2.0

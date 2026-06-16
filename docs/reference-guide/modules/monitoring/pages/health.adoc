@@ -15,4 +15,4 @@ When one of the connections is inactive, the custom WARN status is shown.
 This approach is in line with what Axon Server's local health indicator shows.
 
 Next to the status, details are provided about the separate connection's activity.
-These can be found under `"{context-name}.connection.active"`.
+These can be found under `"<context-name>.connection.active"`, where `<context-name>` is the name of the Axon Server context.

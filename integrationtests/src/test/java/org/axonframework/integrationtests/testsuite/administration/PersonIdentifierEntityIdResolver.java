@@ -19,30 +19,28 @@ package org.axonframework.integrationtests.testsuite.administration;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
-import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
-import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
 import org.axonframework.integrationtests.testsuite.administration.commands.PersonCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.modelling.EntityIdResolutionException;
 import org.axonframework.modelling.EntityIdResolver;
 import org.jspecify.annotations.NonNull;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import static java.lang.String.format;
-
 class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentifier> {
 
-    @NonNull
     @Override
-    public PersonIdentifier resolve(@NonNull Message message, @NonNull ProcessingContext context) {
+    public PersonIdentifier resolve(
+            @NonNull Message message,
+            @NonNull ProcessingContext context
+    ) throws EntityIdResolutionException {
         List<Class<? extends PersonCommand>> personCommandTypes = List.of(
                 AssignTaskCommand.class,
-                CreateCustomer.class,
-                CreateEmployee.class,
                 ChangeEmailAddress.class,
                 CompleteTaskCommand.class,
                 GiveRaise.class
@@ -50,10 +48,9 @@ class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentif
         var clazz = personCommandTypes.stream()
                                       .filter(type -> type.getName().equals(message.type().name()))
                                       .findFirst()
-                                      .orElseThrow(() -> new IllegalArgumentException(format(
-                                              "Unknown command type: %s",
-                                              message.type().name()
-                                      )));
+                                      .orElseThrow(() -> new EntityIdResolutionException(
+                                              message.payloadType(), Collections.emptyList()
+                                      ));
         return Objects.requireNonNull(message.payloadAs(clazz)).identifier();
     }
 }

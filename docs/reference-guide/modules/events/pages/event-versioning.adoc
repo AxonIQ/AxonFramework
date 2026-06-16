@@ -196,7 +196,7 @@ To validate if the intermediate representation supports a given type, you can in
 [#provided_abstract_upcaster_implementations]
 === Provided abstract Upcaster implementations
 
-As described earlier, the `Upcaster` interface does not upcast a single event; it requires a `Stream<IntermediateEventRepresentation>` and returns one.
+As described earlier, the `Upcaster` interface does not upcast a single event. It requires a `Stream<IntermediateEventRepresentation>` and returns one.
 However, an upcaster is usually written to adjust a single event out of this stream.
 More elaborate upcasting setups are also imaginable.
 For example from one event to multiple, or an upcaster which pulls state from an earlier event and pushes it in a later one.

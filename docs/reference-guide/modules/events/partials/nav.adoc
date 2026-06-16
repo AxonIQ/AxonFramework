@@ -6,7 +6,7 @@
 *** xref:events:event-processors/subscribing.adoc[]
 *** xref:events:event-processors/streaming.adoc[]
 ifdef::advanced-framework[]
-*** xref:dead-letter-queue:index.adoc[]
+*** xref:dead-letter-queue:index.adoc[[.advanced-framework]#Dead-Letter Queue#]
 endif::[]
 ** xref:events:infrastructure.adoc[]
 *** xref:events:event-store-internals.adoc[]

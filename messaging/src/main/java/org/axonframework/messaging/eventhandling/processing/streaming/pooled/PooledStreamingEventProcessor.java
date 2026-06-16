@@ -55,18 +55,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.axonframework.common.BuilderUtils.assertThat;
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 /**
  * A {@link StreamingEventProcessor} implementation which pools its resources to enhance processing speed. It utilizes a
@@ -183,8 +182,10 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     @Override
     public CompletableFuture<Void> start() {
         logger.info("Starting PooledStreamingEventProcessor [{}].", name);
-        coordinator.start();
-        return FutureUtils.emptyCompletedFuture();
+        var unitOfWork = unitOfWorkFactory.create();
+        return unitOfWork.executeWithResult(tokenStore::retrieveStorageIdentifier)
+                         .thenAccept(tokenStoreIdentifier::set)
+                         .thenCompose(unused -> coordinator.start());
     }
 
     @Override
@@ -203,6 +204,13 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return coordinator.isError();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * This implementation resolves the identifier eagerly during {@link #start()}. If called before {@code start()}
+     * has completed, the identifier is resolved lazily with a blocking call to the
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore}.
+     */
     @Override
     public String getTokenStoreIdentifier() {
         return tokenStoreIdentifier.updateAndGet(i -> i != null ? i : calculateIdentifier());
@@ -210,7 +218,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
 
     private String calculateIdentifier() {
         var unitOfWork = unitOfWorkFactory.create();
-        return joinAndUnwrap(unitOfWork.executeWithResult(tokenStore::retrieveStorageIdentifier));
+        return FutureUtils.joinAndUnwrap(unitOfWork.executeWithResult(tokenStore::retrieveStorageIdentifier));
     }
 
     @Override
@@ -222,7 +230,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
         coordinator.releaseUntil(
-                segmentId, GenericEventMessage.clock.instant().plusMillis(unit.toMillis(releaseDuration))
+                segmentId, configuration.clock().instant().plusMillis(unit.toMillis(releaseDuration))
         );
         return FutureUtils.emptyCompletedFuture();
     }
@@ -412,7 +420,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     }
 
     private WorkPackage spawnWorker(Segment segment, TrackingToken initialToken) {
-        WorkPackage.BatchProcessor batchProcessor = (events, context) -> processWithErrorHandling(events, context);
+        WorkPackage.BatchProcessor batchProcessor = (entries, context) -> processWithErrorHandling(entries, context);
         var batchSize = configuration.batchSize();
         var claimExtensionThreshold = configuration.claimExtensionThreshold();
         var clock = configuration.clock();
@@ -435,13 +443,15 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                           .build();
     }
 
-    private MessageStream.Empty<Message> processWithErrorHandling(List<? extends EventMessage> events,
-                                                                  ProcessingContext context) {
-        return eventHandlingComponents.handle(events, context)
+    private MessageStream.Empty<Message> processWithErrorHandling(
+            List<MessageStream.Entry<? extends EventMessage>> entries,
+            ProcessingContext context
+    ) {
+        return eventHandlingComponents.handle(entries, context)
                                       .onErrorContinue(ex -> {
                                           try {
                                               configuration.errorHandler()
-                                                           .handleError(new ErrorContext(name, ex, events, context));
+                                                           .handleError(new ErrorContext(name, ex, entries.stream().map(MessageStream.Entry::message).toList(), context));
                                           } catch (RuntimeException re) {
                                               return MessageStream.failed(re);
                                           } catch (Exception e) {

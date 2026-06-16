@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.NonNull;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
@@ -84,11 +85,11 @@ public abstract class EventTestUtils {
             return e;
         }
         if (event instanceof Message message) {
-            return new GenericEventMessage(message, GenericEventMessage.clock.instant());
+            return new GenericEventMessage(message, ClockUtils.instant());
         }
         return new GenericEventMessage(
                 new GenericMessage(new MessageType(event.getClass()), event),
-                GenericEventMessage.clock.instant()
+                ClockUtils.instant()
         );
     }
 

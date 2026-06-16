@@ -26,10 +26,8 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryHandler;
 import org.axonframework.messaging.queryhandling.QueryHandlingComponent;
-import org.axonframework.messaging.queryhandling.QueryHandlingExceptionHandler;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.SimpleQueryHandlingComponent;
-import org.axonframework.messaging.queryhandling.interception.ErrorHandlingQueryHandlingComponent;
 import org.axonframework.messaging.queryhandling.interception.InterceptingQueryHandlingComponent;
 
 import java.util.ArrayList;
@@ -56,7 +54,6 @@ class SimpleQueryHandlingModule extends BaseModule<SimpleQueryHandlingModule>
     private final Map<QualifiedName, ComponentBuilder<QueryHandler>> handlerBuilders;
     private final List<ComponentBuilder<QueryHandlingComponent>> handlingComponentBuilders;
     private final List<ComponentBuilder<MessageHandlerInterceptor<? super QueryMessage>>> interceptorBuilders;
-    private final List<QueryHandlingExceptionHandler> exceptionHandlers;
 
     SimpleQueryHandlingModule(String moduleName) {
         super(requireNonNull(moduleName, "The module name cannot be null."));
@@ -64,7 +61,6 @@ class SimpleQueryHandlingModule extends BaseModule<SimpleQueryHandlingModule>
         this.handlerBuilders = new HashMap<>();
         this.handlingComponentBuilders = new ArrayList<>();
         this.interceptorBuilders = new ArrayList<>();
-        this.exceptionHandlers = new ArrayList<>();
     }
 
     @Override
@@ -99,12 +95,6 @@ class SimpleQueryHandlingModule extends BaseModule<SimpleQueryHandlingModule>
     }
 
     @Override
-    public QueryHandlerPhase withExceptionHandler(QueryHandlingExceptionHandler exceptionHandler) {
-        exceptionHandlers.add(requireNonNull(exceptionHandler, "The exception handler must not be null."));
-        return this;
-    }
-
-    @Override
     public QueryHandlingModule build() {
         registerQueryHandlingComponent();
         return this;
@@ -129,9 +119,6 @@ class SimpleQueryHandlingModule extends BaseModule<SimpleQueryHandlingModule>
                                 interceptorBuilders.stream().map(b -> b.build(c)).collect(Collectors.toList()),
                                 result
                         );
-                    }
-                    for (QueryHandlingExceptionHandler handler : exceptionHandlers) {
-                        result = new ErrorHandlingQueryHandlingComponent(result, handler);
                     }
                     return result;
                 })

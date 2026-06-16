@@ -29,7 +29,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  * to the event processor.
  * <p>
  * Register via
- * {@link org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer.CompletePhase#withExceptionHandler(EventHandlingExceptionHandler)}.
+ * {@link org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer.CompletePhase#withExceptionHandler(org.axonframework.common.configuration.ComponentBuilder)}.
  *
  * @author Allard Buijze
  * @since 5.2.0

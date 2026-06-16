@@ -5,7 +5,7 @@ One of the major benefits of Axon Framework 5's Vertical Slice Architecture is t
 Now we'll implement the `SubscribeStudentToCourse` feature without needing to implement every feature in between.
 As long as we keep the `State` needed for command validation private to each slice, the only shared code between slices are the events, which serve as the backbone contract of our system.
 
-You don't even need to stick to certain order. How many times have you heard in the development team: "I'm waiting till the feature X is implemented, to be able to start implementing feature Y"?
+You don't even need to stick to certain order. How many times have you heard in the development team: "We're waiting for feature X to be implemented before we can start on feature Y"?
 
 
 == Define messages
@@ -456,7 +456,7 @@ For the `SubscribeStudentToCourse` handling, this is not enough, because, as you
 We need all `StudentSubscribedToCourse` events for the given `courseId` and also all `StudentSubscribedToCourse` events for the given `studentId`.
 The same applies to `StudentUnsubscribedFromCourse` events.
 
-Whereas, for example, with `StudentEnrolledInFaculty` - we care about just one event for the given `studentId`; other students are not involved while processing this command, and there are no business rules between them.
+Whereas, for example, with `StudentEnrolledInFaculty` - we care about just one event for the given `studentId`. Other students are not involved while processing this command, and there are no business rules between them.
 The subscription story is different, because we have a limit of students per course and also a limit of courses per student.
 
 Thanks to the Axon Framework's `EventCriteria` concept, we're able to define the events we'd like to load dynamically.

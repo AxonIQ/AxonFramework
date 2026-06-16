@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
@@ -74,7 +75,7 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@link MaxSegmentProvider} (used by {@link PooledStreamingEventProcessor#maxCapacity()}) defaults to {@link MaxSegmentProvider#maxShort()}.</li>
  *     <li>The {@code claimExtensionThreshold} defaults to {@code 5000} milliseconds.</li>
  *     <li>The {@code batchSize} defaults to {@code 1}.</li>
- *     <li>The {@link Clock} defaults to {@link GenericEventMessage#clock}.</li>
+ *     <li>The {@link Clock} defaults to {@link ClockUtils#get()}.</li>
  *     <li>The {@code coordinatorExtendsClaims} defaults to a {@code false}.</li>
  * </ul>
  * The following fields of this configuration are <b>hard requirements</b> and as such should be provided:
@@ -102,7 +103,8 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private MaxSegmentProvider maxSegmentProvider = MaxSegmentProvider.maxShort();
     private long claimExtensionThreshold = 5000;
     private int batchSize = 1;
-    private Clock clock = GenericEventMessage.clock;
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    private Clock clock = ClockUtils.get();
     private boolean coordinatorExtendsClaims = false;
     private Function<Set<QualifiedName>, EventCriteria> eventCriteriaProvider =
             (supportedEvents) -> EventCriteria.havingAnyTag().andBeingOneOfTypes(supportedEvents);
@@ -383,11 +385,13 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Defines the {@link Clock} used for time dependent operation by this {@link EventProcessor}. Used by the
      * {@link Coordinator} and {@link WorkPackage} threads to decide when to perform certain tasks, like updating
      * {@link TrackingToken} claims or when to unmark a {@link Segment} as "unclaimable". Defaults to
-     * {@link GenericEventMessage#clock}.
+     * {@link ClockUtils#get()}.
      *
      * @param clock The {@link Clock} used for time dependent operation by this {@link EventProcessor}.
      * @return The current instance, for fluent interfacing.
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public PooledStreamingEventProcessorConfiguration clock(Clock clock) {
         assertNonNull(clock, "Clock may not be null");
         this.clock = clock;
@@ -608,7 +612,9 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Returns the {@link Clock} used for time-dependent operations.
      *
      * @return The {@link Clock} for this processor.
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public Clock clock() {
         return clock;
     }

@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa;
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.Nullable;
 import jakarta.persistence.Basic;
 import jakarta.persistence.Column;
@@ -50,22 +51,18 @@ import static org.axonframework.common.DateTimeUtils.formatInstant;
 public class TokenEntry {
 
     /**
-     * The clock used to persist timestamps in this entry. Defaults to UTC system time.
-     */
-    public static Clock clock = Clock.systemUTC();
-
-    /**
      * Computes a token timestamp.
      *
      * @return A token timestamp.
      */
     public static String computeTokenTimestamp() {
-        return formatInstant(clock.instant());
+        return formatInstant(ClockUtils.instant());
     }
 
     @Lob
     @Column(length = 10000)
     private byte[] token;
+
     @Basic
     private String tokenType;
 
@@ -77,8 +74,10 @@ public class TokenEntry {
 
     @Id
     private String processorName;
+
     @Id
     private int segment;
+
     @Basic(optional = false)
     private int mask;
 
@@ -95,7 +94,7 @@ public class TokenEntry {
                       Segment segment,
                       @Nullable TrackingToken token,
                       Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();
@@ -140,7 +139,7 @@ public class TokenEntry {
         if (!mayClaim(owner, claimTimeout)) {
             return false;
         }
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         this.owner = owner;
         return true;
     }
@@ -158,7 +157,7 @@ public class TokenEntry {
     }
 
     private boolean expired(TemporalAmount claimTimeout) {
-        return timestamp().plus(claimTimeout).isBefore(clock.instant());
+        return timestamp().plus(claimTimeout).isBefore(ClockUtils.instant());
     }
 
     /**
@@ -171,7 +170,7 @@ public class TokenEntry {
     public boolean releaseClaim(String owner) {
         if (Objects.equals(this.owner, owner)) {
             this.owner = null;
-            this.timestamp = formatInstant(clock.instant());
+            this.timestamp = formatInstant(ClockUtils.instant());
         }
         return this.owner == null;
     }
@@ -202,7 +201,7 @@ public class TokenEntry {
      * @param converter The converter that will be used to serialize the token.
      */
     public void updateToken(@Nullable TrackingToken token, Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();

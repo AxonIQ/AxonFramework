@@ -1,23 +1,21 @@
 = Tuning
 :page-aliases: README.adoc
 
-Axon Framework provides several capabilities to tune the performance of your applications.
-This includes support for snapshots, caching, segmented event processing, and command sequencing.
-Additionally, general guidance is provided for optimizing relational database usage.
+The Tuning section collects the performance guidance that is relevant for Axon Framework.
+It focuses on command sequencing, pooled streaming event processing, snapshotting for event-sourced entities, and relational database settings for the JPA-backed event store.
 
-This section details the various tools and strategies Axon Framework offers to improve the efficiency and responsiveness of your application.
-
-A summary of the subsections is provided below:
+The topics in this section are intentionally practical.
+They describe the defaults that ship with the framework, when to change them, and which knobs matter most in real applications.
 
 [cols="<,<"]
 |===
-|Sub-Section |Purpose
+|Section |Purpose
 
-|xref:event-processing.adoc[Event Processing] |Tuning options for batching and parallel processing of events
-|xref:command-processing.adoc[Command Processing] |Configuration options for command processing, including duplicate handler resolution and sequencing
-|xref:rdbms-tuning.adoc[Relational Database Tuning] |Best practices and tuning suggestions when using Axon Framework with relational databases
+|xref:tuning:command-processing.adoc[Command Processing] |Keep commands for the same entity ordered and avoid optimistic locking conflicts.
+|xref:tuning:event-processing.adoc[Event Processing] |Tune pooled streaming event processors for throughput, claim management, and batching.
+|xref:tuning:rdbms-tuning.adoc[Relational Database Tuning] |Adjust schema and database settings for the aggregate-based JPA event store.
 ifdef::advanced-framework[]
-|xref:snapshotting:index.adoc[Snapshots] |Capabilities to create snapshots, reducing the time required to load aggregates
-|xref:caching:index.adoc[Caching] |In-process event caching to reduce event store network traffic
+|xref:snapshotting.adoc[Snapshotting] |Reduce entity rebuild time by creating snapshots at the right moments.
+|xref:caching:index.adoc[Caching] |Reduce event store traffic by caching data close to the application.
 endif::[]
 |===

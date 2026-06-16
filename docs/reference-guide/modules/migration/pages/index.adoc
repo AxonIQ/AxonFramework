@@ -18,6 +18,11 @@ xref:migration:prerequisites.adoc[Prerequisites & System Requirements]::
 Verify your infrastructure readiness.
 We cover Java version alignment, Spring Boot compatibility, and Axon Server requirements to ensure smooth migration.
 
+xref:migration:openrewrite-code-conversion.adoc[Automated Code Conversion]::
+Get a head start with OpenRewrite-based recipes that mechanically rewrite the predictable parts of your Axon Framework 4 codebase.
+Running them does not guarantee a compiling project—the compile errors that remain, together with `axon4to5` markers left in the source, become your guided checklist for the manual steps.
+Code conversion covers only source and build file transformations; it does not touch event store data, token tables, or any other runtime state.
+
 xref:migration:solved-architecture-choices.adoc[Application Design Problems Solved by Axon Framework 5]::
 Understand the "why" behind each major change.
 We walk through the application design problems that Axon Framework 5 solves, the architectural philosophy driving those solutions, and how they cascade through your codebase.

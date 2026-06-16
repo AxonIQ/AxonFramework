@@ -16,18 +16,19 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.entity.EntityMetamodel;
 import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 
@@ -39,11 +40,13 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
 import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletion;
+import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link DefaultEventStoreTransaction}.
@@ -167,6 +170,35 @@ class DefaultEventStoreTransactionTest {
 
             appendEventForTag(existentTag);
             testCanCommitTag(nonExistingCriteria, existingCriteria, existentTag);
+        }
+
+        @Test
+        void appendEventCreatesAppendConditionFromTagsWhenNoneExists() {
+            // given
+            Tag eventTag = new Tag("myTag", "myValue");
+            var event = new GenericEventMessage(new MessageType(String.class), "tagged payload");
+
+            // when
+            var afterCommitEvents = new AtomicReference<MessageStream<? extends EventMessage>>();
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                   // No source() call — the AppendCondition should be created by appendEvent
+                   context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, m -> Set.of(eventTag));
+                   transaction.appendEvent(event);
+               })
+               .whenComplete(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                   afterCommitEvents.set(
+                           transaction.source(SourcingCondition.conditionFor(EventCriteria.havingTags(eventTag)))
+                   );
+               });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            StepVerifier.create(FluxUtils.of(afterCommitEvents.get()))
+                        .assertNext(entry -> assertEquals("tagged payload", entry.message().payload()))
+                        .verifyComplete();
         }
 
         private ConsistencyMarker appendEventForTag(Tag tag) {
@@ -372,6 +404,211 @@ class DefaultEventStoreTransactionTest {
             assertFalse(onCommitExecuted.get(), "Commit step should not execute after an error");
             assertFalse(onAfterCommitExecuted.get(), "After commit step should not execute after an error");
             assertTrue(onPostInvocationExecuted.get(), "Post invocation step should be executed after an error");
+        }
+    }
+
+    @Nested
+    class OverrideAppendCondition {
+
+        @Test
+        void overrideWithoutSourcingReceivesNoCondition() {
+            // given
+            Tag uniqueTag = new Tag("courseName", "uniqueCourse");
+            EventCriteria uniqueCriteria = EventCriteria.havingTags(uniqueTag);
+            var receivedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.overrideAppendCondition(condition -> {
+                    receivedCondition.set(condition);
+                    return AppendCondition.withCriteria(uniqueCriteria);
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCondition.get()).isEqualTo(AppendCondition.none());
+        }
+
+        @Test
+        void overrideAfterSourcingReceivesDerivedCondition() {
+            // given - pre-populate an event so sourcing produces a non-ORIGIN marker
+            var setupUow = aUnitOfWork();
+            setupUow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(setupUow.execute());
+
+            var receivedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                transaction.overrideAppendCondition(condition -> {
+                    receivedCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(eventMessage(1));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCondition.get()).isNotNull();
+            assertThat(receivedCondition.get().criteria().flatten()).containsAll(TEST_AGGREGATE_CRITERIA.flatten());
+            assertThat(receivedCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void chainingMultipleOverridesAppliesInOrder() {
+            // given
+            Tag tag1 = new Tag("step", "first");
+            Tag tag2 = new Tag("step", "second");
+            EventCriteria criteria1 = EventCriteria.havingTags(tag1);
+            EventCriteria criteria2 = EventCriteria.havingTags(tag2);
+            var receivedBySecondOverride = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                // first override: replace criteria with criteria1
+                transaction.overrideAppendCondition(condition -> condition.replaceCriteria(criteria1));
+                // second override: receives output of first, replace with criteria2
+                transaction.overrideAppendCondition(condition -> {
+                    receivedBySecondOverride.set(condition);
+                    return condition.replaceCriteria(criteria2);
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - second override received the output of the first
+            assertThat(receivedBySecondOverride.get()).isNotNull();
+            assertThat(receivedBySecondOverride.get().criteria().flatten()).containsAll(criteria1.flatten());
+        }
+
+        @Test
+        void overrideReplaceCriteriaPreservesMarker() {
+            // given - pre-populate an event so sourcing produces a non-ORIGIN marker
+            var setupUow = aUnitOfWork();
+            setupUow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(setupUow.execute());
+
+            Tag narrowTag = new Tag("narrow", "criteria");
+            EventCriteria narrowCriteria = EventCriteria.havingTags(narrowTag);
+            var finalCondition = new AtomicReference<AppendCondition>();
+
+            // when - source to get a marker, then narrow criteria
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                transaction.overrideAppendCondition(condition -> {
+                    AppendCondition narrowed = condition.replaceCriteria(narrowCriteria);
+                    finalCondition.set(narrowed);
+                    return narrowed;
+                });
+                transaction.appendEvent(eventMessage(1));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - marker preserved from sourcing, criteria replaced
+            assertThat(finalCondition.get()).isNotNull();
+            assertThat(finalCondition.get().criteria().flatten()).containsAll(narrowCriteria.flatten());
+            assertThat(finalCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void overrideReturningNoneBypassesConflictDetection() {
+            // given - pre-populate an event
+            var setupUow = aUnitOfWork();
+            setupUow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(setupUow.execute());
+
+            // when - source (gets a marker), then another tx appends a conflicting event,
+            //        but the override returns none() to bypass conflict detection
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                transaction.overrideAppendCondition(condition -> AppendCondition.none());
+                transaction.appendEvent(eventMessage(1));
+            });
+
+            // then - should succeed despite potential conflicts
+            awaitSuccessfulCompletion(uow.execute());
+        }
+
+        @Test
+        void noOverrideDoesNotAffectNormalFlow() {
+            // given
+            var event = eventMessage(0);
+            var appendPosition = new AtomicReference<ConsistencyMarker>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                   FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                   transaction.appendEvent(event);
+               })
+               .whenComplete(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                   appendPosition.set(transaction.appendPosition());
+               });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - event was appended normally
+            assertThat(appendPosition.get()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void overrideReturningNullIsTreatedAsNone() {
+            // given - pre-populate an event
+            var setupUow = aUnitOfWork();
+            setupUow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(setupUow.execute());
+
+            // when - source (creates a condition), then override returns null
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                transaction.overrideAppendCondition(condition -> null);
+                transaction.appendEvent(eventMessage(1));
+            });
+
+            // then - should succeed (null treated as AppendCondition.none(), bypassing conflict detection)
+            awaitSuccessfulCompletion(uow.execute());
+        }
+
+        @Test
+        void overrideRejectsNullOperator() {
+            // given
+            var uow = aUnitOfWork();
+
+            // when / then
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                assertThatThrownBy(() -> transaction.overrideAppendCondition(null))
+                        .isInstanceOf(NullPointerException.class);
+            });
+            awaitSuccessfulCompletion(uow.execute());
         }
     }
 

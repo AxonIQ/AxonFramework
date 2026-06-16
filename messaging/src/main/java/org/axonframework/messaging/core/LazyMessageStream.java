@@ -54,10 +54,14 @@ public class LazyMessageStream<M extends Message> implements MessageStream<M> {
 
     private MessageStream<M> initializeIfAbsent() {
         MessageStream<M> current = delegate.get();
-        if (current != null) return current;
+        if (current != null) {
+            return current;
+        }
         synchronized (this) {
             current = delegate.get();
-            if (current != null) return current;
+            if (current != null) {
+                return current;
+            }
             try {
                 current = Objects.requireNonNullElse(supplier.get(), MessageStream.empty().cast());
             } catch (RuntimeException e) {

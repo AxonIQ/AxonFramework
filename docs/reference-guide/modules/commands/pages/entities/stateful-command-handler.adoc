@@ -1,0 +1,244 @@
+= Stateful Command Handlers
+:navtitle: Stateful command handlers
+
+A stateful command handler keeps command handling logic in a dedicated class, separate from the entity that holds state.
+The entity is loaded automatically by Axon and injected as a parameter via `@InjectEntity`.
+The injected entity can still be event sourced, as shown xref:commands:entities/event-sourced-entity.adoc[here], but without the command handlers inside the event-sourced entity class.
+
+This separates two concerns:
+
+* The **entity** maintains state fields and event sourcing handlers.
+* The **stateful command handler** contains decision logic, validates the command against entity state, and appends events.
+
+== Defining a stateful command handler
+
+Declare command handlers in a regular class.
+Annotate entity parameters with `@InjectEntity` to tell Axon to load the correct entity instance before the handler is invoked.
+Axon identifies which instance to load using the `@TargetEntityId`-annotated field on the command payload.
+
+The entity used in this example tracks the basic state of a university course:
+
+[source,java]
+----
+import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+
+@EventSourcedEntity(tagKey = "courseId")
+public class Course {
+
+    private String courseId;
+    private String name;
+    private int capacity;
+
+    @EntityCreator
+    public Course() {}
+
+    @EventSourcingHandler
+    void on(CourseCreated event) {
+        this.courseId = event.courseId();
+        this.name = event.name();
+        this.capacity = event.capacity();
+    }
+
+    @EventSourcingHandler
+    void on(CourseRenamed event) {
+        this.name = event.name();
+    }
+
+    String courseId() { return courseId; }
+    String name() { return name; }
+    int capacity() { return capacity; }
+}
+----
+
+The stateful command handler is a plain class.
+Its methods receive the `Course` entity as a parameter whenever prior state is needed:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.modelling.annotation.InjectEntity;
+import org.springframework.stereotype.Component;
+
+@Component
+public class CourseCommandHandler {
+
+    @CommandHandler // <1>
+    public String handle(CreateCourse command, EventAppender eventAppender) {
+        if (command.capacity() <= 0) {
+            throw new IllegalArgumentException("Capacity must be positive");
+        }
+        eventAppender.append(new CourseCreated(command.courseId(), command.name(), command.capacity()));
+        return command.courseId();
+    }
+
+    @CommandHandler
+    void handle(RenameCourse command,
+                @InjectEntity Course course, // <2>
+                EventAppender eventAppender) {
+        if (course.courseId() == null) {
+            throw new IllegalStateException("Course does not exist");
+        }
+        if (!command.name().equals(course.name())) { // <3>
+            eventAppender.append(new CourseRenamed(command.courseId(), command.name()));
+        }
+    }
+}
+----
+
+<1> Creational handlers do not receive an entity parameter; the course does not yet exist and is created when `CourseCreated` is published.
+
+<2> `@InjectEntity` tells Axon to load the `Course` entity before invoking this handler.
+By default, the entity ID is read from the `@TargetEntityId`-annotated field on the command payload; see <<_resolving_the_entity_identifier>> for the other options.
+
+<3> The handler reads entity state to make a decision.
+No event is appended if the name has not changed; an idempotent pattern common in this style.
+
+The commands used in this example:
+
+[source,java]
+----
+import org.axonframework.modelling.annotation.TargetEntityId;
+
+public record CreateCourse(String courseId, String name, int capacity) {}
+
+public record RenameCourse(@TargetEntityId String courseId, String name) {}
+----
+
+For how to define the entity itself (state fields, event sourcing handlers, and configuration), see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities].
+
+[#_resolving_the_entity_identifier]
+== Resolving the entity identifier
+
+`@InjectEntity` needs an identifier to look up the entity.
+The annotation offers two attributes for controlling how that identifier is resolved from the incoming command:
+
+* **`idProperty`**: name a field on the command payload directly: `@InjectEntity(idProperty = "courseId")`.
+Useful when the command targets multiple entities (see <<_injecting_multiple_entities>>) or when the relevant field is not marked with `@TargetEntityId`.
+* **`idResolver`**: supply a class implementing `EntityIdResolver` for custom extraction logic, useful when the identifier is computed from multiple fields or requires lookup logic.
+
+Without either attribute set, Axon falls back to the default resolver, which reads the field marked with `@TargetEntityId` on the command payload (the form used in the example above).
+
+[#_injecting_multiple_entities]
+== Injecting multiple entities
+
+A single handler method can receive more than one entity.
+Use `idProperty` to specify which field of the command payload identifies each entity:
+
+[source,java]
+----
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.modelling.annotation.InjectEntity;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SubscribeStudentToCourseHandler {
+
+    private static final int MAX_COURSES_PER_STUDENT = 3;
+
+    @CommandHandler
+    void handle(
+            SubscribeStudentToCourse command,
+            @InjectEntity(idProperty = "courseId") Course course,     // <1>
+            @InjectEntity(idProperty = "studentId") Student student,  // <2>
+            EventAppender eventAppender
+    ) {
+        if (course.courseId() == null) {
+            throw new IllegalStateException("Course does not exist");
+        }
+        if (student.studentId() == null) {
+            throw new IllegalStateException("Student is not enrolled in the faculty");
+        }
+        if (student.subscribedCourses().size() >= MAX_COURSES_PER_STUDENT) {
+            throw new IllegalStateException("Student is already subscribed to the maximum number of courses");
+        }
+        if (course.studentsSubscribed().size() >= course.capacity()) {
+            throw new IllegalStateException("Course is fully booked");
+        }
+        eventAppender.append(new StudentSubscribedToCourse(command.courseId(), command.studentId()));
+    }
+}
+----
+
+<1> `idProperty = "courseId"` tells Axon to load the `Course` entity using the `courseId` field of the command.
+
+<2> `idProperty = "studentId"` tells Axon to load the `Student` entity using the `studentId` field of the command.
+
+The command in this example has no `@TargetEntityId` because there is no single primary entity; the handler works across two:
+
+[source,java]
+----
+public record SubscribeStudentToCourse(String studentId, String courseId) {}
+----
+
+== Vertical slice architecture
+
+Stateful command handlers are the natural fit for https://www.jimmybogard.com/vertical-slice-architecture/[Vertical Slice Architecture] in Axon Framework.
+
+In Vertical Slice Architecture, you organize code around use cases rather than technical layers.
+Each slice owns everything needed to fulfill one request: the command, the handler, the entity state it reads, and the events it appends.
+A slice cuts vertically through the application stack (from the incoming command down to the event store) rather than grouping code horizontally by layers such as controllers, services, and repositories.
+
+=== From event model to code
+
+Event Storming and Event Modeling produce a sequence of commands, events, and the entities they act on.
+Each command-event pair on that model is a slice.
+Axon lets you translate that model directly into code: one class per slice, where the class name reflects the use case.
+
+For a university faculty system, the Event Model maps to code like this:
+
+[cols="1,1,1", options="header"]
+|===
+| Command | Event | Handler class
+
+| `CreateCourse`
+| `CourseCreated`
+| `CreateCourseHandler`
+
+| `RenameCourse`
+| `CourseRenamed`
+| `RenameCourseHandler`
+
+| `ChangeCourseCapacity`
+| `CourseCapacityChanged`
+| `ChangeCourseCapacityHandler`
+
+| `EnrollStudentInFaculty`
+| `StudentEnrolledInFaculty`
+| `EnrollStudentInFacultyHandler`
+
+| `SubscribeStudentToCourse`
+| `StudentSubscribedToCourse`
+| `SubscribeStudentToCourseHandler`
+|===
+
+Each handler class contains exactly one `@CommandHandler` method, loads the entity state it needs via `@InjectEntity`, and appends the events that result from the decision:
+
+[source,java]
+----
+@Component
+public class RenameCourseHandler {
+
+    @CommandHandler
+    void handle(RenameCourse command,
+                @InjectEntity Course course,
+                EventAppender eventAppender) {
+        if (course.courseId() == null) {
+            throw new IllegalStateException("Course does not exist");
+        }
+        if (!command.name().equals(course.name())) {
+            eventAppender.append(new CourseRenamed(command.courseId(), command.name()));
+        }
+    }
+}
+----
+
+The result is a codebase where finding the code for a use case is trivial: look for the handler class named after the command.
+
+* **Navigability**: each use case lives in one place. No need to trace through service layers to find where a command is processed.
+* **Testability**: a handler class with a single method is straightforward to test in isolation, with a stub or mock entity.
+* **Parallel development**: slices are independent. Multiple developers can work on different commands without touching the same files.
+* **Alignment with the domain model**: the code structure mirrors the Event Model, keeping implementation and design in sync.

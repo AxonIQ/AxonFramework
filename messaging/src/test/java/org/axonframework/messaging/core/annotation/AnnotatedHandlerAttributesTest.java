@@ -106,11 +106,9 @@ class AnnotatedHandlerAttributesTest {
         expected.put(HandlerAttributes.MESSAGE_TYPE, Message.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Object.class);
         expected.put(MessageHandlerInterceptor.class.getSimpleName() + ".messageType", Message.class);
-        expected.put(MessageHandlerInterceptor.class.getSimpleName() + ".payloadType", Object.class);
         expected.put(HandlerAttributes.RESULT_TYPE, Exception.class);
         expected.put(HandlerAttributes.EXCEPTION_RESULT_TYPE, Exception.class);
         expected.put(ExceptionHandler.class.getSimpleName() + ".messageType", Message.class);
-        expected.put(ExceptionHandler.class.getSimpleName() + ".payloadType", Object.class);
 
         AnnotatedHandlerAttributes testSubject = new AnnotatedHandlerAttributes(messageHandlingMember);
 

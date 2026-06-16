@@ -2,7 +2,7 @@
 :navtitle: Advanced Testing
 
 After having taken note of the xref:basic-testing.adoc[basic test] flow and the use of xref:matchers-and-field-filters.adoc[matchers and field filters], it's worth to investigate more advanced testing scenarios.
-This page covers those advanced tests, discussing <<integration_testing,integration tests>>, <<testing-with-spring-boot,testing with spring boot>>, and <<testing-with-axon-server-testcontainer,testing with Testcontainers>> to name a few.
+This page covers those advanced tests, discussing <<integration_testing,integration tests>> and <<testing-with-spring-boot,testing with Spring Boot>> to name a few.
 
 [#integration_testing]
 == Integration testing
@@ -125,8 +125,10 @@ class AccountSpringTest {
 }
 ----
 
+ifdef::advanced-framework[]
 From here, it is rather straightforward to add Testcontainers into the mix, when your (integration) test requires it.
 Be sure to check out the <<testing-with-axon-server-testcontainer,tests with Testcontainers>> section for that.
+endif::[]
 
 === Using @AxonSpringBootTest
 
@@ -177,7 +179,7 @@ class AccountSpringBootTest {
 ----
 
 The fixture's `Customization` is derived automatically from the Spring environment.
-When `axon.axonserver.enabled` is `false`, the fixture disables Axon Server; when `true` or absent, it remains enabled.
+When `axon.axonserver.enabled` is `false`, the fixture disables Axon Server. When `true` or absent, it remains enabled.
 
 To override the default customization, declare a `Customization` bean in the test:
 

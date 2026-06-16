@@ -16,20 +16,31 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.common.ObjectUtils;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.entity.EntityMetamodel;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNullElse;
 import static org.axonframework.common.ObjectUtils.getOrDefault;
@@ -49,6 +60,8 @@ import static org.axonframework.common.ObjectUtils.getOrDefault;
  */
 public class DefaultEventStoreTransaction implements EventStoreTransaction {
 
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
     private final EventStorageEngine eventStorageEngine;
     private final ProcessingContext processingContext;
     private final Function<EventMessage, TaggedEventMessage<?>> eventTagger;
@@ -59,6 +72,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     private final ResourceKey<List<TaggedEventMessage<?>>> eventQueueKey = ResourceKey.withLabel("eventQueue");
     private final ResourceKey<ConsistencyMarker> appendPositionKey = ResourceKey.withLabel("appendPosition");
     private final ResourceKey<Boolean> prepareCommitExecuted = ResourceKey.withLabel("prepareCommitExecuted");
+    private final ResourceKey<UnaryOperator<AppendCondition>> conditionOverrideKey = ResourceKey.withLabel("conditionOverride");
 
     /**
      * Constructs a {@code DefaultEventStoreTransaction} using the given {@code eventStorageEngine} to
@@ -148,26 +162,48 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                     return new CopyOnWriteArrayList<>();
                 }
         );
-        eventQueue.add(eventTagger.apply(eventMessage));
+        TaggedEventMessage<?> taggedEvent = eventTagger.apply(eventMessage);
+        eventQueue.add(taggedEvent);
+        Set<Tag> tags = taggedEvent.tags();
+        if (appendingWithoutSourcing() && !tags.isEmpty()) {
+            // No AppendCondition is present, but the event contains tags.
+            // Tags make no sense without an AppendCondition, so let's create an ORIGIN call
+            processingContext.computeResourceIfAbsent(
+                    appendConditionKey,
+                    () -> new DefaultAppendCondition(ConsistencyMarker.ORIGIN, EventCriteria.havingTags(tags))
+            );
+        }
         callbacks.forEach(callback -> callback.accept(eventMessage));
+    }
+
+    /**
+* Returns {@code true} if the {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is set to {@code true}.
+     * <p>
+     * Typically, the {@code DefaultEventStoreTransaction} constructs an {@link AppendCondition} based on a
+     * {@link SourcingCondition}, thus it creates the {@code AppendCondition} as a result from <b>loading</b> an entity.
+     * Whenever a creational command is <b>not</b> instructed to load an entity (e.g. because no
+     * {@link org.axonframework.modelling.annotation.TargetEntityId} is used), the use of an {@code AppendCondition} is
+     * still required in some cases.
+     * <p>
+     * One of these is when {@link EntityMetamodel#handleCreate(CommandMessage, ProcessingContext)} is invoked on the
+     * {@link EntityMetamodel} without loading first. The {@code CREATE_WITHOUT_LOAD} {@link ResourceKey} signals these
+     * scenarios.
+     *
+     * @return {@code true} if {@link EntityMetamodel#CREATE_WITHOUT_LOAD} is {@code true}, {@code false} otherwise
+     */
+    private boolean appendingWithoutSourcing() {
+        return ObjectUtils.getOrDefault(processingContext.getResource(EntityMetamodel.CREATE_WITHOUT_LOAD), false);
     }
 
     private void attachAppendEventsStep() {
         processingContext.onPrepareCommit(
                 context -> {
-                    // we need to update the condition with the marker that we may have updated during reading
-                    AppendCondition appendCondition =
-                            context.updateResource(appendConditionKey, current -> {
-                                if (current == null || AppendCondition.none().equals(current)) {
-                                    return AppendCondition.none();
-                                }
-                                return current.withMarker(getOrDefault(context.getResource(appendPositionKey),
-                                                                       current.consistencyMarker()));
-                            });
+                    AppendCondition appendCondition = resolveAppendCondition(context);
 
                     context.putResource(prepareCommitExecuted, true);
 
-                    List<TaggedEventMessage<?>> eventQueue = context.getResource(eventQueueKey);
+                    List<TaggedEventMessage<?>> eventQueue =
+                            Objects.requireNonNullElse(context.getResource(eventQueueKey), Collections.emptyList());
 
                     return eventStorageEngine.appendEvents(appendCondition, processingContext, eventQueue)
                                              .thenApply(DefaultEventStoreTransaction::castTransaction)
@@ -181,6 +217,31 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
         );
     }
 
+    /**
+     * Resolves the final {@link AppendCondition} for this transaction by combining the sourcing-derived condition with
+     * the marker obtained during reading, and then applying any user-provided
+     * {@link #overrideAppendCondition(UnaryOperator) override}.
+     */
+    private AppendCondition resolveAppendCondition(ProcessingContext context) {
+        AppendCondition resolved = context.updateResource(appendConditionKey, current -> {
+            if (current == null || AppendCondition.none().equals(current)) {
+                return AppendCondition.none();
+            }
+            return current.withMarker(getOrDefault(context.getResource(appendPositionKey),
+                                                   current.consistencyMarker()));
+        });
+
+        UnaryOperator<AppendCondition> override = context.getResource(conditionOverrideKey);
+        if (override == null) {
+            return resolved;
+        }
+
+        // A null return from the override is treated as AppendCondition.none() (no conflict detection).
+        AppendCondition overridden = getOrDefault(override.apply(resolved), AppendCondition.none());
+        logger.debug("AppendCondition overridden from [{}] to [{}]", resolved, overridden);
+        return overridden;
+    }
+
     private <R> CompletableFuture<ConsistencyMarker> doAfterCommit(ProcessingContext context,
                                                                    EventStorageEngine.AppendTransaction<R> tx,
                                                                    R commitResult) {
@@ -192,6 +253,14 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                                  other -> position.upperBound(requireNonNullElse(other, ConsistencyMarker.ORIGIN)));
                      }
                  });
+    }
+
+    @Override
+    public void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
+        Objects.requireNonNull(conditionOverride, "The conditionOverride cannot be null");
+        processingContext.updateResource(conditionOverrideKey, previous ->
+                previous == null ? conditionOverride : ac -> conditionOverride.apply(previous.apply(ac))
+        );
     }
 
     @Override

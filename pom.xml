@@ -31,6 +31,7 @@
         <module>extensions</module>
         <module>eventsourcing</module>
         <module>messaging</module>
+        <module>migration</module>
         <module>modelling</module>
         <module>test</module>
         <module>update</module>
@@ -78,19 +79,19 @@
         <!-- Build / Plugin -->
         <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
         <eclipse.transformer-maven-plugin.version>1.0.0</eclipse.transformer-maven-plugin.version>
-        <jacoco-maven.version>0.8.14</jacoco-maven.version>
+        <jacoco-maven.version>0.8.15</jacoco-maven.version>
         <maven-assembly.version>3.8.0</maven-assembly.version>
         <maven-clean.version>3.5.0</maven-clean.version>
         <maven-compiler.version>3.15.0</maven-compiler.version>
-        <maven-enforcer.version>3.6.2</maven-enforcer.version>
-        <maven-failsafe.version>3.5.5</maven-failsafe.version>
+        <maven-enforcer.version>3.6.3</maven-enforcer.version>
+        <maven-failsafe.version>3.5.6</maven-failsafe.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
         <maven-install.version>3.1.4</maven-install.version>
         <maven-jar.version>3.5.0</maven-jar.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
         <maven-release.version>3.3.1</maven-release.version>
         <maven-source.version>3.4.0</maven-source.version>
-        <maven-surefire.version>3.5.5</maven-surefire.version>
+        <maven-surefire.version>3.5.6</maven-surefire.version>
         <maven-resources.version>3.5.0</maven-resources.version>
     </properties>
 
@@ -153,6 +154,14 @@
                     <mavenExecutorId>forked-path</mavenExecutorId>
                     <localCheckout>true</localCheckout>
                     <releaseProfiles>javadoc,sources,sign</releaseProfiles>
+                    <!-- Skip the AF4 recipe tests in the forked release build.
+                         The stubs are downloaded via maven-dependency-plugin:copy
+                         (not as <dependency> elements) so the release plugin's
+                         version-consistency scanner does not see them. The
+                         -DskipAf4RecipeTests flag skips the copy execution and
+                         the tests that depend on those JARs; they are validated
+                         in CI before release. -->
+                    <arguments>-DskipAf4RecipeTests=true</arguments>
                 </configuration>
             </plugin>
             <plugin>
@@ -243,7 +252,7 @@
                         <configuration>
                             <doclint>none</doclint>
                             <legacyMode>true</legacyMode>
-                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-migration,axon-integrationtests</skippedModules>
+                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-integrationtests</skippedModules>
                             <!-- These parameters are in preparation for resolution of this issue: -->
                             <!-- https://bugs.openjdk.java.net/browse/JDK-8068562 -->
                             <tags>
@@ -264,6 +273,41 @@
                                 </tag>
                             </tags>
                         </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>integration-test</id>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-failsafe-plugin</artifactId>
+                            <version>${maven-failsafe.version}</version>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-integration-tests</id>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>verify-integration-tests</id>
+                                <goals>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
@@ -309,7 +353,7 @@
         <connection>scm:git:git://github.com/AxonFramework/AxonFramework.git</connection>
         <developerConnection>scm:git:git@github.com:AxonFramework/AxonFramework.git</developerConnection>
         <url>https://github.com/AxonFramework/AxonFramework</url>
-        <tag>axon-5.0.4</tag>
+        <tag>axon-5.1.1</tag>
     </scm>
 
     <developers>

@@ -191,6 +191,13 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Serializer dependencies -->
         <dependency>
             <groupId>org.apache.avro</groupId>

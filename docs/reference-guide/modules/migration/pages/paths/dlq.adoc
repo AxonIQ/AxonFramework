@@ -12,7 +12,7 @@ endif::[]
 ====
 The most significant changes are:
 
-* **Database schema**: Column names in the embedded event entry changed; the schema is not backward compatible with Axon Framework 4 data.
+* **Database schema**: Column names in the embedded event entry changed. The schema is not backward compatible with Axon Framework 4 data.
 * **Queue scoping**: DLQs are now scoped per event handling component, not per processing group.
 Each component within a processor gets its own queue.
 * **MongoDB support removed**: The `MongoSequencedDeadLetterQueue` (previously available via the MongoDB Extension) is not available in Axon Framework 5.
@@ -337,7 +337,7 @@ public class AxonConfig {
 
 Axon Framework 5::
 +
-Configuration API (using `InMemorySequencedDeadLetterQueue` for brevity; replace with `JpaSequencedDeadLetterQueue` or `JdbcSequencedDeadLetterQueue` for production):
+Configuration API (using `InMemorySequencedDeadLetterQueue` for brevity, but replace with `JpaSequencedDeadLetterQueue` or `JdbcSequencedDeadLetterQueue` for production):
 +
 [source,java]
 ----

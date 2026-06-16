@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -27,10 +28,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 /**
  * A {@link CoordinatorTask} implementation dedicated to splitting a {@link Segment}.
@@ -53,10 +55,11 @@ class SplitTask extends CoordinatorTask {
     private final String name;
     private final int segmentId;
     private final Map<Integer, WorkPackage> workPackages;
-    private final Map<Integer, java.time.Instant> releasesDeadlines;
+    private final Map<Integer, Instant> releasesDeadlines;
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
-    private final java.time.Clock clock;
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    private final Clock clock;
 
     /**
      * Constructs a {@code SplitTask}.
@@ -73,16 +76,17 @@ class SplitTask extends CoordinatorTask {
      *                          it is not present in the {@code workPackages} and to store the split segment.
      * @param unitOfWorkFactory The {@link UnitOfWorkFactory} that spawns {@link UnitOfWork UnitOfWorks} used to invoke
      *                          all {@link TokenStore} operations inside a unit of work.
-     * @param clock             the clock used for time-based operations
+     * @param clock             the clock used for time-based operations, deprecated in favor of {@link ClockUtils#get()}.
      */
     SplitTask(CompletableFuture<Boolean> result,
               String name,
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
-              Map<Integer, java.time.Instant> releasesDeadlines,
+              Map<Integer, Instant> releasesDeadlines,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
-              java.time.Clock clock) {
+              @Deprecated(forRemoval = true, since = "5.2.0")
+              Clock clock) {
 
         super(result, name);
         this.name = name;
@@ -116,46 +120,35 @@ class SplitTask extends CoordinatorTask {
 
     private CompletableFuture<Boolean> abortAndSplit(WorkPackage workPackage) {
         return workPackage.abort(null)
-                          .thenApply(e -> splitAndRelease(workPackage.segment()));
+                          .thenCompose(e -> splitAndRelease(workPackage.segment()));
     }
 
     private CompletableFuture<Boolean> fetchSegmentAndSplit(int segmentId) {
         return unitOfWorkFactory.create().executeWithResult(
                 context -> tokenStore.fetchSegment(name, segmentId, context)
-                                     .thenApply(this::splitAndRelease)
-        );
+        ).thenCompose(this::splitAndRelease);
     }
 
-    private boolean splitAndRelease(Segment segmentToSplit) {
-        try {
-            joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
-                    context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
-                                         .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
-                                         .thenCompose(splitStatuses -> splitAndRelease(
-                                                 splitStatuses, segmentToSplit, context
-                                         ))
-            ));
-        } finally {
-            // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
-            releasesDeadlines.remove(segmentToSplit.getSegmentId());
-        }
-        return true;
+    private CompletableFuture<Boolean> splitAndRelease(Segment segmentToSplit) {
+        return unitOfWorkFactory.create().executeWithResult(
+                context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
+                                     .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
+                                     .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
+        ).whenComplete((result, throwable) ->
+                 // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
+                 releasesDeadlines.remove(segmentToSplit.getSegmentId())
+         );
     }
 
-    private CompletableFuture<Void> splitAndRelease(TrackerStatus[] splitStatuses,
-                                                    Segment segmentToSplit,
-                                                    ProcessingContext context) {
+    private CompletableFuture<Boolean> splitAndRelease(TrackerStatus[] splitStatuses,
+                                                     Segment segmentToSplit,
+                                                     ProcessingContext context) {
         return tokenStore.initializeSegment(
                                  splitStatuses[1].getTrackingToken(),
                                  name,
                                  splitStatuses[1].getSegment(),
                                  context
                          )
-                         .thenCompose(result -> tokenStore.releaseClaim(
-                                 name,
-                                 splitStatuses[0].getSegment().getSegmentId(),
-                                 context
-                         ))
                          .thenCompose(result -> tokenStore.deleteToken(
                                  name,
                                  splitStatuses[0].getSegment().getSegmentId(),
@@ -167,10 +160,13 @@ class SplitTask extends CoordinatorTask {
                                  splitStatuses[0].getSegment(),
                                  context
                          ))
-                         .thenRun(() -> logger.info(
-                                 "Processor [{}] successfully split {} into {} and {}.",
-                                 name, segmentToSplit, splitStatuses[0].getSegment(), splitStatuses[1].getSegment()
-                         ));
+                         .thenApply(ignored -> {
+                             logger.info(
+                                     "Processor [{}] successfully split {} into {} and {}.",
+                                     name, segmentToSplit, splitStatuses[0].getSegment(), splitStatuses[1].getSegment()
+                             );
+                             return true;
+                         });
     }
 
     @Override

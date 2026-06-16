@@ -172,20 +172,20 @@ class CreateCourseTest {
         var courseName = "Event Sourcing in Practice";
         var capacity = 3;
 
-        fixture.given()
+        fixture.given() // <1>
                 .when()
-                .command(new CreateCourse(courseId, courseName, capacity))
+                .command(new CreateCourse(courseId, courseName, capacity)) // <2>
                 .then()
                 .success()
-                .events(new CourseCreated(courseId, courseName, capacity));
+                .events(new CourseCreated(courseId, courseName, capacity)); // <3>
     }
 
 }
 ----
-<.> In our case, when we receive the `CreateCourse` command, we expect that no previous events were received in the system.
+<1> In our case, when we receive the `CreateCourse` command, we expect that no previous events were received in the system.
 We may even skip the whole `given` section if there is nothing to execute.
-<.> We provide the `CreateCourse` command we want to dispatch against the system (scoped to the given configuration).
-<.> After successfully processing the `CreateCourse`, we expect the publication of a new `CourseCreated` event with the details of the new course.
+<2> We provide the `CreateCourse` command we want to dispatch against the system (scoped to the given configuration).
+<3> After successfully processing the `CreateCourse`, we expect the publication of a new `CourseCreated` event with the details of the new course.
 
 If we run this test now, it will fail with the following error:
 

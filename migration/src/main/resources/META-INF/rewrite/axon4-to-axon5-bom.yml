@@ -1,0 +1,101 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Framework 4 → 5 BOM rename. The Maven coordinates of the published
+# bill-of-materials artifact changed:
+#   AF4: org.axonframework:axon-bom
+#   AF5: org.axonframework:axon-framework-bom
+# The groupId is unchanged; only the artifactId moves. The recipe also pins
+# the imported BOM to the AF5 line — `UpgradeDependencyVersion` doesn't lift
+# the version after the rename because the renamed coordinate didn't exist
+# at the AF4 line, leaving the managed import at `4.x` otherwise.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Bom
+displayName: Migrate the Axon Framework BOM coordinates
+description: >-
+  Renames the imported `org.axonframework:axon-bom` BOM in
+  `<dependencyManagement>` to `org.axonframework:axon-framework-bom` and pins
+  the imported version to the current Axon Framework 5 release. The BOM
+  artifactId changed between Axon Framework 4 and Axon Framework 5; the
+  groupId is unchanged.
+recipeList:
+  # Maven leg: BOM is imported via `<dependencyManagement>` with
+  # `<scope>import</scope><type>pom</type>` — `ChangeManagedDependencyGroupIdAndArtifactId`
+  # is the recipe that touches managed-only entries.
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      newVersion: ${project.version}
+  # Gradle leg (plain): BOM consumed via `implementation(platform("g:a:v"))`
+  # or `api(platform(...))` — `gradle.ChangeDependency` rewrites the dependency
+  # declaration directly.
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      newVersion: ${project.version}
+  # Gradle leg (Spring DM plugin): BOM consumed via the
+  # `dependencyManagement { imports { mavenBom("g:a:v") } }` block. The
+  # standard `gradle.ChangeDependency` doesn't visit `mavenBom(...)` calls
+  # nested inside Spring DM's DSL — `gradle.ChangeManagedDependency` is the
+  # recipe wired to the `SpringDependencyManagementPluginEntry` trait.
+  - org.openrewrite.gradle.ChangeManagedDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      newVersion: ${project.version}
+  # Gradle leg (Groovy ext properties): when the BOM version is read from a
+  # Groovy `ext.axonFrameworkVersion = '4.x'` / `ext { axonFrameworkVersion =
+  # '4.x' }` property, the steps above rewrite only the artifactId and leave
+  # the property pinning the version to the AF4 line. `ChangeExtraProperty`
+  # is wired to the `ExtraProperty` trait, which understands all Groovy `ext`
+  # syntaxes. (The Kotlin-DSL `extra["..."] = "..."` shape is handled by
+  # `MigrateKotlinDslBomImport` below — `ExtraProperty.Matcher` does not
+  # recognize the Kotlin subscript form.)
+  - org.openrewrite.gradle.ChangeExtraProperty:
+      key: axonFrameworkVersion
+      value: ${project.version}
+  - org.openrewrite.gradle.ChangeExtraProperty:
+      key: axonVersion
+      value: ${project.version}
+  # Gradle leg (Kotlin DSL with property indirection): the
+  # `mavenBom("org.axonframework:axon-bom:${property(\"X\")}")` shape — and
+  # the matching `extra["X"] = "4.x"` declaration — fall through every stock
+  # recipe above because OpenRewrite's `SpringDependencyManagementPluginEntry`
+  # trait can't extract the version variable from a Kotlin string template
+  # whose embedded expression is `property("...")` (it only recognizes
+  # `J.Identifier`, not `J.MethodInvocation`). The custom recipe below fills
+  # both gaps in one pass.
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      extraPropertyKey: axonFrameworkVersion
+      newVersion: ${project.version}
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: org.axonframework
+      newArtifactId: axon-framework-bom
+      extraPropertyKey: axonVersion
+      newVersion: ${project.version}

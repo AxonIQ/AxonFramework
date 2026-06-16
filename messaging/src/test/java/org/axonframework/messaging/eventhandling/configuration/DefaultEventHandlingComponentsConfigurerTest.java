@@ -20,6 +20,7 @@ import org.jspecify.annotations.NonNull;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
@@ -275,7 +276,7 @@ class DefaultEventHandlingComponentsConfigurerTest {
 
             var builtComponent = new DefaultEventHandlingComponentsConfigurer()
                     .declarative("comp", cfg -> component)
-                    .withExceptionHandler((event, context, error) -> { invocationLog.add("exceptionHandler"); return MessageStream.empty(); })
+                    .withExceptionHandler(c -> (event, context, error) -> { invocationLog.add("exceptionHandler"); return MessageStream.empty(); })
                     .toMap()
                     .get("comp")
                     .build(configurer.build());
@@ -296,7 +297,7 @@ class DefaultEventHandlingComponentsConfigurerTest {
 
             var builtComponent = new DefaultEventHandlingComponentsConfigurer()
                     .declarative("comp", cfg -> component)
-                    .withExceptionHandler((event, context, error) -> MessageStream.empty())
+                    .withExceptionHandler(c -> (event, context, error) -> MessageStream.empty())
                     .toMap()
                     .get("comp")
                     .build(configurer.build());
@@ -317,7 +318,7 @@ class DefaultEventHandlingComponentsConfigurerTest {
 
             var builtComponent = new DefaultEventHandlingComponentsConfigurer()
                     .declarative("comp", cfg -> component)
-                    .withExceptionHandler((event, context, error) -> MessageStream.failed(new IOException("wrapped")))
+                    .withExceptionHandler(c -> (event, context, error) -> MessageStream.failed(new IOException("wrapped")))
                     .toMap()
                     .get("comp")
                     .build(configurer.build());
@@ -339,7 +340,7 @@ class DefaultEventHandlingComponentsConfigurerTest {
 
             var builtComponent = new DefaultEventHandlingComponentsConfigurer()
                     .declarative("comp", cfg -> component)
-                    .withExceptionHandler((event, context, error) -> { throw new RuntimeException("unexpected"); })
+                    .withExceptionHandler(c -> (event, context, error) -> { throw new RuntimeException("unexpected"); })
                     .toMap()
                     .get("comp")
                     .build(configurer.build());
@@ -350,6 +351,33 @@ class DefaultEventHandlingComponentsConfigurerTest {
             // then
             assertThat(result.error()).isPresent();
             assertThat(result.error().get()).isInstanceOf(RuntimeException.class).hasMessage("unexpected");
+        }
+
+        @Test
+        void genericMessageExceptionHandlerCanBeRegistered() {
+            // given - a generic handler typed at Message that could be shared across all message types
+            List<String> invocationLog = new ArrayList<>();
+            MessageHandlingExceptionHandler<Message> genericHandler = (msg, ctx, error) -> {
+                invocationLog.add("generic:" + error.getMessage());
+                return MessageStream.empty();
+            };
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("boom")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> genericHandler)
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            var result = builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("generic:boom");
+            assertThat(result.error()).isEmpty();
         }
 
         @Test
@@ -366,7 +394,7 @@ class DefaultEventHandlingComponentsConfigurerTest {
             var built = new DefaultEventHandlingComponentsConfigurer()
                     .declarative("comp1", cfg -> comp1)
                     .declarative("comp2", cfg -> comp2)
-                    .withExceptionHandler((event, context, error) -> { invocationLog.add(error.getMessage()); return MessageStream.empty(); })
+                    .withExceptionHandler(c -> (event, context, error) -> { invocationLog.add(error.getMessage()); return MessageStream.empty(); })
                     .toMap();
             var cfg = configurer.build();
 

@@ -83,9 +83,26 @@ If you are migrating an Axon Framework 4 application, this is the closest equiva
 [#spring_boot_configuration]
 == Spring Boot configuration
 
-For Spring Boot applications, the annotation-based `@EventSourced` shortcut currently does not expose snapshot policy configuration.
-If you need snapshotting, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` there.
-Spring's component registry picks up `Module` beans automatically, so this integrates with the regular Spring Boot setup.
+For Spring Boot applications, snapshotting can be enabled by adding `@Snapshotting` alongside the `@EventSourced` annotation on the entity class:
+
+[source,java]
+----
+@EventSourced
+@Snapshotting(afterEvents = 100)
+public class Account { ... }
+----
+
+The annotation supports two threshold attributes:
+
+* `afterEvents`: trigger a snapshot after a fixed number of events have been applied during sourcing.
+* `afterSourcingTime`: trigger a snapshot when the total sourcing time exceeds the given ISO-8601 duration (for example, `"PT5S"` for five seconds).
+
+When both attributes are set, either condition independently triggers a snapshot.
+Use a bare `@Snapshotting` (no attributes) when the threshold is inherited from a higher-level annotation on an enclosing class, package, or module.
+See xref:tuning:snapshotting.adoc#_annotation_based_configuration[annotation-based configuration] for details.
+
+For more complex policies that require payload inspection, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` programmatically.
+Spring's component registry picks up `Module` beans automatically, so this integrates with the regular Spring Boot setup:
 
 [source,java]
 ----
@@ -95,7 +112,12 @@ class AccountConfiguration {
     @Bean
     EventSourcedEntityModule<String, Account> accountModule() {
         return EventSourcedEntityModule.declarative(String.class, Account.class)
-                .snapshotPolicy(c -> SnapshotPolicy.afterEvents(250))
+                .snapshotPolicy(c -> SnapshotPolicy.afterEvents(250)
+                        .or(SnapshotPolicy.whenEventMatches(
+                                msg -> msg.type().qualifiedName().equals(
+                                        new QualifiedName(AccountClosed.class)
+                                )
+                        )))
                 .build();
     }
 
@@ -105,9 +127,6 @@ class AccountConfiguration {
     }
 }
 ----
-
-This is the Spring-friendly migration path when you still want to use the AF5 snapshotting model.
-If you are only using `@EventSourced` annotations today, you will need to move this entity to explicit module registration before you can configure snapshotting.
 
 [#snapshot_storage]
 == Snapshot storage
