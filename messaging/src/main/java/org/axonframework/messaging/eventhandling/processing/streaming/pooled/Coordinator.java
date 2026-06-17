@@ -1016,8 +1016,13 @@ class Coordinator {
 
         private CompletableFuture<WorkPackage> createWorkPackage(Segment segment, TrackingToken token) {
             WorkPackage workPackage = workPackageFactory.apply(segment, token);
-            workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
-            workPackage.notifySegmentClaimed();
+            try {
+                workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
+                workPackage.notifySegmentClaimed();
+            } catch (Exception e) {
+                // A participant rejected the claim; release it so the token store claim is not leaked.
+                return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
+            }
             return segmentChangeListener.onSegmentClaimed(segment)
                                         .handle((ignored, e) -> {
                                             if (e != null) {
