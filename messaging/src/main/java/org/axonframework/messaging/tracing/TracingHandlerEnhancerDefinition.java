@@ -18,6 +18,7 @@ package org.axonframework.messaging.tracing;
 
 import org.axonframework.common.BuilderUtils;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -73,16 +74,15 @@ public class TracingHandlerEnhancerDefinition implements HandlerEnhancerDefiniti
         }
 
         Optional<Executable> unwrap = original.unwrap(Executable.class);
-        if (!unwrap.isPresent()) {
+        if (unwrap.isEmpty()) {
             return original;
         }
         String signature = toMethodSignature(unwrap.get());
         return new WrappedMessageHandlingMember<>(original) {
             @Override
-            public Object handleSync(Message message, ProcessingContext context, T target)
-                    throws Exception {
+            public MessageStream<?> handle(Message message, ProcessingContext context, T target) {
                 return spanFactory.createInternalSpan(() -> getSpanName(target, signature))
-                                  .runCallable(() -> super.handleSync(message, context, target));
+                                  .runSupplier(() -> super.handle(message, context, target));
             }
         };
     }

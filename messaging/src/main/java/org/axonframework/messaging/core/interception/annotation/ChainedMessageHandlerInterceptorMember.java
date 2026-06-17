@@ -73,28 +73,4 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
                 ? delegate.handle(message, context, target)
                 : next.handle(message, context, target, handler);
     }
-
-    /**
-     * @deprecated in favor of {@link #handle(Message, ProcessingContext, Object, MessageHandlingMember)}
-     */
-    @Override
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    public Object handleSync(Message message,
-                             ProcessingContext context,
-                             T target,
-                             MessageHandlingMember<? super T> handler) throws Exception {
-        MessageHandlerInterceptorChain<Message> chain = (msg, ctx) -> next.handle(msg, ctx, target, handler);
-        ProcessingContext contextWithChain =
-                InterceptorChainParameterResolverFactory.contextWithInterceptorChain(context, chain);
-        return doHandleSync(message, contextWithChain, target, handler);
-    }
-
-    private Object doHandleSync(Message message,
-                                ProcessingContext context,
-                                T target, MessageHandlingMember<? super T> handler)
-            throws Exception {
-        return delegate.canHandle(message, context)
-                ? delegate.handleSync(message, context, target)
-                : next.handleSync(message, context, target, handler);
-    }
 }

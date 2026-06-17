@@ -60,11 +60,6 @@ public abstract class WrappedMessageHandlingMember<T> implements MessageHandling
     }
 
     @Override
-    public Object handleSync(Message message, ProcessingContext context, @Nullable T target) throws Exception {
-        return delegate.handleSync(message, context, target);
-    }
-
-    @Override
     public MessageStream<?> handle(Message message,
                                    ProcessingContext context,
                                    @Nullable T target) {

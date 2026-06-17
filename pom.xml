@@ -38,10 +38,6 @@
 
         <module>integrationtests</module>
 
-        <module>stash/todo</module>
-        <module>stash/legacy</module>
-        <module>stash/legacy-aggregate</module>
-        <module>stash/legacy-saga</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -175,9 +171,6 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
-                    <excludeArtifacts>
-                        axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-todo
-                    </excludeArtifacts>
                 </configuration>
             </plugin>
 

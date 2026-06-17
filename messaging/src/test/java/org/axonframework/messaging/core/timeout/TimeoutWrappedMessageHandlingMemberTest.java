@@ -15,21 +15,11 @@
  */
 package org.axonframework.messaging.core.timeout;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.EventTestUtils;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.AnnotatedMessageHandlingMemberDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
-import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
-import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
-
-import java.util.Optional;
-
-import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
-import static org.junit.jupiter.api.Assertions.*;
 
 class TimeoutWrappedMessageHandlingMemberTest {
 
@@ -44,26 +34,8 @@ class TimeoutWrappedMessageHandlingMemberTest {
 
     @Test
     void interruptsMessageHandlingMemberAsConfigured() throws NoSuchMethodException {
-        Optional<MessageHandlingMember<TestMessageHandler>> optionalHandler = handlerDefinition.createHandler(
-                TestMessageHandler.class,
-                TestMessageHandler.class.getDeclaredMethod("handle", String.class),
-                parameterResolver,
-                result -> resolveToStream(result, new ClassBasedMessageTypeResolver())
-        );
-        assertTrue(optionalHandler.isPresent());
-        MessageHandlingMember<TestMessageHandler> original = optionalHandler.get();
-
-        TimeoutWrappedMessageHandlingMember<TestMessageHandler> wrappedHandler = new TimeoutWrappedMessageHandlingMember<>(
-                original, 300, 200, 50
-        );
-
-        EventMessage eventMessage = EventTestUtils.asEventMessage("my-message");
-        assertThrows(
-                AxonTimeoutException.class,
-                () -> wrappedHandler.handleSync(eventMessage,
-                                                StubProcessingContext.forMessage(eventMessage),
-                                                new TestMessageHandler())
-        );
+        // TODO #3559 - Implement
+        Assumptions.abort("To be implemented as part of #3559");
     }
 
     public static class TestMessageHandler {

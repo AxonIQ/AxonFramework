@@ -65,12 +65,12 @@ class TracingHandlerEnhancerDefinitionTest {
         MessageHandlingMember<TracingHandlerEnhancerDefinitionTest> messageHandlingMember = definition.wrapHandler(
                 original);
         Message message = mock(Message.class);
-        when(original.handleSync(any(), any(), any())).thenAnswer(invocationOnMock -> {
+        when(original.handle(any(), any(), any())).thenAnswer(invocationOnMock -> {
             spanFactory.verifySpanActive("TracingHandlerEnhancerDefinitionTest.executable(MyEvent,CommandGateway)");
             invoked = true;
             return null;
         });
-        messageHandlingMember.handleSync(message, StubProcessingContext.forMessage(message), this);
+        messageHandlingMember.handle(message, StubProcessingContext.forMessage(message), this);
 
         assertTrue(invoked);
         spanFactory.verifySpanCompleted("TracingHandlerEnhancerDefinitionTest.executable(MyEvent,CommandGateway)");
@@ -100,12 +100,12 @@ class TracingHandlerEnhancerDefinitionTest {
         MessageHandlingMember<TracingHandlerEnhancerDefinitionTest> messageHandlingMember = definition.wrapHandler(
                 original);
         Message message = mock(Message.class);
-        when(original.handleSync(any(), any(), any())).thenAnswer(invocationOnMock -> {
+        when(original.handle(any(), any(), any())).thenAnswer(invocationOnMock -> {
             spanFactory.verifySpanActive("TracingHandlerEnhancerDefinitionTest.executable(MyEvent,CommandGateway)");
             invoked = true;
             return null;
         });
-        messageHandlingMember.handleSync(message, StubProcessingContext.forMessage(message), this);
+        messageHandlingMember.handle(message, StubProcessingContext.forMessage(message), this);
 
         assertTrue(invoked);
         spanFactory.verifySpanCompleted("TracingHandlerEnhancerDefinitionTest.executable(MyEvent,CommandGateway)");
