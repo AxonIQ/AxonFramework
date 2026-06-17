@@ -25,6 +25,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/dlq.adoc[Dead-Letter Queue migration]
 * xref:migration:paths/token-store.adoc[Token Store migration]
 ifdef::advanced-framework[]
+* xref:migration:paths/upcasters.adoc[Upcaster Migration]
 * xref:advanced-migration:paths/5.0-to-5.1.adoc[Axon Framework 5.0 to Axoniq Framework migration]
 endif::[]
 ifdef::data-protection[]
@@ -288,7 +289,6 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
 As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
 
 - **Saga & Deadline Overhaul**: Sagas and Deadlines do not have a native "async-native" replacement yet. A full redesign is in progress.
-- **Event Upcasters**: Event upcasting is not yet available.
 - **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
 - **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
 - **Annotated Features (Coming in 5.2.0)**:

@@ -1,0 +1,182 @@
+[.axoniq-feature]
+= Defining Transformations
+:navtitle: Defining transformations
+
+A transformation is built using the static factory methods on `EventTransformation`.
+You name the event identity it matches (`from`), the identity it produces (`to`), and a mapper that rewrites the payload.
+
+== A single transformation
+
+A single transformation maps one stored version of an event to the next.
+The `from` and `to` identities name the same event and differ only in version, and the mapper rewrites the payload from the old shape to the new one, so a transformation only ever changes an event's version and payload.
+Each step is small and self-contained, and you register one per version so the chain can compose them.
+
+A v1 `CoursePublished` stored a single `capacity` field.
+This transformation lifts it into the v2 shape that carries `minCapacity` and `maxCapacity`:
+
+[source,java]
+----
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
+import io.axoniq.framework.messaging.transformation.events.EventTransformation;
+import org.axonframework.messaging.core.MessageType;
+
+public final class CoursePublishedV1ToV2 {
+
+    private static final MessageType FROM = new MessageType("coursecatalog.CoursePublished", "1.0.0");
+    private static final MessageType TO   = new MessageType("coursecatalog.CoursePublished", "2.0.0");
+
+    public static EventTransformation build() {
+        return EventTransformation.from(FROM)                                             // <1>
+                                  .to(TO)                                                 // <2>
+                                  .transform(JsonNode.class, CoursePublishedV1ToV2::map); // <3>
+    }
+
+    private static JsonNode map(JsonNode v1) { // <4>
+        int capacity = v1.get("capacity").asInt();
+        ObjectNode v2 = JsonNodeFactory.instance.objectNode();
+        v2.set("catalogId", v1.get("catalogId"));
+        v2.set("courseId",  v1.get("courseId"));
+        v2.set("name",      v1.get("name"));
+        v2.put("minCapacity", capacity);
+        v2.put("maxCapacity", capacity);
+        return v2;
+    }
+}
+----
+<1> `from(...)` matches the stored event identity by its `MessageType`, a qualified name plus a version. Only events with this exact identity are passed to the mapper.
+<2> `to(...)` declares the identity of the event the mapper produces. It must keep the same qualified name as `from`, and only the version may change.
+<3> `transform(...)` converts the stored payload to the requested type before calling your mapper, which returns the new payload.
+<4> The mapper takes just the converted payload and returns the new one. Most mappers need nothing else; if yours does, see <<_reading_from_the_processing_context>>.
+
+[NOTE]
+The `JsonNode` used here is the Jackson 3 type (`tools.jackson.databind.JsonNode`), the same representation Axon Framework's default converter works with.
+
+== Working with generic payloads
+
+`transform(Class<T>, ...)` works for any non-generic type.
+When the type you want carries type parameters (such as `Map<String, Object>` or `List<...>`), use the `TypeReference` overload so the generic information is preserved:
+
+[source,java]
+----
+private static final TypeReference<Map<String, Object>> INPUT_TYPE = new TypeReference<>() { // <1>
+};
+
+public static EventTransformation build() {
+    return EventTransformation.from(FROM)
+                              .to(TO)
+                              .transform(INPUT_TYPE, StudentRegisteredV1ToV2::map); // <2>
+}
+
+private static Map<String, Object> map(Map<String, Object> v1) {
+    Map<String, Object> v2 = new LinkedHashMap<>();
+    v2.put("catalogId", v1.get("catalogId"));
+    v2.put("studentId", v1.get("studentId"));
+    v2.put("fullName", combine(v1.get("firstName"), v1.get("lastName"))); // <3>
+    return v2;
+}
+----
+<1> A `TypeReference` captures the full `Map<String, Object>` type that a `Class` token would erase.
+<2> Pass it to the `TypeReference` overload of `transform(...)`.
+<3> The mapper combines the separate `firstName` and `lastName` fields into a single `fullName`.
+
+[#_mapping_to_a_typed_event]
+== Mapping to a typed event
+
+Reading and writing `JsonNode` or `Map` is convenient, but it gives up compile-time safety: a misspelled field or wrong type only surfaces at read time, and the loosely typed nodes coerce values in ways you did not ask for (dates and UUIDs become strings, a small number is an `int` while a larger one is a `long`).
+
+You can avoid that by mapping between records and letting the compiler check the result.
+Describe the _stored_ shape as a small `record` that mirrors the old version, and map it to the next version of the event.
+Axon Framework deserializes the stored payload into that record before your mapper runs:
+
+[source,java]
+----
+private static final MessageType FROM = new MessageType("coursecatalog.CoursePublished", "2.0.0");
+private static final MessageType TO   = new MessageType("coursecatalog.CoursePublished", "3.0.0");
+
+public static EventTransformation build() {
+    return EventTransformation.from(FROM)
+                              .to(TO)
+                              .transform(V2Schema.class, CoursePublishedV2ToV3::map); // <1>
+}
+
+private static CoursePublished map(V2Schema v2) { // <2>
+    return new CoursePublished(
+            new CatalogId(v2.catalogId().value()),
+            new CourseId(v2.courseId().value()),
+            v2.name(),
+            new CapacityRange(v2.minCapacity(), v2.maxCapacity())
+    );
+}
+
+// Mirrors how a v2 CoursePublished was stored: capacity split into a min and a max.
+record V2Schema(Id catalogId, Id courseId, String name, int minCapacity, int maxCapacity) { } // <3>
+
+// Stored id value object: a single value string.
+record Id(String value) { }
+----
+<1> The mapper's input type is the schema `record`, not `JsonNode`. Axon Framework deserializes the stored payload into it before the mapper runs.
+<2> The mapper works on named, typed fields and returns the current `CoursePublished` event, so a misspelled field or wrong type is now a compile error.
+<3> The schema `record` only describes the _stored_ shape. It mirrors the wire form exactly, including identifiers written as `{"value": ...}` objects, and stays free of the live value objects, which the mapper builds at the end.
+
+[IMPORTANT]
+.The stored-shape record is a throwaway, not a domain class
+====
+The input `record` (here `V2Schema`) exists only to read one historic version.
+Keep it next to the transformation that uses it, and do not add it, or a handler for it, to your domain model.
+
+You never accumulate a class or an event handler per historic version: the chain lifts every stored version to the current shape, so handlers only ever deal with the current event.
+When the event changes again, you add one more transformation, nothing else.
+====
+
+Mapping the final hop straight to the current event class, as above, is fully type-safe but couples that transformation to the class.
+When the event changes again, map what is now an older version to its own stored-shape `record` instead, exactly as the earlier hops do, so the historic transformation keeps compiling unchanged.
+
+Because the mapper returns a typed object, Axon Framework resolves its identity and rejects a wrong-shaped output: if the produced event's identity does not match the declared `to`, the chain raises a `ChainConfigurationException`.
+A `JsonNode` or `Map` output skips that check, so the typed form catches a class of mistakes the untyped one cannot.
+
+[#_reading_from_the_processing_context]
+== Reading from the processing context
+
+The mappers shown so far take only the payload, which is all most transformations need.
+When a mapper needs read-only access to the surrounding `ProcessingContext`, add it as a second parameter:
+
+[source,java]
+----
+.transform(JsonNode.class, (payload, context) -> map(payload, context)); // <1>
+----
+<1> The context-taking overload of `transform(...)`. The `ProcessingContext` is for read-only access and may be `null`.
+
+Reach for this overload only when the mapper genuinely depends on the context.
+Keep it out of the signature otherwise, so the common case stays a plain payload-to-payload function.
+
+[#_matching_multiple_event_versions]
+== Matching multiple event versions
+
+Sometimes one rule should apply to a _range_ of stored identities rather than a single one.
+This is the exception, not the norm: prefer a concrete `MessageType` with one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target.
+Instead of a concrete `MessageType`, pass a predicate to `from(...)`:
+
+[source,java]
+----
+private static final Predicate<MessageType> FROM_PREDICATE =
+        type -> "coursecatalog.WelcomeMessageSent".equals(type.qualifiedName().name())
+                && type.version().startsWith("0."); // <1>
+
+public static EventTransformation build() {
+    return EventTransformation.from(FROM_PREDICATE) // <2>
+                              .to(new MessageType("coursecatalog.WelcomeMessageSent", "1.0.0"))
+                              .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
+}
+----
+<1> The predicate matches any stored `WelcomeMessageSent` whose version starts with `0.`.
+<2> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
+
+This single transformation folds every `0.x` beta version of `WelcomeMessageSent` up to `1.0.0`, instead of registering one transformation per beta version.
+Keep the predicate's matched names aligned with the `to` identity's name, since renaming an event is not supported.
+
+== Next steps
+
+With your transformations defined, the next step is to assemble and register them.
+See xref:message-transformation:configuring-transformations.adoc[Configuring transformations].

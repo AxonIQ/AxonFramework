@@ -96,13 +96,15 @@ Payload conversion handles many common versioning scenarios without requiring up
 == Event Upcasting
 
 [WARNING]
-.Upcasters not available in Axon 5.0
+.Upcaster support is being introduced incrementally
 ====
-Event upcasters are not yet available in Axon Framework 5.0.
-They are scheduled to be reintroduced in Axon Framework 5.2.0 (see https://github.com/AxonFramework/AxonFramework/issues/3597[issue #3597]) with updated APIs aligned with the new conversion architecture.
+The full upcaster API described below is not yet available in Axon Framework 5.2.0. It is being reintroduced (see https://github.com/AxonFramework/AxonFramework/issues/3597[issue #3597]) with updated APIs aligned with the new conversion architecture.
 
-For now, rely on xref:#event_versioning_at_handling_time[payload conversion at handling time] for event versioning.
-This approach handles most common versioning scenarios without requiring upcasters.
+Rely on xref:#event_versioning_at_handling_time[payload conversion at handling time] for most versioning scenarios.
+ifdef::advanced-framework[]
+For one-to-one structural changes, Axon Framework 5.2.0 already provides xref:message-transformation:index.adoc[event transformation], the successor to the single-event upcaster. See the xref:migration:paths/upcasters.adoc[upcaster migration path].
+The broader cases described below, such as splitting one event into several, merging events, and context-aware upcasting, are not yet covered.
+endif::[]
 
 The documentation below describes the upcasting concepts and approach that will be available in future releases.
 ====
@@ -205,6 +207,10 @@ This section describes the currently provided (abstract) implementations of even
 * `SingleEventUpcaster` - a one-to-one implementation of an event upcaster.
 Extending from this implementation requires one to implement a `canUpcast` and `doUpcast` function, which respectively check whether the event at hand is to be upcasted, and if so how it should be upcasted.
 This is most likely the implementation to extend from, as most event adjustments are based on self contained data and are one to one.
+ifdef::advanced-framework[]
++
+NOTE: For one-to-one changes, xref:message-transformation:index.adoc[event transformation] is already available. The `SingleEventUpcaster` covers this case once the full upcaster API is reintroduced.
+endif::[]
 * `EventMultiUpcaster` - a one-to-many implementation of an event upcaster.
 It is mostly identical to a `SingleEventUpcaster`, with the exception that the `doUpcast` function returns a `Stream` instead of a single `IntermediateEventRepresentation`.
 As such, this upcaster allows you to convert a single event to several events.
