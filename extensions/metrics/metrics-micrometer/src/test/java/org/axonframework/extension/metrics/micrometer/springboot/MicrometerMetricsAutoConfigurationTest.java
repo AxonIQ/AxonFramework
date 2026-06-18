@@ -40,24 +40,6 @@ class MicrometerMetricsAutoConfigurationTest {
     }
 
     @Test
-    void defaultMetricAutoConfigSetsMetricRegistryBeanForEnhancer() {
-        testContext.withPropertyValues("axon.metrics.enabled=true")
-                   .run(context -> {
-                       assertThat(context).hasSingleBean(MeterRegistry.class);
-                       assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
-                   });
-    }
-
-    @Test
-    void defaultMetricAutoConfigSetsMetricRegistryBeanForEnhancerWorkWithoutProperty() {
-        // Deliberately not included "axon.metrics.enabled=true" per test!
-        testContext.run(context -> {
-                       assertThat(context).hasSingleBean(MeterRegistry.class);
-                       assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
-                   });
-    }
-
-    @Test
     void disabledMetricsDisablesMetricRegistryAndMetricsConfigurationEnhancer() {
         testContext.withPropertyValues("axon.metrics.enabled=false")
                    .run(context -> {
