@@ -113,8 +113,8 @@ If a single event legitimately needs more hops, raise the bound with `EventTrans
 == When more than one transformation matches
 
 Chaining handles the common case where each transformation matches a _different_ identity and hands off to the next.
-Registration order also resolves the rarer case where _several_ registered transformations match the _same_ stored event, most often a broad predicate that overlaps a specific `from`.
-When that happens the chain applies the *last* matching registration: later registrations override earlier, overlapping ones.
+When _several_ registered transformations could match the _same_ stored event, the chain resolves it like Java overload resolution: the *most specific* match wins, independent of registration order.
+An exact identity match (a concrete `from`, including each version of a xref:defining-transformations.adoc#_matching_multiple_event_versions[multi-version `from`]) is more specific than a xref:defining-transformations.adoc#_matching_with_a_predicate[predicate `from`], so it always wins; a predicate runs only when no exact match claims the event, and among predicates the first registered one wins.
 
 Suppose every `0.x` beta `WelcomeMessageSent` folds up to `1.0.0`, but the `0.9.0` beta needs its own mapping:
 
@@ -124,19 +124,19 @@ Suppose every `0.x` beta `WelcomeMessageSent` folds up to `1.0.0`, but the `0.9.
 .register(WelcomeMessage090ToV1.build())       // <2>
 ----
 <1> A broad predicate matching every `0.x` version (`0.x` -> `1.0.0`).
-<2> A specific transformation for `0.9.0`, registered _after_ it (`0.9.0` -> `1.0.0`).
+<2> An exact transformation for the `0.9.0` version (`0.9.0` -> `1.0.0`).
 
 A stored `0.9.0` event matches both.
-The chain applies the *last* one, the concrete `0.9.0` transformation, producing `1.0.0`, which no transformation matches further, so the broad predicate never runs for `0.9.0` while still handling every other `0.x` version.
-Swap the two registrations and the broad predicate would win for `0.9.0` instead.
+The exact `0.9.0` transformation wins, producing `1.0.0`, which no transformation matches further, so the predicate never runs for `0.9.0` while still handling every other `0.x` version.
+Registering the two in the other order changes nothing: the exact match always wins.
 
 [NOTE]
 .What the chain validates, and when
 ====
-A `transform(...)` whose `to` changes the qualified name is rejected: at build time for a concrete `from`, or when a matching event is read for a predicate `from`.
+Two transformations that match the *same exact identity* are a configuration error, reported as a `ChainConfigurationException` when the chain is built. A predicate that merely overlaps an exact match is not a conflict: the exact match wins and the predicate stays a fallback.
+A `transform(...)` whose `to` changes the qualified name is rejected: at build time for an exact `from`, or when a matching event is read for a predicate `from`.
 To change the name on purpose, use xref:defining-transformations.adoc#_renaming_an_event[`rename(...)`] instead.
 A typed mapper whose output identity differs from its declared `to`, and a cycle that exceeds the safety bound, are likewise reported as a `ChainConfigurationException`, but only when the offending event is read.
-Overlapping matches are not an error: they resolve by last-match-wins, as above.
 ====
 
 == Writing safe mappers

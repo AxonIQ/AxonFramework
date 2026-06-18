@@ -166,9 +166,34 @@ Keep it out of the signature otherwise, so the common case stays a plain payload
 [#_matching_multiple_event_versions]
 == Matching multiple event versions
 
-Sometimes one rule should apply to a _range_ of stored identities rather than a single one.
-This is the exception, not the norm: prefer a concrete `MessageType` with one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target.
-Instead of a concrete `MessageType`, pass a predicate to `from(...)`, and scope it to the names it is meant for with `declaringFromTypes(...)`.
+Sometimes one rule should apply to several stored versions rather than a single one.
+Pass a list of `MessageType` values to `from(...)`, and the one mapper applies to every listed identity:
+
+[source,java]
+----
+private static final QualifiedName NAME = new QualifiedName("coursecatalog.WelcomeMessageSent");
+private static final MessageType TO = new MessageType(NAME, "1.0.0"); // <1>
+
+public static EventTransformation build() {
+    return EventTransformation.from(List.of(                       // <2>
+                                      new MessageType(NAME, "0.1.0"),
+                                      new MessageType(NAME, "0.2.0"),
+                                      new MessageType(NAME, "0.3.0")))
+                              .to(TO)
+                              .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
+}
+----
+<1> `to` keeps the same qualified name and bumps only the version. A `transform(...)` does not change the name (use a <<_renaming_an_event,rename>> for that).
+<2> `from(List)` matches any of the listed identities by exact equality, folding all of them up to `1.0.0` with a single registration and a single mapper.
+
+This stays an _exact_ match: every listed version is matched by identity, so the chain routes to it in constant time and resolves it without depending on registration order.
+Prefer it whenever the versions to cover are known, even a long run produced with code such as `IntStream.range(0, 50).mapToObj(v -> new MessageType(NAME, "0." + v + ".0")).toList()`.
+
+[#_matching_with_a_predicate]
+=== Matching with a predicate
+
+This is the exception, not the norm: prefer exact matching (`from(MessageType)`, or `from(List)` for several known versions), one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target and the versions cannot be listed up front.
+Pass the predicate to `from(...)` and scope it to the names it is meant for with `declaringFromTypes(...)`.
 The declared names act as a _pre-filter_: the predicate only ever sees events of those names, so it can match on version alone.
 
 [source,java]
@@ -177,23 +202,29 @@ private static final Predicate<MessageType> BETA_VERSION =
         type -> type.version().startsWith("0."); // <1>
 
 private static final QualifiedName FROM_NAME = new QualifiedName("coursecatalog.WelcomeMessageSent");
-private static final MessageType TO = new MessageType(FROM_NAME, "1.0.0"); // <2>
+private static final MessageType TO = new MessageType(FROM_NAME, "1.0.0");
 
 public static EventTransformation build() {
-    return EventTransformation.from(BETA_VERSION)            // <3>
-                              .declaringFromTypes(FROM_NAME) // <4>
+    return EventTransformation.from(BETA_VERSION)            // <2>
+                              .declaringFromTypes(FROM_NAME) // <3>
                               .to(TO)
                               .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
 }
 ----
 <1> The predicate matches on version alone. The pre-filter takes care of the name.
-<2> `to` keeps the same qualified name and bumps only the version. A `transform(...)` does not change the name (use a <<_renaming_an_event,rename>> for that).
-<3> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
-<4> `declaringFromTypes(...)` declares the names the predicate runs against. The predicate is only ever evaluated for events of these names, so a type-filtering read for `WelcomeMessageSent` stays scoped to that name rather than scanning every stored event.
+<2> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
+<3> `declaringFromTypes(...)` declares the names the predicate runs against. The predicate is only ever evaluated for events of these names, so a type-filtering read for `WelcomeMessageSent` stays scoped to that name rather than scanning every stored event.
 
-This single transformation folds every `0.x` beta version of `WelcomeMessageSent` up to `1.0.0`, instead of registering one transformation per beta version.
+This single transformation folds every `0.x` version of `WelcomeMessageSent` up to `1.0.0` without listing each one.
 
-=== Without a pre-filter
+[IMPORTANT]
+.A predicate cannot be optimized
+====
+The chain cannot look inside a predicate, so unlike an exact `from` it is evaluated for every event that reaches the fallback step (an exact match always takes precedence; see xref:configuring-transformations.adoc#_when_more_than_one_transformation_matches[When more than one transformation matches]).
+Never use one merely to cover a handful of known versions, such as `type -> versions.contains(type.version())`: that runs on every read and the chain cannot optimize it. List the versions in `from(List)` instead.
+====
+
+==== Without a pre-filter
 
 You can omit `declaringFromTypes(...)` and go straight to `to(...)`.
 The predicate then sees _every_ event read, so it must guard the qualified name itself:
