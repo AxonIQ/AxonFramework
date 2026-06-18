@@ -200,8 +200,8 @@ public static EventTransformation build() {
 ----
 <1> Without a pre-filter, the name guard must live inside the predicate.
 
-Both forms produce the same result.
-Prefer `declaringFromTypes(...)`: the predicate stays simpler (version only), and a type-filtering read keeps its filter.
+Both forms produce the same result, but it is typically preferred to use `declaringFromTypes(...)`.
+The predicate stays simpler (version only) and more importantly, the Framework can optimize reads from the event store as it knows the types that are expected..
 Because the chain cannot look inside a predicate, the form without `declaringFromTypes(...)` drops the type filter on reads, a broader read that returns every stored event so the predicate can run against each.
 
 Keep the matched names aligned with the `to` identity's name either way, since renaming an event is not supported.
