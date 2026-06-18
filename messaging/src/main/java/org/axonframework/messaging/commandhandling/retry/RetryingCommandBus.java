@@ -16,17 +16,17 @@
 
 package org.axonframework.messaging.commandhandling.retry;
 
-import org.jspecify.annotations.Nullable;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
-import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageStream.Entry;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.retry.RetryScheduler;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -37,12 +37,27 @@ import static org.axonframework.common.FutureUtils.unwrap;
 /**
  * A {@code CommandBus} wrapper that will retry dispatching {@link CommandMessage commands} that resulted in a failure.
  * <p>
- * A {@link RetryScheduler} is used to determine if and how retries are performed.
+ * A {@link RetryScheduler} is used to determine if and how retries are performed. A {@code CommandBus} is automatically
+ * decorated whenever a {@code RetryScheduler} is present in the
+ * {@link org.axonframework.common.configuration.Configuration}. For manual decoration, be sure to use a
+ * {@link
+ * org.axonframework.common.configuration.ComponentRegistry#registerDecorator(org.axonframework.common.configuration.DecoratorDefinition)
+ * decorator} with an order close to the {@link #DECORATION_ORDER} to ensure other components are not overtaken.
  *
  * @author Allard Buijze
  * @since 5.0.0
  */
 public class RetryingCommandBus implements CommandBus {
+
+    /**
+     * The order in which the {@link RetryingCommandBus} decorator is applied to the {@link CommandBus} relative to
+     * other decorators.
+     * <p>
+     * Set to {@code Integer.MIN_VALUE + 200} to ensure it wraps the
+     * {@link org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus} (order
+     * {@code Integer.MIN_VALUE + 100}), so that retries also pass through the interceptor chain.
+     */
+    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 200;
 
     private final CommandBus delegate;
     private final RetryScheduler retryScheduler;
