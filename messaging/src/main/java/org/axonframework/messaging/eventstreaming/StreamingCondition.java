@@ -78,9 +78,9 @@ public sealed interface StreamingCondition extends EventsCondition permits Defau
      * Returns a copy of this {@code StreamingCondition} with its {@link #criteria()} replaced by the given
      * {@code criteria}, preserving the {@link #position() position} to start streaming from.
      *
-     * @param criteria The {@link EventCriteria} to use in place of the current {@link #criteria()}.
-     * @return A copy of this {@code StreamingCondition} using the given {@code criteria}.
-     * @throws NullPointerException if {@code criteria} is {@code null}.
+     * @param criteria the {@link EventCriteria} to use in place of the current {@link #criteria()}
+     * @return a copy of this {@code StreamingCondition} using the given {@code criteria}
+     * @throws NullPointerException if {@code criteria} is {@code null}
      */
     StreamingCondition withCriteria(EventCriteria criteria);
 
