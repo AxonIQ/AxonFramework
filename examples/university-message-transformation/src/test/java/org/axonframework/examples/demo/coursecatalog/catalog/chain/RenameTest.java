@@ -92,8 +92,9 @@ class RenameTest {
 
     @Test
     void renameWithIdenticalSourceAndTargetIsRejected() {
-        MessageType courseOffered = new MessageType(CourseCatalogMessageNames.COURSE_OFFERED, "1.0.0");
-        assertThatThrownBy(() -> EventTransformation.rename(courseOffered, courseOffered))
+        MessageType source = new MessageType(CourseCatalogMessageNames.COURSE_OFFERED, "1.0.0");
+        MessageType target = new MessageType(CourseCatalogMessageNames.COURSE_OFFERED, "1.0.0");
+        assertThatThrownBy(() -> EventTransformation.rename(source, target))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("identical");
     }

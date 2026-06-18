@@ -127,11 +127,13 @@ Match that version in `from(...)` when lifting legacy events, as shown above.
 Axon Framework 4 keyed an event off its payload _class name_ (the `SerializedType` name defaulted to the fully qualified class name), so a name change had to be bridged at the serialization layer or by an upcaster that rewrote the stored `SerializedType`.
 Axon Framework 5 keys off a logical `MessageType` decoupled from the class, so a rename becomes a first-class operation: declare the old and new identity and the payload is carried over unchanged.
 
-A payload-mapping `transform(...)` may only change the version, never the name.
-A rename uses the dedicated `rename(...)` factory instead, with no mapper:
+A payload-mapping `transform(...)` may only change the version, never the name. For renames, use the dedicated `rename(...)` factory instead, which does not require a mapper:
 
 [source,java]
 ----
+import io.axoniq.framework.messaging.transformation.events.EventTransformation;
+import org.axonframework.messaging.core.MessageType;
+
 public final class CourseOfferedToCoursePublished {
 
     private static final MessageType FROM = new MessageType("coursecatalog.CourseOffered", "1.0.0");
@@ -142,7 +144,7 @@ public final class CourseOfferedToCoursePublished {
     }
 }
 ----
-<1> `rename(from, to)` takes the two identities and nothing else: there is no mapper, because the payload is unchanged. The new identity may change the qualified name, the version, or both.
+<1> `rename(from, to)` takes the two identities and nothing else: there is no mapper, because the payload is carried over unchanged. The new identity may change the qualified name, the version, or both.
 
 A renamed event keeps flowing through the chain, so a rename can sit in front of the version-step transformations that lift it the rest of the way.
 See xref:message-transformation:defining-transformations.adoc#_renaming_an_event[Renaming an event] for the full detail.
