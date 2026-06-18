@@ -677,20 +677,41 @@ class WorkPackage {
     }
 
     /**
-     * Stores {@code safe} unless doing so would rewind the segment's progress, enforcing the monotonicity of the stored
-     * {@link TrackingToken}. A {@code null} or already-stored token is silently ignored; a token that sits
-     * <em>strictly behind</em> the last stored checkpoint (a proven regression) is ignored with a warning rather than
-     * persisted, so a misbehaving component can never rewind progress. Tokens that are merely not comparable to the
-     * last stored one (for example across a replay boundary, or partial multi-source advances) are still stored,
-     * preserving the historical "store on any change" behaviour of the auto-checkpointing path.
+     * Indicates whether {@code candidate} represents a position at or beyond {@code reference}, comparing the raw
+     * {@link WrappedToken#unwrapUpperBound(TrackingToken) unwrapped} upper-bound positions rather than the tokens
+     * directly.
+     * <p>
+     * Unwrapping keeps the comparison robust when a replay concludes: {@code reference} may still be a
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken} while {@code candidate}
+     * is the plain stream token it advances to, and a direct {@code candidate.covers(reference)} would then either
+     * throw (the raw token type rejecting the wrapped one) or report a false regression. Comparing the unwrapped
+     * positions reports that transition as an advance, while still returning {@code false} for a genuine regression or
+     * an incomparable token (such as a partially-regressed multi-source token).
+     *
+     * @param candidate the token whose position is tested
+     * @param reference the token to compare against
+     * @return {@code true} if {@code candidate} covers {@code reference} once both are unwrapped to their raw
+     * upper-bound positions
+     */
+    private static boolean coversWhenUnwrapped(TrackingToken candidate, TrackingToken reference) {
+        return WrappedToken.unwrapUpperBound(candidate).covers(WrappedToken.unwrapUpperBound(reference));
+    }
+
+    /**
+     * Stores {@code safe}, keeping the stored {@link TrackingToken} monotonic. A {@code null} or already-stored token
+     * is ignored. A token that does not {@link #coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last
+     * stored checkpoint -- whether a strict regression or an <em>incomparable</em> position, such as a
+     * partially-regressed multi-source token where one source advanced while another fell behind -- is ignored with a
+     * warning rather than persisted, so a misbehaving component can never rewind progress on any source. A concluding
+     * replay is still recognized as an advance, as the coverage is judged on the unwrapped positions.
      */
     private CompletableFuture<Void> storeIfAdvanced(@Nullable TrackingToken safe, ProcessingContext ctx) {
         if (safe == null || safe.equals(lastStoredToken)) {
             return emptyCompletedFuture();
         }
-        if (lastStoredToken != null && lastStoredToken.covers(safe) && !safe.covers(lastStoredToken)) {
+        if (lastStoredToken != null && !coversWhenUnwrapped(safe, lastStoredToken)) {
             logger.warn(
-                    "Work Package [{}]-[{}] ignoring checkpoint token [{}]; it regresses below the stored token [{}].",
+                    "Work Package [{}]-[{}] ignoring checkpoint token [{}]; it does not advance beyond the stored token [{}].",
                     name,
                     segment.getSegmentId(),
                     safe,

@@ -30,6 +30,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
@@ -506,6 +507,30 @@ class WorkPackageCheckpointTest {
         }
 
         @Test
+        void aReleaseTokenIncomparableToTheLastCheckpointIsIgnoredAndDoesNotRewindAnySource() {
+            // given -- the stored checkpoint is a multi-source position {A=5, B=3}
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+            participant.trigger.requestCheckpoint(new TwoAxisToken(5L, 3L));
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(new TwoAxisToken(5L, 3L)), anyString(), anyInt(), any()
+            ));
+            clearInvocations(tokenStore);
+
+            // when -- on release the component reports {A=4, B=7}: source B advanced but source A fell back, so the two
+            // tokens are incomparable (neither covers the other) rather than a clean advance or a strict regression
+            participant.releaseResult = upTo -> CompletableFuture.completedFuture(new TwoAxisToken(4L, 7L));
+            UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                              .executeWithResult(testSubject::checkpointOnRelease)
+                                              .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                                              .join();
+
+            // then -- the incomparable token is ignored; storing it would have rewound source A from 5 to 4
+            verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+
+        @Test
         void aFailingReleaseFutureDoesNotFailTheFinalCheckpointSoTheClaimCanStillBeReleased() {
             // given -- a component whose onSegmentReleased completes exceptionally (e.g. its async flush failed)
             RecordingCheckpointing participant = new RecordingCheckpointing();
@@ -584,6 +609,35 @@ class WorkPackageCheckpointTest {
         }
     }
 
+    @Nested
+    class ReplayBoundary {
+
+        @Test
+        void aPlainTokenPastTheReplayBoundaryAdvancesBeyondTheStoredReplayTokenAndIsStored() {
+            // given -- the stored checkpoint is still a ReplayToken (replaying position 5, reset was taken at 10)
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+            TrackingToken replayToken = ReplayToken.createReplayToken(new GlobalSequenceTrackingToken(10L),
+                                                                      new GlobalSequenceTrackingToken(5L));
+            participant.trigger.requestCheckpoint(replayToken);
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(replayToken), anyString(), anyInt(), any()
+            ));
+            clearInvocations(tokenStore);
+
+            // when -- a plain stream token past the replay position is checkpointed. Comparing the raw tokens directly
+            // would throw (a GlobalSequenceTrackingToken rejects the wrapped ReplayToken), so the store decision must
+            // compare the unwrapped positions to recognize this as the advance it is.
+            participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(6L));
+
+            // then -- the live token advances beyond the stored replay position (5) and is stored
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(new GlobalSequenceTrackingToken(6L)), anyString(), anyInt(), any()
+            ));
+        }
+    }
+
     private static SimpleEntry<EventMessage> eventAt(long position) {
         return new SimpleEntry<>(
                 EventTestUtils.asEventMessage("event-" + position),
@@ -658,6 +712,34 @@ class WorkPackageCheckpointTest {
         public CompletableFuture<TrackingToken> onCheckpointAdvanced(@NonNull Segment segment,
                                                                      @NonNull TrackingToken requested) {
             return CompletableFuture.completedFuture(requested);
+        }
+    }
+
+    /**
+     * A minimal two-axis {@link TrackingToken}, a deliberately simplified stand-in for a multi-source token (such as
+     * the {@code MultiSourceTrackingToken} provided by an extension). It {@link #covers(TrackingToken) covers} another
+     * two-axis token only when BOTH axes are at or beyond the other's, so two tokens where one axis advanced while the
+     * other regressed are mutually non-covering (incomparable) -- the partial-regression case that must never be
+     * stored, as doing so would rewind progress on the regressed axis.
+     */
+    private record TwoAxisToken(long a, long b) implements TrackingToken {
+
+        @Override
+        public TrackingToken lowerBound(TrackingToken other) {
+            TwoAxisToken that = (TwoAxisToken) other;
+            return new TwoAxisToken(Math.min(a, that.a), Math.min(b, that.b));
+        }
+
+        @Override
+        public TrackingToken upperBound(TrackingToken other) {
+            TwoAxisToken that = (TwoAxisToken) other;
+            return new TwoAxisToken(Math.max(a, that.a), Math.max(b, that.b));
+        }
+
+        @Override
+        public boolean covers(TrackingToken other) {
+            TwoAxisToken that = (TwoAxisToken) other;
+            return a >= that.a && b >= that.b;
         }
     }
 }
