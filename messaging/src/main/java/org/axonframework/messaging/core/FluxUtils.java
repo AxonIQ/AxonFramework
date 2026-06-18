@@ -51,7 +51,7 @@ public final class FluxUtils {
         return Flux.create(emitter -> {
             FluxStreamAdapter<M> fluxTask = new FluxStreamAdapter<>(source, emitter);
             emitter.onRequest(i -> fluxTask.process());
-            emitter.onCancel(source::close);
+            emitter.onDispose(source::close);
             source.setCallback(fluxTask::process);
         });
     }
@@ -126,8 +126,9 @@ public final class FluxUtils {
                         source.error().ifPresentOrElse(emitter::error, emitter::complete);
                     }
                 } catch (Exception e) {
+                    // The emitter's onDispose(source::close) closes the source once the error terminates the
+                    // sink, so no explicit close() is needed here (avoids a duplicate close).
                     emitter.error(e);
-                    source.close();
                 } finally {
                     processingGate.set(false);
                 }
