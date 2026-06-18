@@ -1,3 +1,4 @@
+[.axoniq-feature]
 = Snapshotting Migration
 :navtitle: Snapshotting
 
