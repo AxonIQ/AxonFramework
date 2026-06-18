@@ -65,7 +65,8 @@ mvn compile exec:java
 Or run `CourseCatalogApplication#main` from your IDE.
 
 The bootstrap seeds the legacy history, dispatches a few sample commands, awaits
-the projection, prints the resulting catalog view, and shuts down.
+the projection, prints the resulting catalog view, and shuts down. The printed
+view ends with a `Welcome messages` section: which shows which students were registered in the past.
 
 The bundled `logback.xml` enables `DEBUG` for `io.axoniq.framework.messaging.transformation`,
 so the chain build log naming every registered transformation shows up on startup.
@@ -125,9 +126,22 @@ Courses (7):
 Enrolments (1):
   - Student:alice in Course:ai-101 region=EU
   ...
+Welcome messages (3):
+  - Student:alice: Welcome to the catalog, Alice.
+  - Student:bob: Hi Bob, welcome to the catalog.
+  - Student:carol: Welcome Carol.
+
+course-catalog> welcome alice
+  Student:alice: Welcome to the catalog, Alice.
 
 course-catalog> exit
 ```
+
+The three welcome messages were written years ago as beta-versioned
+`WelcomeMessageSent` events (0.5 / 0.7 / 0.9), each with a now-removed `subject`
+field. `WelcomeMessageBetaCleanup` folds every `0.x` version to `1.0.0` on the read
+path, so the projection only ever records the current shape. The `welcome` command
+looks one up by student id (the seeded students are `alice`, `bob`, and `carol`).
 
 The placeholders in `help` (`<courseId>`, `<name>`, `<min>`, `<max>`,
 `<studentId>`) are values you choose: any string for `courseId` and `studentId`,

@@ -22,7 +22,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-class WelcomeMessageBetaCleanupTest {
+class WelcomeMessageBetaCleanupWithoutPreFilterTest {
 
     private static final MessageType WELCOME_V1 =
             new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0");
@@ -37,12 +37,6 @@ class WelcomeMessageBetaCleanupTest {
         }
 
         @Test
-        void liftsBetaV0_7ToV1() {
-            runCleanup("0.7", "/transformations/welcomemessagesent/v0_7.json",
-                       "/transformations/welcomemessagesent/v1_bob.json");
-        }
-
-        @Test
         void liftsBetaV0_9ToV1() {
             runCleanup("0.9", "/transformations/welcomemessagesent/v0_9.json",
                        "/transformations/welcomemessagesent/v1_carol.json");
@@ -50,14 +44,14 @@ class WelcomeMessageBetaCleanupTest {
     }
 
     @Nested
-    class PreFilterScopesThePredicateToTheDeclaredName {
+    class TheNameGuardLivesInThePredicate {
 
         @Test
-        void aForeignEventWithAMatchingVersionPassesThroughUntouched() {
-            // given a CoursePublished beta whose 0.x version the cleanup's predicate would match
-            // when the cleanup runs (it declares WelcomeMessageSent, so the pre-filter excludes CoursePublished)
-            // then the foreign event never reaches the predicate and is left untouched
-            TransformationTester.forTransformation(WelcomeMessageBetaCleanup.build())
+        void aForeignEventWithAMatchingVersionIsExcludedByThePredicatesNameGuard() {
+            // given a CoursePublished beta whose 0.x version alone the predicate would match
+            // when the cleanup runs (its predicate also guards on the WelcomeMessageSent name)
+            // then the predicate rejects the foreign name and the event is left untouched
+            TransformationTester.forTransformation(WelcomeMessageBetaCleanupWithoutPreFilter.build())
                                 .given()
                                 .messageType(CourseCatalogMessageNames.COURSE_PUBLISHED, "0.9.0")
                                 .payloadFromResource("/transformations/coursepublished/v1.json")
@@ -70,7 +64,7 @@ class WelcomeMessageBetaCleanupTest {
     }
 
     private static void runCleanup(String betaVersion, String inputResource, String expectedResource) {
-        TransformationTester.forTransformation(WelcomeMessageBetaCleanup.build())
+        TransformationTester.forTransformation(WelcomeMessageBetaCleanupWithoutPreFilter.build())
                             .given()
                             .messageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, betaVersion)
                             .payloadFromResource(inputResource)

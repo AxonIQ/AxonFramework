@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventstreaming;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
@@ -24,6 +25,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -166,6 +168,7 @@ import java.util.stream.Collectors;
  * @author Sara Pellegrini
  * @author Steven van Beelen
  * @author Mitchell Herrijgers
+ * @author Laura Devriendt
  * @since 5.0.0
  */
 public sealed interface EventCriteria
@@ -306,6 +309,36 @@ public sealed interface EventCriteria
      * @return The flattened set of {@code EventCriteria}.
      */
     Set<EventCriterion> flatten();
+
+    /**
+     * Rewrites each {@link EventCriterion} of this criteria with {@code mapper} and OR's the results back together,
+     * using {@link #flatten()} to get the individual parts and {@link #either(Collection)} to rejoin them. Returns
+     * this same instance when nothing changes: a match-everything criteria (no parts to map), or a {@code mapper} that
+     * returns every part unchanged.
+     * <p>
+     * Marked {@link Internal @Internal}: it backs the framework's read-time criteria rewriting and is not yet a
+     * committed public capability.
+     *
+     * @param mapper rewrites a single {@link EventCriterion}; return it unchanged to leave it as-is
+     * @return the transformed criteria, or this same instance when nothing changed
+     */
+    @Internal
+    default EventCriteria mapEachCriterion(Function<EventCriterion, EventCriteria> mapper) {
+        Objects.requireNonNull(mapper, "The mapper cannot be null.");
+        Set<EventCriterion> criteria = flatten();
+        if (criteria.isEmpty()) {
+            return this;
+        }
+        Set<EventCriteria> mapped = HashSet.newHashSet(criteria.size());
+        boolean changed = false;
+        for (EventCriterion criterion : criteria) {
+            EventCriteria result = Objects.requireNonNull(mapper.apply(criterion),
+                                                          "The mapper must not return a null EventCriteria.");
+            mapped.add(result);
+            changed = changed || !result.equals(criterion);
+        }
+        return changed ? either(mapped) : this;
+    }
 
     /**
      * Indicates whether this {@code EventCriteria} instance has any criteria defined.

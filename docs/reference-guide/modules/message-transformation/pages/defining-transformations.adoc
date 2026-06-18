@@ -156,25 +156,55 @@ Keep it out of the signature otherwise, so the common case stays a plain payload
 
 Sometimes one rule should apply to a _range_ of stored identities rather than a single one.
 This is the exception, not the norm: prefer a concrete `MessageType` with one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target.
-Instead of a concrete `MessageType`, pass a predicate to `from(...)`:
+Instead of a concrete `MessageType`, pass a predicate to `from(...)`, and scope it to the names it is meant for with `declaringFromTypes(...)`.
+The declared names act as a _pre-filter_: the predicate only ever sees events of those names, so it can match on version alone.
+
+[source,java]
+----
+private static final Predicate<MessageType> BETA_VERSION =
+        type -> type.version().startsWith("0."); // <1>
+
+private static final QualifiedName FROM_NAME = new QualifiedName("coursecatalog.WelcomeMessageSent");
+private static final MessageType TO = new MessageType(FROM_NAME, "1.0.0"); // <2>
+
+public static EventTransformation build() {
+    return EventTransformation.from(BETA_VERSION)            // <3>
+                              .declaringFromTypes(FROM_NAME) // <4>
+                              .to(TO)
+                              .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
+}
+----
+<1> The predicate matches on version alone; the pre-filter takes care of the name.
+<2> `to` keeps the same qualified name, only bumping the version, since renaming an event is not supported.
+<3> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
+<4> `declaringFromTypes(...)` declares the names the predicate runs against. The predicate is only ever evaluated for events of these names, so a type-filtering read for `WelcomeMessageSent` stays scoped to that name rather than scanning every stored event.
+
+This single transformation folds every `0.x` beta version of `WelcomeMessageSent` up to `1.0.0`, instead of registering one transformation per beta version.
+
+=== Without a pre-filter
+
+You can omit `declaringFromTypes(...)` and go straight to `to(...)`.
+The predicate then sees _every_ event read, so it must guard the qualified name itself:
 
 [source,java]
 ----
 private static final Predicate<MessageType> FROM_PREDICATE =
-        type -> "coursecatalog.WelcomeMessageSent".equals(type.qualifiedName().name())
-                && type.version().startsWith("0."); // <1>
+        type -> "coursecatalog.WelcomeMessageSent".equals(type.qualifiedName().name()) // <1>
+                && type.version().startsWith("0.");
 
 public static EventTransformation build() {
     return EventTransformation.from(FROM_PREDICATE) // <2>
                               .to(new MessageType("coursecatalog.WelcomeMessageSent", "1.0.0"))
-                              .transform(JsonNode.class, WelcomeMessageBetaCleanup::map);
+                              .transform(JsonNode.class, WelcomeMessageBetaCleanupWithoutPreFilter::map);
 }
 ----
-<1> The predicate matches any stored `WelcomeMessageSent` whose version starts with `0.`.
-<2> Pass the predicate to the `from(...)` overload instead of a concrete `MessageType`.
+<1> Without a pre-filter, the name guard must live inside the predicate.
 
-This single transformation folds every `0.x` beta version of `WelcomeMessageSent` up to `1.0.0`, instead of registering one transformation per beta version.
-Keep the predicate's matched names aligned with the `to` identity's name, since renaming an event is not supported.
+Both forms produce the same result, but it is typically preferred to use `declaringFromTypes(...)`.
+The predicate stays simpler (version only) and more importantly, the Framework can optimize reads from the event store as it knows the types that are expected..
+Because the chain cannot look inside a predicate, the form without `declaringFromTypes(...)` drops the type filter on reads, a broader read that returns every stored event so the predicate can run against each.
+
+Keep the matched names aligned with the `to` identity's name either way, since renaming an event is not supported.
 
 == Next steps
 

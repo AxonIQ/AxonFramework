@@ -49,6 +49,12 @@ public interface CatalogViewRepository {
      */
     void recordEnrolment(CourseId courseId, StudentId studentId, String region);
 
+    /**
+     * @param studentId the recipient of the welcome message
+     * @param body      the message body (re-recording the same student replays to the same body)
+     */
+    void recordWelcomeMessage(StudentId studentId, String body);
+
     /** @return the full snapshot of the catalog */
     CourseCatalogView snapshot();
 }

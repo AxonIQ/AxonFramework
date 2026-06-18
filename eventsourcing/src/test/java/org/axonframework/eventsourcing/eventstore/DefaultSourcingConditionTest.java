@@ -19,6 +19,8 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.*;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -52,6 +54,32 @@ class DefaultSourcingConditionTest {
         assertEquals(position1, result1.start());
         assertNotEquals(position2, result2.start());
         assertEquals(position1, result2.start());
+    }
+
+    @Test
+    void withCriteriaReplacesTheExistingCriteriaPreservingStrategy() {
+        // given a condition with a sourcing strategy and a replacement criteria
+        SourcingStrategy strategy = new SourcingStrategy.Absolute(new GlobalIndexPosition(10));
+        SourcingCondition testSubject = new DefaultSourcingCondition(strategy, TEST_CRITERIA);
+        EventCriteria replacement = EventCriteria.havingTags("other-key", "other-value");
+
+        // when the criteria is replaced
+        SourcingCondition result = testSubject.withCriteria(replacement);
+
+        // then the strategy is preserved and only the replacement criteria remains (the original is dropped)
+        assertEquals(strategy, result.strategy());
+        assertEquals(Set.of(replacement), result.criteria().flatten());
+    }
+
+    @Test
+    void withCriteriaThrowsExceptionForNullCriteria() {
+        // given a condition with an absolute start position
+        SourcingCondition testSubject =
+                new DefaultSourcingCondition(new SourcingStrategy.Absolute(Position.START), TEST_CRITERIA);
+
+        // when replacing with null criteria, then a NullPointerException is raised
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class, () -> testSubject.withCriteria(null));
     }
 
     @Test

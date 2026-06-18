@@ -34,7 +34,9 @@ The demo composes five transformations into one chain, each illustrating a techn
 
 | `WelcomeMessageBetaCleanup`
 | every `0.x` beta version folds up to `1.0.0`
-| xref:defining-transformations.adoc#_matching_multiple_event_versions[a predicate matching multiple versions]
+| xref:defining-transformations.adoc#_matching_multiple_event_versions[a version-only predicate scoped with `declaringFromTypes`]
 |===
+
+A sixth class, `WelcomeMessageBetaCleanupWithoutPreFilter`, expresses that last rule without `declaringFromTypes(...)` to contrast the xref:defining-transformations.adoc#_matching_multiple_event_versions[two predicate-`from` styles]; it is not registered in the chain.
 
 The chain is assembled in `CourseCatalogTransformations` and registered as an `EventTransformerChain` component, exactly as shown in xref:configuring-transformations.adoc[Configuring transformations].
