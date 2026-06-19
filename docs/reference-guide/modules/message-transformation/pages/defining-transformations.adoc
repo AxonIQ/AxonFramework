@@ -167,7 +167,7 @@ Keep it out of the signature otherwise, so the common case stays a plain payload
 == Matching multiple event versions
 
 Sometimes one rule should apply to several stored versions rather than a single one.
-Pass a list of `MessageType` values to `from(...)`, and the one mapper applies to every listed identity:
+Pass a set of `MessageType` values to `from(...)`, and the one mapper applies to every given identity:
 
 [source,java]
 ----
@@ -175,7 +175,7 @@ private static final QualifiedName NAME = new QualifiedName("coursecatalog.Welco
 private static final MessageType TO = new MessageType(NAME, "1.0.0"); // <1>
 
 public static EventTransformation build() {
-    return EventTransformation.from(List.of(                       // <2>
+    return EventTransformation.from(Set.of(                        // <2>
                                       new MessageType(NAME, "0.1.0"),
                                       new MessageType(NAME, "0.2.0"),
                                       new MessageType(NAME, "0.3.0")))
@@ -184,15 +184,15 @@ public static EventTransformation build() {
 }
 ----
 <1> `to` keeps the same qualified name and bumps only the version. A `transform(...)` does not change the name (use a <<_renaming_an_event,rename>> for that).
-<2> `from(List)` matches any of the listed identities by exact equality, folding all of them up to `1.0.0` with a single registration and a single mapper.
+<2> `from(Set)` matches any of the given identities by exact equality, folding all of them up to `1.0.0` with a single registration and a single mapper.
 
-This stays an _exact_ match: every listed version is matched by identity, so the chain routes to it in constant time and resolves it without depending on registration order.
-Prefer it whenever the versions to cover are known, even a long run produced with code such as `IntStream.range(0, 50).mapToObj(v -> new MessageType(NAME, "0." + v + ".0")).toList()`.
+This stays an _exact_ match: every given version is matched by identity, so the chain routes to it in constant time and resolves it without depending on registration order.
+Prefer it whenever the versions to cover are known, even a long run produced with code such as `IntStream.range(0, 50).mapToObj(v -> new MessageType(NAME, "0." + v + ".0")).collect(Collectors.toSet())`.
 
 [#_matching_with_a_predicate]
 === Matching with a predicate
 
-This is the exception, not the norm: prefer exact matching (`from(MessageType)`, or `from(List)` for several known versions), one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target and the versions cannot be listed up front.
+This is the exception, not the norm: prefer exact matching (`from(MessageType)`, or `from(Set)` for several known versions), one transformation per version step, and reach for a predicate only when a whole range of historic versions genuinely folds to a single target and the versions cannot be listed up front.
 Pass the predicate to `from(...)` and scope it to the names it is meant for with `declaringFromTypes(...)`.
 The declared names act as a _pre-filter_: the predicate only ever sees events of those names, so it can match on version alone.
 
@@ -221,7 +221,7 @@ This single transformation folds every `0.x` version of `WelcomeMessageSent` up 
 .A predicate cannot be optimized
 ====
 The chain cannot look inside a predicate, so unlike an exact `from` it is evaluated for every event that reaches the fallback step (an exact match always takes precedence; see xref:configuring-transformations.adoc#_when_more_than_one_transformation_matches[When more than one transformation matches]).
-Never use one merely to cover a handful of known versions, such as `type -> versions.contains(type.version())`: that runs on every read and the chain cannot optimize it. List the versions in `from(List)` instead.
+Never use one merely to cover a handful of known versions, such as `type -> versions.contains(type.version())`: that runs on every read and the chain cannot optimize it. List the versions in `from(Set)` instead.
 ====
 
 ==== Without a pre-filter

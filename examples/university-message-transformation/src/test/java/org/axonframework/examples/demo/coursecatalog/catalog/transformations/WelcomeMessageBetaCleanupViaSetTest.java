@@ -22,7 +22,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-class WelcomeMessageBetaCleanupViaListTest {
+class WelcomeMessageBetaCleanupViaSetTest {
 
     private static final MessageType WELCOME_V1 =
             new MessageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "1.0.0");
@@ -57,7 +57,7 @@ class WelcomeMessageBetaCleanupViaListTest {
             // given a WelcomeMessageSent 0.6, a version the list does not cover
             // when the cleanup runs
             // then the event is passed through unchanged, since only listed versions match
-            TransformationTester.forTransformation(WelcomeMessageBetaCleanupViaList.build())
+            TransformationTester.forTransformation(WelcomeMessageBetaCleanupViaSet.build())
                                 .given()
                                 .messageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, "0.6")
                                 .payloadFromResource("/transformations/welcomemessagesent/v0_5.json")
@@ -70,7 +70,7 @@ class WelcomeMessageBetaCleanupViaListTest {
     }
 
     private static void runCleanup(String betaVersion, String inputResource, String expectedResource) {
-        TransformationTester.forTransformation(WelcomeMessageBetaCleanupViaList.build())
+        TransformationTester.forTransformation(WelcomeMessageBetaCleanupViaSet.build())
                             .given()
                             .messageType(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT, betaVersion)
                             .payloadFromResource(inputResource)

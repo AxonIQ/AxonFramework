@@ -27,14 +27,14 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 
-import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Demonstrates how the chain resolves a stored event when more than one transformation could apply: exact identity
  * matches win over predicates regardless of registration order, a predicate runs only as a fallback, a single
- * {@code from(List)} folds several known versions, and two transformations claiming the same exact source are
+ * {@code from(Set)} folds several known versions, and two transformations claiming the same exact source are
  * rejected when the chain is built.
  */
 class SemanticMatchingTest {
@@ -78,11 +78,11 @@ class SemanticMatchingTest {
     }
 
     @Test
-    void aSingleFromListFoldsEveryListedVersion() {
+    void aSingleFromSetFoldsEveryGivenVersion() {
         EventTransformerChain chain = EventTransformerChain.builder()
-                                                           .register(EventTransformation.from(List.of(welcome("0.5"),
-                                                                                                      welcome("0.7"),
-                                                                                                      welcome("0.9")))
+                                                           .register(EventTransformation.from(Set.of(welcome("0.5"),
+                                                                                                     welcome("0.7"),
+                                                                                                     welcome("0.9")))
                                                                                         .to(CURRENT)
                                                                                         .transform(JsonNode.class,
                                                                                                    (in, ctx) -> in))

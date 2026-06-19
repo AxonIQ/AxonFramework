@@ -24,35 +24,35 @@ import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessag
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 
-import java.util.List;
+import java.util.Set;
 
 /**
  * The same {@code 0.x} beta cleanup as {@link WelcomeMessageBetaCleanup}, expressed by listing the
- * exact stored versions ({@code 0.5}, {@code 0.7}, {@code 0.9}) in {@code from(List)} rather than
- * matching them with a predicate. One mapper still applies to all of them.
+ * exact stored versions ({@code 0.5}, {@code 0.7}, {@code 0.9}) in {@link EventTransformation#from(Set)} rather
+ * than matching them with a predicate. One mapper still applies to all of them.
  * <p>
  * This is the preferred form whenever the versions to cover are known: each is matched by exact
  * identity, so the chain resolves it without depending on registration order, and an exact match
  * always takes precedence over any overlapping predicate. Reach for a predicate (as
  * {@link WelcomeMessageBetaCleanup} does) only when the set of versions cannot be listed up front.
  */
-public final class WelcomeMessageBetaCleanupViaList {
+public final class WelcomeMessageBetaCleanupViaSet {
 
     private static final QualifiedName NAME =
             new QualifiedName(CourseCatalogMessageNames.WELCOME_MESSAGE_SENT);
     // Same name, bumped version: renaming an event is not supported.
     private static final MessageType TO = new MessageType(NAME, "1.0.0");
 
-    private WelcomeMessageBetaCleanupViaList() {
+    private WelcomeMessageBetaCleanupViaSet() {
     }
 
     /** @return the transformation; an unregistered alternative to {@link WelcomeMessageBetaCleanup} */
     public static EventTransformation build() {
-        return EventTransformation.from(List.of(new MessageType(NAME, "0.5"),
-                                                new MessageType(NAME, "0.7"),
-                                                new MessageType(NAME, "0.9")))
+        return EventTransformation.from(Set.of(new MessageType(NAME, "0.5"),
+                                               new MessageType(NAME, "0.7"),
+                                               new MessageType(NAME, "0.9")))
                                   .to(TO)
-                                  .transform(JsonNode.class, WelcomeMessageBetaCleanupViaList::map);
+                                  .transform(JsonNode.class, WelcomeMessageBetaCleanupViaSet::map);
     }
 
     private static JsonNode map(JsonNode beta) {

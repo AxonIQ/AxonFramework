@@ -30,11 +30,11 @@ import io.axoniq.framework.messaging.transformation.events.EventTransformerChain
  * When several transformations could match the same event, the most specific one wins regardless of
  * registration order: an exact {@code from} always beats a predicate, and two transformations claiming
  * the same exact identity are rejected when the chain is built. This chain has a single predicate
- * ({@code WelcomeMessageBetaCleanup}), so no such contest arises.
+ * ({@link WelcomeMessageBetaCleanup}), so no such contest arises.
  * <p>
  * {@code WelcomeMessageBetaCleanup} is registered here only to demonstrate that an exact {@code from} takes
  * precedence over a predicate. When the beta versions are known up front, the preferred form is the exact
- * {@link WelcomeMessageBetaCleanupViaList}, which lists them in a {@code from(List)} rather than matching with a
+ * {@link WelcomeMessageBetaCleanupViaSet}, which lists them in a {@code from(Set)} rather than matching with a
  * predicate.
  */
 public final class CourseCatalogTransformations {
