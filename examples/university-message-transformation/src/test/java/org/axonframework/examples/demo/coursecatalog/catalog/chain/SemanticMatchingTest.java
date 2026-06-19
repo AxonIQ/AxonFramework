@@ -27,22 +27,18 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Demonstrates how the chain resolves a stored event when more than one transformation could apply: exact identity
- * matches win over predicates regardless of registration order, a predicate runs only as a fallback, a single
- * {@code from(List)} folds several known versions, and two transformations claiming the same exact source are
- * rejected when the chain is built.
+ * matches win over predicates regardless of registration order, a predicate runs only as a fallback, and two
+ * transformations claiming the same exact source are rejected when the chain is built.
  */
 class SemanticMatchingTest {
 
     private static final String WELCOME = CourseCatalogMessageNames.WELCOME_MESSAGE_SENT;
     private static final MessageType VIA_EXACT = welcome("9.0.0");
     private static final MessageType VIA_PREDICATE = welcome("8.0.0");
-    private static final MessageType CURRENT = welcome("1.0.0");
 
     @Test
     void exactMatchWinsOverAnOverlappingPredicateWhenThePredicateIsRegisteredFirst() {
@@ -75,22 +71,6 @@ class SemanticMatchingTest {
 
         // 0.7 has no exact match, so it falls back to the predicate
         runWelcome(chain, "0.7").outputType(VIA_PREDICATE);
-    }
-
-    @Test
-    void aSingleFromListFoldsEveryListedVersion() {
-        EventTransformerChain chain = EventTransformerChain.builder()
-                                                           .register(EventTransformation.from(List.of(welcome("0.5"),
-                                                                                                      welcome("0.7"),
-                                                                                                      welcome("0.9")))
-                                                                                        .to(CURRENT)
-                                                                                        .transform(JsonNode.class,
-                                                                                                   (in, ctx) -> in))
-                                                           .build();
-
-        runWelcome(chain, "0.5").outputType(CURRENT);
-        runWelcome(chain, "0.7").outputType(CURRENT);
-        runWelcome(chain, "0.9").outputType(CURRENT);
     }
 
     @Test

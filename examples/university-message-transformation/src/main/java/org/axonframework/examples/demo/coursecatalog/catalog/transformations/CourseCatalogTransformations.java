@@ -19,14 +19,23 @@ package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 import io.axoniq.framework.messaging.transformation.events.EventTransformerChain;
 
 /**
- * Composes the catalog's event transformations into a single
- * {@link EventTransformerChain}. Registration order matters: v1 to v2 must precede
- * v2 to v3 so a stored v1 event reaches a handler as the current shape. The
- * {@code CourseOffered} rename runs first, so a renamed event then flows through the
- * {@code CoursePublished} version chain.
+ * Composes the catalog's event transformations into a single {@link EventTransformerChain}.
  * <p>
- * The {@code SystemHeartbeat} drop is order-independent: no other transformation matches that
- * event, so it removes the legacy heartbeats from the read stream wherever it sits.
+ * The chain matches each event by identity and re-applies transformations until none matches, so
+ * multi-step version hops compose on their own. A stored v1 {@code CoursePublished} is lifted to v2 and
+ * then to v3, and a {@code CourseOffered} is first renamed to {@code CoursePublished} before flowing
+ * through those same version hops. Each step matches a different identity, so registration order does
+ * not affect the outcome here; the transformations are grouped only for readability.
+ * <p>
+ * When several transformations could match the same event, the most specific one wins regardless of
+ * registration order: an exact {@code from} always beats a predicate, and two transformations claiming
+ * the same exact identity are rejected when the chain is built. This chain has a single predicate
+ * ({@link WelcomeMessageBetaCleanup}), so no such contest arises.
+ * <p>
+ * {@code WelcomeMessageBetaCleanup} folds the open-ended range of {@code 0.x} beta versions up to
+ * {@code 1.0.0} with a predicate, the right tool when the versions to fold cannot be enumerated up
+ * front. An event that evolves through known versions is instead modelled one version step at a time,
+ * as {@code CoursePublished} and {@code StudentRegistered} are above.
  */
 public final class CourseCatalogTransformations {
 

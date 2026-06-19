@@ -27,8 +27,9 @@ import org.axonframework.messaging.core.MessageType;
  * A pure rename: only the identity changes, the payload is carried over unchanged, so there is no
  * mapper. The renamed {@code CoursePublished} {@code 1.0.0} then flows through
  * {@link CoursePublishedV1ToV2} and {@link CoursePublishedV2ToV3}, so a historic {@code CourseOffered}
- * reaches handlers as the current {@code CoursePublished}. Because a {@code transform(...)} may only
- * change the version, a name change like this needs {@code rename(...)}.
+ * reaches handlers as the current {@code CoursePublished}. Because a
+ * {@link EventTransformation.TransformStep#transform transform(...)} may only change the version, a
+ * name change like this needs {@link EventTransformation#rename rename(...)}.
  */
 public final class CourseOfferedToCoursePublished {
 
