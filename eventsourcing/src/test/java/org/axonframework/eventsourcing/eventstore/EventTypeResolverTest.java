@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.messaging.core.MessageType;
 import org.junit.jupiter.api.*;
 
@@ -110,8 +111,15 @@ class EventTypeResolverTest {
 
         @Test
         void nullDefaultVersionThrowsException() {
+            //noinspection DataFlowIssue
             assertThatThrownBy(() -> EventTypeResolver.withDefaultVersion(null))
-                    .isInstanceOf(NullPointerException.class);
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
+
+        @Test
+        void emptyDefaultVersionThrowsException() {
+            assertThatThrownBy(() -> EventTypeResolver.withDefaultVersion(""))
+                    .isInstanceOf(AxonConfigurationException.class);
         }
     }
 }

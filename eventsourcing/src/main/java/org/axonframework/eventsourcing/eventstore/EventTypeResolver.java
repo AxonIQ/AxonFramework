@@ -16,11 +16,10 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.BuilderUtils;
 import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.core.MessageType;
 import org.jspecify.annotations.Nullable;
-
-import static java.util.Objects.requireNonNull;
 
 /**
  * Read-side resolver that constructs a {@link MessageType} from the stored qualified name and version of a stored
@@ -32,11 +31,10 @@ import static java.util.Objects.requireNonNull;
  * (possibly {@code null} or empty) {@code version}, it returns the {@link MessageType} to use when reading a stored
  * event.
  * <p>
- * The default resolver, obtained from {@link #DEFAULT}, substitutes {@value #MISSING_VERSION_DEFAULT} for any
- * missing or empty stored version. This ensures that events stored by Axon Framework 4 (which allowed a {@code null}
- * revision) can be read by Axon Framework 5 without any schema migration. Use
- * {@link #withDefaultVersion(String)} to override the substituted version when {@value #MISSING_VERSION_DEFAULT}
- * does not suit your needs.
+ * The default resolver, obtained from {@link #DEFAULT}, substitutes {@value #MISSING_VERSION_DEFAULT} for any missing
+ * or empty stored version. This ensures that events stored by Axon Framework 4 (which allowed a {@code null} revision)
+ * can be read by Axon Framework 5 without any schema migration. Use {@link #withDefaultVersion(String)} to override the
+ * substituted version when {@value #MISSING_VERSION_DEFAULT} does not suit your needs.
  * <p>
  * Implementations are permitted to rewrite the {@code qualifiedName}, but doing so is discouraged: semantic event
  * evolution belongs in the transformation layer, not in version normalization. This interface is intentionally narrow;
@@ -69,10 +67,11 @@ public interface EventTypeResolver {
      * @param defaultVersion the version to use when the stored version is absent; must not be {@code null} or empty
      * @return a {@code EventTypeResolver} that substitutes the given {@code defaultVersion} for any {@code null} or
      * empty stored version, and passes the stored version through unchanged when present
-     * @throws NullPointerException if {@code defaultVersion} is {@code null}
+     * @throws org.axonframework.common.AxonConfigurationException if the given {@code defaultVersion} is {@code null}
+     *                                                             or empty
      */
     static EventTypeResolver withDefaultVersion(String defaultVersion) {
-        requireNonNull(defaultVersion, "The defaultVersion may not be null.");
+        BuilderUtils.assertNonEmpty(defaultVersion, "The defaultVersion may not be null or empty.");
         //noinspection DataFlowIssue
         return (qualifiedName, version) -> new MessageType(
                 qualifiedName,
