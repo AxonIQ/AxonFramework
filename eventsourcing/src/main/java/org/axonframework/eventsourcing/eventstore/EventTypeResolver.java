@@ -32,7 +32,7 @@ import static java.util.Objects.requireNonNull;
  * (possibly {@code null} or empty) {@code version}, it returns the {@link MessageType} to use when reading a stored
  * event.
  * <p>
- * The default resolver, obtained from {@link #defaultResolver()}, substitutes {@value #MISSING_VERSION_DEFAULT} for any
+ * The default resolver, obtained from {@link #DEFAULT}, substitutes {@value #MISSING_VERSION_DEFAULT} for any
  * missing or empty stored version. This ensures that events stored by Axon Framework 4 (which allowed a {@code null}
  * revision) can be read by Axon Framework 5 without any schema migration. Use
  * {@link #withDefaultVersion(String)} to override the substituted version when {@value #MISSING_VERSION_DEFAULT}
@@ -49,8 +49,7 @@ import static java.util.Objects.requireNonNull;
 public interface EventTypeResolver {
 
     /**
-     * The version substituted for {@code null} or empty versions by the {@link #DEFAULT} and
-     * {@link #withDefaultVersion(String)}.
+     * The version substituted for {@code null} or empty versions by the {@link #DEFAULT} event type resolver.
      * <p>
      * Set to {@value}, deliberately distinct from {@link MessageType#DEFAULT_VERSION} ({@code 0.0.1}), so legacy AF4
      * events without a revision always sort as older than any explicitly versioned event.
