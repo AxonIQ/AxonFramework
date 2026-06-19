@@ -93,6 +93,7 @@ Payload conversion handles many common versioning scenarios without requiring up
 * **Restructuring for different handlers** - Different handlers can use completely different Java types for the same event.
 
 [[event-upcasting]]
+[.axoniq-feature]
 == Event Upcasting
 
 Upcasting rewrites the stored representation of an event when it is read, for the structural changes that xref:#event_versioning_at_handling_time[payload conversion at handling time] cannot express on its own.
