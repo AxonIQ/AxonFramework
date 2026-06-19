@@ -24,6 +24,7 @@ import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
+import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker.AggregateSequencer;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedEventStorageEngineUtils;
 import org.axonframework.eventsourcing.eventstore.AggregateSequenceNumberPosition;
@@ -42,7 +43,6 @@ import org.axonframework.eventsourcing.eventstore.TerminalEventMessage;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -140,6 +140,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private final int gapCleaningThreshold;
     private final int maxGapOffset;
     private final long lowestGlobalSequence;
+    private final EventTypeResolver eventTypeResolver;
 
     private final GapAwareTrackingTokenOperations tokenOperations;
     private final Predicate<Throwable> isConflictException;
@@ -175,6 +176,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         this.gapCleaningThreshold = config.gapCleaningThreshold();
         this.lowestGlobalSequence = config.lowestGlobalSequence();
         this.maxGapOffset = config.maxGapOffset();
+        this.eventTypeResolver = config.eventTypeResolver();
 
         this.tokenOperations = new GapAwareTrackingTokenOperations(config.gapTimeout(), logger);
         this.eventCoordinatorHandle = config.eventCoordinator().startCoordination(this::onAppendDetected);
@@ -426,7 +428,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
 
     private GenericEventMessage convertToEventMessage(AggregateEventEntry event) {
         return new GenericEventMessage(event.identifier(),
-                                       new MessageType(event.type(), event.version()),
+                                       eventTypeResolver.resolve(event.type(), event.version()),
                                        event.payload(),
                                        converter.convert(event.metadata(), METADATA_MAP_TYPE_REF.getType()),
                                        event.timestamp()
