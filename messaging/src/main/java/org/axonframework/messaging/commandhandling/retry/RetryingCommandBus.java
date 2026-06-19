@@ -53,7 +53,7 @@ public class RetryingCommandBus implements CommandBus {
      * The order in which the {@link RetryingCommandBus} decorator is applied to the {@link CommandBus} relative to
      * other decorators.
      * <p>
-     * Set to {@code Integer.MIN_VALUE + 200} to ensure it wraps the
+     * Set to {@code Integer.MIN_VALUE + 1000} to ensure it wraps the
      * {@link org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus} (order
      * {@code Integer.MIN_VALUE + 100}), so that retries also pass through the interceptor chain.
      */
