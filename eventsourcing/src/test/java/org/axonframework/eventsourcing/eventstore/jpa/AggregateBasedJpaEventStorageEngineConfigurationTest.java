@@ -74,21 +74,21 @@ class AggregateBasedJpaEventStorageEngineConfigurationTest {
     }
 
     @Test
-    void nullStoredMessageTypeResolverThrowsException() {
+    void nullEventTypeResolverThrowsException() {
         //noinspection DataFlowIssue
-        assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.storedMessageTypeResolver(null))
+        assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.eventTypeResolver(null))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    void storedMessageTypeResolverWitherReplacesTheResolver() {
+    void eventTypeResolverSetsGivenEventTypeResolver() {
         // given
         EventTypeResolver custom = (qualifiedName, version) -> EventTypeResolver
                 .withDefaultVersion("custom").resolve(qualifiedName, version);
 
         // when
         AggregateBasedJpaEventStorageEngineConfiguration result =
-                AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.storedMessageTypeResolver(custom);
+                AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.eventTypeResolver(custom);
 
         // then
         assertThat(result.eventTypeResolver()).isSameAs(custom);

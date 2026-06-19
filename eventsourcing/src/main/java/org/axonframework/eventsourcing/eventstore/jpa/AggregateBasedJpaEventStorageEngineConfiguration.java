@@ -313,7 +313,7 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
      * @param eventTypeResolver the resolver to use; must not be {@code null}
      * @return a new configuration instance, for fluent interfacing
      */
-    public AggregateBasedJpaEventStorageEngineConfiguration storedMessageTypeResolver(
+    public AggregateBasedJpaEventStorageEngineConfiguration eventTypeResolver(
             EventTypeResolver eventTypeResolver
     ) {
         return new AggregateBasedJpaEventStorageEngineConfiguration(this.persistenceExceptionResolver,
