@@ -297,7 +297,7 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
                                                                     this.batchSize,
                                                                     this.gapCleaningThreshold,
                                                                     this.maxGapOffset,
-                                                                    lowestGlobalSequence,
+                                                                    this.lowestGlobalSequence,
                                                                     gapTimeout,
                                                                     this.eventTypeResolver);
     }
