@@ -83,8 +83,12 @@ public class CloseCallbackMessageStream<M extends Message> extends AbstractMessa
 
     @Override
     protected void onCompleted() {
-        if (!invoked.getAndSet(true)) {
-            closeHandler.run();
+        try {
+            delegate.close();
+        } finally {
+            if (!invoked.getAndSet(true)) {
+                closeHandler.run();
+            }
         }
     }
 
