@@ -77,7 +77,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
 
         <!-- Build / Plugin -->
-        <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
+        <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
         <eclipse.transformer-maven-plugin.version>1.0.0</eclipse.transformer-maven-plugin.version>
         <jacoco-maven.version>0.8.15</jacoco-maven.version>
         <maven-assembly.version>3.8.0</maven-assembly.version>
