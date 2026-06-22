@@ -184,9 +184,9 @@ class MessageTypeTest {
 
         @Test
         void classConstructorMatchesAnnotationBasedNamingForTopLevelClasses() {
-            QualifiedName fromClassConstructor = new MessageType(MessageTypeTest.class).qualifiedName();
+            QualifiedName fromClassConstructor = new MessageType(String.class).qualifiedName();
             QualifiedName fromPackageAndSimpleName =
-                    new QualifiedName(MessageTypeTest.class.getPackageName(), MessageTypeTest.class.getSimpleName());
+                    new QualifiedName(String.class.getPackageName(), String.class.getSimpleName());
 
             assertEquals(fromPackageAndSimpleName, fromClassConstructor);
         }
