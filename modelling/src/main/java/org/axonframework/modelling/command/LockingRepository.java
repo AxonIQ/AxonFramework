@@ -150,16 +150,18 @@ public abstract class LockingRepository<T, A extends Aggregate<T>> extends
         Lock lock = spanFactory.createObtainLockSpan(aggregateIdentifier)
                                .runSupplier(() -> lockFactory.obtainLock(aggregateIdentifier));
         try {
-            final A aggregate = doLoadWithLock(aggregateIdentifier, null);
-            CurrentUnitOfWork.get().onCleanup(u -> lock.release());
-            return new LockAwareAggregate<>(aggregate, lock);
-        } catch (AggregateNotFoundException ex) {
-            if (isExactAggregateNotFound(ex.getClass())) {
-                final A aggregate = doCreateNewForLock(factoryMethod);
+            try {
+                final A aggregate = doLoadWithLock(aggregateIdentifier, null);
                 CurrentUnitOfWork.get().onCleanup(u -> lock.release());
                 return new LockAwareAggregate<>(aggregate, lock);
-            } else {
-                throw ex;
+            } catch (AggregateNotFoundException ex) {
+                if (isExactAggregateNotFound(ex.getClass())) {
+                    final A aggregate = doCreateNewForLock(factoryMethod);
+                    CurrentUnitOfWork.get().onCleanup(u -> lock.release());
+                    return new LockAwareAggregate<>(aggregate, lock);
+                } else {
+                    throw ex;
+                }
             }
         } catch (Throwable ex) {
             logger.debug("Exception occurred while trying to load/create an aggregate. Releasing lock.", ex);
