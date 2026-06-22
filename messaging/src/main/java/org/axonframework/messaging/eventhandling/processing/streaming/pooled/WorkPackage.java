@@ -18,7 +18,6 @@ package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.ClockUtils;
-import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.LegacyResources;
@@ -30,7 +29,6 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -43,12 +41,12 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.time.Clock;
-import java.util.concurrent.CompletionException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -536,6 +534,27 @@ class WorkPackage {
     }
 
     /**
+     * Advances this {@code WorkPackage}'s position to the given {@code token} without delivering an event to any
+     * handler. The token-advancement entry is queued like a normal event, so {@code lastConsumedToken} advances and the
+     * stored token is updated once the claim-extension threshold is met.
+     * <p>
+     * Use this when the event source has consumed a batch but filtered every event: no real event should be dispatched,
+     * yet the processor token must move forward so restarts do not re-scan the same gap.
+     * <p>
+     * <b>Threading note:</b> This method is and should only be called by the {@link Coordinator} thread.
+     *
+     * @param token the furthest scanned position to advance this work package's token to
+     */
+    public void advanceTokenTo(TrackingToken token) {
+        if (lastDeliveredToken.covers(token)) {
+            return;
+        }
+        processingQueue.add(new TokenOnlyEntry(token));
+        lastDeliveredToken = token;
+        scheduleWorker();
+    }
+
+    /**
      * Lambda to be invoked whenever the event batch of this package's {@code segment} processed.
      *
      * @param batchProcessedCallback lambda to be invoked whenever the event batch of this package's {@code segment}
@@ -843,6 +862,26 @@ class WorkPackage {
             if (canHandle) {
                 eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
             }
+        }
+    }
+
+    /**
+     * A {@link ProcessingEntry} that carries only a {@link TrackingToken}.
+     * <p>
+     * Used when {@link #advanceTokenTo(TrackingToken)} is invoked, which is typically invoked when event consumption
+     * filtered out all events. This entry ensures we still progress the token.
+     */
+    private record TokenOnlyEntry(TrackingToken token) implements ProcessingEntry {
+
+        @Override
+        public TrackingToken trackingToken() {
+            return token;
+        }
+
+        @Override
+        public void addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                               TrackingToken wrappedToken) {
+            // no-op: position markers never add to the event batch
         }
     }
 

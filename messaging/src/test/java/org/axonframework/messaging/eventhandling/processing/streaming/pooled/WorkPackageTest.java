@@ -778,6 +778,85 @@ class WorkPackageTest {
         }
     }
 
+    @Nested
+    class AdvanceTokenToTest {
+
+        @Test
+        void advanceTokenToStoresTokenWithoutDispatchingAnyEvent() {
+            // given — extremely short threshold to force the empty-batch storeToken path on the first worker run
+            WorkPackage subject = testSubjectBuilder.claimExtensionThreshold(1).build();
+            TrackingToken advanceToken = new GlobalSequenceTrackingToken(5L);
+
+            // when — only a token-only advancement, no real event is scheduled
+            subject.advanceTokenTo(advanceToken);
+
+            // then — the token must be stored at the advanced position; nothing must reach the batch processor
+            ArgumentCaptor<TrackingToken> tokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                subject.scheduleWorker();  // re-trigger in case the claim threshold had not yet elapsed
+                verify(tokenStore, atLeastOnce()).storeToken(
+                        tokenCaptor.capture(), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any()
+                );
+            });
+            assertThat(tokenCaptor.getValue()).isEqualTo(advanceToken);
+            assertThat(batchProcessor.getProcessedEvents()).isEmpty();
+        }
+
+        @Test
+        void advanceTokenToDoesNotInterfereWithTrailingScheduledEvents() {
+            // given — a token advancement immediately followed by a real event
+            TrackingToken advanceToken = new GlobalSequenceTrackingToken(5L);
+            TrackingToken eventToken = new GlobalSequenceTrackingToken(10L);
+            var trailingEntry = new SimpleEntry<>(EventTestUtils.asEventMessage("trailing"),
+                                                  trackingTokenContext(eventToken));
+
+            // when — token-only advancement drains alongside the trailing event in the same processEvents() run
+            testSubject.advanceTokenTo(advanceToken);
+            testSubject.scheduleEvent(trailingEntry);
+
+            // then — the trailing event IS dispatched and its token is stored; the marker adds no extra entry
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                ArgumentCaptor<TrackingToken> tokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
+                verify(tokenStore).storeToken(
+                        tokenCaptor.capture(), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any()
+                );
+                assertThat(tokenCaptor.getValue()).isEqualTo(eventToken);
+            });
+            assertThat(batchProcessor.getProcessedEvents()).hasSize(1);
+        }
+
+        @Test
+        void advanceTokenToBetweenTwoEventsProcessesOnlyTheRealEvents() {
+            // given — a real event, a token-only advancement, then another real event
+            TrackingToken firstToken = new GlobalSequenceTrackingToken(3L);
+            TrackingToken advanceToken = new GlobalSequenceTrackingToken(7L);
+            TrackingToken secondToken = new GlobalSequenceTrackingToken(10L);
+            var firstEntry = new SimpleEntry<>(EventTestUtils.asEventMessage("first"),
+                                               trackingTokenContext(firstToken));
+            var secondEntry = new SimpleEntry<>(EventTestUtils.asEventMessage("second"),
+                                                trackingTokenContext(secondToken));
+
+            // when — the token-only entry sits between the two real events in the processing queue
+            testSubject.scheduleEvent(firstEntry);
+            testSubject.advanceTokenTo(advanceToken);
+            testSubject.scheduleEvent(secondEntry);
+
+            // then — exactly the two real events are dispatched; the marker contributes no entry to any batch
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(batchProcessor.getProcessedEvents()).hasSize(2)
+            );
+
+            // and the final stored token reflects the second event's position (advancing through the marker first)
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                ArgumentCaptor<TrackingToken> tokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
+                verify(tokenStore, atLeastOnce()).storeToken(
+                        tokenCaptor.capture(), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any()
+                );
+                assertThat(tokenCaptor.getAllValues()).contains(secondToken);
+            });
+        }
+    }
+
     private static Context globalTrackingTokenContext(long globalIndex) {
         return trackingTokenContext(new GlobalSequenceTrackingToken(globalIndex));
     }

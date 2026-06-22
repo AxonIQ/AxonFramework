@@ -75,6 +75,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -454,6 +455,131 @@ class AggregateBasedJpaEventStorageEngineIT
             // then — the stream must eventually surface the matching test event despite the
             // non-matching batch preceding it
             await().untilAsserted(() -> assertThat(stream.peek()).isNotEmpty());
+        }
+
+        /**
+         * This test validates that fix introduced for #4643 works as expected.
+         */
+        @Test
+        void streamLoopsThroughEventStreamUntilConditionMatchingEntryIsFound() {
+            // given — 9 non-matching events followed by 1 matching event, with batchSize=1 so
+            // queryTokensAndEventsBy must iterate through exactly 9 single-event batches before
+            // finding the match
+            AggregateBasedJpaEventStorageEngine testEngine = new AggregateBasedJpaEventStorageEngine(
+                    new JpaTransactionalExecutorProvider(entityManagerFactory),
+                    converter,
+                    config -> config
+                            .batchSize(1)
+                            .eventCoordinator(new JpaPollingEventCoordinator(
+                                    new FactoryBasedEntityManagerProvider(entityManagerFactory),
+                                    Duration.ofMillis(500)
+                            ))
+                            .persistenceExceptionResolver(new PersistenceExceptionResolver() {
+                                @Override
+                                public boolean isDuplicateKeyViolation(@NonNull Exception exception) {
+                                    return causeIsEntityExistsException(exception);
+                                }
+
+                                private boolean causeIsEntityExistsException(Throwable exception) {
+                                    return exception instanceof java.sql.SQLIntegrityConstraintViolationException
+                                            || (exception.getCause() != null
+                                            && causeIsEntityExistsException(exception.getCause()));
+                                }
+                            })
+            );
+
+            try {
+                for (int i = 1; i <= 9; i++) {
+                    appendCommitAndWait(testEngine, AppendCondition.none(),
+                                        taggedEventMessage("other-" + i, OTHER_AGGREGATE_TAGS));
+                }
+                appendCommitAndWait(testEngine, AppendCondition.none(),
+                                    taggedEventMessage("test-1", TEST_AGGREGATE_TAGS));
+                // Validate 10 events have actually been inserted by checking the latest token
+                CompletableFuture<TrackingToken> latestToken = testEngine.latestToken();
+                assertThat(latestToken).isCompleted();
+                OptionalLong latestPosition = latestToken.join().position();
+                assertThat(latestPosition).isPresent();
+                assertThat(latestPosition.getAsLong()).isEqualTo(10);
+
+                // when — stream filtered to TEST_AGGREGATE_CRITERIA; batchSize is 1, so each of the
+                // 9 preceding events forms its own batch that must be skipped in the loop
+                MessageStream<EventMessage> stream = testEngine.stream(
+                        StreamingCondition.conditionFor(trackingTokenAt(0), TEST_AGGREGATE_CRITERIA)
+                );
+
+                // then — a single peek() must return the matching event without any retry loop:
+                // queryTokensAndEventsBy loops through all 9 non-matching batches in one invocation,
+                // so the very first peek() surfaces the 10th event directly
+                Optional<MessageStream.Entry<EventMessage>> peek = stream.peek();
+                assertThat(peek).isNotEmpty();
+                assertThat(peek.get().message().payloadAs(String.class)).isEqualTo("test-1");
+            } finally {
+                testEngine.close();
+            }
+        }
+
+        /**
+         * This test validates the token-progress aspect of the fix introduced for #4643: when the
+         * entire event store contains no matching events, the stream must still deliver one entry
+         * (the last scanned event as a cursor-advancement marker) so that the WorkPackage can
+         * advance and store its tracking token.  Without this, a stop/restart would force the PSEP
+         * to re-scan the entire filtered gap from the beginning every time.
+         */
+        @Test
+        void streamReturnsLastScannedEntryAsTokenAdvancementMarker_whenNoMatchingEventsExist() {
+            // given — 10 events, none of which match TEST_AGGREGATE_CRITERIA; batchSize=1 forces
+            // the loop to iterate through all 10 single-event batches
+            AggregateBasedJpaEventStorageEngine testEngine = new AggregateBasedJpaEventStorageEngine(
+                    new JpaTransactionalExecutorProvider(entityManagerFactory),
+                    converter,
+                    config -> config
+                            .batchSize(1)
+                            .eventCoordinator(new JpaPollingEventCoordinator(
+                                    new FactoryBasedEntityManagerProvider(entityManagerFactory),
+                                    Duration.ofMillis(500)
+                            ))
+                            .persistenceExceptionResolver(new PersistenceExceptionResolver() {
+                                @Override
+                                public boolean isDuplicateKeyViolation(@NonNull Exception exception) {
+                                    return causeIsEntityExistsException(exception);
+                                }
+
+                                private boolean causeIsEntityExistsException(Throwable exception) {
+                                    return exception instanceof java.sql.SQLIntegrityConstraintViolationException
+                                            || (exception.getCause() != null
+                                            && causeIsEntityExistsException(exception.getCause()));
+                                }
+                            })
+            );
+            try {
+                // Use emptySet() tags (no aggregate identifier) so each event gets a null
+                // aggregate sequence number — avoiding unique-constraint conflicts on
+                // (aggregateIdentifier, aggregateSequenceNumber) across separate transactions.
+                for (int i = 1; i <= 10; i++) {
+                    appendCommitAndWait(testEngine, AppendCondition.none(),
+                                        taggedEventMessage("other-" + i, emptySet()));
+                }
+
+                // when — stream filtered to TEST_AGGREGATE_CRITERIA; none of the events match
+                MessageStream<EventMessage> stream = testEngine.stream(
+                        StreamingCondition.conditionFor(trackingTokenAt(0), TEST_AGGREGATE_CRITERIA)
+                );
+
+                // then — despite zero matching events, a single peek() must return a marker whose
+                // token equals the latest token in the store: the loop consumed all batches and
+                // reported the furthest scanned position so the WorkPackage can advance its token
+                TrackingToken latestToken = testEngine.latestToken().join();
+                assertThat(latestToken.position()).isPresent();
+
+                Optional<MessageStream.Entry<EventMessage>> peek = stream.peek();
+                assertThat(peek).isNotEmpty();
+                Optional<TrackingToken> markerToken = peek.flatMap(TrackingToken::fromContext);
+                assertThat(markerToken).isPresent();
+                assertThat(markerToken.get().position()).isEqualTo(latestToken.position());
+            } finally {
+                testEngine.close();
+            }
         }
     }
 

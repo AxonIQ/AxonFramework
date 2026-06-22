@@ -40,6 +40,7 @@ import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
 import org.axonframework.eventsourcing.eventstore.StreamSpliterator;
 import org.axonframework.eventsourcing.eventstore.TaggedEventMessage;
 import org.axonframework.eventsourcing.eventstore.TerminalEventMessage;
+import org.axonframework.messaging.eventstreaming.TokenProgressMessage;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.MessageStream;
@@ -347,7 +348,10 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
 
         return new ContinuousMessageStream<>(
                 () -> queryTokensAndEventsBy(cursorRef, condition),
-                tae -> new SimpleEntry<>(convertToEventMessage(tae.event), buildTrackedContext(tae)),
+                tae -> tae.event() != null
+                        ? new SimpleEntry<>(convertToEventMessage(tae.event()), buildTrackedContext(tae))
+                        : new SimpleEntry<>(TokenProgressMessage.INSTANCE,
+                                            Context.with(TrackingToken.RESOURCE_KEY, tae.token())),
                 (ms, r) -> {
                     streamCallbacks.put(ms, r);
                     return () -> streamCallbacks.remove(ms) != null;
@@ -358,27 +362,45 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private List<TokenAndEvent> queryTokensAndEventsBy(AtomicReference<GapAwareTrackingToken> cursorRef, StreamingCondition condition) {
         return entityManagerExecutor(null).apply(em -> {
             List<TokenAndEvent> result = new ArrayList<>();
-            GapAwareTrackingToken cleanedToken = cleanedToken(em, cursorRef.get());
-            List<AggregateEventEntry> events = queryEventsBy(em, cleanedToken);
-
-            GapAwareTrackingToken token = cleanedToken;
-
+            GapAwareTrackingToken token = cleanedToken(em, cursorRef.get());
             Instant gapTimeoutThreshold = tokenOperations.gapTimeoutThreshold();
-            for (AggregateEventEntry event : events) {
-                String type = event.aggregateType();
-                String identifier = event.aggregateIdentifier();
+            boolean anyEventsScanned = false;
 
-                // A null type or identifier is allowed, but those cannot form a valid tag:
-                Set<Tag> tags = type == null || identifier == null ? Set.of() : Set.of(new Tag(type, identifier));
+            do {
+                List<AggregateEventEntry> events = queryEventsBy(em, token);
 
-                // Always advance the cursor to track the furthest scanned position, regardless of match:
-                token = calculateToken(token, event.globalIndex(), event.timestamp(), gapTimeoutThreshold);
-                cursorRef.set(token);
+                for (AggregateEventEntry event : events) {
+                    String type = event.aggregateType();
+                    String identifier = event.aggregateIdentifier();
 
-                if (condition.matches(new QualifiedName(event.type()), tags)) {
-                    result.add(new TokenAndEvent(token, event));
+                    // A null type or identifier is allowed, but those cannot form a valid tag:
+                    Set<Tag> tags = type == null || identifier == null ? Set.of() : Set.of(new Tag(type, identifier));
+
+                    // Always advance the cursor to track the furthest scanned position, regardless of match:
+                    token = calculateToken(token, event.globalIndex(), event.timestamp(), gapTimeoutThreshold);
+                    cursorRef.set(token);
+                    anyEventsScanned = true;
+
+                    if (condition.matches(new QualifiedName(event.type()), tags)) {
+                        result.add(new TokenAndEvent(token, event));
+                    }
                 }
+
+                if (finalBatchPredicate.test(events)) {
+                    break;  // Reached the tail of the event store; stop scanning
+                }
+
+                // Prevent the JPA first-level cache from accumulating all skipped entries across
+                // iterations: after a fully-filtered batch the entities are no longer needed.
+                em.clear();
+            } while (result.isEmpty());
+
+            // When the entire scanned range contains no matching events, emit a token-advancement sentinel (null event)
+            // so consumers can advance their tokens to the furthest scanned position.
+            if (result.isEmpty() && anyEventsScanned) {
+                result.add(new TokenAndEvent(token, null));
             }
+
             return result;
         }).join();
     }
@@ -529,7 +551,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
 
     }
 
-    private record TokenAndEvent(GapAwareTrackingToken token, AggregateEventEntry event) {
+    private record TokenAndEvent(GapAwareTrackingToken token, @Nullable AggregateEventEntry event) {
 
     }
 }

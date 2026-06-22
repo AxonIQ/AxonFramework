@@ -16,27 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
-import static java.util.concurrent.CompletableFuture.completedFuture;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
-import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.function.UnaryOperator;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.ProcessRetriesExhaustedException;
 import org.axonframework.common.ReflectionUtils;
@@ -58,10 +37,32 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
+import org.axonframework.messaging.eventstreaming.TokenProgressMessage;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 import org.mockito.stubbing.*;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
+
+import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link Coordinator}.
@@ -773,6 +774,110 @@ class CoordinatorTest {
 
             // then - the failure is swallowed by the exceptionally handler and a retry is still scheduled
             verify(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        }
+    }
+
+    /**
+     * Tests for the {@link TokenProgressMessage} routing path in {@code coordinateWorkPackages()}, verifying that a
+     * progress marker in the event stream is forwarded to {@link WorkPackage#advanceTokenTo} without going through
+     * {@link WorkPackage#scheduleEvent}.
+     */
+    @Nested
+    class TokenProgressMessageRoutingTest {
+
+        @Test
+        void tokenProgressMessageCallsAdvanceTokenToOnAllWorkPackagesWithoutSchedulingAnEvent() {
+            // given — a stream that contains a single TokenProgressMessage carrying an advanced position
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(0L);
+            GlobalSequenceTrackingToken advanceToken = new GlobalSequenceTrackingToken(5L);
+
+            MessageStream<EventMessage> testStream = MessageStream.fromIterable(
+                    List.of(TokenProgressMessage.INSTANCE),
+                    ignored -> trackingTokenContext(advanceToken)
+            );
+
+            when(workPackage.hasRemainingCapacity()).thenReturn(true);
+            when(workPackage.isAbortTriggered()).thenReturn(false);
+
+            when(executorService.submit(any(Runnable.class))).thenAnswer(runTaskAsync());
+            doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; })
+                    .doAnswer(invocation -> null)
+                    .when(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+
+            when(tokenStore.fetchSegments(eq(PROCESSOR_NAME), any())).thenReturn(completedFuture(SEGMENTS));
+            when(tokenStore.fetchAvailableSegments(eq(PROCESSOR_NAME), any()))
+                    .thenReturn(completedFuture(Collections.singletonList(SEGMENT_ONE)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ONE), any()))
+                    .thenReturn(completedFuture(storedToken));
+            when(messageSource.open(any(StreamingCondition.class), isNull())).thenReturn(testStream);
+
+            // when
+            awaitStart(testSubject);
+
+            // then — advanceTokenTo is called on the work package with the marker's token;
+            //        scheduleEvent must never be called since the entry carries no real event
+            await().atMost(500, TimeUnit.MILLISECONDS)
+                   .untilAsserted(() -> verify(workPackage).advanceTokenTo(advanceToken));
+            verify(workPackage, never()).scheduleEvent(any());
+        }
+
+        @Test
+        void tokenProgressMessageInMiddleOfStreamDoesNotDisruptSchedulingOfSurroundingEvents() {
+            // given — four real events separated by a single TokenProgressMessage in the middle
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(0L);
+            GlobalSequenceTrackingToken token1 = new GlobalSequenceTrackingToken(1L);
+            GlobalSequenceTrackingToken token2 = new GlobalSequenceTrackingToken(2L);
+            GlobalSequenceTrackingToken advanceToken = new GlobalSequenceTrackingToken(3L);
+            GlobalSequenceTrackingToken token3 = new GlobalSequenceTrackingToken(4L);
+            GlobalSequenceTrackingToken token4 = new GlobalSequenceTrackingToken(5L);
+
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+
+            // each entry is identified by reference so the context supplier can assign individual tokens
+            Map<EventMessage, TrackingToken> tokenPerEntry = Map.of(
+                    event1, token1,
+                    event2, token2,
+                    TokenProgressMessage.INSTANCE, advanceToken,
+                    event3, token3,
+                    event4, token4
+            );
+
+            MessageStream<EventMessage> testStream = MessageStream.fromIterable(
+                    List.of(event1, event2, TokenProgressMessage.INSTANCE, event3, event4),
+                    e -> trackingTokenContext(tokenPerEntry.get(e))
+            );
+
+            when(workPackage.hasRemainingCapacity()).thenReturn(true);
+            when(workPackage.isAbortTriggered()).thenReturn(false);
+            when(workPackage.scheduleEvent(any())).thenReturn(true);
+
+            when(executorService.submit(any(Runnable.class))).thenAnswer(runTaskAsync());
+            doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; })
+                    .doAnswer(invocation -> null)
+                    .when(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+
+            when(tokenStore.fetchSegments(eq(PROCESSOR_NAME), any())).thenReturn(completedFuture(SEGMENTS));
+            when(tokenStore.fetchAvailableSegments(eq(PROCESSOR_NAME), any()))
+                    .thenReturn(completedFuture(Collections.singletonList(SEGMENT_ONE)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ONE), any()))
+                    .thenReturn(completedFuture(storedToken));
+            when(messageSource.open(any(StreamingCondition.class), isNull())).thenReturn(testStream);
+
+            // when
+            awaitStart(testSubject);
+
+            // then — all four real events reach scheduleEvent; the marker is routed to advanceTokenTo instead
+            await().atMost(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+                verify(workPackage, times(4)).scheduleEvent(any());
+                verify(workPackage).advanceTokenTo(advanceToken);
+            });
+            // the marker must never appear as an argument to scheduleEvent
+            verify(workPackage, never()).scheduleEvent(
+                    argThat(entry -> entry.message() instanceof TokenProgressMessage)
+            );
         }
     }
 }

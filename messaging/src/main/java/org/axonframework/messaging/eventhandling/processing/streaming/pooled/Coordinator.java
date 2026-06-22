@@ -16,14 +16,13 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
-import org.axonframework.common.ProcessUtils;
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.ProcessUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
@@ -36,6 +35,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
+import org.axonframework.messaging.eventstreaming.TokenProgressMessage;
 import org.axonframework.messaging.eventstreaming.TrackingTokenSource;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -1300,6 +1300,15 @@ class Coordinator {
                         }
                     }
                     offerEventsToWorkPackages(eventEntries);
+                } else if (eventEntry.message() instanceof TokenProgressMessage) {
+                    // Not a real event: advance each work package's token to reflect progress through
+                    // a fully-filtered batch, without dispatching anything to event handlers.
+                    TrackingToken token =
+                            TrackingToken.fromContext(eventEntry)
+                                         .orElseThrow(() -> new IllegalArgumentException(
+                                                 "Receiving a TokenProgressMessage without a TrackingToken in the context"
+                                         ));
+                    workPackages.values().forEach(wp -> wp.advanceTokenTo(token));
                 } else {
                     offerEventToWorkPackages(eventEntry);
                 }
