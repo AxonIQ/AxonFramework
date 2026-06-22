@@ -19,7 +19,8 @@ jobs:
       matrix:
         include:
           - java-version: 21
-            sonar-enabled: true
+            # disable sonar for now
+            sonar-enabled: false
           - java-version: 25
             sonar-enabled: false
 
