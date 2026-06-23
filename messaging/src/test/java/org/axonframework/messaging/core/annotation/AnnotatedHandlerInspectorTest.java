@@ -16,15 +16,16 @@
 
 package org.axonframework.messaging.core.annotation;
 
+import org.axonframework.common.util.MockException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
-import org.axonframework.common.util.MockException;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
 import org.mockito.internal.util.collections.*;
 
@@ -39,8 +40,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
-import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -144,7 +146,7 @@ class AnnotatedHandlerInspectorTest {
                                                                                           parameterResolverFactory);
 
         assertEquals(1, aaInspector.getAllHandlers().size());
-        assertEquals(1, (int) aaInspector.getAllHandlers().values().stream().flatMap(Collection::stream).count());
+        assertEquals(1, (int) aaInspector.getAllHandlers().values().stream().mapToLong(Collection::size).sum());
     }
 
     private <T extends MessageHandlingMember<?>> List<MethodInvokingMessageHandlingMember<?>> unwrapToList(
@@ -156,7 +158,6 @@ class AnnotatedHandlerInspectorTest {
                      .collect(Collectors.toList());
     }
 
-    @Disabled("Reintegrate as part of #3485")
     @Test
     void interceptors() throws Exception {
         D testTarget = new D();
@@ -176,18 +177,12 @@ class AnnotatedHandlerInspectorTest {
         Optional<MessageHandlingMember<? super A>> optionalHandler = inspector.getHandlers(PA.class).stream().findFirst();
         assertTrue(optionalHandler.isPresent());
         MessageHandlingMember<? super A> resultHandler = optionalHandler.get();
-        chain.handleSync(testEvent, testTarget, resultHandler);
-        assertThrows(MockException.class, () -> chain.handleSync(testEventTwo, testTarget, resultHandler));
-    }
 
-    @Test
-    void getAllInspectedTypes() {
-        Set<Class<?>> expectedInspectedTypes = Sets.newSet(PA.class, A.class, B.class, C.class, D.class);
-
-        Set<Class<?>> resultInspectedTypes = inspector.getAllInspectedTypes();
-
-        resultInspectedTypes.forEach(resultType -> assertTrue(expectedInspectedTypes.contains(resultType)));
-        expectedInspectedTypes.forEach(expectedType -> assertTrue(resultInspectedTypes.contains(expectedType)));
+        var result = chain.handle(testEventTwo, StubProcessingContext.forMessage(testEventTwo),
+                                  testTarget, resultHandler);
+        assertThat(result.hasNextAvailable()).isFalse();
+        assertThat(result.isCompleted()).isTrue();
+        assertThat(result.error()).containsInstanceOf(MockException.class);
     }
 
     @SuppressWarnings("unused")

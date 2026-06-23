@@ -55,7 +55,7 @@ class OnErrorContinueMessageStream<M extends Message> extends AbstractMessageStr
     }
 
     @Override
-    protected synchronized FetchResult<Entry<M>> fetchNext() {
+    protected FetchResult<Entry<M>> fetchNext() {
         do {
             FetchResult<Entry<M>> result = FetchResult.of(current);
 
@@ -81,7 +81,7 @@ class OnErrorContinueMessageStream<M extends Message> extends AbstractMessageStr
     }
 
     @Override
-    protected synchronized void onCompleted() {
+    protected void onCompleted() {
         current.close();
     }
 

@@ -31,13 +31,13 @@
 
     <properties>
         <!-- region [maven-project] -->
-        <kotlin.version>2.3.21</kotlin.version>
+        <kotlin.version>2.4.0</kotlin.version>
         <kotlin.compiler.apiVersion>2.2</kotlin.compiler.apiVersion>
         <kotlin.compiler.languageVersion>2.2</kotlin.compiler.languageVersion>
         <!-- endregion [maven-project] -->
 
         <log4j.version>2.25.3</log4j.version>
-        <spring-boot.version>3.5.14</spring-boot.version>
+        <spring-boot.version>3.5.15</spring-boot.version>
 
         <!-- region [dependencies-test] -->
         <assertj.version>3.27.7</assertj.version>
@@ -128,7 +128,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>2.21</version>
+            <version>2.22</version>
         </dependency>
 
         <!-- Test Dependencies -->

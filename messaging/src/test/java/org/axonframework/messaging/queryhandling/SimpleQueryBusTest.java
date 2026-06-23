@@ -268,10 +268,7 @@ class SimpleQueryBusTest {
             // when...
             CompletableFuture<List<String>> result =
                     testSubject.query(testQuery, null)
-                               .reduce(new ArrayList<>(), (results, entry) -> {
-                                   results.add(entry.message().payloadAs(String.class));
-                                   return results;
-                               });
+                               .collect(ArrayList::new, (results, message) -> results.add(message.payloadAs(String.class)));
             // then...
             assertTrue(result.isDone());
             List<String> completedResult = result.get();

@@ -38,10 +38,6 @@
 
         <module>integrationtests</module>
 
-        <module>stash/todo</module>
-        <module>stash/legacy</module>
-        <module>stash/legacy-aggregate</module>
-        <module>stash/legacy-saga</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -81,9 +77,9 @@
         </sonar.coverage.jacoco.xmlReportPaths>
 
         <!-- Build / Plugin -->
-        <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
+        <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
         <eclipse.transformer-maven-plugin.version>1.0.0</eclipse.transformer-maven-plugin.version>
-        <jacoco-maven.version>0.8.14</jacoco-maven.version>
+        <jacoco-maven.version>0.8.15</jacoco-maven.version>
         <maven-assembly.version>3.8.0</maven-assembly.version>
         <maven-clean.version>3.5.0</maven-clean.version>
         <maven-compiler.version>3.15.0</maven-compiler.version>
@@ -175,9 +171,6 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
-                    <excludeArtifacts>
-                        axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-todo
-                    </excludeArtifacts>
                 </configuration>
             </plugin>
 

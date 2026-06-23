@@ -17,8 +17,10 @@
 package org.axonframework.eventsourcing.eventstore.jpa;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
 import org.junit.jupiter.api.*;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -69,5 +71,26 @@ class AggregateBasedJpaEventStorageEngineConfigurationTest {
     void negativeGapTimeoutThrowsException() {
         assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.gapTimeout(-1))
                 .isInstanceOf(AxonConfigurationException.class);
+    }
+
+    @Test
+    void nullEventTypeResolverThrowsException() {
+        //noinspection DataFlowIssue
+        assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.eventTypeResolver(null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void eventTypeResolverSetsGivenEventTypeResolver() {
+        // given
+        EventTypeResolver custom = (qualifiedName, version) -> EventTypeResolver
+                .withDefaultVersion("custom").resolve(qualifiedName, version);
+
+        // when
+        AggregateBasedJpaEventStorageEngineConfiguration result =
+                AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.eventTypeResolver(custom);
+
+        // then
+        assertThat(result.eventTypeResolver()).isSameAs(custom);
     }
 }

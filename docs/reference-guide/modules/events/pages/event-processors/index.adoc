@@ -30,7 +30,27 @@ Two processors with the same name are considered as two instances of the same pr
 Each event handler will belong to an event handling component.
 An event handling component can include any number of event handlers.
 These event handling components are attached to a processor, whose name by default is the package name of the event handler's class.
-Furthermore, the default processor implementation used by Axon is the xref:event-processors/streaming.adoc[PooledStreamingEventProcessor].
+
+[NOTE]
+.Consequences of assigning an event handling component to a processor
+====
+There are certain consequences of grouping event handling components with the same processors.
+All event handling components assigned to a single processor will share the same configuration (for example batch size, initial segment count and thread pool configuration) and scaling considerations (if for example you split the segments).
+
+If the same event is handled in multiple event handlers across different event handling components assigned to the same processor, they are still processed in the same transaction, sharing the same xref:messaging-concepts:processing-context.adoc[processing context].
+
+Finally, event handlers across all event handling components assigned to the same processor are xref:events:event-processors/streaming.adoc#sequential_processing[sequenced together], xref:events:event-processors/streaming.adoc#replaying-events[replayed together] and share xref:events:event-processors/streaming.adoc#thread_configuration[the same thread pool]
+ifndef::advanced-framework[.]
+ifdef::advanced-framework[]
+and
+xref:dead-letter-queue:index.adoc[dead letter queue].
+endif::[]
+
+Consider this when assigning handlers to processors.
+A good rule of thumb usually is: If you want to advance and replay multiple projections as a unit or isolate failures across them, assign them to the same processor.
+====
+
+The default processor implementation used by Axon is the xref:event-processors/streaming.adoc[PooledStreamingEventProcessor].
 The event processor type can be customized, as is shown in the xref:event-processors/subscribing.adoc#configuring[subscribing] and xref:event-processors/streaming.adoc#configuring[streaming] sections.
 
 There are two main approaches to configuring event processors and assigning handlers:
@@ -89,15 +109,68 @@ public class AxonConfig {
 [#autodetected_config]
 === Autodetected configuration
 
+Using the `@Namespace` annotation on an event handling component allows you to explicitly assign it to a processor when using the autodetected configuration.
+
 Assuming the autodetected approach is used, let us consider that the following event handling components have been registered:
 
-* `org.axonframework.example.eventhandling.MyHandler`
-* `org.axonframework.example.eventhandling.MyOtherHandler`
-* `org.axonframework.example.eventhandling.module.ModuleHandler`
+[source,java]
+----
+// MyHandler.java
+package org.axonframework.example.eventhandling;
+@Namespace("my-processor")
+public class MyHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
 
-Without any intervention, this will trigger the creation of two Streaming Processors, namely:
+// MyOtherHandler.java
+package org.axonframework.example.eventhandling;
+@Namespace("my-processor")
+public class MyOtherHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
 
-. `org.axonframework.example.eventhandling` with two event handling components called `MyHandler` and `MyOtherHandler`.
+// ModuleHandler.java
+package org.axonframework.example.eventhandling.module;
+@Namespace("my-processor")
+public class ModuleHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+----
+
+This configuration would result in the creation of a single Streaming Processor named `my-processor` with all three event handling components.
+
+Now consider the same autodetected setup, but with the following event handling components registered without the `@Namespace` annotation:
+
+[source,java]
+----
+// MyHandler.java
+package org.axonframework.example.eventhandling;
+public class MyHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+
+// MyOtherHandler.java
+package org.axonframework.example.eventhandling;
+public class MyOtherHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+
+// ModuleHandler.java
+package org.axonframework.example.eventhandling.module;
+public class ModuleHandler {
+    @EventHandler
+    public void on(MyEvent event) { /* ... */ }
+}
+----
+
+*Without* having the `@Namespace` annotation applied to the event handling component class, this would trigger the creation of two Streaming Processors, based on the handler component's package names:
+
+. `org.axonframework.example.eventhandling` with two event handling components called `MyHandler` and `MyOtherHandler`, and
 . `org.axonframework.example.eventhandling.module` with the event handling component `ModuleHandler`.
 
 === Ordering event handling components within a processor

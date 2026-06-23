@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core.interception;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
@@ -163,7 +164,11 @@ class ExceptionHandlerTest {
         if (handler.isPresent()) {
             MessageHandlerInterceptorMemberChain<ExceptionHandlingComponent> interceptorChain =
                     inspector.chainedInterceptor(ExceptionHandlingComponent.class);
-            return interceptorChain.handleSync(message, messageHandlingComponent, handler.get());
+            ProcessingContext context = StubProcessingContext.forMessage(message);
+            return FutureUtils.joinAndUnwrap(
+                    interceptorChain.handle(message, context, messageHandlingComponent, handler.get())
+                                    .reduce(null, (acc, entry) -> entry.message().payload())
+            );
         }
         return null;
     }

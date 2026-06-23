@@ -202,6 +202,12 @@ public abstract class MessageStreamTestSuite {
 
     @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
     @MethodSource("cases")
+    void collectTest(Case c) throws Exception {
+        assertThat(collect(c)).describedAs("collect").isEqualTo(range(0, c.expectedSize));
+    }
+
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("cases")
     void mapTest(Case c) throws Exception {
         assertThat(iterate(map(c))).describedAs("map").isEqualTo(range(100, c.expectedSize));
     }
@@ -312,6 +318,14 @@ public abstract class MessageStreamTestSuite {
             List.<Message>of(),
             (s, entry) -> Stream.concat(s.stream(), Stream.of(entry == null ? null : entry.message())).toList()
         ).get(10, TimeUnit.SECONDS);
+    }
+
+    private List<? extends Message> collect(Case c) throws Exception {
+        return collect(c.stream);
+    }
+
+    private List<? extends Message> collect(MessageStream<?> stream) throws Exception {
+        return stream.collect(ArrayList<Message>::new, List::add).get(10, TimeUnit.SECONDS);
     }
 
     private MessageStream<? extends Message> map(Case c) throws Exception {
@@ -600,6 +614,50 @@ public abstract class MessageStreamTestSuite {
             return List.of(
                 new ErrorCase(0, new TruncateFirstMessageStream<>(MessageStream.failed(new RuntimeException("oops")))),
                 new ErrorCase(0, new TruncateFirstMessageStream<>(new SingleValueMessageStream<>(CompletableFuture.failedFuture(new RuntimeException("oops")))))
+            );
+        }
+    }
+
+    static class FlatMappedTest extends MessageStreamTestSuite {
+        @Override
+        protected List<Case> cases() {
+            return List.of(
+                new Case(0, new FlatMappedMessageStream<>(MessageStream.empty(), e -> MessageStream.just(e.message()))),
+                new Case(1, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.just(e.message()))),
+                new Case(3, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1), msg(2)), e -> MessageStream.just(e.message()))),
+                new Case("filtered-all", 0, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), e -> MessageStream.empty())),
+                new Case("1-to-3", 3, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.fromItems(msg(0), msg(1), msg(2)))),
+                new Case("async-inner", 1, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> new SingleValueMessageStream<>(delayedEntry(0))))
+            );
+        }
+
+        @Override
+        protected List<ErrorCase> errorCases() {
+            return List.of(
+                new ErrorCase(0, new FlatMappedMessageStream<>(MessageStream.failed(new RuntimeException("oops")), e -> MessageStream.just(e.message()))),
+                new ErrorCase(2, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1)).concatWith(MessageStream.failed(new RuntimeException("oops"))), e -> MessageStream.just(e.message()))),
+                new ErrorCase("inner-error", 0, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.failed(new RuntimeException("inner-oops"))))
+            );
+        }
+    }
+
+    static class MapMultiTest extends MessageStreamTestSuite {
+        @Override
+        protected List<Case> cases() {
+            return List.of(
+                new Case(0, new MapMultiMessageStream<>(MessageStream.empty(), (e, c) -> c.accept(e))),
+                new Case(1, new MapMultiMessageStream<>(MessageStream.just(msg(0)), (e, c) -> c.accept(e))),
+                new Case(3, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1), msg(2)), (e, c) -> c.accept(e))),
+                new Case("filtered-all", 0, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), (e, c) -> {})),
+                new Case("async", 1, new MapMultiMessageStream<>(new SingleValueMessageStream<>(delayedEntry(0)), (e, c) -> c.accept(e)))
+            );
+        }
+
+        @Override
+        protected List<ErrorCase> errorCases() {
+            return List.of(
+                new ErrorCase(0, new MapMultiMessageStream<>(MessageStream.failed(new RuntimeException("oops")), (e, c) -> c.accept(e))),
+                new ErrorCase(2, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1)).concatWith(MessageStream.failed(new RuntimeException("oops"))), (e, c) -> c.accept(e)))
             );
         }
     }

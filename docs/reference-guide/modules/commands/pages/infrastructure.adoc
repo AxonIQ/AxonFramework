@@ -223,6 +223,170 @@ See xref:messaging-concepts:message-intercepting.adoc#command-interceptors[Comma
 For customization options, see xref:tuning:command-processing.adoc#command-sequencing[Command sequencing].
 ====
 
+=== Retry behavior
+
+When a command dispatch fails, the framework can automatically retry it if a `RetryScheduler` is registered in the
+configuration.
+The `RetryScheduler` decides, based on the failure and the dispatch history, whether another attempt is warranted
+and how long to wait before trying again.
+No additional wiring is required: registering the scheduler is enough for the framework to activate retry behavior.
+
+The built-in `AsyncRetryScheduler` executes retries on a `ScheduledExecutorService` according to a `RetryPolicy`.
+Axon Framework provides three composable `RetryPolicy` implementations:
+
+`ExponentialBackOffRetryPolicy`::
+Doubles the retry delay after each attempt, starting from a given initial wait time in milliseconds.
+Retries indefinitely on its own, so combine it with `MaxAttemptsPolicy` to cap the number of attempts.
++
+[source,java]
+----
+// Retry with delays of 100ms, 200ms, 400ms, 800ms, ...
+RetryPolicy policy = new ExponentialBackOffRetryPolicy(100);
+----
+
+`MaxAttemptsPolicy`::
+Wraps any other policy and stops retrying once the maximum number of attempts is reached.
++
+[source,java]
+----
+// Retry at most 3 times using the given delegate policy
+RetryPolicy policy = new MaxAttemptsPolicy(delegate, 3);
+----
+
+`FilteringRetryPolicy`::
+Wraps any other policy and only delegates to it when the latest exception matches a given predicate.
+Failures that do not match are propagated immediately without retrying.
++
+[source,java]
+----
+// Only retry when the failure is not a validation error
+RetryPolicy policy = new FilteringRetryPolicy(
+        delegate,
+        e -> !(e instanceof IllegalArgumentException)
+);
+----
+
+Compose them to express the exact behavior you need.
+A common combination is exponential backoff, capped at a maximum number of retries, filtered to transient errors only:
+
+[source,java]
+----
+RetryPolicy policy = new MaxAttemptsPolicy(
+        new FilteringRetryPolicy(
+                new ExponentialBackOffRetryPolicy(100),
+                e -> !(e instanceof IllegalArgumentException)
+        ),
+        3
+);
+----
+
+Register an `AsyncRetryScheduler` with the policy to enable automatic retry behavior:
+
+[tabs]
+====
+Configuration API::
++
+--
+[source,java]
+----
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.core.retry.AsyncRetryScheduler;
+import org.axonframework.messaging.core.retry.ExponentialBackOffRetryPolicy;
+import org.axonframework.messaging.core.retry.FilteringRetryPolicy;
+import org.axonframework.messaging.core.retry.MaxAttemptsPolicy;
+import org.axonframework.messaging.core.retry.RetryScheduler;
+
+import java.util.concurrent.Executors;
+
+public class AxonConfig {
+
+    public void configureRetryScheduler(MessagingConfigurer configurer) {
+        configurer.componentRegistry(cr -> cr.registerComponent(
+                RetryScheduler.class,
+                config -> new AsyncRetryScheduler(
+                        new MaxAttemptsPolicy(
+                                new FilteringRetryPolicy(
+                                        new ExponentialBackOffRetryPolicy(100),
+                                        e -> !(e instanceof IllegalArgumentException)
+                                ),
+                                3
+                        ),
+                        Executors.newSingleThreadScheduledExecutor()
+                )
+        ));
+    }
+}
+----
+--
+
+Spring Boot::
++
+--
+[source,java]
+----
+import org.axonframework.messaging.core.retry.AsyncRetryScheduler;
+import org.axonframework.messaging.core.retry.ExponentialBackOffRetryPolicy;
+import org.axonframework.messaging.core.retry.FilteringRetryPolicy;
+import org.axonframework.messaging.core.retry.MaxAttemptsPolicy;
+import org.axonframework.messaging.core.retry.RetryScheduler;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.Executors;
+
+@Configuration
+public class AxonConfig {
+
+    @Bean
+    public RetryScheduler retryScheduler() {
+        return new AsyncRetryScheduler(
+                new MaxAttemptsPolicy(
+                        new FilteringRetryPolicy(
+                                new ExponentialBackOffRetryPolicy(100),
+                                e -> !(e instanceof IllegalArgumentException)
+                        ),
+                        3
+                ),
+                Executors.newSingleThreadScheduledExecutor()
+        );
+    }
+}
+----
+--
+====
+
+When the built-in policies do not cover your requirements, implement `RetryPolicy` directly.
+The interface receives the failed message, the current exception, and the exception types from all previous attempts,
+and returns a `RetryPolicy.Outcome` that either schedules the next attempt or aborts:
+
+[source,java]
+----
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.retry.RetryPolicy;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+public class CustomRetryPolicy implements RetryPolicy {
+
+    @Override
+    public Outcome defineFor(Message message, Throwable failure,
+                             List<Class<? extends Throwable>[]> previousFailures) {
+        if (failure instanceof IllegalArgumentException || previousFailures.size() >= 3) {
+            return Outcome.doNotReschedule();
+        }
+        return Outcome.rescheduleIn(2, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("maxRetries", 3);
+        descriptor.describeProperty("retryDelay", "2 SECONDS");
+    }
+}
+----
+
 == Command gateway
 
 The command gateway provides a convenient, type-safe API for dispatching commands.

@@ -33,7 +33,6 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
 /**
@@ -148,24 +147,6 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
             }
         }
         return true;
-    }
-
-    @Override
-    public Object handleSync(Message message,
-                             ProcessingContext context,
-                             @Nullable T target) throws Exception {
-        try {
-            MessageStream.Entry<?> resultEntry = handle(message, context, target).first()
-                                                                                 .asCompletableFuture()
-                                                                                 .get();
-            return resultEntry != null ? resultEntry.message().payload() : null;
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof Exception ex) {
-                throw ex;
-            } else {
-                throw e;
-            }
-        }
     }
 
     @Override

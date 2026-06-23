@@ -36,7 +36,7 @@
     </modules>
 
     <properties>
-        <kotlin.version>2.3.21</kotlin.version>
+        <kotlin.version>2.4.0</kotlin.version>
         <kotlin-serialization.version>1.11.0</kotlin-serialization.version>
         <!-- Logging -->
         <mockk.version>1.14.9</mockk.version>

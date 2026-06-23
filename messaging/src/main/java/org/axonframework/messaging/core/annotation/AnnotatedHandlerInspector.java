@@ -307,7 +307,6 @@ public class AnnotatedHandlerInspector<T> {
      *
      * @return a map of handlers per type
      */
-    // TODO #3936 Clean-up methods only used by stashed code
     public Map<Class<?>, SortedSet<MessageHandlingMember<? super T>>> getAllHandlers() {
         return Collections.unmodifiableMap(handlers);
     }
@@ -319,27 +318,8 @@ public class AnnotatedHandlerInspector<T> {
      *
      * @return a map of interceptors per type
      */
-    // TODO #3936 Clean-up methods only used by stashed code
     public Map<Class<?>, SortedSet<MessageHandlingMember<? super T>>> getAllInterceptors() {
         return Collections.unmodifiableMap(interceptors);
-    }
-
-    /**
-     * Returns a {@link Set} of all types which have been inspected for handlers.
-     *
-     * @return a {@link Set} of all types which have been inspected for handlers
-     */
-    // TODO #3936 Clean-up methods only used by stashed code
-    public Set<Class<?>> getAllInspectedTypes() {
-        Set<Class<?>> inspectedTypes = new HashSet<>();
-        inspectedTypes.add(inspectedType);
-        subClassInspectors.stream()
-                          .map(AnnotatedHandlerInspector::getAllInspectedTypes)
-                          .forEach(inspectedTypes::addAll);
-        superClassInspectors.stream()
-                            .map(AnnotatedHandlerInspector::getAllInspectedTypes)
-                            .forEach(inspectedTypes::addAll);
-        return Collections.unmodifiableSet(inspectedTypes);
     }
 
     /**

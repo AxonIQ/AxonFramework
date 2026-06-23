@@ -180,6 +180,87 @@ public class AxonConfig {
 --
 ====
 
+[#missing-revision]
+== Events without a revision (AF4 migration concern)
+
+Axon Framework 4 allowed events to be stored without a revision (the field was nullable).
+Axon Framework 5 requires every event to carry a version as part of its `MessageType`, so reading AF4 events with a missing revision would throw an `IllegalArgumentException` with the message "The given version is unsupported because it is empty."
+
+The framework resolves this at read time through the `EventTypeResolver`.
+The default resolver substitutes `0.0.0` for any missing or empty stored version, so no schema change or data migration is needed.
+The value `0.0.0` is chosen deliberately: it is distinct from `MessageType.DEFAULT_VERSION` (`0.0.1`) so that legacy events without a revision always sort as older than any explicitly versioned event.
+
+The default resolver is active out of the box.
+If `0.0.0` does not suit your needs, configure a different fallback version.
+
+When using the `AggregateBasedJpaEventStorageEngine`, consider the following example to configure a custom `EventTypeResolver`:
+
+[tabs]
+====
+Configuration API::
++
+--
+[source,java]
+----
+import jakarta.persistence.EntityManagerFactory;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
+import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
+import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+
+public class AxonConfig {
+
+    public void configureStorageEngine(
+            EventSourcingConfigurer configurer,
+            EntityManagerFactory factory,
+            EventConverter eventConverter
+    ) {
+        configurer.registerEventStorageEngine(
+                config -> new AggregateBasedJpaEventStorageEngine(
+                        new JpaTransactionalExecutorProvider(factory),
+                        eventConverter,
+                        engineConfig -> engineConfig.eventTypeResolver(
+                            EventTypeResolver.withDefaultVersion("0.0.1")
+                        )
+                )
+        );
+    }
+}
+----
+--
+
+Spring Boot::
++
+--
+Provide an `AggregateBasedJpaEventStorageEngineConfiguration` bean with the custom resolver:
+
+[source,java]
+----
+import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
+import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration;
+
+@Configuration
+public class AxonConfig {
+
+    @Bean
+    public AggregateBasedJpaEventStorageEngineConfiguration storageEngineConfiguration() {
+        return AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT
+                .eventTypeResolver(
+                    EventTypeResolver.withDefaultVersion("0.0.1")
+                );
+    }
+}
+----
+--
+====
+
+[NOTE]
+====
+This substitution happens only at read time.
+Stored events are never modified; the missing version is resolved in memory when the event is read from the store.
+====
+
 [#jpa-migration]
 == JPA event storage migration
 

@@ -82,7 +82,7 @@ class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStrea
     }
 
     @Override
-    protected synchronized FetchResult<Entry<M>> fetchNext() {
+    protected FetchResult<Entry<M>> fetchNext() {
         do {
             switch (FetchResult.of(active)) {
                 case FetchResult.Completed():
@@ -114,7 +114,7 @@ class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStrea
     }
 
     @Override
-    protected synchronized void onCompleted() {
+    protected void onCompleted() {
         active.close();
         streams.forEach(MessageStream::close);
     }

@@ -329,31 +329,49 @@ class Coordinator {
     }
 
     private CompletableFuture<Boolean> initializeTokenStore() {
-        return unitOfWorkFactory.create().executeWithResult(
-                context -> tokenStore.fetchSegments(name, context)
-                                     .thenCompose(segments -> {
-                                         if (!segments.isEmpty()) {
-                                             return CompletableFuture.completedFuture(true);
-                                         }
-                                         logger.info("Processor [{}]. Initializing ({}) segments",
-                                                     name, initialSegmentCount);
-                                         return initialToken.apply(eventSource)
-                                                            .thenCompose(token -> tokenStore.initializeTokenSegments(
-                                                                    name, initialSegmentCount, token, context
-                                                            ))
-                                                            .thenApply(ignored -> true);
-                                     })
-        ).exceptionally(e -> {
-            Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            logger.warn(
-                    "Error while initializing the Token Store. This may simply indicate concurrent attempts to initialize.",
-                    cause
-            );
-            return false;
-        });
+        // The initial TrackingToken can resolve on a foreign thread (e.g. the Axon Server connector completes its
+        // future on a gRPC callback thread). A unit of work's transaction is bound to the thread that began it,
+        // so the persist may not run as a continuation inside a unit of work started on another thread.
+        //  Therefore, the token is resolved first, and the persist runs in its own unit of work, dispatched to this coordinator's executor,
+        //  so the database work never occupies the connector's callback thread.
+        return unitOfWorkFactory.create()
+                                .executeWithResult(context -> tokenStore.fetchSegments(name, context))
+                                .thenCompose(segments -> {
+                                    if (!segments.isEmpty()) {
+                                        return CompletableFuture.completedFuture(true);
+                                    }
+                                    logger.info("Processor [{}]. Initializing ({}) segments",
+                                                name, initialSegmentCount);
+                                    return initialToken.apply(eventSource)
+                                                       .thenComposeAsync(this::persistInitialSegments,
+                                                                         executorService);
+                                })
+                                .exceptionally(e -> {
+                                    Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
+                                    if (cause instanceof Error error) {
+                                        throw error;
+                                    }
+                                    logger.warn(
+                                            "Error while initializing the Token Store. This may simply indicate concurrent attempts to initialize.",
+                                            cause
+                                    );
+                                    return false;
+                                });
+    }
+
+    /**
+     * Persists the initial token segments in their own unit of work. Invoked on this coordinator's executor (see
+     * {@link #initializeTokenStore()}) so that begin-transaction, persist, and commit all run on the same thread, even
+     * when the initial token resolved on a foreign thread.
+     *
+     * @param token the resolved initial {@link TrackingToken} to store for every initial segment
+     * @return a {@link CompletableFuture} completing with {@code true} once the segments are persisted
+     */
+    private CompletableFuture<Boolean> persistInitialSegments(TrackingToken token) {
+        return unitOfWorkFactory.create()
+                                .executeWithResult(context -> tokenStore.initializeTokenSegments(
+                                        name, initialSegmentCount, token, context
+                                ).thenApply(ignored -> true));
     }
 
     /**

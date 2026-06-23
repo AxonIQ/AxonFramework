@@ -90,26 +90,6 @@ public interface MessageHandlingMember<T> {
     boolean canHandleMessageType(Class<? extends Message> messageType);
 
     /**
-     * Handles the given {@code message} by invoking the appropriate method on given {@code target}. This may result in
-     * an exception if the given target is not capable of handling the message or if an exception is thrown during
-     * invocation of the method.
-     *
-     * @param message The message to handle.
-     * @param context The context in which the message is being handled.
-     * @param target  The target to handle the message.
-     * @return The message handling result in case the invocation was successful.
-     * @throws Exception when there was a problem that prevented invocation of the method or if an exception was thrown
-     *                   from the invoked method.
-     * @deprecated In favor of {@link #handle(Message, ProcessingContext, Object)}.
-     */
-    // TODO Remove entirely once #3065, #3195, #3517, and #3728 have been resolved.
-    @Internal
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    Object handleSync(Message message,
-                      ProcessingContext context,
-                      @Nullable T target) throws Exception;
-
-    /**
      * Handles the given {@code message} within the given {@code context} by invoking the appropriate method on given
      * {@code target}.
      * <p>

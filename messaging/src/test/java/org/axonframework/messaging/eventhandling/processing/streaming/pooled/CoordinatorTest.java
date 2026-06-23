@@ -161,6 +161,12 @@ class CoordinatorTest {
         doReturn(completedFuture(token)).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), any(Segment.class), any());
         doReturn(SEGMENT_ZERO).when(workPackage).segment();
         doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+        // Token-store initialization runs the persist in its own unit of work dispatched via
+        // executorService.execute(...).
+        doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(executorService).execute(any(Runnable.class));
 
         //act
         awaitStart(testSubject);

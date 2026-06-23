@@ -31,7 +31,7 @@
     </description>
 
     <properties>
-        <opentelemetry-api.version>1.62.0</opentelemetry-api.version>
+        <opentelemetry-api.version>1.63.0</opentelemetry-api.version>
     </properties>
 
     <dependencies>
