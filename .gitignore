@@ -30,6 +30,10 @@ docs/_playbook/build
 # AI ASSISTANT - Kiro
 .kiro
 
+# Spec-kit (local use only, not committed, testing out)
+.specify/
+.claude/skills/speckit-*/
+
 # AI ASSISTANT - Cursor
 .vscode
 .cursor

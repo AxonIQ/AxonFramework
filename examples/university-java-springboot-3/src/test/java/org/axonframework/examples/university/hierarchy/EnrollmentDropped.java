@@ -1,0 +1,10 @@
+package org.axonframework.examples.university.hierarchy;
+
+import org.axonframework.eventsourcing.annotation.EventTag;
+
+public record EnrollmentDropped(
+        @EventTag(key = "courseId") String courseId,
+        String studentId,
+        String reason
+) {
+}
