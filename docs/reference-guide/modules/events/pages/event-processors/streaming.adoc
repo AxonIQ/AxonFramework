@@ -916,6 +916,7 @@ axon.eventhandling.processors.example-processor.initial-segment-count=32
 --
 ====
 
+ifdef::advanced-framework[]
 [NOTE]
 .Parallel Processing and Subscribing Event Processors
 ====
@@ -923,6 +924,7 @@ Note that xref:event-processors/subscribing.adoc[Subscribing Event Processors] d
 The only means to achieve this, is through a `SubscribableEventSource` that manages sequencing and threading for you.
 An example of this is the xref:event-processors/subscribing.adoc#persistent_streams[persistent stream] functionality.
 ====
+endif::[]
 
 The Event Handling Components a processor is in charge of may have specific expectations on the event order.
 The ordering is guaranteed when only a single thread is processing events.
