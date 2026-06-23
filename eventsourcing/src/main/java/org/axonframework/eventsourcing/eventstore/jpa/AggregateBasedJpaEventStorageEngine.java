@@ -527,7 +527,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         }
     }
 
-    private TransactionalExecutor<EntityManager> entityManagerExecutor(ProcessingContext processingContext) {
+    private TransactionalExecutor<EntityManager> entityManagerExecutor(@Nullable ProcessingContext processingContext) {
         return transactionalExecutorProvider.getTransactionalExecutor(processingContext);
     }
 
