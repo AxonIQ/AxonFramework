@@ -3,6 +3,145 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+== Release 4.13
+
+=== Release 4.13.2
+
+==== Enhancements
+
+- Add error message in `TrackingEventProcessor` release token claim log statement link:https://github.com/AxonIQ/AxonFramework/pull/4668[#4668]
+- [#4545] Add module discovery to `Jackson3Serializer` link:https://github.com/AxonIQ/AxonFramework/pull/4563[#4563]
+
+==== Bug fixes
+
+- [#4659] Wrap `LockingRepository#doLoadOrCreate` try-catch in outer try-catch to ensure locks are released link:https://github.com/AxonIQ/AxonFramework/pull/4679[#4679]
+- Avoid costly stack walk on every task start in AxonTimeLimitedTask link:https://github.com/AxonIQ/AxonFramework/pull/4657[#4657]
+- fix: RevisionSnapshotFilter#type(Class) never matched stored snapshots, silently disabling revision filtering link:https://github.com/AxonIQ/AxonFramework/pull/4644[#4644]
+- Performance regression `AxonTimeLimitedTask` link:https://github.com/AxonIQ/AxonFramework/issues/4637[#4637]
+- fix(spring-boot-autoconfigure): OpenTelemetry autoconfig to wire Spring-managed OpenTelemetry link:https://github.com/AxonIQ/AxonFramework/pull/4614[#4614]
+- [#4544] Fix JDBC dead-letter claimable sequence paging link:https://github.com/AxonIQ/AxonFramework/pull/4573[#4573]
+- Fix CachingEventSourcingRepository with DCB context in Axon Server link:https://github.com/AxonIQ/AxonFramework/pull/4564[#4564]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/MGathier[@MGathier]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/rsobies[@rsobies]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/doubleflygofight[@doubleflygofight]
+
+=== Release 4.13.1
+
+==== Enhancements
+
+- Allow EmbeddedEventStore to be configured via application.properties link:https://github.com/AxonIQ/AxonFramework/pull/4466[#4466]
+- Fix incorrect aggregate version cached in DCB mode when using AxonServer link:https://github.com/AxonIQ/AxonFramework/pull/4463[#4463]
+- refactor(test): remove shadowed DeadLetteringEventIntegrationTest from spring-boot-3-integrationtests link:https://github.com/AxonIQ/AxonFramework/pull/4246[#4246]
+- Fix generic (for ecj) link:https://github.com/AxonIQ/AxonFramework/pull/4164[#4164]
+
+==== Bug fixes
+
+- Fix race between AxonTimeLimitedTask and UnitOfWorkTimeoutInterceptor causing TEP shutdown link:https://github.com/AxonIQ/AxonFramework/pull/4459[#4459]
+- [#4453] Fix ReplayToken.wasProcessedBeforeReset() for tokens without gap-walkback lowerBound semantics link:https://github.com/AxonIQ/AxonFramework/pull/4458[#4458]
+- Fix #4244: Properly shutdown Axon janitor thread on Spring context close link:https://github.com/AxonIQ/AxonFramework/pull/4269[#4269]
+- Spring context shutdown does not stop Axon janitor thread link:https://github.com/AxonIQ/AxonFramework/issues/4244[#4244]
+- Provide default serializer method and allow Axon classes for Jackson3 link:https://github.com/AxonIQ/AxonFramework/pull/4163[#4163]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- [link:https://github.com/wadhwaroh-lang@wadhwaroh-lang]
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+
+== Release 4.12
+
+=== Release 4.12.3
+
+==== Enhancements
+
+- chore(logs): PooledStreamingEventProcessor | add contextual logging for Coordinator task scheduling link:https://github.com/AxonFramework/AxonFramework/pull/4088[#4088]
+- Ensure that nulls are always stored in `MultiSourceTrackingToken` regardless of serializer configuration link:https://github.com/AxonFramework/AxonFramework/pull/4036[#4036]
+- [#4029] Provide minimal example app for frame work 4.x and spring boot 4.x link:https://github.com/AxonFramework/AxonFramework/pull/4034[#4034]
+- [#3850] Add error message in the log: "Exception occurred while processing a message"  link:https://github.com/AxonFramework/AxonFramework/pull/4027[#4027]
+- Test case ensuring annotated interceptors are not invoked for unhandled events within `SubcribingEventProcessor` link:https://github.com/AxonFramework/AxonFramework/pull/4023[#4023]
+- Add error message in the log: "Exception occurred while processing a message" link:https://github.com/AxonFramework/AxonFramework/issues/3850[#3850]
+
+==== Bug fixes
+
+- Filter out empty events list in `EventGateway` link:https://github.com/AxonFramework/AxonFramework/pull/4105[#4105]
+- fix(eventhandling): TrackingToken#samePositionAs when the other token is null, returns false link:https://github.com/AxonFramework/AxonFramework/pull/4099[#4099]
+- Avoid unnecessary locking when claiming a Segment in JpaTokenStore link:https://github.com/AxonFramework/AxonFramework/pull/4079[#4079]
+- fix(eventhandling): PooledStreamingEventProcessor | prevent stale CoordinationTask from running + logs with CoordinationTask generation link:https://github.com/AxonFramework/AxonFramework/pull/4077[#4077]
+- fix(messaging): `Coordinator` - if eventStream is null, then abort and schedule retry link:https://github.com/AxonFramework/AxonFramework/pull/4048[#4048]
+- [#3604] fix: DisallowReplay might not work as expected when gaps are present  link:https://github.com/AxonFramework/AxonFramework/pull/4038[#4038]
+- Fix compile errors with ECJ compiler link:https://github.com/AxonFramework/AxonFramework/pull/4037[#4037]
+- Gracefully handle cancellation for missing deadlines link:https://github.com/AxonFramework/AxonFramework/pull/4017[#4017]
+- [#4009] fix(eventhandling): Invoke `AbstractEventProcessor#reportIgnored` through the `SubscribingEventProcessor` link:https://github.com/AxonFramework/AxonFramework/pull/4011[#4011]
+- [#3673] fix: inject UsagePropertyProvider into UpdateChecker to respect properties link:https://github.com/AxonFramework/AxonFramework/pull/3981[#3981]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/jangalinski[@jangalinski]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/rsobies[@rsobies]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+- [@link:https://github.com/CodeDrivenMitchCodeDrivenMitch]
+
+=== Release 4.12.2
+
+==== Features
+
+- feat: `AxonServerCommandBus` - wait for commands in progress to be finished link:https://github.com/AxonFramework/AxonFramework/pull/3841[#3841]
+
+==== Enhancements
+
+- Allow update checks to be configured via Spring properties link:https://github.com/AxonFramework/AxonFramework/pull/3840[#3840]
+
+==== Bug fixes
+
+- Fix potential concurrency issue during split and merge link:https://github.com/AxonFramework/AxonFramework/pull/3837[#3837]
+- The EventBuffer should rethrow InterruptExceptions link:https://github.com/AxonFramework/AxonFramework/pull/3716[#3716]
+- Fix issue in token split during replay link:https://github.com/AxonFramework/AxonFramework/pull/3654[#3654]
+- Unable to use CommandGateway while Axon is in graceful shutdown state link:https://github.com/AxonFramework/AxonFramework/issues/3464[#3464]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/abuijze[@abuijze]
+
+=== Release 4.12.1
+
+**Breaking changes**
+
+link:https://github.com/AxonFramework/AxonFramework/pull/3537If your application uses the `JobRunrEventScheduler` or `JobRunrDeadlineManager`, be sure to upgrade to JobRunr 8!
+[This] dependency upgrade pull request for Axon Framework 4.12.0 upgraded the version of JobRunr, which is not backwards compatible.
+
+==== Bug fixes
+
+- [#3565] Several Axon Framework Update Checker fixes link:https://github.com/AxonFramework/AxonFramework/pull/3574[#3574]
+- UpdateCheckerHttpClient unable to report usage data, does not follow redirect link:https://github.com/AxonFramework/AxonFramework/issues/3565[#3565]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+
 == Release 4.11
 
 === Release 4.11.3

@@ -3,6 +3,30 @@
 
 All the enhancements and features which have been introduced to our major releases of the Axon Framework are noted here.
 
+== Release 4.13
+
+**Migration Support**
+
+Axon Framework 4.13. marks the migration support minor release!
+As such, it is aimed at providing users a stepping stone from Axon Framework 4 to Axon Framework 5.
+
+In this first migration support release, we focused on our largest integration with other tooling, which is Spring Boot.
+Hence, as of 4.13., Axon Framework 4 support Spring Boot 4+.
+Furthermore, we increased the JDK version of Axon Framework 4 from JDK8 to JDK17.
+This simplified our integration with Spring Boot 4, as well as aligns more closely with the paramount JDK increase to 21 for Axon Framework 5.
+
+=== _Enhancements_
+
+- [#4073] Support for Spring Boot 4 and Jackson 3 link:https://github.com/AxonFramework/AxonFramework/pull/4136[#4136]
+
+=== _Contributors_
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/jangalinski[@jangalinski]
+- link:https://github.com/hjohn[@hjohn]
+
 == Release 4.12
 
 === _Features_

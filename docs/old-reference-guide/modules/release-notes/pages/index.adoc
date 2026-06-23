@@ -8,7 +8,8 @@ The release notes section for the Axon framework for all major/minor releases.
 |===
 |Release Type |Version
 
-|**Major** |xref:major-releases.adoc#_release_4_12[4.12]
+|**Major** |xref:major-releases.adoc#_release_4_13[4.13]
+| |xref:major-releases.adoc#_release_4_12[4.12]
 | |xref:major-releases.adoc#_release_4_11[4.11]
 | |xref:major-releases.adoc#_release_4_10[4.10]
 | |xref:major-releases.adoc#_release_4_9[4.9]
@@ -21,7 +22,9 @@ The release notes section for the Axon framework for all major/minor releases.
 | |xref:major-releases.adoc#_release_4_2[4.2]
 | |xref:major-releases.adoc#_release_4_1[4.1]
 | |xref:major-releases.adoc#_release_4_0[4.0]
-|**Minor** |xref:minor-releases.adoc#_release_4_11[4.11]
+|**Minor** |xref:minor-releases.adoc#_release_4_13[4.13]
+| |xref:minor-releases.adoc#_release_4_12[4.12]
+| |xref:minor-releases.adoc#_release_4_11[4.11]
 | |xref:minor-releases.adoc#_release_4_10[4.10]
 | |xref:minor-releases.adoc#_release_4_9[4.9]
 | |xref:minor-releases.adoc#_release_4_8[4.8]
