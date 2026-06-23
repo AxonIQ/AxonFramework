@@ -331,7 +331,7 @@ public class TrackingEventProcessor extends AbstractEventProcessor implements St
                     if (errorWaitTime == 1) {
                         logger.warn("Error occurred. Starting retry mode.", e);
                     }
-                    logger.warn("Releasing claim on token and preparing for retry in {}s", errorWaitTime);
+                    logger.warn("Releasing claim on token and preparing for retry in {}s, error message: {}", errorWaitTime, e.getMessage());
                     TrackerStatus trackerStatus = activeSegments.get(segment.getSegmentId());
                     if (!trackerStatus.isErrorState()) {
                         TrackerStatus errorStatus =
