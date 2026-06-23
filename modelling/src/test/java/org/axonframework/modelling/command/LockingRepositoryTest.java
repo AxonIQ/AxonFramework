@@ -186,15 +186,6 @@ class LockingRepositoryTest {
      */
     @Test
     void loadOrCreateAggregateReleasesLockWhenLoadThrowsAggregateNotFoundSubclass() throws Exception {
-        // Arrange: create and then "delete" an aggregate
-        startAndGetUnitOfWork();
-        StubAggregate aggregate = new StubAggregate();
-        testSubject.newInstance(() -> aggregate).execute(StubAggregate::doSomething);
-        CurrentUnitOfWork.commit();
-        reset(lockFactory);
-
-        testSubject.markDeleted(aggregate.getIdentifier());
-
         // Use a real PessimisticLockFactory so the lock leak is detectable from another thread
         PessimisticLockFactory realLockFactory = PessimisticLockFactory.builder()
                                                                        .acquireAttempts(3)
@@ -204,6 +195,7 @@ class LockingRepositoryTest {
                                                                                   .lockFactory(realLockFactory)
                                                                                   .eventBus(eventBus)
                                                                                   .build();
+        StubAggregate aggregate = new StubAggregate();
         subjectWithRealLocks.markDeleted(aggregate.getIdentifier());
 
         // Act: loadOrCreate on a "deleted" aggregate — throws a subclass of AggregateNotFoundException
