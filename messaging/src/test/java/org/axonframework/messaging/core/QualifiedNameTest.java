@@ -101,4 +101,11 @@ class QualifiedNameTest {
 
         assertEquals(FULL_NAME, testSubject.toString());
     }
+
+    @Test
+    void anonymousClassReturnsGetNameAsName() {
+        Class<?> testClass = new Object() {}.getClass();
+
+        assertEquals(testClass.getName(), new QualifiedName(testClass).name());
+    }
 }

@@ -16,9 +16,9 @@
 
 package org.axonframework.messaging.core;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Assert;
 import org.axonframework.common.StringUtils;
+import org.jspecify.annotations.Nullable;
 
 import static java.util.Objects.requireNonNull;
 import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTypeIfPrimitive;
@@ -86,15 +86,28 @@ public record QualifiedName(String name) {
     }
 
     /**
-     * Constructor taking the {@link Class#getName()} as the {@link #name()} of the {@code QualifiedName} under
+     * Constructor combining the given {@code clazz}'s {@link Class#getPackageName() package name} and
+     * {@link Class#getSimpleName() simple name} into the {@link #name()} of the {@code QualifiedName} under
      * construction.
+     * <p>
+     * Note that for nested classes the simple name does <b>not</b> include the enclosing class(es). Classes without a
+     * simple name (e.g. anonymous classes) fall back to {@link Class#getName()}.
      *
-     * @param clazz The {@code Class} from which to use the {@link Class#getName()} as the {@link #name()}.
+     * @param clazz The {@code Class} from which to derive the {@link #name()}.
      */
     public QualifiedName(Class<?> clazz) {
-        this(((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
+        this(deriveNameOf((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
                 clazz, "The given Class cannot be null."
-        ))).getName());
+        ))));
+    }
+
+    private static String deriveNameOf(Class<?> clazz) {
+        String simpleName = clazz.getSimpleName();
+        if (StringUtils.emptyOrNull(simpleName)) {
+            // Anonymous and similar classes have no simple name; fall back to the binary name.
+            return clazz.getName();
+        }
+        return combineNames(clazz.getPackageName(), simpleName);
     }
 
     @Nullable
