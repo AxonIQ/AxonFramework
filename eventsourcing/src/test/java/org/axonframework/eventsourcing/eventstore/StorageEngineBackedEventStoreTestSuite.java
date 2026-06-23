@@ -592,6 +592,41 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
     }
 
     @Nested
+    protected class GivenNonMatchingEventsPrecedingMatchingOnes {
+
+        /**
+         * Regression test for issue #4643.
+         * <p>
+         * When streaming with a condition that matches only a subset of event types or entities, the engine must
+         * advance past batches of non-matching events without waiting for new appends. Previously, a full batch of
+         * non-matching events caused the stream to stall for some storage engines until an external signal (e.g. new
+         * append) arrived.
+         * <p>
+         * The 105 non-matching events ensure at least one full batch of non-matching events is scanned before the
+         * matching event is reached, which is the configuration that triggered the original bug with the default JPA
+         * batch size of 100.
+         */
+        @Test
+        protected void streamShouldAdvancePastNonMatchingBatchesWithoutWaitingForNewAppends() {
+            // given - 105 events for TAG2 (non-matching), then 1 event for TAG1 (matching)
+            List<EventMessage> nonMatchingEvents = new ArrayList<>();
+            for (int i = 0; i < 105; i++) {
+                nonMatchingEvents.add(message(new CourseUpdated(TAG2.value(), "non-match-" + i)));
+            }
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, nonMatchingEvents)).join();
+
+            EventMessage matchingEvent = message(new CourseUpdated(TAG1.value(), "match-1"));
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, matchingEvent)).join();
+
+            // when - streaming from baseToken for TAG1 only (no new events will be appended)
+            // then - the matching event is found by scanning past the non-matching batches
+            assertThat(stream(StreamingCondition.conditionFor(baseToken, EventCriteria.havingTags(TAG1)), 1))
+                .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                .containsExactly(matchingEvent);
+        }
+    }
+
+    @Nested
     protected class OverrideAppendCondition {
 
         /**
