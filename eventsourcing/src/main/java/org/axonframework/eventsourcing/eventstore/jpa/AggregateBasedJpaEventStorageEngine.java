@@ -355,15 +355,26 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         );
     }
 
-    private List<TokenAndEvent> queryTokensAndEventsBy(AtomicReference<GapAwareTrackingToken> cursorRef, StreamingCondition condition) {
+    private List<TokenAndEvent> queryTokensAndEventsBy(AtomicReference<GapAwareTrackingToken> cursorRef,
+                                                        StreamingCondition condition) {
+        TokenAndEventBatch result;
+        do {
+            result = queryBatch(cursorRef, condition);
+            // fetch as long as there are no events and the stream did not arrive at it's head
+        } while (result.events.isEmpty() && !result.exhausted);
+        return result.events;
+    }
+
+    private TokenAndEventBatch queryBatch(AtomicReference<GapAwareTrackingToken> cursorRef,
+                                          StreamingCondition condition) {
         return entityManagerExecutor(null).apply(em -> {
-            List<TokenAndEvent> result = new ArrayList<>();
+            List<TokenAndEvent> matches = new ArrayList<>();
             GapAwareTrackingToken cleanedToken = cleanedToken(em, cursorRef.get());
             List<AggregateEventEntry> events = queryEventsBy(em, cleanedToken);
 
             GapAwareTrackingToken token = cleanedToken;
-
             Instant gapTimeoutThreshold = tokenOperations.gapTimeoutThreshold();
+
             for (AggregateEventEntry event : events) {
                 String type = event.aggregateType();
                 String identifier = event.aggregateIdentifier();
@@ -371,15 +382,16 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                 // A null type or identifier is allowed, but those cannot form a valid tag:
                 Set<Tag> tags = type == null || identifier == null ? Set.of() : Set.of(new Tag(type, identifier));
 
-                // Always advance the cursor to track the furthest scanned position, regardless of match:
+                // Always advance the cursor past every scanned event, regardless of match:
                 token = calculateToken(token, event.globalIndex(), event.timestamp(), gapTimeoutThreshold);
                 cursorRef.set(token);
 
                 if (condition.matches(new QualifiedName(event.type()), tags)) {
-                    result.add(new TokenAndEvent(token, event));
+                    matches.add(new TokenAndEvent(token, event));
                 }
             }
-            return result;
+            // A partial batch means we've reached the end of the currently known event store.
+            return new TokenAndEventBatch(matches, events.size() < batchSize);
         }).join();
     }
 
@@ -513,7 +525,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         }
     }
 
-    private TransactionalExecutor<EntityManager> entityManagerExecutor(ProcessingContext processingContext) {
+    private TransactionalExecutor<EntityManager> entityManagerExecutor(@Nullable ProcessingContext processingContext) {
         return transactionalExecutorProvider.getTransactionalExecutor(processingContext);
     }
 
@@ -526,6 +538,10 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
             AtomicReference<AggregateBasedConsistencyMarker> markerReference,
             MessageStream<EventMessage> source
     ) {
+
+    }
+
+    private record TokenAndEventBatch(List<TokenAndEvent> events, boolean exhausted) {
 
     }
 
