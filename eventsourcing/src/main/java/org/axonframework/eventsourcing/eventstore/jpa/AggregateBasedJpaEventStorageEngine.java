@@ -357,14 +357,12 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
 
     private List<TokenAndEvent> queryTokensAndEventsBy(AtomicReference<GapAwareTrackingToken> cursorRef,
                                                         StreamingCondition condition) {
-        while (true) {
-            TokenAndEventBatch result = queryBatch(cursorRef, condition);
-            if (!result.events().isEmpty() || result.exhausted()) {
-                return result.events();
-            }
-            // A full batch of non-condition-matching events was scanned and the cursor advanced.
-            // Loop back to scan the next batch right away.
-        }
+        TokenAndEventBatch result;
+        do {
+            result = queryBatch(cursorRef, condition);
+            // fetch as long as there are no events and the stream did not arrive at it's head
+        } while (result.events.isEmpty() && !result.exhausted);
+        return result.events;
     }
 
     private TokenAndEventBatch queryBatch(AtomicReference<GapAwareTrackingToken> cursorRef,
