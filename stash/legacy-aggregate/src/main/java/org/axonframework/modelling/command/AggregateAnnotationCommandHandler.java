@@ -212,7 +212,7 @@ public class AggregateAnnotationCommandHandler<T> implements CommandHandlingComp
                 };
             }
             String commandName = StringUtils.emptyOrNull(cmh.commandName())
-                    ? cmh.payloadType().getName() : cmh.commandName();
+                    ? new QualifiedName(cmh.payloadType()).name() : cmh.commandName();
             handlersFound.add(messageHandler);
             supportedCommandsByName.computeIfAbsent(commandName, key -> new HashSet<>()).add(messageHandler);
             supportedCommands.add(new QualifiedName(commandName));
