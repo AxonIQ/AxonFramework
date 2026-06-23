@@ -54,7 +54,7 @@ We'd like to thank all the contributors who worked on this release!
 
 We'd like to thank all the contributors who worked on this release!
 
-- [link:https://github.com/wadhwaroh-lang@wadhwaroh-lang]
+- link:https://github.com/wadhwaroh-lang[@wadhwaroh-lang]
 - link:https://github.com/smcvb[@smcvb]
 - link:https://github.com/hjohn[@hjohn]
 - link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
@@ -98,7 +98,7 @@ We'd like to thank all the contributors who worked on this release!
 - link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
 - link:https://github.com/abuijze[@abuijze]
 - link:https://github.com/hatzlj[@hatzlj]
-- [@link:https://github.com/CodeDrivenMitchCodeDrivenMitch]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
 
 === Release 4.12.2
 
@@ -128,8 +128,7 @@ We'd like to thank all the contributors who worked on this release!
 
 **Breaking changes**
 
-link:https://github.com/AxonFramework/AxonFramework/pull/3537If your application uses the `JobRunrEventScheduler` or `JobRunrDeadlineManager`, be sure to upgrade to JobRunr 8!
-[This] dependency upgrade pull request for Axon Framework 4.12.0 upgraded the version of JobRunr, which is not backwards compatible.
+- link:https://github.com/AxonFramework/AxonFramework/pull/3537[#3537] If your application uses the `JobRunrEventScheduler` or `JobRunrDeadlineManager`, be sure to upgrade to JobRunr 8! This dependency upgrade pull request for Axon Framework 4.12.0 upgraded the version of JobRunr, which is not backwards compatible.
 
 ==== Bug fixes
 
@@ -992,7 +991,7 @@ For those looking for the set of adjustments please take a look at tag https://g
 * Whenever an interface is used as the type of an `@AggregateMember` annotated field, Axon would throw a `NullPointerException`.
  This is far from friendly, and has been changed towards an `AxonConfigurationException` in pull request https://github.com/AxonFramework/AxonFramework/pull/1742[#1742].
 
-Note that the named issues comprise the complete changelist for https://github.com/AxonFramework/AxonFramework/releases/tag/axon-4.4.8[Axon Framework 4.4.8]. 
+Note that the named issues comprise the complete changelist for https://github.com/AxonFramework/AxonFramework/releases/tag/axon-4.4.8[Axon Framework 4.4.8].
 
 === Release 4.4.7
 
@@ -1011,7 +1010,7 @@ Note that the named issues comprise the complete changelist for https://github.c
 * Through the use of the `AxonServerQueryBus`, a cancelled subscription query was wrongfully completed normally where it should complete exceptionally.
  This problem is marked and resolved under pull request https://github.com/AxonFramework/AxonFramework/pull/1695[#1695].
 
-For a detailed perspective on the release notes, please check https://github.com/AxonFramework/AxonFramework/releases/tag/axon-4.4.7[this] page. 
+For a detailed perspective on the release notes, please check https://github.com/AxonFramework/AxonFramework/releases/tag/axon-4.4.7[this] page.
 
 === Release 4.4.6
 
@@ -1043,7 +1042,7 @@ For a complete overview of all the changes you can check the release notes https
 
 * A certain path within the `AxonServerEventStore` allowed for event retrieval without correctly deserializing the `MetaData` of the events.
  If someone tried to access the `MetaData`, a `CannotConvertBetweenTypesException` was being thrown.
- This problem, among others, was remedied in pull request https://github.com/AxonFramework/AxonFramework/pull/1612[#1612], by ensuring the correct `Serializer` taking gRPC message types into account is consistently used. 
+ This problem, among others, was remedied in pull request https://github.com/AxonFramework/AxonFramework/pull/1612[#1612], by ensuring the correct `Serializer` taking gRPC message types into account is consistently used.
 
 For a complete set of the release notes, please check https://github.com/AxonFramework/AxonFramework/releases/tag/axon-4.4.5[here].
 
