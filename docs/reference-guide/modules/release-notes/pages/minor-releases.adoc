@@ -20,7 +20,7 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 
 - [#4643 | Port] `AggregateBasedJpaEventStorageEngine#stream` loops until `StreamingCondition` matching events are retrieved link:https://github.com/AxonIQ/AxonFramework/pull/4686[#4686]
 - [#4625 | Port] Introduce the `EventTypeResolver` for `EventStorageEngines` | Allows for default versions link:https://github.com/AxonIQ/AxonFramework/pull/4672[#4672]
-- [#4634 |  Port] Register the micrometer `MetricsConfigurationEnhancer` only once when using Spring Boot link:https://github.com/AxonIQ/AxonFramework/pull/4671[#4671]
+- [#4634 |  Port] Register the Micrometer `MetricsConfigurationEnhancer` only once when using Spring Boot link:https://github.com/AxonIQ/AxonFramework/pull/4671[#4671]
 - Port (5.1.x): [#4647] Propagate all entry resources to per-event ProcessingContext link:https://github.com/AxonIQ/AxonFramework/pull/4670[#4670]
 - fix(messaging): disposing a Flux does not close the underlying subscription query link:https://github.com/AxonIQ/AxonFramework/pull/4667[#4667]
 - Avoid costly stack walk on every task start in AxonTimeLimitedTask link:https://github.com/AxonIQ/AxonFramework/pull/4655[#4655]
