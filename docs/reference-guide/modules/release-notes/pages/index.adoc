@@ -13,7 +13,8 @@ You can switch the documentation to other major version on the right side of the
 
 |**Major** |xref:major-releases.adoc#release_5_1[5.1]
 | |xref:major-releases.adoc#release_5_0[5.0]
-|**Minor** |xref:minor-releases.adoc#release_5_0[5.0]
+|**Minor** |xref:minor-releases.adoc#release_5_1[5.1]
+| |xref:minor-releases.adoc#release_5_0[5.0]
 |===
 
 ifdef::advanced-framework[]
