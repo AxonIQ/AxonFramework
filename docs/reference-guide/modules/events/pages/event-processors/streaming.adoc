@@ -600,8 +600,11 @@ The framework provides a couple of `TokenStore` implementations:
 * `InMemoryTokenStore` - A `TokenStore` implementation that keeps the tokens in memory.
 This implementation does not suffice as a production-ready store in most applications.
 * `JpaTokenStore` - A `TokenStore` implementation using JPA to store the tokens with.
-Expects that a table is constructed based on the `org.axonframework.eventhandling.tokenstore.jpa.TokenEntry`.
+Expects that a table is constructed based on the `TokenEntry` JPA entity.
 It is easily auto-configurable with, for example, Spring Boot.
+* `JdbcTokenStore` - A `TokenStore` implementation using JDBC to store the tokens with.
+Expects that the schema is constructed through the `JdbcTokenStore#createSchema(TokenTableFactory)` method.
+Several `TokenTableFactory` implementations can be chosen here, like the `GenericTokenTableFactory`, `PostgresTokenTableFactory` or `Oracle11TokenTableFactory` implementation.
 
 [NOTE]
 .Keep your tokens close
