@@ -184,7 +184,7 @@ public class Jackson3Serializer implements Serializer {
             return new SimpleSerializedObject<>(serializedContent, expectedRepresentation,
                                                 typeForClass(ObjectUtils.nullSafeTypeOf(object)));
         } catch (JacksonException e) {
-            throw new SerializationException("Unable to serialize object", e);
+            throw new SerializationException("Unable to serialize object, details: " + e.getMessage(), e);
         }
     }
 

@@ -151,7 +151,7 @@ public class JacksonSerializer implements Serializer {
             return new SimpleSerializedObject<>(serializedContent, expectedRepresentation,
                                                 typeForClass(ObjectUtils.nullSafeTypeOf(object)));
         } catch (JsonProcessingException e) {
-            throw new SerializationException("Unable to serialize object", e);
+            throw new SerializationException("Unable to serialize object, details: " + e.getMessage(), e);
         }
     }
 
