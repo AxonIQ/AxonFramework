@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -77,11 +78,9 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void usesIdConstructorWithoutMessage() {
-            EventMessageTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
-            assertNotNull(entity);
-            assertEquals("test-id", entity.getId());
-            assertNull(entity.getEventMessage());
+        void throwsEntityNotFoundForIdOnlyConstructorWithoutEventMessage() {
+            assertThrows(EntityNotFoundException.class,
+                         () -> factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -144,12 +143,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsErrorIfNoMatchingPayloadType() {
+        void throwsEntityNotFoundIfNoMatchingPayloadType() {
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
+            assertThrows(EntityNotFoundException.class, () -> {
                 factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
             });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found"));
         }
 
         @Test
@@ -209,12 +207,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsErrorIfNoMatchingPayloadType() {
+        void throwsEntityNotFoundIfNoMatchingPayloadType() {
             eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"), new PayloadSpecificPayload("my-specific-payload"));
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
+            assertThrows(EntityNotFoundException.class, () -> {
                 factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
             });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found"));
         }
 
         public static class PayloadSpecificTestEntity {
@@ -332,7 +329,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void invokesSimpleMethodIfMessageNotPresent() {
+        void throwsEntityNotFoundForIdOnlyConstructorWithoutEventMessage() {
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     MostSpecificHandlerEntity.class,
                     String.class,
@@ -341,8 +338,8 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
                     converter
             );
 
-            var entity = factory.create("test-id", null, new StubProcessingContext());
-            assertEquals("simply-id", entity.invoked);
+            assertThrows(EntityNotFoundException.class,
+                         () -> factory.create("test-id", null, new StubProcessingContext()));
         }
 
         static class MostSpecificHandlerEntity {
