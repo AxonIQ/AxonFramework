@@ -84,8 +84,8 @@ public class MixedModeCheckpointingInMemoryIT extends AbstractStudentIT {
         // when -- the processor is restarted
         checkpointing.handledSinceReset.clear();
         ordinary.handledSinceReset.clear();
-        processor.shutdown().join();
-        processor.start().join();
+        processor.shutdown().orTimeout(10, TimeUnit.SECONDS).join();
+        processor.start().orTimeout(10, TimeUnit.SECONDS).join();
 
         // then -- auto mode stored the batch-end token every batch, so the token resumes at c4: a NEW event c5 is the
         // only thing handled, and nothing from c0-c4 is replayed. (In fully-deferred mode the checkpointing component

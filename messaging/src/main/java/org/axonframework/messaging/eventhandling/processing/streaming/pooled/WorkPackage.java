@@ -34,6 +34,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.WrappedToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
@@ -44,7 +45,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -128,17 +128,7 @@ class WorkPackage {
     private final AtomicReference<@Nullable Throwable> abortException = new AtomicReference<>();
     private @Nullable Runnable batchProcessedCallback;
     private volatile @Nullable TrackingToken lastConsumedToken;
-    private final CheckpointTrigger checkpointTrigger = new CheckpointTrigger() {
-        @Override
-        public void requestCheckpoint() {
-            onCheckpointRequested(lastConsumedToken);
-        }
-
-        @Override
-        public void requestCheckpoint(TrackingToken token) {
-            onCheckpointRequested(token);
-        }
-    };
+    private final CheckpointTrigger checkpointTrigger = this::onCheckpointRequested;
 
     /**
      * Instantiate a Builder to be able to create a {@code WorkPackage}. This builder <b>does not</b> validate the
@@ -377,20 +367,6 @@ class WorkPackage {
         processEvents().whenCompleteAsync((unused, e) -> onProcessingComplete(e), executorService);
     }
 
-    private static @Nullable TrackingToken lowerBound(Collection<TrackingToken> tokens) {
-        return tokens.stream()
-                     .filter(Objects::nonNull)
-                     .reduce(TrackingToken::lowerBound)
-                     .orElse(null);
-    }
-
-    private static @Nullable TrackingToken upperBound(Collection<TrackingToken> tokens) {
-        return tokens.stream()
-                     .filter(Objects::nonNull)
-                     .reduce(TrackingToken::upperBound)
-                     .orElse(null);
-    }
-
     private void onProcessingComplete(@Nullable Throwable e) {
         if (e != null) {
             Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
@@ -507,7 +483,7 @@ class WorkPackage {
      * <p>
      * Storing the {@link TrackingToken#lowerBound(TrackingToken) lowerBound} of differing reported positions would
      * leave any component that advanced <em>further</em> than the stored token having to reprocess the events between
-     * the stored token and its own position on the next claim -- events it already made durable, which is only safe if
+     * the stored token and its own position on the next claim (events it already made durable), which is only safe if
      * that processing is idempotent. To avoid relying on idempotency, this reconciles the reported positions: it takes
      * the highest reported position and re-requests every component that has not yet reached it (through
      * {@link Checkpointing#onCheckpointAdvanced(Segment, TrackingToken)}), repeating until every component reports the
@@ -515,13 +491,13 @@ class WorkPackage {
      * <p>
      * This terminates: the agreed position only ever rises and is bounded by {@code lastConsumedToken} (a component
      * cannot be durable past what it was handed). A component that cannot reach the agreed position fails its future,
-     * which fails the surrounding checkpoint without storing -- the safe outcome.
+     * which fails the surrounding checkpoint without storing: the safe outcome.
      *
      * @param reported the latest position reported by each participant
      * @return the single position every participant has durably reached (or {@code null} if none reported one)
      */
     private CompletableFuture<TrackingToken> reconcile(Map<Checkpointing, TrackingToken> reported) {
-        TrackingToken agreed = upperBound(reported.values());
+        TrackingToken agreed = TrackingTokenUtils.upperBound(reported.values());
         if (agreed == null || reported.size() == 1) {
             // Nothing reported, or a single participant that trivially agrees with itself: no reconciliation needed.
             return CompletableFuture.completedFuture(agreed);
@@ -578,7 +554,7 @@ class WorkPackage {
     private void onCheckpointRequested(@Nullable TrackingToken token) {
         TrackingToken resolved = resolveLatest(token);
         if (resolved == null || checkpointsReleased.get()) {
-            // segment released, or nothing handled yet: a late async ack has no safe point to record -- ignore it
+            // segment released, or nothing handled yet: a late async ack has no safe point to record, so ignore it
             return;
         }
         requestedCheckpoint.accumulateAndGet(resolved,
@@ -587,7 +563,7 @@ class WorkPackage {
     }
 
     /**
-     * Resolves the {@link TrackingToken#LATEST} sentinel to this package's {@code lastConsumedToken} -- the latest
+     * Resolves the {@link TrackingToken#LATEST} sentinel to this package's {@code lastConsumedToken}: the latest
      * position actually handed to the handler. A component may use {@code LATEST} (via the {@link CheckpointTrigger} or
      * as a return value) to mean "checkpoint as far as you have given me" without tracking a concrete token; it is
      * deliberately <em>not</em> interpreted as the end of the stream (which this package may not have reached). Any
@@ -609,10 +585,10 @@ class WorkPackage {
      * Performs the final checkpoint for a segment being released: asks each self-checkpointing
      * {@link #checkpointingParticipants participant} to drain toward {@code lastConsumedToken} through
      * {@link Checkpointing#onSegmentReleased(Segment, TrackingToken)}, then {@link #reconcile(Map) reconciles} their
-     * reported positions to a single agreed token -- the highest any participant reported, driving the others to reach
-     * it (exactly as {@link #checkpoint(ProcessingContext)} does) -- and stores that within the given {@code ctx} (if it
-     * advances). Only when reconciliation cannot be reached -- a lagging participant fails to cover the agreed position
-     * -- does it fall back to storing the {@link TrackingToken#lowerBound(TrackingToken) lowerBound} of the reported
+     * reported positions to a single agreed token (the highest any participant reported, driving the others to reach
+     * it, exactly as {@link #checkpoint(ProcessingContext)} does) and stores that within the given {@code ctx} (if it
+     * advances). Only when reconciliation cannot be reached (a lagging participant fails to cover the agreed position)
+     * does it fall back to storing the {@link TrackingToken#lowerBound(TrackingToken) lowerBound} of the reported
      * tokens, so the claim can still be released and the uncovered tail is simply reprocessed on the next claim.
      * Invoked by the {@link Coordinator} while the token-store claim is still held, before the claim is released. With no
      * participant it is a no-op (the per-batch store already covered progress).
@@ -629,7 +605,7 @@ class WorkPackage {
                     logger.warn("Work Package [{}]-[{}] could not reconcile the release checkpoint across components; "
                                         + "storing the lowest reported safe token.",
                                 name, segment.getSegmentId(), error);
-                    return lowerBound(reported.values());
+                    return TrackingTokenUtils.lowerBound(reported.values());
                 }))
                 .thenCompose(agreed -> storeIfAdvanced(agreed, ctx))
                 // The claim must be released regardless of whether a final token could be stored: if a component's
@@ -677,31 +653,11 @@ class WorkPackage {
     }
 
     /**
-     * Indicates whether {@code candidate} represents a position at or beyond {@code reference}, comparing the raw
-     * {@link WrappedToken#unwrapUpperBound(TrackingToken) unwrapped} upper-bound positions rather than the tokens
-     * directly.
-     * <p>
-     * Unwrapping keeps the comparison robust when a replay concludes: {@code reference} may still be a
-     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken} while {@code candidate}
-     * is the plain stream token it advances to, and a direct {@code candidate.covers(reference)} would then either
-     * throw (the raw token type rejecting the wrapped one) or report a false regression. Comparing the unwrapped
-     * positions reports that transition as an advance, while still returning {@code false} for a genuine regression or
-     * an incomparable token (such as a partially-regressed multi-source token).
-     *
-     * @param candidate the token whose position is tested
-     * @param reference the token to compare against
-     * @return {@code true} if {@code candidate} covers {@code reference} once both are unwrapped to their raw
-     * upper-bound positions
-     */
-    private static boolean coversWhenUnwrapped(TrackingToken candidate, TrackingToken reference) {
-        return WrappedToken.unwrapUpperBound(candidate).covers(WrappedToken.unwrapUpperBound(reference));
-    }
-
-    /**
      * Stores {@code safe}, keeping the stored {@link TrackingToken} monotonic. A {@code null} or already-stored token
-     * is ignored. A token that does not {@link #coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last
-     * stored checkpoint -- whether a strict regression or an <em>incomparable</em> position, such as a
-     * partially-regressed multi-source token where one source advanced while another fell behind -- is ignored with a
+     * is ignored. A token that does not
+     * {@link TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last
+     * stored checkpoint (whether a strict regression or an <em>incomparable</em> position, such as a
+     * partially-regressed multi-source token where one source advanced while another fell behind) is ignored with a
      * warning rather than persisted, so a misbehaving component can never rewind progress on any source. A concluding
      * replay is still recognized as an advance, as the coverage is judged on the unwrapped positions.
      */
@@ -709,7 +665,7 @@ class WorkPackage {
         if (safe == null || safe.equals(lastStoredToken)) {
             return emptyCompletedFuture();
         }
-        if (lastStoredToken != null && !coversWhenUnwrapped(safe, lastStoredToken)) {
+        if (lastStoredToken != null && !TrackingTokenUtils.coversWhenUnwrapped(safe, lastStoredToken)) {
             logger.warn(
                     "Work Package [{}]-[{}] ignoring checkpoint token [{}]; it does not advance beyond the stored token [{}].",
                     name,

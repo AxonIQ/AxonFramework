@@ -362,6 +362,78 @@ class WorkPackageCheckpointTest {
                 verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
             });
         }
+
+        @Test
+        void aRunningCheckpointTokenBehindTheLastStoredCheckpointIsIgnoredAndDoesNotRegressTheStoredToken() {
+            // given -- the stored checkpoint has advanced to position 5 via a running checkpoint request
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+            participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(5L));
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(new GlobalSequenceTrackingToken(5L)), anyString(), anyInt(), any()
+            ));
+            clearInvocations(tokenStore);
+
+            // when -- a later running request reports a position BEHIND the last stored checkpoint (a regression)
+            participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(3L));
+
+            // then -- the checkpoint runs (the participant is asked to cover 3) but the regressive token is ignored at
+            // the store: the stored token is never rewound below 5
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(participant.advanced).containsExactly(
+                    new GlobalSequenceTrackingToken(5L), new GlobalSequenceTrackingToken(3L)
+            ));
+            await().during(Duration.ofMillis(200)).atMost(TIMEOUT).untilAsserted(
+                    () -> verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any())
+            );
+        }
+
+        @Test
+        void concurrentRequestsMergeToTheHighestPositionAndLowerOnesAreAbsorbed() {
+            // given -- while the first checkpoint (5) runs, two more requests arrive: a higher 8 and a lower 3
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            participant.advanceResult = requested -> {
+                if (requested.equals(new GlobalSequenceTrackingToken(5L))) {
+                    // both land while the worker is still scheduled, so they only accumulate the pending request
+                    participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(8L));
+                    participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(3L));
+                }
+                return CompletableFuture.completedFuture(requested);
+            };
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+
+            // when
+            participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(5L));
+
+            // then -- the two concurrent requests merge via upperBound to 8 (the lower 3 is absorbed and never runs),
+            // so a single follow-up checkpoint runs at 8 and 8 becomes the stored token
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(participant.advanced).containsExactly(
+                    new GlobalSequenceTrackingToken(5L), new GlobalSequenceTrackingToken(8L)
+            ));
+            verify(tokenStore).storeToken(eq(new GlobalSequenceTrackingToken(8L)), anyString(), anyInt(), any());
+            verify(tokenStore, never()).storeToken(eq(new GlobalSequenceTrackingToken(3L)), anyString(), anyInt(), any());
+        }
+
+        @Test
+        void aParticipantReturningLatestFromOnCheckpointAdvancedResolvesToTheLastConsumedToken() {
+            // given -- one event handled (last consumed token at position 1); the participant reports LATEST from
+            // onCheckpointAdvanced ("I am durable up to everything you handed me") rather than a concrete token
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            participant.advanceResult = requested -> CompletableFuture.completedFuture(TrackingToken.LATEST);
+            WorkPackage testSubject = builder.autoCheckpointing(false).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+            testSubject.scheduleEvent(eventAt(1L));
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(batchProcessor.processed).hasSize(1));
+
+            // when -- a checkpoint is requested at position 1
+            participant.trigger.requestCheckpoint(new GlobalSequenceTrackingToken(1L));
+
+            // then -- the LATEST returned from onCheckpointAdvanced is resolved to the last consumed token (1) and stored
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    eq(new GlobalSequenceTrackingToken(1L)), anyString(), anyInt(), any()
+            ));
+        }
     }
 
     @Nested
@@ -384,6 +456,54 @@ class WorkPackageCheckpointTest {
                 verify(tokenStore).storeToken(stored.capture(), anyString(), anyInt(), any());
             });
             assertThat(stored.getValue()).isEqualTo(new GlobalSequenceTrackingToken(1L));
+        }
+
+        @Test
+        void aParticipantThatCannotCoverTheBatchEndTokenFailsTheBatchAndStoresNothing() {
+            // given -- auto mode with a participant that cannot reach the batch-end token (reports position 0)
+            RecordingCheckpointing participant = new RecordingCheckpointing();
+            participant.advanceResult = requested -> CompletableFuture.completedFuture(new GlobalSequenceTrackingToken(0L));
+            WorkPackage testSubject = builder.autoCheckpointing(true).checkpointingParticipants(List.of(participant)).build();
+            testSubject.notifySegmentClaimed();
+
+            // when -- a batch is processed; the auto checkpoint at the batch-end token (position 1) cannot be covered
+            testSubject.scheduleEvent(eventAt(1L));
+
+            // then -- the checkpoint fails inside the batch commit (onPrepareCommit), rolling back the batch and
+            // aborting the worker; nothing is stored, so the segment will be re-claimed and the batch reprocessed
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(testSubject.abort(null)).isDone());
+            verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+
+        @Test
+        void multipleParticipantsAreReconciledAboveTheBatchEndFloorAndTheHighestIsStored() {
+            // given -- auto mode with two participants reporting different positions, both at/above the batch-end token
+            RecordingCheckpointing lower = new RecordingCheckpointing();
+            lower.advanceResult = requested -> CompletableFuture.completedFuture(
+                    new GlobalSequenceTrackingToken(Math.max(requested.position().orElse(0L), 3L))
+            );
+            RecordingCheckpointing higher = new RecordingCheckpointing();
+            higher.advanceResult = requested -> CompletableFuture.completedFuture(
+                    new GlobalSequenceTrackingToken(Math.max(requested.position().orElse(0L), 5L))
+            );
+            WorkPackage testSubject =
+                    builder.autoCheckpointing(true).checkpointingParticipants(List.of(lower, higher)).build();
+            testSubject.notifySegmentClaimed();
+
+            // when -- a batch is processed (batch-end token at position 1)
+            testSubject.scheduleEvent(eventAt(1L));
+
+            // then -- both first cover the batch-end floor (1); their positions reconcile to the highest (5), and 5 is
+            // stored. The lower participant is re-requested up to the agreed 5; the higher one already reached it.
+            ArgumentCaptor<TrackingToken> stored = ArgumentCaptor.forClass(TrackingToken.class);
+            await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                    stored.capture(), anyString(), anyInt(), any()
+            ));
+            assertThat(stored.getValue()).isEqualTo(new GlobalSequenceTrackingToken(5L));
+            assertThat(lower.advanced).containsExactly(
+                    new GlobalSequenceTrackingToken(1L), new GlobalSequenceTrackingToken(5L)
+            );
+            assertThat(higher.advanced).containsExactly(new GlobalSequenceTrackingToken(1L));
         }
     }
 

@@ -38,7 +38,9 @@ import java.util.concurrent.CompletableFuture;
  * {@link Checkpointing#onSegmentClaimed(org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment, CheckpointTrigger)}.
  * <p>
  * Expects the {@code CheckpointTrigger} to reside in the {@link ProcessingContext} under
- * {@link CheckpointTrigger#RESOURCE_KEY}. A pooled streaming event processor places it there per batch whenever it has
+ * {@link CheckpointTrigger#RESOURCE_KEY}. A
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor streaming event
+ * processor} places it there per batch whenever it has
  * <b>at least one</b> {@link Checkpointing} component. The trigger is <em>segment-scoped</em>: it is shared by every
  * handler in that processor on the claimed segment, not restricted to the checkpointing component(s). A requested
  * checkpoint therefore applies to all of the processor's components on that segment.
@@ -47,7 +49,7 @@ import java.util.concurrent.CompletableFuture;
  * {@link ParameterResolver#matches(ProcessingContext) matches} (so the handler is never silently skipped), but if no
  * trigger is present when the parameter is resolved it fails the handler invocation with a descriptive
  * {@link IllegalStateException} rather than passing {@code null}. A {@code CheckpointTrigger} parameter is therefore
- * only usable on a handler running in a pooled streaming event processor that has at least one {@link Checkpointing}
+ * only usable on a handler running in a streaming event processor that has at least one {@link Checkpointing}
  * component; declaring it on a handler that may run in a subscribing or otherwise non-checkpointing processor, or in a
  * processor with no checkpointing component at all, will raise that exception at runtime.
  * <p>

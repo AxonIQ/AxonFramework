@@ -50,6 +50,13 @@ import static org.awaitility.Awaitility.await;
  * <em>checkpointed</em> token (not the batch-end), idempotently reprocessing the window that was handled but never
  * checkpointed.
  * <p>
+ * Here the projection acquires its {@link CheckpointTrigger} by <em>retaining</em> the one handed to it through
+ * {@link Checkpointing#onSegmentClaimed(Segment, CheckpointTrigger)}, keyed by {@link Segment}. This is the
+ * counterpart of {@link CheckpointTriggerResumeInMemoryIT}, which proves the identical resume guarantee for a
+ * projection that instead obtains the trigger through a handler-method <em>parameter</em> (the
+ * {@code CheckpointTriggerParameterResolverFactory}). Both acquisition paths are public API, so both are exercised
+ * end-to-end.
+ * <p>
  * This is the end-to-end realisation of the guarantee unit-tested by {@code WorkPackageCheckpointTest}: the stored
  * token never runs past what a component made durable.
  *
@@ -88,8 +95,8 @@ public class CheckpointResumeInMemoryIT extends AbstractStudentIT {
         // when -- the processor is killed (shut down) with c3/c4 handled but not yet checkpointed, then restarted
         projection.handledSinceReset.clear();
         projection.confirmLimit = 5;
-        processor.shutdown().join();
-        processor.start().join();
+        processor.shutdown().orTimeout(10, TimeUnit.SECONDS).join();
+        processor.start().orTimeout(10, TimeUnit.SECONDS).join();
 
         // then -- it resumes from the checkpoint (c2), reprocessing ONLY the uncheckpointed window c3, c4.
         // Had the stored token been the batch-end (c4), nothing would be reprocessed; a full replay would re-handle c0-c2.

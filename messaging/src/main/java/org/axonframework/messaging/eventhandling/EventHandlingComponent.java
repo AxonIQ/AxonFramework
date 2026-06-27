@@ -99,9 +99,9 @@ public interface EventHandlingComponent
      * {@link Optional#empty()} otherwise. Decorating components forward this call through their delegate chain, and
      * wrapping components may also expose the object they wrap.
      *
-     * @param componentType The capability type to resolve.
-     * @param <C>           The capability type.
-     * @return An {@link Optional} holding the resolved capability, or empty if not available.
+     * @param componentType the capability type to resolve
+     * @param <C>           the capability type
+     * @return an {@link Optional} holding the resolved capability, or empty if not available
      * @since 5.2.0
      */
     default <C> Optional<C> unwrap(Class<C> componentType) {

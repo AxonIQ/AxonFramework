@@ -28,29 +28,34 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
-import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.Checkpointing;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceCachingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceOverridingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequencingEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating the {@code unwrap(Class)} capability convention on {@link EventHandlingComponent} and its
- * forwarding through {@link DelegatingEventHandlingComponent} decorators, used to detect a {@link Checkpointing} unit.
+ * Test class validating the general {@code unwrap(Class)} capability convention on {@link EventHandlingComponent} and
+ * its forwarding through {@link DelegatingEventHandlingComponent} decorators. The capability resolved here is an
+ * arbitrary marker type ({@link SampleCapability}); the mechanism is not tied to any specific capability.
  *
  * @author Allard Buijze
  */
 class EventHandlingComponentUnwrapTest {
+
+    /**
+     * An arbitrary capability type, standing in for any interface a component might expose through {@code unwrap}.
+     */
+    private interface SampleCapability {
+
+        String capabilityName();
+    }
 
     @Nested
     class PlainComponent {
@@ -60,7 +65,7 @@ class EventHandlingComponentUnwrapTest {
             EventHandlingComponent component = new PlainEventHandlingComponent();
 
             assertThat(component.unwrap(EventHandlingComponent.class)).containsSame(component);
-            assertThat(component.unwrap(Checkpointing.class)).isEmpty();
+            assertThat(component.unwrap(SampleCapability.class)).isEmpty();
         }
     }
 
@@ -68,12 +73,12 @@ class EventHandlingComponentUnwrapTest {
     class DecoratedComponent {
 
         @Test
-        void unwrapFindsCheckpointingThroughTheDecoratorChain() {
-            CheckpointingComponent checkpointing = new CheckpointingComponent();
+        void unwrapFindsCapabilityThroughTheDecoratorChain() {
+            CapabilityComponent capability = new CapabilityComponent();
             EventHandlingComponent decorated =
-                    new SequencingEventHandlingComponent(new SequenceCachingEventHandlingComponent(checkpointing));
+                    new SequencingEventHandlingComponent(new SequenceCachingEventHandlingComponent(capability));
 
-            assertThat(decorated.unwrap(Checkpointing.class)).containsSame(checkpointing);
+            assertThat(decorated.unwrap(SampleCapability.class)).containsSame(capability);
         }
 
         @Test
@@ -82,17 +87,17 @@ class EventHandlingComponentUnwrapTest {
                     new SequencingEventHandlingComponent(
                             new SequenceCachingEventHandlingComponent(new PlainEventHandlingComponent()));
 
-            assertThat(decorated.unwrap(Checkpointing.class)).isEmpty();
+            assertThat(decorated.unwrap(SampleCapability.class)).isEmpty();
         }
 
         // SequenceOverridingEventHandlingComponent is the one decorator with a hand-written (not inherited) unwrap.
         @Test
-        void unwrapFindsCheckpointingThroughTheSequenceOverridingDecorator() {
-            CheckpointingComponent checkpointing = new CheckpointingComponent();
+        void unwrapFindsCapabilityThroughTheSequenceOverridingDecorator() {
+            CapabilityComponent capability = new CapabilityComponent();
             EventHandlingComponent decorated = new SequenceOverridingEventHandlingComponent(
-                    (event, context) -> Optional.of(event.identifier()), checkpointing);
+                    (event, context) -> Optional.of(event.identifier()), capability);
 
-            assertThat(decorated.unwrap(Checkpointing.class)).containsSame(checkpointing);
+            assertThat(decorated.unwrap(SampleCapability.class)).containsSame(capability);
         }
     }
 
@@ -100,18 +105,18 @@ class EventHandlingComponentUnwrapTest {
     class AnnotatedComponent {
 
         @Test
-        void unwrapFindsCheckpointingOnAnAnnotatedHandlerThatImplementsIt() {
-            CheckpointingProjection projection = new CheckpointingProjection();
+        void unwrapFindsCapabilityOnAnAnnotatedHandlerThatImplementsIt() {
+            CapabilityProjection projection = new CapabilityProjection();
             EventHandlingComponent component = annotatedComponent(projection);
 
-            assertThat(component.unwrap(Checkpointing.class)).containsSame(projection);
+            assertThat(component.unwrap(SampleCapability.class)).containsSame(projection);
         }
 
         @Test
-        void unwrapReturnsEmptyForAnAnnotatedHandlerThatDoesNotImplementCheckpointing() {
+        void unwrapReturnsEmptyForAnAnnotatedHandlerThatDoesNotImplementTheCapability() {
             EventHandlingComponent component = annotatedComponent(new PlainProjection());
 
-            assertThat(component.unwrap(Checkpointing.class)).isEmpty();
+            assertThat(component.unwrap(SampleCapability.class)).isEmpty();
         }
 
         private static EventHandlingComponent annotatedComponent(Object eventHandler) {
@@ -134,13 +139,12 @@ class EventHandlingComponentUnwrapTest {
         }
     }
 
-    // An annotated projection POJO that also implements Checkpointing -- the headline detection path.
-    private static class CheckpointingProjection extends PlainProjection implements Checkpointing {
+    // An annotated projection POJO that also exposes a capability: the headline detection path.
+    private static class CapabilityProjection extends PlainProjection implements SampleCapability {
 
         @Override
-        public CompletableFuture<TrackingToken> onCheckpointAdvanced(@NonNull Segment segment,
-                                                                     @NonNull TrackingToken requested) {
-            return CompletableFuture.completedFuture(requested);
+        public String capabilityName() {
+            return "projection";
         }
     }
 
@@ -167,14 +171,11 @@ class EventHandlingComponentUnwrapTest {
         }
     }
 
-    // Implements only the required onCheckpointAdvanced; onSegmentClaimed / onSegmentReleased use the interface defaults.
-    private static class CheckpointingComponent extends PlainEventHandlingComponent
-            implements Checkpointing {
+    private static class CapabilityComponent extends PlainEventHandlingComponent implements SampleCapability {
 
         @Override
-        public CompletableFuture<TrackingToken> onCheckpointAdvanced(@NonNull Segment segment,
-                                                                     @NonNull TrackingToken requested) {
-            return CompletableFuture.completedFuture(requested);
+        public String capabilityName() {
+            return "component";
         }
     }
 }

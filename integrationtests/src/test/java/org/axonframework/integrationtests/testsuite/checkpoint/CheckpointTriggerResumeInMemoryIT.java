@@ -86,8 +86,8 @@ public class CheckpointTriggerResumeInMemoryIT extends AbstractStudentIT {
         // when -- killed with c3/c4 handled but not checkpointed, then restarted
         projection.handledSinceReset.clear();
         projection.confirmLimit = 5;
-        processor.shutdown().join();
-        processor.start().join();
+        processor.shutdown().orTimeout(10, TimeUnit.SECONDS).join();
+        processor.start().orTimeout(10, TimeUnit.SECONDS).join();
 
         // then -- it resumes from the checkpoint (c2), reprocessing only the uncheckpointed window c3, c4
         await().atMost(10, TimeUnit.SECONDS).untilAsserted(

@@ -38,8 +38,8 @@ import java.util.concurrent.CompletableFuture;
  * with at least one ordinary handler runs in auto mode (it requests a checkpoint at the batch-end token every batch).
  * <p>
  * Only a streaming processor (with a tracking token and segments) can honour this protocol. A processor that does not
- * stream -- such as a
- * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor} -- simply never
+ * stream (such as a
+ * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor}) simply never
  * invokes the lifecycle callbacks (no {@link #onSegmentClaimed(Segment, CheckpointTrigger)}, no checkpoints) and does
  * not expose a {@link CheckpointTrigger}, so the checkpointing behaviour is inert there.
  * <p>
@@ -59,7 +59,7 @@ import java.util.concurrent.CompletableFuture;
  * are common, and both rely on the same future-based contract:
  * <ul>
  *     <li><b>In-memory projection with asynchronous persistence</b>: the unit applies each event to in-memory state on
- *     the processing thread -- so ordering is naturally preserved -- and only persists asynchronously. When a checkpoint
+ *     the processing thread (so ordering is naturally preserved) and only persists asynchronously. When a checkpoint
  *     is taken it snapshots that state to durable storage and completes the future once the snapshot is durable,
  *     reporting the snapshotted position. Event handling resumes as soon as the future completes; the future merely gates
  *     storing the token on the snapshot becoming durable.</li>
@@ -73,7 +73,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * <b>The processor awaits the returned future without a timeout</b>: it stores the checkpoint (and, on release, frees
  * the claim) only once the future completes. A future that never completes therefore stalls progress for that segment
- * indefinitely. The framework deliberately does not impose a timeout -- a unit that confirms durability out of band may
+ * indefinitely. The framework deliberately does not impose a timeout: a unit that confirms durability out of band may
  * legitimately take a long time. If a unit's asynchronous work could hang, it should bound its <em>own</em> future, for
  * example:
  * <pre>{@code
@@ -87,7 +87,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * <b>Transactional coupling within a batch.</b> The checkpoint is taken on the commit of the <em>same</em> transaction
  * that processed the batch: the processor awaits the returned future while that transaction is still open. Two
- * consequences follow. First, a slow or never-completing future does not merely stall progress -- it holds the batch's
+ * consequences follow. First, a slow or never-completing future does not merely stall progress: it holds the batch's
  * transaction open for the duration of the await. Second, if the checkpoint fails (the future completes exceptionally),
  * the batch transaction rolls back, undoing the work of <em>every</em> handler in that batch, including ordinary
  * (non-checkpointing) handlers and other checkpointing components sharing the segment. A misbehaving checkpointing
@@ -116,16 +116,16 @@ public interface Checkpointing {
      * positions for that segment. Retain it keyed by segment; it is invalid after
      * {@link #onSegmentReleased(Segment, TrackingToken)}.
      * <p>
-     * Defaults to a no-op: a unit that obtains its trigger another way -- typically through a {@link CheckpointTrigger}
-     * handler-method parameter -- does not need to retain it here.
+     * Defaults to a no-op: a unit that obtains its trigger another way (typically through a {@link CheckpointTrigger}
+     * handler-method parameter) does not need to retain it here.
      * <p>
      * Invoked synchronously as part of claiming the segment. Throwing from this method fails the claim cycle: the
-     * segment is not claimed and the coordinator retries it (after a back-off). This is deliberate -- a component that
-     * never received its trigger could never checkpoint -- so signal a genuine inability to accept the claim by
+     * segment is not claimed and the coordinator retries it (after a back-off). This is deliberate: a component that
+     * never received its trigger could never checkpoint, so signal a genuine inability to accept the claim by
      * throwing, but do not throw for transient conditions that a retained trigger would handle later.
      *
-     * @param segment The segment that was claimed.
-     * @param trigger The handle to request checkpoints for {@code segment}.
+     * @param segment the segment that was claimed
+     * @param trigger the handle to request checkpoints for {@code segment}
      */
     default void onSegmentClaimed(Segment segment, CheckpointTrigger trigger) {
         // No-op by default; override only if the trigger must be retained at claim time.
@@ -134,10 +134,10 @@ public interface Checkpointing {
     /**
      * Invoked on the processing thread when the processor takes a checkpoint for {@code segment} that must cover
      * {@code requested}. Ensure work is durable at least up to {@code requested}, discard buffered state, then return
-     * the highest token now safe -- which may exceed {@code requested} if more async work has drained. The processor
+     * the highest token now safe, which may exceed {@code requested} if more async work has drained. The processor
      * stores the reported token only after every returned future completes. When several checkpointing units share a
      * segment, it does not simply store the lowest report: it reconciles their positions to a single agreed token (the
-     * highest any unit reported), re-requesting any unit that has not yet reached it, and stores that -- so no unit is
+     * highest any unit reported), re-requesting any unit that has not yet reached it, and stores that, so no unit is
      * ever left durably ahead of the stored token.
      * <p>
      * Contract: the returned token must {@link TrackingToken#covers(TrackingToken) cover} {@code requested}. The
@@ -148,21 +148,21 @@ public interface Checkpointing {
      * (returning a token that does not cover {@code requested} is treated the same way). The checkpoint then fails and
      * nothing is stored. The processor handles this as a processing error: it aborts the segment's worker and releases
      * the segment, so the coordinator re-claims it (after a back-off) and resumes from the <em>last stored
-     * checkpoint</em> -- the events since are redelivered. The stored token therefore never advances on a failed
+     * checkpoint</em>; the events since are redelivered. The stored token therefore never advances on a failed
      * checkpoint, and no progress is lost; an isolated failure costs a segment re-claim and some redelivery.
      * <p>
      * The returned future is the lever for the two workloads described on this type. For an
      * <b>in-memory projection with asynchronous persistence</b>, complete the future once the snapshot of the in-memory
      * state has become durable, reporting the snapshotted position; the processing thread then resumes immediately. For
      * a <b>truly asynchronous handler</b>, complete the future only once the in-flight work has caught up far enough to
-     * cover {@code requested} -- the processor awaits it before resuming the segment's worker, so the checkpoint acts as
+     * cover {@code requested}; the processor awaits it before resuming the segment's worker, so the checkpoint acts as
      * a barrier that holds event handling until the asynchronous work has reached this position.
      *
-     * @param segment   The segment being checkpointed.
-     * @param requested The segment-scoped position this checkpoint must cover (the highest anyone requested, or the
-     *                  batch-end token in auto mode).
-     * @return The highest token this unit is durably safe at; must cover {@code requested} and must not sit behind the
-     * last persisted checkpoint.
+     * @param segment   the segment being checkpointed
+     * @param requested the segment-scoped position this checkpoint must cover (the highest anyone requested, or the
+     *                  batch-end token in auto mode)
+     * @return the highest token this unit is durably safe at; must cover {@code requested} and must not sit behind the
+     * last persisted checkpoint
      */
     CompletableFuture<TrackingToken> onCheckpointAdvanced(Segment segment, TrackingToken requested);
 
@@ -181,31 +181,31 @@ public interface Checkpointing {
      * The same two workloads described on this type apply here. An <b>in-memory projection with
      * asynchronous persistence</b> takes a final snapshot and completes the future once it is durable, normally
      * reporting {@code upTo}. A <b>truly asynchronous handler</b> completes the future once its in-flight work has
-     * drained as far as it can before the claim is given up, reporting whatever position is durable by then -- typically
+     * drained as far as it can before the claim is given up, reporting whatever position is durable by then, typically
      * lower than {@code upTo}, with the uncovered tail reprocessed on the next claim. Unlike
      * {@link #onCheckpointAdvanced(Segment, TrackingToken) onCheckpointAdvanced}, reaching {@code upTo} is not required
      * here: there is no later request to satisfy, so an asynchronous unit may report best-effort progress rather than
      * forcing a full drain.
      * <p>
      * <b>Exceptional completion.</b> Unlike {@link #onCheckpointAdvanced(Segment, TrackingToken)}, a future that
-     * completes exceptionally here does <em>not</em> abort or retry -- the segment is being given up regardless. The
+     * completes exceptionally here does <em>not</em> abort or retry: the segment is being given up regardless. The
      * release still proceeds: the checkpoint simply does not advance for what the unit could not confirm, the claim is
      * freed, and the uncovered tail (everything past the last stored checkpoint) is reprocessed when the segment is next
      * claimed. There is nothing the framework can do about a genuine durability failure at release beyond this
      * reprocessing, so a unit that knows a lower already-durable position should <em>report</em> it (return it) rather
      * than fail, to keep the redelivered window as small as possible.
      * <p>
-     * Defaults to {@link #onCheckpointAdvanced(Segment, TrackingToken) onCheckpointAdvanced(segment, upTo)} -- i.e. a
+     * Defaults to {@link #onCheckpointAdvanced(Segment, TrackingToken) onCheckpointAdvanced(segment, upTo)}, i.e. a
      * full flush up to the consumed position. Because that delegate must {@link TrackingToken#covers(TrackingToken) cover}
      * its argument or complete exceptionally, the default does not advance the checkpoint on release if the unit cannot
      * reach {@code upTo} (the claim is still released, per the exceptional-completion behaviour above); override this
      * method to instead report a lower already-durable position (the relaxed, best-effort semantics) for an asynchronous
      * unit that may legitimately lag behind {@code upTo} at release.
      *
-     * @param segment The segment being released.
-     * @param upTo    The segment's {@code lastConsumedToken}: the position to drain toward.
-     * @return The highest token durably persisted; at least the last persisted checkpoint and at most {@code upTo}, and
-     * typically lower than {@code upTo} when asynchronous work is still in flight.
+     * @param segment the segment being released
+     * @param upTo    the segment's {@code lastConsumedToken}: the position to drain toward
+     * @return the highest token durably persisted; at least the last persisted checkpoint and at most {@code upTo}, and
+     * typically lower than {@code upTo} when asynchronous work is still in flight
      */
     default CompletableFuture<TrackingToken> onSegmentReleased(Segment segment, TrackingToken upTo) {
         return onCheckpointAdvanced(segment, upTo);

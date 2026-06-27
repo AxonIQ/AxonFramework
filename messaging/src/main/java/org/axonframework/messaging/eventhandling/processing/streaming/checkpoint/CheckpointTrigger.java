@@ -29,13 +29,13 @@ import java.util.Optional;
  * {@link Checkpointing#onSegmentClaimed(Segment, CheckpointTrigger)} and valid only for the duration of that claim.
  * <p>
  * Requesting never blocks: it wakes the segment's worker, which runs the checkpoint on the processing thread (asking
- * every self-checkpointing component to cover the requested position and storing the single position they reconcile to
- * -- the highest any component reported, with laggards driven to also reach it). A checkpoint request is segment-scoped:
+ * every self-checkpointing component to cover the requested position and storing the single position they reconcile to,
+ * the highest any component reported, with laggards driven to also reach it). A checkpoint request is segment-scoped:
  * it applies to <em>all</em> of the processor's components on that segment.
  * <p>
  * <b>Lifecycle.</b> The trigger is valid only for the duration of the claim. Once the segment is released (after
  * {@link Checkpointing#onSegmentReleased(Segment, TrackingToken)}), the trigger is permanently <em>inert</em>:
- * subsequent requests are <b>silently ignored</b> -- they neither schedule the worker nor advance any stored token.
+ * subsequent requests are <b>silently ignored</b>: they neither schedule the worker nor advance any stored token.
  * After release the worker no longer holds the claim and there is no safe point to record (the segment may already be
  * owned by another node); a late async-write acknowledgement must therefore be a no-op rather than an error. The final
  * safe token for the claim comes solely from the return value of
@@ -65,8 +65,8 @@ public interface CheckpointTrigger {
      * {@code context}, or {@link Optional#empty()} if none is present (for example, in a processor that does not
      * checkpoint).
      *
-     * @param context The context to retrieve the {@code CheckpointTrigger} from.
-     * @return An {@link Optional} holding the {@code CheckpointTrigger} keyed under {@link #RESOURCE_KEY}, if present.
+     * @param context the context to retrieve the {@code CheckpointTrigger} from
+     * @return an {@link Optional} holding the {@code CheckpointTrigger} keyed under {@link #RESOURCE_KEY}, if present
      */
     static Optional<CheckpointTrigger> fromContext(Context context) {
         return Optional.ofNullable(context.getResource(RESOURCE_KEY));
@@ -75,11 +75,15 @@ public interface CheckpointTrigger {
     /**
      * Requests a checkpoint covering everything handed to the handler so far (the segment's current
      * {@code lastConsumedToken}).
+     * <p>
+     * Equivalent to {@code requestCheckpoint(TrackingToken.LATEST)}.
      */
-    void requestCheckpoint();
+    default void requestCheckpoint() {
+        requestCheckpoint(TrackingToken.LATEST);
+    }
 
     /**
-     * Requests a checkpoint that must cover at least {@code token} -- the component declares it is safe up to
+     * Requests a checkpoint that must cover at least {@code token}: the component declares it is safe up to
      * {@code token}. Concurrent requests combine via {@link TrackingToken#upperBound(TrackingToken)}, so the requested
      * position is the highest anyone asked for and only rises.
      * <p>
@@ -88,8 +92,8 @@ public interface CheckpointTrigger {
      * equivalent to {@link #requestCheckpoint()} and is convenient for a component that triggers checkpoints on certain
      * key events without tracking a concrete token.
      *
-     * @param token The position the requesting component has made durable, or {@link TrackingToken#LATEST} for the
-     *              latest position handed to the handler so far.
+     * @param token the position the requesting component has made durable, or {@link TrackingToken#LATEST} for the
+     *              latest position handed to the handler so far
      */
     void requestCheckpoint(TrackingToken token);
 }

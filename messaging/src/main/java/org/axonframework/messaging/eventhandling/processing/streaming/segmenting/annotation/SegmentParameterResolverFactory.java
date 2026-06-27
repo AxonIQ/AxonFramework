@@ -35,8 +35,8 @@ import java.util.concurrent.CompletableFuture;
  * processing -- for example to address the matching {@link org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.CheckpointTrigger}
  * of a self-checkpointing component.
  * <p>
- * The resolver always {@link ParameterResolver#matches(ProcessingContext) matches} -- so a handler declaring a
- * {@link Segment} parameter is <b>never silently skipped</b> -- and resolves to {@code null} when no {@code Segment} is
+ * The resolver always {@link ParameterResolver#matches(ProcessingContext) matches} (so a handler declaring a
+ * {@link Segment} parameter is <b>never silently skipped</b>) and resolves to {@code null} when no {@code Segment} is
  * present (a processor that is not aware of segments, such as a subscribing processor). A {@code null} {@code Segment}
  * is harmless to receive, so, unlike the
  * {@link org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.CheckpointTrigger} parameter, this
@@ -70,8 +70,8 @@ public class SegmentParameterResolverFactory implements ParameterResolverFactory
         @Override
         public boolean matches(ProcessingContext context) {
             // Match unconditionally: a false match here would make the whole handler unable to handle the event (it
-            // would be silently skipped). Instead the handler always participates and resolveParameterValue fails
-            // loudly when no Segment is available.
+            // would be silently skipped). Instead the handler always participates and resolveParameterValue resolves
+            // to null when no Segment is available, which is harmless to receive.
             return true;
         }
     }
