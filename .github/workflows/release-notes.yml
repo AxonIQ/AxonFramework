@@ -41,7 +41,7 @@ jobs:
 
     - name: Add Release Notes to cache
       id: cache-notes
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ env.RELEASE_NOTES_FILE }}
         key: notes
@@ -66,7 +66,7 @@ jobs:
 
     - name: Retrieve Release Notes from cache
       id: cache-notes
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ needs.create-release-notes.outputs.notes }}
         key: notes
