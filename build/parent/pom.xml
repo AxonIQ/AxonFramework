@@ -53,7 +53,7 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.2.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.3.Final</hibernate-core.version>
         <mysql-connector-java.version>9.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.11</postgresql.version>
         <ojdbc.version>23.26.2.0.0</ojdbc.version>
@@ -76,7 +76,7 @@
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
-        <javassist.version>3.31.0-GA</javassist.version>
+        <javassist.version>3.32.0-GA</javassist.version>
         <eaio-uuid.version>3.2</eaio-uuid.version>
         <equalsverifier.version>4.5</equalsverifier.version>
         <!-- Reactive -->
@@ -90,11 +90,11 @@
         <jackson2.version>2.22.0</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <jobrunr.version>8.7.0</jobrunr.version>
+        <jobrunr.version>8.7.1</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
-        <spring.boot.version>3.5.15</spring.boot.version>
+        <spring.boot.version>3.5.16</spring.boot.version>
         <spring-data.version>2025.0.7</spring-data.version>
         <spring-security.version>6.5.11</spring-security.version>
         <!-- Testing -->
@@ -106,7 +106,7 @@
         <assertj.version>3.27.7</assertj.version>
         <archunit.version>1.4.2</archunit.version>
         <!-- Validation -->
-        <hibernate-validator.version>9.1.0.Final</hibernate-validator.version>
+        <hibernate-validator.version>9.1.1.Final</hibernate-validator.version>
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>

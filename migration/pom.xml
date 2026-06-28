@@ -36,7 +36,7 @@
         <!-- Axon Framework 4.x version used to resolve types in recipe tests
              (the rename recipes match AF4 fully-qualified names, so the test
              parser needs the AF4 classpath to produce a typed LST). -->
-        <axon4.version>4.13.1</axon4.version>
+        <axon4.version>4.13.2</axon4.version>
         <!-- Axoniq Framework 5 (commercial) target version. The free Axon
              Framework 5 target is `${project.version}` (inherited from the
              root `${revision}`); this property is the single source of truth
