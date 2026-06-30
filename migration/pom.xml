@@ -32,6 +32,15 @@
     </description>
 
     <properties>
+        <!-- The AF4 recipe tests are skipped when either the standard `skipTests`
+             flag or the dedicated `skipAf4RecipeTests` flag is true. Defaulting
+             `skipAf4RecipeTests` to `${skipTests}` lets a plain `-DskipTests`
+             (or the IDE "Skip Tests" toggle) skip them like any other module,
+             while `-DskipAf4RecipeTests=true` remains available to skip *only*
+             these tests (and the AF4 stub download), e.g. during release,
+             without skipping the rest of the build. If `skipTests` is unset the
+             expression stays unresolved and parses as `false`, so tests run. -->
+        <skipAf4RecipeTests>${skipTests}</skipAf4RecipeTests>
         <rewrite-recipe-bom.version>3.33.0</rewrite-recipe-bom.version>
         <!-- Axon Framework 4.x version used to resolve types in recipe tests
              (the rename recipes match AF4 fully-qualified names, so the test
