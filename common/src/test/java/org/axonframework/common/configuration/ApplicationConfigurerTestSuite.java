@@ -1901,12 +1901,12 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             List<Configuration> levelOneConfigurations = rootConfig.getModuleConfigurations();
             assertEquals(2, levelOneConfigurations.size());
             // Left module can access own components and parent, not its siblings.
-            Configuration leftConfig = levelOneConfigurations.getFirst();
+            Configuration leftConfig = rootConfig.getModuleConfiguration("left").orElseThrow();
             assertTrue(leftConfig.getOptionalComponent(TestComponent.class, "root").isPresent());
             assertEquals(leftModuleComponent, leftConfig.getComponent(TestComponent.class, "left"));
             assertFalse(leftConfig.getOptionalComponent(TestComponent.class, "right").isPresent());
             // Right module can access own components and parent, not its siblings,
-            Configuration rightConfig = levelOneConfigurations.get(1);
+            Configuration rightConfig = rootConfig.getModuleConfiguration("right").orElseThrow();
             assertTrue(rightConfig.getOptionalComponent(TestComponent.class, "root").isPresent());
             assertEquals(rightModuleComponent, rightConfig.getComponent(TestComponent.class, "right"));
             assertFalse(rightConfig.getOptionalComponent(TestComponent.class, "left").isPresent());
