@@ -161,7 +161,7 @@ public class UnitOfWork implements ProcessingLifecycle {
         CompletableFuture<R> result = new CompletableFuture<>();
         onInvocation(processingContext -> safe(() -> action.apply(processingContext))
                 .whenComplete(FutureUtils.alsoComplete(result)));
-        return execute().thenCompose(executeResult -> result);
+        return execute().thenCompose(ignored -> result);
     }
 
     /**
@@ -185,7 +185,7 @@ public class UnitOfWork implements ProcessingLifecycle {
             }
             return result;
         } catch (Throwable t) {
-            if (!(t instanceof Exception)) {
+            if (t instanceof Error) {
                 logger.error("An Error escaped a Unit of Work action and was captured as a failed result. "
                                      + "This typically indicates a severe problem such as a classpath or "
                                      + "dependency mismatch.", t);
