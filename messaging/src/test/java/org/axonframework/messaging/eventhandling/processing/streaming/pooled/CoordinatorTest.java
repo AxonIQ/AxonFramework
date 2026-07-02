@@ -482,11 +482,36 @@ class CoordinatorTest {
     }
 
     /**
-     * Tests for the {@code createWorkPackage} method, specifically the error-handling path
-     * in which the {@link SegmentChangeListener#onSegmentClaimed} callback throws.
+     * Tests for the {@code createWorkPackage} method error-handling paths: when the
+     * {@link SegmentChangeListener#onSegmentClaimed} callback throws, and when a self-checkpointing
+     * participant rejects the claim via {@link WorkPackage#notifySegmentClaimed()}.
      */
     @Nested
     class CreateWorkPackage {
+
+        @Test
+        void releasesTokenClaim_whenNotifySegmentClaimedThrows() {
+            // given - work package whose notifySegmentClaimed throws, simulating a participant that rejects the claim
+            GlobalSequenceTrackingToken token = new GlobalSequenceTrackingToken(0);
+            RuntimeException participantException = new RuntimeException("participant threw");
+            doThrow(participantException).when(workPackage).notifySegmentClaimed();
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(completedFuture(participantException)).when(workPackage).abort(any());
+            doReturn(emptyCompletedFuture()).when(workPackage).checkpointOnRelease(any());
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                             .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(token)).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+
+            // when
+            awaitStart(testSubject);
+
+            // then - the token claim is released so it is not leaked, and the work package is not scheduled
+            verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+            verify(workPackage, never()).scheduleWorker();
+        }
 
         @Test
         void stillRegistersWorkPackageWhenOnSegmentClaimedFails() {

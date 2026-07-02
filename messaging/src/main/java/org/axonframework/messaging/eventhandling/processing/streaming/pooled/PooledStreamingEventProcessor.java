@@ -29,12 +29,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.EventProcessingException;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.ProcessorEventHandlingComponents;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.Checkpointing;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.EventTrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
@@ -55,11 +55,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -101,6 +102,8 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     private final ScheduledExecutorService workerExecutor;
     private final Coordinator coordinator;
     private final WorkPackage.EventFilter workPackageEventFilter;
+    private final List<Checkpointing> checkpointingParticipants;
+    private final boolean autoCheckpointing;
 
     private final AtomicReference<@Nullable String> tokenStoreIdentifier = new AtomicReference<>();
     private final Map<Integer, TrackerStatus> processingStatus = new ConcurrentHashMap<>();
@@ -141,6 +144,25 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         this.workerExecutor = configuration.workerExecutor();
 
         this.eventHandlingComponents = new ProcessorEventHandlingComponents(eventHandlingComponents);
+
+        // A component is self-checkpointing iff it (or the POJO it wraps) resolves to a Checkpointing unit. The
+        // processor runs in auto mode unless EVERY component is self-checkpointing (fully-deferred).
+        this.checkpointingParticipants = eventHandlingComponents.stream()
+                                                                .map(c -> c.unwrap(Checkpointing.class))
+                                                                .flatMap(Optional::stream)
+                                                                .toList();
+        this.autoCheckpointing = checkpointingParticipants.size() < eventHandlingComponents.size();
+        if (autoCheckpointing && !checkpointingParticipants.isEmpty()) {
+            // Mixed mode: self-checkpointing components share a processor with ordinary ones. Auto checkpointing wins,
+            // so a checkpoint is requested at the batch-end token every batch and the self-checkpointing components are
+            // forced to cover it -- they cannot defer the stored token. Log this so the downgrade is not silent.
+            logger.info("PooledStreamingEventProcessor [{}] has {} self-checkpointing component(s) alongside ordinary "
+                                + "event-handling component(s); running in auto-checkpointing mode. The "
+                                + "self-checkpointing components cannot defer the stored token and are driven to cover "
+                                + "the batch-end token every batch. Isolate self-checkpointing components in their own "
+                                + "processor to let them control when their segment's token advances.",
+                        name, checkpointingParticipants.size());
+        }
 
         this.workPackageEventFilter = new DefaultWorkPackageEventFilter(
                 this.name,
@@ -435,6 +457,8 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                           .initialToken(initialToken)
                           .batchSize(batchSize)
                           .claimExtensionThreshold(claimExtensionThreshold)
+                          .autoCheckpointing(autoCheckpointing)
+                          .checkpointingParticipants(checkpointingParticipants)
                           .segmentStatusUpdater(singleStatusUpdater(
                                   segment.getSegmentId(), new TrackerStatus(segment, initialToken)
                           ))

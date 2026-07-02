@@ -16,14 +16,13 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
-import org.axonframework.common.ProcessUtils;
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.ProcessUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
@@ -1035,7 +1034,13 @@ class Coordinator {
 
         private CompletableFuture<WorkPackage> createWorkPackage(Segment segment, TrackingToken token) {
             WorkPackage workPackage = workPackageFactory.apply(segment, token);
-            workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
+            try {
+                workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
+                workPackage.notifySegmentClaimed();
+            } catch (Exception e) {
+                // A participant rejected the claim; release it so the token store claim is not leaked.
+                return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
+            }
             return segmentChangeListener.onSegmentClaimed(segment)
                                         .handle((ignored, e) -> {
                                             if (e != null) {
@@ -1441,8 +1446,11 @@ class Coordinator {
                            }
                        })
                        .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(
-                               context -> tokenStore.releaseClaim(name, segmentId, context)
-                                                    .thenCompose(r -> segmentChangeListener.onSegmentReleased(work.segment()))
+                               // Persist the final safe token (onSegmentReleased -> store) WHILE the claim is still
+                               // held, then release the claim LAST so no other node can resume past durable progress.
+                               context -> work.checkpointOnRelease(context)
+                                              .thenCompose(r -> tokenStore.releaseClaim(name, segmentId, context))
+                                              .thenCompose(r -> segmentChangeListener.onSegmentReleased(work.segment()))
                        ))
                        .exceptionally(throwable -> {
                            Throwable unwrapped = throwable instanceof CompletionException ce ? ce.getCause() : throwable;
