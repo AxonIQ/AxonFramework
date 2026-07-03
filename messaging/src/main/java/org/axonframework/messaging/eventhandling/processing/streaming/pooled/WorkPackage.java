@@ -262,6 +262,21 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
+     * The given {@code eventEntry} should not be scheduled if the {@link TrackingToken} extracted from its context
+     * {@link TrackingToken#covers(TrackingToken)} the last delivered token.
+     * <p>
+     * This validation ensures events that this work package already covered are ignored.
+     *
+     * @param eventEntry The event entry to validate whether it should be scheduled yes or no.
+     * @return {@code true} if the given {@code eventEntry} should not be scheduled, {@code false} otherwise.
+     */
+    private boolean shouldNotSchedule(MessageStream.Entry<? extends EventMessage> eventEntry) {
+        TrackingToken eventToken = TrackingToken.fromContext(eventEntry).orElse(null);
+        // Null check is done to solve potential NullPointerException.
+        return lastDeliveredToken != null && eventToken != null && lastDeliveredToken.covers(eventToken);
+    }
+
+    /**
      * Determines whether this {@code WorkPackage} can handle the given {@link MessageStream.Entry}. This method creates
      * a specialized {@link ProcessingContext} from the event entry to evaluate if the event should be processed by this
      * work package's {@link Segment}.
@@ -297,21 +312,6 @@ class WorkPackage implements SegmentProgressContext {
         //noinspection unchecked
         from.resources().forEach((k, v) -> to.putResource((Context.ResourceKey<Object>) k, v));
         return to;
-    }
-
-    /**
-     * The given {@code eventEntry} should not be scheduled if the {@link TrackingToken} extracted from its context
-     * {@link TrackingToken#covers(TrackingToken)} the last delivered token.
-     * <p>
-     * This validation ensures events that this work package already covered are ignored.
-     *
-     * @param eventEntry The event entry to validate whether it should be scheduled yes or no.
-     * @return {@code true} if the given {@code eventEntry} should not be scheduled, {@code false} otherwise.
-     */
-    private boolean shouldNotSchedule(MessageStream.Entry<? extends EventMessage> eventEntry) {
-        TrackingToken eventToken = TrackingToken.fromContext(eventEntry).orElse(null);
-        // Null check is done to solve potential NullPointerException.
-        return lastDeliveredToken != null && eventToken != null && lastDeliveredToken.covers(eventToken);
     }
 
     private boolean canHandle(EventMessage eventMessage, ProcessingContext processingContext) {
@@ -350,24 +350,6 @@ class WorkPackage implements SegmentProgressContext {
             return;
         }
         processEvents().whenCompleteAsync((unused, e) -> onProcessingComplete(e), executorService);
-    }
-
-    private void onProcessingComplete(@Nullable Throwable e) {
-        if (e != null) {
-            Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
-            logger.warn("Error while processing batch in Work Package [{}]-[{}]. Aborting Work Package...",
-                        segment.getSegmentId(), name, cause);
-            abort(cause);
-        }
-        scheduled.set(false);
-        // Re-check ALL outstanding state AFTER releasing the flag, including the strategy's pending out-of-band work
-        // (e.g. a checkpoint request). This closes the race where such a request arrives (and its scheduleWorker CAS
-        // loses) in the window after the worker consumed the previous one but before it cleared the scheduled flag.
-        if (!processingQueue.isEmpty() || abortFlag.get() != null || progressStrategy.hasPendingWork()) {
-            logger.debug("Rescheduling Work Package [{}]-[{}] since there are events or pending progress work left.",
-                         segment.getSegmentId(), name);
-            scheduleWorker();
-        }
     }
 
     private CompletableFuture<Void> processEvents() {
@@ -416,6 +398,24 @@ class WorkPackage implements SegmentProgressContext {
             result = CompletableFuture.failedFuture(e);
         }
         return result.whenComplete((v, t) -> processingEvents.set(false));
+    }
+
+    private void onProcessingComplete(@Nullable Throwable e) {
+        if (e != null) {
+            Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
+            logger.warn("Error while processing batch in Work Package [{}]-[{}]. Aborting Work Package...",
+                        segment.getSegmentId(), name, cause);
+            abort(cause);
+        }
+        scheduled.set(false);
+        // Re-check ALL outstanding state AFTER releasing the flag, including the strategy's pending out-of-band work
+        // (e.g. a checkpoint request). This closes the race where such a request arrives (and its scheduleWorker CAS
+        // loses) in the window after the worker consumed the previous one but before it cleared the scheduled flag.
+        if (!processingQueue.isEmpty() || abortFlag.get() != null || progressStrategy.hasPendingWork()) {
+            logger.debug("Rescheduling Work Package [{}]-[{}] since there are events or pending progress work left.",
+                         segment.getSegmentId(), name);
+            scheduleWorker();
+        }
     }
 
     /**
