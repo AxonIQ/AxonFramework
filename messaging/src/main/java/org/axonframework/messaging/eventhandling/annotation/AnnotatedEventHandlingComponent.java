@@ -179,10 +179,9 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
      * <p>
      * Besides resolving this wrapper itself, this delegates to the inspected {@link #model} to resolve the capability
      * from the wrapped annotated target. This is the bridge that lets an ordinary annotated handler POJO signal a
-     * capability (most notably
-     * {@link org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.Checkpointing}) even though this
-     * wrapper does not implement it. Routing through the model -- rather than inspecting the target directly -- keeps
-     * the door open for the model to synthesise a capability that is declared purely through annotations.
+     * capability (a behavior interface the processor resolves via {@code unwrap}) even though this wrapper does not
+     * implement it. Routing through the model -- rather than inspecting the target directly -- keeps the door open for
+     * the model to synthesise a capability that is declared purely through annotations.
      */
     @Override
     public <C> Optional<C> unwrap(Class<C> componentType) {

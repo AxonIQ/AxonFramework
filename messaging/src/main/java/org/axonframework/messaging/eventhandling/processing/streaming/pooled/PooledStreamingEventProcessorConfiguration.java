@@ -32,13 +32,11 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.CheckpointingProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
@@ -115,11 +113,10 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private Supplier<ProcessingContext> schedulingProcessingContextProvider =
             () -> new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
     private final List<SegmentChangeListener> segmentChangeListeners = new ArrayList<>();
-    // Selects the per-segment progress-persistence strategy from a processor's components. Defaults to detecting
-    // self-checkpointing components (falling back to token-storing). This detection is expected to move to the
-    // commercial extension via a ConfigurationEnhancer, after which the framework default is plain token-storing.
+    // Selects the per-segment progress-persistence strategy from a processor's components. Defaults to storing the
+    // batch-end token; advanced selectors (such as self-checkpointing detection) are installed through this property.
     private Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder =
-            CheckpointingProgressStrategyFactory.detecting();
+            components -> SegmentProgressStrategyFactory.tokenStoring();
 
     /**
      * Constructs a new {@code PooledStreamingEventProcessorConfiguration} copying properties from the given
@@ -504,7 +501,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Sets the function selecting the {@link SegmentProgressStrategyFactory} for a processor from its
      * {@link EventHandlingComponent}s. The selected factory decides, per segment, how the stored {@link TrackingToken}
      * advances; it is applied to every {@link WorkPackage} the processor spawns. Defaults to a selector that stores the
-     * batch-end token every batch unless advanced progress handling is detected among the components.
+     * batch-end token every batch.
      *
      * @param progressStrategyFactoryBuilder the function mapping a processor's components to a progress-strategy
      *                                        factory
