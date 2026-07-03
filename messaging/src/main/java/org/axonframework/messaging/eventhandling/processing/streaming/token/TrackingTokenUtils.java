@@ -40,14 +40,13 @@ public abstract class TrackingTokenUtils {
      * {@code null} elements.
      *
      * @param tokens the tokens to combine
-     * @return the lower bound of the non-{@code null} tokens, or {@code null} if there are none
+     * @return the lower bound of the non-{@code null} tokens, or {@link TrackingToken#FIRST} if there are none
      */
-    @Nullable
-    public static TrackingToken lowerBound(Collection<TrackingToken> tokens) {
+    public static TrackingToken lowerBound(Collection<@Nullable TrackingToken> tokens) {
         return tokens.stream()
                      .filter(Objects::nonNull)
                      .reduce(TrackingToken::lowerBound)
-                     .orElse(null);
+                     .orElse(TrackingToken.FIRST);
     }
 
     /**
@@ -58,7 +57,7 @@ public abstract class TrackingTokenUtils {
      * @return the upper bound of the non-{@code null} tokens, or {@code null} if there are none
      */
     @Nullable
-    public static TrackingToken upperBound(Collection<TrackingToken> tokens) {
+    public static TrackingToken upperBound(Collection<@Nullable TrackingToken> tokens) {
         return tokens.stream()
                      .filter(Objects::nonNull)
                      .reduce(TrackingToken::upperBound)
