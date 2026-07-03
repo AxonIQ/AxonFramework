@@ -131,17 +131,17 @@ class SplitTask extends CoordinatorTask {
     }
 
     private CompletableFuture<Boolean> splitAndRelease(Segment segmentToSplit, @Nullable WorkPackage workPackage) {
-        return unitOfWorkFactory.create().executeWithResult(
-                // Persist the aborted package's final progress BEFORE fetching the token, so both split halves inherit
-                // the freshly-reconciled position rather than a stale stored token.
-                context -> releaseProgressOf(workPackage, context)
-                        .thenCompose(r -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context))
-                        .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
-                        .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
-        ).whenComplete((result, throwable) ->
-                 // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
-                 releasesDeadlines.remove(segmentToSplit.getSegmentId())
-         );
+        // Commit the aborted package's final progress BEFORE fetching the token, so both split halves inherit the
+        // freshly-reconciled position rather than a stale stored token.
+        return releaseProgressOf(workPackage, unitOfWorkFactory)
+                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
+                        context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
+                                             .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
+                                             .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
+                )).whenComplete((result, throwable) ->
+                        // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
+                        releasesDeadlines.remove(segmentToSplit.getSegmentId())
+                );
     }
 
     private CompletableFuture<Boolean> splitAndRelease(TrackerStatus[] splitStatuses,

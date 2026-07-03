@@ -150,12 +150,12 @@ class MergeTask extends CoordinatorTask {
     }
 
     private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId, @Nullable WorkPackage workPackage) {
-        return unitOfWorkFactory.create().executeWithResult(
-                // Persist the aborted package's final progress BEFORE fetching the token, so the merged segment inherits
-                // the freshly-reconciled position rather than a stale stored token.
-                context -> releaseProgressOf(workPackage, context)
-                        .thenCompose(r -> tokenStore.fetchToken(name, segmentId, context))
-        );
+        // Commit the aborted package's final progress BEFORE fetching the token, so the merged segment inherits the
+        // freshly-reconciled position rather than a stale stored token.
+        return releaseProgressOf(workPackage, unitOfWorkFactory)
+                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
+                        context -> tokenStore.fetchToken(name, segmentId, context)
+                ));
     }
 
     private CompletableFuture<Boolean> mergeSegments(Segment thisSegment, TrackingToken thisToken,
