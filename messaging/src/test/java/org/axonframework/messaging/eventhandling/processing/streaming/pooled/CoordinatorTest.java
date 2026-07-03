@@ -484,20 +484,20 @@ class CoordinatorTest {
     /**
      * Tests for the {@code createWorkPackage} method error-handling paths: when the
      * {@link SegmentChangeListener#onSegmentClaimed} callback throws, and when a self-checkpointing
-     * participant rejects the claim via {@link WorkPackage#notifySegmentClaimed()}.
+     * participant rejects the claim via {@link WorkPackage#onSegmentClaimed()}.
      */
     @Nested
     class CreateWorkPackage {
 
         @Test
-        void releasesTokenClaim_whenNotifySegmentClaimedThrows() {
-            // given - work package whose notifySegmentClaimed throws, simulating a participant that rejects the claim
+        void releasesTokenClaim_whenWorkPackageOnSegmentClaimedThrows() {
+            // given - work package whose onSegmentClaimed throws, simulating a participant that rejects the claim
             GlobalSequenceTrackingToken token = new GlobalSequenceTrackingToken(0);
             RuntimeException participantException = new RuntimeException("participant threw");
-            doThrow(participantException).when(workPackage).notifySegmentClaimed();
+            doThrow(participantException).when(workPackage).onSegmentClaimed();
             doReturn(SEGMENT_ZERO).when(workPackage).segment();
             doReturn(completedFuture(participantException)).when(workPackage).abort(any());
-            doReturn(emptyCompletedFuture()).when(workPackage).checkpointOnRelease(any());
+            doReturn(emptyCompletedFuture()).when(workPackage).onSegmentReleased(any());
             doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
             doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
                                                              .fetchAvailableSegments(eq(PROCESSOR_NAME), any());

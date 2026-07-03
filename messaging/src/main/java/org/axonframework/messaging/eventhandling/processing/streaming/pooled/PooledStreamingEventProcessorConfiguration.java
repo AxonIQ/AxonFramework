@@ -38,6 +38,8 @@ import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+import org.axonframework.messaging.eventhandling.processing.streaming.checkpoint.CheckpointingProgressStrategyFactory;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
@@ -113,6 +115,11 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private Supplier<ProcessingContext> schedulingProcessingContextProvider =
             () -> new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
     private final List<SegmentChangeListener> segmentChangeListeners = new ArrayList<>();
+    // Selects the per-segment progress-persistence strategy from a processor's components. Defaults to detecting
+    // self-checkpointing components (falling back to token-storing). This detection is expected to move to the
+    // commercial extension via a ConfigurationEnhancer, after which the framework default is plain token-storing.
+    private Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder =
+            CheckpointingProgressStrategyFactory.detecting();
 
     /**
      * Constructs a new {@code PooledStreamingEventProcessorConfiguration} copying properties from the given
@@ -493,6 +500,25 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         return this;
     }
 
+    /**
+     * Sets the function selecting the {@link SegmentProgressStrategyFactory} for a processor from its
+     * {@link EventHandlingComponent}s. The selected factory decides, per segment, how the stored {@link TrackingToken}
+     * advances; it is applied to every {@link WorkPackage} the processor spawns. Defaults to a selector that stores the
+     * batch-end token every batch unless advanced progress handling is detected among the components.
+     *
+     * @param progressStrategyFactoryBuilder the function mapping a processor's components to a progress-strategy
+     *                                        factory
+     * @return The current instance, for fluent interfacing.
+     */
+    @Internal
+    public PooledStreamingEventProcessorConfiguration progressStrategyFactoryBuilder(
+            Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder
+    ) {
+        assertNonNull(progressStrategyFactoryBuilder, "The progress strategy factory builder may not be null");
+        this.progressStrategyFactoryBuilder = progressStrategyFactoryBuilder;
+        return this;
+    }
+
     @Override
     protected void validate() throws AxonConfigurationException {
         super.validate();
@@ -688,6 +714,17 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
                                      .reduce(SegmentChangeListener.noOp(), SegmentChangeListener::andThen);
     }
 
+    /**
+     * Returns the function selecting the {@link SegmentProgressStrategyFactory} for a processor from its
+     * {@link EventHandlingComponent}s.
+     *
+     * @return the progress-strategy factory selector.
+     */
+    @Internal
+    public Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder() {
+        return progressStrategyFactoryBuilder;
+    }
+
     @Override
     public <T extends ConfigurationExtension<?>> PooledStreamingEventProcessorConfiguration extend(
             Class<T> extensionType,
@@ -714,6 +751,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         descriptor.describeProperty("coordinatorExtendsClaims", coordinatorExtendsClaims);
         descriptor.describeProperty("eventCriteriaProvider", eventCriteriaProvider);
         descriptor.describeProperty("segmentChangeListeners", segmentChangeListeners);
+        descriptor.describeProperty("progressStrategyFactoryBuilder", progressStrategyFactoryBuilder);
         descriptor.describeProperty("schedulingProcessingContextProvider", schedulingProcessingContextProvider);
         descriptor.describeProperty("ignoredMessageHandler", ignoredMessageHandler);
     }

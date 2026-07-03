@@ -24,6 +24,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -120,20 +121,23 @@ class SplitTask extends CoordinatorTask {
 
     private CompletableFuture<Boolean> abortAndSplit(WorkPackage workPackage) {
         return workPackage.abort(null)
-                          .thenCompose(e -> splitAndRelease(workPackage.segment()));
+                          .thenCompose(e -> splitAndRelease(workPackage.segment(), workPackage));
     }
 
     private CompletableFuture<Boolean> fetchSegmentAndSplit(int segmentId) {
         return unitOfWorkFactory.create().executeWithResult(
                 context -> tokenStore.fetchSegment(name, segmentId, context)
-        ).thenCompose(this::splitAndRelease);
+        ).thenCompose(segment -> splitAndRelease(segment, null));
     }
 
-    private CompletableFuture<Boolean> splitAndRelease(Segment segmentToSplit) {
+    private CompletableFuture<Boolean> splitAndRelease(Segment segmentToSplit, @Nullable WorkPackage workPackage) {
         return unitOfWorkFactory.create().executeWithResult(
-                context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
-                                     .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
-                                     .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
+                // Persist the aborted package's final progress BEFORE fetching the token, so both split halves inherit
+                // the freshly-reconciled position rather than a stale stored token.
+                context -> releaseProgressOf(workPackage, context)
+                        .thenCompose(r -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context))
+                        .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
+                        .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
         ).whenComplete((result, throwable) ->
                  // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
                  releasesDeadlines.remove(segmentToSplit.getSegmentId())

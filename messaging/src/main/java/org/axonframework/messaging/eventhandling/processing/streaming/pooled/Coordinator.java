@@ -1036,7 +1036,7 @@ class Coordinator {
             WorkPackage workPackage = workPackageFactory.apply(segment, token);
             try {
                 workPackage.onBatchProcessed(() -> resetRetryExponentialBackoff(segment.getSegmentId()));
-                workPackage.notifySegmentClaimed();
+                workPackage.onSegmentClaimed();
             } catch (Exception e) {
                 // A participant rejected the claim; release it so the token store claim is not leaked.
                 return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
@@ -1446,9 +1446,10 @@ class Coordinator {
                            }
                        })
                        .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(
-                               // Persist the final safe token (onSegmentReleased -> store) WHILE the claim is still
-                               // held, then release the claim LAST so no other node can resume past durable progress.
-                               context -> work.checkpointOnRelease(context)
+                               // Persist the final safe token (strategy onSegmentReleased -> store) WHILE the claim is
+                               // still held, then release the claim LAST so no other node can resume past durable
+                               // progress.
+                               context -> work.onSegmentReleased(context)
                                               .thenCompose(r -> tokenStore.releaseClaim(name, segmentId, context))
                                               .thenCompose(r -> segmentChangeListener.onSegmentReleased(work.segment()))
                        ))

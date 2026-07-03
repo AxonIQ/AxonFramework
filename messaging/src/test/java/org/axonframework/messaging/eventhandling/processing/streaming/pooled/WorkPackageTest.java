@@ -17,9 +17,10 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.TokenStoringProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -47,6 +48,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
@@ -372,6 +374,40 @@ class WorkPackageTest {
                             any(ProcessingContext.class));
         });
         assertEquals(expectedToken, tokenCaptor.getValue());
+    }
+
+    @Test
+    void idleUpkeepDoesNotInvokeProgressStrategyWhenNothingIsUnstored() {
+        // given
+        // A spy is justified here: the assertion is that the idle-beat gate PREVENTS calls to the strategy.
+        AtomicReference<SegmentProgressStrategy> strategySpy = new AtomicReference<>();
+        // The short threshold ensures the claim-extension beat is due on every idle cycle.
+        WorkPackage testSubjectWithShortThreshold =
+                testSubjectBuilder.claimExtensionThreshold(1)
+                                  .progressStrategyFactory(context -> {
+                                      strategySpy.set(spy(new TokenStoringProgressStrategy(context)));
+                                      return strategySpy.get();
+                                  })
+                                  .build();
+        // Handle one event, so the consumed position is stored and no unstored progress remains.
+        var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L));
+        testSubjectWithShortThreshold.scheduleEvent(testEvent);
+        await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                eq(new GlobalSequenceTrackingToken(1L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        ));
+        clearInvocations(strategySpy.get());
+
+        // when: idle worker cycles run past the claim-extension beat
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            // Consciously trigger the WorkPackage again, to force it through WorkPackage#processEvents.
+            // This should be done inside the await, as the WorkPackage does not re-trigger itself.
+            testSubjectWithShortThreshold.scheduleWorker();
+            verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any());
+        });
+
+        // then: the claim was extended without driving the strategy at an unchanged position
+        verify(strategySpy.get(), never()).onBatchCommit(any());
     }
 
     @Test

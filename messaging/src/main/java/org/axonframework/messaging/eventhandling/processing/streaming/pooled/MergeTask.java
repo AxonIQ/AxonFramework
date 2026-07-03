@@ -23,6 +23,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.segmenting
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -141,16 +142,19 @@ class MergeTask extends CoordinatorTask {
                               clock.instant().plusSeconds(60)); // Block for 1 minute (will be cleared after merge)
 
         // Remove WorkPackage so that the CoordinatorTask cannot find it to release its claim upon impending abortion.
-        return workPackages.containsKey(segmentId)
-                ? workPackages.remove(segmentId)
-                              .abort(null)
-                              .thenCompose(e -> fetchTokenInUnitOfWork(segmentId))
-                : fetchTokenInUnitOfWork(segmentId);
+        WorkPackage workPackage = workPackages.remove(segmentId);
+        return workPackage != null
+                ? workPackage.abort(null)
+                             .thenCompose(e -> fetchTokenInUnitOfWork(segmentId, workPackage))
+                : fetchTokenInUnitOfWork(segmentId, null);
     }
 
-    private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId) {
+    private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId, @Nullable WorkPackage workPackage) {
         return unitOfWorkFactory.create().executeWithResult(
-                context -> tokenStore.fetchToken(name, segmentId, context)
+                // Persist the aborted package's final progress BEFORE fetching the token, so the merged segment inherits
+                // the freshly-reconciled position rather than a stale stored token.
+                context -> releaseProgressOf(workPackage, context)
+                        .thenCompose(r -> tokenStore.fetchToken(name, segmentId, context))
         );
     }
 
