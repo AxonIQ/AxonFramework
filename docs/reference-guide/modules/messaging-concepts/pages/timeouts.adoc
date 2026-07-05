@@ -88,7 +88,7 @@ Configuration API::
 You can create a `ConfigurerModule` with the exact settings you would like.
 Without Spring Boot, no default timeouts are applied.
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 public class MyTimeoutConfigurerModule implements ConfigurerModule {
 
@@ -133,14 +133,7 @@ In addition, you can place a `@MessageHandlerTimeout` annotation on a message ha
 
 [source,java]
 ----
-class MyEventProcessor {
-    @EventHandler
-    @MessageHandlerTimeout(timeoutMs = 10000, warningThresholdMs = 5000, warningIntervalMs = 1000)
-    public void handle(Object event)
-    {
-        Thread.sleep(19000);
-    }
-}
+include::example$messagingconcepts/timeouts/MyEventProcessor.java[tag=message-handler-timeout,indent=0]
 ----
 
 Setting `timeoutMs` on the global configuration and the annotation to `-1` will disable the timeout for that specific message handler.
@@ -165,81 +158,14 @@ You can register timeout interceptors directly using the configuration API:
 
 [source,java]
 ----
-public void configureTimeoutBehavior(MessagingConfigurer configurer) {
-    // Register timeout interceptor for command bus
-    configurer.registerCommandHandlerInterceptor(c -> {
-        UnitOfWorkTimeoutInterceptorBuilder builder =
-                new UnitOfWorkTimeoutInterceptorBuilder(
-                        "CommandBus",
-                        30000,  // timeout in ms
-                        25000,  // warning threshold in ms
-                        1000    // warning interval in ms
-                );
-        return builder.buildCommandInterceptor();
-    });
-
-    // Register timeout interceptor for query bus
-    configurer.registerQueryHandlerInterceptor(c -> {
-        UnitOfWorkTimeoutInterceptorBuilder builder =
-                new UnitOfWorkTimeoutInterceptorBuilder(
-                        "QueryBus",
-                        30000,  // timeout in ms
-                        25000,  // warning threshold in ms
-                        1000    // warning interval in ms
-                );
-        return builder.buildQueryInterceptor();
-    });
-
-    // Register timeout interceptor for event handlers
-    configurer.registerEventHandlerInterceptor(c -> {
-        UnitOfWorkTimeoutInterceptorBuilder builder =
-                new UnitOfWorkTimeoutInterceptorBuilder(
-                        "EventProcessor",
-                        30000,  // timeout in ms
-                        25000,  // warning threshold in ms
-                        1000    // warning interval in ms
-                );
-        return builder.buildEventInterceptor();
-    });
-}
+include::example$messagingconcepts/timeouts/ProcessingContextTimeoutConfiguration.java[tag=processing-context-timeout-config,indent=0]
 ----
 
 For more advanced scenarios, you can implement a `ConfigurationEnhancer` to customize timeout configuration across all components:
 
 [source,java]
 ----
-// Spring users can make a Spring bean of the ConfigurationEnhancer to auto inject it into Axon.
-public class TimeoutConfigurationEnhancer implements ConfigurationEnhancer {
-
-    @Override
-    public void enhance(ComponentRegistry registry) {
-        // Register decorators for handler interceptor registry
-        registry.registerDecorator(HandlerInterceptorRegistry.class, 0, (config, name, delegate) ->
-                delegate.registerCommandInterceptor(
-                                c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                        "CommandBus", 30000, 25000, 1000
-                                ).buildCommandInterceptor()
-                        )
-                        .registerQueryInterceptor(
-                                c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                        "Query", 30000, 25000, 1000
-                                ).buildQueryInterceptor()
-                        )
-                        .registerEventInterceptor(
-                                c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                        "Event", 30000, 25000, 1000
-                                ).buildEventInterceptor()
-                        )
-        );
-    }
-}
-
-// Somewhere in your configuration class...
-public void registerTimeoutEnhancer(MessagingConfigurer configurer) {
-    configurer.componentRegistry(
-            cr -> cr.registerEnhancer(new TimeoutConfigurationEnhancer())
-    );
-}
+include::example$messagingconcepts/timeouts/TimeoutEnhancerExample.java[tag=timeout-configuration-enhancer,indent=0]
 ----
 --
 
