@@ -15,26 +15,7 @@ They may access state through injected services or repositories, but the handler
 
 [source,java]
 ----
-import org.axonframework.examples.demo.university.shared.application.notifier.NotificationService;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.springframework.stereotype.Component;
-
-@Component // <1>
-public class FacultyAnnouncementCommandHandler {
-
-    private final NotificationService notificationService; // <2>
-
-    public FacultyAnnouncementCommandHandler(NotificationService notificationService) {
-        this.notificationService = notificationService;
-    }
-
-    @CommandHandler // <3>
-    public void handle(SendFacultyAnnouncement command) {
-        // Access state through service, but don't maintain it in the handler
-        notificationService.sendNotification(
-                new NotificationService.Notification(command.recipientId(), command.message())); // <4>
-    }
-}
+include::example$commands/commandhandlers/FacultyAnnouncementCommandHandler.java[tag=stateless-command-handler,indent=0]
 ----
 
 <1> Command handlers are regular objects registered via the Configuration API or as Spring beans, as in this example.
@@ -72,14 +53,7 @@ Use the `@Command` annotation on your command class to declare its message type:
 
 [source,java]
 ----
-@Command(
-    namespace = "faculty",            // <1>
-    name = "IssueStudentTranscript",  // <2>
-    version = "1.0.0",                // <3>
-    routingKey = "studentId"          // <4>
-)
-public record IssueStudentTranscript(StudentId studentId, CourseId courseId) {
-}
+include::example$commands/commandhandlers/DeclaringCommandType.java[tag=declaring-command-type,indent=0]
 ----
 
 <1> The `namespace` typically represents the bounded context. When no `namespace` is specified on `@Command`, Axon searches for the presence of the `@Namespace` annotation (as described xref:messaging-concepts:anatomy-message.adoc#namespace-annotation[her]). When no `@Namespace` annotation is found, then `namespace` falls back to the package name of the class.
@@ -99,27 +73,7 @@ This means different handlers in different JVMs can receive the same command in 
 
 [source,java]
 ----
-// Original command class
-@Command(namespace = "faculty", name = "IssueStudentTranscript", version = "1.0.0")
-public record IssueStudentTranscript(StudentId studentId, CourseId courseId) {
-}
-
-// Alternative representation for a different handler
-public record IssueStudentTranscriptDto(String studentId, String courseId) {
-}
-
-// Handler using the original type
-@CommandHandler
-public void handle(IssueStudentTranscript command) {
-    // Receives IssueStudentTranscript with typed StudentId / CourseId
-}
-
-// Handler in a different component AND different JVM using the alternative representation
-@CommandHandler(commandName = "faculty.IssueStudentTranscript")
-public void handle(IssueStudentTranscriptDto dto) {
-    // Same command, but converted to the DTO representation
-    // Axon converts the payload automatically
-}
+include::example$commands/commandhandlers/PayloadConversionExample.java[tags=payload-conversion-types;payload-conversion-original-handler;payload-conversion-dto-handler,indent=0]
 ----
 
 The framework uses `Converters` to transform the payload to match the handler's parameter type.
@@ -140,17 +94,7 @@ You can inject the `ProcessingContext` as a parameter in any command handler:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(
-    SendFacultyAnnouncement command,
-    ProcessingContext context // <1>
-) {
-    notificationService.sendNotification(
-            new NotificationService.Notification(command.recipientId(), command.message()));
-
-    context.runOnCommit(ctx -> notificationService.sendNotification( // <2>
-            new NotificationService.Notification("audit", "Announcement delivered to " + command.recipientId())));
-}
+include::example$commands/commandhandlers/ProcessingContextExample.java[tag=handle-with-processing-context,indent=0]
 ----
 
 <1> The `ProcessingContext` is automatically injected by the framework.
@@ -170,21 +114,7 @@ The `EventAppender` must be injected as a parameter in your command handlers:
 
 [source,java]
 ----
-@CommandHandler
-public static CourseId handle(CreateCourse command, EventAppender eventAppender) { // <1>
-    if (command.capacity() <= 0) {
-        throw new IllegalArgumentException("Capacity must be positive");
-    }
-    eventAppender.append(new CourseCreated(Ids.FACULTY_ID, command.courseId(), command.name(), command.capacity())); // <2>
-    return command.courseId();
-}
-
-@CommandHandler
-public void handle(RenameCourse command, EventAppender eventAppender) {
-    eventAppender.append( // <3>
-            new CourseRenamed(Ids.FACULTY_ID, command.courseId(), command.name())
-    );
-}
+include::example$commands/commandhandlers/EventAppenderExample.java[tag=publishing-events-with-eventappender,indent=0]
 ----
 
 <1> `EventAppender` is injected as a handler parameter alongside the command.
@@ -208,18 +138,7 @@ Some of these are listed below:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(
-    RenameCourse command,                   // <1>
-    CommandMessage commandMessage,          // <2>
-    Metadata metadata,                      // <3>
-    @MetadataValue("userId") String userId, // <4>
-    ProcessingContext processingContext,    // <5>
-    EventAppender eventAppender,            // <6>
-    CommandDispatcher commandDispatcher     // <7>
-) {
-    // Handler logic
-}
+include::example$commands/commandhandlers/InjectableParametersExample.java[tag=injectable-parameters,indent=0]
 ----
 
 <1> The command payload (first parameter, or explicitly typed).
@@ -245,18 +164,7 @@ However, you can also explicitly configure which commands a handler should handl
 
 [source,java]
 ----
-@CommandHandler(commandName = "faculty.IssueStudentTranscript") // <1>
-public void handleIssueTranscript(IssueStudentTranscriptDto dto) {
-    // Handle command
-}
-
-@CommandHandler(
-    commandName = "faculty.RenameCourse",
-    payloadType = RenameCourseDto.class // <2>
-)
-public void handleRename(RenameCourseDto dto) {
-    // Handle command
-}
+include::example$commands/commandhandlers/ExplicitSubscriptionExample.java[tag=explicit-subscription,indent=0]
 ----
 
 <1> The `commandName` attribute specifies the exact command name (MessageType) to handle.
@@ -283,8 +191,7 @@ The examples below illustrate a stateless `SendFacultyAnnouncement` command hand
 
 [source,java]
 ----
-public record SendFacultyAnnouncement(String recipientId, String message) {
-}
+include::example$commands/commandhandlers/SendFacultyAnnouncement.java[tag=send-faculty-announcement,indent=0]
 ----
 
 [#_declarative]
@@ -294,36 +201,7 @@ Register a command handler function without annotations.
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.examples.demo.university.shared.application.notifier.NotificationService;
-import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageTypeResolver;
-
-public class FacultyAnnouncementConfiguration {
-
-    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        return configurer.registerCommandHandlingModule(
-            CommandHandlingModule.named("FacultyAnnouncement")
-                                 .commandHandlers()
-                                 .commandHandlingComponent(config -> { // <1>
-                                     MessageTypeResolver resolver = config.getComponent(MessageTypeResolver.class);
-                                     return SimpleCommandHandlingComponent
-                                             .create("FacultyAnnouncementComponent")
-                                             .subscribe(
-                                                     resolver.resolveOrThrow(SendFacultyAnnouncement.class).qualifiedName(), // <2>
-                                                     (command, context) -> {
-                                                         var payload = command.payloadAs(SendFacultyAnnouncement.class);
-                                                         context.component(NotificationService.class) // <3>
-                                                                .sendNotification(new NotificationService.Notification(
-                                                                        payload.recipientId(), payload.message()));
-                                                         return MessageStream.empty().cast(); // <4>
-                                                     });
-                                 })
-        );
-    }
-}
+include::example$commands/commandhandlers/declarative/FacultyAnnouncementConfiguration.java[tag=declarative-configuration,indent=0]
 ----
 
 <1> Build the command handling component inside a `ComponentBuilder` lambda so the `Configuration` is available for component lookups during registration.
@@ -344,45 +222,14 @@ Axon scans the class for `@CommandHandler` methods automatically.
 
 [source,java]
 ----
-import org.axonframework.examples.demo.university.shared.application.notifier.NotificationService;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-
-public class FacultyAnnouncementCommandHandler {
-
-    private final NotificationService notificationService;
-
-    public FacultyAnnouncementCommandHandler(NotificationService notificationService) {
-        this.notificationService = notificationService;
-    }
-
-    @CommandHandler
-    public void handle(SendFacultyAnnouncement command) {
-        notificationService.sendNotification(
-                new NotificationService.Notification(command.recipientId(), command.message()));
-    }
-}
+include::example$commands/commandhandlers/autodetected/FacultyAnnouncementCommandHandler.java[tag=autodetected-command-handler,indent=0]
 ----
 
 Register the handler class:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.examples.demo.university.shared.application.notifier.NotificationService;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-
-public class FacultyAnnouncementConfiguration {
-
-    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        return configurer.registerCommandHandlingModule(
-            CommandHandlingModule.named("FacultyAnnouncement")
-                                 .commandHandlers()
-                                 .autodetectedCommandHandlingComponent(config ->
-                                         new FacultyAnnouncementCommandHandler(
-                                                 config.getComponent(NotificationService.class)))
-        );
-    }
-}
+include::example$commands/commandhandlers/autodetected/FacultyAnnouncementConfiguration.java[tag=autodetected-configuration,indent=0]
 ----
 
 [#_spring_boot]
@@ -393,25 +240,7 @@ Axon's auto-configuration discovers and registers them automatically.
 
 [source,java]
 ----
-import org.axonframework.examples.demo.university.shared.application.notifier.NotificationService;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.springframework.stereotype.Component;
-
-@Component
-public class FacultyAnnouncementCommandHandler {
-
-    private final NotificationService notificationService;
-
-    public FacultyAnnouncementCommandHandler(NotificationService notificationService) {
-        this.notificationService = notificationService;
-    }
-
-    @CommandHandler
-    public void handle(SendFacultyAnnouncement command) {
-        notificationService.sendNotification(
-                new NotificationService.Notification(command.recipientId(), command.message()));
-    }
-}
+include::example$commands/commandhandlers/springboot/FacultyAnnouncementCommandHandler.java[tag=spring-boot-command-handler,indent=0]
 ----
 
 For registering event-sourced entities, see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities].

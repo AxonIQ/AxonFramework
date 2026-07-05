@@ -29,7 +29,7 @@ Without a repository, you would need to manually load entities, track changes, a
 
 Repository operations in Axon Framework are async-native, returning `CompletableFuture` to support non-blocking operations:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface Repository<ID, E> {
     // Load an existing entity
@@ -54,7 +54,7 @@ Command handlers automatically receive a `ProcessingContext` parameter that you 
 Repositories return entities wrapped in a `ManagedEntity` interface.
 This wrapper tracks the entity's lifecycle and enables the repository to detect and persist changes.
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface ManagedEntity<ID, E> {
     ID identifier();           // Get the entity identifier
@@ -76,30 +76,7 @@ This pattern is covered in xref:command-handlers.adoc#_command_centric_stateful_
 
 [source,java]
 ----
-@Component
-public class OrderCommandHandler {
-
-    private final Repository<String, Order> orderRepository;
-
-    public OrderCommandHandler(Repository<String, Order> orderRepository) {
-        this.orderRepository = orderRepository;
-    }
-
-    @CommandHandler
-    public void handle(ShipOrderCommand command,
-                      ProcessingContext context,
-                      EventAppender eventAppender) {
-        // Load the entity
-        orderRepository.load(command.orderId(), context)
-            .thenAccept(managedOrder -> {
-                Order order = managedOrder.entity();
-                // Apply business logic
-                if (order.canShip()) {
-                    eventAppender.append(new OrderShippedEvent(command.orderId()));
-                }
-            });
-    }
-}
+include::example$commands/infrastructure/repositories/OrderCommandHandler.java[tag=repository-command-handler,indent=0]
 ----
 
 === `EventSourcedRepository`
@@ -110,36 +87,15 @@ Configuration with Spring Boot:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.stereotype.EventSourced;
-
-@EventSourced
-public class Order {
-
-    // Omitted handlers and state for brevity.
-}
+include::example$commands/infrastructure/repositories/springboot/Order.java[tag=event-sourced-spring,indent=0]
 ----
 
 Configuration with Configuration API:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-
-@EventSourcedEntity
-public class Order {
-
-    // Omitted handlers and state for brevity.
-}
-
-public class AxonConfig {
-
-    public void configureOrderEntity(EventSourcingConfigurer configurer) {
-        configurer.registerEntity(
-                EventSourcedEntityModule.autodetected(String.class, Order.class)
-        );
-    }
-}
+include::example$commands/infrastructure/repositories/configapi/Order.java[tag=order-entity,indent=0]
+include::example$commands/infrastructure/repositories/configapi/AxonConfig.java[tag=order-config,indent=0]
 ----
 
 == Command bus
@@ -168,19 +124,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-public class AxonConfig {
-
-    public void configureCommandBus(MessagingConfigurer configurer) {
-        configurer.registerCommandBus(
-                config -> new SimpleCommandBus(
-                        config.getComponent(UnitOfWorkFactory.class),
-                        Collections.emptyList()
-                )
-        );
-    }
-}
+include::example$commands/infrastructure/commandbus/AxonConfig.java[tag=command-bus-config-api,indent=0]
 ----
 --
 
@@ -189,18 +133,7 @@ Spring Boot::
 --
 [source,java]
 ----
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public CommandBus commandBus(UnitOfWorkFactory unitOfWorkFactory,
-                                 TransactionManager transactionManager) {
-        return new SimpleCommandBus(
-                unitOfWorkFactory,
-                List.of(transactionManager)
-        );
-    }
-}
+include::example$commands/infrastructure/commandbus/springboot/AxonConfig.java[tag=command-bus-spring,indent=0]
 ----
 --
 ====
@@ -240,8 +173,7 @@ Retries indefinitely on its own, so combine it with `MaxAttemptsPolicy` to cap t
 +
 [source,java]
 ----
-// Retry with delays of 100ms, 200ms, 400ms, 800ms, ...
-RetryPolicy policy = new ExponentialBackOffRetryPolicy(100);
+include::example$commands/infrastructure/retry/RetryPolicyExamples.java[tag=exponential-backoff,indent=0]
 ----
 
 `MaxAttemptsPolicy`::
@@ -249,8 +181,7 @@ Wraps any other policy and stops retrying once the maximum number of attempts is
 +
 [source,java]
 ----
-// Retry at most 3 times using the given delegate policy
-RetryPolicy policy = new MaxAttemptsPolicy(delegate, 3);
+include::example$commands/infrastructure/retry/RetryPolicyExamples.java[tag=max-attempts,indent=0]
 ----
 
 `FilteringRetryPolicy`::
@@ -259,11 +190,7 @@ Failures that do not match are propagated immediately without retrying.
 +
 [source,java]
 ----
-// Only retry when the failure is not a validation error
-RetryPolicy policy = new FilteringRetryPolicy(
-        delegate,
-        e -> !(e instanceof IllegalArgumentException)
-);
+include::example$commands/infrastructure/retry/RetryPolicyExamples.java[tag=filtering,indent=0]
 ----
 
 Compose them to express the exact behavior you need.
@@ -271,13 +198,7 @@ A common combination is exponential backoff, capped at a maximum number of retri
 
 [source,java]
 ----
-RetryPolicy policy = new MaxAttemptsPolicy(
-        new FilteringRetryPolicy(
-                new ExponentialBackOffRetryPolicy(100),
-                e -> !(e instanceof IllegalArgumentException)
-        ),
-        3
-);
+include::example$commands/infrastructure/retry/RetryPolicyExamples.java[tag=composed-policy,indent=0]
 ----
 
 Register an `AsyncRetryScheduler` with the policy to enable automatic retry behavior:
@@ -289,33 +210,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.retry.AsyncRetryScheduler;
-import org.axonframework.messaging.core.retry.ExponentialBackOffRetryPolicy;
-import org.axonframework.messaging.core.retry.FilteringRetryPolicy;
-import org.axonframework.messaging.core.retry.MaxAttemptsPolicy;
-import org.axonframework.messaging.core.retry.RetryScheduler;
-
-import java.util.concurrent.Executors;
-
-public class AxonConfig {
-
-    public void configureRetryScheduler(MessagingConfigurer configurer) {
-        configurer.componentRegistry(cr -> cr.registerComponent(
-                RetryScheduler.class,
-                config -> new AsyncRetryScheduler(
-                        new MaxAttemptsPolicy(
-                                new FilteringRetryPolicy(
-                                        new ExponentialBackOffRetryPolicy(100),
-                                        e -> !(e instanceof IllegalArgumentException)
-                                ),
-                                3
-                        ),
-                        Executors.newSingleThreadScheduledExecutor()
-                )
-        ));
-    }
-}
+include::example$commands/infrastructure/retry/AxonConfig.java[tag=retry-scheduler-config-api,indent=0]
 ----
 --
 
@@ -324,33 +219,7 @@ Spring Boot::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.retry.AsyncRetryScheduler;
-import org.axonframework.messaging.core.retry.ExponentialBackOffRetryPolicy;
-import org.axonframework.messaging.core.retry.FilteringRetryPolicy;
-import org.axonframework.messaging.core.retry.MaxAttemptsPolicy;
-import org.axonframework.messaging.core.retry.RetryScheduler;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-import java.util.concurrent.Executors;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public RetryScheduler retryScheduler() {
-        return new AsyncRetryScheduler(
-                new MaxAttemptsPolicy(
-                        new FilteringRetryPolicy(
-                                new ExponentialBackOffRetryPolicy(100),
-                                e -> !(e instanceof IllegalArgumentException)
-                        ),
-                        3
-                ),
-                Executors.newSingleThreadScheduledExecutor()
-        );
-    }
-}
+include::example$commands/infrastructure/retry/springboot/AxonConfig.java[tag=retry-scheduler-spring,indent=0]
 ----
 --
 ====
@@ -361,30 +230,7 @@ and returns a `RetryPolicy.Outcome` that either schedules the next attempt or ab
 
 [source,java]
 ----
-import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.retry.RetryPolicy;
-
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-public class CustomRetryPolicy implements RetryPolicy {
-
-    @Override
-    public Outcome defineFor(Message message, Throwable failure,
-                             List<Class<? extends Throwable>[]> previousFailures) {
-        if (failure instanceof IllegalArgumentException || previousFailures.size() >= 3) {
-            return Outcome.doNotReschedule();
-        }
-        return Outcome.rescheduleIn(2, TimeUnit.SECONDS);
-    }
-
-    @Override
-    public void describeTo(ComponentDescriptor descriptor) {
-        descriptor.describeProperty("maxRetries", 3);
-        descriptor.describeProperty("retryDelay", "2 SECONDS");
-    }
-}
+include::example$commands/infrastructure/retry/CustomRetryPolicy.java[tag=custom-retry-policy,indent=0]
 ----
 
 == Command gateway
@@ -396,7 +242,7 @@ While you can dispatch commands directly through the command bus, the gateway is
 
 The `CommandGateway` interface provides several methods for sending commands:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface CommandGateway {
     // Send and get CommandResult for full control
@@ -414,33 +260,7 @@ Example usage:
 
 [source,java]
 ----
-@RestController
-public class OrderController {
-
-    private final CommandGateway commandGateway;
-
-    public OrderController(CommandGateway commandGateway) {
-        this.commandGateway = commandGateway;
-    }
-
-    @PostMapping("/orders")
-    public CompletableFuture<String> createOrder(@RequestBody CreateOrderRequest request) {
-        CreateOrderCommand command = new CreateOrderCommand(
-            UUID.randomUUID().toString(),
-            request.getProductId(),
-            request.getQuantity()
-        );
-
-        // Returns CompletableFuture<String> with the order ID
-        return commandGateway.send(command, String.class);
-    }
-
-    @PostMapping("/orders/{id}/ship")
-    public void shipOrder(@PathVariable String id) {
-        // Fire and forget
-        commandGateway.sendAndWait(new ShipOrderCommand(id));
-    }
-}
+include::example$commands/infrastructure/gateway/OrderController.java[tag=order-controller,indent=0]
 ----
 
 Axon Framework will construct a `CommandGateway` component for you out of the box at all times.
@@ -459,27 +279,12 @@ With Spring Boot, command handlers are automatically discovered and registered w
 
 [source,java]
 ----
-@Component
-public class OrderCommandHandler {
-
-    @CommandHandler
-    public void handle(CreateOrderCommand command) {
-        // Handler implementation
-    }
-}
+include::example$commands/infrastructure/registration/springboot/OrderCommandHandler.java[tag=component-command-handler,indent=0]
 ----
 
 [source,java]
 ----
-@EventSourced
-public class Order {
-
-    @CommandHandler
-    public static Order handle(CreateOrderCommand command) {
-        // Creation handler
-        return new Order(command.orderId(), command.productId());
-    }
-}
+include::example$commands/infrastructure/registration/springboot/Order.java[tag=event-sourced-creation-handler,indent=0]
 ----
 
 === Manual registration with configuration API
@@ -488,28 +293,10 @@ When not using Spring Boot, register command handlers using `CommandHandlingModu
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-
-public class AxonConfig {
-
-    public void configureHandlers() {
-        MessagingConfigurer.create()
-            .registerCommandHandlingModule(
-                CommandHandlingModule.named("order-commands")
-                    .commandHandlers(handlers ->
-                        handlers.annotatedCommandHandlingComponent(
-                            config -> new OrderCommandHandler(
-                                config.getComponent(Repository.class)
-                            )
-                        )
-                    )
-            );
-    }
-}
+include::example$commands/infrastructure/registration/AxonConfig.java[tag=manual-registration,indent=0]
 ----
 
-The `annotatedCommandHandlingComponent()` method scans the handler for `@CommandHandler` annotated methods and registers them with the command bus. When the you prefer to register methods as command handlers without the use of annotations, use the `commandHandler(QualifiedName, CommandHandler)` method instead.
+The `autodetectedCommandHandlingComponent()` method scans the handler for `@CommandHandler` annotated methods and registers them with the command bus. When the you prefer to register methods as command handlers without the use of annotations, use the `commandHandler(QualifiedName, CommandHandler)` method instead.
 
 For registering event-sourced entities and their repositories, use `EventSourcingConfigurer` or `ModellingConfigurer` which provide entity-specific registration methods.
 

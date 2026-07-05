@@ -32,20 +32,7 @@ Use `EventSourcingConfigurer` to register entities:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.modelling.configuration.EntityModule;
-
-public class AxonConfig {
-
-    public void configureEntity() {
-        EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-
-        // Register an entity module
-        configurer.registerEntity(
-                EventSourcedEntityModule.autodetected(String.class, GiftCard.class).build()
-        );
-    }
-}
+include::example$commands/configuration/entity/AxonConfig.java[tag=entity-registration,indent=0]
 ----
 
 For using the `autodetected`, the given entity class should use annotation.
@@ -67,46 +54,7 @@ Use the `@EventSourced` annotation on your entity class:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.stereotype.EventSourced;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-
-@EventSourced
-public class GiftCard {
-
-    private String id;
-    private int remainingValue;
-
-    @CommandHandler
-    public static GiftCard handle(IssueCardCommand cmd, EventAppender eventAppender) {
-        GiftCard card = new GiftCard();
-        eventAppender.append(new CardIssuedEvent(cmd.cardId(), cmd.amount()));
-        return card;
-    }
-
-    @CommandHandler
-    public void handle(RedeemCardCommand cmd, EventAppender eventAppender) {
-        if (remainingValue >= cmd.amount()) {
-            eventAppender.append(new CardRedeemedEvent(id, cmd.amount()));
-        }
-    }
-
-    @EventSourcingHandler
-    private void on(CardIssuedEvent event) {
-        this.id = event.cardId();
-        this.remainingValue = event.amount();
-    }
-
-    @EventSourcingHandler
-    private void on(CardRedeemedEvent event) {
-        this.remainingValue -= event.amount();
-    }
-
-    @EntityCreator
-    protected GiftCard() {
-        // Required no-arg constructor for reconstitution
-    }
-}
+include::example$commands/configuration/entity/springboot/GiftCard.java[tag=spring-event-sourced-entity,indent=0]
 ----
 
 Spring Boot automatically:
@@ -133,28 +81,10 @@ Use `CommandHandlingModule` to register handlers:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-
-public class AxonConfig {
-
-    public void configureCommandHandlers() {
-        MessagingConfigurer.create()
-            .registerCommandHandlingModule(
-                CommandHandlingModule.named("gift-card-commands")
-                    .commandHandlers(handlers ->
-                        handlers.annotatedCommandHandlingComponent(
-                            config -> new GiftCardCommandHandler(
-                                config.getComponent(Repository.class)
-                            )
-                        )
-                    )
-            );
-    }
-}
+include::example$commands/configuration/handlers/AxonConfig.java[tag=command-handling-module,indent=0]
 ----
 
-The `annotatedCommandHandlingComponent()` method scans for `@CommandHandler` annotations and registers them.
+The `autodetectedCommandHandlingComponent()` method scans for `@CommandHandler` annotations and registers them.
 
 If full manual configuration is required, for example in absence of annotations, use the `commandHandler(QualifiedName, CommandHandler)` flow instead.
 
@@ -167,31 +97,7 @@ Annotate your command handling component class with `@Component`:
 
 [source,java]
 ----
-import org.springframework.stereotype.Component;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-
-@Component
-public class GiftCardCommandHandler {
-
-    private final Repository<String, GiftCard> giftCardRepository;
-
-    public GiftCardCommandHandler(Repository<String, GiftCard> giftCardRepository) {
-        this.giftCardRepository = giftCardRepository;
-    }
-
-    @CommandHandler
-    public void handle(CancelCardCommand cmd,
-                      ProcessingContext context,
-                      EventAppender eventAppender) {
-        giftCardRepository.load(cmd.cardId(), context)
-            .thenAccept(managedCard -> {
-                GiftCard card = managedCard.entity();
-                if (card.canBeCancelled()) {
-                    eventAppender.append(new CardCancelledEvent(cmd.cardId()));
-                }
-            });
-    }
-}
+include::example$commands/configuration/handlers/GiftCardCommandHandler.java[tag=spring-command-handling-component,indent=0]
 ----
 
 Spring Boot automatically discovers and registers the handler.
@@ -209,20 +115,7 @@ Register any component via the component registry:
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.common.configuration.ComponentBuilder;
-
-public class AxonConfig {
-
-    public void registerMyService(ApplicationConfigurer configurer) {
-        ComponentBuilder<MyService> serviceBuilder = config -> new MyService(
-                config.getComponent(SomeDependency.class)
-        );
-        configurer.componentRegistry(
-                registry -> registry.registerComponent(MyService.class, serviceBuilder)
-        );
-    }
-}
+include::example$commands/configuration/registration/AxonConfig.java[tag=basic-component-registration,indent=0]
 ----
 
 The `ComponentBuilder` lambda receives a `Configuration` that provides access to other registered components.
@@ -233,23 +126,9 @@ Replace default components by registering with the same type:
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.SimpleCommandBus;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-
-public class AxonConfig {
-
-    public static void main(String[] args) {
-        MessagingConfigurer.create().registerCommandBus(
-                config -> new SimpleCommandBus(
-                        config.getComponent(UnitOfWorkFactory.class),
-                        Collections.emptyList()
-                )
-        );
-    }
-}
-
+include::example$commands/configuration/replacement/AxonConfig.java[tag=component-replacement,indent=0]
 ----
+
 
 The last registration wins - this replaces any previously registered `CommandBus`.
 
@@ -259,52 +138,14 @@ Enhance existing components using decorators:
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.common.configuration.ComponentDecorator;
-import org.axonframework.messaging.commandhandling.CommandBus;
-
-public class AxonConfig {
-
-    public void decorateCommandBus(ApplicationConfigurer configurer) {
-        configurer.componentRegistry(registry -> registry.registerDecorator(
-                CommandBus.class,
-                0, // Integer defining the decoration order
-                (config, name, commandBus) -> new LoggingCommandBus(commandBus)
-        ));
-    }
-}
+include::example$commands/configuration/decoration/AxonConfig.java[tag=component-decoration,indent=0]
 ----
 
 Example decorator that adds logging:
 
 [source,java]
 ----
-public class LoggingCommandBus implements CommandBus {
-
-    private final CommandBus delegate;
-    private final Logger logger = LoggerFactory.getLogger(LoggingCommandBus.class);
-
-    public LoggingCommandBus(CommandBus delegate) {
-        this.delegate = delegate;
-    }
-
-    @Override
-    public CompletableFuture<CommandMessage<?>> dispatch(
-            CommandMessage<?> command,
-            ProcessingContext context) {
-        logger.info("Dispatching command: {}", command.commandName());
-        return delegate.dispatch(command, context)
-            .whenComplete((result, error) -> {
-                if (error != null) {
-                    logger.error("Command failed: {}", command.commandName(), error);
-                } else {
-                    logger.info("Command succeeded: {}", command.commandName());
-                }
-            });
-    }
-
-    // Delegate other methods...
-}
+include::example$commands/configuration/decoration/LoggingCommandBus.java[tag=logging-command-bus,indent=0]
 ----
 
 Decorators are applied in registration order and wrap the original component.
@@ -326,20 +167,7 @@ Register interceptors explicitly:
 
 [source,java]
 ----
-public class AxonConfig {
-
-    private static final Logger logger =
-        LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-    public static void main(String[] args) {
-        MessagingConfigurer.create().registerCommandDispatchInterceptor(
-                config -> (command, context, interceptorChain) -> {
-                    logger.info("Dispatching: {}", command.type().name());
-                    return interceptorChain.proceed(command, context);
-                }
-        );
-    }
-}
+include::example$commands/configuration/interceptors/dispatch/AxonConfig.java[tag=dispatch-interceptor-config-api,indent=0]
 ----
 
 --
@@ -351,20 +179,7 @@ Define interceptors as beans:
 
 [source,java]
 ----
-@Configuration
-public class InterceptorConfig {
-
-    private static final Logger logger =
-        LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-    @Bean
-    public MessageDispatchInterceptor<CommandMessage> loggingInterceptor() {
-        return (command, context, interceptorChain) -> {
-            logger.info("Dispatching: {}", command.type().name());
-            return interceptorChain.proceed(command, context);
-        };
-    }
-}
+include::example$commands/configuration/interceptors/dispatch/InterceptorConfig.java[tag=dispatch-interceptor-spring,indent=0]
 ----
 
 Spring Boot automatically registers interceptor beans with the appropriate bus.
@@ -388,20 +203,7 @@ Register handler interceptors:
 
 [source,java]
 ----
-public class AxonConfig {
-
-    private static final Logger logger =
-        LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-    public static void main(String[] args) {
-        MessagingConfigurer.create().registerCommandHandlerInterceptor(
-                config -> (command, context, interceptorChain) -> {
-                    checkPermissions(command);
-                    return interceptorChain.proceed(command, context);
-                }
-        );
-    }
-}
+include::example$commands/configuration/interceptors/handler/AxonConfig.java[tag=handler-interceptor-config-api,indent=0]
 ----
 
 --
@@ -413,17 +215,7 @@ Define handler interceptors as beans:
 
 [source,java]
 ----
-@Configuration
-public class InterceptorConfig {
-
-    @Bean
-    public MessageHandlerInterceptor<? super CommandMessage> securityInterceptor() {
-        return (command, context, interceptorChain) -> {
-            checkPermissions(command);
-            return interceptorChain.proceed(command, context);
-        };
-    }
-}
+include::example$commands/configuration/interceptors/handler/InterceptorConfig.java[tag=handler-interceptor-spring,indent=0]
 ----
 
 --
@@ -443,38 +235,7 @@ When using the Configuration API, you typically chain multiple configurers:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-
-public class AxonConfig {
-
-    public AxonConfiguration buildConfiguration() {
-        return EventSourcingConfigurer.create()
-            // Register entities
-            .registerEntity(EventSourcedEntityModule.autodetected(
-                    String.class, GiftCard.class)
-            )
-            // Register command handlers
-            .registerCommandHandlingModule(
-                    CommandHandlingModule.named("gift-card-commands").commandHandlers(
-                            handlers -> handlers.annotatedCommandHandlingComponent(
-                                    config -> new GiftCardCommandHandler(
-                                            config.getComponent(Repository.class)
-                                    )
-                            )
-                    )
-            )
-            // Register interceptors
-            .messaging(messagingConfigurer -> messagingConfigurer.registerCommandHandlerInterceptor(
-                    config -> (command, context, chain) -> {
-                        logger.info("Handling: {}", command.type().name());
-                        return chain.proceed(command, context);
-                    }
-            ))
-            // Build and start
-            .start();
-    }
-}
+include::example$commands/configuration/builder/AxonConfig.java[tag=configuration-builder,indent=0]
 ----
 
 The configurer hierarchy allows you to use specialized methods while maintaining a fluent API.
