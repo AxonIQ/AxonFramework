@@ -97,6 +97,32 @@
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!-- XML conversion sample on ROOT/conversion.adoc -->
+        <dependency>
+            <groupId>tools.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-xml</artifactId>
+        </dependency>
+        <!-- Avro conversion samples on ROOT/conversion.adoc -->
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+        </dependency>
+        <!-- JPA event storage engine sample on tuning/rdbms-tuning.adoc -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+        </dependency>
+        <!-- Metrics extension samples on monitoring/metrics.adoc -->
+        <dependency>
+            <groupId>org.axonframework.extensions.metrics</groupId>
+            <artifactId>axon-metrics-dropwizard</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.metrics</groupId>
+            <artifactId>axon-metrics-micrometer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>

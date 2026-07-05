@@ -133,31 +133,7 @@ To avoid `OID`, enforce `BYTEA` by providing a custom PostgreSQL dialect.
 
 [source,java]
 ----
-public class ByteaEnforcedPostgresSQLDialect extends PostgreSQLDialect {
-
-    public ByteaEnforcedPostgresSQLDialect() {
-        super(DatabaseVersion.make(9, 5));
-    }
-
-    @Override
-    protected String columnType(int sqlTypeCode) {
-        return sqlTypeCode == SqlTypes.BLOB ? "bytea" : super.columnType(sqlTypeCode);
-    }
-
-    @Override
-    protected String castType(int sqlTypeCode) {
-        return sqlTypeCode == SqlTypes.BLOB ? "bytea" : super.castType(sqlTypeCode);
-    }
-
-    @Override
-    public void contributeTypes(TypeContributions typeContributions,
-                                ServiceRegistry serviceRegistry) {
-        super.contributeTypes(typeContributions, serviceRegistry);
-        JdbcTypeRegistry jdbcTypeRegistry = typeContributions.getTypeConfiguration()
-                                                             .getJdbcTypeRegistry();
-        jdbcTypeRegistry.addDescriptor(Types.BLOB, BinaryJdbcType.INSTANCE);
-    }
-}
+include::example$tuning/rdbmstuning/ByteaEnforcedPostgresSQLDialect.java[tag=bytea-enforced-postgresql-dialect,indent=0]
 ----
 
 With the dialect in place, configure Hibernate to use it, for example through Spring:

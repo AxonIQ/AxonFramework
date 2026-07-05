@@ -122,19 +122,7 @@ Configuration API::
 --
 [source,java]
 ----
-import com.codahale.metrics.MetricRegistry;
-import org.axonframework.extension.metrics.dropwizard.MetricsConfigurationEnhancer;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-class MetricsConfiguration {
-
-    public void configureDefaultMetrics(MessagingConfigurer configurer,
-                                        MetricRegistry metricRegistry) {
-        configurer.componentRegistry(componentRegistry -> componentRegistry.registerEnhancer(
-                new MetricsConfigurationEnhancer(metricRegistry)
-        ));
-    }
-}
+include::example$monitoring/metrics/dropwizard/configurationapi/MetricsConfiguration.java[tag=dropwizard-configuration-api,indent=0]
 ----
 --
 
@@ -143,18 +131,7 @@ Spring Boot::
 --
 [source,java]
 ----
-import com.codahale.metrics.MetricRegistry;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-class MetricsConfiguration {
-
-    @Bean
-    public MetricRegistry metricRegistry() {
-        return new MetricRegistry();
-    }
-}
+include::example$monitoring/metrics/dropwizard/springboot/MetricsConfiguration.java[tag=dropwizard-springboot-metric-registry,indent=0]
 ----
 --
 ====
@@ -214,20 +191,7 @@ Declarative configuration::
 --
 [source,java]
 ----
-import io.micrometer.core.instrument.MeterRegistry;
-import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-class MetricsConfiguration {
-
-    public void configureDefaultMetrics(MessagingConfigurer configurer,
-                                        MeterRegistry meterRegistry) {
-        boolean disableDimensions = false;
-        configurer.componentRegistry(componentRegistry -> componentRegistry.registerEnhancer(
-                new MetricsConfigurationEnhancer(meterRegistry, disableDimensions)
-        ));
-    }
-}
+include::example$monitoring/metrics/micrometer/dimensions/MetricsConfiguration.java[tag=micrometer-dimensions-toggle,indent=0]
 ----
 --
 
@@ -254,19 +218,7 @@ Declarative configuration::
 --
 [source,java]
 ----
-import io.micrometer.core.instrument.MeterRegistry;
-import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-class MetricsConfiguration {
-
-    public void configureDefaultMetrics(MessagingConfigurer configurer,
-                                        MeterRegistry meterRegistry) {
-        configurer.componentRegistry(componentRegistry -> componentRegistry.registerEnhancer(
-                new MetricsConfigurationEnhancer(meterRegistry)
-        ));
-    }
-}
+include::example$monitoring/metrics/micrometer/metricregistry/MetricsConfiguration.java[tag=micrometer-metric-registry,indent=0]
 ----
 --
 
@@ -275,19 +227,7 @@ Automated configuration - Spring Boot::
 --
 [source,java]
 ----
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-class MetricsConfiguration {
-
-    @Bean
-    public MeterRegistry meterRegistry() {
-        return new SimpleMeterRegistry();
-    }
-}
+include::example$monitoring/metrics/micrometer/springboot/MetricsConfiguration.java[tag=micrometer-springboot-meter-registry,indent=0]
 ----
 --
 ====
@@ -310,21 +250,7 @@ The following snippet shows how to register custom message monitors using the `M
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.monitoring.MessageMonitor;
-
-class MetricsConfiguration {
-
-    public void configureCustomMonitors(MessagingConfigurer configurer) {
-        // Register a monitor for all message types
-        configurer.registerMessageMonitor(config -> new MyCustomMessageMonitor());
-
-        // Register monitors for specific message types
-        configurer.registerCommandMonitor(config -> new MyCommandMonitor());
-        configurer.registerEventMonitor(config -> new MyEventMonitor());
-        configurer.registerQueryMonitor(config -> new MyQueryMonitor());
-    }
-}
+include::example$monitoring/metrics/custommonitors/MetricsConfiguration.java[tag=custom-message-monitors,indent=0]
 ----
 
 If registering `MessageMonitors` per message type is not fine-grained enough, we recommend the registration of a `MessageMonitorFactory`.
@@ -336,23 +262,5 @@ The following example shows how to register a `MessageMonitorFactory` that only 
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.EventProcessor;
-import org.axonframework.messaging.monitoring.MessageMonitor;
-
-class AxonConfig {
-
-    public void registerEventProcessorMonitorFactory(MessagingConfigurer configurer) {
-        configurer.registerEventMonitor((config, componentType, componentName) -> {
-            // Only create a monitor for EventProcessors with a specific name
-            if (EventProcessor.class.isAssignableFrom(componentType)
-                    && "my-processor".equals(componentName)) {
-                return new MyCustomEventMonitor();
-            }
-            // Return null to skip monitoring for other components
-            return null;
-        });
-    }
-}
+include::example$monitoring/metrics/monitorfactory/AxonConfig.java[tag=event-processor-monitor-factory,indent=0]
 ----
