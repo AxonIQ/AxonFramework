@@ -17,136 +17,139 @@
 package org.axonframework.messaging.tracing;
 
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
-
+import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import java.util.Objects;
 
 /**
- * Implementation of a {@link SpanFactory} that delegates calls to multiple other factories. Because only a single
- * {@code SpanFactory} can be configured, this is useful when you need to combine several {@code SpanFactory}
- * implementations to be used as a single factory.
+ * A {@link SpanFactory} that composes several delegate factories, so a single span operation is reported to all of
+ * them. A typical use is combining the OpenTelemetry factory with {@link LoggingSpanFactory} during development.
+ * <p>
+ * Each created {@link Span} fans out to one span per delegate; starting, adding attributes, recording exceptions and
+ * closing the scope are applied to all of them. {@link #propagateContext(Message)} applies every delegate's
+ * propagation in turn.
  *
+ * @author Mateusz Nowak
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
-public class MultiSpanFactory implements SpanFactory {
+public final class MultiSpanFactory implements SpanFactory {
 
-    private final List<SpanFactory> spanFactories;
+    private final List<SpanFactory> delegates;
 
     /**
-     * Creates the {@link MultiSpanFactory} with the delegate factory implementations that it should use.
+     * Initializes a {@link MultiSpanFactory} delegating to the given factories, in order.
      *
-     * @param spanFactories The delegate {@link SpanFactory} implementations it should use.
+     * @param delegates the factories to compose; must not be {@code null} or empty
      */
-    public MultiSpanFactory(List<SpanFactory> spanFactories) {
-        this.spanFactories = spanFactories;
-    }
-
-    @Override
-    public Span createRootTrace(Supplier<String> operationNameSupplier) {
-        return new MultiSpan(
-                spanFactories.stream()
-                             .map(sf -> sf.createRootTrace(operationNameSupplier))
-                             .collect(Collectors.toList())
-        );
-    }
-
-    @Override
-    public Span createHandlerSpan(Supplier<String> operationNameSupplier, Message parentMessage,
-                                  boolean isChildTrace, Message @Nullable... linkedParents) {
-        return new MultiSpan(
-                spanFactories.stream()
-                             .map(sf -> sf.createHandlerSpan(operationNameSupplier,
-                                                             parentMessage,
-                                                             isChildTrace,
-                                                             linkedParents))
-                             .collect(Collectors.toList())
-        );
-    }
-
-    @Override
-    public Span createDispatchSpan(Supplier<String> operationNameSupplier, Message parentMessage,
-                                   Message @Nullable ... linkedSiblings) {
-        return new MultiSpan(
-                spanFactories.stream()
-                             .map(sf -> sf.createDispatchSpan(operationNameSupplier,
-                                                              parentMessage,
-                                                              linkedSiblings))
-                             .collect(Collectors.toList())
-        );
-    }
-
-    @Override
-    public Span createInternalSpan(Supplier<String> operationNameSupplier) {
-        return new MultiSpan(
-                spanFactories.stream()
-                             .map(sf -> sf.createInternalSpan(operationNameSupplier))
-                             .collect(Collectors.toList())
-        );
-    }
-
-    @Override
-    public Span createInternalSpan(Supplier<String> operationNameSupplier, Message message) {
-        return new MultiSpan(
-                spanFactories.stream()
-                             .map(sf -> sf.createInternalSpan(operationNameSupplier, message))
-                             .collect(Collectors.toList())
-        );
-    }
-
-    @Override
-    public void registerSpanAttributeProvider(SpanAttributesProvider provider) {
-        spanFactories.forEach(sf -> sf.registerSpanAttributeProvider(provider));
-    }
-
-    @Override
-    public <M extends Message> M propagateContext(M message) {
-        M adjustedMessage = message;
-        for (SpanFactory spanFactory : spanFactories) {
-            adjustedMessage = spanFactory.propagateContext(adjustedMessage);
+    public MultiSpanFactory(List<SpanFactory> delegates) {
+        Objects.requireNonNull(delegates, "delegates may not be null");
+        if (delegates.isEmpty()) {
+            throw new IllegalArgumentException("delegates may not be empty");
         }
-
-        return adjustedMessage;
+        this.delegates = List.copyOf(delegates);
     }
 
-    private static class MultiSpan implements Span {
+    @Override
+    public Span createDispatchSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createDispatchSpan(operationName, message, context));
+    }
+
+    @Override
+    public Span createHandlerSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createHandlerSpan(operationName, message, context));
+    }
+
+    @Override
+    public Span createLinkedHandlerSpan(String operationName, Message message, Message linkedMessage,
+                                        @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createLinkedHandlerSpan(operationName, message, linkedMessage, context));
+    }
+
+    @Override
+    public Span createInternalSpan(String operationName, @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createInternalSpan(operationName, context));
+    }
+
+    @Override
+    public Span createRootSpan(String operationName, @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createRootSpan(operationName, context));
+    }
+
+    @Override
+    public Span createDisconnectedHandlerSpan(String operationName, Message message,
+                                              @Nullable ProcessingContext context) {
+        return fanOut(factory -> factory.createDisconnectedHandlerSpan(operationName, message, context));
+    }
+
+    private Span fanOut(java.util.function.Function<SpanFactory, Span> spanCreator) {
+        List<Span> spans = new ArrayList<>(delegates.size());
+        for (SpanFactory delegate : delegates) {
+            spans.add(spanCreator.apply(delegate));
+        }
+        return new MultiSpan(spans);
+    }
+
+    private static final class MultiSpan implements Span {
 
         private final List<Span> spans;
 
-        public MultiSpan(List<Span> spans) {
+        private MultiSpan(List<Span> spans) {
             this.spans = spans;
         }
 
         @Override
-        public Span start() {
-            spans.forEach(Span::start);
+        public SpanScope start() {
+            List<SpanScope> scopes = new ArrayList<>(spans.size());
+            for (Span span : spans) {
+                scopes.add(span.start());
+            }
+            return new MultiSpanScope(this, scopes);
+        }
+
+        @Override
+        public Span addAttribute(String key, String value) {
+            spans.forEach(span -> span.addAttribute(key, value));
             return this;
-        }
-
-        @Override
-        public SpanScope makeCurrent() {
-            List<SpanScope> scopes = spans.stream().map(Span::makeCurrent).collect(Collectors.toList());
-            return () -> scopes.forEach(SpanScope::close);
-        }
-
-        @Override
-        public void end() {
-            spans.forEach(Span::end);
         }
 
         @Override
         public Span recordException(Throwable t) {
-            spans.forEach(s -> s.recordException(t));
+            spans.forEach(span -> span.recordException(t));
             return this;
         }
 
         @Override
-        public Span addAttribute(String key, @Nullable String value) {
-            spans.forEach(s -> s.addAttribute(key, value));
-            return this;
+        public <M extends Message> M propagateContext(M message) {
+            M result = message;
+            for (Span span : spans) {
+                result = span.propagateContext(result);
+            }
+            return result;
+        }
+    }
+
+    private static final class MultiSpanScope implements SpanScope {
+
+        private final Span span;
+        private final List<SpanScope> scopes;
+
+        private MultiSpanScope(Span span, List<SpanScope> scopes) {
+            this.span = span;
+            this.scopes = scopes;
+        }
+
+        @Override
+        public Span span() {
+            return span;
+        }
+
+        @Override
+        public void close() {
+            scopes.forEach(SpanScope::close);
         }
     }
 }

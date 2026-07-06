@@ -16,103 +16,82 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageType;
-import org.junit.jupiter.api.*;
-import org.mockito.*;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.function.Supplier;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MultiSpanFactoryTest {
 
-    private final SpanFactory spanFactory1 = mock(SpanFactory.class);
-    private final Span mockSpan1 = mock(Span.class);
-    private final SpanFactory spanFactory2 = mock(SpanFactory.class);
-    private final Span mockSpan2 = mock(Span.class);
-    private final SpanFactory multiSpanFactory = new MultiSpanFactory(Arrays.asList(spanFactory1, spanFactory2));
+    private TestSpanFactory first;
+    private TestSpanFactory second;
+    private MultiSpanFactory testSubject;
 
-    private final GenericEventMessage message =
-            new GenericEventMessage(new MessageType("event"), "payload");
-    private final Supplier<String> stringSupplier = () -> "Trace";
+    private final Message message = EventTestUtils.asEventMessage("payload");
 
-    @Test
-    void rootTracesCreatedWillDelegateToAllFactories() {
-        when(spanFactory1.createRootTrace(any())).thenReturn(mockSpan1);
-        when(spanFactory2.createRootTrace(any())).thenReturn(mockSpan2);
-
-        Span span = multiSpanFactory.createRootTrace(() -> "Trace").start();
-
-        Mockito.verify(mockSpan1).start();
-        Mockito.verify(mockSpan2).start();
-
-        Mockito.verify(mockSpan1, never()).end();
-        Mockito.verify(mockSpan2, never()).end();
-
-        RuntimeException exception = new RuntimeException("My Exception");
-        span.recordException(exception).end();
-
-        Mockito.verify(mockSpan1).end();
-        Mockito.verify(mockSpan2).end();
-        Mockito.verify(mockSpan1).recordException(exception);
-        Mockito.verify(mockSpan2).recordException(exception);
+    @BeforeEach
+    void setUp() {
+        first = new TestSpanFactory();
+        second = new TestSpanFactory();
+        testSubject = new MultiSpanFactory(List.of(first, second));
     }
 
     @Test
-    void handlerSpansCreatedWillDelegateToAllFactories() {
-        multiSpanFactory.createHandlerSpan(stringSupplier, message, false);
+    void startingAndClosingFansOutToEveryDelegate() {
+        // when
+        SpanScope scope = testSubject.createDispatchSpan("op", message, null).start();
 
-        Mockito.verify(spanFactory1).createHandlerSpan(stringSupplier, message, false);
-        Mockito.verify(spanFactory2).createHandlerSpan(stringSupplier, message, false);
+        // then
+        first.verifySpanActive("op");
+        second.verifySpanActive("op");
+
+        // when
+        scope.close();
+
+        // then
+        first.verifySpanCompleted("op");
+        second.verifySpanCompleted("op");
     }
 
     @Test
-    void dispatchSpansCreatedWillDelegateToAllFactories() {
-        multiSpanFactory.createDispatchSpan(stringSupplier, message);
+    void addAttributeFansOutToEveryDelegate() {
+        // given
+        Span span = testSubject.createHandlerSpan("op", message, null);
+        span.start();
 
-        Mockito.verify(spanFactory1).createDispatchSpan(stringSupplier, message);
-        Mockito.verify(spanFactory2).createDispatchSpan(stringSupplier, message);
+        // when
+        span.addAttribute("key", "value");
+
+        // then
+        first.verifySpanHasAttributeValue("op", "key", "value");
+        second.verifySpanHasAttributeValue("op", "key", "value");
     }
 
     @Test
-    void internalSpansCreatedWillDelegateToAllFactories() {
-        multiSpanFactory.createInternalSpan(stringSupplier);
-
-        Mockito.verify(spanFactory1).createInternalSpan(stringSupplier);
-        Mockito.verify(spanFactory2).createInternalSpan(stringSupplier);
+    void emptyDelegateListIsRejected() {
+        // when / then
+        assertThatThrownBy(() -> new MultiSpanFactory(List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void internalSpansWithMessageCreatedWillDelegateToAllFactories() {
-        multiSpanFactory.createInternalSpan(stringSupplier, message);
+    void spanPropagateContextFansOutToEveryDelegate() {
+        // given
+        Span span = testSubject.createDispatchSpan("op", message, null);
+        span.start();
 
-        Mockito.verify(spanFactory1).createInternalSpan(stringSupplier, message);
-        Mockito.verify(spanFactory2).createInternalSpan(stringSupplier, message);
-    }
+        // when
+        Message result = span.propagateContext(message);
 
-    @Test
-    void registerSpanAttributeProviderWillDelegateToAllFactories() {
-        SpanAttributesProvider provider = mock(SpanAttributesProvider.class);
-        multiSpanFactory.registerSpanAttributeProvider(provider);
-
-        Mockito.verify(spanFactory1).registerSpanAttributeProvider(provider);
-        Mockito.verify(spanFactory2).registerSpanAttributeProvider(provider);
-    }
-
-    @Test
-    void propagateContextDelegateToAllFactories() {
-        Message original = mock(Message.class);
-        Message modifiedFirst = mock(Message.class);
-        Message modifiedSecond = mock(Message.class);
-
-        when(spanFactory1.propagateContext(original)).thenReturn(modifiedFirst);
-        when(spanFactory2.propagateContext(modifiedFirst)).thenReturn(modifiedSecond);
-
-        Message result = multiSpanFactory.propagateContext(original);
-        assertSame(result, modifiedSecond);
+        // then
+        assertThat(result).isNotNull();
+        first.verifySpanPropagated("op", message);
+        second.verifySpanPropagated("op", message);
     }
 }

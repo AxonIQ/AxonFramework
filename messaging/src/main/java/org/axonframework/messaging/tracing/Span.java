@@ -16,238 +16,167 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.common.FutureUtils;
-import org.jspecify.annotations.Nullable;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
-import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Represents a part of the application logic that will be traced. One or multiple spans together form a trace and are
- * often used to debug and monitor (distributed) applications.
+ * Represents one unit of traced work. One or more spans together form a trace, used to monitor and debug
+ * (distributed) applications.
  * <p>
- * The {@link Span} is an abstraction for Axon Framework to have tracing capabilities without knowing the specific
- * tracing provider. Calling {@link #start()} will start the {@code span} and make it active to the current thread. For
- * every start invocation, a respective {@link #end()} should be called as well to prevent scope leaks.
+ * A {@code Span} is an abstraction that lets Axon Framework offer tracing capabilities without depending on a
+ * specific tracing provider. A span is opened by calling {@link #start()} and ended by closing the returned
+ * {@link SpanScope}. Every {@link #start()} must be paired with exactly one {@link SpanScope#close()}.
  * <p>
- * Creating {@link Span spans} is the responsibility of the {@link SpanFactory} which should be implemented by the
- * tracing provider of choice.
+ * <b>No {@code ThreadLocal}.</b> Parent/child relationships are never derived from a thread-bound "current span".
+ * Instead, when a span is created within a {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} (the
+ * context is passed to the {@link SpanFactory} factory method), starting it records the span as that context's active
+ * span; spans subsequently created from the same {@link SpanFactory} with that context become its children, and the
+ * previous active span is restored when this span's {@link SpanScope} is closed. Cross-boundary parenting (across
+ * threads or processes) instead rides on message metadata via {@link #propagateContext(Message)} on the dispatch side
+ * and {@link SpanFactory#createHandlerSpan(String, Message, org.axonframework.messaging.core.unitofwork.ProcessingContext)}
+ * on the handling side.
  * <p>
- * Important! In order to make this span the parent for any new span created during its execution,
- * {@link #makeCurrent()} should be called. This method will return a {@link SpanScope}, on which
- * {@link SpanScope#close()} should be invoked during the same code execution on the same thread. If not, this span will
- * become the unwanted parent of any children. You can make the same span the current for multiple threads at any point
- * in time, as long as you close them before calling {@link Span#end()}
- * <p>
- * Each {@link #start()} should eventually result in an {@link #end()} being called, but this does not have to be done
- * on the same thread.
+ * For imperative-style code with no {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} available,
+ * the convenience helpers {@link #run(Runnable)}, {@link #runSupplier(Supplier)} and
+ * {@link #runSupplierAsync(Supplier)} open and close the scope around the given block; such spans perform no active-span
+ * tracking. Framework code that has a {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} should bind
+ * the span to its lifecycle through {@link ProcessingContextSpanBinding}.
  *
+ * @author Mateusz Nowak
  * @author Mitchell Herrijgers
- * @see SpanFactory For more information about creating different kinds of traces.
+ * @see SpanFactory
  * @since 4.6.0
  */
 public interface Span {
 
     /**
-     * Starts the Span. However, does not set this span as the span of the current thread. See {@link #makeCurrent()} in
-     * order to do so.
+     * Starts this span and returns its {@link SpanScope}. When the span was created with a
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}, starting it records this span as that
+     * context's active span (without any {@code ThreadLocal}), so spans created next from the same {@link SpanFactory}
+     * with that context nest under it; closing the returned scope restores the previously-active span. The returned
+     * scope MUST be closed exactly once; closing it ends the span.
      *
-     * @return The span for fluent interfacing.
+     * @return the {@link SpanScope} governing this span; never {@code null}
      */
-    Span start();
+    SpanScope start();
 
     /**
-     * Sets the Span as the current for the current thread. The returned {@link SpanScope} must be closed before ending
-     * the Span, on the same thread, or through a try-with-resources statement in the same thread as this method was
-     * called.
-     * <p>
-     * You can make a span current on as many threads as you like, but you have to close every {@link SpanScope}, or
-     * context will leak into the current thread. Note that if this is neglected, the {@link #end()} method should warn
-     * the user in order to report this back to the framework.
+     * Starts this span <em>within</em> the given {@link ProcessingContext}'s lifecycle: starts the span, records its
+     * {@link SpanScope} as the context's active scope (under {@link SpanScope#RESOURCE_KEY}, never via a
+     * {@code ThreadLocal}), records any processing error on the span, and closes the scope when the context completes
+     * (on both the success and error paths). This is the unit-of-work-scoped counterpart to {@link #start()} (which is
+     * the imperative edge whose scope the caller closes) and replaces the former {@code ProcessingContextSpanBinding}
+     * helper. The scope is stored with {@link ProcessingContext#putResource} so spans created next with the same
+     * context instance nest under this one; it is last-writer-wins, matching {@code Message.RESOURCE_KEY}.
      *
-     * @return The scope of the span that must be closed be
+     * @param context the processing context whose lifecycle the span is bound to
+     * @return the started {@link SpanScope}, also recorded on {@code context} under {@link SpanScope#RESOURCE_KEY}
      */
-    default SpanScope makeCurrent() {
-        return () -> {
-        };
+    default SpanScope start(ProcessingContext context) {
+        SpanScope scope = start();
+        context.putResource(SpanScope.RESOURCE_KEY, scope);
+        context.onError((processingContext, phase, error) -> recordException(error));
+        context.doFinally(processingContext -> scope.close());
+        return scope;
     }
 
     /**
-     * Ends the span. All scopes should have been closed at this point. In addition, a span can only be ended once.
-     * <p>
-     * If scopes are still open when this method is called, either an exception should be thrown or an error log should
-     * be produced to warn the user of the leak. This information can then be reported back to the developers of the
-     * framework for a fix.
+     * Adds an attribute to the span, providing extra information to the APM tooling. Implementations return
+     * {@code this} for fluent chaining.
+     *
+     * @param key   the attribute key
+     * @param value the attribute value
+     * @return this span, for fluent interfacing
      */
-    void end();
+    Span addAttribute(String key, String value);
 
     /**
-     * Records an exception to the span. This will be reported to the APM tooling, which can show more information about
-     * the error in the trace. This method does not end the span.
+     * Records the given exception against the span and marks the span as errored. This does NOT end the span; the span
+     * is ended when its {@link SpanScope} is closed.
      *
-     * @param t The exception to record
-     * @return The span for fluent interfacing.
+     * @param t the exception to record
+     * @return this span, for fluent interfacing
      */
     Span recordException(Throwable t);
 
     /**
-     * Runs a piece of code which will be traced. Exceptions will be caught automatically and added to the span, then
-     * rethrown. The span will be started before the execution, and ended after execution. Note that the
-     * {@link Runnable} will be invoked instantly and synchronously.
+     * Returns a copy of the given {@code message} with this span's tracing context injected into its metadata, so a
+     * remote or asynchronous handler can continue the same trace by extracting it (see
+     * {@link SpanFactory#createHandlerSpan(String, Message, org.axonframework.messaging.core.unitofwork.ProcessingContext)}).
+     * This replaces deriving the context to propagate from a thread-bound "current span": the span propagates
+     * <em>itself</em>. Implementations that perform no propagation (no-op, logging) return the input unchanged and
+     * never throw.
      *
-     * @param runnable The {@link Runnable} to execute.
+     * @param message the message to enrich with this span's tracing context
+     * @param <M>     the message type
+     * @return the message carrying this span's propagated tracing context (possibly the same instance)
+     */
+    <M extends Message> M propagateContext(M message);
+
+    /**
+     * Starts the span, runs the given block inside it, and ends the span afterwards. Exceptions are recorded on the
+     * span and rethrown. The {@link Runnable} runs synchronously on the calling thread. This imperative-edge helper
+     * performs no active-span tracking; nesting is expressed through a {@code ProcessingContext}, not this helper.
+     *
+     * @param runnable the block to run
      */
     default void run(Runnable runnable) {
-        this.start();
-        try (SpanScope unused = this.makeCurrent()) {
-            runnable.run();
-        } catch (Exception e) {
-            this.recordException(e);
-            throw e;
-        } finally {
-            this.end();
+        try (SpanScope ignored = start()) {
+            try {
+                runnable.run();
+            } catch (Throwable t) {
+                recordException(t);
+                throw t;
+            }
         }
     }
 
     /**
-     * Wraps a {@link Runnable}, propagating the current span context to the actual thread that runs the
-     * {@link Runnable}. If you don't wrap a runnable before passing it to an {@link java.util.concurrent.Executor} the
-     * context will be lost and a new trace will be started.
+     * Starts the span, runs the given supplier inside it, ends the span afterwards, and returns the supplied value.
+     * Exceptions are recorded on the span and rethrown. The {@link Supplier} runs synchronously on the calling thread.
      *
-     * @param runnable The {@link Runnable} to wrap
-     * @return A wrapped runnable which propagates the span's context across threads.
-     */
-    default Runnable wrapRunnable(Runnable runnable) {
-        return () -> run(runnable);
-    }
-
-    /**
-     * Runs a piece of code which will be traced. Exceptions will be caught automatically and added to the span, then
-     * rethrown. The span will be started before the execution, and ended after execution. Note that the
-     * {@link Callable} will be invoked instantly and synchronously.
-     *
-     * @param <T> the callable result type
-     * @param callable The {@link Callable} to execute.
-     * @return the result returned by the {@link Callable}
-     * @throws Exception when the {@link Callable} throws an exception
-     */
-    default <T> T runCallable(Callable<T> callable) throws Exception {
-        this.start();
-        try (SpanScope unused = this.makeCurrent()) {
-            return callable.call();
-        } catch (Exception e) {
-            this.recordException(e);
-            throw e;
-        } finally {
-            this.end();
-        }
-    }
-
-    /**
-     * Wraps a {@link Callable}, propagating the current span context to the actual thread that runs the
-     * {@link Callable}. If you don't wrap a callable before passing it to an {@link java.util.concurrent.Executor} the
-     * context will be lost and a new trace will be started.
-     *
-     * @param callable The {@link Callable} to wrap
-     * @return A wrapped callable which propagates the span's context across threads.
-     */
-    default <T> Callable<T> wrapCallable(Callable<T> callable) {
-        return () -> runCallable(callable);
-    }
-
-    /**
-     * Runs a piece of code that returns a value and which will be traced. Exceptions will be caught automatically and
-     * added to the span, then rethrown. The span will be started before the execution, and ended after execution. Note
-     * that the {@link Supplier} will be invoked instantly and synchronously.
-     *
-     * @param <T> the supplier result type
-     * @param supplier The {@link Supplier} to execute.
-     * @return the result returned by the supplier
+     * @param supplier the value-producing block to run
+     * @param <T>      the supplied value type
+     * @return the value produced by {@code supplier}
      */
     default <T> T runSupplier(Supplier<T> supplier) {
-        this.start();
-        try (SpanScope unused = this.makeCurrent()) {
-            return supplier.get();
-        } catch (Exception e) {
-            this.recordException(e);
-            throw e;
-        } finally {
-            this.end();
+        try (SpanScope ignored = start()) {
+            try {
+                return supplier.get();
+            } catch (Throwable t) {
+                recordException(t);
+                throw t;
+            }
         }
     }
 
+    /**
+     * Starts the span and runs the given asynchronous supplier inside it; the span is ended when the returned
+     * {@link CompletableFuture} completes (normally or exceptionally). A failure of the future is recorded on the span.
+     * A synchronous failure of the supplier itself is recorded, the span ended, and the throwable rethrown.
+     *
+     * @param supplier the block producing the {@link CompletableFuture} to trace
+     * @param <T>      the future's result type
+     * @return a future that completes with the same result/exception as the supplied future
+     */
     default <T> CompletableFuture<T> runSupplierAsync(Supplier<CompletableFuture<T>> supplier) {
-        this.start();
-        CompletableFuture<T> future = new CompletableFuture<>();
-        try (SpanScope ignored = this.makeCurrent()) {
-            supplier.get().whenComplete(FutureUtils.alsoComplete(future));
-        } catch (Exception e) {
-            future.completeExceptionally(e);
-        } finally {
-            future = future.whenComplete((r, e) -> {
-                if (e != null) {
-                    this.recordException(e);
-                }
-                this.end();
-            });
+        SpanScope scope = start();
+        CompletableFuture<T> future;
+        try {
+            future = supplier.get();
+        } catch (Throwable t) {
+            recordException(t);
+            scope.close();
+            throw t;
         }
-        return future;
-    }
-
-    /**
-     * Wraps a {@link Supplier}, tracing the invocation. Exceptions will be caught automatically and added to the span,
-     * then rethrown. The span will be started before the execution, and ended after execution.
-     *
-     * @param supplier The {@link Supplier} to wrap
-     * @return A wrapped Supplier
-     */
-    default <T> Supplier<T> wrapSupplier(Supplier<T> supplier) {
-        return () -> runSupplier(supplier);
-    }
-
-    /**
-     * Runs a piece of code that returns a value and which will be traced. Exceptions will be caught automatically and
-     * added to the span, then rethrown. The span will be started before the execution, and ended after execution. Note
-     * that the {@link Consumer} will be invoked instantly and synchronously.
-     *
-     * @param <T> the type consumed by the consumer
-     * @param supplier The {@link Consumer} to execute.
-     * @param consumedObject The object to consume.
-     */
-    default <T> void runConsumer(Consumer<T> supplier, T consumedObject) {
-        this.start();
-        try (SpanScope unused = this.makeCurrent()) {
-            supplier.accept(consumedObject);
-        } catch (Exception e) {
-            this.recordException(e);
-            throw e;
-        } finally {
-            this.end();
-        }
-    }
-
-    /**
-     * Wraps a {@link Consumer}, tracing the invocation. Exceptions will be caught automatically and added to the span,
-     * then rethrown. The span will be started before the execution, and ended after execution.
-     *
-     * @param supplier The {@link Consumer} to wrap
-     * @return A wrapped Consumer
-     */
-    default <T> Consumer<T> wrapConsumer(Consumer<T> supplier) {
-        return (consumedObject) -> runConsumer(supplier, consumedObject);
-    }
-
-    /**
-     * Adds an attribute to the span. This can be used to add extra information to the span, which can be used by the
-     * APM tooling to provide more information about the span.
-     *
-     * @param key   The key of the attribute.
-     * @param value The value of the attribute.
-     * @return The span for fluent interfacing.
-     */
-    default Span addAttribute(String key, @Nullable String value) {
-        return this;
+        return future.whenComplete((result, error) -> {
+            if (error != null) {
+                recordException(error);
+            }
+            scope.close();
+        });
     }
 }

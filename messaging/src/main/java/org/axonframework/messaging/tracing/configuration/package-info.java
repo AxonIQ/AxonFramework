@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing;
-
 /**
- * Factory that creates spans for the spans representing handlers.
- *
- * @author Mitchell Herrijgers
- * @since 4.9.0
+ * Configuration support for the tracing modules: the
+ * {@link org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry} collecting the
+ * {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders} a
+ * {@link org.axonframework.messaging.tracing.SpanFactory} is constructed with, and the shared enhancer/decorator ordering
+ * constants.
  */
-public interface HandlerSpanFactory {
+@NullMarked
+package org.axonframework.messaging.tracing.configuration;
 
-}
+import org.jspecify.annotations.NullMarked;

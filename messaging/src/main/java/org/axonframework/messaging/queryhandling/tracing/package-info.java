@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-
 /**
- * Part of the Axon Messaging module. Contains classes related to tracing.
+ * Tracing decorators for query handling components.
  */
 @NullMarked
 package org.axonframework.messaging.queryhandling.tracing;

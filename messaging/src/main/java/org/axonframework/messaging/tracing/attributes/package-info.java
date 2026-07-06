@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-
 /**
- * Part of the Axon Messaging module. Contains classes related to attributes.
+ * Built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider} implementations contributing standard
+ * message-derived attributes (identifier, type, metadata, aggregate identifier) to spans.
  */
 @NullMarked
 package org.axonframework.messaging.tracing.attributes;

@@ -16,22 +16,50 @@
 
 package org.axonframework.messaging.tracing.attributes;
 
-import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
-import static java.util.Collections.singletonMap;
+import java.util.Objects;
 
 /**
- * Adds the message identifier to the Span.
+ * Adds the {@link Message#identifier() message identifier} to the span. By default the attribute key is
+ * {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.id}); a different key can be supplied through the constructor -- for
+ * example to keep the Axon Framework 4 key {@code axon_message_id}.
  *
+ * @author Mateusz Nowak
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
-public class MessageIdSpanAttributesProvider implements SpanAttributesProvider {
+public final class MessageIdSpanAttributesProvider implements SpanAttributesProvider {
+
+    /**
+     * Default attribute key under which the message identifier is recorded.
+     */
+    public static final String DEFAULT_ATTRIBUTE_KEY = "axoniq.message.id";
+
+    private final String attributeKey;
+
+    /**
+     * Creates a provider recording the message identifier under the default {@link #DEFAULT_ATTRIBUTE_KEY} key.
+     */
+    public MessageIdSpanAttributesProvider() {
+        this(DEFAULT_ATTRIBUTE_KEY);
+    }
+
+    /**
+     * Creates a provider recording the message identifier under the given {@code attributeKey}.
+     *
+     * @param attributeKey the span attribute key to record the message identifier under
+     */
+    public MessageIdSpanAttributesProvider(String attributeKey) {
+        this.attributeKey = Objects.requireNonNull(attributeKey, "attributeKey may not be null");
+    }
 
     @Override
-    public Map<String, String> provideForMessage(Message message) {
-        return singletonMap("axon_message_id", message.identifier());
+    public Map<String, String> provideForMessage(Message message, @Nullable ProcessingContext context) {
+        return Map.of(attributeKey, message.identifier());
     }
 }

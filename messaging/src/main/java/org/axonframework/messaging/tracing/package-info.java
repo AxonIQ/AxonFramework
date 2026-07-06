@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-
 /**
- * Part of the Axon Messaging module. Contains classes related to message tracing.
+ * Tracing wiring for {@code axon-messaging} components. The {@code internal} sub-package holds the
+ * delegating tracing decorators; they are registered with the framework by the
+ * ServiceLoader-discovered {@code MessagingTracingConfigurationEnhancer}.
  */
 @NullMarked
 package org.axonframework.messaging.tracing;

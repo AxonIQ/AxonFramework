@@ -17,87 +17,76 @@
 package org.axonframework.messaging.tracing;
 
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
-
-import java.util.function.Supplier;
-
 /**
- * {@link SpanFactory} implementation that creates a {@link NoOpSpan}. This span does not do any tracing at all. It's
- * used as a fallback when there is no tracing implementation available, so framework code does not have to check.
+ * A {@link SpanFactory} that produces spans which do nothing -- a null-object for tests and composition. Every
+ * operation reduces to a single dispatch returning shared no-op instances.
+ * <p>
+ * This is <em>not</em> an off-switch: tracing is disabled by not registering a {@code SpanFactory} component at all,
+ * in which case the tracing enhancers leave every component undecorated (zero overhead). There is no default
+ * {@code SpanFactory}; a factory only exists when a tracing backend contributes one.
  *
+ * @author Mateusz Nowak
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
-public class NoOpSpanFactory implements SpanFactory {
+public final class NoOpSpanFactory implements SpanFactory {
 
     /**
-     * Singleton instance of the {@link NoOpSpanFactory}, which is used for configuration when there is no specific
-     * implementation configured.
+     * The singleton {@link NoOpSpanFactory} instance.
      */
     public static final NoOpSpanFactory INSTANCE = new NoOpSpanFactory();
 
-    @Override
-    public Span createRootTrace(Supplier<String> operationNameSupplier) {
-        return NoOpSpan.INSTANCE;
+    private static final Span NO_OP_SPAN = new NoOpSpan();
+    private static final SpanScope NO_OP_SCOPE = new NoOpSpanScope();
+
+    private NoOpSpanFactory() {
     }
 
     @Override
-    public Span createHandlerSpan(Supplier<String> operationNameSupplier, Message parentMessage,
-                                  boolean isChildTrace,
-                                  Message @Nullable... linkedParents) {
-        return NoOpSpan.INSTANCE;
+    public Span createDispatchSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
     @Override
-    public Span createDispatchSpan(Supplier<String> operationNameSupplier, Message parentMessage,
-                                   Message @Nullable ... linkedSiblings) {
-        return NoOpSpan.INSTANCE;
+    public Span createHandlerSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
     @Override
-    public Span createInternalSpan(Supplier<String> operationNameSupplier) {
-        return NoOpSpan.INSTANCE;
+    public Span createLinkedHandlerSpan(String operationName, Message message, Message linkedMessage,
+                                        @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
     @Override
-    public Span createInternalSpan(Supplier<String> operationNameSupplier, Message message) {
-        return NoOpSpan.INSTANCE;
+    public Span createInternalSpan(String operationName, @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
     @Override
-    public void registerSpanAttributeProvider(SpanAttributesProvider supplier) {
-        // Do nothing
+    public Span createRootSpan(String operationName, @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
     @Override
-    public <M extends Message> M propagateContext(M message) {
-        return message;
+    public Span createDisconnectedHandlerSpan(String operationName, Message message,
+                                              @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
     }
 
-    /**
-     * The {@link Span} implementation that does nothing.
-     */
-    public static class NoOpSpan implements Span {
-
-        /**
-         * Instance of a {@link NoOpSpan} that can be used to avoid creating new instances.
-         */
-        public static final NoOpSpan INSTANCE = new NoOpSpan();
+    private static final class NoOpSpan implements Span {
 
         @Override
-        public Span start() {
+        public SpanScope start() {
+            return NO_OP_SCOPE;
+        }
+
+        @Override
+        public Span addAttribute(String key, String value) {
             return this;
-        }
-
-        @Override
-        public SpanScope makeCurrent() {
-            return () -> {};
-        }
-
-        @Override
-        public void end() {
-            // Do nothing
         }
 
         @Override
@@ -106,8 +95,21 @@ public class NoOpSpanFactory implements SpanFactory {
         }
 
         @Override
-        public Span addAttribute(String key, @Nullable String value) {
-            return this;
+        public <M extends Message> M propagateContext(M message) {
+            return message;
+        }
+    }
+
+    private static final class NoOpSpanScope implements SpanScope {
+
+        @Override
+        public Span span() {
+            return NO_OP_SPAN;
+        }
+
+        @Override
+        public void close() {
+            // No-op.
         }
     }
 }

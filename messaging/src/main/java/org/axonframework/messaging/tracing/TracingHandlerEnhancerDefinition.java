@@ -16,134 +16,187 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.common.BuilderUtils;
+import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.tracing.MessagingTracingSettings;
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.configuration.ComponentNotFoundException;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
+import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
+import org.axonframework.messaging.queryhandling.annotation.QueryHandlingMember;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Enhances message handlers with the provided {@link SpanFactory}, wrapping handling of the message in a {@link Span}
- * that is reported to the monitoring tooling.
+ * {@link HandlerEnhancerDefinition} that wraps annotated message handlers in a tracing span named after the handling
+ * method (for example {@code "BookRoomHandler.handle(BookRoom)"}). Message-type agnostic: the same wrapper applies to
+ * {@code @CommandHandler}, {@code @EventHandler} and {@code @QueryHandler} alike -- the span lifecycle is driven
+ * entirely by {@link MessageHandlingMember} / {@link ProcessingContext}.
  * <p>
- * Since {@code EventSourcingHandlers} can be very noisy when loading the aggregate, they can be enabled or disabled
- * separately through constructor configuration.
+ * Discovered via the standard {@code META-INF/services} {@link HandlerEnhancerDefinition} {@link java.util.ServiceLoader}
+ * entry, so dropping {@code axoniq-tracing-messaging} on the classpath is enough; no explicit registration is required.
+ * The configured {@link SpanFactory} is resolved from the {@link ProcessingContext}'s
+ * {@link ApplicationContext#component(Class) ApplicationContext} at handle time -- when no factory is registered, the
+ * wrapper is a pass-through.
+ * <p>
+ * <b>{@code @EventSourcingHandler} suppression.</b> Members carrying the {@code EventSourcingHandler} handler
+ * attribute are suppressed by default: they fire once per event during entity replay (a hot path) and would flood
+ * traces with one span per replayed event. Suppression is decided <em>before</em> any span name is built or the
+ * {@link SpanFactory} is resolved, so a suppressed invocation carries no tracing cost beyond a boolean check. Set
+ * {@link MessagingTracingSettings#showEventSourcingHandlers()} to {@code true}
+ * ({@code axon.tracing.show-event-sourcing-handlers} in Spring Boot) to trace them anyway.
  *
- * @author Mitchell Herrijgers
- * @since 4.6.0
+ * @author Mateusz Nowak
+ * @since 5.2.0
  */
-public class TracingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
-
-    private final SpanFactory spanFactory;
-    private final boolean showEventSourcingHandlers;
+@Internal
+public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
 
     /**
-     * Creates a new {@link TracingHandlerEnhancerDefinition} based on the builder.
-     *
-     * @param builder The builder to construct the {@link TracingHandlerEnhancerDefinition} from.
+     * Handler-attributes key identifying an {@code @EventSourcingHandler}-annotated member
+     * ({@code <AnnotationSimpleName>.<attribute>} as produced by the annotation pipeline). Referenced by name so this
+     * module needs no dependency on {@code axon-eventsourcing}.
      */
-    protected TracingHandlerEnhancerDefinition(Builder builder) {
-        BuilderUtils.assertNonNull(builder.spanFactory, "SpanFactory must be provided!");
-        this.spanFactory = builder.spanFactory;
-        this.showEventSourcingHandlers = builder.showEventSourcingHandlers;
-    }
+    private static final String EVENT_SOURCING_HANDLER_ATTRIBUTE = "EventSourcingHandler.payloadType";
 
     /**
-     * Instantiate a builder to create a {@link TracingHandlerEnhancerDefinition}.
-     * <p>
-     * The {@code showEventSourcingHandlers} is defaulted to {@code false}. The {@link SpanFactory} is a hard
-     * requirement and should be provided.
-     *
-     * @return The builder to create a {@link TracingHandlerEnhancerDefinition}.
+     * Constructor for {@link java.util.ServiceLoader} discovery. The {@link SpanFactory} is resolved from the
+     * {@link ProcessingContext}'s {@link ApplicationContext} at handle time.
      */
-    public static Builder builder() {
-        return new Builder();
+    public TracingHandlerEnhancerDefinition() {
     }
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        if (!showEventSourcingHandlers && isEventSourcingHandler(original)) {
+        Optional<Executable> executable = original.unwrap(Executable.class);
+        if (executable.isEmpty()) {
             return original;
         }
-
-        Optional<Executable> unwrap = original.unwrap(Executable.class);
-        if (unwrap.isEmpty()) {
-            return original;
-        }
-        String signature = toMethodSignature(unwrap.get());
-        return new WrappedMessageHandlingMember<>(original) {
-            @Override
-            public MessageStream<?> handle(Message message, ProcessingContext context, T target) {
-                return spanFactory.createInternalSpan(() -> getSpanName(target, signature))
-                                  .runSupplier(() -> super.handle(message, context, target));
-            }
-        };
+        String signature = toMethodSignature(executable.get());
+        boolean eventSourcingHandler = original.attribute(EVENT_SOURCING_HANDLER_ATTRIBUTE).isPresent();
+        return new TracingHandlerMember<>(original, signature, eventSourcingHandler);
     }
 
-    private static <T> String getSpanName(T target, String signature) {
-        return target == null ? signature : target.getClass().getSimpleName() + "." + signature;
-    }
-
-    private boolean isEventSourcingHandler(MessageHandlingMember<?> original) {
-        return original.attribute("EventSourcingHandler.payloadType").isPresent();
-    }
-
-    private String toMethodSignature(Executable executable) {
+    private static String toMethodSignature(Executable executable) {
         return String.format("%s(%s)",
                              executable.getName(),
-                             Arrays.stream(executable.getParameterTypes()).map(Class::getSimpleName)
+                             Arrays.stream(executable.getParameterTypes())
+                                   .map(Class::getSimpleName)
                                    .collect(Collectors.joining(",")));
     }
 
+    private static String spanName(@Nullable Object target, String signature) {
+        return target == null ? signature : target.getClass().getSimpleName() + "." + signature;
+    }
+
     /**
-     * Builder class to instantiate a {@link TracingHandlerEnhancerDefinition}.
-     * <p>
-     * The {@code showEventSourcingHandlers} is defaulted to {@code false}. The {@link SpanFactory} is a hard
-     * requirement and should be provided.
+     * Single message-type-agnostic wrapper. Implements every member sub-interface
+     * ({@link CommandHandlingMember}, {@link EventHandlingMember}, {@link QueryHandlingMember}) so it survives the
+     * hard casts the annotation-based handling components perform; sub-interface accessors delegate to the wrapped
+     * member. The annotation pipeline routes each wrapper to the right component via
+     * {@code MessageHandlingMember#canHandleMessageType(Class)} (which {@link WrappedMessageHandlingMember} forwards
+     * to the original), so a wrapper around an event handler is never streamed into the command pipeline.
      */
-    public static class Builder {
+    private static final class TracingHandlerMember<T> extends WrappedMessageHandlingMember<T>
+            implements CommandHandlingMember<T>, EventHandlingMember<T>, QueryHandlingMember<T> {
 
-        private SpanFactory spanFactory;
-        private boolean showEventSourcingHandlers = false;
+        private final MessageHandlingMember<T> delegate;
+        private final String signature;
+        private final boolean eventSourcingHandler;
 
-
-        /**
-         * Configures the {@link SpanFactory} the handler enhancer should use for tracing.
-         *
-         * @param spanFactory The {@link SpanFactory} to configure.
-         * @return The builder, for fluent interfacing.
-         */
-        public Builder spanFactory(SpanFactory spanFactory) {
-            BuilderUtils.assertNonNull(spanFactory, "SpanFactory can not be set to null!");
-            this.spanFactory = spanFactory;
-            return this;
+        private TracingHandlerMember(MessageHandlingMember<T> delegate,
+                                     String signature,
+                                     boolean eventSourcingHandler) {
+            super(delegate);
+            this.delegate = delegate;
+            this.signature = signature;
+            this.eventSourcingHandler = eventSourcingHandler;
         }
 
-        /**
-         * Configures whether event sourcing handlers should be traced. Defaults to {@code false}.
-         *
-         * @param showEventSourcingHandlers Whether event sourcing handlers should be traced.
-         * @return The builder, for fluent interfacing.
-         */
-        public Builder showEventSourcingHandlers(boolean showEventSourcingHandlers) {
-            this.showEventSourcingHandlers = showEventSourcingHandlers;
-            return this;
+        @Override
+        public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+            if (eventSourcingHandler && !showEventSourcingHandlers(context)) {
+                // Replay hot path: a suppressed @EventSourcingHandler invocation short-circuits BEFORE the span
+                // name is built and BEFORE the SpanFactory is resolved (eager-name guard).
+                return super.handle(message, context, target);
+            }
+            SpanFactory factory = resolveSpanFactory(context);
+            if (factory != null) {
+                factory.createInternalSpan(spanName(target, signature), context).start(context);
+            }
+            return super.handle(message, context, target);
         }
 
-        /**
-         * Initializes the {@link TracingHandlerEnhancerDefinition} based on the builder contents.
-         *
-         * @return The {@link TracingHandlerEnhancerDefinition}.
-         */
-        public TracingHandlerEnhancerDefinition build() {
-            return new TracingHandlerEnhancerDefinition(this);
+        private @Nullable SpanFactory resolveSpanFactory(ProcessingContext context) {
+            try {
+                return context.component(SpanFactory.class);
+            } catch (ComponentNotFoundException e) {
+                // No SpanFactory configured. Tracing degrades to a pass-through.
+                return null;
+            }
+        }
+
+        private static boolean showEventSourcingHandlers(ProcessingContext context) {
+            try {
+                return context.component(MessagingTracingSettings.class).showEventSourcingHandlers();
+            } catch (ComponentNotFoundException e) {
+                // No settings registered -- event sourcing handlers stay suppressed (the safe, replay-friendly
+                // default).
+                return false;
+            }
+        }
+
+        @Override
+        public String commandName() {
+            return delegate.unwrap(CommandHandlingMember.class)
+                           .map(CommandHandlingMember::commandName)
+                           .orElse("");
+        }
+
+        @Override
+        public String routingKey() {
+            return delegate.unwrap(CommandHandlingMember.class)
+                           .map(CommandHandlingMember::routingKey)
+                           .orElse("");
+        }
+
+        @Override
+        public boolean isFactoryHandler() {
+            return delegate.unwrap(CommandHandlingMember.class)
+                           .map(CommandHandlingMember::isFactoryHandler)
+                           .orElse(false);
+        }
+
+        @Override
+        public String eventName() {
+            return delegate.unwrap(EventHandlingMember.class)
+                           .map(EventHandlingMember::eventName)
+                           .orElse("");
+        }
+
+        @Override
+        public String queryName() {
+            return delegate.unwrap(QueryHandlingMember.class)
+                           .map(QueryHandlingMember::queryName)
+                           .orElse("");
+        }
+
+        @Override
+        public Type resultType() {
+            return delegate.unwrap(QueryHandlingMember.class)
+                           .map(QueryHandlingMember::resultType)
+                           .orElse(Object.class);
         }
     }
 }

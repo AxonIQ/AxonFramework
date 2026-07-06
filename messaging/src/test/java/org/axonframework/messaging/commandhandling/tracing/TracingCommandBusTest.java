@@ -16,131 +16,183 @@
 
 package org.axonframework.messaging.commandhandling.tracing;
 
+import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
+import org.axonframework.messaging.tracing.support.TestSpanFactory;
+import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
-import org.axonframework.common.FutureUtils;
-import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
-import org.axonframework.messaging.tracing.TestSpanFactory;
-import org.axonframework.common.util.MockException;
-import org.junit.jupiter.api.*;
-import org.mockito.*;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TracingCommandBusTest {
 
-    private TracingCommandBus testSubject;
+    private static final String DISPATCH_SPAN = "CommandBus.dispatchCommand MyCommand";
+    private static final String HANDLE_SPAN = "CommandBus.handleCommand MyCommand";
+
     private TestSpanFactory spanFactory;
-    private CommandBus delegate;
-    private DefaultCommandBusSpanFactory commandBusSpanFactory;
+    private RecordingCommandBus delegate;
+    private TracingCommandBus testSubject;
+
+    private final CommandMessage command =
+            new GenericCommandMessage(new MessageType("MyCommand"), "the-payload");
+    private final CommandResultMessage result =
+            new GenericCommandResultMessage(new MessageType("Result"), "ok");
 
     @BeforeEach
     void setUp() {
-        delegate = mock(CommandBus.class);
         spanFactory = new TestSpanFactory();
-        commandBusSpanFactory = DefaultCommandBusSpanFactory.builder()
-                                                            .spanFactory(spanFactory)
-                                                            .build();
-        testSubject = new TracingCommandBus(delegate, commandBusSpanFactory);
+        delegate = new RecordingCommandBus();
+        testSubject = new TracingCommandBus(delegate, spanFactory);
     }
 
-    @Test
-    void dispatchIsCorrectlyTraced() {
-        CommandMessage testCommand =
-                new GenericCommandMessage(new MessageType("command"), "Say hi!");
+    @Nested
+    class Dispatch {
 
-        when(delegate.dispatch(any(), any())).thenAnswer(
-                i -> {
-                    spanFactory.verifySpanActive("CommandBus.dispatchCommand");
-                    spanFactory.verifySpanPropagated("CommandBus.dispatchCommand",
-                                                     i.getArgument(0, CommandMessage.class));
-                    return FutureUtils.emptyCompletedFuture();
-                }
-        );
+        @Test
+        void opensCompletesAndPropagatesADispatchSpan() {
+            // given
+            delegate.dispatchResult = CompletableFuture.completedFuture(result);
 
-        testSubject.dispatch(testCommand, StubProcessingContext.forMessage(testCommand));
-        spanFactory.verifySpanCompleted("CommandBus.dispatchCommand");
-    }
+            // when
+            testSubject.dispatch(command, null).join();
 
+            // then
+            spanFactory.verifySpanCompleted(DISPATCH_SPAN);
+            spanFactory.verifySpanHasType(DISPATCH_SPAN, TestSpanType.DISPATCH);
+            spanFactory.verifySpanPropagated(DISPATCH_SPAN, command);
+        }
 
-    @Test
-    void dispatchIsCorrectlyTracedDuringException() {
-        CommandMessage testCommand =
-                new GenericCommandMessage(new MessageType("command"), "Say hi!");
+        @Test
+        void recordsExceptionWhenDispatchFails() {
+            // given
+            delegate.dispatchResult = CompletableFuture.failedFuture(new IllegalStateException("boom"));
 
-        when(delegate.dispatch(any(), any())).thenAnswer(i -> {
-            spanFactory.verifySpanPropagated("CommandBus.dispatchCommand",
-                                             i.getArgument(0, CommandMessage.class));
-            return CompletableFuture.failedFuture(new RuntimeException("Some exception"));
-        });
-        testSubject.subscribe(new QualifiedName(String.class),
-                              (command, context) -> {
-                                  throw new RuntimeException("Some exception");
-                              });
+            // when
+            CompletableFuture<CommandResultMessage> dispatched = testSubject.dispatch(command, null);
 
-        var actual = testSubject.dispatch(testCommand, StubProcessingContext.forMessage(testCommand));
-
-        assertTrue(actual.isCompletedExceptionally());
-
-        spanFactory.verifySpanCompleted("CommandBus.dispatchCommand");
-        spanFactory.verifySpanHasException("CommandBus.dispatchCommand", RuntimeException.class);
-    }
-
-    @Test
-    void verifyHandlerSpansAreCreatedOnHandlerInvocation() {
-        CommandMessage testCommand =
-                new GenericCommandMessage(new MessageType("command"), "Test");
-        ArgumentCaptor<CommandHandler> captor = ArgumentCaptor.forClass(CommandHandler.class);
-        when(delegate.subscribe(any(QualifiedName.class), captor.capture())).thenReturn(null);
-
-        testSubject.subscribe(testCommand.type().qualifiedName(),
-                              (command, processingContext) -> {
-                                  spanFactory.verifySpanActive("CommandBus.handleCommand");
-                                  return MessageStream.just(new GenericCommandResultMessage(
-                                          new MessageType("result"), "ok"
-                                  ));
-                              });
-
-        captor.getValue().handle(testCommand, StubProcessingContext.forMessage(testCommand));
-        spanFactory.verifySpanCompleted("CommandBus.handleCommand");
-    }
-
-    @Test
-    void verifyHandlerSpansAreCompletedOnExceptionInHandlerInvocation() {
-        CommandMessage testCommand = new GenericCommandMessage(new MessageType("command"), "Test");
-        ArgumentCaptor<CommandHandler> captor = ArgumentCaptor.forClass(CommandHandler.class);
-        when(delegate.subscribe(any(QualifiedName.class), captor.capture())).thenReturn(null);
-
-        testSubject.subscribe(testCommand.type().qualifiedName(),
-                              (command, processingContext) -> {
-                                  spanFactory.verifySpanActive("CommandBus.handleCommand");
-                                  throw new MockException("Simulating failure");
-                              });
-
-        try {
-            captor.getValue().handle(testCommand, StubProcessingContext.forMessage(testCommand));
-            fail("Expected a MockException to be thrown from handling a command!");
-        } catch (MockException e) {
-            spanFactory.verifySpanCompleted("CommandBus.handleCommand");
-            spanFactory.verifySpanHasException("CommandBus.handleCommand", MockException.class);
+            // then
+            assertThatThrownBy(dispatched::join).hasRootCauseInstanceOf(IllegalStateException.class);
+            spanFactory.verifySpanCompleted(DISPATCH_SPAN);
+            spanFactory.verifySpanHasException(DISPATCH_SPAN, IllegalStateException.class);
         }
     }
 
-    @Test
-    void verifyDescriptionContainsComponents() {
-        ComponentDescriptor componentDescriptor = mock(ComponentDescriptor.class);
-        testSubject.describeTo(componentDescriptor);
-        verify(componentDescriptor).describeWrapperOf(delegate);
-        verify(componentDescriptor).describeProperty("spanFactory", commandBusSpanFactory);
+    @Nested
+    class Handle {
+
+        @Test
+        void wrapsSubscribedHandlerToOpenAHandlerSpan() {
+            // given
+            testSubject.subscribe(new QualifiedName("MyCommand"),
+                                  (cmd, context) -> MessageStream.just(result));
+            CommandHandler wrapped = delegate.subscribedHandler.get();
+
+            // when
+            wrapped.handle(command, new StubProcessingContext());
+
+            // then
+            assertThat(wrapped).isNotNull();
+            spanFactory.verifySpanActive(HANDLE_SPAN);
+            spanFactory.verifySpanHasType(HANDLE_SPAN, TestSpanType.HANDLER);
+        }
+    }
+
+    @Nested
+    class Introspection {
+
+        @Test
+        void describesItselfAsAWrapperOfTheDelegate() {
+            // given
+            RecordingComponentDescriptor descriptor = new RecordingComponentDescriptor();
+
+            // when
+            testSubject.describeTo(descriptor);
+
+            // then
+            assertThat(descriptor.wrapped).isSameAs(delegate);
+        }
+    }
+
+    /**
+     * Minimal {@link CommandBus} stub recording the subscribed handler and returning a configurable dispatch result.
+     */
+    private static final class RecordingCommandBus implements CommandBus {
+
+        private final AtomicReference<CommandHandler> subscribedHandler = new AtomicReference<>();
+        private CompletableFuture<CommandResultMessage> dispatchResult = new CompletableFuture<>();
+
+        @Override
+        public CompletableFuture<CommandResultMessage> dispatch(CommandMessage command,
+                                                                @Nullable ProcessingContext processingContext) {
+            return dispatchResult;
+        }
+
+        @Override
+        public CommandBus subscribe(QualifiedName name, CommandHandler commandHandler) {
+            subscribedHandler.set(commandHandler);
+            return this;
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            // not relevant to these tests
+        }
+    }
+
+    /**
+     * Captures the single {@code describeWrapperOf} target for introspection assertions.
+     */
+    private static final class RecordingComponentDescriptor implements ComponentDescriptor {
+
+        private @Nullable Object wrapped;
+
+        @Override
+        public void describeWrapperOf(Object delegate) {
+            this.wrapped = delegate;
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable Object object) {
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable Collection<?> collection) {
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable Map<?, ?> map) {
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable String value) {
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable Long value) {
+        }
+
+        @Override
+        public void describeProperty(String name, @Nullable Boolean value) {
+        }
     }
 }

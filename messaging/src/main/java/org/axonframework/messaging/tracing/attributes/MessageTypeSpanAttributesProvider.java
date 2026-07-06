@@ -16,22 +16,50 @@
 
 package org.axonframework.messaging.tracing.attributes;
 
-import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
-import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * Adds the message type (simple class name) to the Span.
+ * Adds the message's {@link org.axonframework.messaging.core.MessageType type} (its qualified name plus version) to the
+ * span. By default the attribute key is {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.type}); a different key can be
+ * supplied through the constructor -- for example to keep the Axon Framework 4 key {@code axon_message_type}.
  *
+ * @author Mateusz Nowak
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
-public class MessageTypeSpanAttributesProvider implements SpanAttributesProvider {
+public final class MessageTypeSpanAttributesProvider implements SpanAttributesProvider {
+
+    /**
+     * Default attribute key under which the message type is recorded.
+     */
+    public static final String DEFAULT_ATTRIBUTE_KEY = "axoniq.message.type";
+
+    private final String attributeKey;
+
+    /**
+     * Creates a provider recording the message type under the default {@link #DEFAULT_ATTRIBUTE_KEY} key.
+     */
+    public MessageTypeSpanAttributesProvider() {
+        this(DEFAULT_ATTRIBUTE_KEY);
+    }
+
+    /**
+     * Creates a provider recording the message type under the given {@code attributeKey}.
+     *
+     * @param attributeKey the span attribute key to record the message type under
+     */
+    public MessageTypeSpanAttributesProvider(String attributeKey) {
+        this.attributeKey = Objects.requireNonNull(attributeKey, "attributeKey may not be null");
+    }
 
     @Override
-    public Map<String, String> provideForMessage(Message message) {
-        return Collections.singletonMap("axon_message_type", message.getClass().getSimpleName());
+    public Map<String, String> provideForMessage(Message message, @Nullable ProcessingContext context) {
+        return Map.of(attributeKey, message.type().toString());
     }
 }
