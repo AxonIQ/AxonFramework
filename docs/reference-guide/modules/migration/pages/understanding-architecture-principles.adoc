@@ -48,9 +48,37 @@ This breaks down into specific layer configurers:
 
 Instead of a monolithic configuration class, you now compose modular configurers:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/understandingarchitectureprinciples/configurercomposition/AxonConfig.java[tag=configurer-composition,indent=0]
+import io.axoniq.axonserver.connector.AxonServerConnection;
+import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
+import org.axonframework.common.configuration.ApplicationConfigurer;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
+import org.axonframework.messaging.core.interception.LoggingInterceptor;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+
+class AxonConfig {
+
+    public ApplicationConfigurer configurer() {
+        return EventSourcingConfigurer.create()
+                                      .registerEventStorageEngine(config -> new AxonServerEventStorageEngine(
+                                              config.getComponent(AxonServerConnection.class),
+                                              config.getComponent(EventConverter.class)
+                                      ))
+                                      // Accessing the modelling layer...
+                                      .modelling(modelling -> {
+                                          CommandHandlingModule.CommandHandlerPhase commandHandlingModule =
+                                                  CommandHandlingModule.named("orders")
+                                                                       .commandHandlers();
+                                          modelling.registerCommandHandlingModule(commandHandlingModule);
+                                      })
+                                      // Accessing the messaging layer...
+                                      .messaging(messaging -> messaging.registerDispatchInterceptor(
+                                              config -> new LoggingInterceptor<>()
+                                      ));
+    }
+}
 ----
 
 Each layer wraps the one below it, creating a delegation chain that lets you move up and down to access layer-specific APIs.
@@ -205,9 +233,24 @@ Axon Framework 5 breaks this into focused, composable pieces and replaces `Seria
 
 Infrastructure components now enforce the use of the appropriate converter due to the concrete types for each layer:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/understandingarchitectureprinciples/eventstorageenginebean/AxonConfig.java[tag=event-storage-engine-bean,indent=0]
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.springframework.context.annotation.Bean;
+
+class AxonConfig {
+
+    @Bean
+    public EventStorageEngine eventStorageEngine(
+            AxonServerConnectionManager connectionManager,
+            EventConverter eventConverter
+    ) {
+        return new AxonServerEventStorageEngine(connectionManager.getConnection(), eventConverter);
+    }
+}
 ----
 
 The default converter switched from XStream to Jackson, eliminating the problematic reflection behavior of XStream.

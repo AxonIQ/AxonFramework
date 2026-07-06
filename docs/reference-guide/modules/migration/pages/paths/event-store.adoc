@@ -76,32 +76,105 @@ To configure the `AggregateBasedAxonServerEventStorageEngine`, please regard the
 Configuration API::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/paths/eventstore/axonserver/configapi/defaultcontext/AxonConfig.java[tag=axonserver-storage-engine,indent=0]
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+
+public class AxonConfig {
+
+    public void configureStorageEngine(EventSourcingConfigurer configurer) {
+        configurer.registerEventStorageEngine(config -> {
+            AxonServerConnectionManager connectionManager =
+                    config.getComponent(AxonServerConnectionManager.class);
+            return new AggregateBasedAxonServerEventStorageEngine(
+                    connectionManager.getConnection(),
+                    config.getComponent(EventConverter.class)
+            );
+        });
+    }
+}
 ----
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/paths/eventstore/axonserver/configapi/customcontext/AxonConfig.java[tag=axonserver-storage-engine-context,indent=0]
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+
+public class AxonConfig {
+
+    public void configureStorageEngine(EventSourcingConfigurer configurer,
+                                       String context) {
+        configurer.registerEventStorageEngine(config -> {
+            AxonServerConnectionManager connectionManager =
+                    config.getComponent(AxonServerConnectionManager.class);
+            return new AggregateBasedAxonServerEventStorageEngine(
+                    connectionManager.getConnection(context),
+                    config.getComponent(EventConverter.class)
+            );
+        });
+    }
+}
 ----
 --
 
 Spring Boot::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/paths/eventstore/axonserver/springboot/defaultcontext/AxonConfig.java[tag=axonserver-storage-engine-springboot,indent=0]
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class AxonConfig {
+
+    @Bean
+    public EventStorageEngine storageEngine(AxonServerConnectionManager connectionManager,
+                                            EventConverter eventConverter) {
+        return new AggregateBasedAxonServerEventStorageEngine(
+                connectionManager.getConnection(),
+                eventConverter
+        );
+    }
+}
 ----
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/paths/eventstore/axonserver/springboot/customcontext/AxonConfig.java[tag=axonserver-storage-engine-springboot-context,indent=0]
+import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
+import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
+import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class AxonConfig {
+
+    @Bean
+    public EventStorageEngine storageEngine(AxonServerConnectionManager connectionManager,
+                                            EventConverter eventConverter,
+                                            @Value("my-context") String context) {
+        return new AggregateBasedAxonServerEventStorageEngine(
+                connectionManager.getConnection(context),
+                eventConverter
+        );
+    }
+}
 ----
 
 --

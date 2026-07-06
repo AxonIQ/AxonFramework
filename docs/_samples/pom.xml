@@ -123,22 +123,6 @@
             <artifactId>axon-metrics-micrometer</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- Dead letter queue samples on migration/paths/dlq.adoc: DLQ moved from org.axonframework
-             to the Axoniq Framework product. Explicit version (not a BOM import) to avoid the
-             axoniq-framework-bom re-pinning this module's org.axonframework:* dependencies. -->
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-dead-letter</artifactId>
-            <version>5.2.0-SNAPSHOT</version>
-        </dependency>
-        <!-- Axon Server event store samples on migration/paths/event-store.adoc: axon-server-connector
-             moved from org.axonframework to the Axoniq Framework product (same rationale as
-             axoniq-dead-letter above). -->
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axon-server-connector</artifactId>
-            <version>5.2.0-SNAPSHOT</version>
-        </dependency>
         <!-- Flyway Java migration sample on migration/paths/token-store.adoc -->
         <dependency>
             <groupId>org.flywaydb</groupId>

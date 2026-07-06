@@ -86,9 +86,28 @@ See xref:tuning:snapshotting.adoc#_annotation_based_configuration[annotation-bas
 For more complex policies that require payload inspection, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` programmatically.
 Spring's component registry picks up `Module` beans automatically, so this integrates with the regular Spring Boot setup:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
-include::example$migration/paths/snapshotting/springbootprogrammatic/AccountConfiguration.java[tag=spring-boot-snapshotting-programmatic,indent=0]
+@Configuration
+class AccountConfiguration {
+
+    @Bean
+    EventSourcedEntityModule<String, Account> accountModule() {
+        return EventSourcedEntityModule.declarative(String.class, Account.class)
+                .snapshotPolicy(c -> SnapshotPolicy.afterEvents(250)
+                        .or(SnapshotPolicy.whenEventMatches(
+                                msg -> msg.type().qualifiedName().equals(
+                                        new QualifiedName(AccountClosed.class)
+                                )
+                        )))
+                .build();
+    }
+
+    @Bean
+    SnapshotStore snapshotStore(AxonServerConnectionManager connectionManager, EventConverter converter) {
+        return new AxonServerSnapshotStore(connectionManager.getConnection(), converter);
+    }
+}
 ----
 
 [#snapshot_storage]
