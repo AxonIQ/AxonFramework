@@ -33,9 +33,7 @@ For users who require an XML-based format, it is recommended to use the `Jackson
 
 [source,java]
 ----
-// Configuring Jackson for XML conversion
-XmlMapper xmlMapper = new XmlMapper();
-Converter xmlConverter = new JacksonConverter(xmlMapper);
+include::example$migration/paths/serializers/XmlConversionConfiguration.java[tag=xml-conversion,indent=0]
 ----
 
 [WARNING]
@@ -66,7 +64,7 @@ As with serializers, converters can be configured in multiple ways depending on 
 
 When using the `MessagingConfigurer` in a non-Spring environment, the configuration has shifted from the `Configurer` to a more modular approach.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public void configure(Configurer configurer) {
@@ -74,23 +72,19 @@ public void configure(Configurer configurer) {
               .configureMessageSerializer(c -> JacksonSerializer.defaultSerializer())
               .configureEventSerializer(c -> JacksonSerializer.defaultSerializer());
 }
+----
 
+[source,java]
+----
 // AF5
-public void configure(MessagingConfigurer configurer, ObjectMapper objectMapper) {
-    configurer.componentRegistry(registry -> {
-        Converter generalConverter = new JacksonConverter(objectMapper);
-        registry.registerComponent(GeneralConverter.class, c -> new DelegatingGeneralConverter(generalConverter));
-        registry.registerComponent(MessageConverter.class, c -> new DelegatingMessageConverter(generalConverter));
-        registry.registerComponent(EventConverter.class, c -> new DelegatingEventConverter(generalConverter));
-    });
-}
+include::example$migration/paths/serializers/DeclarativeConversionConfiguration.java[tags=declarative-configuration-import;declarative-configuration,indent=0]
 ----
 
 === Spring configuration
 
 In a Spring environment, you can define beans for the different converter levels. Axon's auto-configuration will automatically pick them up.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 @Configuration
@@ -101,26 +95,12 @@ public class SerializationConfig {
         return JacksonSerializer.defaultSerializer();
     }
 }
+----
 
+[source,java]
+----
 // AF5
-@Configuration
-public class ConversionConfig {
-    @Bean
-    @Primary
-    public GeneralConverter converter(ObjectMapper objectMapper) {
-        return new DelegatingGeneralConverter(new JacksonConverter(objectMapper));
-    }
-
-    @Bean
-    public MessageConverter messageConverter(GeneralConverter generalConverter) {
-        return new DelegatingMessageConverter(generalConverter);
-    }
-
-    @Bean
-    public EventConverter eventConverter(MessageConverter messageConverter) {
-        return new DelegatingEventConverter(messageConverter);
-    }
-}
+include::example$migration/paths/serializers/ConversionConfig.java[tag=spring-configuration,indent=0]
 ----
 
 === Spring Boot properties configuration

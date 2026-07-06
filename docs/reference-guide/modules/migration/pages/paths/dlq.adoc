@@ -155,7 +155,7 @@ The configuration of DLQ has changed in Axon Framework 5 to provide a simpler AP
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class AxonConfig {
 
@@ -185,26 +185,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import io.axoniq.framework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-
-public class AxonConfig {
-
-    public void configureDeadLetterQueue(MessagingConfigurer configurer) {
-        configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps
-                .processor(
-                        EventProcessorModule
-                                .pooledStreaming("my-processor")
-                                .eventHandlingComponents(components -> components
-                                        .declarative("myHandler", cfg -> myHandlerComponent))
-                                .customized((cfg, processorConfig) -> processorConfig
-                                        .extend(DeadLetterQueueConfiguration.class,
-                                                () -> new DeadLetterQueueConfiguration().enabled()))
-                )
-        ));
-    }
-}
+include::example$migration/paths/dlq/declarativeconfiguration/AxonConfig.java[tag=declarative-dlq-configuration,indent=0]
 ----
 +
 Key changes:
@@ -222,7 +203,7 @@ Axon Framework 4::
 +
 Explicit configuration via `ConfigurerModule` bean:
 +
-[source,java]
+[source,java,role=axon4]
 ----
 @Configuration
 public class AxonConfig {
@@ -257,26 +238,7 @@ Explicit configuration via `EventProcessorDefinition` bean
 +
 [source,java]
 ----
-import io.axoniq.framework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class ProcessorConfig {
-
-    @Bean
-    EventProcessorDefinition orderProcessor() {
-        return EventProcessorDefinition.pooledStreaming("order-processor")
-                .assigningHandlers(descriptor ->
-                        descriptor.beanName().startsWith("order"))
-                .customized(config -> config
-                        .extend(DeadLetterQueueConfiguration.class,
-                                () -> new DeadLetterQueueConfiguration()
-                                        .enabled()
-                                        .cacheMaxSize(2048)));
-    }
-}
+include::example$migration/paths/dlq/springconfiguration/ProcessorConfig.java[tag=spring-dlq-configuration,indent=0]
 ----
 +
 Via Spring Boot property:
@@ -312,7 +274,7 @@ In Axon Framework 5 the name of the DLQ is determined by both the processor name
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class AxonConfig {
     public void configureDeadLetterQueue(EventProcessingConfigurer processingConfigurer) {
@@ -345,38 +307,7 @@ Configuration API (using `InMemorySequencedDeadLetterQueue` for brevity, but rep
 +
 [source,java]
 ----
-import io.axoniq.framework.messaging.deadletter.InMemorySequencedDeadLetterQueue;
-import io.axoniq.framework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-
-public class AxonConfig {
-
-    public void configureDeadLetterQueue(MessagingConfigurer configurer) {
-        var dlqEnabledGroups = List.of(/*...*/);
-        configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps
-                .processor(
-                        EventProcessorModule
-                                .pooledStreaming("my-processor")
-                                .eventHandlingComponents(components -> components
-                                        .declarative("myHandler", cfg -> myHandlerComponent))
-                                .customized((cfg, processorConfig) -> processorConfig
-                                        .extend(DeadLetterQueueConfiguration.class,
-                                                () -> new DeadLetterQueueConfiguration()
-                                                        .enabled()
-                                                        .factory((name, config) -> {
-                                                                    if (dlqEnabledGroups.contains(name)) {
-                                                                        return conf -> InMemorySequencedDeadLetterQueue.builder()
-                                                                                .maxSequences(256)
-                                                                                .maxSequenceSize(256)
-                                                                                .build();
-                                                                    } else {
-                                                                        return null;
-                                                                    }
-                                                                }
-                                                        ))))));
-    }
-}
+include::example$migration/paths/dlq/declarativefactory/AxonConfig.java[tag=declarative-dlq-factory,indent=0]
 ----
 +
 Key changes:
@@ -393,7 +324,7 @@ The configuration of a custom dead letter queue factory via Spring changes as we
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 @Configuration
 public class AxonConfig {
@@ -427,36 +358,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.conversion.GeneralConverter;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import io.axoniq.framework.messaging.eventhandling.deadletter.SequencedDeadLetterQueueFactory;
-import io.axoniq.framework.messaging.eventhandling.deadletter.jpa.JpaSequencedDeadLetterQueue;
-import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
-import jakarta.persistence.EntityManagerFactory;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class DlqConfig {
-
-    @Bean
-    SequencedDeadLetterQueueFactory myDeadLetterQueueFactory(
-            EntityManagerFactory entityManagerFactory,
-            EventConverter eventConverter,
-            GeneralConverter converter
-    ) {
-        return (processingGroup, config) ->
-                JpaSequencedDeadLetterQueue.builder()
-                        .processingGroup(processingGroup)
-                        .maxSequences(256)
-                        .maxSequenceSize(256)
-                        .transactionalExecutorProvider(
-                                new JpaTransactionalExecutorProvider(entityManagerFactory))
-                        .eventConverter(eventConverter)
-                        .genericConverter(converter)
-                        .build();
-    }
-}
+include::example$migration/paths/dlq/springfactory/DlqConfig.java[tag=spring-dlq-factory,indent=0]
 ----
 +
 Key changes:
@@ -472,7 +374,7 @@ The declarative configuration for a custom `EnqueuePolicy` has changed from Axon
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class AxonConfig {
 
@@ -485,7 +387,7 @@ public class AxonConfig {
 +
 Spring Boot:
 +
-[source,java]
+[source,java,role=axon4]
 ----
 @Configuration
 public class AxonConfig {
@@ -503,51 +405,14 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import io.axoniq.framework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-
-public class AxonConfig {
-
-    public void configureDeadLetterQueue(MessagingConfigurer configurer) {
-        configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps
-                .processor(
-                        EventProcessorModule
-                                .pooledStreaming("my-processor")
-                                .eventHandlingComponents(/* ... */)
-                                .customized((cfg, processorConfig) -> processorConfig
-                                        .extend(DeadLetterQueueConfiguration.class,
-                                                () -> new DeadLetterQueueConfiguration()
-                                                        .enabled()
-                                                        .enqueuePolicy(new CustomEnqueuePolicy()))))
-        ));
-    }
-}
+include::example$migration/paths/dlq/enqueuepolicydeclarative/AxonConfig.java[tag=declarative-enqueue-policy,indent=0]
 ----
 +
 Spring Boot (via `EventProcessorDefinition`):
 +
 [source,java]
 ----
-import io.axoniq.framework.messaging.eventhandling.deadletter.DeadLetterQueueConfiguration;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class ProcessorConfig {
-
-    @Bean
-    EventProcessorDefinition myProcessor() {
-        return EventProcessorDefinition.pooledStreaming("my-processor")
-                .assigningHandlers(descriptor -> descriptor.beanName().startsWith("my"))
-                .customized(config -> config
-                        .extend(DeadLetterQueueConfiguration.class,
-                                () -> new DeadLetterQueueConfiguration()
-                                        .enabled()
-                                        .enqueuePolicy(new CustomEnqueuePolicy())));
-    }
-}
+include::example$migration/paths/dlq/enqueuepolicyspring/ProcessorConfig.java[tag=spring-enqueue-policy,indent=0]
 ----
 ====
 
@@ -571,7 +436,7 @@ TIP: https://platform.axoniq.io/[Axoniq Platform] can process dead lettered sequ
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class DeadletterProcessor {
 
@@ -588,23 +453,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.Configuration;
-import io.axoniq.framework.messaging.deadletter.SequencedDeadLetterProcessor;
-import java.util.concurrent.TimeUnit;
-
-public class DeadLetterProcessor {
-
-    private final Configuration configuration;
-
-    public void retryAnySequence(String processorName, String componentName) {
-        configuration.getModuleConfiguration(processorName)
-                .flatMap(m -> m.getOptionalComponent(SequencedDeadLetterProcessor.class, "EventHandlingComponent[" + processorName + "][" + componentName + "]"))
-                .ifPresent(dlp ->
-                        dlp.processAny()
-                           .orTimeout(30, TimeUnit.SECONDS)
-                           .join());
-    }
-}
+include::example$migration/paths/dlq/processingsequences/DeadLetterProcessor.java[tag=retry-dead-lettered-sequence,indent=0]
 ----
 +
 Key changes:

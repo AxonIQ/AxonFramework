@@ -22,7 +22,7 @@ Dispatch interceptors are invoked when a message is dispatched/published on a bu
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class MyDispatchInterceptor implements MessageDispatchInterceptor<CommandMessage<?>> {
 
@@ -41,21 +41,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-public class MyDispatchInterceptor implements MessageDispatchInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(CommandMessage message,
-                                                @Nullable ProcessingContext context,
-                                                MessageDispatchInterceptorChain<CommandMessage> chain) {
-        // Modify or enrich message
-        CommandMessage enrichedMessage = message.andMetaData(
-            Collections.singletonMap("dispatchTime", Instant.now())
-        );
-
-        // Continue chain with modified message
-        return chain.proceed(enrichedMessage, context);
-    }
-}
+include::example$migration/paths/interceptors/dispatchinterceptor/MyDispatchInterceptor.java[tag=dispatch-interceptor,indent=0]
 ----
 +
 Key changes:
@@ -82,7 +68,7 @@ The `MessageHandlerInterceptor` interface has been redesigned to support async-f
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class MyHandlerInterceptor implements MessageHandlerInterceptor<CommandMessage<?>> {
 
@@ -110,21 +96,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-public class MyHandlerInterceptor implements MessageHandlerInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnHandle(CommandMessage message,
-                                              ProcessingContext context,
-                                              MessageHandlerInterceptorChain<CommandMessage> chain) {
-        // Pre-processing
-        context.runOnAfterCommit(ctx -> {
-            // Post-commit logic
-        });
-
-        // Continue chain - returns MessageStream
-        return chain.proceed(message, context);
-    }
-}
+include::example$migration/paths/interceptors/handlerinterceptor/MyHandlerInterceptor.java[tag=handler-interceptor,indent=0]
 ----
 +
 Key changes:
@@ -148,7 +120,7 @@ The `ProcessingContext` provides lifecycle hooks similar to `UnitOfWork`:
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 Configurer configurer = DefaultConfigurer.defaultConfiguration();
 
@@ -165,17 +137,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-MessagingConfigurer configurer = MessagingConfigurer.create();
-
-// Register handler interceptor for commands
-configurer.registerCommandHandlerInterceptor(
-    config -> new MyCommandHandlerInterceptor()
-);
-
-// Register dispatch interceptor for commands
-configurer.registerCommandDispatchInterceptor(
-    config -> new MyCommandDispatchInterceptor()
-);
+include::example$migration/paths/interceptors/declarativeregistration/AxonApp.java[tag=declarative-registration,indent=0]
 ----
 ====
 
@@ -197,14 +159,7 @@ The following registration methods are available:
 
 [source,java]
 ----
-MessagingConfigurer configurer = MessagingConfigurer.create();
-
-// Register for multiple message types
-configurer.registerCommandHandlerInterceptor(config -> new LoggingInterceptor("Command"))
-          .registerEventHandlerInterceptor(config -> new LoggingInterceptor("Event"))
-          .registerQueryHandlerInterceptor(config -> new LoggingInterceptor("Query"));
-
-Configuration configuration = configurer.build();
+include::example$migration/paths/interceptors/multitype/AxonApp.java[tag=multi-type-registration,indent=0]
 ----
 
 == Spring Boot interceptor registration
@@ -215,7 +170,7 @@ Spring Boot auto-configuration automatically discovers and registers interceptor
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 @Component
 public class MyCommandHandlerInterceptor implements MessageHandlerInterceptor<CommandMessage<?>> {
@@ -227,32 +182,12 @@ Axon Framework 5::
 +
 [source,java]
 ----
-@Component
-public class MyCommandHandlerInterceptor implements MessageHandlerInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnHandle(CommandMessage message,
-                                              ProcessingContext context,
-                                              MessageHandlerInterceptorChain<CommandMessage> chain) {
-        logger.info("Handling command: {}", message.type().name());
-        return chain.proceed(message, context);
-    }
-}
+include::example$migration/paths/interceptors/springboot/MyCommandHandlerInterceptor.java[tag=springboot-handler-interceptor,indent=0]
 ----
 +
 [source,java]
 ----
-@Component
-public class MyCommandDispatchInterceptor implements MessageDispatchInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(CommandMessage message,
-                                                @Nullable ProcessingContext context,
-                                                MessageDispatchInterceptorChain<CommandMessage> chain) {
-        logger.info("Dispatching command: {}", message.type().name());
-        return chain.proceed(message, context);
-    }
-}
+include::example$migration/paths/interceptors/springboot/MyCommandDispatchInterceptor.java[tag=springboot-dispatch-interceptor,indent=0]
 ----
 ====
 
@@ -276,37 +211,18 @@ You can control interceptor application order using Spring's `@Order` annotation
 
 [source,java]
 ----
-@Component
-@Order(1)
-public class FirstInterceptor implements MessageHandlerInterceptor<CommandMessage> {
-    // Applied first
-}
-
-@Component
-@Order(2)
-public class SecondInterceptor implements MessageHandlerInterceptor<CommandMessage> {
-    // Applied second
-}
+include::example$migration/paths/interceptors/ordering/FirstInterceptor.java[tag=interceptor-order-first,indent=0]
+include::example$migration/paths/interceptors/ordering/SecondInterceptor.java[tag=interceptor-order-second,indent=0]
 ----
 ====
 
 == Component-specific interceptor registration
 
-For advanced scenarios where interceptors should only apply to specific components, use the factory pattern:
+For advanced scenarios where interceptors should only apply to specific components, decorate the `HandlerInterceptorRegistry` with a `HandlerInterceptorFactory`:
 
 [source,java]
 ----
-configurer.registerCommandHandlerInterceptor(
-    HandlerInterceptorFactory.of(
-        (config, componentType, componentName) -> {
-            // Only intercept OrderAggregate commands
-            if (componentType.equals(OrderAggregate.class)) {
-                return new OrderValidationInterceptor();
-            }
-            return null; // No interceptor for other components
-        }
-    )
-);
+include::example$migration/paths/interceptors/componentspecific/AxonApp.java[tag=component-specific-registration,indent=0]
 ----
 
 The factory receives:
@@ -336,7 +252,7 @@ The method controls whether and when to call `chain.proceed(message, context)`.
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class OrderCommandHandler {
 
@@ -359,36 +275,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class OrderCommandHandler {
-
-    // Surround-interceptor: full control over the chain
-    @CommandHandlerInterceptor
-    MessageStream<?> authorize(
-            CommandMessage command,
-            MessageHandlerInterceptorChain<CommandMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!isAuthorized(command)) {
-            return MessageStream.failed(new AccessDeniedException("Not authorized"));
-        }
-        return chain.proceed(command, context);
-    }
-
-    // Before-interceptor: runs before the handler, chain proceeds automatically
-    @CommandHandlerInterceptor
-    void log(CommandMessage command) {
-        logger.info("Handling command: {}", command.qualifiedName());
-    }
-
-    @CommandHandler
-    void handle(PlaceOrderCommand command, ProcessingContext context) {
-        // Handle the command
-    }
-}
+include::example$migration/paths/interceptors/annotationbased/OrderCommandHandler.java[tag=annotation-based-interceptors,indent=0]
 ----
 ====
 
@@ -403,7 +290,7 @@ The `payloadType` attribute has been removed. Narrowing is now done solely by ex
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class OrderCommandHandler {
 
@@ -418,19 +305,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-public class OrderCommandHandler {
-
-    @ExceptionHandler(resultType = IllegalStateException.class)
-    public void handleIllegalState(IllegalStateException exception) {
-        // Handle exception for all commands on this component
-    }
-
-    // Narrow to a specific exception type
-    @ExceptionHandler(resultType = ValidationException.class)
-    public void handleValidation(ValidationException exception) {
-        // Only handles ValidationException (and its subtypes)
-    }
-}
+include::example$migration/paths/interceptors/exceptionhandler/OrderCommandHandler.java[tag=exception-handler-migration,indent=0]
 ----
 ====
 

@@ -50,35 +50,7 @@ Instead of a monolithic configuration class, you now compose modular configurers
 
 [source,java]
 ----
-import io.axoniq.axonserver.connector.AxonServerConnection;
-import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.messaging.core.interception.LoggingInterceptor;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-class AxonConfig {
-
-    public ApplicationConfigurer configurer() {
-        return EventSourcingConfigurer.create()
-                                      .registerEventStorageEngine(config -> new AxonServerEventStorageEngine(
-                                              config.getComponent(AxonServerConnection.class),
-                                              config.getComponent(EventConverter.class)
-                                      ))
-                                      // Accessing the modelling layer...
-                                      .modelling(modelling -> {
-                                          CommandHandlingModule.CommandHandlerPhase commandHandlingModule =
-                                                  CommandHandlingModule.named("orders")
-                                                                       .commandHandlers();
-                                          modelling.registerCommandHandlingModule(commandHandlingModule);
-                                      })
-                                      // Accessing the messaging layer...
-                                      .messaging(messaging -> messaging.registerDispatchInterceptor(
-                                              config -> new LoggingInterceptor<>()
-                                      ));
-    }
-}
+include::example$migration/understandingarchitectureprinciples/configurercomposition/AxonConfig.java[tag=configurer-composition,indent=0]
 ----
 
 Each layer wraps the one below it, creating a delegation chain that lets you move up and down to access layer-specific APIs.
@@ -132,7 +104,7 @@ The `ProcessingContext` replaces the use of the `ThreadLocal`.
 As such, you will notice that the `ProcessingContext` will become a parameter throughout virtually all infrastructure interfaces Axon Framework provides.
 This will become most apparent on all message handlers.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // Axon Framework 4.x: Implicit ThreadLocal-based unit of work
 @EventHandler
@@ -140,13 +112,11 @@ public void handle(MyEvent event) {
     UnitOfWork uow = CurrentUnitOfWork.get();
     // Process event
 }
+----
 
-// Axon Framework 5: Explicit ProcessingContext
-@EventHandler
-public void handle(MyEvent event, ProcessingContext context) {
-    // Context is explicit, can be reasoned about
-    // Flows through all nested operations
-}
+[source,java]
+----
+include::example$migration/understandingarchitectureprinciples/processingcontext/MyEventHandler.java[tag=processing-context,indent=0]
 ----
 
 The `ProcessingContext` provides:
@@ -237,22 +207,7 @@ Infrastructure components now enforce the use of the appropriate converter due t
 
 [source,java]
 ----
-import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
-import io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.springframework.context.annotation.Bean;
-
-class AxonConfig {
-
-    @Bean
-    public EventStorageEngine eventStorageEngine(
-            AxonServerConnectionManager connectionManager,
-            EventConverter eventConverter
-    ) {
-        return new AxonServerEventStorageEngine(connectionManager.getConnection(), eventConverter);
-    }
-}
+include::example$migration/understandingarchitectureprinciples/eventstorageenginebean/AxonConfig.java[tag=event-storage-engine-bean,indent=0]
 ----
 
 The default converter switched from XStream to Jackson, eliminating the problematic reflection behavior of XStream.
@@ -260,24 +215,22 @@ However, if you need XML serialization:
 
 [source,java]
 ----
-// Configure Jackson with XML support
-JacksonConverter xmlConverter = new JacksonConverter(
-    new ObjectMapper(new XmlFactory())
-);
+include::example$migration/understandingarchitectureprinciples/xmlconversion/XmlConversionExample.java[tag=xml-conversion,indent=0]
 ----
 
 Version resolution moved from the `Serializer` layer to the `MessageType` itself.
 Rather than having a `RevisionResolver` determine message version at serialization time, the version is now part of the message's identity:
 
-[source,java]
+[source,java,role=axon4]
 ----
 // Old Axon Framework 4.x approach
 @Revision("2.0")
 public class AccountCreatedEvent { }
+----
 
-// New Axon 5 approach
-@Event(name = "AccountCreatedEvent", version = "2.0")
-public class AccountCreatedEvent { }
+[source,java]
+----
+include::example$migration/understandingarchitectureprinciples/eventversioning/AccountCreatedEvent.java[tag=account-created-event,indent=0]
 ----
 
 This makes versioning explicit and independent of serialization concerns.
