@@ -41,7 +41,8 @@ import java.util.UUID;
  * Writes the historic events that pretend to have been in the store for years,
  * so the application boots into a state with v1/v2 {@code CoursePublished}
  * payloads, v1 {@code StudentRegistered} payloads, beta-versioned
- * {@code WelcomeMessageSent} payloads, and an unversioned {@code SystemAnnouncement}
+ * {@code WelcomeMessageSent} payloads, a bundled {@code CourseListedWithSeats} the chain splits into a
+ * {@code CoursePublished} and a {@code CourseCapacityChanged}, and an unversioned {@code SystemAnnouncement}
  * waiting for the transformation chain to lift them on read. It also writes a couple of
  * {@code SystemHeartbeat} pings, which the chain drops on read so the projection never counts them.
  * <p>
@@ -74,6 +75,11 @@ public class LegacyEventSeeder {
                                       "Hexagonal Architecture", 10, 30),
                 new CoursePublishedV2(catalogId, CourseId.of("polyglot-storage"),
                                       "Polyglot Storage Strategies", 8, 24),
+
+                // A bundled legacy listing the chain splits on read into a CoursePublished (which then flows
+                // through the version chain) and a CourseCapacityChanged.
+                new CourseListedWithSeatsV1(catalogId, CourseId.of("streaming-systems"),
+                                            "Streaming Systems", 45),
 
                 new StudentRegisteredV1(catalogId, StudentId.of("alice"), "Alice", "Hopper"),
                 new StudentRegisteredV1(catalogId, StudentId.of("bob"), "Bob", "Carter"),
@@ -142,6 +148,21 @@ public class LegacyEventSeeder {
             @EventTag(key = CourseCatalogTags.COURSE_ID) CourseId courseId,
             String name,
             int capacity
+    ) {
+    }
+
+    /**
+     * A bundled listing that recorded a course and its initial seat count in one event, before the
+     * domain modeled those as separate {@code CoursePublished} and {@code CourseCapacityChanged} events.
+     * A {@code split(...)} reads it back as both. The produced {@code CoursePublished} {@code 1.0.0} then
+     * flows through the version chain to the current shape.
+     */
+    @Event(namespace = CourseCatalogMessageNames.NAMESPACE, name = "CourseListedWithSeats", version = "1.0.0")
+    record CourseListedWithSeatsV1(
+            @EventTag(key = CourseCatalogTags.CATALOG_ID) CatalogId catalogId,
+            @EventTag(key = CourseCatalogTags.COURSE_ID) CourseId courseId,
+            String name,
+            int seats
     ) {
     }
 

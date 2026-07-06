@@ -96,7 +96,7 @@ ifdef::advanced-framework[]
 [NOTE]
 .Structural changes use event transformation
 ====
-For the structural changes that payload conversion cannot express (reshaping, renaming, or dropping stored events), Axoniq Framework provides [.advanced-framework]#event transformation#, the declarative successor to the Axon Framework 4 upcaster.
+For the structural changes that payload conversion cannot express (reshaping, renaming, splitting, or dropping stored events), Axoniq Framework provides [.advanced-framework]#event transformation#, the declarative successor to the Axon Framework 4 upcaster.
 See the xref:message-transformation:index.adoc[event transformation reference] to get started, and the xref:migration:paths/upcasters.adoc[upcaster migration path] to migrate existing Axon Framework 4 upcasters.
 ====
 endif::[]
