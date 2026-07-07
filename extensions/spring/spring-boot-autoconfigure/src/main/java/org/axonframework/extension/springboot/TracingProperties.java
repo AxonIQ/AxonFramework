@@ -47,6 +47,13 @@ public class TracingProperties {
     private boolean enabled = true;
 
     /**
+     * Whether {@code @EventSourcingHandler} invocations get their own per-method handler span. Defaults to
+     * {@code false}: event sourcing handlers fire once per event during entity replay and would flood traces with one
+     * span per replayed event.
+     */
+    private boolean showEventSourcingHandlers = false;
+
+    /**
      * Tracing settings for the {@code CommandBus}.
      */
     private final CommandBus commandBus = new CommandBus();
@@ -77,6 +84,11 @@ public class TracingProperties {
     private final StateManager stateManager = new StateManager();
 
     /**
+     * Tracing settings for {@code SnapshotStore}.
+     */
+    private final SnapshotStore snapshotStore = new SnapshotStore();
+
+    /**
      * Toggles for the built-in {@code SpanAttributesProvider}s.
      */
     private final AttributeProviders attributeProviders = new AttributeProviders();
@@ -97,6 +109,24 @@ public class TracingProperties {
      */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    /**
+     * Returns whether {@code @EventSourcingHandler} invocations get their own per-method handler span.
+     *
+     * @return {@code true} when event sourcing handlers are traced, {@code false} otherwise
+     */
+    public boolean isShowEventSourcingHandlers() {
+        return showEventSourcingHandlers;
+    }
+
+    /**
+     * Sets whether {@code @EventSourcingHandler} invocations get their own per-method handler span.
+     *
+     * @param showEventSourcingHandlers {@code true} to trace event sourcing handlers, {@code false} to suppress them
+     */
+    public void setShowEventSourcingHandlers(boolean showEventSourcingHandlers) {
+        this.showEventSourcingHandlers = showEventSourcingHandlers;
     }
 
     /**
@@ -151,6 +181,15 @@ public class TracingProperties {
      */
     public StateManager getStateManager() {
         return stateManager;
+    }
+
+    /**
+     * Returns the tracing settings for {@code SnapshotStore}.
+     *
+     * @return the {@code SnapshotStore} tracing settings, never {@code null}
+     */
+    public SnapshotStore getSnapshotStore() {
+        return snapshotStore;
     }
 
     /**
@@ -351,6 +390,25 @@ public class TracingProperties {
     }
 
     /**
+     * Tracing settings for {@code SnapshotStore}.
+     */
+    public static class SnapshotStore {
+
+        /**
+         * Whether the {@code SnapshotStore} is decorated with tracing. Defaults to {@code true}.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
      * Toggles for the built-in {@code SpanAttributesProvider}s, bound at
      * {@code axon.tracing.attribute-providers.*}. Each toggle decides whether the corresponding provider is
      * contributed to the {@code SpanAttributesProviderRegistry} the {@code SpanFactory} is constructed with.
@@ -377,6 +435,11 @@ public class TracingProperties {
          * {@code true}.
          */
         private boolean aggregateIdentifier = true;
+
+        /**
+         * Whether the event-tags provider ({@code axoniq.event_tag.*}) is contributed. Defaults to {@code true}.
+         */
+        private boolean eventTags = true;
 
         public boolean isMessageId() {
             return messageId;
@@ -408,6 +471,14 @@ public class TracingProperties {
 
         public void setAggregateIdentifier(boolean aggregateIdentifier) {
             this.aggregateIdentifier = aggregateIdentifier;
+        }
+
+        public boolean isEventTags() {
+            return eventTags;
+        }
+
+        public void setEventTags(boolean eventTags) {
+            this.eventTags = eventTags;
         }
     }
 }

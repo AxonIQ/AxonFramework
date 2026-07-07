@@ -17,6 +17,7 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
 import org.axonframework.extension.springboot.TracingProperties;
 import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
@@ -78,9 +79,6 @@ public class TracingAutoConfiguration {
             TracingProperties.AttributeProviders providers = properties.getAttributeProviders();
             registry.registerIfNotPresent(
                     MessagingTracingSettings.class,
-                    // showEventSourcingHandlers is not yet exposed as a Spring property -- it is wired up alongside
-                    // the eventsourcing tracing autoconfiguration, since @EventSourcingHandler is an eventsourcing
-                    // concept even though the toggle itself lives on this messaging-owned settings record.
                     c -> new MessagingTracingSettings(
                             properties.getCommandBus().isEnabled(),
                             properties.getEventSink().isEnabled(),
@@ -89,7 +87,7 @@ public class TracingAutoConfiguration {
                             properties.getEventProcessor().isDistributedInSameTrace(),
                             properties.getEventProcessor().getDistributedInSameTraceTimeLimit(),
                             properties.getQueryBus().isEnabled(),
-                            false,
+                            properties.isShowEventSourcingHandlers(),
                             new MessagingTracingSettings.SpanAttributesProviders(
                                     providers.isMessageId(),
                                     providers.isMessageType(),
@@ -101,6 +99,12 @@ public class TracingAutoConfiguration {
                             properties.getRepository().isEnabled(),
                             properties.getStateManager().isEnabled(),
                             new ModellingTracingSettings.SpanAttributesProviders(providers.isAggregateIdentifier()))
+            );
+            registry.registerIfNotPresent(
+                    EventSourcingTracingSettings.class,
+                    c -> new EventSourcingTracingSettings(
+                            properties.getSnapshotStore().isEnabled(),
+                            new EventSourcingTracingSettings.SpanAttributesProviders(providers.isEventTags()))
             );
             // Bridge user-declared SpanAttributesProvider beans into the registry. The built-in providers are not
             // beans (they are contributed natively per the settings above), so the ObjectProvider yields only

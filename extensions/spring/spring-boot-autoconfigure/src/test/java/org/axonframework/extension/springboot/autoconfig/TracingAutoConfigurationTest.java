@@ -18,6 +18,8 @@ package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.eventsourcing.eventstore.tracing.EventTagsSpanAttributesProvider;
+import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
 import org.axonframework.extension.springboot.TracingProperties;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
@@ -124,6 +126,21 @@ class TracingAutoConfigurationTest {
     }
 
     @Test
+    void showEventSourcingHandlersPropertyReachesTheFrameworkSettingsComponent() {
+        // given / when the Spring property is set, the settings component must carry it — the component the handler
+        // enhancer reads at handle time
+        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=true")
+                     .run(context -> {
+                         AxonConfiguration configuration = configurationFrom(context);
+
+                         // then
+                         MessagingTracingSettings settings =
+                                 configuration.getComponent(MessagingTracingSettings.class);
+                         assertThat(settings.showEventSourcingHandlers()).isTrue();
+                     });
+    }
+
+    @Test
     void eventProcessorSubTogglesReachTheFrameworkSettingsComponent() {
         // given / when the event-processor sub-toggles are set, the settings component must carry them — the component
         // the messaging tracing enhancer reads when decorating event-handling components
@@ -180,6 +197,68 @@ class TracingAutoConfigurationTest {
                                  configuration.getComponent(ModellingTracingSettings.class);
                          assertThat(settings.repositoryEnabled()).isFalse();
                          assertThat(settings.stateManagerEnabled()).isFalse();
+                     });
+    }
+
+    @Test
+    void eventTagsProviderIsContributedByDefault() {
+        // given the framework-default TagResolver from axon-eventsourcing's configuration defaults
+        contextRunner.run(context -> {
+            AxonConfiguration configuration = configurationFrom(context);
+
+            // when / then the event-tags provider is contributed to the registry
+            assertThat(registeredProviders(configuration))
+                    .anyMatch(EventTagsSpanAttributesProvider.class::isInstance);
+        });
+    }
+
+    @Test
+    void eventTagsProviderIsSkippedWhenDisabledViaProperty() {
+        // given
+        contextRunner.withPropertyValues("axon.tracing.attribute-providers.event-tags=false")
+                     .run(context -> {
+                         AxonConfiguration configuration = configurationFrom(context);
+
+                         // when / then the toggle reaches the settings component and the provider is not contributed
+                         EventSourcingTracingSettings settings =
+                                 configuration.getComponent(EventSourcingTracingSettings.class);
+                         assertThat(settings.eventTagsEnabled()).isFalse();
+                         assertThat(registeredProviders(configuration))
+                                 .noneMatch(EventTagsSpanAttributesProvider.class::isInstance);
+                     });
+    }
+
+    @Test
+    void showEventSourcingHandlersDefaultsToFalseAndBindsToTrue() {
+        // given / when / then — the default keeps replay-noisy @EventSourcingHandler spans suppressed
+        contextRunner.run(context -> {
+            TracingProperties properties = context.getBean(TracingProperties.class);
+            assertThat(properties.isShowEventSourcingHandlers()).isFalse();
+        });
+        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=true")
+                     .run(context -> {
+                         TracingProperties properties = context.getBean(TracingProperties.class);
+                         assertThat(properties.isShowEventSourcingHandlers()).isTrue();
+                     });
+    }
+
+    @Test
+    void userRegisteredSettingsComponentWinsOverThePropertyTranslation() {
+        // given a user-registered MessagingTracingSettings component and a conflicting property
+        MessagingTracingSettings userSettings = MessagingTracingSettings.enabledByDefault()
+                                                                        .withShowEventSourcingHandlers(true);
+        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=false")
+                     .run(context -> {
+                         AxonConfiguration configuration = MessagingConfigurer.create()
+                                 .componentRegistry(registry -> {
+                                     registry.registerComponent(MessagingTracingSettings.class, c -> userSettings);
+                                     context.getBeansOfType(ConfigurationEnhancer.class).values()
+                                            .forEach(e -> e.enhance(registry));
+                                 })
+                                 .build();
+
+                         // when / then — registerIfNotPresent leaves the user registration in place
+                         assertThat(configuration.getComponent(MessagingTracingSettings.class)).isSameAs(userSettings);
                      });
     }
 
