@@ -22,6 +22,7 @@ import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
+import org.axonframework.modelling.tracing.ModellingTracingSettings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -93,6 +94,13 @@ public class TracingAutoConfiguration {
                                     providers.isMessageId(),
                                     providers.isMessageType(),
                                     providers.isMetadata()))
+            );
+            registry.registerIfNotPresent(
+                    ModellingTracingSettings.class,
+                    c -> new ModellingTracingSettings(
+                            properties.getRepository().isEnabled(),
+                            properties.getStateManager().isEnabled(),
+                            new ModellingTracingSettings.SpanAttributesProviders(providers.isAggregateIdentifier()))
             );
             // Bridge user-declared SpanAttributesProvider beans into the registry. The built-in providers are not
             // beans (they are contributed natively per the settings above), so the ObjectProvider yields only

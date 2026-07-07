@@ -25,10 +25,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.tracing.attributes.AggregateIdentifierSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MessageIdSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MessageTypeSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MetadataSpanAttributesProvider;
 import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
+import org.axonframework.modelling.tracing.ModellingTracingSettings;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -86,7 +88,8 @@ class TracingAutoConfigurationTest {
             // pass-through
             assertThat(registeredProviders(configuration))
                     .anyMatch(p -> p instanceof MessageIdSpanAttributesProvider)
-                    .anyMatch(p -> p instanceof MetadataSpanAttributesProvider);
+                    .anyMatch(p -> p instanceof MetadataSpanAttributesProvider)
+                    .anyMatch(p -> p instanceof AggregateIdentifierSpanAttributesProvider);
             assertThat(configuration.getOptionalComponent(SpanFactory.class)).isEmpty();
         });
     }
@@ -143,10 +146,11 @@ class TracingAutoConfigurationTest {
 
     @Test
     void attributeProviderTogglesSuppressTheBuiltInProviders() {
-        // given the message-id and metadata providers disabled via properties
+        // given the message-id, metadata and aggregate-identifier providers disabled via properties
         contextRunner.withPropertyValues(
                              "axon.tracing.attribute-providers.message-id=false",
-                             "axon.tracing.attribute-providers.metadata=false")
+                             "axon.tracing.attribute-providers.metadata=false",
+                             "axon.tracing.attribute-providers.aggregate-identifier=false")
                      .run(context -> {
                          AxonConfiguration configuration = configurationFrom(context);
 
@@ -154,9 +158,28 @@ class TracingAutoConfigurationTest {
                          List<SpanAttributesProvider> providers = registeredProviders(configuration);
                          assertThat(providers)
                                  .noneMatch(p -> p instanceof MessageIdSpanAttributesProvider)
-                                 .noneMatch(p -> p instanceof MetadataSpanAttributesProvider);
+                                 .noneMatch(p -> p instanceof MetadataSpanAttributesProvider)
+                                 .noneMatch(p -> p instanceof AggregateIdentifierSpanAttributesProvider);
                          assertThat(providers)
                                  .anyMatch(p -> p instanceof MessageTypeSpanAttributesProvider);
+                     });
+    }
+
+    @Test
+    void repositoryAndStateManagerTogglesReachTheModellingSettingsComponent() {
+        // given / when the modelling toggles are set, the settings component must carry them — the component the
+        // modelling tracing enhancer reads when decorating Repository / StateManager
+        contextRunner.withPropertyValues(
+                             "axon.tracing.repository.enabled=false",
+                             "axon.tracing.state-manager.enabled=false")
+                     .run(context -> {
+                         AxonConfiguration configuration = configurationFrom(context);
+
+                         // then
+                         ModellingTracingSettings settings =
+                                 configuration.getComponent(ModellingTracingSettings.class);
+                         assertThat(settings.repositoryEnabled()).isFalse();
+                         assertThat(settings.stateManagerEnabled()).isFalse();
                      });
     }
 

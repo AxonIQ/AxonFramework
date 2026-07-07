@@ -67,6 +67,16 @@ public class TracingProperties {
     private final QueryBus queryBus = new QueryBus();
 
     /**
+     * Tracing settings for {@code Repository}.
+     */
+    private final Repository repository = new Repository();
+
+    /**
+     * Tracing settings for {@code StateManager}.
+     */
+    private final StateManager stateManager = new StateManager();
+
+    /**
      * Toggles for the built-in {@code SpanAttributesProvider}s.
      */
     private final AttributeProviders attributeProviders = new AttributeProviders();
@@ -123,6 +133,24 @@ public class TracingProperties {
      */
     public QueryBus getQueryBus() {
         return queryBus;
+    }
+
+    /**
+     * Returns the tracing settings for {@code Repository}.
+     *
+     * @return the {@code Repository} tracing settings, never {@code null}
+     */
+    public Repository getRepository() {
+        return repository;
+    }
+
+    /**
+     * Returns the tracing settings for {@code StateManager}.
+     *
+     * @return the {@code StateManager} tracing settings, never {@code null}
+     */
+    public StateManager getStateManager() {
+        return stateManager;
     }
 
     /**
@@ -285,6 +313,44 @@ public class TracingProperties {
     }
 
     /**
+     * Tracing settings for {@code Repository}.
+     */
+    public static class Repository {
+
+        /**
+         * Whether {@code Repository} instances are decorated with tracing. Defaults to {@code true}.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Tracing settings for {@code StateManager}.
+     */
+    public static class StateManager {
+
+        /**
+         * Whether the {@code StateManager} is decorated with tracing. Defaults to {@code true}.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
      * Toggles for the built-in {@code SpanAttributesProvider}s, bound at
      * {@code axon.tracing.attribute-providers.*}. Each toggle decides whether the corresponding provider is
      * contributed to the {@code SpanAttributesProviderRegistry} the {@code SpanFactory} is constructed with.
@@ -305,6 +371,12 @@ public class TracingProperties {
          * Whether the metadata provider ({@code axoniq.metadata.*}) is contributed. Defaults to {@code true}.
          */
         private boolean metadata = true;
+
+        /**
+         * Whether the aggregate-identifier provider ({@code axoniq.aggregate.identifier}) is contributed. Defaults to
+         * {@code true}.
+         */
+        private boolean aggregateIdentifier = true;
 
         public boolean isMessageId() {
             return messageId;
@@ -328,6 +400,14 @@ public class TracingProperties {
 
         public void setMetadata(boolean metadata) {
             this.metadata = metadata;
+        }
+
+        public boolean isAggregateIdentifier() {
+            return aggregateIdentifier;
+        }
+
+        public void setAggregateIdentifier(boolean aggregateIdentifier) {
+            this.aggregateIdentifier = aggregateIdentifier;
         }
     }
 }
