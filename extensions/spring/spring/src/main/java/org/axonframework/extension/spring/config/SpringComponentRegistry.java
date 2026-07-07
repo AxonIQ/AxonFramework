@@ -647,6 +647,8 @@ public class SpringComponentRegistry implements
                     throw e;
                 }
                 return bean;
+            } catch (NoSuchBeanDefinitionException e) {
+                throw new ComponentNotFoundException(type, null, e);
             }
         }
 
@@ -655,7 +657,11 @@ public class SpringComponentRegistry implements
                                   @Nullable String name) {
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             //noinspection DataFlowIssue
-            return beanFactory.getBean(name, type);
+            try {
+                return beanFactory.getBean(name, type);
+            } catch (NoSuchBeanDefinitionException e) {
+                throw new ComponentNotFoundException(type, name, e);
+            }
         }
 
         @Override
@@ -700,7 +706,7 @@ public class SpringComponentRegistry implements
                 }
                 return (C) beanFactory.getBean(name);
             } catch (NoSuchBeanDefinitionException e) {
-                throw new ComponentNotFoundException(typeReference, null);
+                throw new ComponentNotFoundException(typeReference, name, e);
             }
         }
 
