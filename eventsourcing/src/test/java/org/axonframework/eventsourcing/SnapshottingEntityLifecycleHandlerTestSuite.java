@@ -161,7 +161,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
@@ -219,7 +219,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
@@ -250,7 +250,8 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
                 new Account(ACCOUNT_ID, "My Account", 262144),
                 Instant.now(),
                 Map.of()
-            )
+            ),
+            null
         ).join();
 
         appender.clear();
@@ -286,7 +287,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {   // New snapshot (overwriting the bad one) should be available now
@@ -317,7 +318,8 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
                 "Junk",  // incorrect data, which leads to deserialization error
                 Instant.now(),
                 Map.of()
-            )
+            ),
+            null
         ).join();
 
         appender.clear();

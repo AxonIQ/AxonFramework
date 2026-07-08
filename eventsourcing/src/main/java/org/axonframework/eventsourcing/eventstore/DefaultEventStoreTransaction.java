@@ -111,7 +111,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                         : ac.orCriteria(condition.criteria())
         );
 
-        MessageStream<EventMessage> source = eventStorageEngine.source(condition);
+        MessageStream<EventMessage> source = eventStorageEngine.source(condition, processingContext);
         AtomicReference<ConsistencyMarker> markerReference = new AtomicReference<>(appendCondition.consistencyMarker());
 
         return source.onNext(entry -> {
