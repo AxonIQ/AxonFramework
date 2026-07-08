@@ -37,10 +37,39 @@ class UnitOfWorkConfigurationTest {
         assertThat(defaultConfig.allowAsyncProcessing()).isTrue();
         assertThat(defaultConfig.workScheduler()).isInstanceOf(DirectExecutor.class);
         assertThat(defaultConfig.processingLifecycleEnhancers()).isEmpty();
+        assertThat(defaultConfig.interceptor()).isSameAs(ProcessingLifecycleInterceptor.PASS_THROUGH);
 
         // check list immutability:
         assertThatThrownBy(() -> defaultConfig.processingLifecycleEnhancers().clear())
             .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void interceptorComposesAndDoesNotModifyPreviousConfig() {
+        ProcessingLifecycleInterceptor interceptor =
+                ProcessingLifecycleInterceptor.uniform((context, action) -> action.get());
+
+        UnitOfWorkConfiguration newConfig = defaultConfig.interceptor(interceptor);
+
+        // previous config keeps the PASS_THROUGH default:
+        assertThat(defaultConfig.interceptor()).isSameAs(ProcessingLifecycleInterceptor.PASS_THROUGH);
+        // new config composes the interceptor (no longer the PASS_THROUGH sentinel):
+        assertThat(newConfig.interceptor()).isNotSameAs(ProcessingLifecycleInterceptor.PASS_THROUGH);
+        // unrelated values are preserved:
+        assertThat(newConfig.workScheduler()).isEqualTo(defaultConfig.workScheduler());
+        assertThat(newConfig.allowAsyncProcessing()).isEqualTo(defaultConfig.allowAsyncProcessing());
+    }
+
+    @Test
+    void forcedSameThreadInvocationPreservesActionInterceptor() {
+        ProcessingLifecycleInterceptor interceptor =
+                ProcessingLifecycleInterceptor.uniform((context, action) -> action.get());
+        UnitOfWorkConfiguration config = defaultConfig.interceptor(interceptor);
+
+        UnitOfWorkConfiguration forced = config.forcedSameThreadInvocation();
+
+        assertThat(forced.allowAsyncProcessing()).isFalse();
+        assertThat(forced.interceptor()).isSameAs(config.interceptor());
     }
 
     @Test

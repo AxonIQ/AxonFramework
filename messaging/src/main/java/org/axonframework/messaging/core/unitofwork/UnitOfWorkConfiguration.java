@@ -34,11 +34,16 @@ import org.axonframework.common.DirectExecutor;
  * @param allowAsyncProcessing         Whether the unit of work should allow fully asynchronous processing.
  * @param processingLifecycleEnhancers The enhancers that are applied to the processing lifecycle for each created unit
  *                                     of work.
+ * @param interceptor                  The {@link ProcessingLifecycleInterceptor} invoked immediately around every
+ *                                     action and handler dispatch executed by the unit of work.
  * @author Mateusz Nowak
  * @author John Hendrikx
  * @since 5.0.0
  */
-public record UnitOfWorkConfiguration(Executor workScheduler, boolean allowAsyncProcessing, List<Consumer<ProcessingLifecycle>> processingLifecycleEnhancers) {
+public record UnitOfWorkConfiguration(Executor workScheduler,
+                                      boolean allowAsyncProcessing,
+                                      List<Consumer<ProcessingLifecycle>> processingLifecycleEnhancers,
+                                      ProcessingLifecycleInterceptor interceptor) {
 
     /**
      * Creates default configuration with direct execution.
@@ -46,18 +51,24 @@ public record UnitOfWorkConfiguration(Executor workScheduler, boolean allowAsync
      * @return Default {@link UnitOfWorkConfiguration} instance.
      */
     static UnitOfWorkConfiguration defaultValues() {
-        return new UnitOfWorkConfiguration(DirectExecutor.instance(), true, List.of());
+        return new UnitOfWorkConfiguration(DirectExecutor.instance(),
+                                           true,
+                                           List.of(),
+                                           ProcessingLifecycleInterceptor.PASS_THROUGH);
     }
 
     /**
      * Creates a new {@link UnitOfWorkConfiguration} that forces all handlers to be invoked by the same thread. The
      * configuration uses a direct execution model where all tasks are run immediately on the calling thread, and the
      * coordinating thread will wait for any asynchronous processing to complete.
+     * <p>
+     * The {@link #interceptor() interceptor} is preserved, so state-bridging around framework-executed segments
+     * survives the switch to same-thread invocation.
      *
      * @return A new modified {@link UnitOfWorkConfiguration}.
      */
         public UnitOfWorkConfiguration forcedSameThreadInvocation() {
-        return new UnitOfWorkConfiguration(Runnable::run, false, processingLifecycleEnhancers);
+        return new UnitOfWorkConfiguration(Runnable::run, false, processingLifecycleEnhancers, interceptor);
     }
 
     /**
@@ -68,7 +79,7 @@ public record UnitOfWorkConfiguration(Executor workScheduler, boolean allowAsync
      */
         public UnitOfWorkConfiguration workScheduler(Executor workScheduler) {
         Objects.requireNonNull(workScheduler, "workScheduler may not be null");
-        return new UnitOfWorkConfiguration(workScheduler, allowAsyncProcessing, processingLifecycleEnhancers);
+        return new UnitOfWorkConfiguration(workScheduler, allowAsyncProcessing, processingLifecycleEnhancers, interceptor);
     }
 
     /**
@@ -83,7 +94,26 @@ public record UnitOfWorkConfiguration(Executor workScheduler, boolean allowAsync
         return new UnitOfWorkConfiguration(
                 workScheduler,
                 allowAsyncProcessing,
-                Stream.concat(processingLifecycleEnhancers.stream(), Stream.of(enhancer)).toList()
+                Stream.concat(processingLifecycleEnhancers.stream(), Stream.of(enhancer)).toList(),
+                interceptor
+        );
+    }
+
+    /**
+     * Creates a new configuration that composes the given {@code next} interceptor with any already registered
+     * {@link #interceptor() interceptor}. Composition (rather than replacement) ensures multiple contributors never
+     * clobber each other.
+     *
+     * @param next The {@link ProcessingLifecycleInterceptor} to compose in.
+     * @return A new modified {@link UnitOfWorkConfiguration}.
+     */
+        public UnitOfWorkConfiguration interceptor(ProcessingLifecycleInterceptor next) {
+        Objects.requireNonNull(next, "next may not be null");
+        return new UnitOfWorkConfiguration(
+                workScheduler,
+                allowAsyncProcessing,
+                processingLifecycleEnhancers,
+                interceptor.andThen(next)
         );
     }
 }

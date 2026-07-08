@@ -75,23 +75,29 @@ public class UnitOfWork implements ProcessingLifecycle {
      * @param identifier         The identifier of this Unit of Work.
      * @param workScheduler      The {@link Executor} for processing unit of work actions.
      * @param applicationContext The {@link ApplicationContext} for component resolution.
+     * @param interceptor        The {@link ProcessingLifecycleInterceptor} invoked immediately around every action
+     *                           and handler dispatch; {@link ProcessingLifecycleInterceptor#PASS_THROUGH} for the
+     *                           direct, zero-overhead path.
      */
     @Internal
     UnitOfWork(
             String identifier,
             Executor workScheduler,
             boolean forceSyncProcessing,
-            ApplicationContext applicationContext
+            ApplicationContext applicationContext,
+            ProcessingLifecycleInterceptor interceptor
     ) {
         Objects.requireNonNull(identifier, "identifier may not be null.");
         Objects.requireNonNull(workScheduler, "workScheduler may not be null.");
         Objects.requireNonNull(applicationContext, "applicationContext may not be null.");
+        Objects.requireNonNull(interceptor, "interceptor may not be null.");
         this.identifier = identifier;
         this.context = new UnitOfWorkProcessingContext(
                 identifier,
                 workScheduler,
                 forceSyncProcessing,
-                applicationContext
+                applicationContext,
+                interceptor
         );
     }
 
@@ -215,18 +221,24 @@ public class UnitOfWork implements ProcessingLifecycle {
         private final ApplicationContext applicationContext;
         private final ConcurrentMap<ResourceKey<?>, Object> resources;
         private final boolean forceSyncProcessing;
+        private final ProcessingLifecycleInterceptor interceptor;
+        private final boolean intercepting;
 
         private UnitOfWorkProcessingContext(
                 String identifier,
                 Executor workScheduler,
                 boolean forceSyncProcessing,
-                ApplicationContext applicationContext
+                ApplicationContext applicationContext,
+                ProcessingLifecycleInterceptor interceptor
         ) {
             this.identifier = identifier;
             this.workScheduler = workScheduler;
             this.forceSyncProcessing = forceSyncProcessing;
             this.resources = new ConcurrentHashMap<>();
             this.applicationContext = applicationContext;
+            this.interceptor = interceptor;
+            // Determined once: the PASS_THROUGH default keeps the original direct execution path (zero overhead).
+            this.intercepting = interceptor != ProcessingLifecycleInterceptor.PASS_THROUGH;
         }
 
         @Override
@@ -394,7 +406,9 @@ public class UnitOfWork implements ProcessingLifecycle {
             while (!completeHandlers.isEmpty()) {
                 Consumer<ProcessingContext> nextCompletionHandler = completeHandlers.poll();
                 if (nextCompletionHandler != null) {
-                    workScheduler.execute(() -> nextCompletionHandler.accept(this));
+                    workScheduler.execute(() -> interceptedCompletionHandler(
+                            () -> nextCompletionHandler.accept(this)
+                    ));
                 }
             }
         }
@@ -408,7 +422,11 @@ public class UnitOfWork implements ProcessingLifecycle {
                 ErrorHandler nextErrorHandler = errorHandlers.poll();
                 if (nextErrorHandler != null) {
                     workScheduler.execute(
-                            () -> nextErrorHandler.handle(this, recordedCause.phase(), recordedCause.cause())
+                            () -> interceptedErrorHandler(
+                                    recordedCause.phase(),
+                                    recordedCause.cause(),
+                                    () -> nextErrorHandler.handle(this, recordedCause.phase(), recordedCause.cause())
+                            )
                     );
                 }
             }
@@ -433,8 +451,8 @@ public class UnitOfWork implements ProcessingLifecycle {
 
             CompletableFuture<Void> phaseResult = actionQueue.stream()
                                                              .map(handler -> FutureUtils.emptyCompletedFuture()
-                                                                                        .thenComposeAsync(result -> handler.apply(
-                                                                                                this), workScheduler)
+                                                                                        .thenComposeAsync(result -> intercepted(
+                                                                                                current, handler), workScheduler)
                                                                                         .thenAccept(FutureUtils::ignoreResult))
                                                              .reduce(CompletableFuture::allOf)
                                                              .orElseGet(FutureUtils::emptyCompletedFuture);
@@ -447,6 +465,41 @@ public class UnitOfWork implements ProcessingLifecycle {
                 }
             }
             return phaseResult;
+        }
+
+        /**
+         * Runs the given phase {@code handler} through the {@link ProcessingLifecycleInterceptor}, or directly
+         * when no interceptor is installed (the {@link ProcessingLifecycleInterceptor#PASS_THROUGH} default),
+         * keeping the original zero-overhead execution path.
+         */
+        private CompletableFuture<?> intercepted(Phase phase, Function<ProcessingContext, CompletableFuture<?>> handler) {
+            return intercepting
+                    ? interceptor.interceptPhaseAction(this, phase, () -> handler.apply(this))
+                    : handler.apply(this);
+        }
+
+        /**
+         * Runs the given completion-handler {@code action} through the {@link ProcessingLifecycleInterceptor},
+         * or directly when no interceptor is installed.
+         */
+        private void interceptedCompletionHandler(Runnable action) {
+            if (intercepting) {
+                interceptor.interceptCompletionHandler(this, action);
+            } else {
+                action.run();
+            }
+        }
+
+        /**
+         * Runs the given error-handler {@code action} through the {@link ProcessingLifecycleInterceptor}, or
+         * directly when no interceptor is installed.
+         */
+        private void interceptedErrorHandler(@Nullable Phase failedPhase, Throwable cause, Runnable action) {
+            if (intercepting) {
+                interceptor.interceptErrorHandler(this, failedPhase, cause, action);
+            } else {
+                action.run();
+            }
         }
 
         @Override
