@@ -18,25 +18,29 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>org.axonframework</groupId>
-        <artifactId>axon-parent</artifactId>
+        <groupId>org.axonframework.extensions</groupId>
+        <artifactId>axon-extensions</artifactId>
         <version>${revision}</version>
-        <relativePath>../build/parent/pom.xml</relativePath>
     </parent>
 
-    <groupId>org.axonframework.extensions</groupId>
-    <artifactId>axon-extensions</artifactId>
+    <groupId>org.axonframework.extensions.micronaut</groupId>
+    <artifactId>axon-micronaut-extension</artifactId>
     <packaging>pom</packaging>
 
-    <name>Axon Extension - Parent</name>
-    <description>Module providing parent for Axon Framework Extensions.</description>
+    <name>Axon Extension - Micronaut - Parent</name>
+    <description>Module providing parent for Axon Framework Micronaut Extension.</description>
 
     <modules>
-        <module>kotlin</module>
-        <module>metrics</module>
-        <module>reactor</module>
-        <module>spring</module>
         <module>micronaut</module>
-        <module>tracing</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.axonframework.extensions.micronaut</groupId>
+                <artifactId>axon-micronaut</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 </project>
