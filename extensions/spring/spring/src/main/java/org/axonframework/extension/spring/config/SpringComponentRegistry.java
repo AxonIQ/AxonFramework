@@ -659,9 +659,7 @@ public class SpringComponentRegistry implements
             //noinspection DataFlowIssue
             try {
                 return beanFactory.getBean(name, type);
-            } catch (NoSuchBeanDefinitionException e) {
-                throw new ComponentNotFoundException(type, name, e);
-            } catch (BeanNotOfRequiredTypeException e) {
+            } catch (NoSuchBeanDefinitionException | BeanNotOfRequiredTypeException e) {
                 throw new ComponentNotFoundException(type, name, e);
             }
         }
