@@ -21,8 +21,8 @@ import org.axonframework.common.configuration.ApplicationConfigurerTestSuite;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.BeanNotOfRequiredTypeException;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
-import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -41,10 +41,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SpringAxonApplicationTest extends ApplicationConfigurerTestSuite<SpringAxonApplication> {
 
     private SpringComponentRegistry componentRegistry;
+    private DefaultListableBeanFactory beanFactory;
 
     @Override
     public SpringAxonApplication createConfigurer() {
-        ConfigurableListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        beanFactory = new DefaultListableBeanFactory();
         SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
         lifecycleRegistry.setBeanFactory(beanFactory);
         componentRegistry = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
@@ -106,6 +107,18 @@ class SpringAxonApplicationTest extends ApplicationConfigurerTestSuite<SpringAxo
         assertThatThrownBy(() -> config.getComponent(new TypeReference<TestComponent>() {
         }, "testComponent"))
                 .isInstanceOf(ComponentNotFoundException.class)
+                .hasMessageContaining("testComponent")
                 .hasCauseInstanceOf(NoSuchBeanDefinitionException.class);
+    }
+
+    @Test
+    void getComponentByNameThrowsComponentNotFoundExceptionWhenSpringBeanHasWrongType() {
+        beanFactory.registerSingleton("testComponent", "notATestComponent");
+        AxonConfiguration config = testSubject.build();
+
+        assertThatThrownBy(() -> config.getComponent(TestComponent.class, "testComponent"))
+                .isInstanceOf(ComponentNotFoundException.class)
+                .hasMessageContaining("testComponent")
+                .hasCauseInstanceOf(BeanNotOfRequiredTypeException.class);
     }
 }

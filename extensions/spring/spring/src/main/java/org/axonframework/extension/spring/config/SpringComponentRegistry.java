@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanNotOfRequiredTypeException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
@@ -643,8 +644,7 @@ public class SpringComponentRegistry implements
                 C bean = beanFactory.getBeansOfType(type)
                                     .get(type.getName());
                 if (bean == null) {
-                    // We couldn't be smarter, let's propagate the NoUniqueBeanDefinitionException instead.
-                    throw e;
+                    throw new ComponentNotFoundException(type, null, e);
                 }
                 return bean;
             } catch (NoSuchBeanDefinitionException e) {
@@ -660,6 +660,8 @@ public class SpringComponentRegistry implements
             try {
                 return beanFactory.getBean(name, type);
             } catch (NoSuchBeanDefinitionException e) {
+                throw new ComponentNotFoundException(type, name, e);
+            } catch (BeanNotOfRequiredTypeException e) {
                 throw new ComponentNotFoundException(type, name, e);
             }
         }
