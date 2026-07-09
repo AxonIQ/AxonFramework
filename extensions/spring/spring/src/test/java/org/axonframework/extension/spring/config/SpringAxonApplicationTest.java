@@ -19,9 +19,11 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.configuration.ApplicationConfigurerTestSuite;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 /**
@@ -37,10 +39,11 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 class SpringAxonApplicationTest extends ApplicationConfigurerTestSuite<SpringAxonApplication> {
 
     private SpringComponentRegistry componentRegistry;
+    private DefaultListableBeanFactory beanFactory;
 
     @Override
     public SpringAxonApplication createConfigurer() {
-        ConfigurableListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        beanFactory = new DefaultListableBeanFactory();
         SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
         lifecycleRegistry.setBeanFactory(beanFactory);
         componentRegistry = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
@@ -75,5 +78,40 @@ class SpringAxonApplicationTest extends ApplicationConfigurerTestSuite<SpringAxo
         assertThatNoException().isThrownBy(
                 () -> config.getOptionalComponent(TestComponent.class)
         );
+    }
+
+    @Test
+    void getComponentAndGetOptionalComponentMustBeConsistentWhenMultipleBeansExistForType() {
+        // given
+        componentRegistry.registerComponent(DummySpanFactory.class, c -> new DummySpanFactory());
+        beanFactory.registerSingleton("anotherSpanFactory", new DummySpanFactory());
+
+        componentRegistry.postProcessAfterInitialization(new Object(), "something");
+        AxonConfiguration config = testSubject.build();
+
+        // when
+        Optional<DummySpanFactory> optional = config.getOptionalComponent(DummySpanFactory.class);
+        DummySpanFactory mandatory = config.getComponent(DummySpanFactory.class);
+
+        // then
+        assertThat(optional)
+                .as("getOptionalComponent and getComponent must behave consistently when bean is present")
+                .containsSame(mandatory);
+    }
+
+    @Test
+    void getOptionalComponentShouldReturnEmptyWhenComponentIsNotPresent() {
+        // given
+        componentRegistry.postProcessAfterInitialization(new Object(), "something");
+
+        // when
+        AxonConfiguration config = testSubject.build();
+
+        // then
+        assertThat(config.getOptionalComponent(DummySpanFactory.class))
+                .isEmpty();
+    }
+
+    static class DummySpanFactory {
     }
 }

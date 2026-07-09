@@ -660,7 +660,11 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> Optional<C> getOptionalComponent(Class<C> type) {
-            return Optional.ofNullable(beanFactory.getBeanProvider(type).getIfUnique());
+            try {
+                return Optional.of(getComponent(type));
+            } catch(NoSuchBeanDefinitionException e){
+                return Optional.empty();
+            }
         }
 
         @Override
