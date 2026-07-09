@@ -150,3 +150,27 @@ Use `AxonServerSnapshotStore` when you want persistent snapshot storage backed b
 When migrating from Axon Framework 4, make sure your application no longer assumes snapshot persistence is part of the event store implementation itself.
 Snapshot storage is now an explicit dependency of the entity module.
 ====
+
+[#reusing_existing_snapshots]
+== Reusing existing Axon Framework 4 snapshots
+
+The stores above only begin writing snapshots once your application runs on Axon Framework 5.
+The snapshots you already hold from Axon Framework 4 cannot be carried over, because the two versions locate a snapshot in the event stream with incompatible numbering:
+
+* *Aggregate-based storage* (the Axon Framework 4 model, and the aggregate-based storage engines in Axon Framework 5) numbers events per entity, each entity starting at 0.
+* *Dynamic Consistency Boundary (DCB) storage* numbers events context-wide, as a single global index shared by every event.
+
+An Axon Framework 4 snapshot is positioned only by its aggregate sequence number and carries no global index, so a DCB store has no way to know where in the global stream to resume.
+
+[IMPORTANT]
+====
+Existing Axon Framework 4 snapshots are therefore neither reusable in Axon Framework 5 nor migratable to a DCB context.
+Once a context is switched to DCB they are ignored entirely: affected entities rebuild from a full event replay, and fresh snapshots are written from then on.
+====
+
+This is not a correctness problem: a snapshot is only an optional cache, and every entity can be rebuilt from its event stream.
+It is a performance one, and the cost depends on your domain.
+Until fresh snapshots accumulate, each affected entity is sourced from its full history, so the first load after migration is slower.
+For short streams this is negligible, but an entity with a long stream, hundreds of thousands or millions of events, can suffer a significant response-time hit.
+There is no single answer here: assess the impact against your longest-lived entities and plan for the initial replay accordingly.
+For the storage engine choices that decide whether a context runs in aggregate-based or DCB mode, see the xref:migration:paths/event-store.adoc[Event Store migration].

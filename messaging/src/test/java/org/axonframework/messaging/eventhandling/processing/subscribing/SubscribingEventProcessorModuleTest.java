@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.processing.subscribing;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
@@ -49,6 +50,7 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.Propag
 import org.junit.jupiter.api.*;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -607,6 +610,27 @@ class SubscribingEventProcessorModuleTest {
             // then
             var messageSource = configuration.getOptionalComponent(ErrorHandler.class);
             assertThat(messageSource).isNotPresent();
+        }
+    }
+
+    @Nested
+    class MissingEventSourceValidationTest {
+
+        @Test
+        void constructingProcessorWithoutEventSourceReportsProcessorNameAndRemedies() {
+            // given
+            String processorName = "no-source-processor";
+            var configurationWithoutSource = new SubscribingEventProcessorConfiguration(
+                    new EventProcessorConfiguration(processorName, null)
+            );
+
+            // when / then
+            assertThatThrownBy(() -> new SubscribingEventProcessor(processorName,
+                                                                   List.of(),
+                                                                   configurationWithoutSource))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("event processor '" + processorName + "'")
+                    .hasMessageContaining("SubscribableEventSource");
         }
     }
 

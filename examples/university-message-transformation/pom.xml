@@ -44,19 +44,19 @@
         so the whole demo builds against one consistent line until 5.2.0 is the examples baseline.
         -->
         <axoniq-framework.version>5.2.0-SNAPSHOT</axoniq-framework.version>
-        <axoniq-platform-framework-client.version>5.1.0</axoniq-platform-framework-client.version>
+        <axoniq-platform-framework-client.version>5.1.1</axoniq-platform-framework-client.version>
 
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
-        <jline.version>3.27.0</jline.version>
-        <logback.version>1.5.32</logback.version>
+        <jline.version>3.30.15</jline.version>
+        <logback.version>1.5.37</logback.version>
 
         <!-- Test libraries -->
         <assertj.version>3.27.7</assertj.version>
-        <junit.version>6.1.0</junit.version>
+        <junit.version>6.1.1</junit.version>
 
         <!-- Build plugins -->
-        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
     </properties>
 
     <dependencyManagement>

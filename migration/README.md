@@ -67,7 +67,7 @@ Run a top-level recipe against a target project with the Maven plugin:
 
 ```bash
 mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
-  -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:5.2.0-SNAPSHOT \
+  -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:5.2.0 \
   -Drewrite.activeRecipes=io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5
 ```
 
@@ -87,7 +87,7 @@ gradle rewriteRun --init-script init.gradle \
 
 Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxon5`
 for the non-commercial path. Override the recipe artifact version (default
-`5.2.0-SNAPSHOT`) with `-Drewrite.axonMigrationVersion=<version>` if you
+`5.2.0`) with `-Drewrite.axonMigrationVersion=<version>` if you
 need a different release. The script also wires Sonatype Snapshots and
 Maven Local so `-SNAPSHOT` coordinates resolve without extra
 configuration.

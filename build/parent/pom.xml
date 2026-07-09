@@ -53,9 +53,9 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.3.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.4.Final</hibernate-core.version>
         <mysql-connector-java.version>9.7.0</mysql-connector-java.version>
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.12</postgresql.version>
         <ojdbc.version>23.26.2.0.0</ojdbc.version>
         <!-- Jakarta -->
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
@@ -66,13 +66,13 @@
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <jspecify.version>1.0.0</jspecify.version>
         <!-- Logging -->
-        <log4j.version>2.26.0</log4j.version>
+        <log4j.version>2.26.1</log4j.version>
         <slf4j.version>2.0.18</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.7</dropwizard.metrics.version>
         <micrometer.version>1.17.0</micrometer.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.10</byte-buddy.version>
+        <byte-buddy.version>1.18.11</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
@@ -100,7 +100,7 @@
         <!-- Testing -->
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
-        <junit.jupiter.version>6.1.0</junit.jupiter.version>
+        <junit.jupiter.version>6.1.1</junit.jupiter.version>
         <mockito.version>5.23.0</mockito.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <assertj.version>3.27.7</assertj.version>
@@ -110,7 +110,7 @@
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>13.6.0</checkstyle.version>
+        <checkstyle.version>13.7.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
@@ -459,7 +459,7 @@
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core-test</artifactId>
-            <version>2.26.0</version>
+            <version>2.26.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>

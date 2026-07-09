@@ -17,6 +17,7 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.Registration;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.extension.spring.config.EventProcessorDefinition;
@@ -28,7 +29,12 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.axonframework.messaging.eventhandling.SimpleEventBus;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
@@ -36,6 +42,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.*;
 import org.junit.jupiter.params.provider.*;
@@ -55,11 +62,17 @@ import org.springframework.test.context.ContextConfiguration;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -123,6 +136,64 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
             return EventProcessorDefinition.pooledStreaming(KEY2)
                                       .assigningHandlers(p -> true)
                                       .notCustomized();
+        }
+    }
+
+    @org.springframework.context.annotation.Configuration
+    public static class DefinitionSuppliedEventSourceContext {
+
+        @Bean
+        public StubSubscribableEventSource definitionSuppliedSource() {
+            return new StubSubscribableEventSource();
+        }
+
+        @Bean
+        public RecordingEventHandler recordingEventHandler() {
+            return new RecordingEventHandler();
+        }
+
+        @Bean
+        public EventProcessorDefinition definitionSourcedProcessorDefinition(
+                StubSubscribableEventSource definitionSuppliedSource
+        ) {
+            return EventProcessorDefinition.subscribing("definition-sourced-processor")
+                                           .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
+                                           .customized(c -> c.eventSource(definitionSuppliedSource));
+        }
+    }
+
+    /**
+     * A source that, unlike the {@link SimpleEventBus}, only implements {@link SubscribableEventSource}, like a
+     * persistent stream backed source does. This keeps type-level lookups of other components, like the
+     * {@link org.axonframework.messaging.eventhandling.EventSink}, unambiguous.
+     */
+    public static class StubSubscribableEventSource implements SubscribableEventSource {
+
+        private final SimpleEventBus delegate = new SimpleEventBus();
+
+        @Override
+        public Registration subscribe(
+                BiFunction<List<? extends EventMessage>, @Nullable ProcessingContext, CompletableFuture<?>> eventsBatchConsumer
+        ) {
+            return delegate.subscribe(eventsBatchConsumer);
+        }
+
+        public void publish(EventMessage event) {
+            delegate.publish(null, event);
+        }
+    }
+
+    public static class RecordingEventHandler {
+
+        private final List<String> handledEvents = new CopyOnWriteArrayList<>();
+
+        @EventHandler
+        public void handle(String event) {
+            handledEvents.add(event);
+        }
+
+        public List<String> handledEvents() {
+            return handledEvents;
         }
     }
 
@@ -368,6 +439,53 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
                     // we should not see the custom interceptor here
                     config -> assertThatCollection(config.interceptors()).anyMatch(StubInterceptor.class::isInstance)
             );
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
+            classes = {EventProcessorPropertiesAndDefinitionInteractionIT.MyCustomContext.class,
+                    DefinitionSuppliedEventSourceContext.class},
+            properties = {
+                    "axon.eventstorage.jpa.polling-interval=0"
+            },
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class DefinitionSuppliedEventSourceTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Autowired
+        private StubSubscribableEventSource definitionSuppliedSource;
+
+        @Autowired
+        private RecordingEventHandler recordingEventHandler;
+
+        @Test
+        void processorUsesTheDefinitionSuppliedEventSourceWhenNoSourceSettingIsPresent() {
+            // given - no unique type-level SubscribableEventSource is resolvable (the event store and the
+            // definition-supplied source are both candidates), so only the EventProcessorDefinition can
+            // supply the source for the processor
+            assertThat(context.getBeanProvider(SubscribableEventSource.class).getIfUnique()).isNull();
+
+            AxonConfiguration axonApplication = context.getBean(AxonConfiguration.class);
+            Configuration processorConfig = axonApplication.getModuleConfiguration(
+                    "EventProcessor[definition-sourced-processor]").orElseThrow();
+            assertThat(processorConfig.getOptionalComponent(EventProcessor.class, "definition-sourced-processor"))
+                    .isPresent();
+            assertThat(processorConfig.getOptionalComponent(SubscribingEventProcessorConfiguration.class))
+                    .hasValueSatisfying(
+                            config -> assertThat(config.eventSource()).isSameAs(definitionSuppliedSource)
+                    );
+
+            // when
+            definitionSuppliedSource.publish(EventTestUtils.asEventMessage("definition-sourced-event"));
+
+            // then
+            await().atMost(Duration.ofSeconds(2))
+                   .untilAsserted(() -> assertThat(recordingEventHandler.handledEvents())
+                           .contains("definition-sourced-event"));
         }
     }
 

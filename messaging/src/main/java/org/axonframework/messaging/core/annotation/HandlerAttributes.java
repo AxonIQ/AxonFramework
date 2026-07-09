@@ -76,6 +76,12 @@ public interface HandlerAttributes {
     String COMMAND_NAME_PATTERN = "CommandHandlerInterceptor.commandNamePattern";
 
     /**
+     * Attribute key referencing the message type handled by a
+     * {@link org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor}.
+     */
+    String INTERCEPTOR_MESSAGE_TYPE = "MessageHandlerInterceptor.messageType";
+
+    /**
      * Attribute key referencing whether the handler forces the creation of a new saga instance.
      */
     String FORCE_NEW_SAGA = "StartSaga.forceNew";

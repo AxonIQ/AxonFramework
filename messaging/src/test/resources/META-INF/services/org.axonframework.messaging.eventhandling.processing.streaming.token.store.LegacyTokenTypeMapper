@@ -14,13 +14,4 @@
 # limitations under the License.
 #
 
-# OpenTelemetry tracing support is provided by Axoniq Framework.
-
----
-type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
-displayName: Record OpenTelemetry tracing ownership for Axon Framework 5
-description: >-
-  OpenTelemetry tracing support is not part of the OSS Axon Framework module
-  set. It is provided by Axoniq Framework.
-recipeList: []
+org.axonframework.messaging.eventhandling.processing.streaming.token.store.StubLegacyTokenTypeMapper

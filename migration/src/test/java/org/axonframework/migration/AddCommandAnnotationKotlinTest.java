@@ -120,6 +120,54 @@ class AddCommandAnnotationKotlinTest implements RewriteTest {
     }
 
     @Test
+    void explicitRoutingKeyWinsOverTargetEntityIdOnKotlinDataClass() {
+        // AF4 routing semantics: an explicit @RoutingKey wins over @TargetEntityId even when the
+        // target-identifier parameter is declared first. The Kotlin primary-constructor
+        // parameters travel the fallback path, so this also guards the capture-precedence logic
+        // there: the routing key is lifted from shardKey, its @RoutingKey annotation and import
+        // are removed, and @TargetEntityId is preserved on orderId.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.commandhandling.RoutingKey
+                        import org.axonframework.modelling.annotation.TargetEntityId
+
+                        data class ReassignCommand(
+                            @TargetEntityId val orderId: String,
+                            @RoutingKey val shardKey: String
+                        )
+
+                        class ReassignHandler {
+                            @CommandHandler
+                            fun on(cmd: ReassignCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.annotation.TargetEntityId
+
+                        @Command(routingKey = "shardKey")
+                        data class ReassignCommand(
+                            @TargetEntityId val orderId: String,
+                            val shardKey: String
+                        )
+
+                        class ReassignHandler {
+                            @CommandHandler
+                            fun on(cmd: ReassignCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void isIdempotentWhenAlreadyMigrated() {
         rewriteRun(
                 kotlin(
@@ -134,6 +182,238 @@ class AddCommandAnnotationKotlinTest implements RewriteTest {
                         class PaymentCommandHandler {
                             @CommandHandler
                             fun on(cmd: PreparePaymentCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void liftsRoutingKeyFromTargetAggregateIdentifierOnKotlinDataClass() {
+        // AF4 commonly marks the routing identifier with `@TargetAggregateIdentifier`. AF5
+        // splits the concern: `@TargetEntityId` stays on the field (it tells the framework
+        // which field carries the id) and `@Command(routingKey = "…")` declares the routing
+        // key on the class. This isolation test exercises `AddCommandAnnotation` alone,
+        // so the AF4 field annotation FQN survives — the `TargetAggregateIdentifier` →
+        // `TargetEntityId` rename is owned by `Axon4ToAxon5Modelling`. The combined behaviour
+        // is exercised in {@link #liftsRoutingKeyFromTargetEntityIdAfterModellingRename}.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier
+                        import java.util.UUID
+
+                        data class NoteAddCommand(
+                            @TargetAggregateIdentifier val id: UUID,
+                            val targetId: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier
+                        import java.util.UUID
+
+                        @Command(routingKey = "id")
+                        data class NoteAddCommand(
+                            @TargetAggregateIdentifier val id: UUID,
+                            val targetId: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void liftsRoutingKeyFromTargetEntityIdAfterModellingRename() {
+        // Post-rename shape: after `Axon4ToAxon5Modelling` finishes,
+        // `@TargetAggregateIdentifier` already lives at its AF5 home as `@TargetEntityId`.
+        // `AddCommandAnnotation` must still detect it and lift the routing key.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.modelling.annotation.TargetEntityId
+                        import java.util.UUID
+
+                        data class NoteAddCommand(
+                            @TargetEntityId val id: UUID,
+                            val targetId: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.annotation.TargetEntityId
+                        import java.util.UUID
+
+                        @Command(routingKey = "id")
+                        data class NoteAddCommand(
+                            @TargetEntityId val id: UUID,
+                            val targetId: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void addsRoutingKeyToExistingCommandAnnotationOnKotlinDataClass() {
+        // A Kotlin data class that already has a bare @Command (e.g., from an earlier incomplete
+        // migration) must receive a routingKey attribute when @TargetAggregateIdentifier is
+        // present on one of its primary-constructor parameters.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier
+                        import java.util.UUID
+
+                        @Command
+                        data class NoteAddCommand(
+                            @TargetAggregateIdentifier val id: UUID,
+                            val body: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier
+                        import java.util.UUID
+
+                        @Command(routingKey = "id")
+                        data class NoteAddCommand(
+                            @TargetAggregateIdentifier val id: UUID,
+                            val body: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void addsRoutingKeyToExistingCommandAnnotationWithTargetEntityIdOnKotlinDataClass() {
+        // Post-rename shape: @TargetEntityId on the primary-constructor parameter,
+        // bare @Command already on the class. Recipe must add routingKey attribute.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.annotation.TargetEntityId
+                        import java.util.UUID
+
+                        @Command
+                        data class NoteAddCommand(
+                            @TargetEntityId val id: UUID,
+                            val body: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+                        import org.axonframework.modelling.annotation.TargetEntityId
+                        import java.util.UUID
+
+                        @Command(routingKey = "id")
+                        data class NoteAddCommand(
+                            @TargetEntityId val id: UUID,
+                            val body: String
+                        )
+
+                        class NoteHandler {
+                            @CommandHandler
+                            fun on(cmd: NoteAddCommand) {
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void doesNotPopulateRoutingKeyWhenNeitherRoutingKeyNorTargetIdentifierPresent() {
+        // Bare command without any routing-key marker just gets a `@Command` annotation
+        // with no attributes — defaulting routing inference to the framework's standard
+        // behaviour (currently, the implicit "id" routing key resolution).
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+
+                        data class BareCommand(val payload: String)
+
+                        class BareHandler {
+                            @CommandHandler
+                            fun on(cmd: BareCommand) {
+                            }
+                        }
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.commandhandling.CommandHandler
+                        import org.axonframework.messaging.commandhandling.annotation.Command
+
+                        @Command
+                        data class BareCommand(val payload: String)
+
+                        class BareHandler {
+                            @CommandHandler
+                            fun on(cmd: BareCommand) {
                             }
                         }
                         """
