@@ -30,7 +30,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -262,8 +262,9 @@ public class AnnotatedHandlerInspector<T> {
     }
 
     /**
-     * Returns a list of detected members of given {@code type}, that can handle messages of {@code messageType}. The
-     * list is further filtered to exclude any duplicate members that resolve to the same {@link Executable}.
+     * Returns a list of detected members of given {@code type}, that can handle messages of {@code messageType}. When
+     * several members resolve to the same method signature - for example a supertype handler that is overridden or
+     * shadowed by a subtype - only the member declared by the most specific type is retained.
      *
      * @param type a type of inspected entity
      * @param messageType a message type the returned handlers must be able to handle
@@ -271,17 +272,24 @@ public class AnnotatedHandlerInspector<T> {
      */
     public List<MessageHandlingMember<? super T>> getUniqueHandlers(Class<?> type, Class<? extends Message> messageType) {
         SortedSet<MessageHandlingMember<? super T>> set = handlers.getOrDefault(type, emptySortedSet());
-        Set<ExecutableSignature> seenMethods = new HashSet<>();
 
-        // Note: this is a stateful stream, do not change the order of the filter conditions as otherwise
-        // a method that belongs to a different message type may filter out methods that belong to the correct
-        // message type.
-        return set.stream()
+        // When several handlers resolve to the same method signature - because a supertype method is
+        // overridden or shadowed in a subtype - only the one declared by the most specific type is kept.
+        // Otherwise an inherited handler may take precedence over the subtype's own handler; for private
+        // methods, which are bound statically rather than virtually dispatched, this even causes the
+        // supertype's implementation to be invoked instead of the subtype's.
+        // Note: the messageType is filtered first on purpose, so a member handling a different message type
+        // cannot displace the member that actually handles the requested messageType.
+        Map<ExecutableSignature, MessageHandlingMember<? super T>> uniqueBySignature = set.stream()
             .filter(member -> member.canHandleMessageType(messageType))
-            .filter(member -> seenMethods.add(
-                member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow()  // there is always an executable
-            ))
-            .toList();
+            .collect(Collectors.toMap(
+                member -> member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow(),  // there is always an executable
+                member -> member,
+                (existing, replacement) ->
+                    existing.declaringClass().isAssignableFrom(replacement.declaringClass()) ? replacement : existing,
+                LinkedHashMap::new
+            ));
+        return List.copyOf(uniqueBySignature.values());
     }
 
     /**
