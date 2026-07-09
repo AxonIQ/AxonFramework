@@ -40,7 +40,7 @@ initscript {
 rootProject {
     plugins.apply(org.openrewrite.gradle.RewritePlugin)
 
-    def axonMigrationVersion = System.getProperty("rewrite.axonMigrationVersion", "5.2.0-SNAPSHOT")
+    def axonMigrationVersion = System.getProperty("rewrite.axonMigrationVersion", "5.2.0")
 
     dependencies {
         rewrite("org.axonframework:axon-migration:${axonMigrationVersion}")
