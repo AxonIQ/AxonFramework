@@ -37,13 +37,7 @@
 
     <properties>
         <!-- AxonIQ Framework -->
-        <!--
-        The event transformation feature lives in the 5.2.0-SNAPSHOT line, which is ahead of the
-        released Axon core the examples parent manages. The axoniq-framework BOM imported below
-        aligns every Axon module (org.axonframework core and io.axoniq.framework) on this version,
-        so the whole demo builds against one consistent line until 5.2.0 is the examples baseline.
-        -->
-        <axoniq-framework.version>5.2.0-SNAPSHOT</axoniq-framework.version>
+        <axoniq-framework.version>5.2.0</axoniq-framework.version>
         <axoniq-platform-framework-client.version>5.1.1</axoniq-platform-framework-client.version>
 
         <!-- Runtime libraries -->
