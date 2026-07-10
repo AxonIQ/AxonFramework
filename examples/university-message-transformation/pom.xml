@@ -42,8 +42,8 @@
 
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
-        <jline.version>3.30.15</jline.version>
-        <logback.version>1.5.37</logback.version>
+        <jline.version>4.3.1</jline.version>
+        <logback.version>1.5.38</logback.version>
 
         <!-- Test libraries -->
         <assertj.version>3.27.7</assertj.version>
