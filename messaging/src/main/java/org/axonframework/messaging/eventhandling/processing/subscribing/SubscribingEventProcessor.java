@@ -157,7 +157,6 @@ public class SubscribingEventProcessor implements EventProcessor {
     }
 
     private CompletableFuture<Void> processInContext(List<EventMessage> eventMessages, ProcessingContext context) {
-        // the events are processed in the ProcessingContext provided from the outside
         return processWithErrorHandling(eventMessages, context).asCompletableFuture()
                                                                .thenAccept(ignored -> {});
     }
