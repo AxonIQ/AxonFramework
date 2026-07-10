@@ -149,7 +149,7 @@ public class SubscribingEventProcessor implements EventProcessor {
             return context != null
                     ? processInContext(eventMessages, context)
                     : processInNewUnitOfWork(eventMessages);
-        } catch (RuntimeException runtimeFailure) {
+        } catch (RuntimeException e) {
             // a failure while synchronously building the processing pipeline is reported through the returned
             // future, so it never breaks the publishing thread; failures during handling are carried by the future
             return CompletableFuture.failedFuture(runtimeFailure);
