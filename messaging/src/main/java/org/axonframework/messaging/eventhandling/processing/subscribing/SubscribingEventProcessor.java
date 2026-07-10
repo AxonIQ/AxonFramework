@@ -115,7 +115,7 @@ public class SubscribingEventProcessor implements EventProcessor {
             return FutureUtils.emptyCompletedFuture();
         }
         eventBusRegistration = eventSource.subscribe(
-                (events, context) -> this.process(events.stream().map(EventMessage.class::cast).toList(), context)
+                (events, context) -> this.processAsync(events.stream().map(EventMessage.class::cast).toList(), context)
         );
         return FutureUtils.emptyCompletedFuture();
     }
@@ -144,19 +144,44 @@ public class SubscribingEventProcessor implements EventProcessor {
      * @param context       the {@link ProcessingContext} to use, or {@code null} to create a new {@link UnitOfWork}
      * @return a {@link CompletableFuture} that completes when processing of the {@code eventMessages} is done
      */
-    protected CompletableFuture<Void> process(List<EventMessage> eventMessages, @Nullable ProcessingContext context) {
+    protected CompletableFuture<Void> processAsync(List<EventMessage> eventMessages,
+                                                   @Nullable ProcessingContext context) {
         try {
             return context != null
-                    ? processInContext(eventMessages, context)
+                    ? processInGivenContext(eventMessages, context)
                     : processInNewUnitOfWork(eventMessages);
         } catch (RuntimeException e) {
             // a failure while synchronously building the processing pipeline is reported through the returned
             // future, so it never breaks the publishing thread; failures during handling are carried by the future
-            return CompletableFuture.failedFuture(runtimeFailure);
+            return CompletableFuture.failedFuture(e);
         }
     }
 
-    private CompletableFuture<Void> processInContext(List<EventMessage> eventMessages, ProcessingContext context) {
+    /**
+     * Process the given messages, blocking the calling thread until processing is done.
+     * <p>
+     * When a {@code context} is provided, the events are processed within that context. Otherwise, a new
+     * {@link UnitOfWork} is created for the given batch of {@code eventMessages}.
+     *
+     * @param eventMessages the messages to process
+     * @param context       the {@link ProcessingContext} to use, or {@code null} to create a new {@link UnitOfWork}
+     * @throws EventProcessingException if a checked exception occurs while processing the events
+     * @deprecated in favor of {@link #processAsync(List, ProcessingContext)}, which reports completion and failures
+     * through the returned {@link CompletableFuture} rather than blocking the calling thread. This method is retained
+     * for backward compatibility and blocks until processing finishes.
+     */
+    @Deprecated(since = "5.2.0", forRemoval = true)
+    protected void process(List<EventMessage> eventMessages, @Nullable ProcessingContext context) {
+        try {
+            FutureUtils.joinAndUnwrap(processAsync(eventMessages, context));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new EventProcessingException("Exception occurred while processing events", e);
+        }
+    }
+
+    private CompletableFuture<Void> processInGivenContext(List<EventMessage> eventMessages, ProcessingContext context) {
         return processWithErrorHandling(eventMessages, context).asCompletableFuture()
                                                                .thenAccept(ignored -> {});
     }
