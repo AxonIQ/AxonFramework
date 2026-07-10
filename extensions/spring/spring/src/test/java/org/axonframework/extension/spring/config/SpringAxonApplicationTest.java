@@ -25,6 +25,9 @@ import org.springframework.beans.factory.BeanNotOfRequiredTypeException;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -120,5 +123,40 @@ class SpringAxonApplicationTest extends ApplicationConfigurerTestSuite<SpringAxo
                 .isInstanceOf(ComponentNotFoundException.class)
                 .hasMessageContaining("testComponent")
                 .hasCauseInstanceOf(BeanNotOfRequiredTypeException.class);
+    }
+
+    @Test
+    void getComponentAndGetOptionalComponentMustBeConsistentWhenMultipleBeansExistForType() {
+        // given
+        componentRegistry.registerComponent(DummySpanFactory.class, c -> new DummySpanFactory());
+        beanFactory.registerSingleton("anotherSpanFactory", new DummySpanFactory());
+
+        componentRegistry.postProcessAfterInitialization(new Object(), "something");
+        AxonConfiguration config = testSubject.build();
+
+        // when
+        Optional<DummySpanFactory> optional = config.getOptionalComponent(DummySpanFactory.class);
+        DummySpanFactory mandatory = config.getComponent(DummySpanFactory.class);
+
+        // then
+        assertThat(optional)
+                .as("getOptionalComponent and getComponent must behave consistently when bean is present")
+                .containsSame(mandatory);
+    }
+
+    @Test
+    void getOptionalComponentShouldReturnEmptyWhenComponentIsNotPresent() {
+        // given
+        componentRegistry.postProcessAfterInitialization(new Object(), "something");
+
+        // when
+        AxonConfiguration config = testSubject.build();
+
+        // then
+        assertThat(config.getOptionalComponent(DummySpanFactory.class))
+                .isEmpty();
+    }
+
+    static class DummySpanFactory {
     }
 }
