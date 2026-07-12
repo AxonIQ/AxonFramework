@@ -104,7 +104,8 @@ class AnnotatedEventSourcedEntityModule<I, E>
                                     + "higher-level annotation on an enclosing class, package, or module."
                     ));
             SnapshotPolicy policy = buildSnapshotPolicy(entityType, resolved);
-            phase.snapshotPolicy(c -> policy);
+            ComponentBuilder<SnapshotPolicy> builder = c -> policy;
+            phase.snapshotPolicy(builder);
         }
 
         componentRegistry(cr -> cr.registerModule(phase.build()));
