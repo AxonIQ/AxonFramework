@@ -13,6 +13,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-org.axonframework.eventsourcing.configuration.EventSourcingConfigurationDefaults
-org.axonframework.eventsourcing.tracing.EventSourcingSpanAttributesProviderConfigurationEnhancer
-org.axonframework.eventsourcing.tracing.EventSourcingTracingConfigurationEnhancer
+org.axonframework.eventsourcing.handler.tracing.TracingEventTagsHandlerEnhancerDefinition

@@ -20,6 +20,7 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.DependencyRules;
+import com.tngtech.archunit.library.freeze.FreezingArchRule;
 import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandles;
@@ -51,7 +52,8 @@ class ArchitectureTest {
 
   @ArchTest
   private final ArchRule noClassesShouldDependOnUpperPackages =
-      DependencyRules.NO_CLASSES_SHOULD_DEPEND_UPPER_PACKAGES.as("Package Hierarchy Violations");
+      FreezingArchRule.freeze(DependencyRules.NO_CLASSES_SHOULD_DEPEND_UPPER_PACKAGES
+                                      .as("Package Hierarchy Violations"));
 
 
   @Test
