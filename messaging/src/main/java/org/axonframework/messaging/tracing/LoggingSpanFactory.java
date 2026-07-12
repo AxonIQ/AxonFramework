@@ -38,7 +38,8 @@ import java.util.function.Supplier;
  * it originated from, without any {@code ThreadLocal}.
  * <p>
  * This factory performs no context propagation: {@link Span#propagateContext(Message)} returns the message unchanged.
- * Combine it with the OpenTelemetry factory through {@link MultiSpanFactory} to get both logging and real tracing.
+ * Use it as a standalone local development aid. Exporting spans to tracing backends is configured through Micrometer
+ * Tracing and its exporters.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

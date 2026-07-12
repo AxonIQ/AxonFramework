@@ -29,8 +29,7 @@ import org.jspecify.annotations.Nullable;
  * the {@code RESOURCE_KEY} / {@code addToContext} / {@code fromContext} convention of
  * {@link org.axonframework.messaging.core.Message} and {@code TrackingToken}. Under nested spans this is
  * last-writer-wins (the most recently started span on the context), exactly like {@code Message.RESOURCE_KEY}'s
- * "current message"; precise parent chaining is the tracing provider's concern, kept on its own private resource so
- * composed factories (see {@link MultiSpanFactory}) do not collide.
+ * "current message"; precise parent chaining is the tracing provider's concern, kept on its own private resource.
  *
  * @author AxonIQ
  * @since 5.2.0
@@ -38,7 +37,22 @@ import org.jspecify.annotations.Nullable;
 public interface SpanScope extends AutoCloseable {
 
     /**
-     * Resource key under which the active {@code SpanScope} is stored on a {@link ProcessingContext}.
+     * Resource key under which the active {@link SpanScope} is stored on a {@link ProcessingContext} (never via a
+     * {@code ThreadLocal}), written by {@link Span#start(ProcessingContext)} and read with
+     * {@link #fromContext(ProcessingContext)}.
+     * <p>
+     * <b>Question it answers:</b> <em>"Which scope owns the active span's lifecycle, and what is the active span for
+     * provider-agnostic access (for example {@link Span#addAttribute(String, String)})?"</em> It is
+     * <em>last-writer-wins</em> -- the most recently started span on the context, matching
+     * {@code Message.RESOURCE_KEY}'s "current message" semantics -- and is deliberately <b>not</b> a parent-nesting
+     * stack.
+     * <p>
+     * <b>Why not a stack here.</b> Precise parent chaining is a tracing provider's concern, kept on the provider's own
+     * private resource key -- <em>not</em> on this shared key. Consequently a provider's private parent key and this key
+     * coincide when a span is started but may legitimately diverge afterwards: once a nested span closes, a stack-based
+     * parent key pops back to the enclosing span while this last-writer key still points at whichever span started most
+     * recently. That is expected -- each reader consults the key that answers its question (a provider reads its stack
+     * for parenting; lifecycle and provider-agnostic access read this key).
      */
     Context.ResourceKey<SpanScope> RESOURCE_KEY = Context.ResourceKey.withLabel("SpanScope");
 

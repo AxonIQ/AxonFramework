@@ -43,10 +43,10 @@ import org.jspecify.annotations.Nullable;
  * additionally prefer not installing a tracing decorator at all when the configured factory is {@link NoOpSpanFactory}
  * or absent, so the un-traced path carries no name-building cost whatsoever.
  * <p>
- * Backend-specific bindings can be composed with {@link MultiSpanFactory}, each delegate constructed with its own
- * {@link SpanAttributesProvider} list. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component
- * at all -- the tracing enhancers then leave every component undecorated (zero overhead). {@link NoOpSpanFactory} is a
- * null-object for tests and composition, not an off-switch.
+ * Fan-out to multiple tracing destinations is configured through Micrometer Tracing and the exporters behind it, below
+ * the {@code SpanFactory}. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component at all --
+ * the tracing enhancers then leave every component undecorated (zero overhead). {@link NoOpSpanFactory} is a
+ * null-object for tests, not an off-switch.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers
