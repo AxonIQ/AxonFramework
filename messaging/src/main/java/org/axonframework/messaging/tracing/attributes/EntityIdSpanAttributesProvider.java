@@ -31,7 +31,7 @@ package org.axonframework.messaging.tracing.attributes;
  * through an aggregate-based event storage engine.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 public final class EntityIdSpanAttributesProvider {
 

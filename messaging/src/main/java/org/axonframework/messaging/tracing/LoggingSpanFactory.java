@@ -23,6 +23,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -35,7 +36,7 @@ import java.util.function.Supplier;
  * identifier} are logged too. When the span is created while another message is being handled -- i.e. the supplied
  * {@link ProcessingContext} carries a current {@link Message#fromContext(ProcessingContext) message} -- the in-flight
  * message's type and identifier are appended as well, so a dispatch / internal span can be correlated with the handler
- * it originated from, without any {@code ThreadLocal}.
+ * it originated from.
  * <p>
  * This factory performs no context propagation: {@link Span#propagateContext(Message)} returns the message unchanged.
  * Use it as a standalone local development aid. Exporting spans to tracing backends is configured through Micrometer
@@ -64,6 +65,12 @@ public final class LoggingSpanFactory implements SpanFactory {
 
     @Override
     public Span createHandlerSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return new LoggingSpan(operationName, () -> handlerSpanStartLog(message));
+    }
+
+    @Override
+    public Span createContextParentHandlerSpan(String operationName, Message message,
+                                               @Nullable ProcessingContext context) {
         return new LoggingSpan(operationName, () -> handlerSpanStartLog(message));
     }
 
@@ -159,6 +166,7 @@ public final class LoggingSpanFactory implements SpanFactory {
         private final Span span;
         private final String identifier;
         private final String operationName;
+        private final AtomicBoolean closed = new AtomicBoolean(false);
 
         private LoggingSpanScope(Span span, String identifier, String operationName) {
             this.span = span;
@@ -172,8 +180,23 @@ public final class LoggingSpanFactory implements SpanFactory {
         }
 
         @Override
+        public boolean isClosed() {
+            return closed.get();
+        }
+
+        @Override
         public void close() {
-            logger.info("[{}][{}] Span ended", identifier, operationName);
+            // Idempotent per the SpanScope contract: the structured Span operations routinely close both through
+            // the primary path (result termination) and the context-level leak backstop -- log the end only once.
+            if (closed.compareAndSet(false, true)) {
+                logger.info("[{}][{}] Span ended", identifier, operationName);
+            }
+        }
+
+        @Override
+        public <T> T within(Supplier<T> operation) {
+            // Transparent per the SpanScope contract; deliberately unlogged, as streams re-enter per pull.
+            return operation.get();
         }
     }
 }

@@ -43,8 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TracingEventSinkTest {
 
-    private static final String PUBLISH_SPAN = "EventBus.publishEvent MyEvent";
-    private static final String COMMIT_SPAN = "EventBus.commitEvents";
+    private static final String PUBLISH_SPAN = "EventSink.publish MyEvent";
 
     private TestSpanFactory spanFactory;
     private RecordingEventSink delegate;
@@ -96,26 +95,25 @@ class TracingEventSinkTest {
         }
 
         @Test
-        void opensAnInternalCommitSpanAroundPublicationWhenNoProcessingContext() {
+        void publishesWithoutOpeningACommitSpanWhenNoProcessingContext() {
             // when
             testSubject.publish(null, List.of(event)).join();
 
-            // then the commit span is opened and completed around the synchronous publication
-            spanFactory.verifySpanCompleted(COMMIT_SPAN);
-            spanFactory.verifySpanHasType(COMMIT_SPAN, TestSpanType.INTERNAL);
+            // then
+            spanFactory.verifyNoSpanWithNamePrefix("EventBus.commitEvents");
             assertThat(delegate.publishedEvents.get()).hasSize(1);
         }
 
         @Test
-        void bindsTheCommitSpanToTheProcessingContextLifecycleWhenPresent() {
+        void publishesWithoutOpeningACommitSpanWhenProcessingContextIsPresent() {
             // given
             ProcessingContext context = new StubProcessingContext();
 
             // when
             testSubject.publish(context, List.of(event));
 
-            // then the commit span stays active, bound to the (not-yet-completed) context lifecycle
-            spanFactory.verifySpanActive(COMMIT_SPAN);
+            // then
+            spanFactory.verifyNoSpanWithNamePrefix("EventBus.commitEvents");
             assertThat(delegate.publishedContext.get()).isSameAs(context);
         }
     }

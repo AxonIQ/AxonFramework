@@ -65,6 +65,17 @@ class LoggingSpanFactoryTest {
     class SpanLifecycle {
 
         @Test
+        void scopeReportsItsMonotonicClosedState() {
+            SpanScope scope = testSubject.createInternalSpan("op", null).start();
+
+            assertThat(scope.isClosed()).isFalse();
+            scope.close();
+            assertThat(scope.isClosed()).isTrue();
+            scope.close();
+            assertThat(scope.isClosed()).isTrue();
+        }
+
+        @Test
         void rootSpanCanBeStartedRecordExceptionAndClose() {
             // given
             Span span = testSubject.createRootSpan("op", null);

@@ -53,7 +53,7 @@ import java.util.function.Supplier;
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class TracingQueryBus implements QueryBus {
@@ -96,7 +96,12 @@ public final class TracingQueryBus implements QueryBus {
         Span span = spanFactory.createDispatchSpan(
                 DISPATCH_SPAN + " " + query.type().qualifiedName().name(), query, context
         );
-        return span.runSupplier(() -> delegate.query(span.propagateContext(query), context));
+        // Branch-scoped: the branched context makes connector internals nest under this dispatch span (as for
+        // TracingCommandBus). Closing on the result stream's own termination -- not on its mere construction -- also
+        // keeps the span's duration honest: a query dispatch span used to close the instant the (lazy) MessageStream
+        // was constructed, understating how long the dispatch actually took.
+        return span.branchStream(context, dispatchContext -> delegate.query(span.propagateContext(query),
+                                                                            dispatchContext));
     }
 
     @Override
@@ -106,9 +111,13 @@ public final class TracingQueryBus implements QueryBus {
         Span span = spanFactory.createDispatchSpan(
                 SUBSCRIPTION_QUERY_SPAN + " " + query.type().qualifiedName().name(), query, context
         );
-        return span.runSupplier(
-                () -> delegate.subscriptionQuery(span.propagateContext(query), context, updateBufferSize)
-        );
+        // Branch-scoped like query() above, but closed synchronously around the subscription's setup (Span#branch
+        // closes on return) rather than on stream termination: a subscription query's update
+        // stream is long-lived (potentially unbounded), so a dispatch span spanning its whole lifetime would never
+        // end.
+        return span.branch(context, dispatchContext -> delegate.subscriptionQuery(span.propagateContext(query),
+                                                                                  dispatchContext,
+                                                                                  updateBufferSize));
     }
 
     @Override
@@ -122,14 +131,14 @@ public final class TracingQueryBus implements QueryBus {
                                               Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                               @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(EMIT_UPDATE_SPAN, context);
-        return span.runSupplierAsync(() -> delegate.emitUpdate(filter, updateSupplier, context));
+        return span.branchAsync(context, scoped -> delegate.emitUpdate(filter, updateSupplier, scoped));
     }
 
     @Override
     public CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
                                                          @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_SPAN, context);
-        return span.runSupplierAsync(() -> delegate.completeSubscriptions(filter, context));
+        return span.branchAsync(context, scoped -> delegate.completeSubscriptions(filter, scoped));
     }
 
     @Override
@@ -137,7 +146,8 @@ public final class TracingQueryBus implements QueryBus {
                                                                       Throwable cause,
                                                                       @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN, context);
-        return span.runSupplierAsync(() -> delegate.completeSubscriptionsExceptionally(filter, cause, context));
+        return span.branchAsync(context,
+                                scoped -> delegate.completeSubscriptionsExceptionally(filter, cause, scoped));
     }
 
     @Override
@@ -169,7 +179,7 @@ public final class TracingQueryBus implements QueryBus {
         @Override
         public MessageStream<QueryResponseMessage> handle(QueryMessage query, ProcessingContext context) {
             spanFactory.createHandlerSpan(HANDLE_SPAN + " " + query.type().qualifiedName().name(), query, context)
-                       .start(context);
+                       .coverLifecycle(context);
             return delegate.handle(query, context);
         }
     }

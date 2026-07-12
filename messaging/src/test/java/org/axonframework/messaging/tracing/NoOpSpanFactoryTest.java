@@ -18,12 +18,14 @@ package org.axonframework.messaging.tracing;
 
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class NoOpSpanFactoryTest {
 
@@ -43,21 +45,37 @@ class NoOpSpanFactoryTest {
     }
 
     @Test
-    void runExecutesTheGivenBlock() {
+    void eachScopeReportsItsOwnMonotonicClosedState() {
+        Span span = testSubject.createInternalSpan("op", null);
+        SpanScope first = span.start();
+        SpanScope second = span.start();
+
+        assertThat(first.isClosed()).isFalse();
+        assertThat(second.isClosed()).isFalse();
+        first.close();
+        assertThat(first.isClosed()).isTrue();
+        assertThat(second.isClosed()).isFalse();
+    }
+
+    @Test
+    void branchExecutesTheGivenBlock() {
         // given
         AtomicBoolean executed = new AtomicBoolean(false);
 
         // when
-        testSubject.createInternalSpan("op", null).run(() -> executed.set(true));
+        testSubject.createInternalSpan("op", null).branch(null, ignored -> {
+            executed.set(true);
+            return null;
+        });
 
         // then
         assertThat(executed).isTrue();
     }
 
     @Test
-    void runSupplierReturnsTheSuppliedValue() {
+    void branchReturnsTheOperationsValue() {
         // when
-        String result = testSubject.createHandlerSpan("op", message, null).runSupplier(() -> "value");
+        String result = testSubject.createHandlerSpan("op", message, null).branch(null, ignored -> "value");
 
         // then
         assertThat(result).isEqualTo("value");
@@ -80,5 +98,35 @@ class NoOpSpanFactoryTest {
         // when / then
         assertThat(span.addAttribute("k", "v")).isSameAs(span);
         assertThat(span.recordException(new RuntimeException())).isSameAs(span);
+    }
+
+    @Nested
+    class ScopeBoundOperations {
+
+        @Test
+        void withinReturnsTheOperationsValue() {
+            // given
+            SpanScope scope = testSubject.createInternalSpan("op", null).start();
+
+            // when
+            String result = scope.within(() -> "value");
+
+            // then
+            assertThat(result).isEqualTo("value");
+            scope.close();
+        }
+
+        @Test
+        void withinPropagatesTheOperationsExceptionUnchanged() {
+            // given
+            SpanScope scope = testSubject.createInternalSpan("op", null).start();
+            RuntimeException failure = new RuntimeException("boom");
+
+            // when / then
+            assertThatThrownBy(() -> scope.within(() -> {
+                throw failure;
+            })).isSameAs(failure);
+            scope.close();
+        }
     }
 }

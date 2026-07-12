@@ -37,6 +37,8 @@ import org.axonframework.messaging.eventhandling.configuration.EventProcessorCon
 import org.axonframework.messaging.queryhandling.QueryBus;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Optional;
+
 /**
  * {@link ConfigurationEnhancer} that wires tracing into {@code axon-messaging} components. Discovered automatically via
  * ServiceLoader, so dropping the {@code axoniq-tracing-messaging} module on the classpath is enough to enable messaging
@@ -49,7 +51,7 @@ import org.jspecify.annotations.Nullable;
  * ServiceLoader entry shipped with this module -- no additional registration is needed here.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 @RegistrationScope("Register decorators once at the root; do not re-invoke in child module registries "
@@ -124,7 +126,9 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                 TRACING_DECORATOR_ORDER,
                 (config, name, delegate) -> {
                     // Only event-handling components owned by an event processor are traced -- not ad-hoc components.
-                    if (config.getOptionalComponent(EventProcessorConfiguration.class).isEmpty()) {
+                    Optional<EventProcessorConfiguration> processorConfig = config.getOptionalComponent(
+                            EventProcessorConfiguration.class);
+                    if (processorConfig.isEmpty()) {
                         return delegate;
                     }
                     SpanFactory spanFactory = spanFactory(config);
@@ -135,6 +139,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                     return new TracingEventHandlingComponent(
                             delegate,
                             spanFactory,
+                            processorConfig.get().processorName(),
                             settings.eventProcessorDisableBatchTrace(),
                             settings.eventProcessorDistributedInSameTrace(),
                             settings.eventProcessorDistributedInSameTraceTimeLimit()

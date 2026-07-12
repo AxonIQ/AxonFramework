@@ -33,30 +33,20 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Delegating {@link EventSink} decorator that opens tracing spans around event publication.
  * <p>
- * Publication is traced with two span shapes, mirroring the established publish/commit pattern:
- * <ul>
- *     <li>a short-lived <em>publish</em> span (kind producer) per event, during which this span's tracing context is
- *     injected into the event's metadata so a downstream handler can continue the trace; and</li>
- *     <li>a single <em>commit</em> span (kind internal) around the actual publication. When a
- *     {@link ProcessingContext} is present the commit span is bound to that context's lifecycle (it ends when the
- *     unit of work completes); otherwise it is opened around the synchronous publication and ended when the resulting
- *     future completes.</li>
- * </ul>
+ * Publication is traced with a short-lived producer span per event, during which the span's tracing context is
+ * injected into the event's metadata so a downstream handler can continue the trace.
  * <p>
  * This decorator is registered by {@code MessagingTracingConfigurationEnhancer}; it is never instantiated directly by
  * applications.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class TracingEventSink implements EventSink {
 
-    /** Prefix for the per-event publish span ({@code "EventBus.publishEvent <name>"}). */
-    public static final String PUBLISH_SPAN = "EventBus.publishEvent";
-
-    /** Name of the unit-of-work-scoped event-commit span. */
-    public static final String COMMIT_SPAN = "EventBus.commitEvents";
+    /** Prefix for the per-event publish span ({@code "EventSink.publish <name>"}). */
+    public static final String PUBLISH_SPAN = "EventSink.publish";
 
     private final EventSink delegate;
     private final SpanFactory spanFactory;
@@ -81,14 +71,12 @@ public final class TracingEventSink implements EventSink {
             Span publishSpan = spanFactory.createDispatchSpan(
                     PUBLISH_SPAN + " " + event.type().qualifiedName().name(), event, context
             );
-            propagated.add(publishSpan.runSupplier(() -> publishSpan.propagateContext(event)));
+            // Duration is deliberately just the metadata-injection window, not the shared batch publish future below:
+            // this span's job is to exist as this event's own dispatch node for downstream parent/link resolution,
+            // not to time I/O that one publish() call performs for every event in the batch at once.
+            propagated.add(publishSpan.branch(context, ignored -> publishSpan.propagateContext(event)));
         }
-        Span commitSpan = spanFactory.createInternalSpan(COMMIT_SPAN, context);
-        if (context != null) {
-            commitSpan.start(context);
-            return delegate.publish(context, propagated);
-        }
-        return commitSpan.runSupplierAsync(() -> delegate.publish(null, propagated));
+        return delegate.publish(context, propagated);
     }
 
     @Override

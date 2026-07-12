@@ -23,7 +23,7 @@ import org.axonframework.common.configuration.ConfigurationEnhancer;
  * decorators.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 public final class TracingConfigurationOrder {
 

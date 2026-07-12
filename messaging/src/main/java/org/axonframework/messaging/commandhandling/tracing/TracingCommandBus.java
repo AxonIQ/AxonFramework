@@ -78,9 +78,12 @@ public final class TracingCommandBus implements CommandBus {
         Span span = spanFactory.createDispatchSpan(
                 DISPATCH_SPAN + " " + command.type().qualifiedName().name(), command, processingContext
         );
-        return span.runSupplierAsync(
-                () -> delegate.dispatch(span.propagateContext(command), processingContext)
-        );
+        // Branch-scoped: the branched context makes connector internals (e.g. the axon-server-connector's own span
+        // for the network call) nest under this dispatch span, deterministically, instead of resolving whatever was
+        // already active further up the caller's context.
+        return span.branchAsync(processingContext,
+                                dispatchContext -> delegate.dispatch(span.propagateContext(command),
+                                                                     dispatchContext));
     }
 
     @Override
@@ -112,7 +115,7 @@ public final class TracingCommandBus implements CommandBus {
         @Override
         public MessageStream.Single<CommandResultMessage> handle(CommandMessage command, ProcessingContext context) {
             spanFactory.createHandlerSpan(HANDLE_SPAN + " " + command.type().qualifiedName().name(), command, context)
-                       .start(context);
+                       .coverLifecycle(context);
             return delegate.handle(command, context);
         }
     }

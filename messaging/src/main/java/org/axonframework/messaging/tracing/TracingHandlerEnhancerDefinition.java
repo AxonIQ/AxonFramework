@@ -58,7 +58,7 @@ import java.util.stream.Collectors;
  * ({@code axon.tracing.show-event-sourcing-handlers} in Spring Boot) to trace them anyway.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
@@ -132,17 +132,26 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
                 return super.handle(message, context, target);
             }
             SpanFactory factory = resolveSpanFactory(context);
-            if (factory != null) {
-                factory.createInternalSpan(spanName(target, signature), context).start(context);
+            if (factory == null) {
+                return super.handle(message, context, target);
             }
-            return super.handle(message, context, target);
+
+            // Branch-scoped, like the per-event handler span: created against the un-branched context (parent
+            // resolved at creation time), then run via Span#branchStream, which carries its scope on a branch passed to
+            // the invocation -- so the method body's own children (a dispatch span, an appended-event publish span)
+            // parent under this method span -- executes the synchronous window within the span's scope, and closes
+            // it on this invocation's own result termination (with a close-only doFinally leak backstop), never at
+            // the enclosing context's end, which -- for a per-event method invoked mid-batch -- would be the bug.
+            return factory.createInternalSpan(spanName(target, signature), context)
+                          .branchStream(context, spanned -> super.handle(message, spanned, target).cast());
         }
 
         private @Nullable SpanFactory resolveSpanFactory(ProcessingContext context) {
             try {
                 return context.component(SpanFactory.class);
-            } catch (ComponentNotFoundException e) {
-                // No SpanFactory configured. Tracing degrades to a pass-through.
+            } catch (ComponentNotFoundException | UnsupportedOperationException e) {
+                // No SpanFactory configured, or a context without an application context (e.g. tests). Tracing
+                // degrades to a pass-through.
                 return null;
             }
         }
@@ -150,9 +159,9 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
         private static boolean showEventSourcingHandlers(ProcessingContext context) {
             try {
                 return context.component(MessagingTracingSettings.class).showEventSourcingHandlers();
-            } catch (ComponentNotFoundException e) {
-                // No settings registered -- event sourcing handlers stay suppressed (the safe, replay-friendly
-                // default).
+            } catch (ComponentNotFoundException | UnsupportedOperationException e) {
+                // No settings registered, or a context without an application context (e.g. tests) -- event sourcing
+                // handlers stay suppressed (the safe, replay-friendly default).
                 return false;
             }
         }

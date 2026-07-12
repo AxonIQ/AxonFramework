@@ -33,13 +33,13 @@ import java.time.Duration;
  * @param eventSinkEnabled                           whether the {@code EventSink} is decorated with tracing
  * @param eventProcessorEnabled                      whether event-handling components (event processors) are decorated with tracing
  * @param eventProcessorDisableBatchTrace            when {@code true}, suppresses the streaming-processor batch span (each event handler still gets its own span)
- * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default, AF4 parity), a new trace is started with a link back to the publisher's context
- * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (AF4 parity, default {@code PT2M})
+ * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default), it is parented to the streaming batch and links back to the publisher, or starts a linked trace if batch tracing is disabled
+ * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (default {@code PT2M})
  * @param queryBusEnabled                            whether the {@code QueryBus} is decorated with tracing
  * @param showEventSourcingHandlers                  when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
  * @param spanAttributesProviders                    toggles for the built-in span attribute providers contributed by this module
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public record MessagingTracingSettings(boolean commandBusEnabled,
@@ -53,7 +53,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
                                        SpanAttributesProviders spanAttributesProviders) {
 
     /**
-     * Default time limit for {@code distributedInSameTrace} (AF4 parity).
+     * Default time limit for {@code distributedInSameTrace}.
      */
     public static final Duration DEFAULT_DISTRIBUTED_IN_SAME_TRACE_TIME_LIMIT = Duration.ofMinutes(2);
 
@@ -81,8 +81,8 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     }
 
     /**
-     * Returns the default settings, with every messaging component enabled for tracing and AF4-compatible defaults
-     * for the event-processor sub-toggles ({@code disableBatchTrace=false}, {@code distributedInSameTrace=false},
+     * Returns the default settings, with every messaging component enabled for tracing and default values for the
+     * event-processor sub-toggles ({@code disableBatchTrace=false}, {@code distributedInSameTrace=false},
      * {@code distributedInSameTraceTimeLimit=PT2M}) and the handler enhancer
      * ({@code showEventSourcingHandlers=false} -- replay-noisy event sourcing handlers are not traced). Every built-in
      * span attribute provider is enabled.

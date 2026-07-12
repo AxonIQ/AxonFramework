@@ -33,7 +33,7 @@ import java.util.List;
  * {@link TracingConfigurationDefaults} and is not intended for direct instantiation by applications.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class DefaultSpanAttributesProviderRegistry implements SpanAttributesProviderRegistry {

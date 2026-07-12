@@ -45,7 +45,7 @@ import java.util.List;
  * {@code SpanAttributesProvider} bean (Spring Boot).
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 public interface SpanAttributesProviderRegistry {
 

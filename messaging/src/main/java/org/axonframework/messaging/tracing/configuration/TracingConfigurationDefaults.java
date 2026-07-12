@@ -30,7 +30,7 @@ import org.axonframework.common.configuration.ConfigurationEnhancer;
  * registrations take precedence.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 @RegistrationScope("Register the registry default once at the root; do not re-invoke in child module registries. "

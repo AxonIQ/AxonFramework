@@ -20,9 +20,12 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
+
 /**
  * A {@link SpanFactory} that produces spans which do nothing -- a null-object for tests and composition. Every
- * operation reduces to a single dispatch returning shared no-op instances.
+ * operation reduces to a single dispatch returning a shared no-op span.
  * <p>
  * This is <em>not</em> an off-switch: tracing is disabled by not registering a {@code SpanFactory} component at all,
  * in which case the tracing enhancers leave every component undecorated (zero overhead). There is no default
@@ -40,8 +43,6 @@ public final class NoOpSpanFactory implements SpanFactory {
     public static final NoOpSpanFactory INSTANCE = new NoOpSpanFactory();
 
     private static final Span NO_OP_SPAN = new NoOpSpan();
-    private static final SpanScope NO_OP_SCOPE = new NoOpSpanScope();
-
     private NoOpSpanFactory() {
     }
 
@@ -52,6 +53,12 @@ public final class NoOpSpanFactory implements SpanFactory {
 
     @Override
     public Span createHandlerSpan(String operationName, Message message, @Nullable ProcessingContext context) {
+        return NO_OP_SPAN;
+    }
+
+    @Override
+    public Span createContextParentHandlerSpan(String operationName, Message message,
+                                               @Nullable ProcessingContext context) {
         return NO_OP_SPAN;
     }
 
@@ -81,7 +88,7 @@ public final class NoOpSpanFactory implements SpanFactory {
 
         @Override
         public SpanScope start() {
-            return NO_OP_SCOPE;
+            return new NoOpSpanScope();
         }
 
         @Override
@@ -102,14 +109,26 @@ public final class NoOpSpanFactory implements SpanFactory {
 
     private static final class NoOpSpanScope implements SpanScope {
 
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
         @Override
         public Span span() {
             return NO_OP_SPAN;
         }
 
         @Override
+        public boolean isClosed() {
+            return closed.get();
+        }
+
+        @Override
         public void close() {
-            // No-op.
+            closed.set(true);
+        }
+
+        @Override
+        public <T> T within(Supplier<T> operation) {
+            return operation.get();
         }
     }
 }

@@ -36,7 +36,7 @@ import org.axonframework.common.configuration.ConfigurationEnhancer;
  * the {@link org.axonframework.messaging.tracing.SpanFactory} consuming it is constructed.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 @RegistrationScope("Contribute the providers once at the root; do not re-invoke in child module registries. "

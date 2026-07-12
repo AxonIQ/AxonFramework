@@ -79,7 +79,7 @@ class TracingHandlerEnhancerDefinitionTest {
 
             // then
             assertThat(wrapped).isNotSameAs(member);
-            spanFactory.verifySpanActive("BookRoomHandler.handle(String)");
+            spanFactory.verifySpanCompleted("BookRoomHandler.handle(String)");
         }
     }
 
@@ -99,7 +99,7 @@ class TracingHandlerEnhancerDefinitionTest {
 
             // then
             assertThat(wrapped).isNotSameAs(member);
-            spanFactory.verifySpanActive("RoomBookedProjection.on(String)");
+            spanFactory.verifySpanCompleted("RoomBookedProjection.on(String)");
         }
     }
 
@@ -119,7 +119,7 @@ class TracingHandlerEnhancerDefinitionTest {
             wrapped.handle(command, context, new BookRoomHandler());
 
             // then the wrapper looked up the SpanFactory on the context and opened the per-method span
-            spanFactory.verifySpanActive("BookRoomHandler.handle(String)");
+            spanFactory.verifySpanCompleted("BookRoomHandler.handle(String)");
         }
 
         @Test
@@ -190,7 +190,7 @@ class TracingHandlerEnhancerDefinitionTest {
             wrapped.handle(event, context, new RoomBookedProjection());
 
             // then
-            spanFactory.verifySpanActive("RoomBookedProjection.on(String)");
+            spanFactory.verifySpanCompleted("RoomBookedProjection.on(String)");
         }
 
         @Test
@@ -206,7 +206,7 @@ class TracingHandlerEnhancerDefinitionTest {
             wrapped.handle(event, context, new RoomBookedProjection());
 
             // then
-            spanFactory.verifySpanActive("RoomBookedProjection.on(String)");
+            spanFactory.verifySpanCompleted("RoomBookedProjection.on(String)");
         }
     }
 

@@ -34,7 +34,7 @@ import java.util.function.BiFunction;
  * Type-preserving tracing decorator for {@link EventBus}.
  * <p>
  * Composes a {@link TracingEventSink} for the publish path (so a {@code TracingEventBus} produces the exact same
- * publish + commit span shape as a plain {@code TracingEventSink}) and passes
+ * per-event publish span shape as a plain {@code TracingEventSink}) and passes
  * {@link #subscribe(BiFunction) subscribe} straight through to the wrapped {@link EventBus}.
  * <p>
  * Type preservation matters because AF5's component registry decorates by the slot's declared type
@@ -43,7 +43,7 @@ import java.util.function.BiFunction;
  * mirrors {@code InterceptingEventBus} -- the in-tree precedent for type-preserving event-bus decoration.
  *
  * @author Mateusz Nowak
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class TracingEventBus implements EventBus {
