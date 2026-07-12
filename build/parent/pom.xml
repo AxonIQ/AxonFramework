@@ -53,7 +53,7 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.4.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.5.Final</hibernate-core.version>
         <mysql-connector-java.version>9.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.13</postgresql.version>
         <ojdbc.version>23.26.2.0.0</ojdbc.version>
@@ -86,7 +86,7 @@
         <avro.version>1.12.1</avro.version>
         <dom4j.version>2.2.0</dom4j.version>
         <gson.version>2.14.0</gson.version>
-        <jackson.version>3.2.0</jackson.version>
+        <jackson.version>3.2.1</jackson.version>
         <jackson2.version>2.22.1</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.12.0</db-scheduler.version>
@@ -110,7 +110,7 @@
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>13.7.0</checkstyle.version>
+        <checkstyle.version>13.8.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
