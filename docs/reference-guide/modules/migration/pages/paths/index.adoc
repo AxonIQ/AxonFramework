@@ -182,12 +182,19 @@ to
 
 `org.axonframework.extension.metrics.micrometer`
 
+| Tracing SPI and decorators
+| `org.axonframework.tracing`
+
+to
+
+`org.axonframework.messaging.tracing`
+
 | OpenTelemetry support
 | `org.axonframework.tracing.opentelemetry`
 
 to
 
-`io.axoniq.framework.tracing.opentelemetry`
+`io.axoniq.framework.tracing.micrometer` (the Micrometer Tracing binding provided by Axoniq Framework)
 |===
 ====
 
@@ -253,7 +260,7 @@ Axon Framework 5 has been restructured into more focused modules. This allows fo
 | `axon-micrometer`
 | `extensions/axon-metrics-micrometer`
 
-| OpenTelemetry tracing support is provided by Axoniq Framework.
+| The tracing SPI and component decorators are part of the core open-source modules. Exporting spans to OpenTelemetry is provided by Axoniq Framework through its Micrometer Tracing binding (`axoniq-tracing-micrometer`).
 | `axon-tracing-opentelemetry`
 | Not part of the OSS Axon Framework module set.
 |===
