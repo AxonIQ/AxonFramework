@@ -67,7 +67,7 @@ class EventSourcingSpanAttributesProviderConfigurationEnhancerTest {
         void omitsTheEventTagsProviderWhenDisabledViaSettings() {
             // given
             EventSourcingTracingSettings settings = new EventSourcingTracingSettings(
-                    true, new EventSourcingTracingSettings.SpanAttributesProviders(false));
+                    true, true, new EventSourcingTracingSettings.SpanAttributesProviders(false));
 
             // when
             List<SpanAttributesProvider> providers = providers(TAG_RESOLVER, settings);

@@ -141,7 +141,11 @@ class TracingEventTagsHandlerEnhancerDefinitionTest {
                         registry.registerComponent(TagResolver.class,
                                                    c -> event -> Set.of(Tag.of("Army", "army-42")));
                         registry.registerComponent(EventSourcingTracingSettings.class,
-                                                   c -> new EventSourcingTracingSettings(true, new EventSourcingTracingSettings.SpanAttributesProviders(false)));
+                                                   c -> new EventSourcingTracingSettings(
+                                                           true,
+                                                           true,
+                                                           new EventSourcingTracingSettings.SpanAttributesProviders(false)
+                                                   ));
                     }
             );
             EventMessage event = new GenericEventMessage(new MessageType("RoomBooked"), "the-payload");

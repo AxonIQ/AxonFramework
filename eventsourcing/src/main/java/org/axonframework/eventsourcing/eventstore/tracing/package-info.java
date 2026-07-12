@@ -15,8 +15,8 @@
  */
 
 /**
- * Event-sourcing-specific {@link org.axonframework.messaging.tracing.SpanAttributesProvider} implementations. These live
- * Event-store tracing decorators and event-tag span attribute providers.
+ * Event-store tracing decorators and event-sourcing-specific
+ * {@link org.axonframework.messaging.tracing.SpanAttributesProvider} implementations.
  */
 @NullMarked
 package org.axonframework.eventsourcing.eventstore.tracing;

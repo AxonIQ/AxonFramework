@@ -103,6 +103,7 @@ public class TracingAutoConfiguration {
             registry.registerIfNotPresent(
                     EventSourcingTracingSettings.class,
                     c -> new EventSourcingTracingSettings(
+                            properties.getEventStore().isEnabled(),
                             properties.getSnapshotStore().isEnabled(),
                             new EventSourcingTracingSettings.SpanAttributesProviders(providers.isEventTags()))
             );

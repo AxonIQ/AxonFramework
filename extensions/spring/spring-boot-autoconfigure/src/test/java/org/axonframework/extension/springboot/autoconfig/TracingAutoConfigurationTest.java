@@ -126,6 +126,20 @@ class TracingAutoConfigurationTest {
     }
 
     @Test
+    void eventStoreEnabledPropertyReachesTheFrameworkSettingsComponent() {
+        // given / when
+        contextRunner.withPropertyValues("axon.tracing.event-store.enabled=false")
+                     .run(context -> {
+                         AxonConfiguration configuration = configurationFrom(context);
+
+                         // then
+                         EventSourcingTracingSettings settings =
+                                 configuration.getComponent(EventSourcingTracingSettings.class);
+                         assertThat(settings.eventStoreEnabled()).isFalse();
+                     });
+    }
+
+    @Test
     void showEventSourcingHandlersPropertyReachesTheFrameworkSettingsComponent() {
         // given / when the Spring property is set, the settings component must carry it — the component the handler
         // enhancer reads at handle time

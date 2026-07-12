@@ -26,13 +26,15 @@ import org.axonframework.common.annotation.Internal;
  * <p>
  * Registered as a framework component by the Spring autoconfiguration. When absent, every toggle defaults to enabled.
  *
+ * @param eventStoreEnabled       whether the {@code EventStorageEngine} is decorated with tracing
  * @param snapshotStoreEnabled    whether the {@code SnapshotStore} is decorated with tracing
  * @param spanAttributesProviders toggles for the built-in span attribute providers contributed by this module
  * @author Mateusz Nowak
  * @since 5.3.0
  */
 @Internal
-public record EventSourcingTracingSettings(boolean snapshotStoreEnabled,
+public record EventSourcingTracingSettings(boolean eventStoreEnabled,
+                                           boolean snapshotStoreEnabled,
                                            SpanAttributesProviders spanAttributesProviders) {
 
     /**
@@ -63,7 +65,7 @@ public record EventSourcingTracingSettings(boolean snapshotStoreEnabled,
      * @return the all-enabled default settings
      */
     public static EventSourcingTracingSettings enabledByDefault() {
-        return new EventSourcingTracingSettings(true, SpanAttributesProviders.enabledByDefault());
+        return new EventSourcingTracingSettings(true, true, SpanAttributesProviders.enabledByDefault());
     }
 
     /**

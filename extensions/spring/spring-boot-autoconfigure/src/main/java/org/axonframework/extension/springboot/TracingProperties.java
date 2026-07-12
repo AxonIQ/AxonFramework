@@ -84,6 +84,11 @@ public class TracingProperties {
     private final StateManager stateManager = new StateManager();
 
     /**
+     * Tracing settings for the {@code EventStorageEngine}.
+     */
+    private final EventStore eventStore = new EventStore();
+
+    /**
      * Tracing settings for {@code SnapshotStore}.
      */
     private final SnapshotStore snapshotStore = new SnapshotStore();
@@ -184,6 +189,15 @@ public class TracingProperties {
     }
 
     /**
+     * Returns the tracing settings for the {@code EventStorageEngine}.
+     *
+     * @return the event-store tracing settings, never {@code null}
+     */
+    public EventStore getEventStore() {
+        return eventStore;
+    }
+
+    /**
      * Returns the tracing settings for {@code SnapshotStore}.
      *
      * @return the {@code SnapshotStore} tracing settings, never {@code null}
@@ -277,14 +291,14 @@ public class TracingProperties {
 
         /**
          * When {@code true}, the handler span continues the publisher's trace. When {@code false} (default), the
-         * handler span starts a new trace with a link back to the publisher, so asynchronously handled events do not
-         * stretch the publisher's already-finished trace.
+         * handler span links back to the publisher and is parented to the streaming batch span. If batch tracing is
+         * disabled, it starts a new trace with the same publisher link.
          */
         private boolean distributedInSameTrace = false;
 
         /**
          * How recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is
-         * {@code true}. Older events — typically replays — start their own trace linked back to the publisher
+         * {@code true}. Older events -- typically replays -- start their own trace linked back to the publisher
          * instead of stretching the publisher's long-finished trace. Defaults to two minutes.
          */
         private Duration distributedInSameTraceTimeLimit = Duration.ofMinutes(2);
@@ -377,6 +391,25 @@ public class TracingProperties {
 
         /**
          * Whether the {@code StateManager} is decorated with tracing. Defaults to {@code true}.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Tracing settings for the {@code EventStorageEngine}.
+     */
+    public static class EventStore {
+
+        /**
+         * Whether the {@code EventStorageEngine} is decorated with tracing. Defaults to {@code true}.
          */
         private boolean enabled = true;
 

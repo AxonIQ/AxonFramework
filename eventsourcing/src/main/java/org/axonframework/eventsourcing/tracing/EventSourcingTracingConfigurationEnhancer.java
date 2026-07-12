@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.tracing;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStore;
+import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.store.tracing.TracingSnapshotStore;
 import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
@@ -28,6 +29,7 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.jspecify.annotations.Nullable;
 
@@ -59,6 +61,17 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(EventSourcingTracingSettings.class,
                                       c -> EventSourcingTracingSettings.enabledByDefault());
+        registry.registerDecorator(
+                EventStorageEngine.class,
+                TRACING_DECORATOR_ORDER,
+                (config, name, delegate) -> {
+                    SpanFactory spanFactory = spanFactory(config);
+                    if (spanFactory == null || !settings(config).eventStoreEnabled()) {
+                        return delegate;
+                    }
+                    return new TracingEventStorageEngine(delegate, spanFactory);
+                }
+        );
         registry.registerDecorator(
                 SnapshotStore.class,
                 TRACING_DECORATOR_ORDER,
