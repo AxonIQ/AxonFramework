@@ -12,19 +12,18 @@ The complete tracing guide, including the OpenTelemetry setup through the Microm
 ====
 endif::[]
 
-== Tracing architecture
+Migrating from Axon Framework 4 tracing? Follow the xref:migration:paths/distributed-tracing.adoc[Distributed Tracing migration path].
 
-A single `SpanFactory` interface, located in `org.axonframework.messaging.tracing` in the `axon-messaging` module, is the only public abstraction for span creation.
-Per-component span shapes (names, kinds, attributes, cross-process metadata propagation) are implementation details of internal decorators that each framework module registers through a `ConfigurationEnhancer` discovered by Java's `ServiceLoader`.
+== How tracing is enabled
 
-This design has two practical consequences:
+Tracing is built into the framework modules: each module automatically registers tracing decorators for its own components.
+The only step needed to turn tracing on is providing a `SpanFactory`, the single abstraction through which all spans are created.
 
-* Registering a `SpanFactory` component is the only step needed to enable tracing for every framework component on the classpath.
-* When no `SpanFactory` component is registered, the enhancers leave every component undecorated, so the un-traced path carries zero overhead.
+* With a `SpanFactory` present, every framework component on the classpath is traced; there is nothing to enable per component.
+* Without one, every component stays undecorated and the un-traced path carries zero overhead.
 
-The public SPI consists of `SpanFactory`, `Span`, `SpanScope`, and `SpanAttributesProvider`.
-The open-source modules ship two `SpanFactory` implementations: `LoggingSpanFactory`, which writes span lifecycle events to SLF4J for local development, and `NoOpSpanFactory`, a null-object for tests.
-Exporting spans to a tracing backend such as OpenTelemetry requires a provider implementation; see <<Exporting spans to a tracing backend>>.
+The open-source modules ship `LoggingSpanFactory`, which writes span lifecycle events to SLF4J for local development.
+Exporting spans to a tracing backend such as OpenTelemetry requires a provider; see <<Exporting spans to a tracing backend>>.
 
 == Traced operations
 
@@ -130,13 +129,14 @@ MessagingConfigurer.create()
 
 The open-source framework modules ship no exporting `SpanFactory` implementation; `LoggingSpanFactory` writes to the log only.
 Sending spans to OpenTelemetry-compatible backends such as Jaeger, Tempo, or Zipkin is provided by Axoniq Framework through its Micrometer Tracing binding (`io.axoniq.framework:axoniq-tracing-micrometer`).
-That binding builds on the `Tracer` and `Propagator` supplied by Spring Boot Actuator and a Micrometer bridge such as `micrometer-tracing-bridge-otel`, and additionally traces the distributed connector legs between applications and bridges the trace context to instrumented JDBC, gRPC, WebClient, and MDC code.
+That binding builds on the `Tracer` and `Propagator` supplied by Spring Boot Actuator and a Micrometer bridge such as `micrometer-tracing-bridge-otel`.
+It also traces the distributed connector legs between applications, makes instrumented gRPC, JDBC, and WebClient calls plus MDC logging nest under the correct Axon span, and carries the active span into Reactor pipelines through Micrometer's context propagation.
 
 ifdef::advanced-framework[]
 See xref:tracing:index.adoc[Distributed Tracing] for the complete setup.
 endif::[]
 ifndef::advanced-framework[]
-See the link:https://docs.axoniq.io/[Axoniq documentation,role=external,window=_blank] for the complete setup.
+The complete setup is described in the Axoniq Framework documentation.
 endif::[]
 
 Alternatively, implement the `SpanFactory` interface against the tracing library of your choice and register it as a component; the framework decorators are provider-agnostic.
