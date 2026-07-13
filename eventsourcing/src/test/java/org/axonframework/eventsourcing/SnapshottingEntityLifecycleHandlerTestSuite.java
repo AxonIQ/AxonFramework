@@ -112,7 +112,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
                         return new Account(ac.id, ac.name, 0);
                     })
                     .criteriaResolver(c -> (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)))
-                    .snapshotPolicy(c -> snapshotPolicy)
+                    .snapshotPolicy(snapshotPolicy)
                     .build()
             )
             .build();
