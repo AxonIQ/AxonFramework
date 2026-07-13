@@ -187,10 +187,10 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
             });
     }
 
-    private void storeSnapshot(I identifier, E entity, Position position, ProcessingContext pc) {
+    private void storeSnapshot(I identifier, E entity, Position position, ProcessingContext context) {
         Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, ClockUtils.instant(), Map.of());
 
-        snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot, pc)
+        snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot, context)
             .whenComplete((voidResult, ex) -> {
                 if (ex != null) {
                     logger.warn("Snapshotting failed for {} with identifier {}", messageType, identifier, ex);

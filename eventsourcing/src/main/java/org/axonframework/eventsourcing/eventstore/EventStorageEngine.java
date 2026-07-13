@@ -128,11 +128,11 @@ public interface EventStorageEngine extends DescribableComponent {
      * example snapshot-loading and tracing decorators) that need to correlate the sourcing operation with the
      * surrounding unit of work.
      *
-     * @param condition The {@link SourcingCondition} dictating the {@link MessageStream stream} of
-     *                  {@link EventMessage events} to source.
-     * @param context   The {@link ProcessingContext} active while sourcing; may be {@code null}.
-     * @return A <b>finite</b> {@link MessageStream} of {@link EventMessage events} matching the given
-     * {@code condition}.
+     * @param condition the {@link SourcingCondition} dictating the {@link MessageStream stream} of
+     *                  {@link EventMessage events} to source
+     * @param context   the {@link ProcessingContext} active while sourcing; may be {@code null}
+     * @return a <b>finite</b> {@link MessageStream} of {@link EventMessage events} matching the given
+     * {@code condition}
      */
     MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context);
 
