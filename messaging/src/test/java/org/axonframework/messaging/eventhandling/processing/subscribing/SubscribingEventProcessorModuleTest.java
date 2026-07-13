@@ -52,6 +52,7 @@ import org.junit.jupiter.api.*;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -82,7 +83,8 @@ class SubscribingEventProcessorModuleTest {
             SubscribingEventProcessorModule module = EventProcessorModule
                     .subscribing(processorName)
                     .eventHandlingComponents(components -> components.declarative("component",
-                            cfg -> SimpleEventHandlingComponent.create("test")
+                                                                                  cfg -> SimpleEventHandlingComponent.create(
+                                                                                          "test")
                     ))
                     .customized((cfg, c) -> c);
 
@@ -161,9 +163,12 @@ class SubscribingEventProcessorModuleTest {
                     ep -> ep.subscribing(
                             sp -> sp.defaults(d -> d.eventSource(eventBus))
                                     .defaultProcessor("test-processor",
-                                                      components -> components.declarative("component1", cfg -> component1)
-                                                                              .declarative("component2", cfg -> component2)
-                                                                              .autodetected("component3", cfg -> component3)
+                                                      components -> components.declarative("component1",
+                                                                                           cfg -> component1)
+                                                                              .declarative("component2",
+                                                                                           cfg -> component2)
+                                                                              .autodetected("component3",
+                                                                                            cfg -> component3)
                                     )
                     )
             );
@@ -205,9 +210,12 @@ class SubscribingEventProcessorModuleTest {
                     ep -> ep.subscribing(
                             sp -> sp.defaults(d -> d.eventSource(eventBus))
                                     .defaultProcessor("test-processor",
-                                                      components -> components.declarative("component1", cfg -> component1)
-                                                                              .declarative("component2", cfg -> component2)
-                                                                              .autodetected("component3", cfg -> component3)
+                                                      components -> components.declarative("component1",
+                                                                                           cfg -> component1)
+                                                                              .declarative("component2",
+                                                                                           cfg -> component2)
+                                                                              .autodetected("component3",
+                                                                                            cfg -> component3)
                                     )
                     )
             );
@@ -229,6 +237,83 @@ class SubscribingEventProcessorModuleTest {
                    .untilAsserted(() -> assertThat(component2.handled(sampleEvent)).isTrue());
             await().atMost(Duration.ofMillis(500))
                    .untilAsserted(() -> assertThat(component3HandledPayload.get()).isEqualTo(sampleEvent.payload()));
+
+            // cleanup
+            configuration.shutdown();
+        }
+
+        @Test
+        void handlerFailurePropagatesToPublisherWhenPublishProcessingContextIsNull() {
+            // given
+            SimpleEventBus eventBus = new SimpleEventBus();
+            RuntimeException handlerFailure = new RuntimeException("handler failed");
+            var failingComponent = new Object() {
+                @EventHandler
+                public void handle(String event) {
+                    throw handlerFailure;
+                }
+            };
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(
+                    processingConfigurer -> processingConfigurer.subscribing(
+                            subscribingEventProcessorsConfigurer ->
+                                    subscribingEventProcessorsConfigurer
+                                            .defaults(subscribingEventProcessorCfg -> subscribingEventProcessorCfg.eventSource(
+                                                    eventBus))
+                                            .defaultProcessor("test-processor",
+                                                              components -> components.autodetected("failing",
+                                                                                                    cfg -> failingComponent)
+                                            )
+                    )
+            );
+            var configuration = configurer.build();
+            configuration.start();
+
+            // when
+            EventMessage sampleEvent = EventTestUtils.asEventMessage("test-event");
+            CompletableFuture<Void> publishResult = eventBus.publish(null, sampleEvent);
+
+            // then - the publisher observes the handler failure through the publication future
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(publishResult)).isSameAs(handlerFailure);
+
+            // cleanup
+            configuration.shutdown();
+        }
+
+        @Test
+        void handlerFailureFailsThePublishingUnitOfWorkWhenPublishProcessingContextIsNotNull() {
+            // given
+            SimpleEventBus eventBus = new SimpleEventBus();
+            RuntimeException handlerFailure = new RuntimeException("handler failed");
+            var failingComponent = new Object() {
+                @EventHandler
+                public void handle(String event) {
+                    throw handlerFailure;
+                }
+            };
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(
+                    eventProcessingConfigurer -> eventProcessingConfigurer.subscribing(
+                            subscribingEventProcessorsConfigurer ->
+                                    subscribingEventProcessorsConfigurer
+                                            .defaults(subscribingEventProcessorCfg -> subscribingEventProcessorCfg.eventSource(eventBus))
+                                            .defaultProcessor("test-processor",
+                                                              components -> components.autodetected("failing",
+                                                                                                    cfg -> failingComponent)
+                                            )
+                    )
+            );
+            var configuration = configurer.build();
+            configuration.start();
+
+            // when
+            EventMessage sampleEvent = EventTestUtils.asEventMessage("test-event");
+            CompletableFuture<Void> publishResult = aUnitOfWorkFactory()
+                    .create()
+                    .executeWithResult(ctx -> eventBus.publish(ctx, sampleEvent));
+
+            // then - the failure surfaces to the publisher when the publishing unit of work commits
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(publishResult)).isSameAs(handlerFailure);
 
             // cleanup
             configuration.shutdown();
@@ -269,7 +354,8 @@ class SubscribingEventProcessorModuleTest {
             SubscribingEventProcessorModule sepModuleOne =
                     EventProcessorModule.subscribing("processor-one")
                                         .eventHandlingComponents(
-                                                components -> components.declarative("componentOne", cfg -> componentOne)
+                                                components -> components.declarative("componentOne",
+                                                                                     cfg -> componentOne)
                                         )
                                         .customized((config, psepConfig) -> psepConfig.withInterceptor(
                                                 specificInterceptorOne
@@ -278,7 +364,8 @@ class SubscribingEventProcessorModuleTest {
             SubscribingEventProcessorModule sepModuleTwo =
                     EventProcessorModule.subscribing("processor-two")
                                         .eventHandlingComponents(
-                                                components -> components.declarative("componentTwo", cfg -> componentTwo)
+                                                components -> components.declarative("componentTwo",
+                                                                                     cfg -> componentTwo)
                                         )
                                         .customized((config, psepConfig) -> psepConfig.withInterceptor(
                                                 specificInterceptorTwo
@@ -667,7 +754,8 @@ class SubscribingEventProcessorModuleTest {
                                                          .orElse(new SimpleEventBus())));
     }
 
-        private @NonNull static Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase> singleTestEventHandlingComponent() {
+    private @NonNull
+    static Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase> singleTestEventHandlingComponent() {
         var eventHandlingComponent = SimpleEventHandlingComponent.create("test");
         eventHandlingComponent.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
         return components -> components.declarative("eventHandlingComponent", cfg -> eventHandlingComponent);
@@ -685,11 +773,12 @@ class SubscribingEventProcessorModuleTest {
                                               processorName).ifPresent(p -> assertThat(p.isRunning()).isTrue()));
     }
 
-        private @NonNull static Optional<SubscribingEventProcessor> processor(
+    private @NonNull
+    static Optional<SubscribingEventProcessor> processor(
             AxonConfiguration configuration,
             String processorName
     ) {
-            return configuration.getModuleConfiguration("EventProcessor[" + processorName + "]")
+        return configuration.getModuleConfiguration("EventProcessor[" + processorName + "]")
                             .flatMap(m -> m.getOptionalComponent(EventProcessor.class, processorName))
                             .filter(SubscribingEventProcessor.class::isInstance)
                             .map(SubscribingEventProcessor.class::cast);
