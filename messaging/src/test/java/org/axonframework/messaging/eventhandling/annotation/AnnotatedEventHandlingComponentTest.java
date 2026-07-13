@@ -818,6 +818,40 @@ class AnnotatedEventHandlingComponentTest {
         }
     }
 
+    @Nested
+    class GivenPrivateHandlersInATypeHierarchy {
+
+        @Test
+        void invokesSubtypeHandlerInsteadOfShadowedPrivateSupertypeHandler() {
+            // given
+            // The supertype sorts lexically before the subtype, so the ordering used to select the
+            // supertype's private handler. Private methods are bound statically, so its body would run.
+            BaseWithPrivateHandler target = new SubWithPrivateHandler();
+            AnnotatedEventHandlingComponent<?> component = annotatedEventHandlingComponent(target);
+            EventMessage event = eventMessage(0);
+
+            // when
+            component.handle(event, messageProcessingContext(event));
+
+            // then
+            assertThat(target.handledBy).isEqualTo("sub");
+        }
+
+        @Test
+        void invokesPrivateSupertypeHandlerWhenSubtypeDoesNotDeclareItsOwn() {
+            // given
+            BaseWithPrivateHandler target = new SubWithoutOwnHandler();
+            AnnotatedEventHandlingComponent<?> component = annotatedEventHandlingComponent(target);
+            EventMessage event = eventMessage(0);
+
+            // when
+            component.handle(event, messageProcessingContext(event));
+
+            // then
+            assertThat(target.handledBy).isEqualTo("base");
+        }
+    }
+
     private void assertCalledOnlyOnce(Object handlerInstance) {
         AnnotatedEventHandlingComponent<?> annotatedEventHandlingComponent = annotatedEventHandlingComponent(
                 handlerInstance);
@@ -871,6 +905,30 @@ class AnnotatedEventHandlingComponentTest {
         void handleNotNamed() {
             handledNotNamed++;
         }
+    }
+
+    @SuppressWarnings("unused")
+    private static class BaseWithPrivateHandler {
+
+        String handledBy = "none";
+
+        @EventHandler
+        private void handle(Integer event) {
+            this.handledBy = "base";
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class SubWithPrivateHandler extends BaseWithPrivateHandler {
+
+        @EventHandler
+        private void handle(Integer event) {
+            this.handledBy = "sub";
+        }
+    }
+
+    private static class SubWithoutOwnHandler extends BaseWithPrivateHandler {
+
     }
 
         private @NonNull static AnnotatedEventHandlingComponent<?> annotatedEventHandlingComponent(Object eventHandler) {
