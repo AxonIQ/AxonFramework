@@ -23,6 +23,9 @@ import org.axonframework.common.util.MockException;
 import org.axonframework.conversion.DelegatingGeneralConverter;
 import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.TestConverter;
+import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.commandhandling.gateway.CommandResult;
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -66,6 +69,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -119,6 +123,7 @@ class PooledStreamingEventProcessorTest {
     private SimpleEventHandlingComponent simpleEhc;
     private RecordingEventHandlingComponent defaultEventHandlingComponent;
     private GeneralConverter converter;
+    private CommandGateway commandGateway;
 
     @BeforeEach
     void setUp() {
@@ -133,6 +138,7 @@ class PooledStreamingEventProcessorTest {
         simpleEhc.subscribe(new QualifiedName(Integer.class), (event, ctx) -> MessageStream.empty());
         defaultEventHandlingComponent = spy(new RecordingEventHandlingComponent(simpleEhc));
         converter = new DelegatingGeneralConverter(TestConverter.JACKSON.getConverter());
+        commandGateway = mock(CommandGateway.class);
         withTestSubject(List.of()); // default always applied
     }
 
@@ -156,6 +162,7 @@ class PooledStreamingEventProcessorTest {
 
         TestApplicationContext testApplicationContext = new TestApplicationContext();
         testApplicationContext.addComponent(GeneralConverter.class, null, converter);
+        testApplicationContext.addComponent(CommandGateway.class, null, commandGateway);
         EventProcessorConfiguration baseConfig = new EventProcessorConfiguration(PROCESSOR_NAME, null);
         var testDefaultConfiguration = new PooledStreamingEventProcessorConfiguration(baseConfig)
                 .eventSource(stubMessageSource)
@@ -480,6 +487,70 @@ class PooledStreamingEventProcessorTest {
 
             // then
             assertTrue(countDownLatch.await(5, TimeUnit.SECONDS));
+        }
+
+        @Test
+        void forContextDispatchesUsingEachEventsOwnPerEventResourceWithinABatch() {
+            // Within a single batch, ProcessorEventHandlingComponents.handle(entries, context) branches the shared
+            // batch context once per event, overriding TrackingToken.RESOURCE_KEY with that event's own token (see
+            // WorkPackage#processBatch). CommandDispatcher.forContext(ctx) caches its wrapper under a DIFFERENT key
+            // (CommandDispatcher.RESOURCE_KEY) via computeResourceIfAbsent: if that cache write is not scoped to the
+            // event's own branch, the wrapper created for the first event handled in a batch leaks into every later
+            // event of that SAME batch, which then dispatches in the first event's branch instead of its own.
+            //
+            // For each event this records the TrackingToken the handler itself observed (always correct - read
+            // directly off its own branch) plus a batch identity key (the branch's toString omits the per-event
+            // override, so two events share this key iff they were branched from the same batch root). It also
+            // records the TrackingToken the CommandGateway actually saw when CommandDispatcher.forContext(ctx)
+            // dispatched. Within any batch shared by 2+ events, every event's dispatched token must equal its own
+            // handler-observed token - not another event's from the same batch.
+            Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
+            Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
+            Map<Object, TrackingToken> tokenSeenAtDispatch = Collections.synchronizedMap(new HashMap<>());
+
+            when(commandGateway.send(any(), any(ProcessingContext.class))).thenAnswer(invocation -> {
+                Object payload = invocation.getArgument(0);
+                ProcessingContext dispatchContext = invocation.getArgument(1);
+                TrackingToken.fromContext(dispatchContext).ifPresent(token -> tokenSeenAtDispatch.put(payload, token));
+                return mock(CommandResult.class);
+            });
+
+            var ehc = SimpleEventHandlingComponent.create("test");
+            ehc.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                Object payload = event.payload();
+                TrackingToken.fromContext(ctx).ifPresent(token -> tokenSeenByHandler.put(payload, token));
+                batchKeyOfEvent.put(payload, ctx.toString());
+                return MessageStream.fromFuture(CommandDispatcher.forContext(ctx).send(payload).getResultMessage()).ignoreEntries().cast();
+            });
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(List.of(ehc), c -> c.initialSegmentCount(1).batchSize(5));
+
+            // when - publish 3 events before starting; the WorkPackage groups whichever of them arrive together
+            // into the same batch
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            startEventProcessor();
+
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(tokenSeenAtDispatch.keySet())
+                           .containsExactlyInAnyOrder("event-1", "event-2", "event-3"));
+
+            // sanity precondition - this only proves anything if at least one batch actually contained 2+ events
+            Map<String, List<Object>> eventsByBatch = batchKeyOfEvent.entrySet().stream()
+                    .collect(Collectors.groupingBy(Map.Entry::getValue,
+                                                    Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+            assertThat(eventsByBatch.values())
+                    .as("expected at least one batch with 2+ events, so the cross-event forContext cache can be observed")
+                    .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
+
+            // then - each event's dispatch must have used ITS OWN per-event token, matching what its handler saw.
+            // With the caching bug, an event sharing a batch with an earlier one dispatches using that earlier
+            // event's token instead of its own.
+            assertThat(tokenSeenAtDispatch).isEqualTo(tokenSeenByHandler);
         }
     }
 
