@@ -493,10 +493,10 @@ class PooledStreamingEventProcessorTest {
         void forContextDispatchesUsingEachEventsOwnPerEventResourceWithinABatch() {
             // Within a single batch, ProcessorEventHandlingComponents.handle(entries, context) branches the shared
             // batch context once per event, overriding TrackingToken.RESOURCE_KEY with that event's own token (see
-            // WorkPackage#processBatch). CommandDispatcher.forContext(ctx) caches its wrapper under a DIFFERENT key
-            // (CommandDispatcher.RESOURCE_KEY) via computeResourceIfAbsent: if that cache write is not scoped to the
-            // event's own branch, the wrapper created for the first event handled in a batch leaks into every later
-            // event of that SAME batch, which then dispatches in the first event's branch instead of its own.
+            // WorkPackage#processBatch). This test guards CommandDispatcher.forContext(ctx) returning a fresh
+            // dispatcher bound to that event's OWN branch every time: if it were cached under some other resource
+            // key instead, the wrapper created for the first event handled in a batch would leak into every later
+            // event of that SAME batch, which would then dispatch in the first event's branch instead of its own.
             //
             // For each event this records the TrackingToken the handler itself observed (always correct - read
             // directly off its own branch) plus a batch identity key (the branch's toString omits the per-event

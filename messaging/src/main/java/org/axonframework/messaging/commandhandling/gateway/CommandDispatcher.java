@@ -21,7 +21,6 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandDispatcherParameterResolverFactory;
-import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.annotation.MessageHandler;
@@ -48,24 +47,20 @@ import java.util.concurrent.CompletableFuture;
 public interface CommandDispatcher extends DescribableComponent {
 
     /**
-     * The {@link Context.ResourceKey} used to store the {@link CommandDispatcher} in the {@link ProcessingContext}.
-     */
-    Context.ResourceKey<ContextAwareCommandDispatcher> RESOURCE_KEY = Context.ResourceKey.withLabel("CommandDispatcher");
-
-    /**
      * Creates a dispatcher for the given {@link ProcessingContext}.
      * <p>
-     * You can use this dispatcher <b>only</b> for the context it was created for. There is no harm in using this method
-     * more than once with the same {@code context}, as the same dispatcher will be returned.
+     * You can use this dispatcher <b>only</b> for the context it was created for. Every invocation returns a fresh
+     * instance bound to the given {@code context} - it is never cached or shared with another call, even for the
+     * same {@code context}. This matters when {@code context} overrides one or more resources on top of a shared
+     * parent (e.g. one such override per event in a streaming processor's batch): each context with its own
+     * overridden resources must resolve its own dispatcher rather than risk one context's dispatcher leaking into
+     * another's.
      *
      * @param context The {@link ProcessingContext} to create the dispatcher for.
-     * @return The command dispatcher specific for the given {@code context}.
+     * @return A fresh command dispatcher specific for the given {@code context}.
      */
     static CommandDispatcher forContext(ProcessingContext context) {
-        return context.computeResourceIfAbsent(
-                RESOURCE_KEY,
-                () -> new ContextAwareCommandDispatcher(context.component(CommandGateway.class), context)
-        );
+        return new ContextAwareCommandDispatcher(context.component(CommandGateway.class), context);
     }
 
     /**
