@@ -246,7 +246,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source();
 
-            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID).join();
+            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join();
 
             assertThat(snapshot).isNotNull();
             assertThat(snapshot.payload()).isEqualTo(new Account(ACCOUNT_ID, "Alice", 300));
@@ -265,7 +265,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source(matchHandler);
 
-            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID).join()).isNotNull();
+            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join()).isNotNull();
         }
 
         @Test
@@ -335,7 +335,8 @@ class SnapshottingEntityLifecycleHandlerTest {
         snapshotStore.store(
             ACCOUNT_TYPE.qualifiedName(),
             ACCOUNT_ID,
-            new Snapshot(position, version, payload, Instant.now(), Map.of())
+            new Snapshot(position, version, payload, Instant.now(), Map.of()),
+            null
         ).join();
     }
 
