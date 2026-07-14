@@ -183,7 +183,7 @@ to
 
 `org.axonframework.extension.metrics.micrometer`
 
-| Tracing SPI and decorators
+| Tracing Service Provider Interface (SPI) and decorators
 | `org.axonframework.tracing`
 
 to

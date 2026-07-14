@@ -21,7 +21,6 @@ import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrd
 import org.axonframework.modelling.repository.tracing.TracingRepository;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
-import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
@@ -48,8 +47,8 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
     /**
      * Decorator order for the modelling tracing decorators. Near-maximal so tracing is applied last and is the
      * <em>outermost</em> wrapper - spans cover all inner decorators, and tracing wrappers are reliably detectable by
-     * an outermost {@code instanceof} check (see {@code TracingStateManager#register}). Same value and rationale as
-     * {@code MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     * an outermost {@code instanceof} check (see {@link TracingStateManager#register(Repository)}). Same value and
+     * rationale as {@link org.axonframework.messaging.tracing.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
      */
     public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
 
@@ -88,15 +87,11 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
 
     /**
      * Resolves the configured {@link SpanFactory}, or {@code null} when none is configured (tracing disabled). The
-     * {@code SpanFactory} is an optional bean; when absent {@link Configuration#getComponent(Class)} throws
-     * {@link ComponentNotFoundException}, translated to {@code null} so the component is left undecorated.
+     * {@code SpanFactory} is an optional bean contributed only by a tracing backend; when absent the component is left
+     * undecorated.
      */
     private static @Nullable SpanFactory spanFactory(Configuration config) {
-        try {
-            return config.getComponent(SpanFactory.class);
-        } catch (ComponentNotFoundException e) {
-            return null;
-        }
+        return config.getOptionalComponent(SpanFactory.class).orElse(null);
     }
 
     /**

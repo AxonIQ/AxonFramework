@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventBus;
@@ -25,7 +24,6 @@ import org.axonframework.messaging.eventhandling.tracing.TracingEventSink;
 import org.axonframework.messaging.queryhandling.tracing.TracingQueryBus;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
-import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
@@ -160,19 +158,12 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
     }
 
     /**
-     * Resolves the configured {@link SpanFactory}, or {@code null} when none is configured (tracing disabled).
-     * <p>
-     * Uses {@link Configuration#getComponent(Class)} rather than {@code getOptionalComponent}: a {@code SpanFactory} is
-     * an optional bean contributed only by a tracing backend. When absent,
-     * {@code getComponent} throws {@link ComponentNotFoundException}, which is translated to {@code null} so the
-     * component is left undecorated.
+     * Resolves the configured {@link SpanFactory}, or {@code null} when none is configured (tracing disabled). The
+     * {@code SpanFactory} is an optional bean contributed only by a tracing backend; when absent the component is left
+     * undecorated.
      */
     private static @Nullable SpanFactory spanFactory(Configuration config) {
-        try {
-            return config.getComponent(SpanFactory.class);
-        } catch (ComponentNotFoundException e) {
-            return null;
-        }
+        return config.getOptionalComponent(SpanFactory.class).orElse(null);
     }
 
     /**

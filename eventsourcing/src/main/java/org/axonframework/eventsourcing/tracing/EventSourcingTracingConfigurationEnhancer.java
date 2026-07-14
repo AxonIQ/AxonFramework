@@ -24,7 +24,6 @@ import org.axonframework.eventsourcing.snapshot.store.tracing.TracingSnapshotSto
 import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
-import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
@@ -92,6 +91,8 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
                 TRACING_DECORATOR_ORDER,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
+                    // Gated on the same event-sink.enabled toggle as the messaging-side EventSink wrappers: they
+                    // trace the same publish path, just on a different slot.
                     if (spanFactory == null || !messagingSettings(config).eventSinkEnabled()) {
                         return delegate;
                     }
@@ -102,15 +103,11 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
 
     /**
      * Resolves the configured {@link SpanFactory}, or {@code null} when none is configured (tracing disabled). The
-     * {@code SpanFactory} is an optional bean; when absent {@link Configuration#getComponent(Class)} throws
-     * {@link ComponentNotFoundException}, translated to {@code null} so the component is left undecorated.
+     * {@code SpanFactory} is an optional bean contributed only by a tracing backend; when absent the component is left
+     * undecorated.
      */
     private static @Nullable SpanFactory spanFactory(Configuration config) {
-        try {
-            return config.getComponent(SpanFactory.class);
-        } catch (ComponentNotFoundException e) {
-            return null;
-        }
+        return config.getOptionalComponent(SpanFactory.class).orElse(null);
     }
 
     /**
@@ -127,10 +124,6 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
         return TracingConfigurationOrder.TRACING_DEFAULTS_ENHANCER_ORDER;
     }
 
-    /**
-     * The EventStore wrapper is gated on the same {@code event-sink.enabled} toggle as the messaging-side EventSink
-     * wrappers - they trace the same publish path, just on a different slot.
-     */
     /**
      * Resolves the {@link MessagingTracingSettings} component. Always present: {@code axon-messaging} registers the
      * default via {@code registerIfNotPresent}.

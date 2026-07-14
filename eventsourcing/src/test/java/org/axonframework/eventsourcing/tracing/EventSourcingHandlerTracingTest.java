@@ -65,7 +65,7 @@ class EventSourcingHandlerTracingTest {
 
     @Test
     void suppressesARealEventSourcingHandlerByDefault() {
-        // given a context with a SpanFactory but default (absent) settings - showEventSourcingHandlers=false
+        // given a context with a SpanFactory but default (absent) settings - eventSourcingHandlersEnabled=false
         ProcessingContext context = StubProcessingContext.withComponents(
                 registry -> registry.registerComponent(SpanFactory.class, c -> spanFactory)
         );
@@ -82,10 +82,10 @@ class EventSourcingHandlerTracingTest {
     }
 
     @Test
-    void tracesARealEventSourcingHandlerWhenShowEventSourcingHandlersIsEnabled() {
-        // given a context whose settings enable showEventSourcingHandlers
+    void tracesARealEventSourcingHandlerWhenEventSourcingHandlersEnabled() {
+        // given a context whose settings enable eventSourcingHandlersEnabled
         MessagingTracingSettings showHandlers =
-                MessagingTracingSettings.enabledByDefault().withShowEventSourcingHandlers(true);
+                MessagingTracingSettings.enabledByDefault().withEventSourcingHandlersEnabled(true);
         ProcessingContext context = StubProcessingContext.withComponents(
                 registry -> {
                     registry.registerComponent(SpanFactory.class, c -> spanFactory);

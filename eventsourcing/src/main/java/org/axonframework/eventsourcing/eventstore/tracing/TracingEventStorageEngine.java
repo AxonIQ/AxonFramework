@@ -41,8 +41,8 @@ import java.util.function.Supplier;
 /**
  * Tracing decorator for an {@link EventStorageEngine}. It traces the complete logical append operation, beginning
  * when {@link EventStorageEngine#appendEvents(AppendCondition, ProcessingContext, List)} is invoked and ending when
- * the returned {@link AppendTransaction} reaches a terminal outcome through {@link AppendTransaction#afterCommit(Object)},
- * {@link AppendTransaction#rollback()}, or a failure.
+ * the returned {@link AppendTransaction} reaches a terminal outcome through
+ * {@link AppendTransaction#afterCommit(Object)}, {@link AppendTransaction#rollback()}, or a failure.
  * <p>
  * When a {@link ProcessingContext} is supplied, the span additionally ends with the context as a leak backstop, so an
  * abandoned transaction cannot leave it open. Without a context there is no lifecycle to attach that backstop to: the
@@ -117,7 +117,8 @@ public final class TracingEventStorageEngine implements EventStorageEngine {
 
     private static <R> AppendTransaction<R> tracingTransactionTyped(AppendTransaction<R> transaction,
                                                                     SpanScope scope) {
-        return new TracingAppendTransaction<>(Objects.requireNonNull(transaction, "transaction may not be null"), scope);
+        return new TracingAppendTransaction<>(
+                Objects.requireNonNull(transaction, "transaction may not be null"), scope);
     }
 
     private static void fail(SpanScope scope, Throwable error) {

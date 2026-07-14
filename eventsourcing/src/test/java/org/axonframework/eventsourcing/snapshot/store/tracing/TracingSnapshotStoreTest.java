@@ -69,7 +69,7 @@ class TracingSnapshotStoreTest {
 
         @Test
         void threadsProcessingContextToTheDelegate() {
-            // given — the pc is what lets the span nest under the surrounding entity-source trace
+            // given - the pc is what lets the span nest under the surrounding entity-source trace
             QualifiedName name = new QualifiedName("Booking");
             ProcessingContext context = new StubProcessingContext();
 

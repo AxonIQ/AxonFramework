@@ -51,7 +51,7 @@ public class TracingProperties {
      * {@code false}: event sourcing handlers fire once per event during entity replay and would flood traces with one
      * span per replayed event.
      */
-    private boolean showEventSourcingHandlers = false;
+    private boolean eventSourcingHandlersEnabled = false;
 
     /**
      * Tracing settings for the {@code CommandBus}.
@@ -121,17 +121,17 @@ public class TracingProperties {
      *
      * @return {@code true} when event sourcing handlers are traced, {@code false} otherwise
      */
-    public boolean isShowEventSourcingHandlers() {
-        return showEventSourcingHandlers;
+    public boolean isEventSourcingHandlersEnabled() {
+        return eventSourcingHandlersEnabled;
     }
 
     /**
      * Sets whether {@code @EventSourcingHandler} invocations get their own per-method handler span.
      *
-     * @param showEventSourcingHandlers {@code true} to trace event sourcing handlers, {@code false} to suppress them
+     * @param eventSourcingHandlersEnabled {@code true} to trace event sourcing handlers, {@code false} to suppress them
      */
-    public void setShowEventSourcingHandlers(boolean showEventSourcingHandlers) {
-        this.showEventSourcingHandlers = showEventSourcingHandlers;
+    public void setEventSourcingHandlersEnabled(boolean eventSourcingHandlersEnabled) {
+        this.eventSourcingHandlersEnabled = eventSourcingHandlersEnabled;
     }
 
     /**
@@ -303,34 +303,77 @@ public class TracingProperties {
          */
         private Duration distributedInSameTraceTimeLimit = Duration.ofMinutes(2);
 
+        /**
+         * Returns whether event-handling components are decorated with tracing.
+         *
+         * @return {@code true} when event-processor tracing is enabled, {@code false} otherwise
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * Sets whether event-handling components are decorated with tracing.
+         *
+         * @param enabled {@code true} to enable event-processor tracing, {@code false} to disable it
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
 
+        /**
+         * Returns whether the streaming-processor batch span is suppressed.
+         *
+         * @return {@code true} when the batch span is suppressed, {@code false} otherwise
+         */
         public boolean isDisableBatchTrace() {
             return disableBatchTrace;
         }
 
+        /**
+         * Sets whether the streaming-processor batch span is suppressed.
+         *
+         * @param disableBatchTrace {@code true} to suppress the batch span, {@code false} to keep it
+         */
         public void setDisableBatchTrace(boolean disableBatchTrace) {
             this.disableBatchTrace = disableBatchTrace;
         }
 
+        /**
+         * Returns whether the handler span continues the publisher's trace.
+         *
+         * @return {@code true} when the handler span continues the publisher's trace, {@code false} otherwise
+         */
         public boolean isDistributedInSameTrace() {
             return distributedInSameTrace;
         }
 
+        /**
+         * Sets whether the handler span continues the publisher's trace.
+         *
+         * @param distributedInSameTrace {@code true} to continue the publisher's trace, {@code false} to link back and
+         *                               parent under the batch span instead
+         */
         public void setDistributedInSameTrace(boolean distributedInSameTrace) {
             this.distributedInSameTrace = distributedInSameTrace;
         }
 
+        /**
+         * Returns how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is
+         * {@code true}.
+         *
+         * @return the time limit for continuing the publisher's trace, never {@code null}
+         */
         public Duration getDistributedInSameTraceTimeLimit() {
             return distributedInSameTraceTimeLimit;
         }
 
+        /**
+         * Sets how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is
+         * {@code true}.
+         *
+         * @param distributedInSameTraceTimeLimit the time limit for continuing the publisher's trace
+         */
         public void setDistributedInSameTraceTimeLimit(Duration distributedInSameTraceTimeLimit) {
             this.distributedInSameTraceTimeLimit = distributedInSameTraceTimeLimit;
         }
@@ -375,10 +418,20 @@ public class TracingProperties {
          */
         private boolean enabled = true;
 
+        /**
+         * Returns whether {@code Repository} instances are decorated with tracing.
+         *
+         * @return {@code true} when {@code Repository} tracing is enabled, {@code false} otherwise
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * Sets whether {@code Repository} instances are decorated with tracing.
+         *
+         * @param enabled {@code true} to enable {@code Repository} tracing, {@code false} to disable it
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
@@ -394,10 +447,20 @@ public class TracingProperties {
          */
         private boolean enabled = true;
 
+        /**
+         * Returns whether the {@code StateManager} is decorated with tracing.
+         *
+         * @return {@code true} when {@code StateManager} tracing is enabled, {@code false} otherwise
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * Sets whether the {@code StateManager} is decorated with tracing.
+         *
+         * @param enabled {@code true} to enable {@code StateManager} tracing, {@code false} to disable it
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
@@ -413,10 +476,20 @@ public class TracingProperties {
          */
         private boolean enabled = true;
 
+        /**
+         * Returns whether the {@code EventStorageEngine} is decorated with tracing.
+         *
+         * @return {@code true} when event-store tracing is enabled, {@code false} otherwise
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * Sets whether the {@code EventStorageEngine} is decorated with tracing.
+         *
+         * @param enabled {@code true} to enable event-store tracing, {@code false} to disable it
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
@@ -432,10 +505,20 @@ public class TracingProperties {
          */
         private boolean enabled = true;
 
+        /**
+         * Returns whether the {@code SnapshotStore} is decorated with tracing.
+         *
+         * @return {@code true} when {@code SnapshotStore} tracing is enabled, {@code false} otherwise
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * Sets whether the {@code SnapshotStore} is decorated with tracing.
+         *
+         * @param enabled {@code true} to enable {@code SnapshotStore} tracing, {@code false} to disable it
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
         }
@@ -474,42 +557,93 @@ public class TracingProperties {
          */
         private boolean eventTags = true;
 
+        /**
+         * Returns whether the message-id attribute provider is contributed.
+         *
+         * @return {@code true} when the message-id provider is contributed, {@code false} otherwise
+         */
         public boolean isMessageId() {
             return messageId;
         }
 
+        /**
+         * Sets whether the message-id attribute provider is contributed.
+         *
+         * @param messageId {@code true} to contribute the message-id provider, {@code false} to omit it
+         */
         public void setMessageId(boolean messageId) {
             this.messageId = messageId;
         }
 
+        /**
+         * Returns whether the message-type attribute provider is contributed.
+         *
+         * @return {@code true} when the message-type provider is contributed, {@code false} otherwise
+         */
         public boolean isMessageType() {
             return messageType;
         }
 
+        /**
+         * Sets whether the message-type attribute provider is contributed.
+         *
+         * @param messageType {@code true} to contribute the message-type provider, {@code false} to omit it
+         */
         public void setMessageType(boolean messageType) {
             this.messageType = messageType;
         }
 
+        /**
+         * Returns whether the metadata attribute provider is contributed.
+         *
+         * @return {@code true} when the metadata provider is contributed, {@code false} otherwise
+         */
         public boolean isMetadata() {
             return metadata;
         }
 
+        /**
+         * Sets whether the metadata attribute provider is contributed.
+         *
+         * @param metadata {@code true} to contribute the metadata provider, {@code false} to omit it
+         */
         public void setMetadata(boolean metadata) {
             this.metadata = metadata;
         }
 
+        /**
+         * Returns whether the aggregate-identifier attribute provider is contributed.
+         *
+         * @return {@code true} when the aggregate-identifier provider is contributed, {@code false} otherwise
+         */
         public boolean isAggregateIdentifier() {
             return aggregateIdentifier;
         }
 
+        /**
+         * Sets whether the aggregate-identifier attribute provider is contributed.
+         *
+         * @param aggregateIdentifier {@code true} to contribute the aggregate-identifier provider, {@code false} to
+         *                            omit it
+         */
         public void setAggregateIdentifier(boolean aggregateIdentifier) {
             this.aggregateIdentifier = aggregateIdentifier;
         }
 
+        /**
+         * Returns whether the event-tags attribute provider is contributed.
+         *
+         * @return {@code true} when the event-tags provider is contributed, {@code false} otherwise
+         */
         public boolean isEventTags() {
             return eventTags;
         }
 
+        /**
+         * Sets whether the event-tags attribute provider is contributed.
+         *
+         * @param eventTags {@code true} to contribute the event-tags provider, {@code false} to omit it
+         */
         public void setEventTags(boolean eventTags) {
             this.eventTags = eventTags;
         }

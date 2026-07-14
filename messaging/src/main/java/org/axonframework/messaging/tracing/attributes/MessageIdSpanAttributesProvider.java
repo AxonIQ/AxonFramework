@@ -26,8 +26,7 @@ import java.util.Objects;
 
 /**
  * Adds the {@link Message#identifier() message identifier} to the span. By default the attribute key is
- * {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.id}); a different key can be supplied through the constructor -- for
- * example to keep the Axon Framework 4 key {@code axon_message_id}.
+ * {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.id}); a different key can be supplied through the constructor.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

@@ -28,12 +28,11 @@ import java.util.Objects;
 /**
  * Adds the aggregate identifier to the span when one is available on the {@link ProcessingContext} via
  * {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY}. By default the attribute key is {@link #DEFAULT_ATTRIBUTE_KEY}
- * ({@code axoniq.aggregate.identifier}); a different key can be supplied through the constructor -- for example to keep
- * the Axon Framework 4 key {@code axon_aggregate_identifier}.
+ * ({@code axoniq.aggregate.identifier}); a different key can be supplied through the constructor.
  * <p>
  * This is best-effort: the attribute is present only when a legacy aggregate-based event storage engine populated the
  * resource. It is absent for dynamic-consistency-boundary / entity-based operations and whenever no context is
- * available. This provider intentionally does not reference any Axon Framework 4-era message type.
+ * available.
  * <p>
  * <b>Legacy-only.</b> This provider is exclusively for events produced by a legacy, aggregate-based event store. For
  * dynamic-consistency-boundary events, tags are recorded by the {@code axon-eventsourcing} module's

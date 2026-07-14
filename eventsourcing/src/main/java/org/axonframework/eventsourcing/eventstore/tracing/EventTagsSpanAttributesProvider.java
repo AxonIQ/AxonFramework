@@ -94,12 +94,15 @@ public final class EventTagsSpanAttributesProvider implements SpanAttributesProv
         if (!(message instanceof EventMessage event)) {
             return Map.of();
         }
-        Map<String, String> attributes = new HashMap<>();
-        tagResolver.resolve(event).forEach(tag -> {
+        Map<String, String> attributes = null;
+        for (var tag : tagResolver.resolve(event)) {
             if (allowedKeys.isEmpty() || allowedKeys.contains(tag.key())) {
+                if (attributes == null) {
+                    attributes = new HashMap<>();
+                }
                 attributes.put(prefix + tag.key(), tag.value());
             }
-        });
-        return attributes;
+        }
+        return attributes == null ? Map.of() : attributes;
     }
 }

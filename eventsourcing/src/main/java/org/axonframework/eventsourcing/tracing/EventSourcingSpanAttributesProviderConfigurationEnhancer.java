@@ -34,8 +34,8 @@ import org.axonframework.eventsourcing.eventstore.TagResolver;
  * it is only contributed when one is present in the configuration. Contribution is a decorator on the registry
  * component, so both the {@link EventSourcingTracingSettings#spanAttributesProviders()} toggle and the
  * {@code TagResolver} presence are evaluated when the registry is resolved - right before the
- * {@link org.axonframework.messaging.tracing.SpanFactory} consuming it is constructed, once all component registrations are
- * known.
+ * {@link org.axonframework.messaging.tracing.SpanFactory} consuming it is constructed, once all component
+ * registrations are known.
  *
  * @author Mateusz Nowak
  * @since 5.3.0

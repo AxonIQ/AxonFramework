@@ -38,13 +38,13 @@ import org.springframework.context.annotation.Bean;
  * This layer is deliberately thin: it registers the {@code *TracingSettings} components derived from
  * {@link TracingProperties} (via {@code registerIfNotPresent}, so a user-defined settings bean or component always
  * wins) and bridges user-declared {@link SpanAttributesProvider} beans into the
- * {@link SpanAttributesProviderRegistry}. Everything else — the built-in attribute providers, their toggles, the
- * tracing decorators — is wired natively by the ServiceLoader-discovered enhancers of the framework modules, driven
+ * {@link SpanAttributesProviderRegistry}. Everything else - the built-in attribute providers, their toggles, the
+ * tracing decorators - is wired natively by the ServiceLoader-discovered enhancers of the framework modules, driven
  * by these settings.
  * <p>
  * The {@link SpanFactory} is <b>optional</b> and contributed by a tracing backend (for example an
  * OpenTelemetry-backed {@code SpanFactory} registered by its own autoconfiguration). When no factory component is
- * present, the tracing decorators leave every component undecorated — tracing is off with zero overhead. The whole
+ * present, the tracing decorators leave every component undecorated - tracing is off with zero overhead. The whole
  * configuration backs off when {@code axon.tracing.enabled} is set to {@code false}, in which case no settings are
  * registered.
  *
@@ -87,7 +87,7 @@ public class TracingAutoConfiguration {
                             properties.getEventProcessor().isDistributedInSameTrace(),
                             properties.getEventProcessor().getDistributedInSameTraceTimeLimit(),
                             properties.getQueryBus().isEnabled(),
-                            properties.isShowEventSourcingHandlers(),
+                            properties.isEventSourcingHandlersEnabled(),
                             new MessagingTracingSettings.SpanAttributesProviders(
                                     providers.isMessageId(),
                                     providers.isMessageType(),

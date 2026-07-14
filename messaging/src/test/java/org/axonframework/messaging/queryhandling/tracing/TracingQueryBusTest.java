@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.queryhandling.tracing;
 
-import org.axonframework.messaging.queryhandling.tracing.TracingQueryBus;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;

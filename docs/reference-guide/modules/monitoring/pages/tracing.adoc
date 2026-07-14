@@ -19,11 +19,11 @@ Migrating from Axon Framework 4 tracing? Follow the xref:migration:paths/distrib
 Tracing is built into the framework modules: each module automatically registers tracing decorators for its own components.
 The only step needed to turn tracing on is providing a `SpanFactory`, the single abstraction through which all spans are created.
 
-* With a `SpanFactory` present, every framework component on the classpath is traced; there is nothing to enable per component.
+* With a `SpanFactory` present, every framework component on the classpath is traced, with nothing to enable per component.
 * Without one, every component stays undecorated and the un-traced path carries zero overhead.
 
 The open-source modules ship `LoggingSpanFactory`, which writes span lifecycle events to SLF4J for local development.
-Exporting spans to a tracing backend such as OpenTelemetry requires a provider; see <<Exporting spans to a tracing backend>>.
+Exporting spans to a tracing backend such as OpenTelemetry requires a provider. See <<Exporting spans to a tracing backend>>.
 
 == Traced operations
 
@@ -53,9 +53,9 @@ StreamingEventProcessor.batch                        [INTERNAL]
    +- StudentProjector.on(StudentRegistered)         [INTERNAL]
 ----
 
-The batch span is the structural parent because the processor owns the execution; the link preserves the causal relationship to the publisher.
+The batch span is the structural parent because the processor owns the execution. The link preserves the causal relationship to the publisher.
 Because the publisher is a link rather than a parent, an event handled long after publication (processor lag, downtime catch-up, replay) starts a temporally coherent trace at processing time and never stretches the publisher's finished trace.
-Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead; events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
+Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead. Events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
 Subscribing processors run inside the publisher's processing context and always continue its trace.
 
 Queries follow the same pattern with `QueryBus.query`, `QueryBus.subscriptionQuery`, `QueryBus.handleQuery`, and `QueryBus.emitUpdate` spans, and the modelling and event-sourcing modules contribute `Repository.load` / `loadOrCreate` / `persist` / `attach`, `StateManager.loadManagedEntity`, and `SnapshotStore.store` / `load` spans.
@@ -87,13 +87,13 @@ Every component can be opted out individually:
 |`axon.tracing.repository.enabled` |`true` |Traces repository operations.
 |`axon.tracing.state-manager.enabled` |`true` |Traces state-manager loads.
 |`axon.tracing.snapshot-store.enabled` |`true` |Traces snapshot store and load operations.
-|`axon.tracing.show-event-sourcing-handlers` |`false` |When `true`, `@EventSourcingHandler` invocations get their own per-method span. Off by default because they fire once per event during entity replay.
+|`axon.tracing.event-sourcing-handlers-enabled` |`false` |When `true`, `@EventSourcingHandler` invocations get their own per-method span. Off by default because they fire once per event during entity replay.
 |`axon.tracing.attribute-providers.*` |`true` |Toggles the built-in span attribute providers (`message-id`, `message-type`, `metadata`, `aggregate-identifier`, `event-tags`) individually.
 |===
 
 Outside Spring, the same wiring happens automatically through the ServiceLoader-discovered enhancers as soon as a `SpanFactory` component is registered with the configurer.
 
-== Local development with LoggingSpanFactory
+== Local development with `LoggingSpanFactory`
 
 For local development without a tracing backend, register `LoggingSpanFactory`.
 It emits one INFO line per span lifecycle event, formatted as `[spanId][operationName]`, including the type and identifier of the traced message.
@@ -127,10 +127,10 @@ MessagingConfigurer.create()
 
 == Exporting spans to a tracing backend
 
-The open-source framework modules ship no exporting `SpanFactory` implementation; `LoggingSpanFactory` writes to the log only.
+The open-source framework modules ship no exporting `SpanFactory` implementation. `LoggingSpanFactory` writes to the log only.
 Sending spans to OpenTelemetry-compatible backends such as Jaeger, Tempo, or Zipkin is provided by Axoniq Framework through its Micrometer Tracing binding (`io.axoniq.framework:axoniq-tracing-micrometer`).
 That binding builds on the `Tracer` and `Propagator` supplied by Spring Boot Actuator and a Micrometer bridge such as `micrometer-tracing-bridge-otel`.
-It also traces the distributed connector legs between applications, makes instrumented gRPC, JDBC, and WebClient calls plus MDC logging nest under the correct Axon span, and carries the active span into Reactor pipelines through Micrometer's context propagation.
+It also traces the distributed connector legs between applications, makes instrumented gRPC, JDBC, and WebClient calls plus Mapped Diagnostic Context (MDC) logging nest under the correct Axon span, and carries the active span into Reactor pipelines through Micrometer's context propagation.
 
 ifdef::advanced-framework[]
 See xref:tracing:index.adoc[Distributed Tracing] for the complete setup.
@@ -139,5 +139,5 @@ ifndef::advanced-framework[]
 The complete setup is described in the Axoniq Framework documentation.
 endif::[]
 
-Alternatively, implement the `SpanFactory` interface against the tracing library of your choice and register it as a component; the framework decorators are provider-agnostic.
+Alternatively, implement the `SpanFactory` interface against the tracing library of your choice and register it as a component. The framework decorators are provider-agnostic.
 Sending spans to several destinations at once is a concern of the chosen provider's export layer (for example, multiple OpenTelemetry span exporters), not of the framework: Axon Framework always uses one active `SpanFactory`, so every span is created and ended exactly once.

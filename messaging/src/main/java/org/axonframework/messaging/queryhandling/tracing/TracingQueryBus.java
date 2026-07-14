@@ -44,9 +44,9 @@ import java.util.function.Supplier;
  * Each subscribed {@link QueryHandler} is wrapped so that handling opens a handler span -- parented on the dispatch span
  * via the propagated context -- bound to the handling {@link ProcessingContext}'s lifecycle.
  * <p>
- * Update emission (the AF4 {@code QueryUpdateEmitter} concern) is traced here too: AF5's
- * {@code SimpleQueryUpdateEmitter} delegates {@code emit} / {@code complete} / {@code completeExceptionally} to the
- * matching {@link QueryBus} methods, so wrapping the bus naturally traces the emitter as well.
+ * Update emission is traced here too: {@code SimpleQueryUpdateEmitter} delegates {@code emit} / {@code complete} /
+ * {@code completeExceptionally} to the matching {@link QueryBus} methods, so wrapping the bus naturally traces the
+ * emitter as well.
  * <p>
  * This decorator is registered by {@code MessagingTracingConfigurationEnhancer}; it is never instantiated directly by
  * applications.

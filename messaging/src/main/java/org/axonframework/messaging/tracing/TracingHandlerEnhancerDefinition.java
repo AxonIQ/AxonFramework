@@ -16,8 +16,6 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
@@ -54,8 +52,8 @@ import java.util.stream.Collectors;
  * attribute are suppressed by default: they fire once per event during entity replay (a hot path) and would flood
  * traces with one span per replayed event. Suppression is decided <em>before</em> any span name is built or the
  * {@link SpanFactory} is resolved, so a suppressed invocation carries no tracing cost beyond a boolean check. Set
- * {@link MessagingTracingSettings#showEventSourcingHandlers()} to {@code true}
- * ({@code axon.tracing.show-event-sourcing-handlers} in Spring Boot) to trace them anyway.
+ * {@link MessagingTracingSettings#eventSourcingHandlersEnabled()} to {@code true}
+ * ({@code axon.tracing.event-sourcing-handlers-enabled} in Spring Boot) to trace them anyway.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -126,7 +124,7 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
 
         @Override
         public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
-            if (eventSourcingHandler && !showEventSourcingHandlers(context)) {
+            if (eventSourcingHandler && !eventSourcingHandlersEnabled(context)) {
                 // Replay hot path: a suppressed @EventSourcingHandler invocation short-circuits BEFORE the span
                 // name is built and BEFORE the SpanFactory is resolved (eager-name guard).
                 return super.handle(message, context, target);
@@ -156,9 +154,9 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
             }
         }
 
-        private static boolean showEventSourcingHandlers(ProcessingContext context) {
+        private static boolean eventSourcingHandlersEnabled(ProcessingContext context) {
             try {
-                return context.component(MessagingTracingSettings.class).showEventSourcingHandlers();
+                return context.component(MessagingTracingSettings.class).eventSourcingHandlersEnabled();
             } catch (ComponentNotFoundException | UnsupportedOperationException e) {
                 // No settings registered, or a context without an application context (e.g. tests) -- event sourcing
                 // handlers stay suppressed (the safe, replay-friendly default).

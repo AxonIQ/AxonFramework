@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MessageIdSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MessageTypeSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MetadataSpanAttributesProvider;

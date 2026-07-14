@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link ApplicationContextRunner}.
  * <p>
  * The Spring layer is a thin properties-to-settings translation: assertions therefore run at the framework-component
- * level — the enhancer bean participates in a {@link MessagingConfigurer} build (with ServiceLoader enhancer scanning
+ * level - the enhancer bean participates in a {@link MessagingConfigurer} build (with ServiceLoader enhancer scanning
  * active, so the framework modules' native tracing enhancers contribute the built-in providers), and the resulting
  * {@link AxonConfiguration} is inspected.
  *
@@ -85,7 +85,7 @@ class TracingAutoConfigurationTest {
         contextRunner.run(context -> {
             AxonConfiguration configuration = configurationFrom(context);
 
-            // then the built-in messaging providers are contributed, and no SpanFactory component exists — a
+            // then the built-in messaging providers are contributed, and no SpanFactory component exists - a
             // tracing backend (e.g. an OpenTelemetry-backed factory) has to contribute one; decorators degrade to a
             // pass-through
             assertThat(registeredProviders(configuration))
@@ -98,7 +98,7 @@ class TracingAutoConfigurationTest {
 
     @Test
     void tracingDisabledContributesNoEnhancerAtAll() {
-        // given / when / then — the autoconfiguration backs off entirely
+        // given / when / then - the autoconfiguration backs off entirely
         contextRunner.withPropertyValues("axon.tracing.enabled=false")
                      .run(context -> assertThat(context).doesNotHaveBean("tracingConfigurationEnhancer"));
     }
@@ -140,23 +140,23 @@ class TracingAutoConfigurationTest {
     }
 
     @Test
-    void showEventSourcingHandlersPropertyReachesTheFrameworkSettingsComponent() {
-        // given / when the Spring property is set, the settings component must carry it — the component the handler
+    void eventSourcingHandlersEnabledPropertyReachesTheFrameworkSettingsComponent() {
+        // given / when the Spring property is set, the settings component must carry it - the component the handler
         // enhancer reads at handle time
-        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=true")
+        contextRunner.withPropertyValues("axon.tracing.event-sourcing-handlers-enabled=true")
                      .run(context -> {
                          AxonConfiguration configuration = configurationFrom(context);
 
                          // then
                          MessagingTracingSettings settings =
                                  configuration.getComponent(MessagingTracingSettings.class);
-                         assertThat(settings.showEventSourcingHandlers()).isTrue();
+                         assertThat(settings.eventSourcingHandlersEnabled()).isTrue();
                      });
     }
 
     @Test
     void eventProcessorSubTogglesReachTheFrameworkSettingsComponent() {
-        // given / when the event-processor sub-toggles are set, the settings component must carry them — the component
+        // given / when the event-processor sub-toggles are set, the settings component must carry them - the component
         // the messaging tracing enhancer reads when decorating event-handling components
         contextRunner.withPropertyValues(
                              "axon.tracing.event-processor.disable-batch-trace=true",
@@ -198,7 +198,7 @@ class TracingAutoConfigurationTest {
 
     @Test
     void repositoryAndStateManagerTogglesReachTheModellingSettingsComponent() {
-        // given / when the modelling toggles are set, the settings component must carry them — the component the
+        // given / when the modelling toggles are set, the settings component must carry them - the component the
         // modelling tracing enhancer reads when decorating Repository / StateManager
         contextRunner.withPropertyValues(
                              "axon.tracing.repository.enabled=false",
@@ -243,16 +243,16 @@ class TracingAutoConfigurationTest {
     }
 
     @Test
-    void showEventSourcingHandlersDefaultsToFalseAndBindsToTrue() {
-        // given / when / then — the default keeps replay-noisy @EventSourcingHandler spans suppressed
+    void eventSourcingHandlersEnabledDefaultsToFalseAndBindsToTrue() {
+        // given / when / then - the default keeps replay-noisy @EventSourcingHandler spans suppressed
         contextRunner.run(context -> {
             TracingProperties properties = context.getBean(TracingProperties.class);
-            assertThat(properties.isShowEventSourcingHandlers()).isFalse();
+            assertThat(properties.isEventSourcingHandlersEnabled()).isFalse();
         });
-        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=true")
+        contextRunner.withPropertyValues("axon.tracing.event-sourcing-handlers-enabled=true")
                      .run(context -> {
                          TracingProperties properties = context.getBean(TracingProperties.class);
-                         assertThat(properties.isShowEventSourcingHandlers()).isTrue();
+                         assertThat(properties.isEventSourcingHandlersEnabled()).isTrue();
                      });
     }
 
@@ -260,8 +260,8 @@ class TracingAutoConfigurationTest {
     void userRegisteredSettingsComponentWinsOverThePropertyTranslation() {
         // given a user-registered MessagingTracingSettings component and a conflicting property
         MessagingTracingSettings userSettings = MessagingTracingSettings.enabledByDefault()
-                                                                        .withShowEventSourcingHandlers(true);
-        contextRunner.withPropertyValues("axon.tracing.show-event-sourcing-handlers=false")
+                                                                        .withEventSourcingHandlersEnabled(true);
+        contextRunner.withPropertyValues("axon.tracing.event-sourcing-handlers-enabled=false")
                      .run(context -> {
                          AxonConfiguration configuration = MessagingConfigurer.create()
                                  .componentRegistry(registry -> {
@@ -271,7 +271,7 @@ class TracingAutoConfigurationTest {
                                  })
                                  .build();
 
-                         // when / then — registerIfNotPresent leaves the user registration in place
+                         // when / then - registerIfNotPresent leaves the user registration in place
                          assertThat(configuration.getComponent(MessagingTracingSettings.class)).isSameAs(userSettings);
                      });
     }

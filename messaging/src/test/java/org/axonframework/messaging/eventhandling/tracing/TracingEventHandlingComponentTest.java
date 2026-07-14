@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.tracing;
 
-import org.axonframework.messaging.eventhandling.tracing.TracingEventHandlingComponent;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;

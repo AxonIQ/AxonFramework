@@ -45,7 +45,7 @@ import java.util.concurrent.CompletableFuture;
  * reach of the root registry's {@code Repository} decorator - and then register it on the root {@code StateManager}:
  * this wrap is what puts the {@code Repository.load <EntityType>} span inside the entity-loading trace.
  * <p>
- * This decorator is registered by {@code ModellingTracingConfigurationEnhancer}; it is never instantiated directly by
+ * This decorator is registered by {@link ModellingTracingConfigurationEnhancer}; it is never instantiated directly by
  * applications.
  *
  * @author Mateusz Nowak
@@ -84,11 +84,12 @@ public final class TracingStateManager implements StateManager {
      * already-traced check looks at the <em>outermost</em> wrapper only - sound for everything the component
      * registry builds, because the tracing decorators register at near-maximal {@code TRACING_DECORATOR_ORDER} and
      * are therefore always the outermost layer. If you register a hand-built decorator pipeline around an
-     * already-traced repository, keep the {@code TracingRepository} as the outermost wrapper - burying it under
+     * already-traced repository, keep the {@link TracingRepository} as the outermost wrapper - burying it under
      * another decorator makes it undetectable here and results in duplicate {@code Repository.*} spans.
      */
     @Override
     public <ID, T> StateManager register(Repository<ID, T> repository) {
+        Objects.requireNonNull(repository, "repository may not be null");
         delegate.register(traced(repository));
         return this;
     }

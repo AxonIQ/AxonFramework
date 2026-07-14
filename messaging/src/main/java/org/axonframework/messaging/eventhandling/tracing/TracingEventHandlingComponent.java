@@ -127,7 +127,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      *                                        handler is parented to an enabled batch span and linked to its publisher,
      *                                        or starts a linked trace when batch tracing is disabled; subscribing
      *                                        processors always continue the publisher's trace
-     * @param distributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher instead of stretching the publisher's long-finished trace (AF4 parity)
+     * @param distributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher instead of stretching the publisher's long-finished trace
      */
     public TracingEventHandlingComponent(EventHandlingComponent delegate,
                                          SpanFactory spanFactory,
@@ -151,8 +151,8 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
 
         // Open the batch span once per batch, on the first event of a streaming-processor batch -- unless disabled by
         // configuration or running in distributed-in-same-trace mode. In same-trace mode per-event spans continue
-        // their publishers' traces, so a batch root would dangle without meaningful children; AF4 suppressed it for
-        // the same reason. Note: the span is started (which mutates the context via putResource) OUTSIDE a
+        // their publishers' traces, so a batch root would dangle without meaningful children. Note: the span is
+        // started (which mutates the context via putResource) OUTSIDE a
         // computeResourceIfAbsent supplier -- mutating a ProcessingContext from within such a supplier is rejected as
         // a re-entrant ("recursive") update; get-then-put is deliberate.
         if (streaming && !disableBatchTrace && !distributedInSameTrace
@@ -195,7 +195,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      * Decides whether the per-event handler span continues the publisher's trace: only when
      * {@code distributedInSameTrace} is enabled AND the event is younger than
      * {@code distributedInSameTraceTimeLimit}. Stale events -- typically replays -- get a disconnected span (new trace
-     * linked back to the publisher) so they do not stretch a long-finished trace (AF4 parity).
+     * linked back to the publisher) so they do not stretch a long-finished trace.
      */
     private boolean continuesPublisherTrace(EventMessage event) {
         return distributedInSameTrace

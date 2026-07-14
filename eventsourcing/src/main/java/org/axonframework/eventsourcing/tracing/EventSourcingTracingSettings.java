@@ -38,7 +38,8 @@ public record EventSourcingTracingSettings(boolean eventStoreEnabled,
                                            SpanAttributesProviders spanAttributesProviders) {
 
     /**
-     * Toggles for the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
+     * Toggles for the built-in
+     * {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
      * contributed by the {@code axon-eventsourcing} module (read by
      * {@code EventSourcingSpanAttributesProviderConfigurationEnhancer} and
      * {@code TracingEventTagsHandlerEnhancerDefinition}).

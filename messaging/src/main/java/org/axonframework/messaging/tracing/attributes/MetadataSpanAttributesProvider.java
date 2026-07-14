@@ -31,9 +31,8 @@ import java.util.Set;
  * Adds message metadata entries to the span, each under the key {@code <prefix><metadataKey>}.
  * <p>
  * By default the prefix is {@link #METADATA_PREFIX} ({@code axoniq.metadata.}) and every metadata entry is added. The
- * prefix can be overridden through the constructor -- for example to keep the Axon Framework 4 prefix
- * {@code axon_metadata_}. An optional allowlist restricts which metadata keys are added; an empty allowlist means all
- * keys. Entries with a {@code null} value are skipped.
+ * prefix can be overridden through the constructor. An optional allowlist restricts which metadata keys are added; an
+ * empty allowlist means all keys. Entries with a {@code null} value are skipped.
  * <p>
  * Besides the metadata already attached to the message, this provider also includes correlation data staged on the
  * {@link ProcessingContext} under {@link CorrelationDataInterceptor#CORRELATION_DATA}. Dispatch-side spans are created

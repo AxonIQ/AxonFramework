@@ -142,7 +142,6 @@ public final class TracingEventTagsHandlerEnhancerDefinition implements HandlerE
             }
         }
 
-
         @Override
         public String eventName() {
             return delegate.unwrap(EventHandlingMember.class)

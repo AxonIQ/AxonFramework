@@ -17,7 +17,6 @@
 package org.axonframework.messaging.eventhandling.tracing;
 
 import org.axonframework.messaging.tracing.attributes.MetadataSpanAttributesProvider;
-import org.axonframework.messaging.eventhandling.tracing.TracingEventSink;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;
@@ -83,7 +82,7 @@ class TracingEventSinkTest {
                     ));
 
             // when
-            testSubject.publish(context, List.of(event));
+            testSubject.publish(context, List.of(event)).join();
 
             // then
             spanFactory.verifySpanHasAttributeValue(
@@ -110,7 +109,7 @@ class TracingEventSinkTest {
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            testSubject.publish(context, List.of(event));
+            testSubject.publish(context, List.of(event)).join();
 
             // then
             spanFactory.verifyNoSpanWithNamePrefix("EventBus.commitEvents");

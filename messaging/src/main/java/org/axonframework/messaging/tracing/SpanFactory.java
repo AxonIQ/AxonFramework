@@ -140,8 +140,7 @@ public interface SpanFactory {
      * (root) yet remain navigable to the producing trace through a span <em>link</em>. The link target is the tracing
      * context propagated in {@code message}'s metadata.
      * <p>
-     * This is the "distributed-in-different-trace" handling mode (AF4's
-     * {@code createHandlerSpan(message, isChildTrace=false)} / event-processor
+     * This is the "distributed-in-different-trace" handling mode (event-processor
      * {@code distributedInSameTrace=false}). Use it when joining the publisher's trace would either flood it (long-
      * running consumers, batch processors) or cross trust / lifecycle boundaries, but you still want the APM UI to
      * surface a clickable link from the producer's span to the consumer's new trace.

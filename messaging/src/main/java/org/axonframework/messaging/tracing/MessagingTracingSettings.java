@@ -36,7 +36,7 @@ import java.time.Duration;
  * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default), it is parented to the streaming batch and links back to the publisher, or starts a linked trace if batch tracing is disabled
  * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (default {@code PT2M})
  * @param queryBusEnabled                            whether the {@code QueryBus} is decorated with tracing
- * @param showEventSourcingHandlers                  when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
+ * @param eventSourcingHandlersEnabled                  when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
  * @param spanAttributesProviders                    toggles for the built-in span attribute providers contributed by this module
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -49,7 +49,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
                                        boolean eventProcessorDistributedInSameTrace,
                                        Duration eventProcessorDistributedInSameTraceTimeLimit,
                                        boolean queryBusEnabled,
-                                       boolean showEventSourcingHandlers,
+                                       boolean eventSourcingHandlersEnabled,
                                        SpanAttributesProviders spanAttributesProviders) {
 
     /**
@@ -84,7 +84,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      * Returns the default settings, with every messaging component enabled for tracing and default values for the
      * event-processor sub-toggles ({@code disableBatchTrace=false}, {@code distributedInSameTrace=false},
      * {@code distributedInSameTraceTimeLimit=PT2M}) and the handler enhancer
-     * ({@code showEventSourcingHandlers=false} -- replay-noisy event sourcing handlers are not traced). Every built-in
+     * ({@code eventSourcingHandlersEnabled=false} -- replay-noisy event sourcing handlers are not traced). Every built-in
      * span attribute provider is enabled.
      *
      * @return the all-enabled default settings
@@ -96,15 +96,15 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     }
 
     /**
-     * Returns a copy of these settings with {@link #showEventSourcingHandlers()} replaced by the given value.
+     * Returns a copy of these settings with {@link #eventSourcingHandlersEnabled()} replaced by the given value.
      *
-     * @param showEventSourcingHandlers whether {@code @EventSourcingHandler} invocations get their own span
-     * @return a copy of these settings with the given {@code showEventSourcingHandlers}
+     * @param eventSourcingHandlersEnabled whether {@code @EventSourcingHandler} invocations get their own span
+     * @return a copy of these settings with the given {@code eventSourcingHandlersEnabled}
      */
-    public MessagingTracingSettings withShowEventSourcingHandlers(boolean showEventSourcingHandlers) {
+    public MessagingTracingSettings withEventSourcingHandlersEnabled(boolean eventSourcingHandlersEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
                                             eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
-                                            queryBusEnabled, showEventSourcingHandlers, spanAttributesProviders);
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
 }

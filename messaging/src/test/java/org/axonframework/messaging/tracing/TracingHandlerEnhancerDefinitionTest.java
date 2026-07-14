@@ -16,8 +16,6 @@
 
 package org.axonframework.messaging.tracing;
 
-import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
@@ -147,7 +145,7 @@ class TracingHandlerEnhancerDefinitionTest {
         void suppressesAnEventSourcingHandlerByDefaultWithoutResolvingTheSpanFactory() {
             // given an @EventSourcingHandler member (carries the "EventSourcingHandler.payloadType" handler
             // attribute) and a context that has a SpanFactory but no MessagingTracingSettings -- the
-            // showEventSourcingHandlers default is false
+            // eventSourcingHandlersEnabled default is false
             AtomicBoolean spanFactoryResolved = new AtomicBoolean(false);
             ProcessingContext context = StubProcessingContext.withComponents(
                     registry -> registry.registerComponent(SpanFactory.class, c -> {
@@ -171,10 +169,10 @@ class TracingHandlerEnhancerDefinitionTest {
         }
 
         @Test
-        void tracesAnEventSourcingHandlerWhenShowEventSourcingHandlersIsEnabled() {
-            // given a context whose MessagingTracingSettings enables showEventSourcingHandlers
+        void tracesAnEventSourcingHandlerWhenEventSourcingHandlersEnabled() {
+            // given a context whose MessagingTracingSettings enables eventSourcingHandlersEnabled
             MessagingTracingSettings showHandlers =
-                    MessagingTracingSettings.enabledByDefault().withShowEventSourcingHandlers(true);
+                    MessagingTracingSettings.enabledByDefault().withEventSourcingHandlersEnabled(true);
             ProcessingContext context = StubProcessingContext.withComponents(
                     registry -> {
                         registry.registerComponent(SpanFactory.class, c -> spanFactory);

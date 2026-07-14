@@ -32,7 +32,7 @@ import java.util.Map;
  * from {@link org.axonframework.messaging.core.LegacyResources#AGGREGATE_IDENTIFIER_KEY}) MUST handle {@code null}
  * gracefully.
  * <p>
- * Implementations MUST NOT reference Axon Framework 4-era types that have been removed from Axon Framework 5.
+ * Implementations MUST NOT depend on message types that have been removed from the framework.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers
