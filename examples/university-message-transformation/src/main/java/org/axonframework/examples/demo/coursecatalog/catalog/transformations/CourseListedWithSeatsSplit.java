@@ -17,14 +17,11 @@
 package org.axonframework.examples.demo.coursecatalog.catalog.transformations;
 
 import io.axoniq.framework.messaging.transformation.events.EventTransformation;
-import io.axoniq.framework.messaging.transformation.events.TransformedEvent;
 import org.axonframework.examples.demo.coursecatalog.catalog.CourseCatalogMessageNames;
 import org.axonframework.examples.demo.coursecatalog.catalog.events.CourseCapacityChanged;
 import org.axonframework.examples.demo.coursecatalog.catalog.values.CapacityRange;
 import org.axonframework.examples.demo.coursecatalog.shared.ids.CourseId;
 import org.axonframework.messaging.core.MessageType;
-
-import java.util.List;
 
 /**
  * Splits a historic {@code CourseListedWithSeats} event, which bundled a course listing and its
@@ -53,22 +50,19 @@ public final class CourseListedWithSeatsSplit {
 
     /** @return the transformation registered into the chain */
     public static EventTransformation build() {
-        return EventTransformation.split(FROM)
-                                  .declaringToTypes(COURSE_PUBLISHED.qualifiedName(),
-                                                    COURSE_CAPACITY_CHANGED.qualifiedName())
-                                  .transform(Listing.class, CourseListedWithSeatsSplit::split);
+        return EventTransformation.split(FROM, Listing.class)
+                                  .producing(COURSE_PUBLISHED, CourseListedWithSeatsSplit::toPublished)
+                                  .producing(COURSE_CAPACITY_CHANGED, CourseListedWithSeatsSplit::toCapacityChanged)
+                                  .build();
     }
 
-    private static List<TransformedEvent> split(Listing listing) {
-        PublishedV1 published = new PublishedV1(
-                listing.catalogId(), listing.courseId(), listing.name(), listing.seats());
-        CourseCapacityChanged capacityChanged = new CourseCapacityChanged(
-                new CourseId(listing.courseId().value()), new CapacityRange(listing.seats(), listing.seats()));
+    private static PublishedV1 toPublished(Listing listing) {
+        return new PublishedV1(listing.catalogId(), listing.courseId(), listing.name(), listing.seats());
+    }
 
-        return List.of(
-                TransformedEvent.of(COURSE_PUBLISHED, published),
-                TransformedEvent.of(COURSE_CAPACITY_CHANGED, capacityChanged)
-        );
+    private static CourseCapacityChanged toCapacityChanged(Listing listing) {
+        return new CourseCapacityChanged(
+                new CourseId(listing.courseId().value()), new CapacityRange(listing.seats(), listing.seats()));
     }
 
     // Stored shape of the bundled listing: identifiers were written as {"value": ...} objects.
