@@ -1,0 +1,3 @@
+# Never commit license files
+axon-server.license
+*.license

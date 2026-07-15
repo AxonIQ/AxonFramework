@@ -56,6 +56,7 @@
         <module>university-java-springboot-4</module>
         <module>university-demo-kotlin</module>
         <module>university-message-transformation</module>
+        <module>university-multi-tenancy</module>
     </modules>
 
     <build>

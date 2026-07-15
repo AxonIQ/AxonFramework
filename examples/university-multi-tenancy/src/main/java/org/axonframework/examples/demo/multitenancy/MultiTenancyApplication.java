@@ -16,51 +16,60 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
-import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
-import io.axoniq.framework.messaging.multitenancy.api.MetadataBasedTenantResolver;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
-import io.axoniq.framework.messaging.multitenancy.api.TenantNotResolvedException;
-import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
 import org.awaitility.Awaitility;
-import org.axonframework.common.AxonConfigurationException;
+import org.awaitility.core.ConditionTimeoutException;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.examples.demo.multitenancy.scaffolding.ConfigurationProperties;
+import org.axonframework.examples.demo.multitenancy.scaffolding.DemoOutcome;
+import org.axonframework.examples.demo.multitenancy.scaffolding.DemoTenantProvider;
+import org.axonframework.examples.demo.multitenancy.scaffolding.Enrolments;
+import org.axonframework.examples.demo.multitenancy.scaffolding.ProviderAmbiguityGuardrail;
+import org.axonframework.examples.demo.multitenancy.scaffolding.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.scaffolding.TenantView;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.audit.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
-import org.axonframework.examples.demo.multitenancy.university.read.coursestats.CourseStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.coursestats.CourseStatsProjection;
 import org.axonframework.examples.demo.multitenancy.university.read.coursestats.CourseStatsRepository;
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.EventSink;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 /**
  * Bootstraps the multi-tenancy demo.
  * <p>
- * A SaaS platform hosts several universities, each an isolated tenant. Two per-tenant components
- * are registered once (a {@link CourseStatsRepository} and an {@link AuditLog}), and enrolments are
- * published as events. The framework routes each event to the {@link CourseStatsProjection} with
- * both of the event's tenant instances injected, each matched by type, so no handler ever resolves
- * a tenant itself. This bootstrap walks the whole tenant lifecycle in one run and also shows the
- * two guardrails: an unknown tenant is rejected, and registering two providers for one type is
- * rejected at configuration time.
+ * A platform hosts several universities, each an isolated tenant. The feature this demonstrates
+ * is that a per-tenant component is registered once and the framework hands each message handler the
+ * instance belonging to the tenant of the message it is handling, so no handler ever resolves a tenant
+ * itself. Here two such parts are registered (a {@link CourseStatsRepository} and an
+ * {@link AuditLog}), enrolments are published as events carrying their tenant in metadata, and the
+ * framework routes each event to the {@link CourseStatsProjection} with both of that tenant's instances
+ * injected, matched by type.
  * <p>
- * The demo runs entirely in memory. The Axon Server backed path, where each tenant is a real
- * context and enrolments arrive as routed messages, arrives with the command routing this demo
- * will grow into.
+ * {@link #runLifecycle} reads top to bottom as the story the demo tells: tenants known at startup,
+ * a tenant added at runtime, an unknown tenant rejected, a tenant removed, and shutdown. The
+ * supporting cast lives in small classes next to this one, so this file stays the lesson:
+ * <ul>
+ *     <li>{@link TenantProvisioning} is where the tenants come from, and the only thing that differs between
+ *     the two runs.</li>
+ *     <li>{@link Enrolments} publishes the enrolment events and reads them back.</li>
+ *     <li>{@link TenantView} renders one tenant's isolated view.</li>
+ *     <li>{@link ProviderAmbiguityGuardrail} demonstrates the configuration-time guardrail.</li>
+ * </ul>
+ * <p>
+ * The same lifecycle runs two ways, selected by the {@code axon.server.enabled} toggle: in memory by
+ * default (tenants from a {@link DemoTenantProvider}), or against Axon Server (tenants are real
+ * contexts the {@link AxonServerTenantProvider} sources). Either way the enrolments flow through the
+ * same {@link SimpleEventBus}, so only the {@link TenantProvisioning} changes.
  */
 public class MultiTenancyApplication {
 
@@ -71,65 +80,125 @@ public class MultiTenancyApplication {
     private static final TenantDescriptor OGDENVILLE = TenantDescriptor.tenantWithId("ogdenville");
     private static final TenantDescriptor UNKNOWN = TenantDescriptor.tenantWithId("atlantis");
 
+    // The tenants known before the application starts.
+    private static final List<TenantDescriptor> KNOWN_TENANTS = List.of(SPRINGFIELD, SHELBYVILLE);
+    // On the Axon Server run these are the predefined context names the AxonServerTenantProvider uses.
+    private static final String PREDEFINED_CONTEXTS = String.join(",", SPRINGFIELD.tenantId(), SHELBYVILLE.tenantId());
+
     private static final String COURSE_CS_101 = "cs-101";
     private static final String COURSE_LAW_200 = "law-200";
 
     /**
-     * Entry point running the in-memory demo end to end.
+     * Entry point running the demo end to end, in memory by default or against Axon Server when the
+     * {@code axon.server.enabled} property is set.
      *
      * @param args ignored
      */
     public static void main(String[] args) {
-        ConfigurationProperties props = ConfigurationProperties.load();
-        if (props.axonServerEnabled()) {
-            logger.info("Axon Server mode is not wired on this branch yet. Running the in-memory demo instead.");
-        }
-        new MultiTenancyApplication().run();
+        ConfigurationProperties properties = ConfigurationProperties.load();
+        MultiTenancyApplication demo = new MultiTenancyApplication();
+        DemoOutcome outcome = properties.axonServerEnabled() ? demo.runWithAxonServer() : demo.run();
+        logger.info("Demo finished. Outcome: {}", outcome);
     }
 
     /**
-     * Runs the in-memory demo end to end and returns what it observed, so callers (and the smoke
-     * test) can assert the outcome through the same path a user runs. Reads as the sequence of steps
-     * the demo performs; each step is a method below.
+     * Runs the in-memory demo end to end, with the tenants supplied by an in-memory
+     * {@link DemoTenantProvider}, and returns what it observed so the smoke test can assert the outcome
+     * through the same entry point a user runs.
      *
      * @return the observed outcome of the demo run
      */
     public DemoOutcome run() {
-        boolean ambiguousProvidersRejected = demonstrateAmbiguousProvidersRejected();
-
         SimpleEventBus eventBus = new SimpleEventBus();
         DemoTenantProvider tenantProvider = new DemoTenantProvider(SPRINGFIELD, SHELBYVILLE);
         TenantComponentProvider<CourseStatsRepository> statsProvider = UniversityModuleConfiguration.courseStatsProvider();
         TenantComponentProvider<AuditLog> auditProvider = UniversityModuleConfiguration.auditLogProvider();
-        AxonConfiguration configuration = startConfiguration(eventBus, tenantProvider, statsProvider, auditProvider);
+
+        MessagingConfigurer configurer = MessagingConfigurer.create();
+        UniversityModuleConfiguration.configure(configurer, eventBus, tenantProvider, statsProvider, auditProvider);
+        AxonConfiguration configuration = configurer.build();
+
+        return runLifecycle(eventBus, configuration, statsProvider, auditProvider,
+                            config -> TenantProvisioning.inMemory(tenantProvider));
+    }
+
+    /**
+     * Runs the demo end to end against Axon Server, sourcing the tenants from Axon Server contexts
+     * rather than from an in-memory provider. The lifecycle is identical to {@link #run()}. Only the
+     * {@link TenantProvisioning} differs. This path needs a running multi-context (Enterprise Edition) Axon
+     * Server, reachable on its default {@code localhost} address.
+     *
+     * @return the observed outcome of the demo run
+     */
+    public DemoOutcome runWithAxonServer() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        TenantComponentProvider<CourseStatsRepository> statsProvider = UniversityModuleConfiguration.courseStatsProvider();
+        TenantComponentProvider<AuditLog> auditProvider = UniversityModuleConfiguration.auditLogProvider();
+
+        MessagingConfigurer configurer = MessagingConfigurer.create();
+        UniversityModuleConfiguration.configureForAxonServer(configurer, eventBus, PREDEFINED_CONTEXTS,
+                                                             statsProvider, auditProvider);
+        AxonConfiguration configuration = configurer.build();
+
+        return runLifecycle(eventBus, configuration, statsProvider, auditProvider,
+                            config -> TenantProvisioning.axonServer(config, KNOWN_TENANTS));
+    }
+
+    /**
+     * Starts the given {@code configuration} and walks the whole tenant lifecycle, returning what it
+     * observed. This is the story both runs share. Only the {@code provisioning} differs. The per-tenant
+     * components it reads are {@link AutoCloseable}, but the framework closes them on tenant removal and
+     * shutdown, so this only reads their state.
+     *
+     * @param eventSink      the sink enrolments are published on
+     * @param configuration  the built, not-yet-started configuration to run
+     * @param statsProvider  the provider of the per-tenant course-statistics repositories
+     * @param auditProvider  the provider of the per-tenant audit logs
+     * @param provisioningFactory builds the tenant provisioning for this run once the configuration is
+     *                       started (the Axon Server provisioning resolves its components from it)
+     * @return the observed outcome of the demo run
+     */
+    private DemoOutcome runLifecycle(EventSink eventSink,
+                                     AxonConfiguration configuration,
+                                     TenantComponentProvider<CourseStatsRepository> statsProvider,
+                                     TenantComponentProvider<AuditLog> auditProvider,
+                                     Function<AxonConfiguration, TenantProvisioning> provisioningFactory) {
+        // Guardrail, shown up front and independent of the run: two providers for one component type
+        // are rejected at configuration time.
+        boolean ambiguousProvidersRejected = ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType();
+
+        configuration.start();
+        TenantProvisioning provisioning = provisioningFactory.apply(configuration);
 
         boolean shutDown = false;
         try {
-            logReplayedTenants(statsProvider);
+            provisioning.prepareKnownTenants();
+            logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statsProvider));
 
-            enrolStudents(eventBus, statsProvider);
-            printTenantView("Springfield University", statsProvider, auditProvider, SPRINGFIELD);
-            printTenantView("Shelbyville University", statsProvider, auditProvider, SHELBYVILLE);
+            // 1. Enrol students in the tenants known at startup and show each tenant sees only its own.
+            enrolStudents(eventSink, statsProvider);
+            logTenantView("Springfield University", statsProvider, auditProvider, SPRINGFIELD);
+            logTenantView("Shelbyville University", statsProvider, auditProvider, SHELBYVILLE);
 
-            enrolInTenantAddedAtRuntime(eventBus, tenantProvider, statsProvider);
-            printTenantView("Ogdenville University (added at runtime)", statsProvider, auditProvider, OGDENVILLE);
+            // 2. Add a tenant at runtime. Its instances materialize on its first event, no config change.
+            provisioning.addTenant(OGDENVILLE);
+            Enrolments.enrol(eventSink, OGDENVILLE, COURSE_CS_101, "dan");
+            Enrolments.awaitEnrolments(statsProvider, OGDENVILLE, 1);
+            logTenantView("Ogdenville University (added at runtime)", statsProvider, auditProvider, OGDENVILLE);
 
-            boolean unknownTenantRejected = unknownTenantIsRejected(eventBus);
+            // 3. An enrolment for a tenant the application does not know is rejected.
+            boolean unknownTenantRejected = unknownTenantIsRejected(eventSink);
+
+            // 4. Removing a tenant closes its per-tenant instances.
             boolean shelbyvilleClosedOnRemoval =
-                    removingTenantClosesItsInstances(tenantProvider, statsProvider, auditProvider, SHELBYVILLE);
+                    removingTenantClosesItsInstances(provisioning, statsProvider, auditProvider);
 
-            int springfieldEnrolments = totalEnrolments(statsProvider.componentFor(SPRINGFIELD));
-            int springfieldAuditEntries = auditProvider.componentFor(SPRINGFIELD).entries().size();
-            boolean allClosedOnShutdown =
-                    shutdownClosesRemainingInstances(configuration, statsProvider, SPRINGFIELD, OGDENVILLE);
+            // 5. Shutting down closes every remaining tenant's instances. Capture the outcome and stop.
+            DemoOutcome outcome = shutDownAndBuildOutcome(configuration, statsProvider, auditProvider,
+                                                          unknownTenantRejected, ambiguousProvidersRejected,
+                                                          shelbyvilleClosedOnRemoval);
             shutDown = true;
-
-            return new DemoOutcome(springfieldEnrolments,
-                                   springfieldAuditEntries,
-                                   unknownTenantRejected,
-                                   ambiguousProvidersRejected,
-                                   shelbyvilleClosedOnRemoval,
-                                   allClosedOnShutdown);
+            return outcome;
         } finally {
             if (!shutDown) {
                 configuration.shutdown();
@@ -137,219 +206,120 @@ public class MultiTenancyApplication {
         }
     }
 
-    private static AxonConfiguration startConfiguration(SimpleEventBus eventBus,
-                                                        DemoTenantProvider tenantProvider,
-                                                        TenantComponentProvider<CourseStatsRepository> statsProvider,
-                                                        TenantComponentProvider<AuditLog> auditProvider) {
-        MessagingConfigurer configurer = MessagingConfigurer.create();
-        UniversityModuleConfiguration.configure(configurer, eventBus, tenantProvider, statsProvider, auditProvider);
-        AxonConfiguration configuration = configurer.build();
-        configuration.start();
-        return configuration;
-    }
-
-    private static void logReplayedTenants(TenantComponentProvider<CourseStatsRepository> statsProvider) {
-        logger.info("Providers subscribed at startup. Tenants replayed to the provider: {}",
-                    tenantIds(statsProvider.tenants()));
-    }
-
     /**
-     * Enrols students in the tenants known at startup. Each event is routed to the projection with
-     * both the tenant's {@link CourseStatsRepository} and its {@link AuditLog} injected, matched by
-     * parameter type.
+     * Enrols students in the tenants known at startup. Each event is routed to the projection with both
+     * the tenant's {@link CourseStatsRepository} and its {@link AuditLog} injected, matched by type.
      */
-    private static void enrolStudents(SimpleEventBus eventBus,
+    private static void enrolStudents(EventSink eventSink,
                                       TenantComponentProvider<CourseStatsRepository> statsProvider) {
-        enrol(eventBus, SPRINGFIELD, COURSE_CS_101, "alice");
-        enrol(eventBus, SPRINGFIELD, COURSE_CS_101, "bob");
-        enrol(eventBus, SHELBYVILLE, COURSE_LAW_200, "carol");
-        awaitEnrolments(statsProvider, SPRINGFIELD, 2);
-        awaitEnrolments(statsProvider, SHELBYVILLE, 1);
+        Enrolments.enrol(eventSink, SPRINGFIELD, COURSE_CS_101, "alice");
+        Enrolments.enrol(eventSink, SPRINGFIELD, COURSE_CS_101, "bob");
+        Enrolments.enrol(eventSink, SHELBYVILLE, COURSE_LAW_200, "carol");
+        Enrolments.awaitEnrolments(statsProvider, SPRINGFIELD, 2);
+        Enrolments.awaitEnrolments(statsProvider, SHELBYVILLE, 1);
     }
 
     /**
-     * Adds a tenant at runtime and enrols a student in it, showing that its instances materialize on
-     * the first event without any configuration change.
+     * Logs the given tenant's isolated view. Guarded on the log level, so the view (which walks the
+     * tenant's components) is only rendered when info logging is on.
      */
-    private static void enrolInTenantAddedAtRuntime(SimpleEventBus eventBus,
-                                                    DemoTenantProvider tenantProvider,
-                                                    TenantComponentProvider<CourseStatsRepository> statsProvider) {
-        tenantProvider.addTenant(OGDENVILLE);
-        enrol(eventBus, OGDENVILLE, COURSE_CS_101, "dan");
-        awaitEnrolments(statsProvider, OGDENVILLE, 1);
+    private static void logTenantView(String label,
+                                      TenantComponentProvider<CourseStatsRepository> statsProvider,
+                                      TenantComponentProvider<AuditLog> auditProvider,
+                                      TenantDescriptor tenant) {
+        if (logger.isInfoEnabled()) {
+            logger.info("{}", TenantView.render(label, statsProvider, auditProvider, tenant));
+        }
     }
 
     /**
-     * Publishes an enrolment for a tenant the application does not know, and confirms it is rejected
-     * with a {@link TenantNotResolvedException} so that no instance is ever built for it.
+     * Publishes an enrolment for a tenant the application does not know and confirms it is rejected, so
+     * that no instance is ever built for it.
      */
-    private static boolean unknownTenantIsRejected(SimpleEventBus eventBus) {
-        boolean rejected = enrolExpectingRejection(eventBus, UNKNOWN, COURSE_CS_101, "eve");
-        logger.info("Enrolment for an unknown tenant rejected with TenantNotResolvedException: {}", rejected);
+    private static boolean unknownTenantIsRejected(EventSink eventSink) {
+        boolean rejected;
+        try {
+            Enrolments.enrol(eventSink, UNKNOWN, COURSE_CS_101, "eve");
+            rejected = false;
+        } catch (RuntimeException e) {
+            rejected = Enrolments.causedByTenantNotResolved(e);
+        }
+        logger.info("Enrolment for an unknown tenant rejected: {}", rejected);
         return rejected;
     }
 
     /**
-     * Removes a tenant and confirms both of its {@link AutoCloseable} instances were closed.
+     * Removes Shelbyville through the {@code provisioning} and confirms both of its instances were closed.
+     * The per-tenant components are {@link AutoCloseable} and closed by the framework on removal, so
+     * this reads their state before and after removing the tenant.
      */
-    private static boolean removingTenantClosesItsInstances(DemoTenantProvider tenantProvider,
+    // Holds the components to check isClosed() after removal. The framework, not this method, closes them.
+    private static boolean removingTenantClosesItsInstances(TenantProvisioning provisioning,
                                                             TenantComponentProvider<CourseStatsRepository> statsProvider,
-                                                            TenantComponentProvider<AuditLog> auditProvider,
-                                                            TenantDescriptor tenant) {
-        CourseStatsRepository statistics = statsProvider.componentFor(tenant);
-        AuditLog auditLog = auditProvider.componentFor(tenant);
-        tenantProvider.removeTenant(tenant);
+                                                            TenantComponentProvider<AuditLog> auditProvider) {
+        CourseStatsRepository statistics = statsProvider.componentFor(SHELBYVILLE);
+        AuditLog auditLog = auditProvider.componentFor(SHELBYVILLE);
+        provisioning.removeTenant(SHELBYVILLE);
         boolean closed = statistics.isClosed() && auditLog.isClosed();
-        logger.info("Tenant [{}] removed. Its instances are closed: {}", tenant.tenantId(), closed);
+        logger.info("Tenant [{}] removed. Its instances are closed: {}", SHELBYVILLE.tenantId(), closed);
         return closed;
     }
 
     /**
-     * Shuts the configuration down and confirms every still-registered tenant's instance was closed,
-     * as the cancelled provider subscriptions destroy them.
+     * Shuts the configuration down and gathers what the run observed into a {@link DemoOutcome}, reading
+     * Springfield's totals and confirming shutdown closed every still-registered tenant's instances (the
+     * canceled provider subscriptions destroy them).
      */
-    private static boolean shutdownClosesRemainingInstances(AxonConfiguration configuration,
-                                                            TenantComponentProvider<CourseStatsRepository> statsProvider,
-                                                            TenantDescriptor... tenants) {
-        List<CourseStatsRepository> repositories = Arrays.stream(tenants).map(statsProvider::componentFor).toList();
+    // Holds the components to check isClosed() after shutdown. The framework, not this method, closes them.
+    @SuppressWarnings("resource")
+    private static DemoOutcome shutDownAndBuildOutcome(AxonConfiguration configuration,
+                                                       TenantComponentProvider<CourseStatsRepository> statsProvider,
+                                                       TenantComponentProvider<AuditLog> auditProvider,
+                                                       boolean unknownTenantRejected,
+                                                       boolean ambiguousProvidersRejected,
+                                                       boolean shelbyvilleClosedOnRemoval) {
+        int springfieldEnrolments = Enrolments.totalEnrolments(statsProvider.componentFor(SPRINGFIELD));
+        int springfieldAuditEntries = auditProvider.componentFor(SPRINGFIELD).entries().size();
+        int ogdenvilleEnrolments = Enrolments.totalEnrolments(statsProvider.componentFor(OGDENVILLE));
+
+        // Both components of every still-registered tenant should be closed once shutdown cancels the
+        // provider subscriptions.
+        List<CourseStatsRepository> repositories =
+                List.of(statsProvider.componentFor(SPRINGFIELD), statsProvider.componentFor(OGDENVILLE));
+        List<AuditLog> auditLogs =
+                List.of(auditProvider.componentFor(SPRINGFIELD), auditProvider.componentFor(OGDENVILLE));
         configuration.shutdown();
-        Awaitility.await("shutdown cleanup")
-                  .atMost(Duration.ofSeconds(5))
-                  .until(() -> repositories.stream().allMatch(CourseStatsRepository::isClosed));
-        boolean allClosed = repositories.stream().allMatch(CourseStatsRepository::isClosed);
-        logger.info("Shutdown complete. All remaining tenant instances closed: {}", allClosed);
-        return allClosed;
+        boolean allClosedOnShutdown = awaitClosed(() ->
+                repositories.stream().allMatch(CourseStatsRepository::isClosed)
+                        && auditLogs.stream().allMatch(AuditLog::isClosed));
+        logger.info("Shutdown complete. All remaining tenant instances closed: {}", allClosedOnShutdown);
+
+        return new DemoOutcome(springfieldEnrolments,
+                               springfieldAuditEntries,
+                               ogdenvilleEnrolments,
+                               unknownTenantRejected,
+                               ambiguousProvidersRejected,
+                               shelbyvilleClosedOnRemoval,
+                               allClosedOnShutdown);
     }
 
     /**
-     * Builds a throwaway configuration that registers two providers for the same component type and
-     * checks that resolving a handler parameter of that type is rejected, since the framework cannot
-     * know which instance to inject.
-     *
-     * @return {@code true} if the ambiguity was rejected with an {@link AxonConfigurationException}
+     * Waits until the given {@code closed} condition holds, returning whether it did within the timeout.
+     * Unlike a bare {@code await(...).until(...)}, this returns {@code false} on timeout rather than
+     * throwing, so the demo can report the cleanup outcome instead of failing opaquely.
      */
-    private boolean demonstrateAmbiguousProvidersRejected() {
-        DemoTenantProvider tenantProvider = new DemoTenantProvider(SPRINGFIELD);
-        MessagingConfigurer configurer = MessagingConfigurer.create();
-        configurer.componentRegistry(registry -> registry
-                .disableEnhancer(AxonServerConfigurationEnhancer.class)
-                .registerComponent(TenantProvider.class, config -> tenantProvider)
-                // Two providers for CourseStatsRepository make that handler parameter ambiguous.
-                .registerComponent(TenantComponentProvider.class, "courseStatsA",
-                                   config -> UniversityModuleConfiguration.courseStatsProvider())
-                .registerComponent(TenantComponentProvider.class, "courseStatsB",
-                                   config -> UniversityModuleConfiguration.courseStatsProvider()));
-        AxonConfiguration configuration = configurer.build();
-        configuration.start();
+    private static boolean awaitClosed(BooleanSupplier closed) {
         try {
-            // Ask the parameter resolver to match the CourseStatsRepository parameter, exactly as
-            // handler inspection does. With two providers of that type, it cannot choose one.
-            ParameterResolverFactory resolverFactory = configuration.getComponent(ParameterResolverFactory.class);
-            Method handler = CourseStatsProjection.class.getDeclaredMethod(
-                    "on", StudentEnrolledInCourse.class, CourseStatsRepository.class, AuditLog.class);
-            resolverFactory.createInstance(handler, handler.getParameters(), 1);
-            logger.warn("Expected ambiguous providers to be rejected, but resolution succeeded.");
-            return false;
-        } catch (AxonConfigurationException e) {
-            logger.info("Two providers for one component type rejected: {}", e.getMessage());
+            Awaitility.await("shutdown cleanup")
+                      .atMost(Duration.ofSeconds(5))
+                      .until(closed::getAsBoolean);
             return true;
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException("Demo projection handler method not found.", e);
-        } finally {
-            configuration.shutdown();
-        }
-    }
-
-    private static void enrol(SimpleEventBus eventBus, TenantDescriptor tenant, String courseId, String studentId) {
-        // No active ProcessingContext: the event is published standalone, not from within a handler.
-        eventBus.publish(null, enrolmentEvent(tenant, courseId, studentId))
-                .orTimeout(5, TimeUnit.SECONDS)
-                .join();
-    }
-
-    private static boolean enrolExpectingRejection(SimpleEventBus eventBus,
-                                                   TenantDescriptor tenant,
-                                                   String courseId,
-                                                   String studentId) {
-        try {
-            // No active ProcessingContext: the event is published standalone, not from within a handler.
-            eventBus.publish(null, enrolmentEvent(tenant, courseId, studentId))
-                    .orTimeout(5, TimeUnit.SECONDS)
-                    .join();
+        } catch (ConditionTimeoutException e) {
             return false;
-        } catch (RuntimeException e) {
-            return causedByTenantNotResolved(e);
         }
     }
 
-    private static EventMessage enrolmentEvent(TenantDescriptor tenant, String courseId, String studentId) {
-        return new GenericEventMessage(new MessageType(StudentEnrolledInCourse.class),
-                                       new StudentEnrolledInCourse(courseId, studentId))
-                .andMetadata(Map.of(MetadataBasedTenantResolver.DEFAULT_TENANT_KEY, tenant.tenantId()));
-    }
-
-    private static void awaitEnrolments(TenantComponentProvider<CourseStatsRepository> provider,
-                                        TenantDescriptor tenant,
-                                        int expected) {
-        Awaitility.await("enrolments for " + tenant.tenantId())
-                  .atMost(Duration.ofSeconds(5))
-                  .until(() -> totalEnrolments(provider.componentFor(tenant)) >= expected);
-    }
-
-    /**
-     * What a demo run observed, used to assert the outcome from the demo's own entry point.
-     *
-     * @param springfieldEnrolments      the enrolments recorded in Springfield's course-statistics repository
-     * @param springfieldAuditEntries    the entries recorded in Springfield's audit log
-     * @param unknownTenantRejected      whether an event for an unknown tenant was rejected
-     * @param ambiguousProvidersRejected whether two providers for one type were rejected at configuration time
-     * @param shelbyvilleClosedOnRemoval whether Shelbyville's instances were closed when its tenant was removed
-     * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
-     */
-    public record DemoOutcome(int springfieldEnrolments,
-                              int springfieldAuditEntries,
-                              boolean unknownTenantRejected,
-                              boolean ambiguousProvidersRejected,
-                              boolean shelbyvilleClosedOnRemoval,
-                              boolean allClosedOnShutdown) {
-
-    }
-
-    private static void printTenantView(String label,
-                                        TenantComponentProvider<CourseStatsRepository> statsProvider,
-                                        TenantComponentProvider<AuditLog> auditProvider,
-                                        TenantDescriptor tenant) {
-        CourseStatsRepository statistics = statsProvider.componentFor(tenant);
-        AuditLog auditLog = auditProvider.componentFor(tenant);
-        StringBuilder report = new StringBuilder("\n").append(label).append(":\n");
-        List<CourseStatistics> statisticsPerCourse = statistics.statistics();
-        if (statisticsPerCourse.isEmpty()) {
-            report.append("  (no enrolments)\n");
-        } else {
-            statisticsPerCourse.forEach(statistic -> report.append("  - ")
-                                                           .append(statistic.courseId())
-                                                           .append(": ")
-                                                           .append(statistic.enrolments())
-                                                           .append(" enrolments\n"));
-        }
-        report.append("  audit entries: ").append(auditLog.entries().size()).append('\n');
-        logger.info("{}", report);
-    }
-
-    private static List<String> tenantIds(List<TenantDescriptor> tenants) {
-        return tenants.stream().map(TenantDescriptor::tenantId).toList();
-    }
-
-    private static int totalEnrolments(CourseStatsRepository repository) {
-        return repository.statistics().stream().mapToInt(CourseStatistics::enrolments).sum();
-    }
-
-    private static boolean causedByTenantNotResolved(Throwable throwable) {
-        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
-            if (cause instanceof TenantNotResolvedException) {
-                return true;
-            }
-        }
-        return false;
+    private static List<String> tenantIds(TenantComponentProvider<CourseStatsRepository> statsProvider) {
+        return statsProvider.tenants().stream().map(TenantDescriptor::tenantId).toList();
     }
 }

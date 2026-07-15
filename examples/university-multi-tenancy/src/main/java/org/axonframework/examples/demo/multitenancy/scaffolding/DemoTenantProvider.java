@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.demo.multitenancy;
+package org.axonframework.examples.demo.multitenancy.scaffolding;
 
 import io.axoniq.framework.messaging.multitenancy.api.MultiTenantAwareComponent;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;

@@ -43,6 +43,9 @@ public interface AuditLog extends AutoCloseable {
 
     /**
      * Returns whether this audit log has been closed, meaning its tenant was removed.
+     * <p>
+     * This is demo instrumentation for observing the framework-driven cleanup. A real tenant-aware
+     * component only needs its domain methods plus {@link AutoCloseable}; it would not expose this.
      *
      * @return {@code true} if this audit log was closed
      */

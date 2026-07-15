@@ -15,11 +15,12 @@
  */
 
 /**
- * Bootstrap and demo infrastructure for the multi-tenancy example: the runnable application, its
- * configuration toggles, the in-memory tenant provider used by default, and the helper that
- * provisions Axon Server contexts when the demo runs against Axon Server.
+ * Supporting classes for the multi-tenancy demo: the two tenant provisioning strategies (in-memory and
+ * Axon Server), the enrolment publishing and tenant-view rendering helpers, the configuration-time
+ * guardrail, and the run's toggle and outcome. The lesson itself lives one package up, in
+ * {@link org.axonframework.examples.demo.multitenancy.MultiTenancyApplication}.
  */
 @NullMarked
-package org.axonframework.examples.demo.multitenancy;
+package org.axonframework.examples.demo.multitenancy.scaffolding;
 
 import org.jspecify.annotations.NullMarked;

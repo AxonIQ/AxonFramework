@@ -16,7 +16,7 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
-import org.axonframework.examples.demo.multitenancy.MultiTenancyApplication.DemoOutcome;
+import org.axonframework.examples.demo.multitenancy.scaffolding.DemoOutcome;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +40,8 @@ class MultiTenancyDemoTest {
         // and isolated from the other tenants
         assertThat(outcome.springfieldEnrolments()).isEqualTo(2);
         assertThat(outcome.springfieldAuditEntries()).isEqualTo(2);
+        // and the tenant added at runtime recorded its own enrolment in isolation
+        assertThat(outcome.ogdenvilleEnrolments()).isEqualTo(1);
         // and an event for an unknown tenant was rejected
         assertThat(outcome.unknownTenantRejected()).isTrue();
         // and registering two providers for one component type was rejected at configuration time

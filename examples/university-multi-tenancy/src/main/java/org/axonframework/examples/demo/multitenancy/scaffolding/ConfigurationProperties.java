@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.demo.multitenancy;
+package org.axonframework.examples.demo.multitenancy.scaffolding;
 
 import java.io.IOException;
 import java.io.InputStream;

@@ -1,0 +1,26 @@
+services:
+  axon-server:
+    # Enterprise Edition image: one context per tenant is an Enterprise Edition feature. It needs a
+    # license (see the README): without one, the server runs a trial that cannot create extra contexts.
+    image: docker.axoniq.io/axoniq/axonserver:2026.0.0
+    hostname: axon-server
+    ports:
+      - "8024:8024"
+      - "8124:8124"
+    environment:
+      AXONIQ_AXONSERVER_HOSTNAME: axon-server
+      AXONIQ_AXONSERVER_DEVMODE_ENABLED: true
+      # Auto-create the built-in _admin and default (DCB) contexts on the first boot, so no manual cluster
+      # initialization is needed. Creating the per-tenant contexts still requires the license below.
+      AXONIQ_AXONSERVER_STANDALONE_DCB: true
+    volumes:
+      - data:/axonserver/data
+      - events:/axonserver/events
+      # Provide a license in the file `axon-server.license` to create the per-tenant contexts: drop your license file in the same directory as this file
+      - ./axon-server.license:/axonserver/config/axoniq.license:ro
+
+volumes:
+  data:
+    driver: local
+  events:
+    driver: local

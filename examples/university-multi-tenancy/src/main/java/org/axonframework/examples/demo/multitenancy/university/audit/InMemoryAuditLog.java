@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -39,7 +40,7 @@ public class InMemoryAuditLog implements AuditLog {
      * @param tenantId the identifier of the tenant this audit log belongs to
      */
     public InMemoryAuditLog(String tenantId) {
-        this.tenantId = tenantId;
+        this.tenantId = Objects.requireNonNull(tenantId, "The tenant id must not be null");
     }
 
     @Override

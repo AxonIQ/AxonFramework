@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,7 +45,7 @@ public class InMemoryCourseStatsRepository implements CourseStatsRepository {
      * @param tenantId the identifier of the tenant this repository belongs to
      */
     public InMemoryCourseStatsRepository(String tenantId) {
-        this.tenantId = tenantId;
+        this.tenantId = Objects.requireNonNull(tenantId, "The tenant id must not be null");
     }
 
     @Override

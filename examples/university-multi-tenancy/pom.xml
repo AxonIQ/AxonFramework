@@ -85,12 +85,10 @@
             <artifactId>axon-server-connector</artifactId>
         </dependency>
 
-        <!-- The feature under demonstration. Pinned explicitly, as it is not yet managed by the
-             axoniq-framework BOM. Drop the version once the BOM manages it. -->
+        <!-- The feature under demonstration, managed by the axoniq-framework BOM imported above. -->
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-multi-tenancy</artifactId>
-            <version>${axoniq-framework.version}</version>
         </dependency>
 
         <!-- Logging Dependencies -->
