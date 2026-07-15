@@ -108,10 +108,10 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * {@code ProcessingContext}: resolve the dependency on the delegate <em>before</em> entering the supplier, rather
      * than from within it.
      * <p>
-     * <b>Warning:</b> never cache a resource whose construction closes over (holds a reference to) this
-     * {@code ProcessingContext} itself - supply a fresh instance on every call instead - unless {@code key} is
-     * guaranteed to be one of the resources every possible branch of this context overrides. A "branch" here is any
-     * {@code ProcessingContext} returned by {@link #withResource(ResourceKey, Object)}: a
+     * <b>Warning:</b> never use this method for a resource whose construction closes over (holds a reference to)
+     * this {@code ProcessingContext} itself - construct a fresh instance directly on every call instead - unless
+     * {@code key} is guaranteed to be one of the resources every possible branch of this context overrides. A
+     * "branch" here is any {@code ProcessingContext} returned by {@link #withResource(ResourceKey, Object)}: a
      * {@link ResourceOverridingProcessingContext} that overrides one specific resource key on top of a shared
      * parent. Such a branch only intercepts {@code computeResourceIfAbsent} for its own overridden key; every other
      * key falls through to the shared parent, ultimately the root context. If the supplied instance holds onto

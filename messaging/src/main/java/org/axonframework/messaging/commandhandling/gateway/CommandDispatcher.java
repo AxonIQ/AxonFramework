@@ -51,8 +51,7 @@ public interface CommandDispatcher extends DescribableComponent {
      * <p>
      * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
      * of dispatching directly through a {@link CommandGateway}: the dispatcher returned here is bound to that
-     * {@code context}, so every command it sends correctly carries the correlation/causation of whatever is
-     * currently being handled.
+     * {@code context}, so every command it sends is dispatched with that context's resources correctly applied.
      * <p>
      * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
      * with another call, even for the same {@code context}. Use the returned dispatcher only for operations
