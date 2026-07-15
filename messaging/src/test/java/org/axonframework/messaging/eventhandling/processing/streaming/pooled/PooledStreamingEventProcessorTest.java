@@ -501,21 +501,18 @@ class PooledStreamingEventProcessorTest {
             assertTrue(countDownLatch.await(5, TimeUnit.SECONDS));
         }
 
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link CommandDispatcher} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every dispatched command carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
         @Test
         void forContextDispatchesUsingEachEventsOwnPerEventResourceWithinABatch() {
-            // Within a single batch, ProcessorEventHandlingComponents.handle(entries, context) branches the shared
-            // batch context once per event, overriding TrackingToken.RESOURCE_KEY with that event's own token (see
-            // WorkPackage#processBatch). This test guards CommandDispatcher.forContext(ctx) returning a fresh
-            // dispatcher bound to that event's OWN branch every time: if it were cached under some other resource
-            // key instead, the wrapper created for the first event handled in a batch would leak into every later
-            // event of that SAME batch, which would then dispatch in the first event's branch instead of its own.
-            //
-            // For each event this records the TrackingToken the handler itself observed (always correct - read
-            // directly off its own branch) plus a batch identity key (the branch's toString omits the per-event
-            // override, so two events share this key iff they were branched from the same batch root). It also
-            // records the TrackingToken the CommandGateway actually saw when CommandDispatcher.forContext(ctx)
-            // dispatched. Within any batch shared by 2+ events, every event's dispatched token must equal its own
-            // handler-observed token - not another event's from the same batch.
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // CommandGateway actually saw when CommandDispatcher.forContext(ctx) dispatched.
             Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
             Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
             Map<Object, TrackingToken> tokenSeenAtDispatch = Collections.synchronizedMap(new HashMap<>());
@@ -556,31 +553,25 @@ class PooledStreamingEventProcessorTest {
                     .collect(Collectors.groupingBy(Map.Entry::getValue,
                                                     Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
             assertThat(eventsByBatch.values())
-                    .as("expected at least one batch with 2+ events, so the cross-event forContext cache can be observed")
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
                     .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
 
-            // then - each event's dispatch must have used ITS OWN per-event token, matching what its handler saw.
-            // With the caching bug, an event sharing a batch with an earlier one dispatches using that earlier
-            // event's token instead of its own.
+            // then - each event's dispatch must have used its own per-event token, matching what its handler saw
             assertThat(tokenSeenAtDispatch).isEqualTo(tokenSeenByHandler);
         }
 
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link QueryUpdateEmitter} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every emitted update carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
         @Test
         void forContextEmitsUsingEachEventsOwnPerEventResourceWithinABatch() {
-            // Same defect shape as CommandDispatcher.forContext (see the test above), but for
-            // QueryUpdateEmitter.forContext: within a single batch, each event is handled against its own thin
-            // branch of the shared batch context, overriding TrackingToken.RESOURCE_KEY with that event's own
-            // token. This guards QueryUpdateEmitter.forContext(ctx) returning a fresh emitter bound to that event's
-            // OWN branch every time: if it were cached under some other resource key instead, the wrapper created
-            // for the first event handled in a batch would leak into every later event of that SAME batch, which
-            // would then emit in the first event's branch instead of its own.
-            //
-            // For each event this records the TrackingToken the handler itself observed (always correct - read
-            // directly off its own branch) plus a batch identity key (the branch's toString omits the per-event
-            // override, so two events share this key iff they were branched from the same batch root). It also
-            // records the TrackingToken the QueryBus actually saw when QueryUpdateEmitter.forContext(ctx) emitted.
-            // Within any batch shared by 2+ events, every event's emitted token must equal its own handler-observed
-            // token - not another event's from the same batch.
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // QueryBus actually saw when QueryUpdateEmitter.forContext(ctx) emitted.
             Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
             Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
             Map<Object, TrackingToken> tokenSeenAtEmit = Collections.synchronizedMap(new HashMap<>());
@@ -623,12 +614,10 @@ class PooledStreamingEventProcessorTest {
                     .collect(Collectors.groupingBy(Map.Entry::getValue,
                                                     Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
             assertThat(eventsByBatch.values())
-                    .as("expected at least one batch with 2+ events, so the cross-event forContext cache can be observed")
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
                     .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
 
-            // then - each event's emit must have used ITS OWN per-event token, matching what its handler saw.
-            // With the caching bug, an event sharing a batch with an earlier one emits using that earlier
-            // event's token instead of its own.
+            // then - each event's emit must have used its own per-event token, matching what its handler saw
             assertThat(tokenSeenAtEmit).isEqualTo(tokenSeenByHandler);
         }
     }

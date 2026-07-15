@@ -49,24 +49,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 /**
- * Regression test for the {@code forContext} batch-sharing defect (issue #3594).
- * <p>
- * A streaming (pooled) event processor creates ONE {@link UnitOfWork} — and therefore one root
- * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} — per BATCH, not per event. Each event in the
- * batch is handled against a thin branch of that root. When
- * {@link CommandDispatcher#forContext(org.axonframework.messaging.core.unitofwork.ProcessingContext) forContext} cached
- * its wrapper on the shared root, the FIRST event's injected {@link CommandDispatcher} was handed back to every later
- * event in the same batch — so their dispatched commands ran against event #1's context branch and inherited event #1's
- * correlation/causation metadata (a corrupted causation chain), tracing on or not.
- * <p>
- * This test drives exactly that shape: two events in a single batch, an automation that dispatches a command per event
- * through the <em>injected</em> {@link CommandDispatcher}. Each dispatched command must carry the {@code causationId}
- * (and {@code correlationId}) of its OWN triggering event.
- * <ul>
- *     <li>With the buggy caching {@code forContext}: event #2's command carries event #1's ids → the two commands share
- *     one {@code causationId} → this test fails.</li>
- *     <li>With the fresh-per-call {@code forContext}: each command carries its own event's ids → this test passes.</li>
- * </ul>
+ * Verifies that when a {@link PooledStreamingEventProcessor} handles multiple events within a single batch, an
+ * automation reacting to each event resolves its own {@link CommandDispatcher} via
+ * {@link CommandDispatcher#forContext(org.axonframework.messaging.core.unitofwork.ProcessingContext) forContext}, and
+ * every command it dispatches carries the {@code causationId} and {@code correlationId} of its own triggering event.
  *
  * @author Mateusz Nowak
  */
@@ -95,9 +81,9 @@ class InjectedCommandDispatcherBatchCausationInMemoryIT extends AbstractStudentI
                                                  "both enrollment events should have dispatched a command"));
 
         // when — replay the (now already-processed) events. A replay reads them as a backlog, which the pooled
-        // processor groups into a SINGLE batch (batchSize 2, one segment) sharing one root ProcessingContext —
-        // the shape that triggers the defect. (Live tailing delivers one event per batch, so it cannot reproduce
-        // it; and resetTokens only replays up to the current token, hence the initial live pass above.)
+        // processor groups into a SINGLE batch (batchSize 2, one segment) sharing one root ProcessingContext, so
+        // both events are handled within it. (Live tailing delivers one event per batch; resetTokens only replays
+        // up to the current token, hence the initial live pass above.)
         replayAlreadyProcessedEvents();
 
         // then
@@ -110,12 +96,11 @@ class InjectedCommandDispatcherBatchCausationInMemoryIT extends AbstractStudentI
         var command1 = byCourse.get("course-1");
         var command2 = byCourse.get("course-2");
 
-        // each command must be caused by its OWN triggering event, not by the first event of the batch
+        // each command must be caused by its own triggering event
         assertEquals(eventIdByCourse.get("course-1"), command1.causationId(),
                      "command for event #1 must carry event #1's causationId");
         assertEquals(eventIdByCourse.get("course-2"), command2.causationId(),
-                     "command for event #2 must carry event #2's causationId, not event #1's "
-                             + "(forContext must return a fresh CommandDispatcher per call)");
+                     "command for event #2 must carry event #2's causationId, not event #1's");
 
         // ... and therefore the causation/correlation of the two commands differ
         assertNotEquals(command1.causationId(), command2.causationId(),
@@ -133,7 +118,7 @@ class InjectedCommandDispatcherBatchCausationInMemoryIT extends AbstractStudentI
                                                Metadata.emptyInstance());
         UnitOfWork uow = unitOfWorkFactory.create();
         // Publish BOTH events in a single call => one atomic append => the pooled processor reads them
-        // in ONE batch (sharing a single root ProcessingContext), which is what triggers the defect.
+        // in ONE batch (sharing a single root ProcessingContext).
         uow.runOnInvocation(context -> context.component(EventSink.class).publish(context, message1, message2));
         uow.execute().join();
         return Map.of(course1, message1.identifier(), course2, message2.identifier());
@@ -185,8 +170,7 @@ class InjectedCommandDispatcherBatchCausationInMemoryIT extends AbstractStudentI
 
     /**
      * Reacts to every {@link StudentEnrolledEvent} by dispatching a command through the <em>injected</em>
-     * {@link CommandDispatcher} — i.e. resolved via {@code forContext(context)} on each invocation. This is the path
-     * that carried the batch-sharing defect.
+     * {@link CommandDispatcher} - i.e. resolved via {@code forContext(context)} on each invocation.
      */
     static class NotifyOnEnrollmentAutomation {
 
