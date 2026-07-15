@@ -54,11 +54,9 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * ensuring updates are emitted in the correct order relative to the lifecycle of whatever is currently being
      * handled.
      * <p>
-     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
-     * with another call, even for the same {@code context}. Use the returned emitter only for operations belonging
-     * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
-     * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own emitter
-     * rather than risk one branch's emitter leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context The {@link ProcessingContext} to create the emitter for.
      * @return A fresh emitter specific for the given {@code context}.

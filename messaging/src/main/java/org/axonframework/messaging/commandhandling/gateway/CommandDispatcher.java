@@ -53,11 +53,9 @@ public interface CommandDispatcher extends DescribableComponent {
      * of dispatching directly through a {@link CommandGateway}: the dispatcher returned here is bound to that
      * {@code context}, so every command it sends is dispatched with that context's resources correctly applied.
      * <p>
-     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
-     * with another call, even for the same {@code context}. Use the returned dispatcher only for operations
-     * belonging to that {@code context}: if {@code context} is a branch created via
-     * {@link ProcessingContext#withResource} (e.g. one such branch per event in a streaming processor's batch), each
-     * branch must resolve its own dispatcher rather than risk one branch's dispatcher leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context The {@link ProcessingContext} to create the dispatcher for.
      * @return A fresh command dispatcher specific for the given {@code context}.

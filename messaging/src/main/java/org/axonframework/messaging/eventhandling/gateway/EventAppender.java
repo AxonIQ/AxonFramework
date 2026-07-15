@@ -55,11 +55,9 @@ public interface EventAppender extends DescribableComponent {
      * of appending directly through an {@link EventSink}: the appender returned here is bound to that
      * {@code context}, so every event it appends is published with that context's resources correctly applied.
      * <p>
-     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
-     * with another call, even for the same {@code context}. Use the returned appender only for operations belonging
-     * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
-     * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own appender
-     * rather than risk one branch's appender leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context The {@link ProcessingContext} to create the appender for.
      * @return A fresh appender specific for the given {@code context}.
@@ -75,11 +73,9 @@ public interface EventAppender extends DescribableComponent {
      * of appending directly through an {@link EventSink}: the appender returned here is bound to that
      * {@code context}, so every event it appends is published with that context's resources correctly applied.
      * <p>
-     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
-     * with another call, even for the same {@code context}. Use the returned appender only for operations belonging
-     * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
-     * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own appender
-     * rather than risk one branch's appender leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context             The {@link ProcessingContext} to create the appender for.
      * @param eventSink           The {@link EventSink} to use for the appender.

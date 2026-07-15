@@ -134,10 +134,6 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      *     return new MyContextAwareGateway(context);
      * }
      * }</pre>
-     * See {@link org.axonframework.messaging.commandhandling.gateway.CommandDispatcher#forContext(ProcessingContext)},
-     * {@link org.axonframework.messaging.eventhandling.gateway.EventAppender#forContext(ProcessingContext)}, and
-     * {@link org.axonframework.messaging.queryhandling.QueryUpdateEmitter#forContext(ProcessingContext)}, all of
-     * which were fixed for exactly this reason.
      * <p>
      * This method remains the correct choice when the cached value does <em>not</em> reference {@code context} and
      * is genuinely meant to be shared for the whole processing session, regardless of how many branches exist. For
