@@ -36,10 +36,13 @@ import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTy
  * {@link MessageHandler MessageHandlers}, and other components that require naming. To combine a qualified
  * qualifiedName with a version, consider using the {@link MessageType}.
  *
- * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null} or empty.
+ * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
+ *             ({@code #}), since that character is reserved by {@link MessageType} as the separator between a
+ *             qualified name and version in its String representation.
  * @author Allard Buijze
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @see MessageType
  * @since 5.0.0
  */
@@ -48,14 +51,19 @@ public record QualifiedName(String name) {
     private static final String DELIMITER = ".";
 
     /**
-     * Compact constructor asserting whether the {@code qualifiedName} is non-null and not empty.
+     * Creates a new instance and asserts whether the {@code qualifiedName} is non-null, not blank, and does not
+     * contain {@link MessageType#VERSION_DELIMITER}.
      */
     public QualifiedName {
-        Assert.assertThat(
-                requireNonNull(name, "The given name is unsupported because it is null."),
-                StringUtils::nonEmpty,
-                () -> new IllegalArgumentException("The given name is unsupported because it is empty.")
-        );
+        requireNonNull(name, "The given name is unsupported because it is null.");
+
+        if (!MessageType.VALID_SEGMENT.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                    "The given name [" + name + "] is unsupported because it is blank, or contains \""
+                            + MessageType.VERSION_DELIMITER + "\", which is reserved by MessageType as the "
+                            + "separator between a qualified name and version in its String representation."
+            );
+        }
     }
 
     /**

@@ -18,12 +18,14 @@ package org.axonframework.messaging.core;
 
 import org.junit.jupiter.api.*;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test class validating the {@link QualifiedName}.
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  */
 class QualifiedNameTest {
 
@@ -76,6 +78,26 @@ class QualifiedNameTest {
     @Test
     void throwsIllegalArgumentExceptionForEmptyName() {
         assertThrows(IllegalArgumentException.class, () -> new QualifiedName(""));
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForBlankName() {
+        assertThrows(IllegalArgumentException.class, () -> new QualifiedName("   "));
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForNameContainingHash() {
+        // the hash is reserved by MessageType as the separator between a qualified name and version
+        assertThatThrownBy(() -> new QualifiedName("my.context.Business#Name"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForLocalNameContainingHash() {
+        assertThatThrownBy(() -> new QualifiedName(NAMESPACE, "local#Name"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
     }
 
     @Test
