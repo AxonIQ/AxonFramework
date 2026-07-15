@@ -58,8 +58,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * with another call, even for the same {@code context}. Use the returned emitter only for operations belonging
      * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
      * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own emitter
-     * rather than risk one branch's emitter leaking into another's. See
-     * {@link ProcessingContext#computeResourceIfAbsent} for why this method deliberately does not cache its result.
+     * rather than risk one branch's emitter leaking into another's.
      *
      * @param context The {@link ProcessingContext} to create the emitter for.
      * @return A fresh emitter specific for the given {@code context}.
