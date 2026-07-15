@@ -51,6 +51,10 @@ public interface EventAppender extends DescribableComponent {
     /**
      * Creates an appender for the given {@link ProcessingContext}.
      * <p>
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of appending directly through an {@link EventSink}: the appender returned here is bound to that {@code context},
+     * so every event it appends correctly carries the correlation/causation of whatever is currently being handled.
+     * <p>
      * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
      * with another call, even for the same {@code context}. Use the returned appender only for operations belonging
      * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
@@ -66,6 +70,10 @@ public interface EventAppender extends DescribableComponent {
 
     /**
      * Creates an appender for the given {@link ProcessingContext} and {@link EventSink}.
+     * <p>
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of appending directly through an {@link EventSink}: the appender returned here is bound to that {@code context},
+     * so every event it appends correctly carries the correlation/causation of whatever is currently being handled.
      * <p>
      * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
      * with another call, even for the same {@code context}. Use the returned appender only for operations belonging

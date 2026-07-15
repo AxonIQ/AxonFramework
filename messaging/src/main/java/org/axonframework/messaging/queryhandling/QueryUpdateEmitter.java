@@ -49,6 +49,11 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Creates a query update emitter for the given {@link ProcessingContext}.
      * <p>
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of emitting directly through a {@link QueryBus}: the emitter returned here is bound to that {@code context},
+     * ensuring updates are emitted in the correct order relative to the lifecycle of whatever is currently being
+     * handled.
+     * <p>
      * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
      * with another call, even for the same {@code context}. Use the returned emitter only for operations belonging
      * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
