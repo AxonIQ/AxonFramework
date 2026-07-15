@@ -49,12 +49,11 @@ public interface CommandDispatcher extends DescribableComponent {
     /**
      * Creates a dispatcher for the given {@link ProcessingContext}.
      * <p>
-     * You can use this dispatcher <b>only</b> for the context it was created for. Every invocation returns a fresh
-     * instance bound to the given {@code context} - it is never cached or shared with another call, even for the
-     * same {@code context}. This matters when {@code context} overrides one or more resources on top of a shared
-     * parent (e.g. one such override per event in a streaming processor's batch): each context with its own
-     * overridden resources must resolve its own dispatcher rather than risk one context's dispatcher leaking into
-     * another's.
+     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
+     * with another call, even for the same {@code context}. Use the returned dispatcher only for operations
+     * belonging to that {@code context}: if {@code context} is a branch created via
+     * {@link ProcessingContext#withResource} (e.g. one such branch per event in a streaming processor's batch), each
+     * branch must resolve its own dispatcher rather than risk one branch's dispatcher leaking into another's.
      *
      * @param context The {@link ProcessingContext} to create the dispatcher for.
      * @return A fresh command dispatcher specific for the given {@code context}.

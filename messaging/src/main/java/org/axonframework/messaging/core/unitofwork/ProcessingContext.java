@@ -108,11 +108,13 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * {@code ProcessingContext}: resolve the dependency on the delegate <em>before</em> entering the supplier, rather
      * than from within it.
      * <p>
-     * <b>Never cache a resource whose construction closes over (holds a reference to) this {@code ProcessingContext}
-     * itself</b>, unless {@code key} is guaranteed to be one of the resources every possible branch of this context
-     * overrides. A {@link ResourceOverridingProcessingContext} - the result of {@link #withResource(ResourceKey,
-     * Object)} - only intercepts {@code computeResourceIfAbsent} for its own overridden key; every other key falls
-     * through to the shared delegate, ultimately the root context. If the supplied instance holds onto
+     * <b>Warning:</b> never cache a resource whose construction closes over (holds a reference to) this
+     * {@code ProcessingContext} itself - supply a fresh instance on every call instead - unless {@code key} is
+     * guaranteed to be one of the resources every possible branch of this context overrides. A "branch" here is any
+     * {@code ProcessingContext} returned by {@link #withResource(ResourceKey, Object)}: a
+     * {@link ResourceOverridingProcessingContext} that overrides one specific resource key on top of a shared
+     * parent. Such a branch only intercepts {@code computeResourceIfAbsent} for its own overridden key; every other
+     * key falls through to the shared parent, ultimately the root context. If the supplied instance holds onto
      * {@code context}, and {@code context} may be one of several sibling branches of a shared parent (for example,
      * one branch per event in a streaming processor's batch), the first branch to call this method gets its
      * instance cached on the shared root, and every sibling branch that calls afterward receives that <em>same</em>
@@ -124,8 +126,15 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * }
      * }</pre>
      * If {@code context} is a per-event branch of a batch, the second event to call {@code forContext} receives the
-     * first event's gateway back, closed over the first event's branch. Construct a fresh instance on every call
-     * instead - see {@link org.axonframework.messaging.commandhandling.gateway.CommandDispatcher#forContext(ProcessingContext)},
+     * first event's gateway back, closed over the first event's branch. Supply a fresh instance directly instead,
+     * bypassing this resource store entirely:
+     * <pre>{@code
+     * // SAFE: always supplies a fresh instance bound to whichever context is passed in.
+     * static MyContextAwareGateway forContext(ProcessingContext context) {
+     *     return new MyContextAwareGateway(context);
+     * }
+     * }</pre>
+     * See {@link org.axonframework.messaging.commandhandling.gateway.CommandDispatcher#forContext(ProcessingContext)},
      * {@link org.axonframework.messaging.eventhandling.gateway.EventAppender#forContext(ProcessingContext)}, and
      * {@link org.axonframework.messaging.queryhandling.QueryUpdateEmitter#forContext(ProcessingContext)}, all of
      * which were fixed for exactly this reason.

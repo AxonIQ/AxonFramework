@@ -51,11 +51,11 @@ public interface EventAppender extends DescribableComponent {
     /**
      * Creates an appender for the given {@link ProcessingContext}.
      * <p>
-     * You can use this appender only for the context it was created for. Every invocation returns a fresh instance
-     * bound to the given {@code context} - it is never cached or shared with another call, even for the same
-     * {@code context}. This matters when {@code context} overrides one or more resources on top of a shared parent
-     * (e.g. one such override per event in a streaming processor's batch): each context with its own overridden
-     * resources must resolve its own appender rather than risk one context's appender leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
+     * with another call, even for the same {@code context}. Use the returned appender only for operations belonging
+     * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
+     * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own appender
+     * rather than risk one branch's appender leaking into another's.
      *
      * @param context The {@link ProcessingContext} to create the appender for.
      * @return A fresh appender specific for the given {@code context}.
@@ -67,11 +67,11 @@ public interface EventAppender extends DescribableComponent {
     /**
      * Creates an appender for the given {@link ProcessingContext} and {@link EventSink}.
      * <p>
-     * You can use this appender only for the context it was created for. Every invocation returns a fresh instance
-     * bound to the given {@code context} - it is never cached or shared with another call, even for the same
-     * {@code context}. This matters when {@code context} overrides one or more resources on top of a shared parent
-     * (e.g. one such override per event in a streaming processor's batch): each context with its own overridden
-     * resources must resolve its own appender rather than risk one context's appender leaking into another's.
+     * Every invocation returns a fresh instance bound to the given {@code context} - it is never cached or shared
+     * with another call, even for the same {@code context}. Use the returned appender only for operations belonging
+     * to that {@code context}: if {@code context} is a branch created via {@link ProcessingContext#withResource}
+     * (e.g. one such branch per event in a streaming processor's batch), each branch must resolve its own appender
+     * rather than risk one branch's appender leaking into another's.
      *
      * @param context             The {@link ProcessingContext} to create the appender for.
      * @param eventSink           The {@link EventSink} to use for the appender.
