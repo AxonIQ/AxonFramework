@@ -87,6 +87,10 @@ Other extensions can provide additional implementations:
 * PostgreSQL event store (via the PostgreSQL extension)
 * Reactive gateways for commands, events, and queries (via the xref:modules.adoc#axon-reactor[Reactor extension])
 
+ifdef::advanced-framework[]
+include::connector:partial$connection-security.adoc[]
+endif::[]
+
 == Component detection
 
 The Spring Boot Starter automatically detects Axon components in your application:
