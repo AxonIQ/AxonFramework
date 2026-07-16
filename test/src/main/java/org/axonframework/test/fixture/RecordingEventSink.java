@@ -33,6 +33,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * An {@link EventSink} implementation recording all the events that are
  * {@link #publish(ProcessingContext, List) published}.
  * <p>
+ * When events are published within a {@link ProcessingContext}, recording is deferred until the context's
+ * {@link ProcessingContext#runOnAfterCommit(java.util.function.Consumer) after-commit phase}. As a result, events
+ * appended in a unit of work that is rolled back — for example because the command handler threw an exception — are
+ * never recorded, mirroring the fact that they are never persisted or published to event handlers. Events published
+ * without a context are recorded immediately.
+ * <p>
  * The recorded events can then be used to assert expectations with test cases.
  *
  * @author Mateusz Nowak
@@ -56,8 +62,12 @@ public class RecordingEventSink implements EventSink {
     @Override
     public CompletableFuture<Void> publish(@Nullable ProcessingContext context,
                                            List<? extends EventMessage> events) {
+        if (context == null) {
+            return delegate.publish(null, events)
+                           .thenRun(() -> recorded.addAll(events));
+        }
         return delegate.publish(context, events)
-                       .thenRun(() -> recorded.addAll(events));
+                       .thenRun(() -> context.runOnAfterCommit(c -> recorded.addAll(events)));
     }
 
     /**
