@@ -666,7 +666,7 @@ include::example$testing/basictesting/extension/basic/BasicExtensionUsage.java[t
 IMPORTANT: `@ProvidedAxonTestFixture` cannot be applied on static fields, as this breaks the lifecycle contract of getting a new instance of the fixture on every test run. You can however use `@ProvidedAxonTestFixture` on static and non-static methods if you want.
 
 
-Alternatively, you can also parameterize `@ProvidedAxonTestFixture` with a class value implementing the `@AxonTestFixtureProvider` interface. By doing so, you can reuse the same provider across multiple test classes, or even share it across your entire test suite by using a common base class.
+Alternatively, you can also parameterize `@ProvidedAxonTestFixture` with a class value implementing the `AxonTestFixtureProvider` interface. By doing so, you can reuse the same provider across multiple test classes, or even share it across your entire test suite by using a common base class.
 By using the `@ProvidedAxonTestFixture` directly on a test method, you can override the default configured on class level.
 
 [source,java]

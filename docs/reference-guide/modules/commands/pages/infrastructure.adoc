@@ -296,7 +296,7 @@ When not using Spring Boot, register command handlers using `CommandHandlingModu
 include::example$commands/infrastructure/registration/AxonConfig.java[tag=manual-registration,indent=0]
 ----
 
-The `autodetectedCommandHandlingComponent()` method scans the handler for `@CommandHandler` annotated methods and registers them with the command bus. When the you prefer to register methods as command handlers without the use of annotations, use the `commandHandler(QualifiedName, CommandHandler)` method instead.
+The `autodetectedCommandHandlingComponent()` method scans the handler for `@CommandHandler` annotated methods and registers them with the command bus. When you prefer to register methods as command handlers without the use of annotations, use the `commandHandler(QualifiedName, CommandHandler)` method instead.
 
 For registering event-sourced entities and their repositories, use `EventSourcingConfigurer` or `ModellingConfigurer` which provide entity-specific registration methods.
 

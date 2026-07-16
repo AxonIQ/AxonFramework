@@ -129,7 +129,6 @@ Replace default components by registering with the same type:
 include::example$commands/configuration/replacement/AxonConfig.java[tag=component-replacement,indent=0]
 ----
 
-
 The last registration wins - this replaces any previously registered `CommandBus`.
 
 === Component decoration
