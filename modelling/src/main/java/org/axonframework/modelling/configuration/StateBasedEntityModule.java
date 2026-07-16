@@ -21,9 +21,14 @@ import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.modelling.EntityIdResolver;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityLoader;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityPersister;
 import org.axonframework.modelling.repository.Repository;
+
+import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * An expansion on the {@link EntityModule}, specifically for state-based entities.
@@ -81,12 +86,40 @@ public interface StateBasedEntityModule<ID, E> extends EntityModule<ID, E> {
         PersisterPhase<ID, E> loader(ComponentBuilder<SimpleRepositoryEntityLoader<ID, E>> loader);
 
         /**
+         * Registers the given {@code loader} for the state-based entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the loader.
+         *
+         * @param loader the {@link SimpleRepositoryEntityLoader} for the state-based entity
+         * @return the "persister" phase of this builder, for a fluent API
+         */
+        default PersisterPhase<ID, E> loader(SimpleRepositoryEntityLoader<ID, E> loader) {
+            Objects.requireNonNull(loader, "The loader cannot be null.");
+            return loader(configuration -> loader);
+        }
+
+        /**
          * Registers the given {@code repository} as a factory method for the state-based entity being built.
          *
          * @param repository A factory method constructing a {@link Repository}.
          * @return The parent {@link StateBasedEntityModule}, signaling the end of configuring a state-based entity.
          */
         MessagingMetamodelPhase<ID, E> repository(ComponentBuilder<Repository<ID, E>> repository);
+
+        /**
+         * Registers the given {@code repository} for the state-based entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the repository.
+         *
+         * @param repository the {@link Repository} for the state-based entity
+         * @return the messaging metamodel phase of this builder, for a fluent API
+         */
+        default MessagingMetamodelPhase<ID, E> repository(Repository<ID, E> repository) {
+            Objects.requireNonNull(repository, "The repository cannot be null.");
+            return repository(configuration -> repository);
+        }
     }
 
     /**
@@ -108,6 +141,20 @@ public interface StateBasedEntityModule<ID, E> extends EntityModule<ID, E> {
         MessagingMetamodelPhase<ID, E> persister(
                 ComponentBuilder<SimpleRepositoryEntityPersister<ID, E>> persister
         );
+
+        /**
+         * Registers the given {@code persister} for the state-based entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the persister.
+         *
+         * @param persister the {@link SimpleRepositoryEntityPersister} for the state-based entity
+         * @return the messaging metamodel phase of this builder, for a fluent API
+         */
+        default MessagingMetamodelPhase<ID, E> persister(SimpleRepositoryEntityPersister<ID, E> persister) {
+            Objects.requireNonNull(persister, "The persister cannot be null.");
+            return persister(configuration -> persister);
+        }
     }
 
     /**
@@ -134,6 +181,23 @@ public interface StateBasedEntityModule<ID, E> extends EntityModule<ID, E> {
         EntityIdResolverPhase<ID, E> messagingModel(
                 EntityMetamodelConfigurationBuilder<E> metamodelFactory
         );
+
+        /**
+         * Registers a messaging metamodel factory that does not require the
+         * {@link org.axonframework.common.configuration.Configuration}.
+         * <p>
+         * Convenience overload for callers that only need the {@link EntityMetamodelBuilder}.
+         *
+         * @param metamodelFactory a factory constructing the {@link EntityMetamodel} from the
+         *                         {@link EntityMetamodelBuilder}
+         * @return the next phase of this builder, allowing for configuring the entity's ID resolver
+         */
+        default EntityIdResolverPhase<ID, E> messagingModel(
+                Function<EntityMetamodelBuilder<E>, EntityMetamodel<E>> metamodelFactory
+        ) {
+            Objects.requireNonNull(metamodelFactory, "The metamodelFactory cannot be null.");
+            return messagingModel((configuration, builder) -> metamodelFactory.apply(builder));
+        }
     }
 
     /**
@@ -159,5 +223,19 @@ public interface StateBasedEntityModule<ID, E> extends EntityModule<ID, E> {
         StateBasedEntityModule<ID, E> entityIdResolver(
                 ComponentBuilder<EntityIdResolver<ID>> entityIdResolver
         );
+
+        /**
+         * Registers the given {@code entityIdResolver} for resolving entity identifiers from a given {@link Message}.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the resolver.
+         *
+         * @param entityIdResolver the {@link EntityIdResolver} for the state-based entity
+         * @return the {@link StateBasedEntityModule}, signaling the end of this builder
+         */
+        default StateBasedEntityModule<ID, E> entityIdResolver(EntityIdResolver<ID> entityIdResolver) {
+            Objects.requireNonNull(entityIdResolver, "The entity ID resolver cannot be null.");
+            return entityIdResolver(configuration -> entityIdResolver);
+        }
     }
 }

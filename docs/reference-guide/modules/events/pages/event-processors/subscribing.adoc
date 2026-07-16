@@ -19,6 +19,11 @@ When using a simple bus solution like the `EventBus` as the event source, the Su
 Operations like xref:event-processors/streaming.adoc#replaying-events[replaying] are, therefore, not an option for any Subscribing Processor.
 Furthermore, when the `EventBus` is used as the event source, the event publishing thread is the same one that handles the event in the Subscribing Processor.
 
+[NOTE]
+====
+As a result, publication through the `EventBus` completes only after every subscribed handler has finished, and a failing handler propagates its failure back to the publisher, failing the event publication.
+====
+
 Although this coupled approach deserves a spot within the framework, most scenarios require further decoupling of components by separating the threads as well.
 When, for example, an application requires event processing parallelization to get a higher performance, this can be a blocker.
 This predicament is why the `SubscribingEventProcessor` is not the default in Axon Framework.

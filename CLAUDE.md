@@ -119,7 +119,7 @@ Additional modules:
 - `axon-server-connector/` — Distributed communication with Axon Server
 - `extensions/spring/` — Spring Boot auto-configuration and starter
 - `extensions/metrics/` — Dropwizard and Micrometer metrics
-- `extensions/tracing/` — OpenTelemetry distributed tracing
+- `extensions/tracing/` — OpenTelemetry tracing is provided by Axoniq Framework, not this OSS repository
 - `stash/legacy*/` — Backward compatibility layers for older Axon versions
 - `stash/migration/` — OpenRewrite migration recipes
 - `stash/todo/` — Axon Framework 4 parts to be ported to Axon Framework 5

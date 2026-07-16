@@ -18,6 +18,7 @@ package org.axonframework.extension.spring.config;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonThreadFactory;
+import org.axonframework.common.StringUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
@@ -70,6 +71,14 @@ interface SpringCustomizations {
 
     /**
      * Customization executed based on the {@link EventProcessorSettings.SubscribingEventProcessorSettings}.
+     * <p>
+     * The {@link SubscribableEventSource} is only mandatory when the
+     * {@link EventProcessorSettings#source() source setting} is explicitly set. When it is unset (or empty), this
+     * customization falls back to resolving the unique, type-level {@code SubscribableEventSource} (typically the
+     * {@link org.axonframework.messaging.eventhandling.EventBus}) and only sets a source when one is found. Otherwise,
+     * it leaves the source untouched, allowing customizations applied after this one, like an
+     * {@code EventProcessorDefinition}, to supply it. A still-missing source is reported when the resulting
+     * {@link SubscribingEventProcessorConfiguration} is validated.
      */
     class SpringSubscribingEventProcessingModuleCustomization implements SubscribingEventProcessorModule.Customization {
 
@@ -86,21 +95,18 @@ interface SpringCustomizations {
         @Override
         public SubscribingEventProcessorConfiguration apply(Configuration configuration,
                                                             SubscribingEventProcessorConfiguration subscribingEventProcessorConfiguration) {
-            var messageSource = getComponent(configuration,
-                                             SubscribableEventSource.class,
-                                             settings.source(),
-                                             null
-            );
-            require(messageSource != null, "Could not find a mandatory Source with name '" + settings.source()
-                    + "' for event processor '" + name + "'.");
-
             var unitOfWorkFactory = getComponent(configuration, UnitOfWorkFactory.class, null, null);
             require(unitOfWorkFactory != null,
                     "Could not find a mandatory UnitOfWorkFactory for event processor '" + name + "'.");
+            var result = subscribingEventProcessorConfiguration.unitOfWorkFactory(unitOfWorkFactory);
 
-            return subscribingEventProcessorConfiguration
-                    .eventSource(messageSource)
-                    .unitOfWorkFactory(unitOfWorkFactory);
+            String sourceName = StringUtils.nonEmptyOrNull(settings.source()) ? settings.source() : null;
+            var messageSource = getComponent(configuration, SubscribableEventSource.class, sourceName, null);
+            if (sourceName != null) {
+                require(messageSource != null, "Could not find a mandatory Source with name '" + settings.source()
+                        + "' for event processor '" + name + "'.");
+            }
+            return messageSource != null ? result.eventSource(messageSource) : result;
         }
     }
 

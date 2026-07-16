@@ -36,6 +36,5 @@
         <module>metrics</module>
         <module>reactor</module>
         <module>spring</module>
-        <module>tracing</module>
     </modules>
 </project>

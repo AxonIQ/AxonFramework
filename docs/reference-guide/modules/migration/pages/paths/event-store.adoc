@@ -69,6 +69,12 @@ However, this version also expects that the Axon Server instances have migrated 
 If you have not performed this migration yet, but do want to upgrade to Axon Framework 5, you should use the `AggregateBasedAxonServerEventStorageEngine` instead.
 This engine uses Axon Server's previous aggregate-oriented APIs, which organize events by aggregate identifier and sequence number.
 
+[NOTE]
+====
+Switching a context to DCB also affects existing snapshots: Axon Framework 4 snapshots cannot be reused afterwards, and affected entities rebuild from their event streams.
+See xref:migration:paths/snapshotting.adoc#reusing_existing_snapshots[Reusing existing Axon Framework 4 snapshots] for the reasoning and what to expect.
+====
+
 To configure the `AggregateBasedAxonServerEventStorageEngine`, please regard the following samples:
 
 [tabs]

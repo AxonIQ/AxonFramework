@@ -21,10 +21,14 @@ import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 
 import java.lang.annotation.Documented;
-import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+
+import static java.lang.annotation.ElementType.ANNOTATION_TYPE;
+import static java.lang.annotation.ElementType.MODULE;
+import static java.lang.annotation.ElementType.PACKAGE;
+import static java.lang.annotation.ElementType.TYPE;
 
 /**
  * Configures snapshotting behaviour for an event-sourced entity when using the annotation-based registration path
@@ -70,7 +74,7 @@ import java.lang.annotation.Target;
  * @see org.axonframework.eventsourcing.configuration.EventSourcedEntityModule.OptionalPhase#snapshotPolicy(org.axonframework.common.configuration.ComponentBuilder)
  * @since 5.1.1
  */
-@Target(ElementType.TYPE)
+@Target({TYPE, ANNOTATION_TYPE, PACKAGE, MODULE})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface Snapshotting {

@@ -5,6 +5,9 @@ Axon Framework 5 adds a `mask` column to the token store table used by streaming
 This column is required: without it, the framework cannot start.
 If you are migrating from Axon Framework 4, the existing schema must be updated and the column must be populated with correct values.
 
+Alongside this schema change, the tracking token classes moved to a new package, so the class names stored in existing token data also need attention.
+See <<token-class-names>> for what that means and when you need to act.
+
 == Understanding the mask column
 
 Streaming event processors divide the event stream into xref:events:event-processors/streaming.adoc[segments].
@@ -214,3 +217,62 @@ Spring Boot's default `SpringPhysicalNamingStrategy` converts camelCase field na
 Using `PhysicalNamingStrategyStandardImpl` keeps them as-is.
 Check your persistence configuration to confirm the exact column names in your database before running any migration script.
 ====
+
+[#token-class-names]
+== Token class names
+
+Between Axon Framework 4 and Axon Framework 5 the tracking token classes moved to a new package.
+A token store written by Axon Framework 4 records the old class names, for example `org.axonframework.eventhandling.GlobalSequenceTrackingToken`.
+The name appears in the token type column, and for tokens that wrap other tokens it also appears inside the serialized token.
+Whether you need to act depends on how those tokens were serialized.
+
+=== Jackson (JSON) stores
+
+If your Axon Framework 4 application serialized its tokens with Jackson, no action is required, as long as Axon Framework 5 reads them with a Jackson-based converter (the default).
+This applies to both the Jackson 3 and the Jackson 2 converter.
+Axon Framework 5 recognizes the old class names when reading a token and maps them to the new classes.
+The first time each token is updated it is stored under the new name, so the store migrates itself as the processors run.
+
+=== XStream stores
+
+Axon Framework 5 does not include XStream, so it cannot read tokens serialized with the removed `XStreamSerializer`.
+See the xref:paths/serializers.adoc[Serializer Migration] for the background on that removal.
+A token only records the position a streaming event processor has reached, so these tokens can be regenerated.
+The simplest option is to <<option-2-reset-processors-to-latest,reset the processors to latest>> and let them rebuild.
+
+If a full replay is not acceptable, re-serialize the tokens to JSON while still on Axon Framework 4, before upgrading.
+Run the following for each token entry, reading the stored token with the serializer your Axon Framework 4 application already uses and writing it back with Jackson:
+
+[source,java]
+----
+Serializer xStreamSerializer = /* the serializer your Axon 4 application is configured with */;
+Serializer jacksonSerializer = JacksonSerializer.defaultSerializer();
+
+// tokenColumn and tokenTypeColumn hold the current values of the token entry
+SerializedObject<byte[]> stored =
+        new SimpleSerializedObject<>(tokenColumn, byte[].class, tokenTypeColumn, null);
+TrackingToken token = xStreamSerializer.deserialize(stored);
+
+SerializedObject<byte[]> jsonToken = jacksonSerializer.serialize(token, byte[].class);
+// store jsonToken.getData() back in the token column
+----
+
+Only the token column changes to JSON.
+The token type column can keep the old class name, because Axon Framework 5 maps it on read.
+After this, upgrade and apply the mask migration above.
+
+[#replay-tokens]
+=== Replay tokens
+
+Replay tokens are not migrated automatically, because their format changed between versions beyond the class name.
+Axon Framework 4 named the reset context field `context`, and Axon Framework 5 renamed it to `resetContext` and changed its type.
+A replay token only exists while a processor is replaying, so complete any replay in progress before upgrading, or reset the affected processors.
+
+[.axoniq-feature]
+=== Multi-source tokens
+
+Reading from more than one event source, and its `MultiSourceTrackingToken`, is part of the Axoniq Framework rather than Axon Framework 5 itself.
+When you use Axoniq Framework, these tokens are recognized and read after upgrading, in the same way as the tokens above.
+The exception is a token captured while one of its sources was replaying, because it contains a replay token, which cannot be migrated for the reason described under <<replay-tokens,Replay tokens>>. Reset those processors instead.
+
+On Axon Framework 5 without the Axoniq Framework there is no multi-source support, so reset the affected processors to rebuild their position, as described in <<option-2-reset-processors-to-latest,reset the processors to latest>>.

@@ -17,6 +17,7 @@
 package org.axonframework.modelling.configuration;
 
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.core.MessageStream;
@@ -26,8 +27,11 @@ import org.axonframework.messaging.core.correlation.CorrelationDataProviderRegis
 import org.axonframework.messaging.core.correlation.DefaultCorrelationDataProviderRegistry;
 import org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.entity.EntityCommandHandlingComponent;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.repository.Repository;
 import org.axonframework.modelling.repository.SimpleRepository;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityLoader;
@@ -37,7 +41,9 @@ import org.mockito.*;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -82,7 +88,7 @@ class StateBasedEntityModuleTest {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class,
                      () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
-                                                 .repository(null));
+                                                 .repository((ComponentBuilder<Repository<CourseId, Course>>) null));
     }
 
     @Test
@@ -90,7 +96,7 @@ class StateBasedEntityModuleTest {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class,
                      () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
-                                                 .loader(null));
+                                                 .loader((ComponentBuilder<SimpleRepositoryEntityLoader<CourseId, Course>>) null));
     }
 
     @Test
@@ -99,7 +105,7 @@ class StateBasedEntityModuleTest {
         assertThrows(NullPointerException.class,
                      () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
                                                  .loader(c -> testLoader)
-                                                 .persister(null));
+                                                 .persister((ComponentBuilder<SimpleRepositoryEntityPersister<CourseId, Course>>) null));
     }
 
     @Test
@@ -167,6 +173,83 @@ class StateBasedEntityModuleTest {
         CommandHandlingComponent commandHandlingComponent = captor.getValue();
         assertInstanceOf(EntityCommandHandlingComponent.class, commandHandlingComponent);
         assertTrue(commandHandlingComponent.supportedCommands().contains(new QualifiedName("myQualifiedName")));
+    }
+
+    @Nested
+    class ConvenienceOverloads {
+
+        @Test
+        void acceptsDirectComponentInstancesWithoutConfigurationLambdas() {
+            // given / when
+            StateBasedEntityModule<CourseId, Course> module = StateBasedEntityModule
+                    .declarative(CourseId.class, Course.class)
+                    .loader(testLoader)
+                    .persister(testPersister)
+                    .messagingModel(builder -> builder
+                            .instanceCommandHandler(new QualifiedName("myQualifiedName"),
+                                                    (c1, command, ctx) -> MessageStream.empty().cast())
+                            .build())
+                    .entityIdResolver((message, context) -> new CourseId());
+
+            AxonConfiguration configuration = ModellingConfigurer
+                    .create()
+                    .componentRegistry(cr -> cr.registerModule(module))
+                    .start();
+
+            // then
+            Repository<CourseId, Course> result = configuration
+                    .getComponent(StateManager.class)
+                    .repository(Course.class, CourseId.class);
+            assertThat(result).isInstanceOf(SimpleRepository.class);
+            assertThat(module.entityName()).isEqualTo("Course#CourseId");
+        }
+
+        @Test
+        void convenienceLoaderThrowsNullPointerExceptionForNullLoader() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
+                                                     .loader((SimpleRepositoryEntityLoader<CourseId, Course>) null));
+        }
+
+        @Test
+        void conveniencePersisterThrowsNullPointerExceptionForNullPersister() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
+                                                     .loader(testLoader)
+                                                     .persister((SimpleRepositoryEntityPersister<CourseId, Course>) null));
+        }
+
+        @Test
+        void convenienceRepositoryThrowsNullPointerExceptionForNullRepository() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
+                                                     .repository((Repository<CourseId, Course>) null));
+        }
+
+        @Test
+        void convenienceMessagingModelThrowsNullPointerExceptionForNullFactory() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
+                                                     .loader(testLoader)
+                                                     .persister(testPersister)
+                                                     .messagingModel(
+                                                             (Function<EntityMetamodelBuilder<Course>, EntityMetamodel<Course>>) null));
+        }
+
+        @Test
+        void convenienceEntityIdResolverThrowsNullPointerExceptionForNullResolver() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> StateBasedEntityModule.declarative(CourseId.class, Course.class)
+                                                     .loader(testLoader)
+                                                     .persister(testPersister)
+                                                     .messagingModel(builder -> builder.build())
+                                                     .entityIdResolver((EntityIdResolver<CourseId>) null));
+        }
     }
 
     private StateBasedEntityModule<CourseId, Course> stateBasedModuleWithoutModel() {

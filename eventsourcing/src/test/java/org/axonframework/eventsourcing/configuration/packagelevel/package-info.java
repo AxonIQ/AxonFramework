@@ -14,13 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.extension.tracing.opentelemetry;
+@Snapshotting(afterEvents = 50)
+package org.axonframework.eventsourcing.configuration.packagelevel;
 
-import com.tngtech.archunit.core.importer.ImportOption.DoNotIncludeTests;
-import com.tngtech.archunit.junit.AnalyzeClasses;
-import org.axonframework.common.archunit.MainArchUnitConventions;
-
-@AnalyzeClasses(packages = "org.axonframework.extension.tracing.opentelemetry", importOptions = DoNotIncludeTests.class)
-class ArchitectureTest implements MainArchUnitConventions {
-
-}
+import org.axonframework.eventsourcing.annotation.Snapshotting;

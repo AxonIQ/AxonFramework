@@ -23,6 +23,7 @@ import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -151,7 +152,8 @@ class SnapshotCapableEventStorageEngineTest {
         snapshotStore.store(
             SNAPSHOT_TYPE,
             AGGREGATE_ID,
-            new Snapshot(position, "1.0", payload, Instant.now(), Map.of())
+            new Snapshot(position, "1.0", payload, Instant.now(), Map.of()),
+            null
         ).join();
     }
 
@@ -167,12 +169,13 @@ class SnapshotCapableEventStorageEngineTest {
     private static SnapshotStore failingSnapshotStore() {
         return new SnapshotStore() {
             @Override
-            public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s) {
+            public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s,
+                                                 ProcessingContext context) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
-            public CompletableFuture<Snapshot> load(QualifiedName qn, Object id) {
+            public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
                 return CompletableFuture.failedFuture(new RuntimeException("snapshot store failure"));
             }
         };

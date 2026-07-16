@@ -78,41 +78,43 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
     }
 
     @Override
-    public MessageStream<EventMessage> source(SourcingCondition condition) {
+    public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (condition.strategy() instanceof SourcingStrategy.Snapshot s) {
             return DelayedMessageStream.create(
-                snapshotStore.load(s.qualifiedName(), s.identifier())
-                    .thenApply(snapshot -> buildStream(snapshot, condition, s.maximumPosition()))
+                snapshotStore.load(s.qualifiedName(), s.identifier(), context)
+                    .thenApply(snapshot -> buildStream(snapshot, condition, s.maximumPosition(), context))
                     .exceptionally(e -> {
                         LOGGER.warn("Snapshot loading failed, falling back to full reconstruction for: {} ({})", s.qualifiedName(), s.identifier(), e);
 
-                        return source(Position.START, condition.criteria());
+                        return source(Position.START, condition.criteria(), context);
                     })
             );
         }
 
-        return delegate.source(condition);
+        return delegate.source(condition, context);
     }
 
     private MessageStream<EventMessage> buildStream(
         @Nullable Snapshot snapshot,
         SourcingCondition condition,
-        @Nullable Position maximumPosition
+        @Nullable Position maximumPosition,
+        @Nullable ProcessingContext context
     ) {
         if (snapshot == null || isAfter(snapshot.position(), maximumPosition)) {
-            return source(Position.START, condition.criteria());
+            return source(Position.START, condition.criteria(), context);
         }
 
         return MessageStream.<EventMessage>just(new SnapshotEventMessage(snapshot))
-            .concatWith(source(snapshot.position(), condition.criteria()));
+            .concatWith(source(snapshot.position(), condition.criteria(), context));
     }
 
     private static boolean isAfter(Position position, @Nullable Position maximumPosition) {
         return maximumPosition != null && !position.min(maximumPosition).equals(position);
     }
 
-    private MessageStream<EventMessage> source(Position position, EventCriteria criteria) {
-        return delegate.source(SourcingCondition.conditionFor(position, criteria));
+    private MessageStream<EventMessage> source(Position position, EventCriteria criteria,
+                                               @Nullable ProcessingContext context) {
+        return delegate.source(SourcingCondition.conditionFor(position, criteria), context);
     }
 
     @Override

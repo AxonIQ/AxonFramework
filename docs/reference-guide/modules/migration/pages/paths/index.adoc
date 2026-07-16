@@ -187,7 +187,7 @@ to
 
 to
 
-`org.axonframework.extension.tracing.opentelemetry`
+`io.axoniq.framework.tracing.opentelemetry`
 |===
 ====
 
@@ -253,9 +253,9 @@ Axon Framework 5 has been restructured into more focused modules. This allows fo
 | `axon-micrometer`
 | `extensions/axon-metrics-micrometer`
 
-| OpenTelemetry tracing support.
+| OpenTelemetry tracing support is provided by Axoniq Framework.
 | `axon-tracing-opentelemetry`
-| `extensions/axon-tracing-opentelemetry`
+| Not part of the OSS Axon Framework module set.
 |===
 
 Users should update their dependency management (Maven/Gradle) to reflect these changes. Note that the modules in `extensions` have moved to a different group ID (`org.axonframework.extensions.*`) as well.

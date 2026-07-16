@@ -29,6 +29,7 @@ import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
 import org.axonframework.eventsourcing.annotation.Snapshotting;
+import org.axonframework.eventsourcing.configuration.packagelevel.PackageLevelCourse;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
@@ -382,6 +383,23 @@ class AnnotatedEventSourcedEntityModuleTest {
             Repository<CourseId, WithDefaultPolicy.EnclosedCourse> result =
                     configuration.getComponent(StateManager.class)
                                  .repository(WithDefaultPolicy.EnclosedCourse.class, CourseId.class);
+
+            result.describeTo(componentDescriptor);
+
+            verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+
+        @Test
+        void bareAnnotationResolvesDefaultFromPackage() {
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                .componentRegistry(cr -> cr.registerModule(
+                    EventSourcedEntityModule.autodetected(PackageLevelCourse.CourseId.class, PackageLevelCourse.class)))
+                .start();
+
+            Repository<PackageLevelCourse.CourseId, PackageLevelCourse> result =
+                    configuration.getComponent(StateManager.class)
+                                 .repository(PackageLevelCourse.class, PackageLevelCourse.CourseId.class);
 
             result.describeTo(componentDescriptor);
 

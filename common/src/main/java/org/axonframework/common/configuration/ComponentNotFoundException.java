@@ -36,7 +36,20 @@ public class ComponentNotFoundException extends RuntimeException {
      * @param name the name of the component that could not be found, potentially {@code null} when unimportant
      */
     public ComponentNotFoundException(Class<?> type, @Nullable String name) {
-        super(exceptionMessageFor(type, name));
+        this(type, name, null);
+    }
+
+    /**
+     * Constructs a {@code ComponentNotFoundException} with a default message describing a {@link Component} couldn't be
+     * found for the given {@code type} and {@code name}.
+     *
+     * @param type  the type of the component that could not be found, typically an interface
+     * @param name  the name of the component that could not be found, potentially {@code null} when unimportant
+     * @param cause the cause of this exception, potentially {@code null}
+     * @since 5.2.0
+     */
+    public ComponentNotFoundException(Class<?> type, @Nullable String name, @Nullable Throwable cause) {
+        super(exceptionMessageFor(type, name), cause);
     }
 
     /**
@@ -48,7 +61,23 @@ public class ComponentNotFoundException extends RuntimeException {
      *                      unimportant
      */
     public ComponentNotFoundException(TypeReference<?> typeReference, @Nullable String name) {
-        super(exceptionMessageFor(typeReference.getTypeAsClass(), name));
+        this(typeReference, name, null);
+    }
+
+    /**
+     * Constructs a {@code ComponentNotFoundException} with a default message describing a {@link Component} couldn't be
+     * found for the given {@code typeReference} and {@code name}.
+     *
+     * @param typeReference the type of the component that could not be found, typically an interface
+     * @param name          the name of the component that could not be found, potentially {@code null} when
+     *                      unimportant
+     * @param cause         the cause of this exception, potentially {@code null}
+     * @since 5.2.0
+     */
+    public ComponentNotFoundException(TypeReference<?> typeReference,
+                                      @Nullable String name,
+                                      @Nullable Throwable cause) {
+        super(exceptionMessageFor(typeReference.getTypeAsClass(), name), cause);
     }
 
     private static String exceptionMessageFor(Class<?> type, @Nullable String name) {
