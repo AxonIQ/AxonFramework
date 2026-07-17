@@ -169,7 +169,8 @@ public class ReplayToken implements WrappedToken {
      * Extracts the {@link ReplayToken#resetContext()} from the given {@code token}, converting it to the given
      * {@code type} with the given {@code converter}.
      * <p>
-     * If the {@code token} is not a {@code ReplayToken}, and empty {@link Optional} will be returned.
+     * If the {@code token} is not a {@code ReplayToken}, or is not currently part of a replay, an empty
+     * {@link Optional} will be returned.
      *
      * @param token     the token to extract and convert the {@link ReplayToken#resetContext()} from, if it is a
      *                  {@code ReplayToken}
@@ -178,7 +179,7 @@ public class ReplayToken implements WrappedToken {
      * @param converter the {@code Converter} used to convert the {@link ReplayToken#resetContext()} with
      * @param <T>       the generic defining the desired type to convert the {@link ReplayToken#resetContext()} to
      * @return an {@code Optional} carrying the converted {@link ReplayToken#resetContext()}. Empty if the given
-     * {@code token} was not of type {@code ReplayToken}
+     * {@code token} was not of type {@code ReplayToken}, or is not currently part of a replay
      */
     public static <T> Optional<T> replayContext(
             TrackingToken token,
@@ -186,6 +187,7 @@ public class ReplayToken implements WrappedToken {
             Converter converter
     ) {
         return WrappedToken.unwrap(token, ReplayToken.class)
+                           .filter(rt -> rt.isReplay())
                            .map(ReplayToken::resetContext)
                            .map(rc -> converter.convert(rc, type));
     }
@@ -199,6 +201,7 @@ public class ReplayToken implements WrappedToken {
      */
     public static OptionalLong getTokenAtReset(TrackingToken trackingToken) {
         return WrappedToken.unwrap(trackingToken, ReplayToken.class)
+                           .filter(rt -> rt.isReplay())
                            .map(rt -> rt.getTokenAtReset().position())
                            .orElse(OptionalLong.empty());
     }
