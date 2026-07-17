@@ -15,4 +15,5 @@
 #
 
 org.axonframework.modelling.entity.annotation.ListEntityChildModelDefinition
+org.axonframework.modelling.entity.annotation.MapEntityChildModelDefinition
 org.axonframework.modelling.entity.annotation.SingleEntityChildModelDefinition
