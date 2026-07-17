@@ -20,7 +20,9 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationGranted;
 import org.axonframework.integrationtests.testsuite.administration.events.EmailAddressChanged;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskAssigned;
@@ -29,7 +31,9 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.entity.annotation.EntityMember;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public record SealedEmployee(
@@ -38,7 +42,9 @@ public record SealedEmployee(
         @EntityMember
         ImmutableSalaryInformation salaryInformation,
         @EntityMember(routingKey = "taskId")
-        List<ImmutableTask> taskList
+        List<ImmutableTask> taskList,
+        @EntityMember(routingKey = "certificationName")
+        Map<String, ImmutableCertification> certifications
 ) implements SealedPerson {
 
     @EntityCreator
@@ -46,7 +52,8 @@ public record SealedEmployee(
         this(employeeCreated.identifier(),
              employeeCreated.emailAddress(),
              new ImmutableSalaryInformation(employeeCreated.initialSalary(), employeeCreated.role()),
-             new ArrayList<>()
+             new ArrayList<>(),
+             new HashMap<>()
         );
     }
 
@@ -72,13 +79,26 @@ public record SealedEmployee(
         ));
     }
 
+    @CommandHandler
+    public void handle(GrantCertificationCommand command, EventAppender eventAppender) {
+        if (certifications.containsKey(command.certificationName())) {
+            throw new IllegalStateException("Employee already holds certification " + command.certificationName());
+        }
+        eventAppender.append(new CertificationGranted(
+                command.identifier(),
+                command.certificationName(),
+                command.issuingBody()
+        ));
+    }
+
     @EventSourcingHandler
     public SealedEmployee on(EmployeeCreated event) {
         return new SealedEmployee(
                 event.identifier(),
                 event.emailAddress(),
                 new ImmutableSalaryInformation(event.initialSalary(), event.role()),
-                new ArrayList<>()
+                new ArrayList<>(),
+                new HashMap<>()
         );
     }
 
@@ -90,7 +110,24 @@ public record SealedEmployee(
                 identifier,
                 emailAddress,
                 salaryInformation,
-                newTaskList
+                newTaskList,
+                certifications
+        );
+    }
+
+    @EventSourcingHandler
+    public SealedEmployee on(CertificationGranted event) {
+        Map<String, ImmutableCertification> newCertifications = new HashMap<>(certifications);
+        newCertifications.put(
+                event.certificationName(),
+                new ImmutableCertification(event.certificationName(), event.issuingBody(), false)
+        );
+        return new SealedEmployee(
+                identifier,
+                emailAddress,
+                salaryInformation,
+                taskList,
+                newCertifications
         );
     }
 
@@ -98,13 +135,27 @@ public record SealedEmployee(
         return taskList;
     }
 
-    public SealedEmployee evolveTaskList(
-            List<ImmutableTask> taskList) {
+    public SealedEmployee evolveTaskList(List<ImmutableTask> taskList) {
         return new SealedEmployee(
                 identifier,
                 emailAddress,
                 salaryInformation,
-                taskList
+                taskList,
+                certifications
+        );
+    }
+
+    public Map<String, ImmutableCertification> getCertifications() {
+        return certifications;
+    }
+
+    public SealedEmployee evolveCertifications(Map<String, ImmutableCertification> certifications) {
+        return new SealedEmployee(
+                identifier,
+                emailAddress,
+                salaryInformation,
+                taskList,
+                certifications
         );
     }
 
@@ -114,7 +165,8 @@ public record SealedEmployee(
                 identifier,
                 event.emailAddress(),
                 salaryInformation,
-                taskList
+                taskList,
+                certifications
         );
     }
 
@@ -123,9 +175,8 @@ public record SealedEmployee(
                 identifier,
                 emailAddress,
                 immutableSalaryInformation,
-                taskList
+                taskList,
+                certifications
         );
     }
 }
-
-
