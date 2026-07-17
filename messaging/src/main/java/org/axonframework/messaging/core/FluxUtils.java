@@ -72,6 +72,12 @@ public final class FluxUtils {
     /**
      * Create a stream that provides the {@link Message Messages} returned by the given {@code flux}, automatically
      * wrapped in an {@link Entry} with the resulting {@link Context} from the {@code contextSupplier}.
+     * <p>
+     * The given {@code flux} is subscribed with {@link Flux#contextCapture() ThreadLocal context capture}: the
+     * resulting stream subscribes the flux with a plain, context-less subscriber, so without an explicit capture the
+     * flux's Reactor {@code Context} would always be empty, and thread-bound state present at subscription -- such as
+     * the tracing span and observation a message handler runs under -- could never reach the flux's operators or
+     * context-reading instrumentation (for example Spring Boot's R2DBC observation) downstream.
      *
      * @param flux            The {@link Flux} providing the {@link Message Messages} to stream.
      * @param contextSupplier A {@link Function} ingesting each {@link Message} from the given {@code flux} returning
@@ -82,7 +88,9 @@ public final class FluxUtils {
      */
     public static <M extends Message> MessageStream<M> asMessageStream(Flux<M> flux,
                                                                        Function<M, Context> contextSupplier) {
-        return new FluxMessageStream<>(flux.map(message -> new SimpleEntry<>(message, contextSupplier.apply(message))));
+        return new FluxMessageStream<>(flux.<MessageStream.Entry<M>>map(
+                                                   message -> new SimpleEntry<>(message, contextSupplier.apply(message)))
+                                           .contextCapture());
     }
 
     /**

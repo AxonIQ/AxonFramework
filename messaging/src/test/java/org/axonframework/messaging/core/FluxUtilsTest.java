@@ -16,23 +16,45 @@
 
 package org.axonframework.messaging.core;
 
+import io.micrometer.context.ContextRegistry;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
+import reactor.util.context.ContextView;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating {@link FluxUtils#of(MessageStream)}.
+ * Test class validating {@link FluxUtils}.
  * <p>
- * Guards that the source {@link MessageStream} is {@link MessageStream#close() closed} on <em>every</em> terminal
- * signal of the resulting {@link reactor.core.publisher.Flux Flux} — completion, error, and cancellation — so resources
- * held by the source (e.g. a subscription query registration) are always released. The completion case is a regression
- * guard: cleanup used to be wired to cancellation only, so a normally-completing stream leaked its source.
+ * For {@link FluxUtils#of(MessageStream)}: guards that the source {@link MessageStream} is
+ * {@link MessageStream#close() closed} on <em>every</em> terminal signal of the resulting
+ * {@link reactor.core.publisher.Flux Flux} — completion, error, and cancellation — so resources held by the source
+ * (e.g. a subscription query registration) are always released. The completion case is a regression guard: cleanup
+ * used to be wired to cancellation only, so a normally-completing stream leaked its source.
+ * <p>
+ * For {@link FluxUtils#asMessageStream(Flux)}: guards that the given {@link Flux} is subscribed with ThreadLocal
+ * context capture ({@link Flux#contextCapture()}). The resulting stream subscribes the flux with a plain,
+ * context-less subscriber, so without the explicit capture the flux's Reactor {@code Context} would always be empty
+ * and thread-bound state present at subscription — such as the tracing span a message handler runs under — could
+ * never reach the flux's operators or context-reading instrumentation downstream. Those tests register a plain test
+ * {@code ThreadLocal} with Micrometer's {@link ContextRegistry} and assert its value is captured into the Reactor
+ * {@link ContextView}, acting as the regression tripwire for that capture.
  *
  * @author Allard Buijze
+ * @author Mateusz Nowak
  */
 class FluxUtilsTest {
 
@@ -89,6 +111,80 @@ class FluxUtilsTest {
         assertThat(source.timesClosed())
                 .as("source must be closed exactly once when processing throws")
                 .isEqualTo(1);
+    }
+
+    @Nested
+    class AsMessageStream {
+
+        private static final String THREAD_LOCAL_KEY = "test.correlation";
+        private static final ThreadLocal<String> THREAD_LOCAL = new ThreadLocal<>();
+
+        @BeforeEach
+        void setUp() {
+            ContextRegistry.getInstance()
+                           .registerThreadLocalAccessor(THREAD_LOCAL_KEY,
+                                                        THREAD_LOCAL::get,
+                                                        THREAD_LOCAL::set,
+                                                        THREAD_LOCAL::remove);
+        }
+
+        @AfterEach
+        void tearDown() {
+            THREAD_LOCAL.remove();
+            ContextRegistry.getInstance().removeThreadLocalAccessor(THREAD_LOCAL_KEY);
+        }
+
+        @Test
+        void capturesThreadLocalValuesIntoTheReactorContextAtSubscription() throws Exception {
+            // given
+            THREAD_LOCAL.set("trace-123");
+            AtomicReference<ContextView> observedContext = new AtomicReference<>();
+            Flux<Message> flux = Flux.deferContextual(ctx -> {
+                observedContext.set(ctx);
+                return Flux.just(message("one"), message("two"));
+            });
+
+            // when
+            List<Message> messages = FluxUtils.asMessageStream(flux)
+                                              .collect(ArrayList<Message>::new, List::add)
+                                              .get(5, TimeUnit.SECONDS);
+
+            // then
+            assertThat(messages).hasSize(2);
+            assertThat(observedContext.get().<String>getOrDefault(THREAD_LOCAL_KEY, null))
+                    .as("the ThreadLocal value current at subscription must be captured into the Reactor Context")
+                    .isEqualTo("trace-123");
+        }
+
+        @Test
+        void capturedContextIsVisibleToOperatorsRunningOnOtherThreads() throws Exception {
+            // given
+            THREAD_LOCAL.set("trace-456");
+            String subscribingThread = Thread.currentThread().getName();
+            AtomicReference<ContextView> observedContext = new AtomicReference<>();
+            AtomicReference<String> observedThread = new AtomicReference<>();
+            Flux<Message> flux = Flux.just(message("one"))
+                                     .publishOn(Schedulers.boundedElastic())
+                                     .concatMap(message -> Mono.deferContextual(ctx -> {
+                                         observedContext.set(ctx);
+                                         observedThread.set(Thread.currentThread().getName());
+                                         return Mono.just(message);
+                                     }));
+
+            // when
+            List<Message> messages = FluxUtils.asMessageStream(flux)
+                                              .collect(ArrayList<Message>::new, List::add)
+                                              .get(5, TimeUnit.SECONDS);
+
+            // then
+            assertThat(messages).hasSize(1);
+            assertThat(observedThread.get())
+                    .as("the downstream operator must have run on another thread for this test to be meaningful")
+                    .isNotEqualTo(subscribingThread);
+            assertThat(observedContext.get().<String>getOrDefault(THREAD_LOCAL_KEY, null))
+                    .as("the captured context must travel structurally with the pipeline, not with the thread")
+                    .isEqualTo("trace-456");
+        }
     }
 
     private static Message message(Object payload) {
