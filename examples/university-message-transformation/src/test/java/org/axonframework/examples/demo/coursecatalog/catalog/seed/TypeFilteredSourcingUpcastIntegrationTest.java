@@ -92,6 +92,28 @@ class TypeFilteredSourcingUpcastIntegrationTest {
     }
 
     @Test
+    void historicCourseListedWithSeatsIsFoundWhenEnrollSourcesByASplitProducedType() {
+        // given: a course stored only as a bundled CourseListedWithSeats (never as CoursePublished)
+        // and a registered student
+        CourseId courseId = CourseId.of("sourcing-split");
+        StudentId studentId = StudentId.of("edsger");
+        fixture.given()
+               .event(new LegacyEventSeeder.CourseListedWithSeatsV1(
+                       Ids.CATALOG_ID, courseId, "Streaming Systems", 45))
+               .event(new StudentRegistered(Ids.CATALOG_ID, studentId, "Edsger Dijkstra"))
+               // when: enrolling sources the course through criteria filtered to CoursePublished. The split
+               // declares CoursePublished among its produced types, so the read is widened back to the
+               // CourseListedWithSeats source; the split fires and its CoursePublished output is lifted
+               // through the version chain to the current shape before the entity's handler sees it.
+               .when()
+               .command(new EnrollStudent(courseId, studentId))
+               // then: the split-produced-and-upcast course is recognized as published, so enrolment succeeds
+               .then()
+               .success()
+               .events(new StudentEnrolledInCourse(courseId, studentId));
+    }
+
+    @Test
     void v1CapacityIsCarriedThroughTheUpcastSoEnrollingIntoAFullCourseIsRejected() {
         // given: a v1 course with capacity 1 (upcasts to range [1,1]) that already has one enrolment
         CourseId courseId = CourseId.of("sourcing-upcast-full");
