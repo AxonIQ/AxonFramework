@@ -37,7 +37,6 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * A {@link ConfigurationEnhancer} registering the default components of the {@link EventSourcingConfigurer}.
@@ -54,12 +53,15 @@ import java.util.Optional;
  * Furthermore, this enhancer will decorate the:
  * <ul>
  *     <li>The {@link EventStorageEngine} in a {@link SnapshotCapableEventStorageEngine} <b>if</b> a
- *     {@link SnapshotStore} is present and the engine does not already implement snapshot support.</li>
+ *     {@link SnapshotStore} is present and it is not the same instance as the engine. When the engine and the
+ *     snapshot store are the same instance, the engine handles snapshots natively (potentially in a single
+ *     round-trip) and wrapping it would degrade performance.</li>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  * </ul>
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer {
@@ -87,10 +89,10 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
                 EventStorageEngine.class,
                 SnapshotCapableEventStorageEngine.DECORATION_ORDER,
                 (config, name, engine) -> {
-                    Optional<SnapshotStore> snapshotStore = config.getOptionalComponent(SnapshotStore.class);
-                    return snapshotStore.isEmpty() || engine instanceof SnapshotStore
+                    SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class).orElse(null);
+                    return snapshotStore == null || snapshotStore == engine
                             ? engine
-                            : new SnapshotCapableEventStorageEngine(engine, snapshotStore.orElseThrow());
+                            : new SnapshotCapableEventStorageEngine(engine, snapshotStore);
                 }
         );
         registry.registerDecorator(

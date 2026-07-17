@@ -38,6 +38,8 @@
 
         <module>integrationtests</module>
 
+        <module>docs/_samples</module>
+
     </modules>
     <packaging>pom</packaging>
 
@@ -65,7 +67,7 @@
     </organization>
 
     <properties>
-        <revision>5.2.0-SNAPSHOT</revision>
+        <revision>5.3.0-SNAPSHOT</revision>
         <java.version>21</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -252,7 +254,7 @@
                         <configuration>
                             <doclint>none</doclint>
                             <legacyMode>true</legacyMode>
-                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-integrationtests</skippedModules>
+                            <skippedModules>axon-todo,axon-legacy,axon-legacy-aggregate,axon-legacy-saga,axon-integrationtests,axon-docs-samples</skippedModules>
                             <!-- These parameters are in preparation for resolution of this issue: -->
                             <!-- https://bugs.openjdk.java.net/browse/JDK-8068562 -->
                             <tags>

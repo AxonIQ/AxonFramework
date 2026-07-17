@@ -55,18 +55,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.queryhandling.SimpleQueryBus;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-
-public class AxonConfig {
-    // omitting other configuration methods...
-    public void configureQueryBus(MessagingConfigurer configurer) {
-        configurer.registerQueryBus(
-                config ->  new SimpleQueryBus(config.getComponent(UnitOfWorkFactory.class))
-        );
-    }
-}
+include::example$queries/infrastructure/configapi/AxonConfig.java[tag=query-bus-configapi,indent=0]
 ----
 --
 
@@ -76,20 +65,7 @@ Spring Boot::
 
 [source,java]
 ----
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.axonframework.messaging.queryhandling.QueryBus;
-import org.axonframework.messaging.queryhandling.SimpleQueryBus;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-
-@Configuration
-public class AxonConfig {
-    // omitting other configuration methods...
-    @Bean
-    public QueryBus queryBus(UnitOfWorkFactory unitOfWorkFactory) {
-        return new SimpleQueryBus(unitOfWorkFactory);
-    }
-}
+include::example$queries/infrastructure/springboot/AxonConfig.java[tag=query-bus-springboot,indent=0]
 ----
 --
 ====
@@ -104,28 +80,7 @@ The `QueryUpdateEmitter` is responsible for emitting updates to active subscript
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
-import org.axonframework.messaging.eventhandling.EventHandler;
-
-@Component
-public class CardSummaryProjection {
-
-    @EventHandler
-    public void on(CardRedeemedEvent event, ProcessingContext context) {
-        // Create a context-aware emitter
-        QueryUpdateEmitter emitter = QueryUpdateEmitter.forContext(context);
-
-        // Update the model
-        CardSummary summary = updateModel(event);
-
-        // Emit update to subscription queries
-        emitter.emit(
-            FetchCardSummaryQuery.class,
-            query -> query.cardSummaryId().equals(event.cardId()),
-            summary
-        );
-    }
-}
+include::example$queries/infrastructure/CardSummaryProjection.java[tag=emitting-updates,indent=0]
 ----
 
 The emitter filters subscription queries based on the provided predicate and emits the update only to matching subscriptions. This allows fine-grained control over which subscribers receive which updates.
@@ -137,13 +92,7 @@ When using annotated message handlers (`@EventHandler`, `@QueryHandler`, etc.), 
 
 [source,java]
 ----
-@EventHandler
-public void on(CardRedeemedEvent event, QueryUpdateEmitter emitter) {
-    // Axon automatically provides the context-aware emitter
-    emitter.emit(FetchCardSummaryQuery.class,
-                 query -> query.getCardSummaryId().equals(event.getCardId()),
-                 updateModel(event));
-}
+include::example$queries/infrastructure/CardSummaryProjectionWithInjectedEmitter.java[tag=emitting-updates-injected,indent=0]
 ----
 
 Explicitly creating the emitter using `QueryUpdateEmitter#forContext(ProcessingContext)` is only necessary when manually registering query handlers or when you need direct control over the emitter creation.
@@ -164,32 +113,7 @@ Subscription queries follow this lifecycle:
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.reactivestreams.Publisher;
-import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
-
-public class QueryDispatcher {
-
-    public void dispatchFetchCard(QueryGateway queryGateway) {
-        String cardId = "...";
-        // Client-side subscription query
-        Publisher<CardSummary> results = queryGateway.subscriptionQuery(
-                new FetchCardSummaryQuery(cardId),
-                CardSummary.class
-        );
-
-        // Subscribe using Reactor (requires reactor-core dependency)
-        Disposable subscription = Flux.from(results)
-                                      .doOnNext(summary -> System.out.println("Received: " + summary))
-                                      .doOnComplete(() -> System.out.println("No more updates"))
-                                      .doOnError(error -> System.err.println("Error: " + error))
-                                      .subscribe();
-
-        // Later: cancel the subscription
-        subscription.dispose();
-    }
-}
+include::example$queries/infrastructure/QueryDispatcher.java[tag=dispatching-and-subscribing,indent=0]
 ----
 
 === Update buffer
@@ -200,18 +124,7 @@ The buffer size is configurable when creating a subscription query:
 
 [source,java]
 ----
-// Default buffer size based on Reactor's Queues.SMALL_BUFFER_SIZE constant
-Publisher<CardSummary> results = queryGateway.subscriptionQuery(
-    new FetchCardSummaryQuery(cardId),
-    CardSummary.class
-);
-
-// Custom buffer size
-Publisher<CardSummary> results = queryGateway.subscriptionQuery(
-    new FetchCardSummaryQuery(cardId),
-    CardSummary.class,
-    512  // buffer size
-);
+include::example$queries/infrastructure/SubscriptionQueryBufferSizeExample.java[tag=subscription-query-buffer-size,indent=0]
 ----
 
 If the buffer fills up before the client subscribes, attempting to add more updates will complete the subscription exceptionally. Choose an appropriate buffer size based on your expected update rate and subscription delay.

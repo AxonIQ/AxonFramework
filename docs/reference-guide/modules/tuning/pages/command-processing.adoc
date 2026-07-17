@@ -34,11 +34,11 @@ That makes it a good fit for fine-grained control over concurrency without chang
 
 The `SequencingPolicy` interface determines which commands should be sequenced together:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
-public interface SequencingPolicy {
+public interface SequencingPolicy<M extends Message> {
 
-    Optional<Object> sequenceIdentifierFor(CommandMessage command, ProcessingContext context);
+    Optional<Object> sequenceIdentifierFor(M message, @Nullable ProcessingContext context);
 }
 ----
 
@@ -58,13 +58,7 @@ The following policy sequences commands by tenant identifier in metadata:
 
 [source,java]
 ----
-public class TenantBasedSequencingPolicy implements SequencingPolicy {
-
-    @Override
-    public Optional<Object> sequenceIdentifierFor(CommandMessage command, ProcessingContext context) {
-        return Optional.ofNullable(command.metadata().get("tenantId"));
-    }
-}
+include::example$tuning/commandprocessing/TenantBasedSequencingPolicy.java[tag=custom-policy,indent=0]
 ----
 
 Register the policy as the command sequencing policy:
@@ -76,12 +70,7 @@ Axon Configuration API::
 --
 [source,java]
 ----
-public void configureSequencingPolicy(MessagingConfigurer configurer) {
-    configurer.componentRegistry(cr -> cr.registerComponent(
-            SequencingPolicy.class,
-            c -> new TenantBasedSequencingPolicy())
-    );
-}
+include::example$tuning/commandprocessing/configapi/AxonConfig.java[tag=register-policy,indent=0]
 ----
 --
 
@@ -90,14 +79,7 @@ Spring Boot auto configuration::
 --
 [source,java]
 ----
-@Configuration
-class MessagingConfiguration {
-
-    @Bean
-    public SequencingPolicy<? super CommandMessage> commandSequencingPolicy() {
-        return new TenantBasedSequencingPolicy();
-    }
-}
+include::example$tuning/commandprocessing/springboot/MessagingConfiguration.java[tag=register-policy-spring-boot,indent=0]
 ----
 --
 ====
@@ -111,10 +93,5 @@ If command handling is already serialized by another mechanism, register `NoOpSe
 
 [source,java]
 ----
-public void configureSequencingPolicy(MessagingConfigurer configurer) {
-    configurer.componentRegistry(cr -> cr.registerComponent(
-            SequencingPolicy.class,
-            c -> NoOpSequencingPolicy.INSTANCE)
-    );
-}
+include::example$tuning/commandprocessing/disabling/AxonConfig.java[tag=disable-policy,indent=0]
 ----

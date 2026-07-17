@@ -21,31 +21,7 @@ Create a fixture from any `ApplicationConfigurer`:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        EventSourcingConfigurer configurer =
-            EventSourcingConfigurer.create()
-                                   .registerEntity(EventSourcedEntityModule.autodetected(
-                                       String.class, Account.class
-                                   ));
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();  // Always stop the fixture
-    }
-    // tests...
-}
+include::example$testing/basictesting/creatingfixture/basic/BasicFixtureCreation.java[tag=basic-fixture-creation,indent=0]
 ----
 
 IMPORTANT: Always call `fixture.stop()` in your `@AfterEach` method to properly release resources. You can use the xref:junit_extension[`AxonFrameworkExtension`] with JUnit to automate this process.
@@ -57,41 +33,12 @@ You can customize the fixture using the `AxonTestFixture#with(ApplicationConfigu
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        EventSourcingConfigurer configurer =
-                EventSourcingConfigurer.create()
-                                       .registerEntity(EventSourcedEntityModule.autodetected(
-                                           String.class, Account.class
-                                       ));
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.disableAxonServer()  // Disable Axon Server for tests
-                                              .registerIgnoredField(MyEvent.class, "timestamp")
-                                              .registerIgnoredField(MyEvent.class, "eventId")
-        );
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();  // Always stop the fixture!
-    }
-    // tests...
-}
+include::example$testing/basictesting/creatingfixture/customization/FixtureCustomization.java[tags=fixture-with-customization-import;fixture-with-customization,indent=0]
 ----
 
 The `Customization` given as the second parameter allows a number of adjustments:
 
-* `disableAxonServer()` - Disable Axon Server connector (useful for local testing).
+* `asIntegrationTest()` - Enable heavier infrastructure components, like the Axon Server connector, which are disabled by default.
 * `registerIgnoredField(Class<?> clazz, String field)` - Ignore specific fields during equality checks.
 * `registerFieldFilter(FieldFilter filter)` - Register custom field filter.
 
@@ -111,51 +58,7 @@ If you're not using Axon's configuration API directly, you can for example creat
 
 [source,java]
 ----
-// Production configuration class
-public class AxonConfig {
-
-    public static EventSourcingConfigurer configurer() {
-        return EventSourcingConfigurer.create()
-                                      .registerEntity(EventSourcedEntityModule.autodetected(
-                                              String.class, Account.class
-                                      ))
-                                      .registerEntity(EventSourcedEntityModule.autodetected(
-                                              String.class, Order.class
-                                      ))
-                                      .messaging(messaging -> messaging.registerCommandHandlingModule(
-                                              CommandHandlingModule.named("payment")
-                                                                   .commandHandlers()
-                                                                   .annotatedCommandHandlingComponent(c -> new PaymentCommandHandler())
-                                      ))
-                                      .messaging(messaging -> messaging.eventProcessing(AxonConfig::registerEventHandlers));
-    }
-
-    private static EventProcessingConfigurer registerEventHandlers(EventProcessingConfigurer eventProcessing) {
-        return eventProcessing.pooledStreaming(pooledConfig -> pooledConfig.processor(
-                "my-processor",
-                processorConfig -> processorConfig.eventHandlingComponents(components -> components.autodetected(
-                        c -> new NotificationEventHandler())
-                ).notCustomized()
-        ));
-    }
-}
-
-// Test class
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(AxonConfig.configurer());
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();  // Always stop the fixture!
-    }
-    // tests...
-}
+include::example$testing/basictesting/creatingfixture/reuseconfig/AxonConfig.java[tag=reuse-production-configuration-api,indent=0]
 ----
 --
 
@@ -165,7 +68,7 @@ Spring Boot::
 When using Spring Boot, the configurer is created by the Axon's Spring Boot integration.
 Inject it as a bean into your test for realistic integration testing:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.test.fixture.AxonTestFixture;
@@ -240,21 +143,7 @@ Single event::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .event(new MoneyDepositedEvent("account-1", 100.00));
-               // when...
-    }
-}
+include::example$testing/basictesting/given/singleevent/GivenSingleEvent.java[tag=given-single-event,indent=0]
 ----
 --
 
@@ -263,21 +152,7 @@ Single event with metadata::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00), Metadata.with("userId", "user-123"));
-               // when...
-    }
-}
+include::example$testing/basictesting/given/singleeventwithmetadata/GivenSingleEventWithMetadata.java[tag=given-single-event-with-metadata,indent=0]
 ----
 --
 
@@ -286,23 +161,7 @@ Multiple events at once::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .events(
-                       new AccountCreatedEvent("account-1", 500.00),
-                       new MoneyDepositedEvent("account-1", 100.00)
-               );
-               // when...
-    }
-}
+include::example$testing/basictesting/given/multipleevents/GivenMultipleEvents.java[tag=given-multiple-events,indent=0]
 ----
 
 Note that you can either use the `events(...)` method with several events, or invoke the `events(...)` method multiple times per event.
@@ -324,21 +183,7 @@ Single command::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .command(new DepositMoneyCommand("account-1", 100.00));
-               // when...
-    }
-}
+include::example$testing/basictesting/given/singlecommand/GivenSingleCommand.java[tag=given-single-command,indent=0]
 ----
 --
 
@@ -347,21 +192,7 @@ Single command with metadata::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .command(new CreateAccountCommand("account-1", 500.00), Metadata.with("userId", "user-123"));
-               // when...
-    }
-}
+include::example$testing/basictesting/given/singlecommandwithmetadata/GivenSingleCommandWithMetadata.java[tag=given-single-command-with-metadata,indent=0]
 ----
 --
 
@@ -370,23 +201,7 @@ Multiple commands at once::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .commands(
-                       new CreateAccountCommand("account-1", 500.00),
-                       new DepositMoneyCommand("account-1", 100.00)
-               );
-               // when...
-    }
-}
+include::example$testing/basictesting/given/multiplecommands/GivenMultipleCommands.java[tag=given-multiple-commands,indent=0]
 ----
 
 Note that you can either use the `commands(...)` method with several commands, or invoke the `command(...)` method multiple times per command.
@@ -402,20 +217,7 @@ When there is no priority activity, you can use the `noPriorActivity` method to 
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .noPriorActivity();
-               // when...
-    }
-}
+include::example$testing/basictesting/given/nopriotactivity/GivenNoPriorActivity.java[tag=given-no-prior-activity,indent=0]
 ----
 
 [#given_execute]
@@ -432,24 +234,7 @@ Execute::
 --
 [source,java]
 ----
-import org.axonframework.modelling.repository.Repository;
-import org.axonframework.test.fixture.AxonTestFixture;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .execute(config -> {
-                   // Access any component from configuration
-                   var repository = config.getComponent(Repository.class);
-                   // Perform custom setup
-               });
-               // when...
-    }
-}
+include::example$testing/basictesting/given/execute/GivenExecute.java[tag=given-execute,indent=0]
 ----
 --
 
@@ -458,28 +243,7 @@ Asynchronous execute::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.util.concurrent.CompletableFuture;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .executeAsync(config -> {
-                   // Return CompletableFuture
-                   return CompletableFuture.supplyAsync(() -> {
-                       // Async setup logic
-                       return null;
-                   });
-               });
-               // when...
-    }
-}
+include::example$testing/basictesting/given/executeasync/GivenExecuteAsync.java[tag=given-execute-async,indent=0]
 ----
 --
 ====
@@ -504,22 +268,7 @@ Command::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00));
-               // then...
-    }
-}
+include::example$testing/basictesting/when/command/WhenCommand.java[tag=when-command,indent=0]
 ----
 --
 
@@ -528,23 +277,7 @@ Command with metadata::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00), Metadata.with("userId", "user-123"));
-               // then...
-    }
-}
+include::example$testing/basictesting/when/commandwithmetadata/WhenCommandWithMetadata.java[tag=when-command-with-metadata,indent=0]
 ----
 --
 ====
@@ -563,22 +296,7 @@ Single event::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .events(new ExternalPaymentReceivedEvent("account-1", 100.00));
-               // then...
-    }
-}
+include::example$testing/basictesting/when/singleevent/WhenSingleEvent.java[tag=when-single-event,indent=0]
 ----
 --
 
@@ -587,26 +305,7 @@ Single event with metadata::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .events(
-                   new ExternalPaymentReceivedEvent("account-1", 100.00),
-                   Metadata.with("userId", "user-123")
-               );
-               // then...
-    }
-}
+include::example$testing/basictesting/when/singleeventwithmetadata/WhenSingleEventWithMetadata.java[tag=when-single-event-with-metadata,indent=0]
 ----
 --
 
@@ -615,25 +314,7 @@ Multiple events at once::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .events(
-                   new ExternalPaymentReceivedEvent("account-1", 100.00),
-                   new PaymentConfirmedEvent("account-1")
-               );
-               // then...
-    }
-}
+include::example$testing/basictesting/when/multipleevents/WhenMultipleEvents.java[tag=when-multiple-events,indent=0]
 ----
 
 Note that you can either use the `events(...)` method with several events, or invoke the `events(...)` method multiple times per event.
@@ -649,22 +330,7 @@ Thus, when there is nothing happening in the system, you can use the `nothing` m
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .nothing();
-               // then...
-    }
-}
+include::example$testing/basictesting/when/nothing/WhenNothing.java[tag=when-nothing,indent=0]
 ----
 
 This option is useful whenever you want to validate against the given state directly, or if you want to validate the base reply from query handlers.
@@ -683,23 +349,7 @@ If you except the <<when_phase,when-phase>> to proceed without any exceptions, y
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success();
-    }
-}
+include::example$testing/basictesting/then/success/ThenSuccess.java[tag=then-success,indent=0]
 ----
 
 As stated at the start of <<then_phase,this section>>, you can follow up the `success()` check with another check, like <<then_events,events>>:
@@ -707,24 +357,7 @@ You can combine it with other assertions:
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00));
-    }
-}
+include::example$testing/basictesting/then/successwithevents/ThenSuccessWithEvents.java[tag=then-success-with-events,indent=0]
 ----
 
 [#then_exceptional]
@@ -740,23 +373,7 @@ Specific exception::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .exception(InsufficientBalanceException.class);
-    }
-}
+include::example$testing/basictesting/then/exception/ThenException.java[tag=then-exception,indent=0]
 ----
 --
 
@@ -766,23 +383,7 @@ Specific exception and message::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .exception(InsufficientBalanceException.class, "Insufficient balance");
-    }
-}
+include::example$testing/basictesting/then/exceptionwithmessage/ThenExceptionWithMessage.java[tag=then-exception-with-message,indent=0]
 ----
 --
 
@@ -792,30 +393,7 @@ Custom exception matcher::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .exceptionSatisfies(ex -> {
-                   assertInstanceOf(InsufficientBalanceException.class, ex);
-                   var ibe = (InsufficientBalanceException) ex;
-                   assertEquals("account-1", ibe.accountId());
-                   assertEquals(100.00, ibe.requestedAmount());
-               });
-    }
-}
+include::example$testing/basictesting/then/exceptionsatisfies/ThenExceptionSatisfies.java[tag=then-exception-satisfies,indent=0]
 ----
 --
 ====
@@ -835,23 +413,7 @@ Single event::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00));
-    }
-}
+include::example$testing/basictesting/then/singleevent/ThenSingleEvent.java[tag=then-single-event,indent=0]
 ----
 --
 
@@ -861,26 +423,7 @@ Multiple events::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .events(
-                       new MoneyWithdrawnEvent("account-1", 100.00),
-                       new BalanceUpdatedEvent("account-1", 400.00)
-               );
-    }
-}
+include::example$testing/basictesting/then/multipleevents/ThenMultipleEvents.java[tag=then-multiple-events,indent=0]
 ----
 
 Note that you can either use the `events(...)` method with several events, or invoke the `events(...)` method multiple times per event.
@@ -893,31 +436,7 @@ Custom event validation::
 [#then_event_satisfies]
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .eventsSatisfy(events -> {
-                   assertEquals(2, events.size());
-                   MoneyWithdrawnEvent firstEvent =
-                           events.getFirst().payloadAs(MoneyWithdrawnEvent.class);
-                   assertEquals("account-1", firstEvent.accountId());
-                   assertEquals(100.00, firstEvent.amount());
-               });
-    }
-}
+include::example$testing/basictesting/then/eventssatisfy/ThenEventsSatisfy.java[tag=then-events-satisfy,indent=0]
 ----
 --
 
@@ -927,26 +446,7 @@ Events match a predicate::
 [#then_event_matches]
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .eventsMatch(events -> events.size() == 2
-                       && events.getFirst().payloadAs(MoneyWithdrawnEvent.class)
-                                .accountId()
-                                .equals("account-1"));
-    }
-}
+include::example$testing/basictesting/then/eventsmatch/ThenEventsMatch.java[tag=then-events-match,indent=0]
 ----
 --
 
@@ -956,23 +456,7 @@ No events::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .noEvents();
-    }
-}
+include::example$testing/basictesting/then/noevents/ThenNoEvents.java[tag=then-no-events,indent=0]
 ----
 --
 ====
@@ -991,23 +475,7 @@ Result::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .resultMessagePayload("account-1");
-    }
-}
+include::example$testing/basictesting/then/resultpayload/ThenResultPayload.java[tag=then-result-payload,indent=0]
 ----
 --
 
@@ -1017,26 +485,7 @@ Result satisfies::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .resultMessagePayloadSatisfies(
-                       String.class,
-                       result -> result.equals("account-1")
-               );
-    }
-}
+include::example$testing/basictesting/then/resultpayloadsatisfies/ThenResultPayloadSatisfies.java[tag=then-result-payload-satisfies,indent=0]
 ----
 --
 
@@ -1046,25 +495,7 @@ Result message satisfies::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .resultMessageSatisfies(
-                       result -> result.payloadAs(String.class).equals("account-1")
-               );
-    }
-}
+include::example$testing/basictesting/then/resultmessagesatisfies/ThenResultMessageSatisfies.java[tag=then-result-message-satisfies,indent=0]
 ----
 --
 ====
@@ -1085,23 +516,7 @@ Single command::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .commands(new SendEmailCommand("user@example.com", "Welcome!"));
-    }
-}
+include::example$testing/basictesting/then/singlecommand/ThenSingleCommand.java[tag=then-single-command,indent=0]
 ----
 --
 
@@ -1111,26 +526,7 @@ Multiple commands::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .commands(
-                       new SendEmailCommand("user@example.com", "Welcome!"),
-                       new DeregisterAccountCommand("account-1")
-               );
-    }
-}
+include::example$testing/basictesting/then/multiplecommands/ThenMultipleCommands.java[tag=then-multiple-commands,indent=0]
 ----
 
 Note that you can either use the `commands(...)` method with several commands, or invoke the `commands(...)` method multiple times per command.
@@ -1144,29 +540,7 @@ Custom command validation::
 [#then_command_satisfies]
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .commandsSatisfy(commands -> {
-                   assertEquals(1, commands.size());
-                   SendEmailCommand command = commands.getFirst().payloadAs(SendEmailCommand.class);
-                   assertEquals("user@example.com", command.recipient());
-               });
-    }
-}
+include::example$testing/basictesting/then/commandssatisfy/ThenCommandsSatisfy.java[tag=then-commands-satisfy,indent=0]
 ----
 --
 
@@ -1177,25 +551,7 @@ Commands match a predicate::
 [#then_command_matches]
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .commandsMatch(commands -> commands.size() == 1
-                       && commands.getFirst().payloadAs(SendEmailCommand.class)
-                                  .equals("user@example.com"));
-    }
-}
+include::example$testing/basictesting/then/commandsmatch/ThenCommandsMatch.java[tag=then-commands-match,indent=0]
 ----
 --
 
@@ -1205,23 +561,7 @@ No commands::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .noCommands();
-    }
-}
+include::example$testing/basictesting/then/nocommands/ThenNoCommands.java[tag=then-no-commands,indent=0]
 ----
 --
 ====
@@ -1243,23 +583,7 @@ Await::
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .await(then -> then.commands(new SendEmailCommand("user@example.com", "Welcome!")));
-    }
-}
+include::example$testing/basictesting/then/await/ThenAwait.java[tag=then-await,indent=0]
 ----
 
 Using plain `await(...)` uses the default timeout of 5 seconds at all time.
@@ -1271,28 +595,7 @@ Await with duration::
 --
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.time.Duration;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .await(
-                       then -> then.commands(new SendEmailCommand("user@example.com", "Welcome!")),
-                       Duration.ofMillis(250)
-               );
-    }
-}
+include::example$testing/basictesting/then/awaitwithduration/ThenAwaitWithDuration.java[tag=then-await-with-duration,indent=0]
 ----
 --
 ====
@@ -1311,35 +614,7 @@ Expect::
 --
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .expect(config -> {
-                   AccountBalance balance =
-                           config.getComponent(QueryGateway.class)
-                                 .query(
-                                         new GetBalanceQuery("account-1"),
-                                         AccountBalance.class
-                                 )
-                                 .join();
-                   assertEquals(400.00, balance.amount());
-               });
-    }
-}
+include::example$testing/basictesting/then/expect/ThenExpect.java[tag=then-expect,indent=0]
 ----
 --
 
@@ -1348,34 +623,7 @@ Asynchronous expect::
 --
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               // ...
-               .when()
-               .event(new AccountClosedEvent("account-1"))
-               .then()
-               .expectAsync(config -> {
-                   QueryGateway queryGateway = config.getComponent(QueryGateway.class);
-                   // Return CompletableFuture, like the result from the QueryGateway
-                   return queryGateway.query(
-                                              new GetBalanceQuery("account-1"),
-                                              AccountBalance.class
-                                      )
-                                      .thenAccept(balance -> assertEquals(400.00, balance.amount()));
-               });
-    }
-}
+include::example$testing/basictesting/then/expectasync/ThenExpectAsync.java[tag=then-expect-async,indent=0]
 ----
 --
 ====
@@ -1391,30 +639,7 @@ To support these cases you can use the `and()` operation to chain an additional 
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00))
-               .and()  // Chain to next test
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 500.00))
-               .then()
-               .exception(InsufficientBalanceException.class)
-               .noEvents();
-    }
-}
+include::example$testing/basictesting/chaining/ChainingTests.java[tag=chaining-tests,indent=0]
 ----
 
 This structure provides a number of benefits you can utilize.
@@ -1430,62 +655,26 @@ To use the extension, simply annotate your test class with `@ExtendWith(AxonFram
 
 [source,java]
 ----
-@ExtendWith(AxonFrameworkExtension.class) <1>
-class AccountEntityTest {
-
-    @ProvideAxonTestFixture <2>
-    private AxonTestFixtureProvider provider = () -> AxonTestFixture.with(
-            EventSourcingConfigurer.create().registerEntity(
-                EventSourcedEntityModule.autodetected(
-                        String.class, Account.class)));
-
-
-    @Test
-    void accountLifecycleReactsAsExpected(AxonTestFixture fixture) { <3>
-        //....
-    }
-}
+include::example$testing/basictesting/extension/basic/BasicExtensionUsage.java[tag=junit-extension-basic,indent=0]
 ----
 
 <1> The `@ExtendWith(AxonFrameworkExtension.class)` annotation tells JUnit to use the `AxonFrameworkExtension` for this test.
-<2> The `@ProvideAxonTestFixture` annotation indicates that the `provider` field can create a new instance of an  `AxonTestFixture` for every test run.
+<2> The `@ProvidedAxonTestFixture` annotation indicates that the `provider` field can create a new instance of an  `AxonTestFixture` for every test run.
 <3> Use parameter injection to get the `AxonTestFixture` instance in your test method. The extension will automatically create and inject the fixture for you, so you can focus on writing your tests without worrying about fixture lifecycle management.
 
 
-IMPORTANT: `@ProvidedAxonTestFixture` cannot be applied on static fields, as this breaks the lifecycle contract of getting a new instance of the fixture on every test run. You can however use `@ProvideAxonTestFixture` on static and non-static methods if you want.
+IMPORTANT: `@ProvidedAxonTestFixture` cannot be applied on static fields, as this breaks the lifecycle contract of getting a new instance of the fixture on every test run. You can however use `@ProvidedAxonTestFixture` on static and non-static methods if you want.
 
 
-Alternatively, you can also parameterize `@ProvideAxonTestFixture` with a class value implementing the `@AxonTestFixtureProvider` interface. By doing so, you can reuse the same provider across multiple test classes, or even share it across your entire test suite by using a common base class.
-By using the `@ProvideAxonTestFixture` directly on a test method, you can override the default configured on class level.
+Alternatively, you can also parameterize `@ProvidedAxonTestFixture` with a class value implementing the `AxonTestFixtureProvider` interface. By doing so, you can reuse the same provider across multiple test classes, or even share it across your entire test suite by using a common base class.
+By using the `@ProvidedAxonTestFixture` directly on a test method, you can override the default configured on class level.
 
 [source,java]
 ----
-@ExtendWith(AxonFrameworkExtension.class)
-@ProvideAxonTestFixture(GlobalFixtureProvider.class) <1>
-class AccountEntityTest {
-
-    @Test <2>
-    void testUsingGlobalProvider(AxonTestFixture fixture) {
-        // This test will use the GlobalFixtureProvider to create the fixture instance
-    }
-
-    @Test
-    @ProvideAxonTestFixture(SpecificFixtureProvider.class) <3>
-    void testUsingSpecificProvider(AxonTestFixture fixture) {
-        // This test will use the SpecificFixtureProvider to create the fixture instance
-    }
-}
-
-class GlobalFixtureProvider implements AxonTestFixtureProvider {
-    @Override
-    public AxonTestFixture createFixture() {
-        return AxonTestFixture.with(...);
-    }
-}
-
+include::example$testing/basictesting/extension/providers/ProviderBasedExtensionUsage.java[tag=junit-extension-providers,indent=0]
 ----
 
-<1> The `@ProvideAxonTestFixture(MyFixtureProvider.class)` annotation tells the extension to use the `MyFixtureProvider` class to create new instances of the `AxonTestFixture` for every test run. This allows you to centralize your fixture configuration in one place and reuse it across multiple test classes.
+<1> The `@ProvidedAxonTestFixture(GlobalFixtureProvider.class)` annotation tells the extension to use the `GlobalFixtureProvider` class to create new instances of the `AxonTestFixture` for every test run. This allows you to centralize your fixture configuration in one place and reuse it across multiple test classes.
 <2> This test method will use the `GlobalFixtureProvider` to create the fixture instance, as it is the default provider configured at the class level.
 <3> This test method will use the `SpecificFixtureProvider` to create the fixture instance.
 
@@ -1503,73 +692,7 @@ Furthermore, the developer decided to construct fine-grained unit tests to valid
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ModuleBuilder;
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountCommandHandlerTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        EventSourcedEntityModule<String, Account> eventSourcedEntity =
-                EventSourcedEntityModule.autodetected(String.class, Account.class);
-        ModuleBuilder<CommandHandlingModule> accountCommandHandlingModule =
-                CommandHandlingModule.named("account")
-                                     .commandHandlers()
-                                     .annotatedCommandHandlingComponent(c -> new AccountCommandHandler());
-        EventSourcingConfigurer configurer =
-                EventSourcingConfigurer.create()
-                                       .registerEntity(eventSourcedEntity)
-                                       .messaging(messaging -> messaging.registerCommandHandlingModule(
-                                               accountCommandHandlingModule
-                                       ));
-
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void createAccount() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .success()
-               .events(new AccountCreatedEvent("account-1", 500.00));
-    }
-
-    @Test
-    void withdrawMoney() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00));
-    }
-
-    @Test
-    void withdrawInsufficientBalance() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 50.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .exception(InsufficientBalanceException.class)
-               .noEvents();
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();
-    }
-}
+include::example$testing/basictesting/examples/commandhandling/AccountCommandHandlerTest.java[tag=testing-command-handling-component,indent=0]
 ----
 
 [#testing_event_handling_components]
@@ -1579,73 +702,7 @@ Here is an example test scenario how an Event Handling Component sends emails as
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class NotificationEventHandlerTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        MessagingConfigurer configurer = MessagingConfigurer.create().eventProcessing(
-                processing -> processing.pooledStreaming(
-                        pooledStreaming -> pooledStreaming.processor(
-                                "notifications",
-                                NotificationEventHandlerTest::configurePooledProcessor))
-        );
-
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    private static PooledStreamingEventProcessorModule configurePooledProcessor(
-            EventProcessorModule.EventHandlingPhase<PooledStreamingEventProcessorModule, PooledStreamingEventProcessorConfiguration> processor
-    ) {
-        return processor.eventHandlingComponents(components -> components.autodetected(
-                                c -> new NotificationEventHandler())
-                        )
-                        .notCustomized();
-    }
-
-    @Test
-    void sendNotificationOnAccountCreated() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .then()
-               .await(
-                       t -> t.success()
-                             .commands(new SendEmailCommand(
-                                     "user@example.com", "Your account has been created"
-                             ))
-               );
-    }
-
-    @Test
-    void sendNotificationOnLowBalance() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .event(new MoneyWithdrawnEvent("account-1", 480.00))
-               .then()
-               .await(
-                       t -> t.success()
-                             .commands(new SendEmailCommand(
-                                     "user@example.com", "Low balance alert"
-                             ))
-               );
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();
-    }
-}
+include::example$testing/basictesting/examples/eventhandling/NotificationEventHandlerTest.java[tag=testing-event-handling-component,indent=0]
 ----
 
 [#testing_event_sourced_entities]
@@ -1656,59 +713,7 @@ Furthermore, the test runs through the complete lifecycle of an account in one g
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountEntityTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        EventSourcingConfigurer configurer =
-                EventSourcingConfigurer.create().registerEntity(
-                    EventSourcedEntityModule.autodetected(String.class, Account.class)
-                );
-
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void accountLifecycleReactsAsExpected() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .success()
-               .events(new AccountCreatedEvent("account-1", 500.00))
-               .and()
-               .when()
-               .command(new DepositMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyDepositedEvent("account-1", 100.00))
-               .and()
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 200.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 200.00))
-               .and()
-               .when()
-               .command(new CloseAccountCommand("account-1"))
-               .then()
-               .success()
-               .events(new AccountClosedEvent("account-1"));
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();
-    }
-}
+include::example$testing/basictesting/examples/eventsourcedentity/AccountEntityTest.java[tag=testing-event-sourced-entity,indent=0]
 ----
 
 [#testing_query_handling_components]
@@ -1718,72 +723,5 @@ As the test fixtures (not yet) support query validation, this scenario uses the 
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ModuleBuilder;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
-import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.axonframework.test.fixture.AxonTestFixture;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class AccountQueryHandlerTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ModuleBuilder<QueryHandlingModule> accountQueryHandlingModule =
-                QueryHandlingModule.named("account")
-                                   .queryHandlers()
-                                   .annotatedQueryHandlingComponent(c -> new AccountQueryHandler());
-        MessagingConfigurer configurer =
-                MessagingConfigurer.create()
-                                   .registerQueryHandlingModule(accountQueryHandlingModule)
-                                   .eventProcessing(
-                                           processing -> processing.pooledStreaming(
-                                                   pooledStreaming -> pooledStreaming.processor(
-                                                           "notifications",
-                                                           AccountQueryHandlerTest::configurePooledProcessor
-                                                   )
-                                           )
-                                   );
-
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    private static PooledStreamingEventProcessorModule configurePooledProcessor(
-            EventProcessorModule.EventHandlingPhase<PooledStreamingEventProcessorModule, PooledStreamingEventProcessorConfiguration> processor
-    ) {
-        return processor.eventHandlingComponents(components -> components.autodetected(
-                                c -> new NotificationEventHandler())
-                        )
-                        .notCustomized();
-    }
-
-    @Test
-    void testGetAccountBalance() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .event(new MoneyDepositedEvent("account-1", 100.00))
-               .when()
-               .nothing()
-               .then()
-               .expect(config -> {
-                   QueryGateway queryGateway = config.getComponent(QueryGateway.class);
-                   var balance = queryGateway.query(
-                           new GetBalanceQuery("account-1"),
-                           AccountBalance.class
-                   ).join();
-                   assertEquals(600.00, balance.amount());
-               });
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();
-    }
-}
+include::example$testing/basictesting/examples/queryhandling/AccountQueryHandlerTest.java[tag=testing-query-handling-component,indent=0]
 ----

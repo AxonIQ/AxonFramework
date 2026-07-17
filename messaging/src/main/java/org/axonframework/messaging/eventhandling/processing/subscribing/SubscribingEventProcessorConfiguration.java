@@ -147,7 +147,9 @@ public class SubscribingEventProcessorConfiguration extends EventProcessorConfig
     @Override
     protected void validate() throws AxonConfigurationException {
         super.validate();
-        assertNonNull(eventSource, "The SubscribableMessageSource is a hard requirement and should be provided");
+        assertNonNull(eventSource,
+                      "The SubscribableEventSource is a hard requirement for event processor '" + processorName
+                              + "' and should be provided. Set it through this configuration's eventSource method.");
     }
 
     /**

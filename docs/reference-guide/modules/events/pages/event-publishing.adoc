@@ -39,18 +39,7 @@ The `EventAppender` provides a simple means to achieve the above:
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-
-class GiftCard {
-
-    @CommandHandler
-    public static GiftCard create(IssueCardCommand cmd, EventAppender appender) {
-        appender.append(new CardIssuedEvent(cmd.cardId(), cmd.amount(), cmd.shopId()));
-        return new GiftCard();
-    }
-    // omitted state, command and event sourcing handlers
-}
+include::example$events/eventpublishing/eventappender/EventAppenderExamples.java[tag=append-event-from-command-handler,indent=0]
 ----
 
 The `EventAppender` is automatically injected by Axon Framework when declared as a parameter in a command handler.
@@ -66,14 +55,7 @@ It is the recommended way to append events from within an entity's command handl
 ====
 [source,java]
 ----
-@CommandHandler
-public static GiftCard create(IssueCardCommand cmd, EventAppender appender) {
-    appender.append(
-            new CardIssuedEvent(cmd.cardId(), cmd.amount(), cmd.shopId()),
-            new CardActivatedEvent(cmd.cardId())
-    );
-    return new GiftCard();
-}
+include::example$events/eventpublishing/eventappender/EventAppenderExamples.java[tag=append-multiple-events,indent=0]
 ----
 ====
 
@@ -84,36 +66,14 @@ The `EventAppender` provides overloads for both a single event and a batch:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-
-@CommandHandler
-public static GiftCard create(IssueCardCommand cmd, EventAppender appender) {
-    Metadata metadata = Metadata.from(Map.of("issuedBy", "admin-service"));
-
-    // Single event with metadata
-    appender.append(new CardIssuedEvent(cmd.cardId(), cmd.amount(), cmd.shopId()), metadata);
-
-    return new GiftCard();
-}
+include::example$events/eventpublishing/eventappender/EventAppenderExamples.java[tags=append-event-with-metadata-import;append-event-with-metadata,indent=0]
 ----
 
 The same `Metadata` can be applied to every event in a batch in a single call:
 
 [source,java]
 ----
-@CommandHandler
-public static GiftCard create(IssueCardCommand cmd, EventAppender appender) {
-    Metadata metadata = Metadata.from(Map.of("issuedBy", "admin-service"));
-
-    appender.append(
-            List.of(
-                    new CardIssuedEvent(cmd.cardId(), cmd.amount(), cmd.shopId()),
-                    new CardActivatedEvent(cmd.cardId())
-            ),
-            metadata
-    );
-    return new GiftCard();
-}
+include::example$events/eventpublishing/eventappender/EventAppenderExamples.java[tag=append-batch-with-metadata,indent=0]
 ----
 
 When the supplied event is already an `EventMessage` that carries its own metadata, the provided `Metadata` is *merged* with the existing metadata.
@@ -134,19 +94,7 @@ The `EventGateway` provides a convenient API for publishing events from componen
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.gateway.EventGateway;
-
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-
-class Notifier {
-
-    private EventGateway eventGateway;
-
-    public CompletableFuture<Void> publishEvent() {
-        return eventGateway.publish(List.of(new CardIssuedEvent("card-1", 100, "Axoniq shop")));
-    }
-}
+include::example$events/eventpublishing/eventgateway/EventGatewayExamples.java[tags=publish-events-with-eventgateway-import;publish-events-with-eventgateway-class,indent=0]
 ----
 
 The `EventGateway` automatically wraps your event objects into `EventMessage` instances before sending them to the `EventSink`.
@@ -159,32 +107,7 @@ Down below is an example of a Spring REST endpoint doing just that:
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.gateway.EventGateway;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-
-@RestController
-class CardController {
-
-    private final EventGateway eventGateway;
-
-    public CardController(EventGateway eventGateway) {
-        this.eventGateway = eventGateway;
-    }
-
-    @PostMapping("/cards/{cardId}/issue")
-    public CompletableFuture<Void> issueCard(@PathVariable String cardId,
-                                             @RequestBody IssueCardRequest request) {
-        return eventGateway.publish(List.of(
-                new CardIssuedEvent(cardId, request.amount(), request.shopId()))
-        );
-    }
-}
+include::example$events/eventpublishing/eventgateway/EventGatewayExamples.java[tags=publish-events-without-context-import;publish-events-without-context-class,indent=0]
 ----
 
 The `EventGateway#publish(List<?)` method returns a `CompletableFuture<Void>`, allowing you to handle the result asynchronously.
@@ -195,21 +118,7 @@ When publishing events from within a message handler (such as an event handler o
 
 [source,java]
 ----
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventGateway;
-
-@EventHandler
-public void on(PaymentReceivedEvent event,
-               ProcessingContext context,
-               EventGateway eventGateway) {
-    // Validation logic...
-
-    eventGateway.publish(
-        context,
-        new BalanceUpdatedEvent(event.getAccountId(), event.getAmount())
-    );
-}
+include::example$events/eventpublishing/eventgateway/EventGatewayExamples.java[tags=publish-events-with-context-import;publish-events-with-context,indent=0]
 ----
 
 Providing the `ProcessingContext` ensures that:
@@ -230,14 +139,7 @@ This allows you to:
 
 [source,java]
 ----
-public CompletableFuture<Void> publishEvent() {
-    return eventGateway.publish(List.of(new CardIssuedEvent("card-1", 100, "Axoniq shop")))
-                       .thenRun(() -> logger.info("Event published successfully"))
-                       .exceptionally(ex -> {
-                           logger.error("Failed to publish event", ex);
-                           return null;
-                       });
-}
+include::example$events/eventpublishing/eventgateway/EventGatewayExamples.java[tag=publish-event-async-chaining,indent=0]
 ----
 ====
 
@@ -269,26 +171,7 @@ It operates on `EventMessage` instances rather than plain event objects, giving 
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.EventSink;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class DirectEventPublisher {
-
-    private final EventSink eventSink;
-
-    public CompletableFuture<Void> publishWithMetadata() {
-        EventMessage eventMessage = new GenericEventMessage(
-                new MessageType(CardIssuedEvent.class),
-                new CardIssuedEvent("cardId", 100, "shopId")
-        ).withMetadata(Map.of("userId", "user123", "source", "api"));
-        return eventSink.publish(null, eventMessage);
-    }
-}
+include::example$events/eventpublishing/eventsink/DirectEventPublisher.java[tag=publish-via-event-sink,indent=0]
 ----
 
 The example above shows that when using the `EventSink` directly, you need to create an `EventMessage` instance containing _your_ event payload yourself.
@@ -310,26 +193,7 @@ We can restructure our example from <<event_sink_directly,here>> and use an `Eve
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventBus;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class DirectEventPublisher {
-
-    private final EventBus eventBus;
-
-    public CompletableFuture<Void> publishWithMetadata() {
-        EventMessage eventMessage = new GenericEventMessage(
-                new MessageType(CardIssuedEvent.class),
-                new CardIssuedEvent("cardId", 100, "shopId")
-        );
-        return eventBus.publish(null, eventMessage);
-    }
-}
+include::example$events/eventpublishing/eventbus/DirectEventPublisher.java[tag=publish-via-event-bus,indent=0]
 ----
 
 [#event_store_direct]
@@ -341,26 +205,7 @@ We can restructure our example from <<event_sink_directly,here>> and use an `Eve
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class DirectEventPublisher {
-
-    private final EventStore eventStore;
-
-    public CompletableFuture<Void> publishWithMetadata() {
-        EventMessage eventMessage = new GenericEventMessage(
-                new MessageType(CardIssuedEvent.class),
-                new CardIssuedEvent("cardId", 100, "shopId")
-        );
-        return eventStore.publish(null, eventMessage);
-    }
-}
+include::example$events/eventpublishing/eventstore/DirectEventPublisher.java[tag=publish-via-event-store,indent=0]
 ----
 
 [#event_tagging]
@@ -386,14 +231,7 @@ The simplest way to tag events is using the `@EventTag` annotation on event fiel
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventTag;
-
-record OrderPlacedEvent(
-    @EventTag String orderId,
-    @EventTag(key = "region") String orderRegion,
-    int amount
-) {
-}
+include::example$events/eventpublishing/eventtagging/annotation/OrderPlacedEvent.java[tag=event-tag-annotation,indent=0]
 ----
 
 The `@EventTag` annotation marks fields whose values should be extracted as tags when the event is published.
@@ -407,52 +245,21 @@ For more complex scenarios where annotation-based tagging is insufficient, you c
 
 [source,java]
 ----
-import jakarta.annotation.Nonnull;
-import org.axonframework.eventsourcing.eventstore.TagResolver;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventstreaming.Tag;
-
-import java.util.Set;
-
-public class CustomTagResolver implements TagResolver {
-
-    @Override
-    public Set<Tag> resolve(@Nonnull EventMessage event) {
-        Object payload = event.payload();
-        if (payload instanceof OrderPlacedEvent orderEvent) {
-            return Set.of(
-                    Tag.of("orderId", orderEvent.orderId()),
-                    Tag.of("customer", orderEvent.customerId())
-            );
-        }
-        return Set.of();
-    }
-}
+include::example$events/eventpublishing/eventtagging/custom/CustomTagResolver.java[tag=custom-tag-resolver,indent=0]
 ----
 
 Register your custom `TagResolver` using the configuration API:
 
 [source,java]
 ----
-public ApplicationConfigurer configureTagResolver(ApplicationConfigurer configurer) {
-    return configurer.eventsourcingConfigurer(esConfigurer ->
-        esConfigurer.registerTagResolver(config -> new CustomTagResolver())
-    );
-}
+include::example$events/eventpublishing/eventtagging/configapi/TagResolverConfig.java[tag=register-tag-resolver-config-api,indent=0]
 ----
 
 When using Spring Boot, you can register a custom `TagResolver` as a Spring bean:
 
 [source,java]
 ----
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public TagResolver tagResolver() {
-        return new CustomTagResolver();
-    }
-}
+include::example$events/eventpublishing/eventtagging/springboot/AxonConfig.java[tag=register-tag-resolver-spring-boot,indent=0]
 ----
 
 For detailed information about tags, event criteria, and consistency markers, see xref:event-store-internals.adoc#tags[Event Store Internals].

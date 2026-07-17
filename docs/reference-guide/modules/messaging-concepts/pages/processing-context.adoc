@@ -37,26 +37,7 @@ The `ProcessingContext` is injected as a parameter in your message handlers:
 
 [source,java]
 ----
-@CommandHandler
-public OrderResult handle(PlaceOrderCommand command,
-                          ProcessingContext context) {
-    // Access the context to register callbacks, manage resources, etc.
-    context.onCommit(ctx -> {
-        logger.info("Order placed successfully");
-        return CompletableFuture.completedFuture(null);
-    });
-
-    return processOrder(command);
-}
-
-@EventHandler
-public void on(OrderPlacedEvent event,
-               ProcessingContext context) {
-    // Register cleanup action
-    context.doFinally(ctx -> releaseResources());
-
-    updateProjection(event);
-}
+include::example$messagingconcepts/processingcontext/AccessingContextHandlers.java[tag=accessing-context,indent=0]
 ----
 
 == Processing lifecycle
@@ -110,21 +91,7 @@ You can register actions to execute in any phase:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(CreateOrderCommand command,
-                   ProcessingContext context) {
-    // Asynchronous action registration...
-    context.onCommit(
-            ctx -> saveToDatabase(order).thenApply(result -> {
-                logger.info("Order saved: {}", result);
-                return null;
-            })
-    );
-    // Synchronous action registration...
-    context.runOnAfterCommit(
-            ctx -> notificationService.sendOrderConfirmation(command.orderId())
-    );
-}
+include::example$messagingconcepts/processingcontext/LifecycleActionRegistration.java[tag=register-lifecycle-actions,indent=0]
 ----
 
 All lifecycle methods come in two variants:
@@ -136,35 +103,14 @@ Available lifecycle methods:
 
 [source,java]
 ----
-public void registerPhaseHandlers(ProcessingContext context) {
-    // Async variants
-    context.onPreInvocation(ctx -> doAsyncSetup());
-    context.onInvocation(ctx -> handleAsync())
-    context.onPostInvocation(ctx -> doAsyncPostProcessing());
-    context.onPrepareCommit(ctx -> validateBeforeCommit());
-    context.onCommit(ctx -> commitTransaction());
-    context.onAfterCommit(ctx -> sendNotifications());
-
-    // Sync variants
-    context.runOnPreInvocation(ctx -> doSetup());
-    context.runOnInvocation(ctx -> handleSync());
-    context.runOnPostInvocation(ctx -> doPostProcessing());
-    context.runOnPrepareCommit(ctx -> validate());
-    context.runOnCommit(ctx -> commit());
-    context.runOnAfterCommit(ctx -> notify());
-}
+include::example$messagingconcepts/processingcontext/LifecycleActionRegistration.java[tag=phase-handlers,indent=0]
 ----
 
 For synchronous actions that need to return a value to be passed to a following step, wrap the result in a `CompletableFuture`:
 
 [source,java]
 ----
-public void registerSyncResultHandlerInFuture(ProcessingContext context) {
-    context.onCommit(ctx -> {
-        String result = performSyncOperation();
-        return CompletableFuture.completedFuture(result);
-    });
-}
+include::example$messagingconcepts/processingcontext/LifecycleActionRegistration.java[tag=sync-result-in-future,indent=0]
 ----
 
 === Error and completion handlers
@@ -173,29 +119,7 @@ Beyond the standard phases, you can register handlers for errors and completion:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event, ProcessingContext context) {
-    // Register error handler - invoked when any phase fails
-    context.onError((ctx, phase, error) -> {
-        logger.error("Processing failed in phase {}: {}", phase, error.getMessage());
-        rollbackChanges();
-        publishErrorEvent(event, error);
-    });
-
-    // Register completion handler - invoked when all phases succeed
-    context.whenComplete(ctx -> {
-        logger.info("Processing completed successfully");
-        updateMetrics();
-    });
-
-    // Register finally handler - invoked regardless of success or failure
-    context.doFinally(ctx -> {
-        releaseResources();
-        cleanupTempFiles();
-    });
-
-    processEvent(event);
-}
+include::example$messagingconcepts/processingcontext/ErrorCompletionHandlers.java[tag=error-completion-handlers,indent=0]
 ----
 
 **Execution order for error scenarios:**
@@ -222,12 +146,7 @@ Resources are identified using type-safe keys:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.Context.ResourceKey;
-
-// Define resource keys
-ResourceKey<EntityManager> EM_KEY = ResourceKey.withLabel("EntityManager");
-ResourceKey<Connection> DB_CONN = ResourceKey.withLabel("DatabaseConnection");
-ResourceKey<List<String>> TAGS = ResourceKey.withLabel("Tags");
+include::example$messagingconcepts/processingcontext/ResourceKeyDefinitions.java[tags=resource-key-import;resource-keys,indent=0]
 ----
 
 Using typed keys prevents casting errors and provides IDE auto-completion support.
@@ -236,33 +155,7 @@ Using typed keys prevents casting errors and provides IDE auto-completion suppor
 
 [source,java]
 ----
-@CommandHandler
-public void handle(CreateOrderCommand command, ProcessingContext context) {
-    // Add or replace resource
-    EntityManager em = entityManagerFactory.createEntityManager();
-    context.putResource(EM_KEY, em);
-
-    // Get resource
-    EntityManager retrieved = context.getResource(EM_KEY);
-
-    // Check if resource exists
-    if (context.containsResource(EM_KEY)) {
-        // Resource is available
-    }
-
-    // Get or create resource (compute if absent)
-    Connection conn = context.computeResourceIfAbsent(
-            DB_CONN, () -> dataSource.getConnection()
-    );
-
-    // Register cleanup
-    context.doFinally(ctx -> {
-        EntityManager manager = ctx.removeResource(EM_KEY);
-        if (manager != null) {
-            manager.close();
-        }
-    });
-}
+include::example$messagingconcepts/processingcontext/ResourceStorageHandler.java[tag=storing-retrieving-resources,indent=0]
 ----
 
 === Resource lifecycle pattern
@@ -271,50 +164,7 @@ A common pattern for managing resources:
 
 [source,java]
 ----
-// Note that this is an advanced example!
-// Axon Framework typically deals with transaction and connection details for you, so you don't have too.
-// That makes thi example useful ONLY if you are using a storage solution that is not supported by Axon Framework out of the box.
-public class TransactionInterceptor implements MessageHandlerInterceptor<CommandMessage> {
-
-    private static final ResourceKey<Transaction> TX_KEY = ResourceKey.withLabel("Transaction");
-
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            CommandMessage command,
-            ProcessingContext context,
-            MessageHandlerInterceptorChain<CommandMessage> chain
-    ) {
-        // Create resource in pre-invocation
-        context.runOnPreInvocation(ctx -> {
-            Transaction tx = transactionManager.beginTransaction();
-            ctx.putResource(TX_KEY, tx);
-        });
-
-        // Commit in commit phase
-        context.onCommit(ctx -> {
-            Transaction tx = ctx.getResource(TX_KEY);
-            return tx.commitAsync();
-        });
-
-        // Rollback on error
-        context.onError((ctx, phase, error) -> {
-            Transaction tx = ctx.getResource(TX_KEY);
-            if (tx != null) {
-                tx.rollback();
-            }
-        });
-
-        // Cleanup in finally
-        context.doFinally(ctx -> {
-            Transaction tx = ctx.removeResource(TX_KEY);
-            if (tx != null) {
-                tx.close();
-            }
-        });
-
-        return chain.proceed(command, context);
-    }
-}
+include::example$messagingconcepts/processingcontext/TransactionInterceptor.java[tag=transaction-interceptor,indent=0]
 ----
 
 === Updating resources
@@ -323,18 +173,7 @@ You can update existing resources using the update method:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event, ProcessingContext context) {
-    // Process event...
-    // and update resource using a function
-    context.updateResource(TAGS, tags -> {
-        if (tags == null) {
-            tags = new ArrayList<>();
-        }
-        tags.add("processed");
-        return tags;
-    });
-}
+include::example$messagingconcepts/processingcontext/ResourceUpdateHandler.java[tag=updating-resources,indent=0]
 ----
 
 === Accessing the current message
@@ -343,19 +182,7 @@ One of the default resources Axon Framework adds for you to the `ProcessingConte
 
 [source,java]
 ----
-@CommandHandler
-public void handle(MyCommand command, ProcessingContext context) {
-    // Retrieve the current message
-    Message message = Message.fromContext(context);
-
-    // Cast to specific message type if needed
-    CommandMessage commandMessage = (CommandMessage) message;
-
-    // Access message properties
-    String messageId = message.identifier();
-    Metadata metadata = message.metadata();
-    Instant timestamp = ((EventMessage) message).timestamp(); // For events
-}
+include::example$messagingconcepts/processingcontext/AccessingCurrentMessage.java[tag=accessing-current-message,indent=0]
 ----
 
 == Accessing configured components
@@ -364,18 +191,7 @@ The `ProcessingContext` provides access to components registered in the Axon Fra
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event, ProcessingContext context) {
-    // Access framework components
-    EventBus eventBus = context.component(EventBus.class);
-    CommandGateway gateway = context.component(CommandGateway.class);
-
-    // Access named components
-    QueryBus queryBus = context.component(QueryBus.class, "myQueryBus");
-
-    // Use components
-    gateway.send(new ProcessOrderCommand(event.getOrderId()));
-}
+include::example$messagingconcepts/processingcontext/AccessingComponents.java[tag=accessing-components,indent=0]
 ----
 
 This is particularly useful in interceptors or custom infrastructure components where you need to access framework services.
@@ -390,13 +206,7 @@ When dispatching new messages from within a handler, it is strongly recommended 
 
 [source,java]
 ----
-@CommandHandler
-public void handle(PlaceOrderCommand command,
-                   EventAppender appender) {
-    // EventAppender uses the context automatically
-    // Metadata and correlation data from context are propagated
-    appender.append(new OrderPlacedEvent(command.getOrderId()));
-}
+include::example$messagingconcepts/processingcontext/EventAppenderPropagation.java[tag=event-appender,indent=0]
 ----
 
 === Using `CommandDispatcher`
@@ -405,23 +215,7 @@ public void handle(PlaceOrderCommand command,
 
 [source,java]
 ----
-@EventHandler
-public CompletableFuture<Void> on(OrderPlacedEvent event,
-                                  CommandDispatcher commandDispatcher) {
-    // CommandDispatcher is already bound to the current ProcessingContext
-    // Correlation data propagates automatically
-    CommandResult result = commandDispatcher.send(
-        new ProcessOrderCommand(event.getOrderId())
-    );
-
-    // Return the CompletableFuture so the handler only completes when the command finishes
-    return result.toCompletableFuture()
-                 .thenAccept(r -> logger.info("Command processed successfully"))
-                 .exceptionally(ex -> {
-                     logger.error("Command failed: {}", ex.getMessage());
-                     return null;
-                 });
-}
+include::example$messagingconcepts/processingcontext/CommandDispatcherPropagation.java[tag=command-dispatcher,indent=0]
 ----
 
 === Creating branched contexts
@@ -430,18 +224,7 @@ You can create a new context that shares resources from a parent context:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderCreatedEvent event, ProcessingContext context) {
-    // Create branched context with additional resource
-    ProcessingContext enrichedContext = context.withResource(
-        CORRELATION_ID_KEY,
-        event.getOrderId()
-    );
-
-    // The enriched context has all resources from the original context
-    // plus the new correlation ID
-    // Lifecycle callbacks registered on either context affect both
-}
+include::example$messagingconcepts/processingcontext/BranchedContext.java[tag=branched-context,indent=0]
 ----
 
 == Advanced usage
@@ -454,26 +237,7 @@ You can define custom phases to insert logic at specific points in the lifecycle
 
 [source,java]
 ----
-class CustomPhaseInterceptor implements MessageHandlerInterceptor<Message> {
-
-    @Nonnull
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            @Nonnull Message message,
-            @Nonnull ProcessingContext context,
-            @Nonnull MessageHandlerInterceptorChain<Message> chain
-    ) {
-        // Order between PRE_INVOCATION (order = -10000) and INVOCATION (order = 0) phase.
-        ProcessingLifecycle.Phase customPhase = () -> -5000;
-
-        context.on(customPhase, ctx -> {
-            // Custom logic here
-            performCustomSetup();
-            return CompletableFuture.completedFuture(null);
-        });
-        return chain.proceed(message, context);
-    }
-}
+include::example$messagingconcepts/processingcontext/CustomPhaseInterceptor.java[tag=custom-phase,indent=0]
 ----
 
 === Checking lifecycle state
@@ -482,23 +246,5 @@ You can query the current state of the processing context:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event, ProcessingContext context) {
-    if (context.isStarted()) {
-        // Processing has started
-    }
-
-    if (context.isError()) {
-        // An error occurred during processing
-    }
-
-    if (context.isCommitted()) {
-        // Processing committed successfully
-    }
-
-    if (context.isCompleted()) {
-        // Processing completed (success or failure)
-    }
-    // Process event...
-}
+include::example$messagingconcepts/processingcontext/LifecycleStateHandler.java[tag=lifecycle-state,indent=0]
 ----

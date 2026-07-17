@@ -25,43 +25,21 @@ For example, consider an event stored with this structure:
 
 [source,java]
 ----
-@Event(name = "OrderPlaced", version = "1.0.0")
-public record OrderPlacedEvent(
-    String orderId,
-    String customerId,
-    List<String> productIds
-) {
-}
+include::example$events/eventversioning/OrderPlacedEvent.java[tag=order-placed-event,indent=0]
 ----
 
 Later, you want to process this same event with additional computed information:
 
 [source,java]
 ----
-@Event(name = "OrderPlaced", version = "2.0.0")
-public record EnrichedOrderPlacedEvent(
-    String orderId,
-    String customerId,
-    List<String> productIds,
-    int productCount  // Computed from productIds
-) {
-    // Compact constructor that computes productCount
-    public EnrichedOrderPlacedEvent(String orderId, String customerId, List<String> productIds) {
-        this(orderId, customerId, productIds, productIds != null ? productIds.size() : 0);
-    }
-}
+include::example$events/eventversioning/EnrichedOrderPlacedEvent.java[tag=enriched-order-placed-event,indent=0]
 ----
 
 You can add a handler that receives the event in this new format:
 
 [source,java]
 ----
-@EventHandler
-public void on(EnrichedOrderPlacedEvent event) {
-    // Axon converts the stored OrderPlacedEvent to EnrichedOrderPlacedEvent
-    // The productCount field is computed during conversion
-    notifyAnalytics(event.getProductCount());
-}
+include::example$events/eventversioning/OrderVersioningHandlers.java[tag=enriched-order-handler,indent=0]
 ----
 
 In doing the above, Axon will know you want to handle the `"OrderPlaced"` and desire it in the `EnrichedOrderPlacedEvent`.
@@ -70,10 +48,7 @@ In the meantime, another handler (in for example another application) can still 
 
 [source,java]
 ----
-@EventHandler(eventName = "OrderPlaced")
-public void on(OrderPlacedEvent event) {
-    // Old handling flow...
-}
+include::example$events/eventversioning/OrderVersioningHandlers.java[tag=legacy-order-handler,indent=0]
 ----
 
 Both handlers process the same stored event, each receiving it in their preferred format.

@@ -51,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test class validating the {@link EventSourcingConfigurationDefaults}.
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  */
 @ExtendWith(MockitoExtension.class)
 class EventSourcingConfigurationDefaultsTest {
@@ -147,15 +148,32 @@ class EventSourcingConfigurationDefaultsTest {
     }
 
     @Test
-    void doesNotDecorateEventStorageEngineWhenItAlreadyImplementsSnapshotStore(
-            @Mock(extraInterfaces = SnapshotStore.class) InMemoryEventStorageEngine snapshotAwareEngine) {
+    void doesNotDecorateEventStorageEngineWhenSnapshotStoreIsSameInstance(
+            @Mock(extraInterfaces = SnapshotStore.class) InMemoryEventStorageEngine snapshotAwareEngine
+    ) {
+        ApplicationConfigurer configurer = EventSourcingConfigurer.create();
+        configurer.componentRegistry(cr -> cr.registerComponent(EventStorageEngine.class, c -> snapshotAwareEngine)
+                                             .registerComponent(SnapshotStore.class,
+                                                                c -> (SnapshotStore) snapshotAwareEngine));
+        Configuration resultConfig = configurer.build();
+
+        // wrapping would prevent the engine's single-round-trip optimisation
+        assertThat(resultConfig.getComponent(EventStorageEngine.class))
+                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class);
+    }
+
+    @Test
+    void decoratesEventStorageEngineWhenSnapshotStoreIsDifferentInstance_evenIfEngineImplementsSnapshotStore(
+            @Mock(extraInterfaces = SnapshotStore.class) InMemoryEventStorageEngine snapshotAwareEngine
+    ) {
         ApplicationConfigurer configurer = EventSourcingConfigurer.create();
         configurer.componentRegistry(cr -> cr.registerComponent(EventStorageEngine.class, c -> snapshotAwareEngine)
                                              .registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()));
         Configuration resultConfig = configurer.build();
 
+        // snapshot reads must be routed to the registered SnapshotStore, not the engine itself
         assertThat(resultConfig.getComponent(EventStorageEngine.class))
-                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class);
+                .isInstanceOf(SnapshotCapableEventStorageEngine.class);
     }
 
     @Test

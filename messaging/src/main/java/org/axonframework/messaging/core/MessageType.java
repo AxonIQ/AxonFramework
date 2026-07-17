@@ -16,9 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import org.axonframework.common.Assert;
-import org.axonframework.common.StringUtils;
-
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,10 +31,12 @@ import static java.util.Objects.requireNonNull;
  * When you do not require a version for typing, consider using the {@code QualifiedName} directly instead.
  *
  * @param qualifiedName The {@code QualifiedName} of this {@code MessageType}.
- * @param version       the version of this {@code MessageType}.
+ * @param version       the version of this {@code MessageType}. Must not be blank, or contain a hash ({@code #}),
+ *                      since that character is reserved as the separator in this record's String representation.
  * @author Allard Buijze
  * @author Mateusz Nowak
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 public record MessageType(QualifiedName qualifiedName, String version) {
@@ -47,24 +46,44 @@ public record MessageType(QualifiedName qualifiedName, String version) {
      */
     public static final String DEFAULT_VERSION = "0.0.1";
 
-    private static final String VERSION_DELIMITER = "#";
-    private static final String DEBUG_STRING_REGEX = "^([^#]+)#([^#]+)$";
-    private static final Pattern DEBUG_STRING_PATTERN = Pattern.compile(DEBUG_STRING_REGEX);
-    private static final int QUALIFIED_NAME_GROUP = 1;
-    private static final int VERSION_GROUP = 2;
+    /**
+     * The separator between a {@link #qualifiedName()} and {@link #version()} in the String representation produced
+     * by {@link #toString()} and parsed by {@link #fromString(String)}. Also enforced as forbidden in
+     * {@link QualifiedName#QualifiedName(String) QualifiedName's name} and in {@link #version}, since either
+     * containing this separator would make that representation ambiguous to parse back.
+     */
+    public static final String VERSION_DELIMITER = "#";
 
     /**
-     * Compact constructor validating that the given {@code qualifiedName} is non-null.
+     * Pattern identifying a single valid segment of a {@code MessageType}'s String representation - either the
+     * {@link #qualifiedName()} or the {@link #version()} - requiring at least one non-whitespace character and no
+     * {@value #VERSION_DELIMITER}. Shared by this record's and {@link QualifiedName}'s constructors, and
+     * combined with itself (separated by {@value #VERSION_DELIMITER}) to build
+     * {@code VALID_STRING_REPRESENTATION_PATTERN}, so a single definition governs what is considered valid
+     * everywhere.
+     */
+    static final Pattern VALID_SEGMENT = Pattern.compile("(?!\\s*$)[^#]+");
+
+    private static final Pattern VALID_STRING_REPRESENTATION = Pattern.compile(
+            "^(?<qualifiedName>" + VALID_SEGMENT.pattern() + ")" + VERSION_DELIMITER
+                    + "(?<version>" + VALID_SEGMENT.pattern() + ")$"
+    );
+
+    /**
+     * Constructor validating that the given {@code qualifiedName} is non-null, and that {@code version} is
+     * non-null, not blank, and does not contain the hash ({@code #}) used as version delimiter.
      */
     public MessageType {
         requireNonNull(qualifiedName, "The qualifiedName cannot be null.");
-        Assert.assertThat(
-                requireNonNull(version, "The given version is unsupported because it is null."),
-                StringUtils::nonEmpty,
-                () -> new IllegalArgumentException(
-                        "The given version is unsupported because it is empty."
-                )
-        );
+        requireNonNull(version, "The version is unsupported because it is null.");
+
+        if (!VALID_SEGMENT.matcher(version).matches()) {
+            throw new IllegalArgumentException(
+                    "The version [" + version + "] is unsupported because it is blank, or contains \""
+                            + VERSION_DELIMITER + "\", which is reserved as the separator in MessageType's "
+                            + "String representation."
+            );
+        }
     }
 
     /**
@@ -157,7 +176,7 @@ public record MessageType(QualifiedName qualifiedName, String version) {
      * Reconstruct a {@code MessageType} based on the output of {@link MessageType#toString()}.
      * <p>
      * The output of {@code MessageType#toString()} is a concatenation of the {@link #qualifiedName()} and
-     * {@link #version()}, split by means of a hashtag ({@code #}).
+     * {@link #version()}, split by means of a hash ({@code #}).
      * <p>
      * Thus, if the given {@code String} equals {@code "my.context.BusinessName#1.0.5"}, the {@code #qualifiedName()} is
      * set to a {@link QualifiedName} of {@code "my.context.BusinessName"} and the {@link #version()} is set to
@@ -168,23 +187,28 @@ public record MessageType(QualifiedName qualifiedName, String version) {
      * @return A reconstructed {@code MessageType} based on the expected output of {@link MessageType#toString()}.
      */
     public static MessageType fromString(String messageTypeString) {
-        Matcher matcher = DEBUG_STRING_PATTERN.matcher(Objects.requireNonNull(
+        Matcher matcher = VALID_STRING_REPRESENTATION.matcher(Objects.requireNonNull(
                 messageTypeString,
                 "Cannot construct a MessageType based on a null or empty String."
         ));
-        Assert.isTrue(matcher.matches(),
-                      () -> "The given simple String [" + messageTypeString + "] does not match the expected pattern.");
-        return new MessageType(new QualifiedName(matcher.group(QUALIFIED_NAME_GROUP)), matcher.group(VERSION_GROUP));
+
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException(
+                    "The given simple String [" + messageTypeString + "] does not match the expected pattern."
+            );
+        }
+
+        return new MessageType(new QualifiedName(matcher.group("qualifiedName")), matcher.group("version"));
     }
 
     /**
      * The output of {@code MessageType#toString()} is a concatenation of the {@link #qualifiedName()} and
-     * {@link #version()}, split by means of a hashtag ({@code #}).
+     * {@link #version()}, split by means of a hash ({@code #}).
      * <p>
      * Thus, if {@code #qualifiedName()} returns {@code "my.context.BusinessName"} and the {@code #version()} returns
      * {@code "1.0.5"}, the result of <b>this</b> operation would be {@code "my.context.BusinessName#1.0.5"}.
      *
-     * @return A combination of the {@link #qualifiedName()} and {@link #version()}, separated by a hashtag.
+     * @return A combination of the {@link #qualifiedName()} and {@link #version()}, separated by a hash.
      */
     @Override
     public String toString() {

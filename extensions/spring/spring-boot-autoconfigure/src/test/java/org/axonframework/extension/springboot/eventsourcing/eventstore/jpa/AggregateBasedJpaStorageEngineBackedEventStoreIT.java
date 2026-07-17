@@ -108,6 +108,11 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
         return factory.create();
     }
 
+    @Override
+    protected boolean supportsDynamicConsistencyBoundaries() {
+        return false;
+    }
+
     @Configuration
     public static class TestConfig {
 

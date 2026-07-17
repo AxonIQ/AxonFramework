@@ -14,15 +14,13 @@
 # limitations under the License.
 #
 
-# OpenTelemetry tracing extension (axon-tracing-opentelemetry): placeholder.
+# OpenTelemetry tracing support is provided by Axoniq Framework.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5TracingOpenTelemetryExtension
-displayName: Migrate the OpenTelemetry tracing extension to Axon Framework 5 (placeholder)
+displayName: Record OpenTelemetry tracing ownership for Axon Framework 5
 description: >-
-  Placeholder for the OpenTelemetry tracing extension migration. Revisioning of
-  the distributed tracing extension for Axon Framework 5 is slated for a later
-  release (see issue #3594). Update this recipe once the AF5 OpenTelemetry
-  tracing integration ships.
+  OpenTelemetry tracing support is not part of the OSS Axon Framework module
+  set. It is provided by Axoniq Framework.
 recipeList: []

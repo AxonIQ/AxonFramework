@@ -39,13 +39,6 @@
         </dependency>
 
         <dependency>
-            <groupId>org.axonframework.extensions.tracing</groupId>
-            <artifactId>axon-tracing-opentelemetry</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
             <groupId>org.axonframework.extensions.reactor</groupId>
             <artifactId>axon-reactor</artifactId>
             <version>${project.version}</version>

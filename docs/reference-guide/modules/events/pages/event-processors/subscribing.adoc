@@ -19,6 +19,11 @@ When using a simple bus solution like the `EventBus` as the event source, the Su
 Operations like xref:event-processors/streaming.adoc#replaying-events[replaying] are, therefore, not an option for any Subscribing Processor.
 Furthermore, when the `EventBus` is used as the event source, the event publishing thread is the same one that handles the event in the Subscribing Processor.
 
+[NOTE]
+====
+As a result, publication through the `EventBus` completes only after every subscribed handler has finished, and a failing handler propagates its failure back to the publisher, failing the event publication.
+====
+
 Although this coupled approach deserves a spot within the framework, most scenarios require further decoupling of components by separating the threads as well.
 When, for example, an application requires event processing parallelization to get a higher performance, this can be a blocker.
 This predicament is why the `SubscribingEventProcessor` is not the default in Axon Framework.
@@ -70,36 +75,7 @@ The example below shows how this approach is used to define a (1) `SubscribingEv
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.subscribing(
-                this::configureSubscribingProcessor
-        ));
-    }
-
-    private SubscribingEventProcessorsConfigurer configureSubscribingProcessor(
-            SubscribingEventProcessorsConfigurer subscribingConfigurer
-    ) {
-        return subscribingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .customized((c, subscribingConfig) -> subscribingConfig.eventSource(
-                                        c.getComponent(EventBus.class)
-                                ))
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new AnnotatedEventHandlingClass());
-    }
-}
+include::example$events/eventprocessors/subscribing/declarative/AxonConfig.java[tag=declarative-subscribing-processor,indent=0]
 ----
 
 [#autodetected_config_spring_properties_plain]
@@ -130,26 +106,7 @@ This approach provides programmatic control over which event handlers are assign
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventHandlerSelector;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.axonframework.messaging.eventhandling.EventBus;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition(EventBus eventBus) {
-        return EventProcessorDefinition.subscribing("example-processor")
-                                       .assigningHandlers(EventHandlerSelector.matchesNamespaceOnType(
-                                               "orders"
-                                       ))
-                                       .customized(config -> config
-                                               .eventSource(eventBus)
-                                       );
-    }
-}
+include::example$events/eventprocessors/subscribing/springboot/namespaceselector/EventProcessorConfig.java[tag=event-processor-definition-namespace-selector,indent=0]
 ----
 
 The `assigningHandlers` method uses the `EventHandlerSelector` to receive an `EventHandlerDescriptor` that provides access to:
@@ -167,70 +124,21 @@ When the Event Processor name and namespace are identical, you can use the `Even
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.subscribingMatching("orders")
-                                       .customized(config -> config
-                                               .eventSource(eventBus)
-                                       );
-    }
-}
+include::example$events/eventprocessors/subscribing/springboot/matchingcustomized/EventProcessorConfig.java[tag=event-processor-definition-matching-customized,indent=0]
 ----
 
 Use `notCustomized()` instead of `customized()` when you don't need custom processor settings but still want explicit handler assignment:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.subscribingMatching("orders")
-                                       .notCustomized();
-    }
-}
+include::example$events/eventprocessors/subscribing/springboot/matchingdefault/EventProcessorConfig.java[tag=event-processor-definition-not-customized,indent=0]
 ----
 
 **Advanced configuration with interceptors and error handling:**
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.axonframework.messaging.eventhandling.EventBus;
-import org.axonframework.messaging.interceptors.MessageHandlerInterceptor;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.error.PropagatingErrorHandler;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition advancedProcessorDefinition(
-            EventBus eventBus,
-            MessageHandlerInterceptor<? super EventMessage> interceptor) {
-        return EventProcessorDefinition.subscribing("advanced-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanName().startsWith("advanced"))
-                .customized(config -> config
-                    .eventSource(eventBus)
-                    .withInterceptor(interceptor)
-                    .errorHandler(PropagatingErrorHandler.INSTANCE));
-    }
-}
+include::example$events/eventprocessors/subscribing/springboot/advanced/EventProcessorConfig.java[tag=event-processor-definition-advanced,indent=0]
 ----
 
 [IMPORTANT]

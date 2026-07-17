@@ -57,7 +57,7 @@ public record UnitOfWorkConfiguration(Executor workScheduler, boolean allowAsync
      * @return A new modified {@link UnitOfWorkConfiguration}.
      */
         public UnitOfWorkConfiguration forcedSameThreadInvocation() {
-        return new UnitOfWorkConfiguration(Runnable::run, false, List.of());
+        return new UnitOfWorkConfiguration(Runnable::run, false, processingLifecycleEnhancers);
     }
 
     /**

@@ -18,14 +18,14 @@ Class and Method Changes
 We introduced a new project module structure and moved code for Spring Support, Monitoring and Tracing into Extensions
 module. By doing so we aligned the top level packages for those Maven Modules in the following matter:
 
-| Axon 4 package name                     | Axon 5 package name                               |
-|-----------------------------------------|---------------------------------------------------|
-| org.axonframework.spring                | org.axonframework.extension.spring                | 
-| org.axonframework.actuator              | org.axonframework.extension.springboot.actuator   | 
-| org.axonframework.springboot            | org.axonframework.extension.springboot            | 
-| org.axonframework.metrics               | org.axonframework.extension.metrics.dropwizard    | 
-| org.axonframework.micrometer            | org.axonframework.extension.metrics.micrometer    | 
-| org.axonframework.tracing.opentelemetry | org.axonframework.extension.tracing.opentelemetry | 
+| Axon 4 package name                     | Axon 5 package name                             |
+|-----------------------------------------|-------------------------------------------------|
+| org.axonframework.spring                | org.axonframework.extension.spring              | 
+| org.axonframework.actuator              | org.axonframework.extension.springboot.actuator | 
+| org.axonframework.springboot            | org.axonframework.extension.springboot          | 
+| org.axonframework.metrics               | org.axonframework.extension.metrics.dropwizard  | 
+| org.axonframework.micrometer            | org.axonframework.extension.metrics.micrometer  | 
+| org.axonframework.tracing.opentelemetry | io.axoniq.framework.tracing.opentelemetry       |
 
 ## Class Changes
 
@@ -314,4 +314,3 @@ Note that **any**  changes here may have far extending impact on the original cl
 | `HandlerAttributes` | `START_PHASE`               | Removed                               | StartHandler annotation is removed    |
 | `HandlerAttributes` | `SHUTDOWN_PHASE`            | Removed                               | ShutdownHandler annotation is removed |
 | `TagsUtil`          | `META_DATA_TAGGER_FUNCTION` | Renamed to `METADATA_TAGGER_FUNCTION` | Consistent spelling                   |
-

@@ -179,7 +179,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
                     // Snapshot is made when specifically triggered by an event, or based on the statistics:
                     if (snapshotTriggered.get() || snapshotPolicy.shouldSnapshot(new EvolutionResult(evolutionCount.get(), sourcingTime))) {
-                        storeSnapshot(identifier, entity, positionRef.get());
+                        storeSnapshot(identifier, entity, positionRef.get(), pc);
                     }
                 }
 
@@ -187,10 +187,10 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
             });
     }
 
-    private void storeSnapshot(I identifier, E entity, Position position) {
+    private void storeSnapshot(I identifier, E entity, Position position, ProcessingContext context) {
         Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, ClockUtils.instant(), Map.of());
 
-        snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot)
+        snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot, context)
             .whenComplete((voidResult, ex) -> {
                 if (ex != null) {
                     logger.warn("Snapshotting failed for {} with identifier {}", messageType, identifier, ex);

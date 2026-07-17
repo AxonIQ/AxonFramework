@@ -18,12 +18,14 @@ package org.axonframework.messaging.core;
 
 import org.junit.jupiter.api.*;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test class validating the {@link MessageType}.
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  */
 class MessageTypeTest {
 
@@ -96,6 +98,28 @@ class MessageTypeTest {
     }
 
     @Test
+    void throwsIllegalArgumentExceptionForBlankVersion() {
+        assertThrows(IllegalArgumentException.class, () -> new MessageType(QUALIFIED_NAME, "   "));
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForVersionContainingHash() {
+        // the hash is reserved as the separator between a qualified name and version in toString()/fromString()
+        assertThatThrownBy(() -> new MessageType(QUALIFIED_NAME, "1#0"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForQualifiedNameContainingHash() {
+        // delegates to QualifiedName's own validation, but verified here too since MessageType's
+        // String representation is what actually depends on it being absent
+        assertThatThrownBy(() -> new MessageType(NAME + "#suffix", VERSION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
+    }
+
+    @Test
     void throwsNullPointerExceptionForNullClass() {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class, () -> new MessageType((Class<?>) null));
@@ -120,7 +144,7 @@ class MessageTypeTest {
     }
 
     @Test
-    void toStringDelimitsQualifiedNameAndVersionWithHashtag() {
+    void toStringDelimitsQualifiedNameAndVersionWithHash() {
         String expectedToString = NAME + "#" + VERSION;
 
         MessageType testSubject = new MessageType(QUALIFIED_NAME, VERSION);
