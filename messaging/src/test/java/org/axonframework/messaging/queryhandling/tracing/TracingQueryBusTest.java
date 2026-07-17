@@ -56,6 +56,7 @@ class TracingQueryBusTest {
     private static final String SUBSCRIPTION_DISPATCH_SPAN = "QueryBus.subscriptionQuery MyQuery";
     private static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse MyQuery";
     private static final String HANDLE_SPAN = "QueryBus.handleQuery MyQuery";
+    private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
 
     private TestSpanFactory spanFactory;
     private RecordingQueryBus delegate;
@@ -142,6 +143,9 @@ class TracingQueryBusTest {
             spanFactory.verifySpanCompleted(SUBSCRIPTION_DISPATCH_SPAN);
             spanFactory.verifySpanHasType(SUBSCRIPTION_DISPATCH_SPAN, TestSpanType.DISPATCH);
             spanFactory.verifySpanPropagated(SUBSCRIPTION_DISPATCH_SPAN, query);
+            spanFactory.verifySpanHasAttributeValue(SUBSCRIPTION_DISPATCH_SPAN,
+                                                    MESSAGE_CONVERSATION_ID_ATTRIBUTE,
+                                                    query.identifier());
         }
 
         @Test
@@ -170,6 +174,9 @@ class TracingQueryBusTest {
             spanFactory.verifySpanActive(INITIAL_RESPONSE_SPAN);
             spanFactory.verifySpanHasType(INITIAL_RESPONSE_SPAN, TestSpanType.INTERNAL);
             spanFactory.verifySpanHasParent(INITIAL_RESPONSE_SPAN, HANDLE_SPAN);
+            spanFactory.verifySpanHasAttributeValue(INITIAL_RESPONSE_SPAN,
+                                                    MESSAGE_CONVERSATION_ID_ATTRIBUTE,
+                                                    query.identifier());
             assertThat(handledQuery.get().metadata())
                     .doesNotContainKey(TracingQueryBus.SUBSCRIPTION_QUERY_MARKER);
 

@@ -94,6 +94,8 @@ public final class TracingQueryBus implements QueryBus {
     /** Name of the subscription-exceptional-completion span. */
     public static final String COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN = "QueryBus.completeSubscriptionsExceptionally";
 
+    private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
+
     private final QueryBus delegate;
     private final SpanFactory spanFactory;
 
@@ -152,7 +154,7 @@ public final class TracingQueryBus implements QueryBus {
                                                                  int updateBufferSize) {
         Span span = spanFactory.createDispatchSpan(
                 SUBSCRIPTION_QUERY_SPAN + " " + query.type().qualifiedName().name(), query, context
-        );
+        ).addAttribute(MESSAGE_CONVERSATION_ID_ATTRIBUTE, query.identifier());
         // Branch-scoped like query() above, but closed synchronously around the subscription's setup (Span#branch
         // closes on return) rather than on stream termination: a subscription query's update
         // stream is long-lived (potentially unbounded), so a dispatch span spanning its whole lifetime would never
@@ -237,7 +239,7 @@ public final class TracingQueryBus implements QueryBus {
 
             Span initialResponseSpan = spanFactory.createInternalSpan(
                     INITIAL_RESPONSE_SPAN + " " + handlerQuery.type().qualifiedName().name(), context
-            );
+            ).addAttribute(MESSAGE_CONVERSATION_ID_ATTRIBUTE, handlerQuery.identifier());
             // The handling context is used above to resolve the parent, but not passed to branchStream: the UnitOfWork
             // finishes as soon as the handler returns its stream, while this span must remain open until that finite
             // initial-result stream terminates. The stream itself provides deterministic completion and cancellation.

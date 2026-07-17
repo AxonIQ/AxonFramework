@@ -58,7 +58,16 @@ Because the publisher is a link rather than a parent, an event handled long afte
 Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead. Events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
 Subscribing processors run inside the publisher's processing context and always continue its trace.
 
-Queries follow the same pattern with `QueryBus.query`, `QueryBus.subscriptionQuery`, `QueryBus.handleQuery`, and `QueryBus.emitUpdate` spans, and the modelling and event-sourcing modules contribute `Repository.load` / `loadOrCreate` / `persist` / `attach`, `StateManager.loadManagedEntity`, and `SnapshotStore.store` / `load` spans.
+Queries follow the same pattern with `QueryBus.query`, `QueryBus.respond`, `QueryBus.subscriptionQuery`, `QueryBus.initialResponse`, `QueryBus.handleQuery`, and `QueryBus.emitUpdate` spans.
+`QueryBus.respond` covers a finite direct-query response stream that continues after its handler returns.
+`QueryBus.initialResponse` covers only the finite first answer of a subscription query, never its potentially unbounded update stream.
+
+The `QueryBus.subscriptionQuery` span and, when present, its `QueryBus.initialResponse` span carry `messaging.message.conversation_id`.
+The value is the subscription query message identifier.
+This gives tracing backends a stable lookup key for the subscription setup and first answer.
+It is deliberately separate from Axon's `correlationId` metadata: correlation follows the command and event flow that caused work, while the conversation identifier stays constant for the lifetime of one subscription query.
+
+The modelling and event-sourcing modules contribute `Repository.load` / `loadOrCreate` / `persist` / `attach`, `StateManager.loadManagedEntity`, and `SnapshotStore.store` / `load` spans.
 
 == Trace context propagation
 

@@ -949,12 +949,13 @@ The old `modeling/` files and the `modeling/` directory have been deleted.
 - Update AxonIQ Console integration examples
 
 ### modules/monitoring/pages/tracing.adoc
-**Changes to apply:**
-- Update tracing module location (extensions/tracing/opentelemetry)
-- Document OpenTelemetry integration
-- Update span creation for new APIs
-- Document tracing with ProcessingContext
-- Update distributed tracing examples
+**Status:** ✅ COMPLETED
+**Changes applied:**
+- Documented the tracing SPI and framework-owned component decorators.
+- Documented `ProcessingContext` and message-metadata trace propagation for imperative and reactive paths.
+- Documented core command, event, query, repository, state-manager, event-storage, and snapshot span shapes.
+- Documented the Axoniq Framework Micrometer Tracing binding as the provider for OpenTelemetry-compatible export.
+- Documented `messaging.message.conversation_id` on subscription-query setup and initial-response spans, including why it is distinct from Axon correlation metadata.
 
 ---
 
