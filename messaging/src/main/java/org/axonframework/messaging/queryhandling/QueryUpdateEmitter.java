@@ -18,7 +18,6 @@ package org.axonframework.messaging.queryhandling;
 
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.conversion.ConversionException;
-import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeNotResolvedException;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -48,28 +47,26 @@ import java.util.function.Supplier;
 public interface QueryUpdateEmitter extends DescribableComponent {
 
     /**
-     * The {@link ResourceKey} used to store the {@link QueryUpdateEmitter} in the {@link ProcessingContext}.
-     */
-    ResourceKey<QueryUpdateEmitter> RESOURCE_KEY = ResourceKey.withLabel("QueryUpdateEmitter");
-
-    /**
      * Creates a query update emitter for the given {@link ProcessingContext}.
      * <p>
-     * You can use this emitter <b>only</b> for the context it was created for. There is no harm in using this method
-     * more than once with the same {@code context}, as the same emitter will be returned.
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of emitting directly through a {@link QueryBus}: the emitter returned here is bound to that {@code context},
+     * ensuring updates are emitted in the correct order relative to the lifecycle of whatever is currently being
+     * handled.
+     * <p>
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context The {@link ProcessingContext} to create the emitter for.
-     * @return The emitter specific for the given {@code context}.
+     * @return A fresh emitter specific for the given {@code context}.
      */
     static QueryUpdateEmitter forContext(ProcessingContext context) {
-        return context.computeResourceIfAbsent(
-                RESOURCE_KEY,
-                () -> new SimpleQueryUpdateEmitter(
-                        context.component(QueryBus.class),
-                        context.component(MessageTypeResolver.class),
-                        context.component(MessageConverter.class),
-                        context
-                )
+        return new SimpleQueryUpdateEmitter(
+                context.component(QueryBus.class),
+                context.component(MessageTypeResolver.class),
+                context.component(MessageConverter.class),
+                context
         );
     }
 
