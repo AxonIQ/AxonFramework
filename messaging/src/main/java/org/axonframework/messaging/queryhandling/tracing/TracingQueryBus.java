@@ -30,7 +30,9 @@ import org.axonframework.messaging.queryhandling.QueryResponseMessage;
 import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -64,8 +66,24 @@ public final class TracingQueryBus implements QueryBus {
     /** Prefix for the query-handle span ({@code "QueryBus.handleQuery <name>"}). */
     public static final String HANDLE_SPAN = "QueryBus.handleQuery";
 
+    /**
+     * Prefix for the query-respond span ({@code "QueryBus.respond <name>"}): production and delivery of a response
+     * stream after handling returned. Only opened while that response stream is not already completed.
+     */
+    public static final String RESPOND_SPAN = "QueryBus.respond";
+
+    /**
+     * Prefix for the subscription-query-initial-response span
+     * ({@code "QueryBus.initialResponse <name>"}): production of the finite initial result after handling returned.
+     * Unlike the subscription dispatch span, this span never covers the potentially unbounded update stream.
+     */
+    public static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse";
+
     /** Prefix for the subscription-query-dispatch span ({@code "QueryBus.subscriptionQuery <name>"}). */
     public static final String SUBSCRIPTION_QUERY_SPAN = "QueryBus.subscriptionQuery";
+
+    /** Internal metadata marker allowing the receiving handler to identify a subscription query's initial result. */
+    static final String SUBSCRIPTION_QUERY_MARKER = "axon.tracing.subscriptionQuery";
 
     /** Name of the query-update-emit span. */
     public static final String EMIT_UPDATE_SPAN = "QueryBus.emitUpdate";
@@ -100,8 +118,32 @@ public final class TracingQueryBus implements QueryBus {
         // TracingCommandBus). Closing on the result stream's own termination -- not on its mere construction -- also
         // keeps the span's duration honest: a query dispatch span used to close the instant the (lazy) MessageStream
         // was constructed, understating how long the dispatch actually took.
-        return span.branchStream(context, dispatchContext -> delegate.query(span.propagateContext(query),
-                                                                            dispatchContext));
+        return span.branchStream(context, dispatchContext -> respondScoped(
+                query, dispatchContext, delegate.query(span.propagateContext(query), dispatchContext)));
+    }
+
+    /**
+     * Wraps the given {@code responses} stream in a {@link #RESPOND_SPAN} span when the answer is still being
+     * produced once handling has returned -- the situation with reactive handlers, whose result pipeline (for
+     * example an R2DBC repository call) completes asynchronously after the handling {@code UnitOfWork} finished.
+     * Without this span, that asynchronous segment is invisible in the trace unless optional database
+     * instrumentation happens to fill it: the dispatch span's tail carries the time, but nothing names it. The span
+     * closes when the result stream terminates (mirroring the dispatch span's own lifetime, so it introduces no new
+     * long-lived-span hazard) and includes delivery to the consumer.
+     * <p>
+     * An already-completed stream is returned as is because there is no remaining response production or delivery to
+     * trace.
+     */
+    private MessageStream<QueryResponseMessage> respondScoped(QueryMessage query,
+                                                              @Nullable ProcessingContext dispatchContext,
+                                                              MessageStream<QueryResponseMessage> responses) {
+        if (responses.isCompleted()) {
+            return responses;
+        }
+        Span respondSpan = spanFactory.createInternalSpan(
+                RESPOND_SPAN + " " + query.type().qualifiedName().name(), dispatchContext
+        );
+        return respondSpan.branchStream(dispatchContext, scoped -> responses);
     }
 
     @Override
@@ -115,9 +157,11 @@ public final class TracingQueryBus implements QueryBus {
         // closes on return) rather than on stream termination: a subscription query's update
         // stream is long-lived (potentially unbounded), so a dispatch span spanning its whole lifetime would never
         // end.
-        return span.branch(context, dispatchContext -> delegate.subscriptionQuery(span.propagateContext(query),
-                                                                                  dispatchContext,
-                                                                                  updateBufferSize));
+        return span.branch(context, dispatchContext -> {
+            QueryMessage propagated = span.propagateContext(query);
+            QueryMessage marked = propagated.andMetadata(Map.of(SUBSCRIPTION_QUERY_MARKER, Boolean.TRUE.toString()));
+            return delegate.subscriptionQuery(marked, dispatchContext, updateBufferSize);
+        });
     }
 
     @Override
@@ -178,9 +222,26 @@ public final class TracingQueryBus implements QueryBus {
 
         @Override
         public MessageStream<QueryResponseMessage> handle(QueryMessage query, ProcessingContext context) {
-            spanFactory.createHandlerSpan(HANDLE_SPAN + " " + query.type().qualifiedName().name(), query, context)
+            boolean subscriptionQuery = Boolean.parseBoolean(query.metadata().get(SUBSCRIPTION_QUERY_MARKER));
+            QueryMessage handlerQuery = subscriptionQuery
+                    ? query.withMetadata(query.metadata().withoutKeys(Set.of(SUBSCRIPTION_QUERY_MARKER)))
+                    : query;
+            spanFactory.createHandlerSpan(HANDLE_SPAN + " " + handlerQuery.type().qualifiedName().name(),
+                                          handlerQuery,
+                                          context)
                        .coverLifecycle(context);
-            return delegate.handle(query, context);
+            MessageStream<QueryResponseMessage> responses = delegate.handle(handlerQuery, context);
+            if (!subscriptionQuery || responses.isCompleted()) {
+                return responses;
+            }
+
+            Span initialResponseSpan = spanFactory.createInternalSpan(
+                    INITIAL_RESPONSE_SPAN + " " + handlerQuery.type().qualifiedName().name(), context
+            );
+            // The handling context is used above to resolve the parent, but not passed to branchStream: the UnitOfWork
+            // finishes as soon as the handler returns its stream, while this span must remain open until that finite
+            // initial-result stream terminates. The stream itself provides deterministic completion and cancellation.
+            return initialResponseSpan.branchStream(null, ignored -> responses);
         }
     }
 }

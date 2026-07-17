@@ -19,10 +19,12 @@ package org.axonframework.messaging.queryhandling.tracing;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.queryhandling.GenericQueryMessage;
 import org.axonframework.messaging.queryhandling.GenericQueryResponseMessage;
@@ -31,6 +33,7 @@ import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryHandler;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
+import org.axonframework.messaging.queryhandling.SimpleQueryBus;
 import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +52,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TracingQueryBusTest {
 
     private static final String DISPATCH_SPAN = "QueryBus.query MyQuery";
+    private static final String RESPOND_SPAN = "QueryBus.respond MyQuery";
     private static final String SUBSCRIPTION_DISPATCH_SPAN = "QueryBus.subscriptionQuery MyQuery";
+    private static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse MyQuery";
     private static final String HANDLE_SPAN = "QueryBus.handleQuery MyQuery";
 
     private TestSpanFactory spanFactory;
@@ -84,6 +89,42 @@ class TracingQueryBusTest {
             spanFactory.verifySpanHasType(DISPATCH_SPAN, TestSpanType.DISPATCH);
             spanFactory.verifySpanPropagated(DISPATCH_SPAN, query);
         }
+
+        @Test
+        void keepsRespondSpanOpenUntilAsynchronousResponseTerminates() {
+            // given
+            CompletableFuture<QueryResponseMessage> deferredResponse = new CompletableFuture<>();
+            delegate.queryResult = MessageStream.fromFuture(deferredResponse);
+            StubProcessingContext context = new StubProcessingContext();
+
+            // when
+            CompletableFuture<MessageStream.Entry<QueryResponseMessage>> result =
+                    testSubject.query(query, context).first().asCompletableFuture();
+
+            // then
+            spanFactory.verifySpanActive(RESPOND_SPAN);
+            spanFactory.verifySpanHasType(RESPOND_SPAN, TestSpanType.INTERNAL);
+            spanFactory.verifySpanHasParent(RESPOND_SPAN, DISPATCH_SPAN);
+
+            // when
+            deferredResponse.complete(response);
+            result.join();
+
+            // then
+            spanFactory.verifySpanCompleted(RESPOND_SPAN);
+        }
+
+        @Test
+        void doesNotOpenRespondSpanForAlreadyCompletedResponse() {
+            // given
+            delegate.queryResult = MessageStream.empty().cast();
+
+            // when
+            testSubject.query(query, null);
+
+            // then
+            spanFactory.verifyNoSpanWithNamePrefix(TracingQueryBus.RESPOND_SPAN);
+        }
     }
 
     @Nested
@@ -101,6 +142,47 @@ class TracingQueryBusTest {
             spanFactory.verifySpanCompleted(SUBSCRIPTION_DISPATCH_SPAN);
             spanFactory.verifySpanHasType(SUBSCRIPTION_DISPATCH_SPAN, TestSpanType.DISPATCH);
             spanFactory.verifySpanPropagated(SUBSCRIPTION_DISPATCH_SPAN, query);
+        }
+
+        @Test
+        void initialResponseSpanCompletesBeforeLongLivedUpdatesStream() {
+            // given
+            CompletableFuture<QueryResponseMessage> deferredInitialResponse = new CompletableFuture<>();
+            AtomicReference<QueryMessage> handledQuery = new AtomicReference<>();
+            SimpleQueryBus simpleQueryBus = new SimpleQueryBus(
+                    new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE)
+            );
+            testSubject = new TracingQueryBus(simpleQueryBus, spanFactory);
+            testSubject.subscribe(
+                    query.type().qualifiedName(),
+                    (actualQuery, context) -> {
+                        handledQuery.set(actualQuery);
+                        return MessageStream.fromFuture(deferredInitialResponse);
+                    }
+            );
+
+            // when
+            MessageStream<QueryResponseMessage> responses = testSubject.subscriptionQuery(query, null, 256);
+
+            // then
+            spanFactory.verifySpanCompleted(SUBSCRIPTION_DISPATCH_SPAN);
+            spanFactory.verifySpanCompleted(HANDLE_SPAN);
+            spanFactory.verifySpanActive(INITIAL_RESPONSE_SPAN);
+            spanFactory.verifySpanHasType(INITIAL_RESPONSE_SPAN, TestSpanType.INTERNAL);
+            spanFactory.verifySpanHasParent(INITIAL_RESPONSE_SPAN, HANDLE_SPAN);
+            assertThat(handledQuery.get().metadata())
+                    .doesNotContainKey(TracingQueryBus.SUBSCRIPTION_QUERY_MARKER);
+
+            // when
+            deferredInitialResponse.complete(response);
+            assertThat(responses.next()).hasValueSatisfying(entry -> assertThat(entry.message()).isEqualTo(response));
+            assertThat(responses.next()).isEmpty();
+
+            // then
+            spanFactory.verifySpanCompleted(INITIAL_RESPONSE_SPAN);
+            assertThat(responses.isCompleted()).isFalse();
+
+            responses.close();
         }
     }
 
@@ -121,6 +203,7 @@ class TracingQueryBusTest {
             assertThat(wrapped).isNotNull();
             spanFactory.verifySpanActive(HANDLE_SPAN);
             spanFactory.verifySpanHasType(HANDLE_SPAN, TestSpanType.HANDLER);
+            spanFactory.verifyNoSpanWithNamePrefix(TracingQueryBus.INITIAL_RESPONSE_SPAN);
         }
     }
 
