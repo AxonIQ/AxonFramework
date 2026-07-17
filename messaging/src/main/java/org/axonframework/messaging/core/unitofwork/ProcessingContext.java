@@ -116,7 +116,7 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * parent. Such a branch only intercepts {@code computeResourceIfAbsent} for its own overridden key; every other
      * key falls through to the shared parent, ultimately the root context. If the supplied instance holds onto
      * {@code context}, and {@code context} may be one of several sibling branches of a shared parent (for example,
-     * one branch per event in a streaming processor's batch), the first branch to call this method gets its
+     * one branch per message being handled within a shared batch), the first branch to call this method gets its
      * instance cached on the shared root, and every sibling branch that calls afterward receives that <em>same</em>
      * stale instance back - silently operating against the wrong branch. For example, this is unsafe:
      * <pre>{@code
@@ -125,9 +125,9 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      *     return context.computeResourceIfAbsent(RESOURCE_KEY, () -> new MyContextAwareGateway(context));
      * }
      * }</pre>
-     * If {@code context} is a per-event branch of a batch, the second event to call {@code forContext} receives the
-     * first event's gateway back, closed over the first event's branch. Supply a fresh instance directly instead,
-     * bypassing this resource store entirely:
+     * If {@code context} is a per-message branch of a batch, the second message to call {@code forContext} receives
+     * the first message's gateway back, closed over the first message's branch. Supply a fresh instance directly
+     * instead, bypassing this resource store entirely:
      * <pre>{@code
      * // SAFE: always supplies a fresh instance bound to whichever context is passed in.
      * static MyContextAwareGateway forContext(ProcessingContext context) {
