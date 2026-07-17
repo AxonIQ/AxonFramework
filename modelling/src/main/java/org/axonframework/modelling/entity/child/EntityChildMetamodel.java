@@ -111,4 +111,21 @@ public interface EntityChildMetamodel<C, P> extends EntityEvolver<P> {
             EntityMetamodel<C> metamodel) {
         return ListEntityChildMetamodel.forEntityModel(parentClass, metamodel);
     }
+
+    /**
+     * Starts a builder for a map of child entities within the given parent entity type.
+     *
+     * @param parentClass the class of the parent entity
+     * @param metamodel   the {@link EntityMetamodel} of the child entity
+     * @param <K>         the type of the key of the {@link java.util.Map} containing the child entities
+     * @param <C>         the type of the child entity
+     * @param <P>         the type of the parent entity
+     * @return a {@link MapEntityChildMetamodel.Builder} for the child entity
+     */
+    static <K, C, P> MapEntityChildMetamodel.Builder<K, C, P> map(
+            Class<P> parentClass,
+            EntityMetamodel<C> metamodel
+    ) {
+        return MapEntityChildMetamodel.forEntityModel(parentClass, metamodel);
+    }
 }
