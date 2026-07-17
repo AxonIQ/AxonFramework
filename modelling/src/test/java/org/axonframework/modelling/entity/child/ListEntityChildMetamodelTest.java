@@ -253,7 +253,7 @@ class ListEntityChildMetamodelTest {
                                                                                           .findFirst()
                                                                                           .orElse(null))
                                                   .eventTargetMatcher((o, eventMessage, ctx) -> o.getId().contains(EVENT_MATCHING_ID));
-            assertThrows(NullPointerException.class, builder::build);
+            assertThrows(AxonConfigurationException.class, builder::build);
         }
 
         @Test

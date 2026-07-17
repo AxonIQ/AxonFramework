@@ -21,18 +21,21 @@ import org.axonframework.modelling.entity.EntityMetamodel;
 import java.util.Map;
 import java.util.Objects;
 
+import static org.axonframework.common.BuilderUtils.assertNonNull;
+
 /**
- * An {@link EntityChildMetamodel} that handles commands and events for a single child entity. It will use the provided
- * {@link ChildEntityFieldDefinition} to resolve the child entity from the parent entity. Once the entity is resolved,
- * it will delegate the command- and event-handling to the child entity metamodel.
+ * An {@link EntityChildMetamodel} that handles commands and events for a single child entity.
+ * <p>
+ * It will use the provided {@link ChildEntityFieldDefinition} to resolve the child entity from the parent entity. Once
+ * the entity is resolved, it will delegate the command- and event-handling to the child entity metamodel.
  * <p>
  * The commands and events will, by default, be forwarded unconditionally to the child entity. If you have multiple
  * member fields, and want to match commands and events to a specific child entity, you can configure the
  * {@link CommandTargetResolver} and {@link EventTargetMatcher} to match the child entity based on the command or
  * event.
  *
- * @param <C> The type of the child entity.
- * @param <P> The type of the parent entity.
+ * @param <C> the type of the child entity
+ * @param <P> the type of the parent entity
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
@@ -42,20 +45,15 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
 
     private final ChildEntityFieldDefinition<P, C> childEntityFieldDefinition;
 
-    private SingleEntityChildMetamodel(EntityMetamodel<C> metamodel,
-                                       ChildEntityFieldDefinition<P, C> childEntityFieldDefinition,
-                                       CommandTargetResolver<C> commandTargetMatcher,
-                                       EventTargetMatcher<C> eventTargetMatcher
+    private SingleEntityChildMetamodel(
+            EntityMetamodel<C> metamodel,
+            ChildEntityFieldDefinition<P, C> childEntityFieldDefinition,
+            CommandTargetResolver<C> commandTargetMatcher,
+            EventTargetMatcher<C> eventTargetMatcher
     ) {
-        super(
-                metamodel,
-                commandTargetMatcher,
-                eventTargetMatcher
-        );
-        this.childEntityFieldDefinition = Objects.requireNonNull(
-                childEntityFieldDefinition,
-                "The childEntityFieldDefinition may not be null."
-        );
+        super(metamodel, commandTargetMatcher, eventTargetMatcher);
+        this.childEntityFieldDefinition =
+                Objects.requireNonNull(childEntityFieldDefinition, "The childEntityFieldDefinition may not be null.");
     }
 
     @Override
@@ -89,11 +87,11 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
      * {@link ChildEntityFieldDefinition} is required to resolve the child entity from the parent entity and evolve the
      * parent entity based on the child entities.
      *
-     * @param parentClass The class of the parent entity.
-     * @param metamodel   The {@link EntityMetamodel} of the child entity.
-     * @param <C>         The type of the child entity.
-     * @param <P>         The type of the parent entity.
-     * @return A new {@link Builder} for the given parent class and child entity metamodel.
+     * @param parentClass the class of the parent entity
+     * @param metamodel   the {@link EntityMetamodel} of the child entity
+     * @param <C>         the type of the child entity
+     * @param <P>         the type of the parent entity
+     * @return a new {@link Builder} for the given parent class and child entity metamodel
      */
     public static <C, P> Builder<C, P> forEntityModel(Class<P> parentClass,
                                                       EntityMetamodel<C> metamodel) {
@@ -112,17 +110,16 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
      * match commands and events to a specific child entity, you can configure the {@link CommandTargetResolver} and
      * {@link EventTargetMatcher} to match the child entity based on the command or event.
      *
-     * @param <C> The type of the child entity.
-     * @param <P> The type of the parent entity.
+     * @param <C> the type of the child entity
+     * @param <P> the type of the parent entity
      */
     public static class Builder<C, P> extends AbstractEntityChildMetamodel.Builder<C, P, Builder<C, P>> {
 
+        @SuppressWarnings("NotNullFieldNotInitialized") // Ensured by validate()
         private ChildEntityFieldDefinition<P, C> childEntityFieldDefinition;
 
         @SuppressWarnings("unused") // Uses for generics
-        private Builder(Class<P> parentClass,
-                        EntityMetamodel<C> childEntityMetamodel
-        ) {
+        private Builder(Class<P> parentClass, EntityMetamodel<C> childEntityMetamodel) {
             super(parentClass, childEntityMetamodel);
             this.commandTargetResolver = CommandTargetResolver.MATCH_ANY();
             this.eventTargetMatcher = EventTargetMatcher.MATCH_ANY();
@@ -132,13 +129,13 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
          * Sets the {@link ChildEntityFieldDefinition} to use for resolving the child entity from the parent entity and
          * evolving the parent entity based on the evolved child entity.
          *
-         * @param fieldDefinition The {@link ChildEntityFieldDefinition} to use for resolving the child entities from
+         * @param fieldDefinition the {@link ChildEntityFieldDefinition} to use for resolving the child entities from
          *                        the parent entity
-         * @return This builder instance.
+         * @return this builder instance
          */
         public Builder<C, P> childEntityFieldDefinition(ChildEntityFieldDefinition<P, C> fieldDefinition) {
-            this.childEntityFieldDefinition = Objects.requireNonNull(fieldDefinition,
-                                                                     "The fieldDefinition may not be null.");
+            this.childEntityFieldDefinition =
+                    Objects.requireNonNull(fieldDefinition, "The fieldDefinition may not be null.");
             return this;
         }
 
@@ -146,15 +143,20 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
          * Builds a new {@link SingleEntityChildMetamodel} instance with the configured properties. The
          * {@link ChildEntityFieldDefinition} is required to be set before calling this method.
          *
-         * @return A new {@link SingleEntityChildMetamodel} instance with the configured properties.
+         * @return a new {@link SingleEntityChildMetamodel} instance with the configured properties
          */
         public SingleEntityChildMetamodel<C, P> build() {
             this.validate();
-            return new SingleEntityChildMetamodel<>(metamodel,
-                                                    childEntityFieldDefinition,
-                                                    commandTargetResolver,
-                                                    eventTargetMatcher
+            return new SingleEntityChildMetamodel<>(
+                    metamodel, childEntityFieldDefinition, commandTargetResolver, eventTargetMatcher
             );
+        }
+
+        @Override
+        protected void validate() {
+            assertNonNull(childEntityFieldDefinition,
+                          "The ChildEntityFieldDefinition must be set before building the metamodel.");
+            super.validate();
         }
     }
 }

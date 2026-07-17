@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.entity.child;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
@@ -196,7 +197,7 @@ class SingleEntityChildMetamodelTest {
         void canNotCompleteBuilderWithoutFieldDefinition() {
             var builder = SingleEntityChildMetamodel.forEntityModel(RecordingParentEntity.class,
                                                                     childEntityMetamodel);
-            assertThrows(NullPointerException.class, builder::build);
+            assertThrows(AxonConfigurationException.class, builder::build);
         }
 
         @Test

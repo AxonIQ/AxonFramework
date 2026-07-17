@@ -18,11 +18,10 @@ package org.axonframework.modelling.entity.child;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
-import org.axonframework.common.BuilderUtils;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.entity.ChildEntityNotFoundException;
 import org.axonframework.modelling.entity.EntityMetamodel;
 
@@ -33,16 +32,25 @@ import java.util.Map;
 import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
+import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
- * Abstract {@link EntityChildMetamodel} that implements common functionality for most implementations. It
- * defines how to handle commands and events for a child entity. The implementor is responsible for defining how to
- * resolve the child entities from the parent ({@link #getChildEntities(Object)}) and how to apply the evolved child
- * entities to the parent ({@link #applyEvolvedChildEntities(Object, List)}).
+ * Abstract {@link EntityChildMetamodel} that implements common functionality for most implementations.
+ * <p>
+ * It defines how to handle commands and events for a child entity. The implementor is responsible for defining how to
+ * resolve the child entities from the parent, keyed by an implementation-specific identity
+ * ({@link #getChildEntities(Object)}), and how to apply the evolved child entities to the parent
+ * ({@link #applyEvolvedChildEntities(Object, Map)}).
+ * <p>
+ * The keys returned by {@link #getChildEntities(Object)} are opaque to this class; they only exist so that
+ * {@link #evolve(Object, EventMessage, ProcessingContext)} can preserve the association between a child entity and its
+ * identity when a child is evolved or removed, regardless of whether the parent stores its children in a {@code List}
+ * (keyed by index), as a single field (keyed by a constant), or in a {@code Map} (keyed by the map's own keys).
  *
- * @param <C> The type of the child entity.
- * @param <P> The type of the parent entity.
+ * @param <C> the type of the child entity
+ * @param <P> the type of the parent entity
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @since 5.0.0
  */
 public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildMetamodel<C, P> {
@@ -59,8 +67,7 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
         this.metamodel = requireNonNull(metamodel, "The metamodel may not be null.");
         this.commandTargetResolver =
                 requireNonNull(commandTargetResolver, "The commandTargetResolver may not be null.");
-        this.eventTargetMatcher =
-                requireNonNull(eventTargetMatcher, "The eventTargetMatcher may not be null.");
+        this.eventTargetMatcher = requireNonNull(eventTargetMatcher, "The eventTargetMatcher may not be null.");
     }
 
     @Override
@@ -149,12 +156,13 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
     protected abstract static class Builder<C, P, R extends Builder<C, P, R>> {
 
         protected final EntityMetamodel<C> metamodel;
+        @SuppressWarnings("NotNullFieldNotInitialized") // Ensured by validate()
         protected CommandTargetResolver<C> commandTargetResolver;
+        @SuppressWarnings("NotNullFieldNotInitialized") // Ensured by validate()
         protected EventTargetMatcher<C> eventTargetMatcher;
 
         @SuppressWarnings("unused") // Is used for generics
-        protected Builder(Class<P> parentClass,
-                          EntityMetamodel<C> metamodel) {
+        protected Builder(Class<P> parentClass, EntityMetamodel<C> metamodel) {
             requireNonNull(parentClass, "The parentClass may not be null.");
             this.metamodel = requireNonNull(metamodel, "The metamodel may not be null.");
         }
@@ -163,9 +171,9 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
          * Sets the {@link CommandTargetResolver} to use for resolving the child entity to handle the command. This
          * should return one child entity, or {@code null} if no child entity should handle the command.
          *
-         * @param commandTargetResolver The {@link CommandTargetResolver} to use for resolving the child entity to
-         *                              handle the command.
-         * @return This builder instance.
+         * @param commandTargetResolver the {@link CommandTargetResolver} to use for resolving the child entity to
+         *                              handle the command
+         * @return this builder instance
          */
         @SuppressWarnings("unchecked")
         public R commandTargetResolver(CommandTargetResolver<C> commandTargetResolver) {
@@ -175,10 +183,10 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
         }
 
         protected void validate() {
-            BuilderUtils.assertNonNull(commandTargetResolver,
-                                       "The commandTargetResolver must be set before building the metamodel.");
-            BuilderUtils.assertNonNull(eventTargetMatcher,
-                                       "The eventTargetMatcher must be set before building the metamodel.");
+            assertNonNull(commandTargetResolver,
+                          "The commandTargetResolver must be set before building the metamodel.");
+            assertNonNull(eventTargetMatcher,
+                          "The eventTargetMatcher must be set before building the metamodel.");
         }
 
         /**
@@ -186,9 +194,8 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
          * {@link EventMessage}. This should return {@code true} if the child entity should handle the event, or
          * {@code false} if it should not.
          *
-         * @param eventTargetMatcher The {@link EventTargetMatcher} to use for matching the child entities to the
-         *                           event.
-         * @return This builder instance.
+         * @param eventTargetMatcher the {@link EventTargetMatcher} to use for matching the child entities to the event
+         * @return this builder instance
          */
         @SuppressWarnings("unchecked")
         public R eventTargetMatcher(EventTargetMatcher<C> eventTargetMatcher) {
