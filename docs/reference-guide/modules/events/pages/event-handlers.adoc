@@ -57,14 +57,7 @@ In a Spring Boot environment, simply adding the Event Handling Components to the
 
 [source,java]
 ----
-@Component
-public class AnnotatedEventHandlingComponent {
-
-    @EventHandler
-    public void on(SomeEvent event) {
-        // ...
-    }
-}
+include::example$events/eventhandlers/springboot/AnnotatedEventHandlingComponent.java[tag=spring-boot-event-handling-component,indent=0]
 ----
 
 Axon's auto-configuration will automatically detect and register all message handlers and assign them to the appropriate event processor.
@@ -80,33 +73,7 @@ When assigning event handling components to an event processor, you will be able
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new AnnotatedEventHandlingComponent());
-    }
-}
+include::example$events/eventhandlers/autodetected/AxonConfig.java[tag=autodetected-configuration-api,indent=0]
 ----
 
 With `autodetected()`, the framework scans the component for `@EventHandler` annotated methods and registers them automatically.
@@ -125,48 +92,7 @@ You're automatically guided to that point when you are configuring an event proc
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.declarative(c -> {
-            EventHandlingComponent eventHandlingComponent = new SimpleEventHandlingComponent();
-            eventHandlingComponent.subscribe(
-                    new QualifiedName("OrderPlaced"),
-                    (event, context) -> {
-                        OrderPlacedEvent eventPayload = event.payloadAs(OrderPlacedEvent.class);
-                        // process events
-                        return MessageStream.empty();
-                    }
-            );
-            return eventHandlingComponent;
-        });
-    }
-}
+include::example$events/eventhandlers/declarative/AxonConfig.java[tag=declarative-configuration-api,indent=0]
 ----
 
 With `declarative()`, you explicitly create an `EventHandlingComponent` (typically `SimpleEventHandlingComponent`) and subscribe handler logic using the `subscribe()` methods.
@@ -187,16 +113,7 @@ This allows you to explicitly define its name, namespace, and version:
 
 [source,java]
 ----
-@Event(
-    namespace = "orders",               // <1>
-    name = "OrderPlaced",               // Local name; defaults to simple class name
-    version = "1.0.0"                   // Defaults to "0.0.1"
-)
-public record OrderPlacedEvent(
-    String orderId,
-    String customerId
-) {
-}
+include::example$events/eventhandlers/OrderPlacedEvent.java[tag=event-annotated-order-placed,indent=0]
 ----
 
 <1> When `namespace` is not specified on `@Event`, Axon first searches for the presence of the `@Namespace` annotation (as described xref:messaging-concepts:anatomy-message.adoc#namespace-annotation[here]). When no `@Namespace` annotation is found, it falls back to the package name of the class.
@@ -206,10 +123,7 @@ Now let's assume we have an `@EventHandler` handling the `OrderPlacedEvent`:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event) {
-    // ...
-}
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-implicit-name,indent=0]
 ----
 
 Axon's autodetected configuration will find the `OrderPlacedEvent` event handler and note the `@Event` handler.
@@ -220,11 +134,7 @@ If you need to override the name used to register the event handler or if the ev
 
 [source,java]
 ----
-@EventHandler(eventName = "orders.OrderPlaced")
-public void handleOrderPlaced(Map<String, Object> eventData) {
-    // Handles events with qualified name "orders.OrderPlaced"
-    // Payload is converted to Map at handling time
-}
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-explicit-name,indent=0]
 ----
 
 [[handler-resolution]]
@@ -246,23 +156,7 @@ Consider the following Event Handling Component sample:
 
 [source,java]
 ----
-public class OrderEventHandler {
-
-    @EventHandler
-    public void on(OrderPlacedEvent event) {
-        // Update read model
-    }
-
-    @EventHandler
-    public void logOrderPlaced(OrderPlacedEvent event, @MetadataValue("userId") String userId) {
-        // Log the event - this handler is ALSO invoked for OrderPlacedEvent
-    }
-
-    @EventHandler
-    public void on(OrderShippedEvent event) {
-        // Handle order shipped
-    }
-}
+include::example$events/eventhandlers/OrderEventHandler.java[tag=order-event-handler,indent=0]
 ----
 
 In this example, when an `OrderPlacedEvent` is published, **both** the `on()` and `logOrderPlaced()` methods will be invoked.
@@ -278,20 +172,14 @@ Hence, the typical return type of any event handler is `void`:
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event) {
-    // Update state, no return value
-}
+include::example$events/eventhandlers/EventHandlerReturnValues.java[tag=event-handler-void-return,indent=0]
 ----
 
 However, you are able to make asynchronous event handlers, by for example using a `CompletableFuture<Void>`:
 
 [source,java]
 ----
-@EventHandler
-public CompletableFuture<Void> on(OrderPlacedEvent event) {
-    return asyncService.processOrder(event.getOrderId());
-}
+include::example$events/eventhandlers/EventHandlerReturnValues.java[tag=event-handler-completablefuture-return,indent=0]
 ----
 
 The framework will wait for the `CompletableFuture` to complete before considering the event handled.
@@ -299,10 +187,7 @@ The same option applies for `Mono`:
 
 [source,java]
 ----
-@EventHandler
-public Mono<Void> on(OrderPlacedEvent event) {
-    return reactiveService.processOrder(event.getOrderId());
-}
+include::example$events/eventhandlers/EventHandlerReturnValues.java[tag=event-handler-mono-return,indent=0]
 ----
 
 Lastly, you're able to use Axon's `MessageStream` to support either of the above flows.
@@ -310,43 +195,5 @@ When registering an `EventHandler` as a lambda directly, you are even expected t
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-
-public class AxonConfig {
-
-    // omitted event processing configurer methods...
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.declarative(c -> {
-            EventHandlingComponent eventHandlingComponent = new SimpleEventHandlingComponent();
-            eventHandlingComponent.subscribe(
-                    new QualifiedName("OrderPlaced"),
-                    (event, context) -> {
-                        OrderPlacedEvent eventPayload = event.payloadAs(OrderPlacedEvent.class);
-                        // process events
-                        return MessageStream.empty();
-                    }
-            );
-            eventHandlingComponent.subscribe(
-                    new QualifiedName("OrderDeclined"),
-                    (event, context) -> {
-                        OrderDeclinedEvent eventPayload = event.payloadAs(OrderDeclinedEvent.class);
-                        AsyncService asyncService = context.component(AsyncService.class);
-                        return MessageStream.fromFuture(asyncService.processOrderDeclined(eventPayload)
-                                                                    .thenApply(r -> TerminalEventMessage.INSTANCE))
-                                            .cast()
-                                            .ignoreEntries();
-                    }
-            );
-            return eventHandlingComponent;
-        });
-    }
-}
+include::example$events/eventhandlers/messagestream/AxonConfig.java[tag=event-handler-messagestream-return,indent=0]
 ----

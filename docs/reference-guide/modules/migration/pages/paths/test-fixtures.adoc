@@ -42,7 +42,7 @@ This means that the `AxonTestFixture` has **no** plain registration methods like
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.test.aggregate.AggregateTestFixture;
 import org.axonframework.test.aggregate.FixtureConfiguration;
@@ -65,45 +65,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class GiftCardTest {
-
-    private AxonTestFixture testFixture;
-
-    @BeforeEach
-    void setUp() {
-        // Reuse of the ApplicationConfigurer, ensuring components are configured once:
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-
-        testFixture = AxonTestFixture.with(configurer);
-    }
-}
-
-class AxonConfig {
-
-    // Static construction is an example for ApplicationConfigurer reuse in tests, but not mandatory
-    public static ApplicationConfigurer appConfigurer() {
-        return EventSourcingConfigurer.create()
-                                      .registerEntity(giftCardModule())
-                                      .messaging(AxonConfig::messagingCustomization);
-    }
-
-    private static EventSourcedEntityModule<String, GiftCard> giftCardModule() {
-        return EventSourcedEntityModule.autodetected(String.class, GiftCard.class);
-    }
-
-    private static MessagingConfigurer messagingCustomization(MessagingConfigurer configurer) {
-        return configurer.registerCommandHandlerInterceptor(
-                c -> new MyCommandHandlingInterceptor()
-        );
-    }
-}
+include::example$migration/paths/testfixtures/setup/GiftCardTest.java[tag=fixture-setup,indent=0]
 ----
 ====
 
@@ -116,15 +78,14 @@ In practice, this resulted in test fixtures not representing the actual setup, b
 
 [NOTE]
 ====
-Due to using the `ApplicationConfigurer`, by default, the fixture will attempt to connect to Axon Server if the connector is on the classpath.
-For unit tests, you typically want to disable this. to that end, you can use the customization parameter provided on the `AxonTestFixture#with` method:
+By default, the `AxonTestFixture` disables heavy infrastructure components, like the Axon Server connector, even if they are on the classpath.
+This keeps unit tests fast and self-contained, without requiring any action on your part.
+
+If you want your test to exercise the actual infrastructure (for example, to verify your application also behaves correctly when connected to Axon Server), use the customization parameter provided on the `AxonTestFixture#with` method to opt in with `asIntegrationTest()`:
 
 [source,java]
 ----
-AxonTestFixture fixture = AxonTestFixture.with(
-        configurer,
-        customization -> customization.disableAxonServer()
-);
+include::example$migration/paths/testfixtures/asintegrationtest/FixtureIntegrationTestCustomization.java[tag=fixture-as-integration-test,indent=0]
 ----
 
 For more customization options, such as field filtering for event validation, check out the xref:testing:basic-testing.adoc#fixture_customization[Fixture customization] section.
@@ -138,28 +99,7 @@ This allows the test fixture to reuse the same configuration:
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-
-@SpringBootTest
-class GiftCardTest {
-
-    @Autowired
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.disableAxonServer()
-        );
-    }
-}
+include::example$migration/paths/testfixtures/springboot/GiftCardTest.java[tag=fixture-setup-spring,indent=0]
 ----
 
 == Given-when-then structure
@@ -178,7 +118,7 @@ The example below shows what this looked like in Axon Framework 4 and how it map
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.test.aggregate.AggregateTestFixture;
 import org.axonframework.test.aggregate.FixtureConfiguration;
@@ -233,59 +173,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.util.List;
-
-class GiftCardTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void givenSingleEvent() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100));
-               // when...
-    }
-
-    @Test
-    void givenMultipleEvents() {
-        fixture.given()
-               .events(new CardIssuedEvent("card-1", 100),
-                       new CardRedeemedEvent("card-1", 20));
-               // when...
-    }
-
-    @Test
-    void givenEventsAsList() {
-        fixture.given()
-               .events(List.of(new CardIssuedEvent("card-1", 100),
-                               new CardRedeemedEvent("card-1", 20)));
-               // when...
-    }
-
-    @Test
-    void givenCommands() {
-        fixture.given()
-               .command(new IssueCardCommand("card-1", 100));
-               // when...
-    }
-
-    @Test
-    void givenNoPriorActivity() {
-        fixture.given()
-               .noPriorActivity();
-               // when...
-    }
-}
+include::example$migration/paths/testfixtures/given/GiftCardTest.java[tag=given-phase,indent=0]
 ----
 ====
 
@@ -308,7 +196,7 @@ The example below shows what this looked like in Axon Framework 4 and how it map
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.messaging.MetaData;
 import org.axonframework.test.aggregate.AggregateTestFixture;
@@ -345,39 +233,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.test.AxonTestFixture;
-import org.axonframework.test.aggregate.AggregateTestConfigurer;
-import org.junit.jupiter.api.*;
-
-class GiftCardTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void whenCommand() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30));
-               // then...
-    }
-
-    @Test
-    void whenCommandWithMetadata() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30),
-                        Metadata.with("userId", "user-123"));
-               // then...
-    }
-}
+include::example$migration/paths/testfixtures/when/GiftCardTest.java[tag=when-phase,indent=0]
 ----
 ====
 
@@ -402,7 +258,7 @@ The example below shows what this looked like in Axon Framework 4 and how it map
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.test.aggregate.AggregateTestFixture;
 import org.axonframework.test.aggregate.FixtureConfiguration;
@@ -458,70 +314,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class GiftCardTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void expectEvents() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30))
-               .then()
-               .events(new CardRedeemedEvent("card-1", 30));
-    }
-
-    @Test
-    void expectNoEvents() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 0))
-               .then()
-               .noEvents();
-    }
-
-    @Test
-    void expectException() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 200))
-               .then()
-               .exception(IllegalStateException.class);
-    }
-
-    @Test
-    void expectSuccessfulHandlerExecution() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30))
-               .then()
-               .success();
-    }
-
-    @Test
-    void expectResultMessagePayload() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new IssueCardCommand("card-1", 100))
-               .then()
-               .resultMessagePayload("card-1");
-    }
-}
+include::example$migration/paths/testfixtures/then/GiftCardTest.java[tag=then-phase,indent=0]
 ----
 ====
 
@@ -546,7 +339,7 @@ Note all possible permutations are shown, but can be deduced based on this examp
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.test.aggregate.AggregateTestFixture;
 import org.axonframework.test.aggregate.FixtureConfiguration;
@@ -578,33 +371,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-
-class GiftCardTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void completeTestFlow() {
-        fixture.given()
-               .events(new CardIssuedEvent("card-1", 100),
-                       new CardRedeemedEvent("card-1", 20))
-               .command(new ReimburseCardCommand("card-1", 10))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30))
-               .then()
-               .success()
-               .events(new CardRedeemedEvent("card-1", 30))
-               .resultMessagePayload(null);
-    }
-}
+include::example$migration/paths/testfixtures/chaining/GiftCardTest.java[tag=chaining,indent=0]
 ----
 ====
 
@@ -621,7 +388,7 @@ The example below shows how matcher-based validation in Axon Framework 4 maps to
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.test.aggregate.AggregateTestFixture;
 import org.axonframework.test.aggregate.FixtureConfiguration;
@@ -670,64 +437,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.util.Objects;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class GiftCardTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        ApplicationConfigurer configurer = AxonConfig.appConfigurer();
-        fixture = AxonTestFixture.with(configurer);
-    }
-
-    @Test
-    void eventsSatisfy() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30))
-               .then()
-               .eventsSatisfy(events -> {
-                   assertEquals(1, events.size());
-                   assertEquals(
-                           new CardRedeemedEvent("card-1", 30),
-                           events.getFirst().payload()
-                   );
-               });
-    }
-
-    @Test
-    void eventsMatch() {
-        fixture.given()
-               .event(new CardIssuedEvent("card-1", 100))
-               .when()
-               .command(new RedeemCardCommand("card-1", 30))
-               .then()
-               .eventsMatch(events -> events.size() == 1 && Objects.equals(
-                       events.getFirst().payload(), new CardRedeemedEvent("card-1", 30)
-               ));
-    }
-
-    @Test
-    void resultMessageSatisfies() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new IssueCardCommand("card-1", 100))
-               .then()
-               .resultMessageSatisfies(
-                       result -> assertEquals("card-1", result.payload())
-               );
-    }
-}
+include::example$migration/paths/testfixtures/matchers/GiftCardTest.java[tag=matcher-based-validation,indent=0]
 ----
 ====
 

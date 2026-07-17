@@ -52,31 +52,14 @@ First, define the query message with the `@Query` annotation:
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.annotation.Query;
-
-@Query(namespace = "inventory", name = "FetchItems")
-public class FetchItemsQuery {
-    private final String criteria;
-
-    public FetchItemsQuery(String criteria) {
-        this.criteria = criteria;
-    }
-
-    public String getCriteria() {
-        return criteria;
-    }
-}
+include::example$queries/querydispatchers/FetchItemsQuery.java[tag=fetch-items-query,indent=0]
 ----
 
 Then write the query handler:
 
 [source,java]
 ----
-@QueryHandler // <1>
-public List<String> query(FetchItemsQuery query) { // <2>
-    // return the query result based on given criteria
-    return repository.findItems(query.getCriteria());
-}
+include::example$queries/querydispatchers/ItemQueryHandler.java[tag=fetch-items-query-handler,indent=0]
 ----
 
 <1> The `@QueryHandler` annotation marks this method as a query handler.
@@ -90,26 +73,14 @@ To query our view model using the `QueryGateway`:
 
 [source,java]
 ----
-// Query for a single result
-CompletableFuture<String> result = queryGateway.query(
-    new FetchItemQuery("item-123"),
-    String.class
-);
-
-result.thenAccept(item -> System.out.println("Item: " + item));
+include::example$queries/querydispatchers/QueryGatewayExamples.java[tag=single-result-query,indent=0]
 ----
 
 ==== Multiple results query
 
 [source,java]
 ----
-// Query for multiple results
-CompletableFuture<List<String>> results = queryGateway.queryMany(
-    new FetchItemsQuery("criteria"),
-    String.class
-);
-
-results.thenAccept(items -> items.forEach(System.out::println));
+include::example$queries/querydispatchers/QueryGatewayExamples.java[tag=multiple-results-query,indent=0]
 ----
 
 [TIP]
@@ -131,19 +102,7 @@ When dispatching queries from within a message handler (such as an event handler
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event,
-               ProcessingContext context,
-               QueryGateway queryGateway) {
-    // Dispatch query with ProcessingContext for correlation
-    queryGateway.query(
-        new FetchInventoryQuery(event.getProductId()),
-        Inventory.class,
-        context
-    ).thenAccept(inventory -> {
-        // Handle inventory result...
-    });
-}
+include::example$queries/querydispatchers/InventoryEventHandler.java[tag=query-dispatch-with-processing-context,indent=0]
 ----
 
 Providing the `ProcessingContext` ensures that:
@@ -156,24 +115,7 @@ When dispatching from outside a message handler (for example, from an HTTP endpo
 
 [source,java]
 ----
-@RestController
-public class ItemController {
-
-    private final QueryGateway queryGateway;
-
-    public ItemController(QueryGateway queryGateway) {
-        this.queryGateway = queryGateway;
-    }
-
-    @GetMapping("/items/{id}")
-    public CompletableFuture<ItemDTO> getItem(@PathVariable String id) {
-        return queryGateway.query(
-            new FetchItemQuery(id),
-            ItemDTO.class
-            // No ProcessingContext needed when dispatching from HTTP endpoint
-        );
-    }
-}
+include::example$queries/querydispatchers/ItemController.java[tag=item-controller,indent=0]
 ----
 
 [[subscription-queries]]
@@ -189,15 +131,7 @@ Let's look at a query handler that provides the initial state:
 
 [source,java]
 ----
-@QueryHandler
-public List<CardSummary> handle(FetchCardSummariesQuery query) {
-    return entityManager
-        .createNamedQuery("CardSummary.fetch", CardSummary.class)
-        .setParameter("idStartsWith", query.getFilter().getIdStartsWith())
-        .setFirstResult(query.getOffset())
-        .setMaxResults(query.getLimit())
-        .getResultList();
-}
+include::example$queries/querydispatchers/CardSummaryProjection.java[tag=subscription-query-handler,indent=0]
 ----
 
 === Emitting updates
@@ -207,19 +141,7 @@ We achieve this by emitting an update using the `QueryUpdateEmitter` component w
 
 [source,java]
 ----
-@EventHandler
-public void on(RedeemedEvent event, QueryUpdateEmitter emitter) {
-    // <1>
-    CardSummary summary = entityManager.find(CardSummary.class, event.getId());
-    summary.setRemainingValue(summary.getRemainingValue() - event.getAmount());
-
-    // <2>
-    emitter.emit(
-        FetchCardSummariesQuery.class, // <3>
-        query -> event.getId().startsWith(query.getFilter().getIdStartsWith()), // <4>
-        summary // <5>
-    );
-}
+include::example$queries/querydispatchers/CardSummaryProjection.java[tag=emitting-updates,indent=0]
 ----
 
 <1> First, we update our view model by updating the existing card.
@@ -235,33 +157,7 @@ Once we have the query handling and emitting side implemented, we can issue a su
 
 [source,java]
 ----
-// <1>
-commandGateway.sendAndWait(new IssueCardCommand("gc1", amount));
-
-// <2>
-FetchCardSummariesQuery query =
-    new FetchCardSummariesQuery(offset, limit, filter);
-
-// <3>
-Publisher<CardSummary> results = queryGateway.subscriptionQuery(
-    query,
-    CardSummary.class
-);
-
-// <4>
-Disposable subscription = Flux.from(results)
-    .subscribe(
-        cardSummary -> System.out.println("Received: " + cardSummary),
-        error -> System.err.println("Error: " + error),
-        () -> System.out.println("Completed")
-    );
-
-// <5>
-commandGateway.sendAndWait(new RedeemCardCommand("gc1", amount));
-
-// <6>
-// When done, cancel the subscription
-subscription.dispose();
+include::example$queries/querydispatchers/SubscriptionQueryExample.java[tag=issuing-subscription-query,indent=0]
 ----
 
 <1> Issue a GiftCard with `gc1` id and initial value of `amount`.
@@ -314,14 +210,7 @@ Note that the `streamingQuery` method *is lazy*, meaning the query is sent once 
 
 [source,java]
 ----
-@QueryHandler
-public List<CardSummary> handle(FetchCardSummariesQuery query) {
-    return cardRepository.findAll(); // <1>
-}
-
-public Publisher<CardSummary> consumer() {
-    return queryGateway.streamingQuery(query, CardSummary.class); // <2>
-}
+include::example$queries/querydispatchers/StreamingQueryExample.java[tag=streaming-query-example,indent=0]
 ----
 
 <1> We query the `cardRepository` for all the cards.
@@ -337,10 +226,7 @@ For fine-grained control of the producing stream, you can use Project Reactor's 
 
 [source,java]
 ----
-@QueryHandler
-public Flux<CardSummary> handle(FetchCardSummariesQuery query) {
-    return reactiveCardRepository.findAll();
-}
+include::example$queries/querydispatchers/NativeStreamingExample.java[tag=native-streaming-flux,indent=0]
 ----
 
 When using a `Flux` as the return type, you can control backpressure, stream cancellation, and implement more complex features like pagination.
@@ -371,11 +257,7 @@ The following sample shows how this could be achieved:
 
 [source,java]
 ----
-public Publisher<CardSummary> consumer() {
-    return Flux.from(queryGateway.streamingQuery(query, CardSummary.class))
-               .take(100)
-               .takeUntil(message -> somePredicate.test(message));
-}
+include::example$queries/querydispatchers/StreamingCancellationExample.java[tag=streaming-cancellation,indent=0]
 ----
 
 The example above shows how the `take` operator limits the number of items to be emitted.
@@ -394,11 +276,7 @@ Essentially to protect against malfunctioning consumers or producers.
 
 [source,java]
 ----
-@QueryHandler
-public Flux<CardSummary> handle(FetchCardSummariesQuery query) {
-    return reactiveCardRepository.findAll()
-                                 .timeout(Duration.ofSeconds(5));
-}
+include::example$queries/querydispatchers/StreamingErrorHandlingExample.java[tag=streaming-error-handling,indent=0]
 ----
 
 The example above shows how the `timeout` operator is used to cancel a request if no responses have been observed during a five-second timespan.
@@ -428,22 +306,7 @@ When using Spring Boot with Axon, both components are available as beans and can
 
 [source,java]
 ----
-@Service
-public class ItemService {
-
-    private final QueryGateway queryGateway;
-
-    public ItemService(QueryGateway queryGateway) {
-        this.queryGateway = queryGateway;
-    }
-
-    public CompletableFuture<ItemDTO> findItem(String itemId) {
-        return queryGateway.query(
-            new FetchItemQuery(itemId),
-            ItemDTO.class
-        );
-    }
-}
+include::example$queries/querydispatchers/ItemService.java[tag=spring-boot-query-service,indent=0]
 ----
 
 === Configuration API
@@ -452,16 +315,7 @@ When configuring Axon programmatically, you can access both components from the 
 
 [source,java]
 ----
-ApplicationConfigurer configurer = DefaultConfigurer.defaultConfiguration();
-
-configurer.messaging(messagingConfigurer -> {
-    // QueryBus is registered by default, but can be customized
-    messagingConfigurer.registerQueryBus(config -> new CustomQueryBus());
-});
-
-Configuration configuration = configurer.start();
-QueryGateway queryGateway = configuration.getComponent(QueryGateway.class);
-QueryBus queryBus = configuration.getComponent(QueryBus.class);
+include::example$queries/querydispatchers/QueryConfigurationExample.java[tag=query-configuration-api,indent=0]
 ----
 
 == Summary

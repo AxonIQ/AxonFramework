@@ -18,12 +18,7 @@ To that end, we can annotate the identifier field on the command with `@TargetEn
 
 [source,java]
 ----
-import org.axonframework.modelling.annotation.TargetEntityId;
-
-public record EnrollStudentCommand(
-        @TargetEntityId String courseId, // <1>
-        String studentId
-) {}
+include::example$commands/entities/eventsourcedentity/EnrollStudentCommand.java[tag=target-entity-id,indent=0]
 ----
 
 <1> Axon reads this field to load the correct entity instance before invoking the handler.
@@ -35,23 +30,12 @@ Mark the identifier field on your events with `@EventTag`, and set `tagKey` on t
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventTag;
-
-public record CourseCreatedEvent(
-        @EventTag String courseId, // <1>
-        String title,
-        int capacity
-) {}
+include::example$commands/entities/eventsourcedentity/CourseCreatedEvent.java[tag=event-tag,indent=0]
 ----
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-
-@EventSourcedEntity(tagKey = "courseId") // <2>
-public class CourseEntity {
-    // ...
-}
+include::example$commands/entities/eventsourcedentity/CourseEntity.java[tag=entity-tag-key,indent=0]
 ----
 
 <1> Marks the identifier field on the event so Axon can filter the event stream for this entity.
@@ -82,39 +66,7 @@ The following plain Java class illustrates all four members:
 
 [source,java]
 ----
-public class CourseEntity {
-
-    private String courseId;
-    private String title;
-    private int capacity;
-    private int enrolledCount;
-
-    public static void create(CreateCourseCommand cmd, EventAppender appender) { // <1>
-        if (cmd.capacity() <= 0) {
-            throw new IllegalArgumentException("Capacity must be positive");
-        }
-        appender.append(new CourseCreatedEvent(cmd.courseId(), cmd.title(), cmd.capacity()));
-    }
-
-    public void enroll(EnrollStudentCommand cmd, EventAppender appender) { // <2>
-        if (enrolledCount >= capacity) {
-            throw new IllegalStateException("Course is full");
-        }
-        appender.append(new StudentEnrolledEvent(courseId, cmd.studentId()));
-    }
-
-    void on(CourseCreatedEvent event) { // <3>
-        this.courseId = event.courseId();
-        this.title = event.title();
-        this.capacity = event.capacity();
-    }
-
-    void on(StudentEnrolledEvent event) {
-        this.enrolledCount++;
-    }
-
-    protected CourseEntity() {} // <4>
-}
+include::example$commands/entities/eventsourcedentity/declarative/CourseEntity.java[tag=entity-members,indent=0]
 ----
 
 <1> Creational command handler: validates the creation command and appends the creation event.
@@ -165,60 +117,7 @@ The registration is wrapped in a helper method that receives the application's `
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.EventSourcedEntityFactory;
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageTypeResolver;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.messaging.eventstreaming.Tag;
-import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolver;
-
-public class CourseEntityConfiguration {
-
-    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        return configurer.registerEntity(
-            EventSourcedEntityModule.declarative(String.class, CourseEntity.class)
-                .messagingModel((config, model) -> {
-                    MessageTypeResolver resolver = config.getComponent(MessageTypeResolver.class); // <1>
-                    return model
-                        .creationalCommandHandler( // <2>
-                            resolver.resolveOrThrow(CreateCourseCommand.class).qualifiedName(),
-                            (command, context) -> {
-                                CourseEntity.create(command.payloadAs(CreateCourseCommand.class), // <3>
-                                                   EventAppender.forContext(context));
-                                return MessageStream.empty().cast();
-                            }
-                        )
-                        .instanceCommandHandler( // <4>
-                            resolver.resolveOrThrow(EnrollStudentCommand.class).qualifiedName(),
-                            (command, entity, context) -> {
-                                entity.enroll(command.payloadAs(EnrollStudentCommand.class), // <5>
-                                              EventAppender.forContext(context));
-                                return MessageStream.empty().cast();
-                            }
-                        )
-                        .entityEvolver((entity, event, context) -> { // <6>
-                            QualifiedName courseCreated = resolver.resolveOrThrow(CourseCreatedEvent.class).qualifiedName();
-                            QualifiedName studentEnrolled = resolver.resolveOrThrow(StudentEnrolledEvent.class).qualifiedName();
-                            if (event.type().qualifiedName().equals(courseCreated)) {
-                                entity.on(event.payloadAs(CourseCreatedEvent.class));
-                            } else if (event.type().qualifiedName().equals(studentEnrolled)) {
-                                entity.on(event.payloadAs(StudentEnrolledEvent.class));
-                            }
-                            return entity;
-                        })
-                        .build();
-                })
-                .entityFactory(c -> EventSourcedEntityFactory.fromNoArgument(CourseEntity::new)) // <7>
-                .criteriaResolver(c -> (id, ctx) -> EventCriteria.havingTags(Tag.of("courseId", id))) // <8>
-                .entityIdResolver(c -> new AnnotationBasedEntityIdResolver<>()) // <9>
-                .build()
-        );
-    }
-}
+include::example$commands/entities/eventsourcedentity/declarative/CourseEntityConfiguration.java[tag=declarative-configuration,indent=0]
 ----
 
 <1> Resolve qualified names via `MessageTypeResolver` rather than constructing `QualifiedName` directly.
@@ -253,53 +152,7 @@ Add Axon annotations to the entity class and register it with `EventSourcedEntit
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-
-@EventSourcedEntity(tagKey = "courseId") // <1>
-public class CourseEntity {
-
-    private String courseId;
-    private String title;
-    private int capacity;
-    private int enrolledCount;
-
-    @CommandHandler
-    public static String handle(CreateCourseCommand cmd, EventAppender eventAppender) {
-        if (cmd.capacity() <= 0) {
-            throw new IllegalArgumentException("Capacity must be positive");
-        }
-        eventAppender.append(new CourseCreatedEvent(cmd.courseId(), cmd.title(), cmd.capacity()));
-        return cmd.courseId();
-    }
-
-    @CommandHandler
-    public void handle(EnrollStudentCommand cmd, EventAppender eventAppender) {
-        if (enrolledCount >= capacity) {
-            throw new IllegalStateException("Course is full");
-        }
-        eventAppender.append(new StudentEnrolledEvent(courseId, cmd.studentId()));
-    }
-
-    @EventSourcingHandler
-    private void on(CourseCreatedEvent event) {
-        this.courseId = event.courseId();
-        this.title = event.title();
-        this.capacity = event.capacity();
-    }
-
-    @EventSourcingHandler
-    private void on(StudentEnrolledEvent event) {
-        this.enrolledCount++;
-    }
-
-    @EntityCreator
-    protected CourseEntity() {
-    }
-}
+include::example$commands/entities/eventsourcedentity/autodetected/CourseEntity.java[tag=autodetected-entity,indent=0]
 ----
 
 <1> Use `@EventSourcedEntity` (non-Spring) instead of `@EventSourced`.
@@ -308,17 +161,7 @@ Register the entity through the same `CourseEntityConfiguration.configure(EventS
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-
-public class CourseEntityConfiguration {
-
-    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
-        return configurer.registerEntity(
-                EventSourcedEntityModule.autodetected(String.class, CourseEntity.class) // <1>
-        );
-    }
-}
+include::example$commands/entities/eventsourcedentity/autodetected/CourseEntityConfiguration.java[tag=autodetected-configuration,indent=0]
 ----
 
 <1> The first argument is the identifier type; the second is the entity class.
