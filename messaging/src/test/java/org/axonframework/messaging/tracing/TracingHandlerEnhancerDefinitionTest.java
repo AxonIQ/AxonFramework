@@ -30,6 +30,7 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
+import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandlingMember;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -209,23 +211,48 @@ class TracingHandlerEnhancerDefinitionTest {
     }
 
     @Nested
-    class GenericityAcrossMessageTypes {
+    class MessageTypeSpecificity {
 
         @Test
-        void aSingleWrapperImplementsEveryMemberSubInterfaceSoItSurvivesEveryHardCast() {
-            // given a member that, for example, handles commands -- the wrapper must still implement
-            // CommandHandlingMember, EventHandlingMember and QueryHandlingMember so it routes correctly through
-            // the annotation-based handling components regardless of the message kind
-            StubHandlingMember<Object> member =
-                    new StubHandlingMember<>(CommandMessage.class, method("handle", String.class));
+        void commandWrapperOnlyImplementsCommandHandlingMember() {
+            // given
+            StubHandlingMember<Object> member = new CommandStubHandlingMember<>(method("handle", String.class));
 
             // when
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
 
             // then
             assertThat(wrapped).isInstanceOf(CommandHandlingMember.class)
-                               .isInstanceOf(EventHandlingMember.class)
-                               .isInstanceOf(QueryHandlingMember.class);
+                               .isNotInstanceOf(EventHandlingMember.class)
+                               .isNotInstanceOf(QueryHandlingMember.class);
+        }
+
+        @Test
+        void eventWrapperOnlyImplementsEventHandlingMember() {
+            // given
+            StubHandlingMember<Object> member = new EventStubHandlingMember<>(method("on", String.class));
+
+            // when
+            MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
+
+            // then
+            assertThat(wrapped).isInstanceOf(EventHandlingMember.class)
+                               .isNotInstanceOf(CommandHandlingMember.class)
+                               .isNotInstanceOf(QueryHandlingMember.class);
+        }
+
+        @Test
+        void queryWrapperOnlyImplementsQueryHandlingMember() {
+            // given
+            StubHandlingMember<Object> member = new QueryStubHandlingMember<>(method("handle", String.class));
+
+            // when
+            MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
+
+            // then
+            assertThat(wrapped).isInstanceOf(QueryHandlingMember.class)
+                               .isNotInstanceOf(CommandHandlingMember.class)
+                               .isNotInstanceOf(EventHandlingMember.class);
         }
     }
 
@@ -297,7 +324,7 @@ class TracingHandlerEnhancerDefinitionTest {
      * attribute (mimicking an {@code @EventSourcingHandler}-annotated method), and returns an empty stream from
      * {@code handle}.
      */
-    private static final class StubHandlingMember<T> implements MessageHandlingMember<T> {
+    private static class StubHandlingMember<T> implements MessageHandlingMember<T> {
 
         private final @Nullable Class<? extends Message> handledType;
         private final @Nullable Method method;
@@ -349,11 +376,68 @@ class TracingHandlerEnhancerDefinitionTest {
         @Override
         @SuppressWarnings("unchecked")
         public <HT> Optional<HT> unwrap(Class<HT> handlerType) {
+            if (handlerType.isInstance(this)) {
+                return Optional.of((HT) this);
+            }
             if (handlerType.isAssignableFrom(Executable.class) || handlerType.equals(Executable.class)) {
                 onUnwrapExecutable.run();
                 return method == null ? Optional.empty() : (Optional<HT>) Optional.of(method);
             }
             return Optional.empty();
+        }
+    }
+
+    private static final class CommandStubHandlingMember<T> extends StubHandlingMember<T>
+            implements CommandHandlingMember<T> {
+
+        private CommandStubHandlingMember(Method method) {
+            super(CommandMessage.class, method);
+        }
+
+        @Override
+        public String commandName() {
+            return "";
+        }
+
+        @Override
+        public String routingKey() {
+            return "";
+        }
+
+        @Override
+        public boolean isFactoryHandler() {
+            return false;
+        }
+    }
+
+    private static final class EventStubHandlingMember<T> extends StubHandlingMember<T>
+            implements EventHandlingMember<T> {
+
+        private EventStubHandlingMember(Method method) {
+            super(EventMessage.class, method);
+        }
+
+        @Override
+        public String eventName() {
+            return "";
+        }
+    }
+
+    private static final class QueryStubHandlingMember<T> extends StubHandlingMember<T>
+            implements QueryHandlingMember<T> {
+
+        private QueryStubHandlingMember(Method method) {
+            super(QueryMessage.class, method);
+        }
+
+        @Override
+        public String queryName() {
+            return "";
+        }
+
+        @Override
+        public Type resultType() {
+            return Object.class;
         }
     }
 }

@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.tracing;
 
+import org.axonframework.common.Priority;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
@@ -59,6 +60,7 @@ import java.util.stream.Collectors;
  * @since 5.3.0
  */
 @Internal
+@Priority(Priority.LAST)
 public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
 
     /**
@@ -83,6 +85,15 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
         }
         String signature = toMethodSignature(executable.get());
         boolean eventSourcingHandler = original.attribute(EVENT_SOURCING_HANDLER_ATTRIBUTE).isPresent();
+        if (original.unwrap(CommandHandlingMember.class).isPresent()) {
+            return new TracingCommandHandlingMember<>(original, signature, eventSourcingHandler);
+        }
+        if (original.unwrap(EventHandlingMember.class).isPresent()) {
+            return new TracingEventHandlingMember<>(original, signature, eventSourcingHandler);
+        }
+        if (original.unwrap(QueryHandlingMember.class).isPresent()) {
+            return new TracingQueryHandlingMember<>(original, signature, eventSourcingHandler);
+        }
         return new TracingHandlerMember<>(original, signature, eventSourcingHandler);
     }
 
@@ -99,15 +110,11 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
     }
 
     /**
-     * Single message-type-agnostic wrapper. Implements every member sub-interface
-     * ({@link CommandHandlingMember}, {@link EventHandlingMember}, {@link QueryHandlingMember}) so it survives the
-     * hard casts the annotation-based handling components perform; sub-interface accessors delegate to the wrapped
-     * member. The annotation pipeline routes each wrapper to the right component via
-     * {@code MessageHandlingMember#canHandleMessageType(Class)} (which {@link WrappedMessageHandlingMember} forwards
-     * to the original), so a wrapper around an event handler is never streamed into the command pipeline.
+     * Message-type-agnostic tracing behavior shared by the specialized command, event, and query wrappers. Each
+     * specialized wrapper implements only its matching member interface, preserving the handler category used by
+     * annotation-based components and entity metamodels.
      */
-    private static final class TracingHandlerMember<T> extends WrappedMessageHandlingMember<T>
-            implements CommandHandlingMember<T>, EventHandlingMember<T>, QueryHandlingMember<T> {
+    private static class TracingHandlerMember<T> extends WrappedMessageHandlingMember<T> {
 
         private final MessageHandlingMember<T> delegate;
         private final String signature;
@@ -164,46 +171,68 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
             }
         }
 
+        protected <H> Optional<H> delegateAs(Class<H> handlerType) {
+            return delegate.unwrap(handlerType);
+        }
+    }
+
+    private static final class TracingCommandHandlingMember<T> extends TracingHandlerMember<T>
+            implements CommandHandlingMember<T> {
+
+        private TracingCommandHandlingMember(MessageHandlingMember<T> delegate,
+                                             String signature,
+                                             boolean eventSourcingHandler) {
+            super(delegate, signature, eventSourcingHandler);
+        }
+
         @Override
         public String commandName() {
-            return delegate.unwrap(CommandHandlingMember.class)
-                           .map(CommandHandlingMember::commandName)
-                           .orElse("");
+            return delegateAs(CommandHandlingMember.class).map(CommandHandlingMember::commandName).orElse("");
         }
 
         @Override
         public String routingKey() {
-            return delegate.unwrap(CommandHandlingMember.class)
-                           .map(CommandHandlingMember::routingKey)
-                           .orElse("");
+            return delegateAs(CommandHandlingMember.class).map(CommandHandlingMember::routingKey).orElse("");
         }
 
         @Override
         public boolean isFactoryHandler() {
-            return delegate.unwrap(CommandHandlingMember.class)
-                           .map(CommandHandlingMember::isFactoryHandler)
-                           .orElse(false);
+            return delegateAs(CommandHandlingMember.class).map(CommandHandlingMember::isFactoryHandler).orElse(false);
+        }
+    }
+
+    private static final class TracingEventHandlingMember<T> extends TracingHandlerMember<T>
+            implements EventHandlingMember<T> {
+
+        private TracingEventHandlingMember(MessageHandlingMember<T> delegate,
+                                           String signature,
+                                           boolean eventSourcingHandler) {
+            super(delegate, signature, eventSourcingHandler);
         }
 
         @Override
         public String eventName() {
-            return delegate.unwrap(EventHandlingMember.class)
-                           .map(EventHandlingMember::eventName)
-                           .orElse("");
+            return delegateAs(EventHandlingMember.class).map(EventHandlingMember::eventName).orElse("");
+        }
+    }
+
+    private static final class TracingQueryHandlingMember<T> extends TracingHandlerMember<T>
+            implements QueryHandlingMember<T> {
+
+        private TracingQueryHandlingMember(MessageHandlingMember<T> delegate,
+                                           String signature,
+                                           boolean eventSourcingHandler) {
+            super(delegate, signature, eventSourcingHandler);
         }
 
         @Override
         public String queryName() {
-            return delegate.unwrap(QueryHandlingMember.class)
-                           .map(QueryHandlingMember::queryName)
-                           .orElse("");
+            return delegateAs(QueryHandlingMember.class).map(QueryHandlingMember::queryName).orElse("");
         }
 
         @Override
         public Type resultType() {
-            return delegate.unwrap(QueryHandlingMember.class)
-                           .map(QueryHandlingMember::resultType)
-                           .orElse(Object.class);
+            return delegateAs(QueryHandlingMember.class).map(QueryHandlingMember::resultType).orElse(Object.class);
         }
     }
 }
