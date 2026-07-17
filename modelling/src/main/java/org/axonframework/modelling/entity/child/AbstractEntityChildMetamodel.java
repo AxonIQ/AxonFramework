@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.entity.child;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.core.MessageStream;
@@ -53,6 +54,7 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * @author Steven van Beelen
  * @since 5.0.0
  */
+@Internal
 public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildMetamodel<C, P> {
 
     protected final EntityMetamodel<C> metamodel;
