@@ -18,7 +18,7 @@ package org.axonframework.modelling.entity.child;
 
 import org.axonframework.modelling.entity.EntityMetamodel;
 
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -37,6 +37,8 @@ import java.util.Objects;
  * @since 5.0.0
  */
 public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel<C, P> {
+
+    private static final Object SINGLE_KEY = new Object();
 
     private final ChildEntityFieldDefinition<P, C> childEntityFieldDefinition;
 
@@ -57,24 +59,19 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
     }
 
     @Override
-    protected List<C> getChildEntities(P entity) {
-        C childEntity = childEntityFieldDefinition
-                .getChildValue(entity);
-        if (childEntity != null) {
-            return List.of(childEntity);
-        }
-        return List.of();
+    protected Map<Object, C> getChildEntities(P parent) {
+        C childEntity = childEntityFieldDefinition.getChildValue(parent);
+        return childEntity != null ? Map.of(SINGLE_KEY, childEntity) : Map.of();
     }
 
     @Override
-    protected P applyEvolvedChildEntities(P entity, List<C> evolvedChildEntities) {
+    protected P applyEvolvedChildEntities(P entity, Map<Object, C> evolvedChildEntities) {
         if (evolvedChildEntities.isEmpty()) {
             return childEntityFieldDefinition.evolveParentBasedOnChildInput(entity, null);
         }
-        if (evolvedChildEntities.size() > 1) {
-            throw new IllegalStateException("The SingleEntityChildModel field should only return a single child entity.");
-        }
-        return childEntityFieldDefinition.evolveParentBasedOnChildInput(entity, evolvedChildEntities.getFirst());
+        return childEntityFieldDefinition.evolveParentBasedOnChildInput(
+                entity, evolvedChildEntities.values().iterator().next()
+        );
     }
 
     @Override

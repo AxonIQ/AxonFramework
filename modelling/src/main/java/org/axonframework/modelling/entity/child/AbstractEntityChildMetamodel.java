@@ -26,11 +26,11 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.entity.ChildEntityNotFoundException;
 import org.axonframework.modelling.entity.EntityMetamodel;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 
@@ -75,7 +75,7 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
         if (!supportedCommands().contains(message.type().qualifiedName())) {
             return false;
         }
-        List<C> childEntities = getChildEntities(parentEntity);
+        List<C> childEntities = new ArrayList<>(getChildEntities(parentEntity).values());
         if (childEntities.isEmpty()) {
             return false;
         }
@@ -86,7 +86,7 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
     public MessageStream.Single<CommandResultMessage> handle(CommandMessage message,
                                                              P parentEntity,
                                                              ProcessingContext context) {
-        List<C> childEntities = getChildEntities(parentEntity);
+        List<C> childEntities = new ArrayList<>(getChildEntities(parentEntity).values());
         C targetChildEntity = commandTargetResolver.getTargetChildEntity(childEntities, message, context);
         if (targetChildEntity == null) {
             return MessageStream.failed(new ChildEntityNotFoundException(message, parentEntity));
@@ -94,29 +94,52 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
         return metamodel.handleInstance(message, targetChildEntity, context);
     }
 
-    protected abstract List<C> getChildEntities(P entity);
-
     @Override
     public P evolve(P entity, EventMessage event, ProcessingContext context) {
-        final AtomicBoolean evolvedChildEntity = new AtomicBoolean(false);
-        var evolvedEntities = getChildEntities(entity)
-                .stream()
-                .map(child -> {
-                    if (eventTargetMatcher.matches(child, event, context)) {
-                        evolvedChildEntity.set(true);
-                        return metamodel.evolve(child, event, context);
-                    }
-                    return child;
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-        if (!evolvedChildEntity.get()) {
+        Map<Object, C> children = getChildEntities(entity);
+        boolean evolvedAnyChild = false;
+        Map<Object, C> evolvedChildren = new LinkedHashMap<>();
+        for (Map.Entry<Object, C> childEntry : children.entrySet()) {
+            C child = childEntry.getValue();
+            if (eventTargetMatcher.matches(child, event, context)) {
+                evolvedAnyChild = true;
+                C evolvedChild = metamodel.evolve(child, event, context);
+                if (evolvedChild != null) {
+                    evolvedChildren.put(childEntry.getKey(), evolvedChild);
+                }
+            } else {
+                evolvedChildren.put(childEntry.getKey(), child);
+            }
+        }
+        if (!evolvedAnyChild) {
             return entity;
         }
-        return applyEvolvedChildEntities(entity, evolvedEntities);
+        return applyEvolvedChildEntities(entity, evolvedChildren);
     }
 
-    protected abstract P applyEvolvedChildEntities(P entity, List<C> evolvedChildEntities);
+    /**
+     * Resolves the child entities of the given {@code parent}, keyed by an implementation-specific identity.
+     * <p>
+     * The returned {@link Map} must preserve iteration order (e.g. {@link LinkedHashMap}), as that order determines the
+     * order in which candidates are offered to the {@link CommandTargetResolver} and {@link EventTargetMatcher}.
+     *
+     * @param parent the parent entity to resolve the child entities from
+     * @return the child entities of the given {@code parent}, keyed by an implementation-specific identity
+     */
+    protected abstract Map<Object, C> getChildEntities(P parent);
+
+    /**
+     * Applies the evolved child entities, keyed by the same implementation-specific identity returned by
+     * {@link #getChildEntities(Object)}, to the given {@code entity}. A key that was present in
+     * {@link #getChildEntities(Object)} but is absent from {@code evolvedChildEntities} indicates that the
+     * corresponding child entity was evolved to {@code null} and should be removed.
+     *
+     * @param entity               the parent entity to apply the evolved child entities to
+     * @param evolvedChildEntities the evolved child entities, keyed by the same identity as
+     *                             {@link #getChildEntities(Object)}
+     * @return the evolved parent entity
+     */
+    protected abstract P applyEvolvedChildEntities(P entity, Map<Object, C> evolvedChildEntities);
 
     @Override
     public Class<C> entityType() {

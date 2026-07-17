@@ -18,7 +18,10 @@ package org.axonframework.modelling.entity.child;
 
 import org.axonframework.modelling.entity.EntityMetamodel;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static java.util.Objects.requireNonNull;
 
@@ -49,18 +52,23 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
     }
 
     @Override
-    protected List<C> getChildEntities(P entity) {
-        List<C> childEntities = childEntityFieldDefinition
-                .getChildValue(entity);
+    protected Map<Object, C> getChildEntities(P parent) {
+        List<C> childEntities = childEntityFieldDefinition.getChildValue(parent);
         if (childEntities == null) {
-            return List.of();
+            return Map.of();
         }
-        return childEntities;
+        Map<Object, C> indexedChildEntities = new LinkedHashMap<>();
+        for (int i = 0; i < childEntities.size(); i++) {
+            indexedChildEntities.put(i, childEntities.get(i));
+        }
+        return indexedChildEntities;
     }
 
     @Override
-    protected P applyEvolvedChildEntities(P entity, List<C> evolvedChildEntities) {
-        return childEntityFieldDefinition.evolveParentBasedOnChildInput(entity, evolvedChildEntities);
+    protected P applyEvolvedChildEntities(P entity, Map<Object, C> evolvedChildEntities) {
+        return childEntityFieldDefinition.evolveParentBasedOnChildInput(
+                entity, new ArrayList<>(evolvedChildEntities.values())
+        );
     }
 
     @Override
