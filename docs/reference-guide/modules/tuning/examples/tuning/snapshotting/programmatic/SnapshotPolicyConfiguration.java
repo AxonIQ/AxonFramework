@@ -47,7 +47,7 @@ class SnapshotPolicyConfiguration {
                                                 Tag.of("courseId", id.value())
                                         ))
         // tag::declarative-snapshot-policy[]
-                                        .snapshotPolicy(c -> snapshotPolicy)
+                                        .snapshotPolicy(snapshotPolicy)
                                         .build();
         // end::declarative-snapshot-policy[]
         return courseModule;

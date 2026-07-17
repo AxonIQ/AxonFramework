@@ -42,7 +42,7 @@ class TriggerToPolicyConfiguration {
                                                 Tag.of("accountId", id)
                                         ))
                 // tag::snapshot-trigger-to-policy[]
-                                        .snapshotPolicy(c -> snapshotPolicy)
+                                        .snapshotPolicy(snapshotPolicy)
                                         .build();
         // end::snapshot-trigger-to-policy[]
         return accountModule;

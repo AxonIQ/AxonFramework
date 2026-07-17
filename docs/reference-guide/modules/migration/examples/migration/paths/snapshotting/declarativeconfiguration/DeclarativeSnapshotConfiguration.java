@@ -44,7 +44,7 @@ class DeclarativeSnapshotConfiguration {
                                                 Tag.of("accountId", id)
                                         ))
                 // tag::snapshot-declarative-configuration[]
-                                        .snapshotPolicy(c -> snapshotPolicy)
+                                        .snapshotPolicy(snapshotPolicy)
                                         .build();
 
         EventSourcingConfigurer.create()

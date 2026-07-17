@@ -93,13 +93,14 @@ class AccountConfiguration {
 
     @Bean
     EventSourcedEntityModule<String, Account> accountModule() {
+        SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(250)
+                .or(SnapshotPolicy.whenEventMatches(
+                        msg -> msg.type().qualifiedName().equals(
+                                new QualifiedName(AccountClosed.class)
+                        )
+                ));
         return EventSourcedEntityModule.declarative(String.class, Account.class)
-                .snapshotPolicy(c -> SnapshotPolicy.afterEvents(250)
-                        .or(SnapshotPolicy.whenEventMatches(
-                                msg -> msg.type().qualifiedName().equals(
-                                        new QualifiedName(AccountClosed.class)
-                                )
-                        )))
+                .snapshotPolicy(snapshotPolicy)
                 .build();
     }
 
