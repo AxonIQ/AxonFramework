@@ -20,6 +20,10 @@ ifdef::data-protection[]
 include::data-protection:partial$nav.adoc[]
 endif::[]
 
+ifdef::advanced-framework[]
+include::multi-tenancy:partial$nav.adoc[]
+endif::[]
+
 include::tuning:partial$nav.adoc[]
 
 include::monitoring:partial$nav.adoc[]
