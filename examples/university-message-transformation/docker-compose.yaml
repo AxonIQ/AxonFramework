@@ -1,0 +1,20 @@
+services:
+  axon-server:
+    image: axoniq/axonserver:2025.2.7
+    hostname: axon-server
+    ports:
+      - "8024:8024"
+      - "8124:8124"
+    environment:
+      AXONIQ_AXONSERVER_HOSTNAME: axon-server
+      AXONIQ_AXONSERVER_STANDALONE_DCB: true
+      AXONIQ_AXONSERVER_DEVMODE_ENABLED: true
+    volumes:
+      - data:/axonserver/data
+      - events:/axonserver/events
+
+volumes:
+  data:
+    driver: local
+  events:
+    driver: local

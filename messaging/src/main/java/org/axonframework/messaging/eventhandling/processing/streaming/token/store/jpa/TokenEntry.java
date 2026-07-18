@@ -24,14 +24,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Lob;
-import org.axonframework.common.ClassUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.LegacyTokenTypes;
 import org.axonframework.conversion.Converter;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.TemporalAmount;
 import java.util.Objects;
@@ -118,9 +117,10 @@ public class TokenEntry {
      * @return The deserialized token stored in this entry.
      */
     public TrackingToken getToken(Converter converter) {
-        return (token == null || tokenType == null)
-                ? null
-                : converter.convert(this.token, ClassUtils.loadClass(tokenType));
+        if (token == null || tokenType == null) {
+            return null;
+        }
+        return LegacyTokenTypes.deserialize(converter, token, tokenType);
     }
 
     /**

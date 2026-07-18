@@ -58,6 +58,6 @@ public class ClassBasedMessageTypeResolver implements MessageTypeResolver {
     @Override
     public Optional<MessageType> resolve(Class<?> payloadType) {
         Objects.requireNonNull(payloadType, "payloadType may not be null");
-        return Optional.of(new MessageType(payloadType.getName(), version));
+        return Optional.of(new MessageType(payloadType, version));
     }
 }

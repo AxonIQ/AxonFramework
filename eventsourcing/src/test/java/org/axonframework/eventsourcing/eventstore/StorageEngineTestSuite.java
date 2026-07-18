@@ -250,8 +250,7 @@ public abstract class StorageEngineTestSuite<ESE extends EventStorageEngine> {
 
         // then ...
         await("Await commit").pollDelay(Duration.ofMillis(50))
-                             .atMost(Duration.ofSeconds(5))
-                             .untilAsserted(result::isDone);
+                             .until(result::isDone);
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AppendEventsTransactionRejectedException.class, result.exceptionNow());
     }

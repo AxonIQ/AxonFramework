@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.configuration;
 
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.lifecycle.LifecycleHandlerInvocationException;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
@@ -35,16 +36,19 @@ import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.configuration.EntityMetamodelConfigurationBuilder;
 import org.axonframework.modelling.entity.EntityCommandHandlingComponent;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.repository.Repository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -88,6 +92,11 @@ class SimpleEventSourcedEntityModuleTest {
                                          .build();
         testSnapshotPolicy = SnapshotPolicy.afterEvents(5);
 
+        ComponentBuilder<SnapshotPolicy> snapshotPolicyBuilder = c -> {
+            constructedSnapshotPolicy.set(true);
+            return testSnapshotPolicy;
+        };
+
         testSubject = EventSourcedEntityModule.declarative(CourseId.class, Course.class)
                                               .messagingModel((c, b) -> {
                                                   constructedEntityModel.set(true);
@@ -105,10 +114,7 @@ class SimpleEventSourcedEntityModuleTest {
                                                   constructedEntityIdResolver.set(true);
                                                   return testEntityIdResolver;
                                               })
-                                              .snapshotPolicy(c -> {
-                                                  constructedSnapshotPolicy.set(true);
-                                                  return testSnapshotPolicy;
-                                              })
+                                              .snapshotPolicy(snapshotPolicyBuilder)
                                               .build();
     }
 
@@ -129,7 +135,7 @@ class SimpleEventSourcedEntityModuleTest {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class,
                      () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
-                                                   .messagingModel(null));
+                                                   .messagingModel((EntityMetamodelConfigurationBuilder<Course>) null));
     }
 
     @Test
@@ -138,7 +144,7 @@ class SimpleEventSourcedEntityModuleTest {
         assertThrows(NullPointerException.class,
                      () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
                                                    .messagingModel((c, b) -> testEntityModel)
-                                                   .entityFactory(null));
+                                                   .entityFactory((ComponentBuilder<EventSourcedEntityFactory<CourseId, Course>>) null));
     }
 
     @Test
@@ -148,7 +154,7 @@ class SimpleEventSourcedEntityModuleTest {
                      () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
                                                    .messagingModel((c, m) -> testEntityModel)
                                                    .entityFactory(c -> testEntityFactory)
-                                                   .criteriaResolver(null));
+                                                   .criteriaResolver((ComponentBuilder<CriteriaResolver<CourseId>>) null));
     }
 
     @Test
@@ -159,7 +165,7 @@ class SimpleEventSourcedEntityModuleTest {
                                                    .messagingModel((c, b) -> testEntityModel)
                                                    .entityFactory(c -> testEntityFactory)
                                                    .criteriaResolver(c -> testCriteriaResolver)
-                                                   .entityIdResolver(null));
+                                                   .entityIdResolver((ComponentBuilder<EntityIdResolver<CourseId>>) null));
     }
 
     @Test
@@ -169,7 +175,7 @@ class SimpleEventSourcedEntityModuleTest {
                                           .messagingModel((c, b) -> testEntityModel)
                                           .entityFactory(c -> testEntityFactory)
                                           .criteriaResolver(c -> testCriteriaResolver)
-                                          .snapshotPolicy(null)
+                                          .snapshotPolicy((ComponentBuilder<SnapshotPolicy>) null)
         );
     }
 
@@ -239,6 +245,84 @@ class SimpleEventSourcedEntityModuleTest {
         assertInstanceOf(EntityCommandHandlingComponent.class, component);
         assertTrue(component.supportedCommands().contains(new QualifiedName("instance")));
         assertTrue(component.supportedCommands().contains(new QualifiedName("creational")));
+    }
+
+    @Nested
+    class ConvenienceOverloads {
+
+        @Test
+        void acceptsDirectComponentInstancesWithoutConfigurationLambdas() {
+            // given / when
+            EventSourcedEntityModule<CourseId, Course> module =
+                    EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                            .messagingModel(builder -> testEntityModel)
+                                            .entityFactory(testEntityFactory)
+                                            .criteriaResolver(testCriteriaResolver)
+                                            .entityIdResolver(testEntityIdResolver)
+                                            .snapshotPolicy(testSnapshotPolicy)
+                                            .build();
+
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                    .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> mock(SnapshotStore.class)))
+                    .componentRegistry(cr -> cr.registerModule(module))
+                    .start();
+
+            // then
+            Repository<CourseId, Course> result = configuration.getComponent(StateManager.class)
+                                                               .repository(Course.class, CourseId.class);
+            assertThat(result).isInstanceOf(EventSourcingRepository.class);
+            assertThat(module.entityName()).isEqualTo(Course.class.getName() + "#" + CourseId.class.getName());
+        }
+
+        @Test
+        void convenienceMessagingModelThrowsNullPointerExceptionForNullFactory() {
+            //noinspection DataFlowIssue,rawtypes,unchecked
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(
+                                                               (java.util.function.Function<org.axonframework.modelling.entity.EntityMetamodelBuilder<Course>, EntityMetamodel<Course>>) null));
+        }
+
+        @Test
+        void convenienceEntityFactoryThrowsNullPointerExceptionForNullFactory() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory((EventSourcedEntityFactory<CourseId, Course>) null));
+        }
+
+        @Test
+        void convenienceCriteriaResolverThrowsNullPointerExceptionForNullResolver() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory(testEntityFactory)
+                                                       .criteriaResolver((CriteriaResolver<CourseId>) null));
+        }
+
+        @Test
+        void convenienceEntityIdResolverThrowsNullPointerExceptionForNullResolver() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory(testEntityFactory)
+                                                       .criteriaResolver(testCriteriaResolver)
+                                                       .entityIdResolver((EntityIdResolver<CourseId>) null));
+        }
+
+        @Test
+        void convenienceSnapshotPolicyThrowsNullPointerExceptionForNullPolicy() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory(testEntityFactory)
+                                                       .criteriaResolver(testCriteriaResolver)
+                                                       .snapshotPolicy((SnapshotPolicy) null));
+        }
     }
 
     record CourseId() {

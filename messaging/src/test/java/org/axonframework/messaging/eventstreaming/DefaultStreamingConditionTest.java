@@ -60,15 +60,38 @@ class DefaultStreamingConditionTest {
     }
 
     @Test
-    void withCriteriaCombinesGivenWithExistingCriteria() {
-        EventCriteria testCriteria = EventCriteria.havingTags(new org.axonframework.messaging.eventstreaming.Tag("other-key", "other-value"))
+    void withCriteriaReplacesTheExistingCriteriaPreservingPosition() {
+        // given a replacement criteria distinct from the existing one
+        EventCriteria replacement = EventCriteria.havingTags("other-key", "other-value");
+
+        // when the criteria is replaced
+        StreamingCondition result = testSubject.withCriteria(replacement);
+
+        // then the position is preserved and only the replacement criteria remains (the original is dropped)
+        assertEquals(TEST_POSITION, result.position());
+        assertEquals(Set.of(replacement), result.criteria().flatten());
+    }
+
+    @Test
+    void withCriteriaThrowsExceptionForNullCriteria() {
+        // when replacing with null criteria, then a NullPointerException is raised
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class, () -> testSubject.withCriteria(null));
+    }
+
+    @Test
+    void orCombinesGivenWithExistingCriteria() {
+        // given a criteria targeting a different tag and a type
+        EventCriteria testCriteria = EventCriteria.havingTags(new Tag("other-key", "other-value"))
                                                   .andBeingOneOfTypes("test-type");
 
+        // when combining it with the existing criteria
         StreamingCondition result = testSubject.or(testCriteria);
 
+        // then the position is preserved and events matching either criteria are accepted
         assertEquals(TEST_POSITION, result.position());
-        assertTrue(result.matches(new QualifiedName("test-type"), Set.of(new org.axonframework.messaging.eventstreaming.Tag("other-key", "other-value"))));
-        assertFalse(result.matches(new QualifiedName("random-type"), Set.of(new org.axonframework.messaging.eventstreaming.Tag("other-key", "other-value"))));
+        assertTrue(result.matches(new QualifiedName("test-type"), Set.of(new Tag("other-key", "other-value"))));
+        assertFalse(result.matches(new QualifiedName("random-type"), Set.of(new Tag("other-key", "other-value"))));
         assertTrue(result.matches(new QualifiedName("random-type"), Set.of(new Tag("key", "value"))));
     }
 }

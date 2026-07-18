@@ -161,12 +161,16 @@ public class UnitOfWork implements ProcessingLifecycle {
         CompletableFuture<R> result = new CompletableFuture<>();
         onInvocation(processingContext -> safe(() -> action.apply(processingContext))
                 .whenComplete(FutureUtils.alsoComplete(result)));
-        return execute().thenCombine(result, (executeResult, invocationResult) -> invocationResult);
+        return execute().thenCompose(ignored -> result);
     }
 
     /**
-     * Wraps a given {@code action} in a try-catch block to ensure exceptions are exclusively returned as a failed
-     * {@link CompletableFuture}.
+     * Wraps a given {@code action} so that any {@link Throwable} it throws is returned as a failed
+     * {@link CompletableFuture} instead of propagating.
+     * <p>
+     * {@link Throwable} is caught (not only {@link Exception}) so that an {@link Error} also fails the future rather
+     * than escaping and leaving the Unit of Work hung; such {@code Error}s are logged as they signal severe,
+     * easily-missed problems.
      *
      * @param action A {@link Callable} to execute within the try-catch block.
      * @return A {@link CompletableFuture} wrapping both the successful and exceptional result of the given
@@ -180,8 +184,13 @@ public class UnitOfWork implements ProcessingLifecycle {
                         "The action returned a null CompletableFuture."));
             }
             return result;
-        } catch (Exception e) {
-            return CompletableFuture.failedFuture(e);
+        } catch (Throwable t) {
+            if (t instanceof Error) {
+                logger.error("An Error escaped a Unit of Work action and was captured as a failed result. "
+                                     + "This typically indicates a severe problem such as a classpath or "
+                                     + "dependency mismatch.", t);
+            }
+            return CompletableFuture.failedFuture(t);
         }
     }
 

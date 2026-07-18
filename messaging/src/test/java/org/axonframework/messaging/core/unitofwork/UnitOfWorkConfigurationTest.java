@@ -65,4 +65,15 @@ class UnitOfWorkConfigurationTest {
             .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    @Test
+    void forcedSameThreadInvocationShouldRetainRegisteredEnhancers() {
+        Consumer<ProcessingLifecycle> consumer = pc -> {};
+        UnitOfWorkConfiguration config = defaultConfig.registerProcessingLifecycleEnhancer(consumer);
+
+        UnitOfWorkConfiguration newConfig = config.forcedSameThreadInvocation();
+
+        assertThat(newConfig.allowAsyncProcessing()).isFalse();
+        assertThat(newConfig.processingLifecycleEnhancers()).containsExactly(consumer);
+    }
+
 }

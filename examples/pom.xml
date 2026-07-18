@@ -33,6 +33,12 @@
 
     <properties>
         <lombok.version>1.18.46</lombok.version>
+        <!--
+        The AxonIQ Platform client ships on its own release line (io.axoniq.platform), independent of
+        the framework version and not covered by the axoniq-framework BOM. Its version therefore has
+        to be stated here explicitly, managed centrally so example modules declare it version-free.
+        -->
+        <axoniq-platform-framework-client.version>5.1.1</axoniq-platform-framework-client.version>
     </properties>
 
     <dependencyManagement>
@@ -42,9 +48,14 @@
             <dependency>
                 <groupId>io.axoniq.framework</groupId>
                 <artifactId>axoniq-framework-bom</artifactId>
-                <version>5.1.1</version>
+                <version>${revision}</version>
                 <scope>import</scope>
                 <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>io.axoniq.platform</groupId>
+                <artifactId>axoniq-platform-framework-client</artifactId>
+                <version>${axoniq-platform-framework-client.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -55,6 +66,7 @@
         <module>university-java-springboot-3</module>
         <module>university-java-springboot-4</module>
         <module>university-demo-kotlin</module>
+        <module>university-message-transformation</module>
     </modules>
 
     <build>

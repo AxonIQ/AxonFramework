@@ -52,7 +52,7 @@ public interface ComponentRegistry extends DescribableComponent {
      *                                    with the same type is already defined.
      */
     default <C> ComponentRegistry registerComponent(Class<C> type,
-                                                    ComponentBuilder<C> builder) {
+                                                    ComponentBuilder<? extends C> builder) {
         return registerComponent(ComponentDefinition.ofType(type)
                                                     .withBuilder(builder));
     }
@@ -234,7 +234,7 @@ public interface ComponentRegistry extends DescribableComponent {
      * @return The current instance of the {@code Configurer} for a fluent API.
      */
     default <C> ComponentRegistry registerIfNotPresent(Class<C> type,
-                                                       ComponentBuilder<C> builder) {
+                                                       ComponentBuilder<? extends C> builder) {
         return registerIfNotPresent(type, null, builder);
     }
 
@@ -258,7 +258,7 @@ public interface ComponentRegistry extends DescribableComponent {
      * @return The current instance of the {@code Configurer} for a fluent API.
      */
     default <C> ComponentRegistry registerIfNotPresent(Class<C> type,
-                                                       ComponentBuilder<C> builder,
+                                                       ComponentBuilder<? extends C> builder,
                                                        SearchScope searchScope) {
         return registerIfNotPresent(type, null, builder, searchScope);
     }
@@ -280,7 +280,7 @@ public interface ComponentRegistry extends DescribableComponent {
      */
     default <C> ComponentRegistry registerIfNotPresent(Class<C> type,
                                                        @Nullable String name,
-                                                       ComponentBuilder<C> builder) {
+                                                       ComponentBuilder<? extends C> builder) {
         return registerIfNotPresent(ComponentDefinition.ofTypeAndName(type, name).withBuilder(builder));
     }
 
@@ -308,7 +308,7 @@ public interface ComponentRegistry extends DescribableComponent {
      */
     default <C> ComponentRegistry registerIfNotPresent(Class<C> type,
                                                        @Nullable String name,
-                                                       ComponentBuilder<C> builder,
+                                                       ComponentBuilder<? extends C> builder,
                                                        SearchScope searchScope) {
         return registerIfNotPresent(ComponentDefinition.ofTypeAndName(type, name).withBuilder(builder), searchScope);
     }

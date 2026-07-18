@@ -23,6 +23,9 @@ axon.iws
 # documentation's local bulid
 docs/_playbook/build
 
+# Python bytecode cache (docs/_samples/bin/compare-snippets.py)
+__pycache__/
+
 # Claude Code
 .claude/settings.local.json
 .ai/temp

@@ -175,7 +175,7 @@ class SimpleEventStoreTest {
             GlobalIndexConsistencyMarker markerAfterCommit = new GlobalIndexConsistencyMarker(42);
 
             UnitOfWork unitOfWork = aUnitOfWork();
-            when(mockStorageEngine.source(any())).thenReturn(messageStreamOf(10));
+            when(mockStorageEngine.source(any(), any())).thenReturn(messageStreamOf(10));
             when(mockStorageEngine.appendEvents(any(), any(ProcessingContext.class), anyList())).thenReturn(completedFuture(mockAppendTransaction));
             when(mockAppendTransaction.commit()).thenReturn(completedFuture(null));
             when(mockAppendTransaction.afterCommit(any())).thenReturn(completedFuture(markerAfterCommit));
@@ -212,9 +212,9 @@ class SimpleEventStoreTest {
             GlobalIndexConsistencyMarker markerAfterCommit = new GlobalIndexConsistencyMarker(101);
 
             UnitOfWork unitOfWork = aUnitOfWork();
-            when(mockStorageEngine.source(any())).thenReturn(messageStreamOf(size1))
-                                                 .thenReturn(messageStreamOf(size2))
-                                                 .thenReturn(messageStreamOf(size3));
+            when(mockStorageEngine.source(any(), any())).thenReturn(messageStreamOf(size1))
+                                                        .thenReturn(messageStreamOf(size2))
+                                                        .thenReturn(messageStreamOf(size3));
             when(mockStorageEngine.appendEvents(any(), any(ProcessingContext.class), anyList())).thenReturn(completedFuture(mockAppendTransaction));
             when(mockAppendTransaction.commit()).thenReturn(completedFuture(null));
             when(mockAppendTransaction.afterCommit(any())).thenReturn(completedFuture(markerAfterCommit));

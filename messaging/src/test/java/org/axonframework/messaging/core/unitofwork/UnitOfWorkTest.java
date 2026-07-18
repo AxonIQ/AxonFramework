@@ -28,8 +28,11 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -112,6 +115,41 @@ class UnitOfWorkTest extends ProcessingLifecycleTest<UnitOfWork> {
 
         assertTrue(actual.isCompletedExceptionally());
         assertInstanceOf(MockException.class, actual.exceptionNow());
+    }
+
+    @Test
+    void errorsThrownInInvocationAreReturnedInFutureInsteadOfHangingTheUnitOfWork() {
+        UnitOfWork testSubject = createTestSubject();
+        CompletableFuture<Object> actual = testSubject.executeWithResult(c -> {
+            throw new NoClassDefFoundError("Simulating a missing class on the classpath");
+        });
+
+        // The returned future must complete exceptionally, not hang.
+        assertThat(actual)
+                .as("Unit of Work hung instead of failing when the invocation threw an Error")
+                .isCompletedExceptionally();
+        assertThatThrownBy(actual::join).hasRootCauseInstanceOf(NoClassDefFoundError.class);
+    }
+
+    @Test
+    void executeWithResultFailsFastWhenCommitFailsBeforeInvocationRuns() {
+        UnitOfWork testSubject = createTestSubject();
+        AtomicBoolean invoked = new AtomicBoolean(false);
+
+        // Fail in a phase that runs before the invocation, so the invocation action never runs.
+        testSubject.on(ProcessingLifecycle.DefaultPhases.PRE_INVOCATION,
+                       c -> CompletableFuture.failedFuture(new MockException("pre-invocation failure")));
+        CompletableFuture<Object> actual = testSubject.executeWithResult(c -> {
+            invoked.set(true);
+            return new CompletableFuture<>(); // a 'result' that never completes on its own
+        });
+
+        assertFalse(invoked.get(), "Invocation action must not run after a pre-invocation failure");
+        // A commit failure before the invocation must fail the returned future fast, not hang.
+        assertThat(actual)
+                .as("executeWithResult hung instead of failing fast on commit failure")
+                .isCompletedExceptionally();
+        assertThatThrownBy(actual::join).hasRootCauseInstanceOf(MockException.class);
     }
 
     @Test

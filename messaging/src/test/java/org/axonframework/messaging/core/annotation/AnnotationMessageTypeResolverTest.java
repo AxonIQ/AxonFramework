@@ -19,6 +19,7 @@ package org.axonframework.messaging.core.annotation;
 import org.axonframework.messaging.commandhandling.annotation.Command;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver.AnnotationSpecification;
 import org.axonframework.messaging.eventhandling.annotation.Event;
 import org.axonframework.messaging.queryhandling.annotation.Query;
@@ -77,8 +78,43 @@ class AnnotationMessageTypeResolverTest {
 
         }
 
+        @Test
+        void classAnnotatedWithCommandWithoutNameAndNamespaceDefaultsToQualifiedNameOfClass() {
+            // The class-derived defaults must equal QualifiedName(Class) - also for nested classes - so that
+            // annotation-based and Class-based naming always align.
+            MessageType expectedType =
+                    new MessageType(new QualifiedName(DefaultNamedCommand.class), MessageType.DEFAULT_VERSION);
+
+            Optional<MessageType> result = testSubject.resolve(DefaultNamedCommand.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get()).isEqualTo(expectedType);
+        }
+
+        @Test
+        void classAnnotatedWithCommandWithNamespaceOnlyDefaultsNameToLocalNameOfClass() {
+            MessageType expectedType = new MessageType("context",
+                                                       new QualifiedName(NamespacedDefaultNamedCommand.class).localName(),
+                                                       MessageType.DEFAULT_VERSION);
+
+            Optional<MessageType> result = testSubject.resolve(NamespacedDefaultNamedCommand.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get()).isEqualTo(expectedType);
+        }
+
         @Command(name = "test-command-domain-name", version = "1.33.7", namespace = "context")
         private record TestCommandWithNamespace(String id) {
+
+        }
+
+        @Command
+        private record DefaultNamedCommand(String id) {
+
+        }
+
+        @Command(namespace = "context")
+        private record NamespacedDefaultNamedCommand(String id) {
 
         }
     }

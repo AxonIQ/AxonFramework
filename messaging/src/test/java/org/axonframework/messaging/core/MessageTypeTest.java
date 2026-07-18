@@ -18,12 +18,14 @@ package org.axonframework.messaging.core;
 
 import org.junit.jupiter.api.*;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test class validating the {@link MessageType}.
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  */
 class MessageTypeTest {
 
@@ -96,6 +98,28 @@ class MessageTypeTest {
     }
 
     @Test
+    void throwsIllegalArgumentExceptionForBlankVersion() {
+        assertThrows(IllegalArgumentException.class, () -> new MessageType(QUALIFIED_NAME, "   "));
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForVersionContainingHash() {
+        // the hash is reserved as the separator between a qualified name and version in toString()/fromString()
+        assertThatThrownBy(() -> new MessageType(QUALIFIED_NAME, "1#0"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
+    }
+
+    @Test
+    void throwsIllegalArgumentExceptionForQualifiedNameContainingHash() {
+        // delegates to QualifiedName's own validation, but verified here too since MessageType's
+        // String representation is what actually depends on it being absent
+        assertThatThrownBy(() -> new MessageType(NAME + "#suffix", VERSION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("#");
+    }
+
+    @Test
     void throwsNullPointerExceptionForNullClass() {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class, () -> new MessageType((Class<?>) null));
@@ -120,7 +144,7 @@ class MessageTypeTest {
     }
 
     @Test
-    void toStringDelimitsQualifiedNameAndVersionWithHashtag() {
+    void toStringDelimitsQualifiedNameAndVersionWithHash() {
         String expectedToString = NAME + "#" + VERSION;
 
         MessageType testSubject = new MessageType(QUALIFIED_NAME, VERSION);
@@ -155,5 +179,43 @@ class MessageTypeTest {
     @Test
     void fromStringRejectsMissingVersion() {
         assertThrows(IllegalArgumentException.class, () -> MessageType.fromString(NAME));
+    }
+
+    @Nested
+    class WithNestedClasses {
+
+        @Test
+        void classConstructorUsesPackageAndSimpleNameForNestedClasses() {
+            MessageType testSubject = new MessageType(NestedPayload.class);
+
+            assertEquals(NAMESPACE, testSubject.qualifiedName().namespace());
+            assertEquals("NestedPayload", testSubject.qualifiedName().localName());
+            assertEquals(NAMESPACE + ".NestedPayload", testSubject.name());
+        }
+
+        @Test
+        void classConstructorMatchesAnnotationBasedNamingForNestedClasses() {
+            // Annotation-based message type resolution (e.g. @Command/@Event defaults) derives a message's
+            // QualifiedName from getPackageName() + getSimpleName(), which excludes the enclosing class for
+            // nested classes. Constructing a MessageType from the same class must yield the same QualifiedName,
+            // otherwise the same nested payload class gets two different names within one application.
+            QualifiedName fromClassConstructor = new MessageType(NestedPayload.class).qualifiedName();
+            QualifiedName fromPackageAndSimpleName =
+                    new QualifiedName(NestedPayload.class.getPackageName(), NestedPayload.class.getSimpleName());
+
+            assertEquals(fromPackageAndSimpleName, fromClassConstructor);
+        }
+
+        @Test
+        void classConstructorMatchesAnnotationBasedNamingForTopLevelClasses() {
+            QualifiedName fromClassConstructor = new MessageType(String.class).qualifiedName();
+            QualifiedName fromPackageAndSimpleName =
+                    new QualifiedName(String.class.getPackageName(), String.class.getSimpleName());
+
+            assertEquals(fromPackageAndSimpleName, fromClassConstructor);
+        }
+    }
+
+    private static class NestedPayload {
     }
 }

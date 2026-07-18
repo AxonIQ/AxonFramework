@@ -102,11 +102,13 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
         }
 
         Map<String, Object> namespaceAttributes = namespaceAttributesFor(payloadType);
+        // Single-source the class-derived naming defaults through QualifiedName(Class).
+        QualifiedName defaultName = new QualifiedName(payloadType);
         return Optional.of(new MessageType(
                 ObjectUtils.getNonEmptyOrDefault((String) namespaceAttributes.get(specification.namespaceAttribute()),
-                                                 payloadType.getPackageName()),
+                                                 defaultName.namespace()),
                 ObjectUtils.getNonEmptyOrDefault((String) nameAttributes.get(specification.nameAttribute()),
-                                                 payloadType.getSimpleName()),
+                                                 defaultName.localName()),
                 (String) versionAttributes.get(specification.versionAttribute())
         ));
     }

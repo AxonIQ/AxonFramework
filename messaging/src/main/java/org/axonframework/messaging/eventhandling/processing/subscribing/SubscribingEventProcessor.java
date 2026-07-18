@@ -21,10 +21,10 @@ import org.axonframework.common.FutureUtils;
 import org.axonframework.common.Registration;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.lifecycle.Phase;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
-import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -114,10 +114,9 @@ public class SubscribingEventProcessor implements EventProcessor {
             // This event processor has already been started
             return FutureUtils.emptyCompletedFuture();
         }
-        eventBusRegistration = eventSource.subscribe((events, context) -> {
-            this.process(events.stream().map(it -> (EventMessage) it).toList(), context);
-            return CompletableFuture.completedFuture(null);
-        });
+        eventBusRegistration = eventSource.subscribe(
+                (events, context) -> this.processAsync(events.stream().map(EventMessage.class::cast).toList(), context)
+        );
         return FutureUtils.emptyCompletedFuture();
     }
 
@@ -133,28 +132,65 @@ public class SubscribingEventProcessor implements EventProcessor {
     }
 
     /**
-     * Process the given messages. A Unit of Work must be created for this processing.
+     * Process the given messages, returning a {@link CompletableFuture} that completes when processing is done.
      * <p>
-     * This implementation creates a Batching unit of work for the given batch of {@code eventMessages}.
+     * When a {@code context} is provided, the events are processed within that context. Otherwise, a new
+     * {@link UnitOfWork} is created for the given batch of {@code eventMessages}.
+     * <p>
+     * The returned future completes when processing finishes, or completes exceptionally when processing fails,
+     * allowing the publisher to observe failures through the publication future.
      *
      * @param eventMessages the messages to process
-     * @param context the {@link ProcessingContext} to use
+     * @param context       the {@link ProcessingContext} to use, or {@code null} to create a new {@link UnitOfWork}
+     * @return a {@link CompletableFuture} that completes when processing of the {@code eventMessages} is done
      */
+    protected CompletableFuture<Void> processAsync(List<EventMessage> eventMessages,
+                                                   @Nullable ProcessingContext context) {
+        try {
+            return context != null
+                    ? processInGivenContext(eventMessages, context)
+                    : processInNewUnitOfWork(eventMessages);
+        } catch (RuntimeException e) {
+            // a failure while synchronously building the processing pipeline is reported through the returned
+            // future, so it never breaks the publishing thread; failures during handling are carried by the future
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /**
+     * Process the given messages, blocking the calling thread until processing is done.
+     * <p>
+     * When a {@code context} is provided, the events are processed within that context. Otherwise, a new
+     * {@link UnitOfWork} is created for the given batch of {@code eventMessages}.
+     *
+     * @param eventMessages the messages to process
+     * @param context       the {@link ProcessingContext} to use, or {@code null} to create a new {@link UnitOfWork}
+     * @throws EventProcessingException if a checked exception occurs while processing the events
+     * @deprecated in favor of {@link #processAsync(List, ProcessingContext)}, which reports completion and failures
+     * through the returned {@link CompletableFuture} rather than blocking the calling thread. This method is retained
+     * for backward compatibility and blocks until processing finishes.
+     */
+    @Deprecated(since = "5.2.0", forRemoval = true)
     protected void process(List<EventMessage> eventMessages, @Nullable ProcessingContext context) {
         try {
-            if (context != null) { // if ProcessingContext is provided from the outside, the events will be processed in that context
-                FutureUtils.joinAndUnwrap(processWithErrorHandling(eventMessages, context).asCompletableFuture());
-            } else { // otherwise new UnitOfWork is created
-                UnitOfWork unitOfWork = this.configuration.unitOfWorkFactory().create();
-                unitOfWork.onInvocation(processingContext -> processWithErrorHandling(eventMessages,
-                                                                                      processingContext).asCompletableFuture());
-                FutureUtils.joinAndUnwrap(unitOfWork.execute());
-            }
+            FutureUtils.joinAndUnwrap(processAsync(eventMessages, context));
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw new EventProcessingException("Exception occurred while processing events", e);
         }
+    }
+
+    private CompletableFuture<Void> processInGivenContext(List<EventMessage> eventMessages, ProcessingContext context) {
+        return processWithErrorHandling(eventMessages, context).asCompletableFuture()
+                                                               .thenAccept(ignored -> {});
+    }
+
+    private CompletableFuture<Void> processInNewUnitOfWork(List<EventMessage> eventMessages) {
+        UnitOfWork unitOfWork = this.configuration.unitOfWorkFactory().create();
+        unitOfWork.onInvocation(processingContext -> processWithErrorHandling(eventMessages,
+                                                                              processingContext).asCompletableFuture());
+        return unitOfWork.execute();
     }
 
     private MessageStream.Empty<Message> processWithErrorHandling(List<EventMessage> events,

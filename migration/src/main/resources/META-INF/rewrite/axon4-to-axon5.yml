@@ -71,8 +71,7 @@ recipeList:
   # Run BEFORE the wildcard version bump below: several extensions move
   # the dependency's groupId out of `org.axonframework` (e.g. axon-spring,
   # axon-spring-boot-starter, axon-spring-boot-autoconfigure → `org.axonframework.extensions.spring`;
-  # axon-metrics-* → `org.axonframework.extensions.metrics`;
-  # axon-tracing-opentelemetry → `org.axonframework.extensions.tracing`).
+  # axon-metrics-* → `org.axonframework.extensions.metrics`).
   # Bumping `org.axonframework:* → AF5` first would try to resolve those
   # artifacts at the OLD groupId and the AF5 version — coordinates that
   # were never published — and OpenRewrite's resolver fails the run with
@@ -106,10 +105,6 @@ recipeList:
       newVersion: ${project.version}
   - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
       groupId: org.axonframework.extensions.metrics
-      artifactId: "*"
-      newVersion: ${project.version}
-  - org.openrewrite.java.dependencies.UpgradeDependencyVersion:
-      groupId: org.axonframework.extensions.tracing
       artifactId: "*"
       newVersion: ${project.version}
   - org.openrewrite.java.dependencies.UpgradeDependencyVersion:

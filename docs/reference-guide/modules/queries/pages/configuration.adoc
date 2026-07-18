@@ -25,46 +25,18 @@ Given the existence of the following query handler:
 
 [source,java]
 ----
-public class CardSummaryProjection {
-
-    private final Map<String, CardSummary> cardSummaryStorage = new ConcurrentHashMap<>();
-
-    @QueryHandler
-    public CardSummary handle(FetchCardSummaryQuery query) {
-        // Retrieve CardSummary instance, for example from a repository
-        return cardSummaryStorage.get(query.getCardSummaryId());
-    }
-}
+include::example$queries/configuration/registration/CardSummaryProjection.java[tag=card-summary-projection,indent=0]
 ----
 
 The following shows how to register the `CardSummaryProjection` as a query handler using `MessagingConfigurer`:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-import org.axonframework.common.configuration.AxonConfiguration;
-
-public class AxonApp {
-
-    public static void main(String[] args) {
-        QueryHandlingModule cardSummaryModule =
-                QueryHandlingModule.named("card-summary-projection")
-                                   .queryHandlers()
-                                   .annotatedQueryHandlingComponent(config -> new CardSummaryProjection())
-                                   .build();
-        MessagingConfigurer configurer =
-            MessagingConfigurer.create()
-                               .registerQueryHandlingModule(cardSummaryModule);
-        // Build and start the configuration
-        AxonConfiguration configuration = configurer.build();
-        configuration.start();
-    }
-}
+include::example$queries/configuration/registration/AxonApp.java[tag=query-configuration-api,indent=0]
 ----
 
-The `annotatedQueryHandlingComponent()` method scans the provided object for methods annotated with `@QueryHandler` and automatically registers them with the `QueryBus`.
-For most use cases, using `annotatedQueryHandlingComponent()` with `@QueryHandler` annotated methods is the recommended approach. The framework also provides low-level APIs for registering lambda query handlers directly, but these require working with `QueryMessage` and `MessageStream` types and are primarily intended for advanced scenarios (for example when annotations are not desired) or framework integrations.
+The `autodetectedQueryHandlingComponent()` method scans the provided object for methods annotated with `@QueryHandler` and automatically registers them with the `QueryBus`.
+For most use cases, using `autodetectedQueryHandlingComponent()` with `@QueryHandler` annotated methods is the recommended approach. The framework also provides low-level APIs for registering lambda query handlers directly, but these require working with `QueryMessage` and `MessageStream` types and are primarily intended for advanced scenarios (for example when annotations are not desired) or framework integrations.
 
 --
 Spring Boot::
@@ -74,20 +46,7 @@ When using Spring Boot, simply declaring the query handler as a Spring bean is s
 
 [source,java]
 ----
-import org.springframework.stereotype.Component;
-import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-
-@Component
-public class CardSummaryProjection {
-
-    private final Map<String, CardSummary> cardSummaryStorage = new ConcurrentHashMap<>();
-
-    @QueryHandler
-    public CardSummary handle(FetchCardSummaryQuery query) {
-        // Retrieve CardSummary instance, for example from a repository
-        return cardSummaryStorage.get(query.getCardSummaryId());
-    }
-}
+include::example$queries/configuration/registration/springboot/CardSummaryProjection.java[tag=query-handler-springboot,indent=0]
 ----
 Spring Boot's auto-configuration automatically scans for beans containing `@QueryHandler` methods and registers them with the `QueryBus`.
 --
@@ -110,19 +69,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.queryhandling.QueryBus;
-import org.axonframework.messaging.queryhandling.SimpleQueryBus;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-
-public class AxonConfig {
-
-    public void registerCustomQueryBus(MessagingConfigurer configurer) {
-        configurer.registerQueryBus(
-                config -> new SimpleQueryBus(config.getComponent(UnitOfWorkFactory.class))
-        );
-    }
-}
+include::example$queries/configuration/querybus/AxonConfig.java[tag=query-bus-configuration-api,indent=0]
 ----
 --
 
@@ -131,20 +78,7 @@ Spring Boot::
 --
 [source,java]
 ----
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.axonframework.messaging.queryhandling.QueryBus;
-import org.axonframework.messaging.queryhandling.SimpleQueryBus;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public QueryBus queryBus(UnitOfWorkFactory unitOfWorkFactory) {
-        return new SimpleQueryBus(unitOfWorkFactory);
-    }
-}
+include::example$queries/configuration/querybus/springboot/AxonConfig.java[tag=query-bus-springboot,indent=0]
 ----
 --
 ====
@@ -160,28 +94,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway;
-import org.axonframework.messaging.core.MessageTypeResolver;
-import org.axonframework.messaging.core.conversion.MessageConverter;
-import org.axonframework.messaging.queryhandling.QueryBus;
-import org.axonframework.messaging.queryhandling.QueryPriorityCalculator;
-
-public class AxonConfig {
-
-    public void registerCustomQueryGateway(MessagingConfigurer configurer) {
-        configurer.componentRegistry(registry -> registry.registerComponent(
-                QueryGateway.class,
-                config -> new DefaultQueryGateway(
-                        config.getComponent(QueryBus.class),
-                        config.getComponent(MessageTypeResolver.class),
-                        config.getComponent(QueryPriorityCalculator.class),
-                        config.getComponent(MessageConverter.class)
-                )
-        ));
-    }
-}
+include::example$queries/configuration/querygateway/AxonConfig.java[tag=query-gateway-configuration-api,indent=0]
 ----
 --
 
@@ -192,20 +105,7 @@ With Spring Boot, the `QueryGateway` is auto-configured. You can inject it direc
 
 [source,java]
 ----
-@Service
-public class OrderService {
-
-    private final QueryGateway queryGateway;
-
-    public OrderService(QueryGateway queryGateway) {
-        this.queryGateway = queryGateway;
-    }
-
-    public CompletableFuture<OrderDetails> fetchOrderDetails(String orderId) {
-        return queryGateway.query(new FetchOrderDetailsQuery(orderId),
-                                 OrderDetails.class);
-    }
-}
+include::example$queries/configuration/querygateway/springboot/OrderService.java[tag=query-gateway-springboot,indent=0]
 ----
 --
 ====
@@ -224,23 +124,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.MessageDispatchInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptor;
-
-public class AxonConfig {
-
-    public void registerQueryInterceptors(MessagingConfigurer configurer) {
-        // Register a query dispatch interceptor
-        configurer.registerQueryDispatchInterceptor(
-                          config -> new LoggingQueryDispatchInterceptor()
-                  )
-                  // Register a query handler interceptor
-                  .registerQueryHandlerInterceptor(
-                          config -> new LoggingQueryHandlerInterceptor()
-                  );
-    }
-}
+include::example$queries/configuration/interceptors/AxonConfig.java[tag=query-interceptors-configuration-api,indent=0]
 ----
 --
 
@@ -251,24 +135,7 @@ With Spring Boot, declare interceptors as beans. They will be automatically regi
 
 [source,java]
 ----
-import org.springframework.stereotype.Component;
-import org.axonframework.messaging.core.MessageDispatchInterceptor;
-import org.axonframework.messaging.queryhandling.QueryMessage;
-
-@Component
-public class LoggingQueryDispatchInterceptor implements MessageDispatchInterceptor<QueryMessage> {
-
-    @Nonnull
-    @Override
-    public MessageStream<?> interceptOnDispatch(
-            @Nonnull QueryMessage message,
-            @Nullable ProcessingContext context,
-            @Nonnull MessageDispatchInterceptorChain<QueryMessage> chain
-    ) {
-        logger.info("Dispatching: {}", message.type().name());
-        return chain.proceed(message, context);
-    }
-}
+include::example$queries/configuration/interceptors/springboot/LoggingQueryDispatchInterceptor.java[tag=query-dispatch-interceptor-springboot,indent=0]
 ----
 --
 ====

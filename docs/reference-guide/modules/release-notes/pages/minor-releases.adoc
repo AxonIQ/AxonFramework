@@ -6,6 +6,38 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_1]
 == Release 5.1
 
+=== Release 5.1.2
+
+==== Features
+
+- feat(migration): preserve AF4 `MessageOriginProvider` metadata key names in AF5 link:https://github.com/AxonIQ/AxonFramework/pull/4613[#4613]
+
+==== Enhancements
+
+- [#3195] feat(migration): fix Kotlin OpenRewrite migration gaps link:https://github.com/AxonIQ/AxonFramework/pull/4605[#4605]
+
+==== Bug fixes
+
+- [#4643 | Port] `AggregateBasedJpaEventStorageEngine#stream` loops until `StreamingCondition` matching events are retrieved link:https://github.com/AxonIQ/AxonFramework/pull/4686[#4686]
+- [#4625 | Port] Introduce the `EventTypeResolver` for `EventStorageEngines` | Allows for default versions link:https://github.com/AxonIQ/AxonFramework/pull/4672[#4672]
+- [#4634 |  Port] Register the Micrometer `MetricsConfigurationEnhancer` only once when using Spring Boot link:https://github.com/AxonIQ/AxonFramework/pull/4671[#4671]
+- Port (5.1.x): [#4647] Propagate all entry resources to per-event ProcessingContext link:https://github.com/AxonIQ/AxonFramework/pull/4670[#4670]
+- fix(messaging): disposing a Flux does not close the underlying subscription query link:https://github.com/AxonIQ/AxonFramework/pull/4667[#4667]
+- Avoid costly stack walk on every task start in AxonTimeLimitedTask link:https://github.com/AxonIQ/AxonFramework/pull/4655[#4655]
+- fix(migration): honor skipTests property link:https://github.com/AxonIQ/AxonFramework/pull/4631[#4631]
+- Align `QualifiedName#(Class)` outcome with annotated approach for nested classes link:https://github.com/AxonIQ/AxonFramework/pull/4630[#4630]
+- test(eventsourcing): assert event metadata is preserved when sourcing aggregate-based events link:https://github.com/AxonIQ/AxonFramework/pull/4628[#4628]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+
 === Release 5.1.1
 
 ==== Features

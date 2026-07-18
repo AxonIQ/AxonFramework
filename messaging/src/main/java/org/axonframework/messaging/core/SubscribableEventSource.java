@@ -17,13 +17,13 @@
 package org.axonframework.messaging.core;
 
 import org.axonframework.common.Registration;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
-
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 /**
  * Interface for a source of {@link EventMessage EventMessages} to which event processors can subscribe.
@@ -56,5 +56,5 @@ public interface SubscribableEventSource {
      * @return A {@link Registration} handle to unsubscribe the {@code eventsBatchConsumer}. When unsubscribed, it will
      * no longer receive events.
      */
-    Registration subscribe(BiFunction<List<? extends EventMessage>, ProcessingContext, CompletableFuture<?>> eventsBatchConsumer);
+    Registration subscribe(BiFunction<List<? extends EventMessage>, @Nullable ProcessingContext, CompletableFuture<?>> eventsBatchConsumer);
 }

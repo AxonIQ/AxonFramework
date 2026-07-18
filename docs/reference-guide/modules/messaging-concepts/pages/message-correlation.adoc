@@ -60,35 +60,7 @@ This allows you to trace the entire chain of messages back to the original trigg
 
 [source,java]
 ----
-// When handling a command that publishes an event:
-@CommandHandler
-public void handle(PlaceOrderCommand command, EventAppender appender) {
-    // Command message id: "cmd-123"
-    // Command has no correlationId yet (it's the root)
-
-    // Create and publish event...
-    appender.append(new OrderPlacedEvent());
-
-    // Event metadata will contain:
-    // - correlationId: "cmd-123" (from command id, since command had none)
-    // - causationId: "cmd-123" (direct parent)
-}
-
-// When the event triggers another command:
-@EventHandler
-public void on(OrderPlacedEvent event, CommandDispatcher dispatcher) {
-    // Event message id: "evt-456"
-    // Event metadata:
-    // - correlationId: "cmd-123"
-    // - causationId: "cmd-123"
-
-    // Create and send command...
-    dispatcher.send(new ShipOrderCommand());
-
-    // Command metadata will contain:
-    // - correlationId: "cmd-123" (propagated from event)
-    // - causationId: "evt-456" (immediate parent)
-}
+include::example$messagingconcepts/messagecorrelation/OrderCorrelationHandlers.java[tag=message-origin-handlers,indent=0]
 ----
 
 In the example above, it is the `ProcessingContext`-aware `EventAppender` and `CommandDispatcher` that know to:
@@ -106,12 +78,7 @@ To use it, provide the list of keys to copy in the constructor:
 
 [source,java]
 ----
-public class AxonConfig {
-
-    public CorrelationDataProvider simpleProvider() {
-        return new SimpleCorrelationDataProvider("tenantId", "userId");
-    }
-}
+include::example$messagingconcepts/messagecorrelation/AxonConfig.java[tag=simple-provider,indent=0]
 ----
 
 This is useful when you have custom metadata keys that should propagate through your message chain.
@@ -124,17 +91,7 @@ This allows you to use both the standard `MessageOriginProvider` and custom prov
 
 [source,java]
 ----
-import java.util.List;public class Configuration {
-
-    public CorrelationDataProvider customCorrelationDataProviders() {
-        return new MultiCorrelationDataProvider(
-            List.of(
-                new MessageOriginProvider(),
-                new SimpleCorrelationDataProvider("tenantId", "userId")
-            )
-        );
-    }
-}
+include::example$messagingconcepts/messagecorrelation/Configuration.java[tag=multi-provider,indent=0]
 ----
 
 === Implementing custom correlation data provider
@@ -144,28 +101,7 @@ The interface is functional and requires a single method:
 
 [source,java]
 ----
-public class AuthCorrelationDataProvider implements CorrelationDataProvider {
-
-    private final Function<String, String> usernameProvider;
-
-    public AuthCorrelationDataProvider(Function<String, String> userProvider) {
-        this.usernameProvider = userProvider;
-    }
-
-    @Override
-    public Map<String, String> correlationDataFor(Message message) {
-        Map<String, String> correlationData = new HashMap<>();
-
-        // Extract auth token from metadata
-        String token = message.metadata().get("authorization");
-        if (token != null) {
-            String username = usernameProvider.apply(token);
-            correlationData.put("username", username);
-        }
-
-        return correlationData;
-    }
-}
+include::example$messagingconcepts/messagecorrelation/AuthCorrelationDataProvider.java[tag=custom-provider,indent=0]
 ----
 
 Note that:
@@ -187,36 +123,14 @@ Configuration API::
 +
 [source,java]
 ----
-public void buildConfiguration() {
-    MessagingConfigurer.create()
-                       .registerCorrelationDataProvider(
-                               config -> new MessageOriginProvider()
-                       )
-                       .registerCorrelationDataProvider(
-                               config -> new SimpleCorrelationDataProvider("tenantId", "userId")
-                       )
-                       .start();
-}
+include::example$messagingconcepts/messagecorrelation/ConfigurationApiExample.java[tag=config-api,indent=0]
 ----
 
 Spring Boot::
 +
 [source,java]
 ----
-@Configuration
-public class CorrelationDataProviderConfiguration {
-
-    // Configuring CorrelationDataProvider beans overrides the default MessageOriginProvider
-    @Bean
-    public CorrelationDataProvider messageOriginProvider() {
-        return new MessageOriginProvider();
-    }
-
-    @Bean
-    public CorrelationDataProvider tenantCorrelationProvider() {
-        return new SimpleCorrelationDataProvider("tenantId", "userId");
-    }
-}
+include::example$messagingconcepts/messagecorrelation/springboot/CorrelationDataProviderConfiguration.java[tag=spring-config,indent=0]
 ----
 ====
 

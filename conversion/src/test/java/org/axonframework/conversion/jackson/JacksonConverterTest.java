@@ -100,4 +100,24 @@ class JacksonConverterTest extends ConverterTestSuite<JacksonConverter> {
         assertThatThrownBy(() -> failingTestSubject.convert(testInput, SomeInput.class))
                 .isExactlyInstanceOf(ConversionException.class);
     }
+
+    @Test
+    void convertRefusesJackson2TreeNodeRatherThanSilentlyIntrospectingItAsAPojo() throws Exception {
+        // Jackson 3's ObjectMapper.convertValue does not recognize a Jackson 2 JsonNode as
+        // one of its own tree nodes. It would fall back to bean introspection and produce a
+        // map keyed by isArray/isObject/... instead of the JSON tree's contents. Detect this
+        // case explicitly and fail with a clear ConversionException.
+        TypeReference<Map<String, Object>> mapType = new TypeReference<>() {
+        };
+        com.fasterxml.jackson.databind.JsonNode jackson2TreeNode = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree("{\"firstName\":\"Alice\",\"lastName\":\"Hopper\"}");
+        JacksonConverter testSubject = buildConverter();
+        var targetType = mapType.getType();
+
+        assertThatThrownBy(() -> testSubject.convert(jackson2TreeNode, targetType))
+                .isExactlyInstanceOf(ConversionException.class)
+                .hasMessageContaining("Jackson 3")
+                .hasMessageContaining("Jackson 2")
+                .hasMessageContaining(com.fasterxml.jackson.databind.JsonNode.class.getName());
+    }
 }

@@ -16,9 +16,9 @@
 
 package org.axonframework.messaging.core;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Assert;
 import org.axonframework.common.StringUtils;
+import org.jspecify.annotations.Nullable;
 
 import static java.util.Objects.requireNonNull;
 import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTypeIfPrimitive;
@@ -36,10 +36,13 @@ import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTy
  * {@link MessageHandler MessageHandlers}, and other components that require naming. To combine a qualified
  * qualifiedName with a version, consider using the {@link MessageType}.
  *
- * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null} or empty.
+ * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
+ *             ({@code #}), since that character is reserved by {@link MessageType} as the separator between a
+ *             qualified name and version in its String representation.
  * @author Allard Buijze
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @see MessageType
  * @since 5.0.0
  */
@@ -48,14 +51,19 @@ public record QualifiedName(String name) {
     private static final String DELIMITER = ".";
 
     /**
-     * Compact constructor asserting whether the {@code qualifiedName} is non-null and not empty.
+     * Creates a new instance and asserts whether the {@code qualifiedName} is non-null, not blank, and does not
+     * contain {@link MessageType#VERSION_DELIMITER}.
      */
     public QualifiedName {
-        Assert.assertThat(
-                requireNonNull(name, "The given name is unsupported because it is null."),
-                StringUtils::nonEmpty,
-                () -> new IllegalArgumentException("The given name is unsupported because it is empty.")
-        );
+        requireNonNull(name, "The given name is unsupported because it is null.");
+
+        if (!MessageType.VALID_SEGMENT.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                    "The given name [" + name + "] is unsupported because it is blank, or contains \""
+                            + MessageType.VERSION_DELIMITER + "\", which is reserved by MessageType as the "
+                            + "separator between a qualified name and version in its String representation."
+            );
+        }
     }
 
     /**
@@ -86,15 +94,28 @@ public record QualifiedName(String name) {
     }
 
     /**
-     * Constructor taking the {@link Class#getName()} as the {@link #name()} of the {@code QualifiedName} under
+     * Constructor combining the given {@code clazz}'s {@link Class#getPackageName() package name} and
+     * {@link Class#getSimpleName() simple name} into the {@link #name()} of the {@code QualifiedName} under
      * construction.
+     * <p>
+     * Note that for nested classes the simple name does <b>not</b> include the enclosing class(es). Classes without a
+     * simple name (e.g. anonymous classes) fall back to {@link Class#getName()}.
      *
-     * @param clazz The {@code Class} from which to use the {@link Class#getName()} as the {@link #name()}.
+     * @param clazz The {@code Class} from which to derive the {@link #name()}.
      */
     public QualifiedName(Class<?> clazz) {
-        this(((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
+        this(deriveNameOf((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
                 clazz, "The given Class cannot be null."
-        ))).getName());
+        ))));
+    }
+
+    private static String deriveNameOf(Class<?> clazz) {
+        String simpleName = clazz.getSimpleName();
+        if (StringUtils.emptyOrNull(simpleName)) {
+            // Anonymous and similar classes have no simple name; fall back to the binary name.
+            return clazz.getName();
+        }
+        return combineNames(clazz.getPackageName(), simpleName);
     }
 
     @Nullable

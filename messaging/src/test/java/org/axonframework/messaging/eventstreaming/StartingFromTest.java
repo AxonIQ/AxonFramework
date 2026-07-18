@@ -45,18 +45,45 @@ class StartingFromTest {
     }
 
     @Test
-    void withCriteriaReplaceNoCriteriaForGivenCriteria() {
+    void orReplacesTheMatchAnyCriteriaWithTheGivenCriteria() {
+        // given a StartingFrom whose default criteria matches any tag
         assertEquals(EventCriteria.havingAnyTag(), testSubject.criteria());
 
+        // when it is combined with concrete criteria
         StreamingCondition result = testSubject.or(TEST_CRITERIA);
 
+        // then the given criteria takes over
+        assertEquals(TEST_CRITERIA, result.criteria());
+    }
+
+    @Test
+    void orThrowsIllegalArgumentExceptionWhenPositionIsNull() {
+        // given a StartingFrom without a position
+        StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);
+
+        // when combining criteria, then it is rejected as criteria cannot ride on a null position
+        assertThrows(IllegalArgumentException.class, () -> nullPositionTestSubject.or(TEST_CRITERIA));
+    }
+
+    @Test
+    void withCriteriaSetsTheGivenCriteriaPreservingThePosition() {
+        // given a StartingFrom whose default criteria matches any tag
+        assertEquals(EventCriteria.havingAnyTag(), testSubject.criteria());
+
+        // when its criteria is replaced
+        StreamingCondition result = testSubject.withCriteria(TEST_CRITERIA);
+
+        // then the position is preserved and the given criteria is used
+        assertEquals(TEST_POSITION, result.position());
         assertEquals(TEST_CRITERIA, result.criteria());
     }
 
     @Test
     void withCriteriaThrowsIllegalArgumentExceptionWhenPositionIsNull() {
+        // given a StartingFrom without a position
         StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);
 
-        assertThrows(IllegalArgumentException.class, () -> nullPositionTestSubject.or(TEST_CRITERIA));
+        // when replacing criteria, then it is rejected as criteria cannot ride on a null position
+        assertThrows(IllegalArgumentException.class, () -> nullPositionTestSubject.withCriteria(TEST_CRITERIA));
     }
 }

@@ -9,14 +9,7 @@ The configuration of entities now uses the `EventSourcedEntityModule` instead of
 
 [source,java]
 ----
-// Axon Framework 5
-
-
-public void configure(EventSourcingConfigurer configurer) {
-    configurer.registerEntity(
-        EventSourcedEntityModule.autodetected(String.class, GiftCard.class)
-    );
-}
+include::example$migration/paths/aggregates/configurationmigration/AxonConfig.java[tag=register-entity-module,indent=0]
 ----
 
 One notable change in this configuration is that the identifier type of the entity must be explicitly provided.
@@ -33,7 +26,7 @@ Most significant, the `@Aggregate` annotation is replaced by `@EventSourced`. Th
 [#event-sourced-instead-of-aggregate-spring]
 === `@EventSourced` instead of `@Aggregate` (Spring)
 
-[source,java]
+[source,java,role=axon4]
 ----
 // Axon Framework 4
 @Aggregate
@@ -42,13 +35,11 @@ public class GiftCard {
     private String giftCardId;
     // ...
 }
+----
 
-// Axon Framework 5
-@EventSourced
-public class GiftCard {
-    private String giftCardId;
-    // ...
-}
+[source,java]
+----
+include::example$migration/paths/aggregates/configurationmigration/springboot/GiftCard.java[tag=event-sourced-spring,indent=0]
 ----
 
 Also, `@AggregateMember` is replaced by `@EntityMember` for child entities within an aggregate, see the xref:migration:paths/aggregates/multi-entity-migration.adoc[multi-entity migration] section for more details.

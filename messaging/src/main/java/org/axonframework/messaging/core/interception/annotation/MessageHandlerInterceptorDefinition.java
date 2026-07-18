@@ -50,9 +50,7 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        String messageHandlerInterceptorMessageTypeAttributeKey =
-                MessageHandlerInterceptor.class.getSimpleName() + ".messageType";
-        if (original.attribute(messageHandlerInterceptorMessageTypeAttributeKey).isPresent()) {
+        if (original.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).isPresent()) {
             Optional<Class<?>> resultType = original.attribute(HandlerAttributes.RESULT_TYPE);
             return resultType.isPresent()
                     ? new ResultHandlingInterceptorMember<>(original, resultType.get())

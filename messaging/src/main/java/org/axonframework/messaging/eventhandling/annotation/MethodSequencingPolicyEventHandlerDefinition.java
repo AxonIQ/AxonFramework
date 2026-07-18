@@ -52,6 +52,13 @@ public class MethodSequencingPolicyEventHandlerDefinition implements HandlerEnha
             return original;
         }
 
+        // Interceptor members (e.g. @ExceptionHandler methods) never participate in sequencing, and their
+        // payload type may not be an event payload (e.g. an exception type), so building the policy against
+        // it could fail
+        if (original.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).isPresent()) {
+            return original;
+        }
+
         // Check for sequencing policy attributes (set by @HasHandlerAttributes on @SequencingPolicy annotation)
         @SuppressWarnings("rawtypes")
         Optional<Class<? extends org.axonframework.messaging.core.sequencing.SequencingPolicy>> policyType =

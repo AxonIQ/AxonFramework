@@ -78,5 +78,5 @@ public interface TransactionalExecutor<T> {
      *     the provided function, never {@code null}.
      * @throws NullPointerException When {@code function} is {@code null}.
      */
-    <R> CompletableFuture<@Nullable R> apply(ThrowingFunction<T, R, Exception> function);
+    <R> CompletableFuture<R> apply(ThrowingFunction<T, R, Exception> function);
 }

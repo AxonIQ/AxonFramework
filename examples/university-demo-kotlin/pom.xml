@@ -37,7 +37,7 @@
         <!-- endregion [maven-project] -->
 
         <log4j.version>2.25.3</log4j.version>
-        <spring-boot.version>3.5.15</spring-boot.version>
+        <spring-boot.version>3.5.16</spring-boot.version>
 
         <!-- region [dependencies-test] -->
         <assertj.version>3.27.7</assertj.version>

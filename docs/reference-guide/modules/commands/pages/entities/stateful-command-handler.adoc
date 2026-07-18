@@ -20,36 +20,7 @@ The entity used in this example tracks the basic state of a university course:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-
-@EventSourcedEntity(tagKey = "courseId")
-public class Course {
-
-    private String courseId;
-    private String name;
-    private int capacity;
-
-    @EntityCreator
-    public Course() {}
-
-    @EventSourcingHandler
-    void on(CourseCreated event) {
-        this.courseId = event.courseId();
-        this.name = event.name();
-        this.capacity = event.capacity();
-    }
-
-    @EventSourcingHandler
-    void on(CourseRenamed event) {
-        this.name = event.name();
-    }
-
-    String courseId() { return courseId; }
-    String name() { return name; }
-    int capacity() { return capacity; }
-}
+include::example$commands/entities/statefulcommandhandler/Course.java[tag=course-entity,indent=0]
 ----
 
 The stateful command handler is a plain class.
@@ -57,35 +28,7 @@ Its methods receive the `Course` entity as a parameter whenever prior state is n
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.modelling.annotation.InjectEntity;
-import org.springframework.stereotype.Component;
-
-@Component
-public class CourseCommandHandler {
-
-    @CommandHandler // <1>
-    public String handle(CreateCourse command, EventAppender eventAppender) {
-        if (command.capacity() <= 0) {
-            throw new IllegalArgumentException("Capacity must be positive");
-        }
-        eventAppender.append(new CourseCreated(command.courseId(), command.name(), command.capacity()));
-        return command.courseId();
-    }
-
-    @CommandHandler
-    void handle(RenameCourse command,
-                @InjectEntity Course course, // <2>
-                EventAppender eventAppender) {
-        if (course.courseId() == null) {
-            throw new IllegalStateException("Course does not exist");
-        }
-        if (!command.name().equals(course.name())) { // <3>
-            eventAppender.append(new CourseRenamed(command.courseId(), command.name()));
-        }
-    }
-}
+include::example$commands/entities/statefulcommandhandler/CourseCommandHandler.java[tag=stateful-command-handler,indent=0]
 ----
 
 <1> Creational handlers do not receive an entity parameter; the course does not yet exist and is created when `CourseCreated` is published.
@@ -100,11 +43,7 @@ The commands used in this example:
 
 [source,java]
 ----
-import org.axonframework.modelling.annotation.TargetEntityId;
-
-public record CreateCourse(String courseId, String name, int capacity) {}
-
-public record RenameCourse(@TargetEntityId String courseId, String name) {}
+include::example$commands/entities/statefulcommandhandler/CourseCommands.java[tags=course-commands-import;course-commands,indent=0]
 ----
 
 For how to define the entity itself (state fields, event sourcing handlers, and configuration), see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities].
@@ -129,38 +68,7 @@ Use `idProperty` to specify which field of the command payload identifies each e
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.modelling.annotation.InjectEntity;
-import org.springframework.stereotype.Component;
-
-@Component
-public class SubscribeStudentToCourseHandler {
-
-    private static final int MAX_COURSES_PER_STUDENT = 3;
-
-    @CommandHandler
-    void handle(
-            SubscribeStudentToCourse command,
-            @InjectEntity(idProperty = "courseId") Course course,     // <1>
-            @InjectEntity(idProperty = "studentId") Student student,  // <2>
-            EventAppender eventAppender
-    ) {
-        if (course.courseId() == null) {
-            throw new IllegalStateException("Course does not exist");
-        }
-        if (student.studentId() == null) {
-            throw new IllegalStateException("Student is not enrolled in the faculty");
-        }
-        if (student.subscribedCourses().size() >= MAX_COURSES_PER_STUDENT) {
-            throw new IllegalStateException("Student is already subscribed to the maximum number of courses");
-        }
-        if (course.studentsSubscribed().size() >= course.capacity()) {
-            throw new IllegalStateException("Course is fully booked");
-        }
-        eventAppender.append(new StudentSubscribedToCourse(command.courseId(), command.studentId()));
-    }
-}
+include::example$commands/entities/statefulcommandhandler/SubscribeStudentToCourseHandler.java[tag=injecting-multiple-entities,indent=0]
 ----
 
 <1> `idProperty = "courseId"` tells Axon to load the `Course` entity using the `courseId` field of the command.
@@ -171,7 +79,7 @@ The command in this example has no `@TargetEntityId` because there is no single 
 
 [source,java]
 ----
-public record SubscribeStudentToCourse(String studentId, String courseId) {}
+include::example$commands/entities/statefulcommandhandler/SubscribeStudentToCourse.java[tag=subscribe-student-to-course,indent=0]
 ----
 
 == Vertical slice architecture
@@ -219,21 +127,7 @@ Each handler class contains exactly one `@CommandHandler` method, loads the enti
 
 [source,java]
 ----
-@Component
-public class RenameCourseHandler {
-
-    @CommandHandler
-    void handle(RenameCourse command,
-                @InjectEntity Course course,
-                EventAppender eventAppender) {
-        if (course.courseId() == null) {
-            throw new IllegalStateException("Course does not exist");
-        }
-        if (!command.name().equals(course.name())) {
-            eventAppender.append(new CourseRenamed(command.courseId(), command.name()));
-        }
-    }
-}
+include::example$commands/entities/statefulcommandhandler/RenameCourseHandler.java[tag=vertical-slice-handler,indent=0]
 ----
 
 The result is a codebase where finding the code for a use case is trivial: look for the handler class named after the command.

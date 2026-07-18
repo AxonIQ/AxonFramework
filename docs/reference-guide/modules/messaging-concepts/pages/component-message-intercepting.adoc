@@ -28,50 +28,14 @@ It is a specialization of `@MessageHandlerInterceptor` scoped to `CommandMessage
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlerInterceptor;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-
-public class OrderCommandHandler {
-
-    @CommandHandlerInterceptor
-    void logCommand(CommandMessage command) {
-        log.info("Handling command: {}", command.qualifiedName());
-    }
-
-    @CommandHandler
-    void handle(PlaceOrderCommand command, ProcessingContext context) {
-        // Handle the command
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/commandbefore/OrderCommandHandler.java[tag=command-interceptor-before,indent=0]
 ----
 
 *Surround-interceptor (authorization check):*
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.annotation.CommandHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class OrderCommandHandler {
-
-    @CommandHandlerInterceptor
-    MessageStream<?> authorize(
-            CommandMessage command,
-            MessageHandlerInterceptorChain<CommandMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!securityContext.isAuthorized(command)) {
-            return MessageStream.failed(new AccessDeniedException("Not authorized"));
-        }
-        return chain.proceed(command, context);
-    }
-
-    @CommandHandler
-    void handle(PlaceOrderCommand command, ProcessingContext context) {
-        // Handle the command
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/commandsurround/OrderCommandHandler.java[tag=command-interceptor-surround,indent=0]
 ----
 
 === `@EventHandlerInterceptor`
@@ -83,50 +47,14 @@ It is a specialization of `@MessageHandlerInterceptor` scoped to `EventMessage`.
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-
-public class CardSummaryProjection {
-
-    @EventHandlerInterceptor
-    void trace(EventMessage event) {
-        tracer.startSpan(event.qualifiedName());
-    }
-
-    @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
-        // Handle event
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/eventbefore/CardSummaryProjection.java[tag=event-interceptor-before,indent=0]
 ----
 
 *Surround-interceptor (conditional processing):*
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class CardSummaryProjection {
-
-    @EventHandlerInterceptor
-    MessageStream<?> filterByTenant(
-            EventMessage event,
-            MessageHandlerInterceptorChain<EventMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!tenantId.equals(event.metadata().get("tenantId"))) {
-            return MessageStream.empty();
-        }
-        return chain.proceed(event, context);
-    }
-
-    @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
-        // Handle event
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/eventsurround/CardSummaryProjection.java[tag=event-interceptor-surround,indent=0]
 ----
 
 === `@QueryHandlerInterceptor`
@@ -138,52 +66,14 @@ It is a specialization of `@MessageHandlerInterceptor` scoped to `QueryMessage`.
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.annotation.QueryHandlerInterceptor;
-import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-
-public class CourseQueryHandler {
-
-    @QueryHandlerInterceptor
-    void auditQuery(QueryMessage query) {
-        auditLog.record(query.qualifiedName(), securityContext.currentUser());
-    }
-
-    @QueryHandler
-    CourseView handle(FindCourseQuery query, ProcessingContext context) {
-        // Handle the query
-        return null;
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/querybefore/CourseQueryHandler.java[tag=query-interceptor-before,indent=0]
 ----
 
 *Surround-interceptor (tenant authorization):*
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.annotation.QueryHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-
-public class CourseQueryHandler {
-
-    @QueryHandlerInterceptor
-    MessageStream<?> checkTenant(
-            QueryMessage query,
-            MessageHandlerInterceptorChain<QueryMessage> chain,
-            ProcessingContext context
-    ) {
-        if (!tenantId.equals(query.metadata().get("tenantId"))) {
-            return MessageStream.failed(new AccessDeniedException("Wrong tenant"));
-        }
-        return chain.proceed(query, context);
-    }
-
-    @QueryHandler
-    CourseView handle(FindCourseQuery query, ProcessingContext context) {
-        // Handle the query
-        return null;
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/querysurround/CourseQueryHandler.java[tag=query-interceptor-surround,indent=0]
 ----
 
 === Generic `@MessageHandlerInterceptor`
@@ -199,53 +89,14 @@ This is useful for cross-cutting concerns such as logging or security checks tha
 
 [source,java]
 ----
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
-
-public class CardSummaryProjection {
-
-    @MessageHandlerInterceptor
-    void interceptAll(Message message) {
-        // Runs before every @EventHandler and @QueryHandler on this component
-    }
-
-    @EventHandler
-    void on(CardIssuedEvent event, ProcessingContext context) {
-        // Handle event
-    }
-
-    @QueryHandler
-    CardSummaryView handle(FindCardSummaryQuery query, ProcessingContext context) {
-        // Handle query
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/genericall/CardSummaryProjection.java[tag=message-interceptor-all,indent=0]
 ----
 
 *Surround-interceptor using the base annotation:*
 
 [source,java]
 ----
-import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.queryhandling.QueryMessage;
-
-public class CourseQueryHandler {
-
-    @MessageHandlerInterceptor(messageType = QueryMessage.class)
-    MessageStream<?> intercept(
-            QueryMessage query,
-            MessageHandlerInterceptorChain<QueryMessage> chain,
-            ProcessingContext context
-    ) {
-        // Logic before handling
-        MessageStream<?> result = chain.proceed(query, context);
-        // Logic after handling (if needed, chain the stream)
-        return result;
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/genericsurround/CourseQueryHandler.java[tag=message-interceptor-surround,indent=0]
 ----
 
 == Declarative interceptors
@@ -262,29 +113,15 @@ Use `CommandHandlingModule.CommandHandlerPhase.intercepted()` to register an int
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.messaging.core.MessageStream;
-
-CommandHandlingModule.named("orders")
-        .commandHandlers()
-        .autodetectedCommandHandlingComponent(cfg -> new OrderCommandHandler())
-        .intercepted(cfg -> (message, context, chain) -> {
-            log.info("Intercepting command: {}", message.qualifiedName());
-            return chain.proceed(message, context);
-        })
-        .build();
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=command-single-imports,indent=0]
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=command-single,indent=0]
 ----
 
 Multiple interceptors are applied in registration order:
 
 [source,java]
 ----
-CommandHandlingModule.named("orders")
-        .commandHandlers()
-        .autodetectedCommandHandlingComponent(cfg -> new OrderCommandHandler())
-        .intercepted(cfg -> new AuthorizationCommandInterceptor(cfg.getComponent(SecurityContext.class)))
-        .intercepted(cfg -> new AuditCommandInterceptor(cfg.getComponent(AuditLog.class)))
-        .build();
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=command-multiple,indent=0]
 ----
 
 === Query interceptors
@@ -293,18 +130,8 @@ Use `QueryHandlingModule.QueryHandlerPhase.intercepted()` to register an interce
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-
-QueryHandlingModule.named("courses")
-        .queryHandlers()
-        .autodetectedQueryHandlingComponent(cfg -> new CourseQueryHandler())
-        .intercepted(cfg -> (message, context, chain) -> {
-            if (!securityContext.canQuery()) {
-                return MessageStream.failed(new AccessDeniedException("Query not permitted"));
-            }
-            return chain.proceed(message, context);
-        })
-        .build();
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=query-imports,indent=0]
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=query,indent=0]
 ----
 
 === Event interceptors
@@ -314,32 +141,15 @@ This method closes the component registration phase, so no further components ma
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-
-EventProcessorModule
-        .subscribing("card-summary")
-        .eventHandlingComponents(components -> components
-                .autodetected("card-summary-projection", cfg -> new CardSummaryProjection())
-                .intercepted(cfg -> (message, context, chain) -> {
-                    log.info("Handling event: {}", message.qualifiedName());
-                    return chain.proceed(message, context);
-                })
-        )
-        .notCustomized();
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=event-subscribing-imports,indent=0]
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=event-subscribing,indent=0]
 ----
 
 Multiple event interceptors are also accumulated in registration order:
 
 [source,java]
 ----
-EventProcessorModule
-        .pooledStreaming("card-summary")
-        .eventHandlingComponents(components -> components
-                .autodetected("card-summary-projection", cfg -> new CardSummaryProjection())
-                .intercepted(cfg -> new TracingEventInterceptor(cfg.getComponent(Tracer.class)))
-                .intercepted(cfg -> new TenantFilterEventInterceptor(tenantId))
-        )
-        .notCustomized();
+include::example$messagingconcepts/componentmessageintercepting/declarative/DeclarativeInterceptors.java[tag=event-pooled,indent=0]
 ----
 
 [[ExceptionHandler]]
@@ -351,7 +161,7 @@ This makes it suitable for cross-cutting exception handling concerns such as log
 
 You can wire the exception and the full message (for example, `CommandMessage` or `EventMessage`) as parameters.
 The framework matches an exception handler based on which parameters it declares: the exception type must be assignable from the thrown exception, and the message type must be assignable from the message being handled.
-Omitting a parameter means it is not used for matching; any value is accepted.
+Omitting a parameter means it is not used for matching. Any value is accepted.
 
 You can introduce `@ExceptionHandler` annotated methods in any message handling component.
 
@@ -359,31 +169,7 @@ You can introduce `@ExceptionHandler` annotated methods in any message handling 
 
 [source,java]
 ----
-class OrderCommandHandler {
-
-    // Command handlers omitted
-
-    @ExceptionHandler
-    public void handleAll(Exception exception) {
-        // Handles all exceptions thrown within this component
-    }
-
-    @ExceptionHandler
-    public void handleIllegalStateExceptions(IllegalStateException exception) {
-        // Handles all IllegalStateExceptions thrown within this component
-    }
-
-    @ExceptionHandler(resultType = IllegalStateException.class)
-    public void handleIllegalStateExceptions(Exception exception) {
-        // Equivalent: handles IllegalStateExceptions using the resultType attribute
-    }
-
-    @ExceptionHandler
-    public void logFailedCommand(CommandMessage command, Exception exception) {
-        // Access the full command message for cross-cutting concerns such as logging
-        log.warn("Command {} failed: {}", command.qualifiedName(), exception.getMessage());
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/exceptioncommand/OrderCommandHandler.java[tag=exception-command,indent=0]
 ----
 
 [NOTE]
@@ -399,29 +185,5 @@ If you need to handle exceptions from a static creation handler, handle them dir
 
 [source,java]
 ----
-class CardSummaryProjection {
-
-    // Event handlers and query handlers omitted
-
-    @ExceptionHandler
-    public void handleAll(Exception exception) {
-        // Handles all exceptions thrown within this component
-    }
-
-    @ExceptionHandler
-    public void handleIllegalArgumentExceptions(IllegalArgumentException exception) {
-        // Handles all IllegalArgumentExceptions within this component
-    }
-
-    @ExceptionHandler(resultType = IllegalArgumentException.class)
-    public void handleIllegalArgumentExceptions(Exception exception) {
-        // Equivalent: handles IllegalArgumentExceptions using the resultType attribute
-    }
-
-    @ExceptionHandler
-    public void logFailedEvent(EventMessage event, Exception exception) {
-        // Access the full event message for cross-cutting concerns such as logging
-        log.warn("Event {} failed: {}", event.qualifiedName(), exception.getMessage());
-    }
-}
+include::example$messagingconcepts/componentmessageintercepting/exceptionprojection/CardSummaryProjection.java[tag=exception-projection,indent=0]
 ----
