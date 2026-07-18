@@ -62,7 +62,6 @@ import static org.mockito.Mockito.spy;
  * as well as any advanced strategy.
  *
  * @author Allard Buijze
- * @since 5.2.0
  */
 public abstract class SegmentProgressStrategyTestSupport {
 

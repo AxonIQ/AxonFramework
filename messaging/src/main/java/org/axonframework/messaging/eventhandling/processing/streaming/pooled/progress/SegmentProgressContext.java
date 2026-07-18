@@ -42,7 +42,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * @author Allard Buijze
  * @see SegmentProgressStrategy
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public interface SegmentProgressContext {

@@ -28,7 +28,7 @@ import java.util.Objects;
  * tokens, these helpers reduce an arbitrary collection to a single token, ignoring {@code null} elements.
  *
  * @author Allard Buijze
- * @since 5.2.0
+ * @since 5.3.0
  */
 public abstract class TrackingTokenUtils {
 

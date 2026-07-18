@@ -342,7 +342,7 @@ public class AnnotatedHandlerInspector<T> {
      * @param behaviorType the behavior type to resolve
      * @param <B>          the behavior type
      * @return an {@link Optional} holding the resolved behavior, or empty if the {@code target} does not provide it
-     * @since 5.2.0
+     * @since 5.3.0
      */
     public <B> Optional<B> resolveBehavior(T target, Class<B> behaviorType) {
         return behaviorType.isInstance(target) ? Optional.of(behaviorType.cast(target)) : Optional.empty();

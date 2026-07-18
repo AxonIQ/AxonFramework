@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,7 +62,7 @@ class TokenStoringProgressStrategyTest {
             context.lastConsumedToken = consumed;
 
             // when
-            testSubject.onBatchCommit(null).join();
+            testSubject.onBatchCommit(null).orTimeout(5, TimeUnit.SECONDS).join();
 
             // then
             assertThat(context.persisted).containsExactly(consumed);
@@ -73,7 +74,7 @@ class TokenStoringProgressStrategyTest {
             context.lastConsumedToken = null;
 
             // when
-            testSubject.onBatchCommit(null).join();
+            testSubject.onBatchCommit(null).orTimeout(5, TimeUnit.SECONDS).join();
 
             // then
             assertThat(context.persisted).isEmpty();
@@ -98,7 +99,7 @@ class TokenStoringProgressStrategyTest {
             context.lastConsumedToken = new GlobalSequenceTrackingToken(3L);
 
             // when
-            testSubject.onSegmentReleased(null).join();
+            testSubject.onSegmentReleased(null).orTimeout(5, TimeUnit.SECONDS).join();
 
             // then -- the per-batch store already covered progress; release is a no-op
             assertThat(context.persisted).isEmpty();

@@ -39,7 +39,7 @@ import static java.util.Objects.requireNonNull;
  *
  * @author Allard Buijze
  * @see SegmentProgressStrategy
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public final class TokenStoringProgressStrategy implements SegmentProgressStrategy {

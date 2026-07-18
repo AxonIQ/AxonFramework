@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -69,7 +70,7 @@ class SegmentParameterResolverFactoryTest {
         ProcessingContext contextWithoutSegment = StubProcessingContext.forMessage(message);
 
         // when / then -- a null Segment is harmless to receive, so resolution yields null rather than failing
-        assertThat(resolver.resolveParameterValue(contextWithoutSegment).join()).isNull();
+        assertThat(resolver.resolveParameterValue(contextWithoutSegment).orTimeout(5, TimeUnit.SECONDS).join()).isNull();
     }
 
     @Test
@@ -83,7 +84,7 @@ class SegmentParameterResolverFactoryTest {
 
         // when / then
         assertThat(resolver.matches(contextWithSegment)).isTrue();
-        assertThat(resolver.resolveParameterValue(contextWithSegment).join()).isSameAs(segment);
+        assertThat(resolver.resolveParameterValue(contextWithSegment).orTimeout(5, TimeUnit.SECONDS).join()).isSameAs(segment);
     }
 
     @Test

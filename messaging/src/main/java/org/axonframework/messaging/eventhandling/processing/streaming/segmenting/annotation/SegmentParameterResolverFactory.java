@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture;
  * is harmless to receive, so this resolver does not fail when one is absent.
  *
  * @author Allard Buijze
- * @since 5.2.0
+ * @since 5.3.0
  */
 public class SegmentParameterResolverFactory implements ParameterResolverFactory {
 

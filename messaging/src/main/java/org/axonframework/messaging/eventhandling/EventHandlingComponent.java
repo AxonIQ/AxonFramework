@@ -102,7 +102,7 @@ public interface EventHandlingComponent
      * @param componentType the capability type to resolve
      * @param <C>           the capability type
      * @return an {@link Optional} holding the resolved capability, or empty if not available
-     * @since 5.2.0
+     * @since 5.3.0
      */
     default <C> Optional<C> unwrap(Class<C> componentType) {
         return componentType.isInstance(this) ? Optional.of(componentType.cast(this)) : Optional.empty();

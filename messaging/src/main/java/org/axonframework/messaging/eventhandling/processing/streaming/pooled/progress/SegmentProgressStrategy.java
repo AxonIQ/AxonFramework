@@ -42,7 +42,7 @@ import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
  * @author Allard Buijze
  * @see SegmentProgressContext
  * @see TokenStoringProgressStrategy
- * @since 5.2.0
+ * @since 5.3.0
  */
 @Internal
 public interface SegmentProgressStrategy {
