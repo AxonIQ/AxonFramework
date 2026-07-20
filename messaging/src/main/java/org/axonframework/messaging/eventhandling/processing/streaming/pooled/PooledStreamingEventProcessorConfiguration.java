@@ -496,8 +496,12 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     @Override
     protected void validate() throws AxonConfigurationException {
         super.validate();
-        assertNonNull(eventSource, "The StreamableEventSource is a hard requirement and should be provided");
-        assertNonNull(tokenStore, "The TokenStore is a hard requirement and should be provided");
+        assertNonNull(eventSource,
+                      "The StreamableEventSource is a hard requirement for event processor '" + processorName
+                              + "' and should be provided. Set it through this configuration's eventSource method.");
+        assertNonNull(tokenStore,
+                      "The TokenStore is a hard requirement for event processor '" + processorName
+                              + "' and should be provided. Set it through this configuration's tokenStore method.");
         assertNonNull(unitOfWorkFactory, "The UnitOfWorkFactory is a hard requirement and should be provided");
         assertNonNull(
                 coordinatorExecutor,

@@ -113,6 +113,15 @@ interface SpringCustomizations {
 
     /**
      * Customization executed based on the {@link EventProcessorSettings.PooledEventProcessorSettings}.
+     * <p>
+     * The {@link StreamableEventSource} and {@link TokenStore} are only mandatory when the corresponding
+     * {@link EventProcessorSettings#source() source} or
+     * {@link EventProcessorSettings.PooledEventProcessorSettings#tokenStore() token-store} setting is explicitly set.
+     * When a setting is unset (or empty), this customization falls back to resolving the unique, type-level component
+     * and only applies it when one is found. Otherwise, it leaves that part of the configuration untouched, allowing
+     * customizations applied after this one, like an {@code EventProcessorDefinition}, to supply it. A still-missing
+     * source or token store is reported when the resulting {@link PooledStreamingEventProcessorConfiguration} is
+     * validated.
      */
     class SpringPooledStreamingEventProcessingModuleCustomization
             implements PooledStreamingEventProcessorModule.Customization {
@@ -138,34 +147,38 @@ interface SpringCustomizations {
                     new AxonThreadFactory(executorName)
             );
 
-            var eventStore = getComponent(configuration,
-                                          StreamableEventSource.class,
-                                          settings.source(),
-                                          null);
-            require(eventStore != null,
-                    "Could not find a mandatory Source with name '" + settings.source()
-                            + "' for event processor '" + name + "'.");
-
-            var tokenStore = getComponent(configuration,
-                                          TokenStore.class,
-                                          settings.tokenStore(),
-                                          null);
-            require(tokenStore != null,
-                    "Could not find a mandatory TokenStore with name '" + settings.tokenStore()
-                            + "' for event processor '" + name + "'."
-            );
             var unitOfWorkFactory = getComponent(configuration, UnitOfWorkFactory.class, null, null);
             require(unitOfWorkFactory != null,
                     "Could not find a mandatory UnitOfWorkFactory for event processor '" + name + "'.");
 
-            return eventProcessorConfiguration
+            var result = eventProcessorConfiguration
                     .workerExecutor(scheduledExecutorService)
                     .tokenClaimInterval(settings.tokenClaimIntervalInMillis())
                     .batchSize(settings.batchSize())
                     .initialSegmentCount(settings.initialSegmentCount())
-                    .eventSource(eventStore)
-                    .tokenStore(tokenStore)
                     .unitOfWorkFactory(unitOfWorkFactory);
+
+            String sourceName = StringUtils.nonEmptyOrNull(settings.source()) ? settings.source() : null;
+            var eventSource = getComponent(configuration, StreamableEventSource.class, sourceName, null);
+            if (sourceName != null) {
+                require(eventSource != null, "Could not find a mandatory Source with name '" + settings.source()
+                        + "' for event processor '" + name + "'.");
+            }
+            if (eventSource != null) {
+                result = result.eventSource(eventSource);
+            }
+
+            String tokenStoreName = StringUtils.nonEmptyOrNull(settings.tokenStore()) ? settings.tokenStore() : null;
+            var tokenStore = getComponent(configuration, TokenStore.class, tokenStoreName, null);
+            if (tokenStoreName != null) {
+                require(tokenStore != null, "Could not find a mandatory TokenStore with name '" + settings.tokenStore()
+                        + "' for event processor '" + name + "'.");
+            }
+            if (tokenStore != null) {
+                result = result.tokenStore(tokenStore);
+            }
+
+            return result;
         }
     }
 
