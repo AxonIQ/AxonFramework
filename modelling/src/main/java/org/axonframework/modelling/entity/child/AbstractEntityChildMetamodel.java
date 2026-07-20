@@ -165,8 +165,9 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
 
         @SuppressWarnings("unused") // Is used for generics
         protected Builder(Class<P> parentClass, EntityMetamodel<C> metamodel) {
-            requireNonNull(parentClass, "The parentClass may not be null.");
-            this.metamodel = requireNonNull(metamodel, "The metamodel may not be null.");
+            assertNonNull(parentClass, "The parentClass may not be null.");
+            assertNonNull(metamodel, "The metamodel may not be null.");
+            this.metamodel = metamodel;
         }
 
         /**
@@ -179,16 +180,9 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
          */
         @SuppressWarnings("unchecked")
         public R commandTargetResolver(CommandTargetResolver<C> commandTargetResolver) {
-            this.commandTargetResolver = requireNonNull(commandTargetResolver,
-                                                        "The commandTargetResolver may not be null.");
+            assertNonNull(commandTargetResolver, "The commandTargetResolver may not be null.");
+            this.commandTargetResolver = commandTargetResolver;
             return (R) this;
-        }
-
-        protected void validate() {
-            assertNonNull(commandTargetResolver,
-                          "The commandTargetResolver must be set before building the metamodel.");
-            assertNonNull(eventTargetMatcher,
-                          "The eventTargetMatcher must be set before building the metamodel.");
         }
 
         /**
@@ -201,8 +195,16 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
          */
         @SuppressWarnings("unchecked")
         public R eventTargetMatcher(EventTargetMatcher<C> eventTargetMatcher) {
-            this.eventTargetMatcher = requireNonNull(eventTargetMatcher, "The eventTargetMatcher may not be null.");
+            assertNonNull(eventTargetMatcher, "The eventTargetMatcher may not be null.");
+            this.eventTargetMatcher = eventTargetMatcher;
             return (R) this;
+        }
+
+        protected void validate() {
+            assertNonNull(commandTargetResolver,
+                          "The commandTargetResolver must be set before building the metamodel.");
+            assertNonNull(eventTargetMatcher,
+                          "The eventTargetMatcher must be set before building the metamodel.");
         }
     }
 }

@@ -258,13 +258,13 @@ class ListEntityChildMetamodelTest {
 
         @Test
         void canNotStartBuilderWithNullParentEntityClass() {
-            assertThrows(NullPointerException.class,
+            assertThrows(AxonConfigurationException.class,
                          () -> ListEntityChildMetamodel.forEntityModel(null, childEntityMetamodel));
         }
 
         @Test
         void canNotStartBuilderWithNullEntityModel() {
-            assertThrows(NullPointerException.class,
+            assertThrows(AxonConfigurationException.class,
                          () -> ListEntityChildMetamodel.forEntityModel(RecordingParentEntity.class, null));
         }
 

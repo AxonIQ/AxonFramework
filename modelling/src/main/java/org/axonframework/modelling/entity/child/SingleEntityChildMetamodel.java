@@ -134,8 +134,8 @@ public class SingleEntityChildMetamodel<C, P> extends AbstractEntityChildMetamod
          * @return this builder instance
          */
         public Builder<C, P> childEntityFieldDefinition(ChildEntityFieldDefinition<P, C> fieldDefinition) {
-            this.childEntityFieldDefinition =
-                    Objects.requireNonNull(fieldDefinition, "The fieldDefinition may not be null.");
+            assertNonNull(fieldDefinition, "The fieldDefinition may not be null.");
+            this.childEntityFieldDefinition = fieldDefinition;
             return this;
         }
 

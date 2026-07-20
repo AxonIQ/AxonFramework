@@ -127,11 +127,9 @@ public class MapEntityChildMetamodel<K, C, P> extends AbstractEntityChildMetamod
          *                        the parent entity
          * @return this builder instance for a fluent API
          */
-        public Builder<K, C, P> childEntityFieldDefinition(
-                ChildEntityFieldDefinition<P, Map<K, C>> fieldDefinition
-        ) {
-            this.childEntityFieldDefinition =
-                    requireNonNull(fieldDefinition, "The childEntityFieldDefinition may not be null.");
+        public Builder<K, C, P> childEntityFieldDefinition(ChildEntityFieldDefinition<P, Map<K, C>> fieldDefinition) {
+            assertNonNull(fieldDefinition, "The childEntityFieldDefinition may not be null.");
+            this.childEntityFieldDefinition = fieldDefinition;
             return this;
         }
 

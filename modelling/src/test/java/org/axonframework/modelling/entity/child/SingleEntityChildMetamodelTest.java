@@ -202,13 +202,13 @@ class SingleEntityChildMetamodelTest {
 
         @Test
         void canNotStartBuilderWithNullParentEntityClass() {
-            assertThrows(NullPointerException.class,
+            assertThrows(AxonConfigurationException.class,
                          () -> SingleEntityChildMetamodel.forEntityModel(null, childEntityMetamodel));
         }
 
         @Test
         void canNotStartBuilderWithNullEntityModel() {
-            assertThrows(NullPointerException.class,
+            assertThrows(AxonConfigurationException.class,
                          () -> SingleEntityChildMetamodel.forEntityModel(RecordingParentEntity.class, null));
         }
     }

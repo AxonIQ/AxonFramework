@@ -294,13 +294,13 @@ class MapEntityChildMetamodelTest {
         @Test
         void canNotStartBuilderWithNullEntityModel() {
             assertThatThrownBy(() -> MapEntityChildMetamodel.forEntityModel(RecordingParentEntity.class, null))
-                    .isInstanceOf(NullPointerException.class);
+                    .isInstanceOf(AxonConfigurationException.class);
         }
 
         @Test
         void canNotStartBuilderWithNullParentEntityClass() {
             assertThatThrownBy(() -> MapEntityChildMetamodel.forEntityModel(null, childEntityMetamodel))
-                    .isInstanceOf(NullPointerException.class);
+                    .isInstanceOf(AxonConfigurationException.class);
         }
 
         @Test
