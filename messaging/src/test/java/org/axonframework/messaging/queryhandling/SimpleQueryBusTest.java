@@ -650,6 +650,66 @@ class SimpleQueryBusTest {
             // then...
             assertThat(updateSupplierInvoked).isFalse();
         }
+
+        @Test
+        void emitUpdateReturningCountReturnsNumberOfMatchingSubscriptions() {
+            // given...
+            QueryMessage testQueryOne = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryTwo = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryThree = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            // Filter matches subscription queries one and two only
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryOne.identifier())
+                            || query.identifier().equals(testQueryTwo.identifier());
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            SubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(UPDATE_PAYLOAD_TYPE, UPDATE_PAYLOAD);
+            testSubject.subscriptionQuery(testQueryOne, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryTwo, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryThree, null, Queues.SMALL_BUFFER_SIZE);
+            // when...
+            Integer matchCount = testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, null).join();
+            // then...
+            assertThat(matchCount).isEqualTo(2);
+        }
+
+        @Test
+        void emitUpdateReturningCountReturnsZeroWhenNoSubscriptionsMatch() {
+            // given...
+            QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            SubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(UPDATE_PAYLOAD_TYPE, UPDATE_PAYLOAD);
+            testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
+            // when...
+            Integer matchCount =
+                    testSubject.emitUpdateAndCount(query -> false, () -> updateMessage, null).join();
+            // then...
+            assertThat(matchCount).isZero();
+        }
+
+        @Test
+        void emitUpdateReturningCountReflectsMatchCountAtCallTimeEvenWhenEmitIsDeferredToAfterCommit() {
+            // given...
+            QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
+            Predicate<QueryMessage> queryFilter = query -> query.identifier().equals(testQuery.identifier());
+            SubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(UPDATE_PAYLOAD_TYPE, UPDATE_PAYLOAD);
+            UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+            AtomicReference<Integer> matchCountRef = new AtomicReference<>();
+            // when emitting on invocation, before the ProcessingContext has committed...
+            uow.onInvocation(context -> {
+                CompletableFuture<Integer> matchCountFuture =
+                        testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, context);
+                // then the match count is already available, without waiting for the after-commit phase...
+                matchCountRef.set(matchCountFuture.join());
+                return CompletableFuture.completedFuture(null);
+            });
+            uow.execute().join();
+            // then...
+            assertThat(matchCountRef.get()).isEqualTo(1);
+        }
     }
 
     @Nested
@@ -771,6 +831,37 @@ class SimpleQueryBusTest {
             uow.execute().join();
             // then we expect the update to be emitted, validated by the filter being invoked...
             assertThat(filterInvoked).isTrue();
+        }
+
+        @Test
+        void completeSubscriptionsReturningCountReturnsNumberOfCompletedSubscriptions() {
+            // given...
+            QueryMessage testQueryOne = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryTwo = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryThree = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            // Filter matches subscription queries one and two only
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryOne.identifier())
+                            || query.identifier().equals(testQueryTwo.identifier());
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            testSubject.subscriptionQuery(testQueryOne, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryTwo, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryThree, null, Queues.SMALL_BUFFER_SIZE);
+            // when...
+            Integer matchCount = testSubject.completeSubscriptionsAndCount(queryFilter, null).join();
+            // then...
+            assertThat(matchCount).isEqualTo(2);
+        }
+
+        @Test
+        void completeSubscriptionsReturningCountReturnsZeroWhenNoSubscriptionsMatch() {
+            // given...
+            QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
+            // when...
+            Integer matchCount = testSubject.completeSubscriptionsAndCount(query -> false, null).join();
+            // then...
+            assertThat(matchCount).isZero();
         }
     }
 
@@ -904,6 +995,43 @@ class SimpleQueryBusTest {
             uow.execute().join();
             // then we expect the update to be emitted, validated by the filter being invoked...
             assertThat(filterInvoked).isTrue();
+        }
+
+        @Test
+        void completeSubscriptionsExceptionallyReturningCountReturnsNumberOfCompletedSubscriptions() {
+            // given...
+            QueryMessage testQueryOne = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryTwo = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryThree = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            // Filter matches subscription queries one and two only
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryOne.identifier())
+                            || query.identifier().equals(testQueryTwo.identifier());
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            testSubject.subscriptionQuery(testQueryOne, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryTwo, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryThree, null, Queues.SMALL_BUFFER_SIZE);
+            MockException mockException = new MockException("Mock");
+            // when...
+            Integer matchCount =
+                    testSubject.completeSubscriptionsExceptionallyAndCount(queryFilter, mockException, null)
+                               .join();
+            // then...
+            assertThat(matchCount).isEqualTo(2);
+        }
+
+        @Test
+        void completeSubscriptionsExceptionallyReturningCountReturnsZeroWhenNoSubscriptionsMatch() {
+            // given...
+            QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
+            MockException mockException = new MockException("Mock");
+            // when...
+            Integer matchCount =
+                    testSubject.completeSubscriptionsExceptionallyAndCount(query -> false, mockException, null)
+                               .join();
+            // then...
+            assertThat(matchCount).isZero();
         }
     }
 }

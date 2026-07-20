@@ -194,7 +194,14 @@ public class SimpleQueryBus implements QueryBus {
     public CompletableFuture<Void> emitUpdate(Predicate<QueryMessage> filter,
                                               Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                               @Nullable ProcessingContext context) {
-        return runAfterCommitOrImmediately(context, () -> emitUpdate(filter, updateSupplier));
+        return emitUpdateAndCount(filter, updateSupplier, context).thenApply(FutureUtils::ignoreResult);
+    }
+
+    @Override
+    public CompletableFuture<Integer> emitUpdateAndCount(Predicate<QueryMessage> filter,
+                                                         Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+                                                         @Nullable ProcessingContext context) {
+        return runAfterCommitOrImmediately(context, filter, () -> emitUpdate(filter, updateSupplier));
     }
 
     private void emitUpdate(Predicate<QueryMessage> filter,
@@ -229,7 +236,13 @@ public class SimpleQueryBus implements QueryBus {
     @Override
     public CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
                                                          @Nullable ProcessingContext context) {
-        return runAfterCommitOrImmediately(context, () -> completeSubscriptions(filter));
+        return completeSubscriptionsAndCount(filter, context).thenApply(FutureUtils::ignoreResult);
+    }
+
+    @Override
+    public CompletableFuture<Integer> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
+                                                                    @Nullable ProcessingContext context) {
+        return runAfterCommitOrImmediately(context, filter, () -> completeSubscriptions(filter));
     }
 
     private void completeSubscriptions(Predicate<QueryMessage> filter) {
@@ -253,7 +266,16 @@ public class SimpleQueryBus implements QueryBus {
             Throwable cause,
             @Nullable ProcessingContext context
     ) {
-        return runAfterCommitOrImmediately(context, () -> completeSubscriptionsExceptionally(filter, cause));
+        return completeSubscriptionsExceptionallyAndCount(filter, cause, context).thenApply(FutureUtils::ignoreResult);
+    }
+
+    @Override
+    public CompletableFuture<Integer> completeSubscriptionsExceptionallyAndCount(
+            Predicate<QueryMessage> filter,
+            Throwable cause,
+            @Nullable ProcessingContext context
+    ) {
+        return runAfterCommitOrImmediately(context, filter, () -> completeSubscriptionsExceptionally(filter, cause));
     }
 
     private void completeSubscriptionsExceptionally(Predicate<QueryMessage> filter, Throwable cause) {
@@ -263,11 +285,23 @@ public class SimpleQueryBus implements QueryBus {
                       .forEach(entry -> emitError(entry.getValue(), cause, entry.getKey()));
     }
 
-    private CompletableFuture<Void> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
-                                                                Runnable updateTask) {
+    /**
+     * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits, matching
+     * {@code updateTask}'s matching subscriptions to the given {@code filter}.
+     * <p>
+     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not for
+     * an already-errored {@code context}, since the update is silently dropped in that case and the {@code filter}
+     * must not observe any side effects.
+     */
+    private CompletableFuture<Integer> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
+                                                                   Predicate<QueryMessage> filter,
+                                                                   Runnable updateTask) {
         if (context == null || context.isCommitted()) {
+            int matchCount = matchCount(filter);
             updateTask.run();
+            return CompletableFuture.completedFuture(matchCount);
         } else if (!context.isCompleted()) {
+            int matchCount = matchCount(filter);
             context.computeResourceIfAbsent(
                            UPDATE_TASKS_KEY,
                            () -> {
@@ -277,9 +311,17 @@ public class SimpleQueryBus implements QueryBus {
                            }
                    )
                    .add(updateTask);
+            return CompletableFuture.completedFuture(matchCount);
         }
         // else: context completed with error - drop the update
-        return FutureUtils.emptyCompletedFuture();
+        return CompletableFuture.completedFuture(0);
+    }
+
+    private int matchCount(Predicate<QueryMessage> filter) {
+        return (int) updateHandlers.keySet()
+                                   .stream()
+                                   .filter(filter)
+                                   .count();
     }
 
     private void emitError(QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler,

@@ -16,14 +16,15 @@
 
 package org.axonframework.messaging.queryhandling;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.conversion.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,12 +62,18 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
      * The {@code messageTypeResolver} is used to construct {@link SubscriptionQueryUpdateMessage update messages} for
      * {@link #emit(Class, Predicate, Object)} invocations. Any {@link #emit(Class, Predicate, Object)} or
      * {@link #emit(QualifiedName, Predicate, Object)} is delegated to
-     * {@link QueryBus#emitUpdate(Predicate, Supplier, ProcessingContext)}. Similarly,
+     * {@link QueryBus#emitUpdate(Predicate, Supplier, ProcessingContext)}, while their match-count-returning
+     * counterparts, {@link #emitAndCount(Class, Predicate, Supplier)} and
+     * {@link #emitAndCount(QualifiedName, Predicate, Supplier)}, are delegated to
+     * {@link QueryBus#emitUpdateAndCount(Predicate, Supplier, ProcessingContext)}. Similarly,
      * {@link #complete(Class, Predicate)}/{@link #complete(QualifiedName, Predicate)} and
      * {@link #completeExceptionally(Class, Predicate, Throwable)}/{@link #completeExceptionally(QualifiedName,
      * Predicate, Throwable)} are respectively delegated to
      * {@link QueryBus#completeSubscriptions(Predicate, ProcessingContext)} and
-     * {@link QueryBus#completeSubscriptionsExceptionally(Predicate, Throwable, ProcessingContext)}.
+     * {@link QueryBus#completeSubscriptionsExceptionally(Predicate, Throwable, ProcessingContext)}, with their
+     * match-count-returning counterparts delegated to
+     * {@link QueryBus#completeSubscriptionsAndCount(Predicate, ProcessingContext)} and
+     * {@link QueryBus#completeSubscriptionsExceptionallyAndCount(Predicate, Throwable, ProcessingContext)}.
      *
      * @param queryBus            The {@code QueryBus} to delegate the {@link #emit(Class, Predicate, Object)},
      *                            {@link #complete(Class, Predicate)}, and
@@ -101,6 +108,24 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
                 .join();
     }
 
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public <Q> int emitAndCount(Class<Q> queryType,
+                                Predicate<? super Q> filter,
+                                Supplier<Object> updateSupplier) {
+        if (logger.isDebugEnabled()) {
+            logger.debug(
+                    "Emitting an update to queries matching type [{}] and a given filter, returning the match count.",
+                    queryType
+            );
+        }
+        return FutureUtils.joinAndUnwrap(queryBus.emitUpdateAndCount(
+                queryTypeFilter(queryType, filter),
+                () -> asUpdateMessage(updateSupplier.get()),
+                context
+        ));
+    }
+
     @Override
     public void emit(QualifiedName queryName,
                      Predicate<Object> filter,
@@ -110,6 +135,24 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         }
         queryBus.emitUpdate(queryNameFilter(queryName, filter), () -> asUpdateMessage(updateSupplier.get()), context)
                 .join();
+    }
+
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public int emitAndCount(QualifiedName queryName,
+                            Predicate<Object> filter,
+                            Supplier<Object> updateSupplier) {
+        if (logger.isDebugEnabled()) {
+            logger.debug(
+                    "Emitting an update to queries matching name [{}] and a given filter, returning the match count.",
+                    queryName
+            );
+        }
+        return FutureUtils.joinAndUnwrap(queryBus.emitUpdateAndCount(
+                queryNameFilter(queryName, filter),
+                () -> asUpdateMessage(updateSupplier.get()),
+                context
+        ));
     }
 
     private SubscriptionQueryUpdateMessage asUpdateMessage(Object update) {
@@ -130,6 +173,17 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
                 .join();
     }
 
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public <Q> int completeAndCount(Class<Q> queryType, Predicate<? super Q> filter) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Completing subscription queries of type [{}], returning the match count.", queryType);
+        }
+        return FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsAndCount(queryTypeFilter(queryType, filter), context)
+        );
+    }
+
     @Override
     public void complete(QualifiedName queryName, Predicate<Object> filter) {
         if (logger.isDebugEnabled()) {
@@ -137,6 +191,17 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         }
         queryBus.completeSubscriptions(queryNameFilter(queryName, filter), context)
                 .join();
+    }
+
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public int completeAndCount(QualifiedName queryName, Predicate<Object> filter) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Completing subscription queries with name [{}], returning the match count.", queryName);
+        }
+        return FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsAndCount(queryNameFilter(queryName, filter), context)
+        );
     }
 
     @Override
@@ -150,6 +215,20 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
                 .join();
     }
 
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public <Q> int completeExceptionallyAndCount(Class<Q> queryType,
+                                                 Predicate<? super Q> filter,
+                                                 Throwable cause) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Completing subscription queries of type [{}] exceptionally, returning the match count.",
+                         queryType, cause);
+        }
+        return FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsExceptionallyAndCount(queryTypeFilter(queryType, filter), cause, context)
+        );
+    }
+
     @Override
     public void completeExceptionally(QualifiedName queryName,
                                       Predicate<Object> filter,
@@ -161,7 +240,21 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
                 .join();
     }
 
-        private static Predicate<QueryMessage> queryNameFilter(QualifiedName queryName,
+    @SuppressWarnings("DataFlowIssue")
+    @Override
+    public int completeExceptionallyAndCount(QualifiedName queryName,
+                                             Predicate<Object> filter,
+                                             Throwable cause) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Completing subscription queries with name [{}] exceptionally, returning the match count.",
+                         queryName, cause);
+        }
+        return FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsExceptionallyAndCount(queryNameFilter(queryName, filter), cause, context)
+        );
+    }
+
+    private static Predicate<QueryMessage> queryNameFilter(QualifiedName queryName,
                                                            Predicate<Object> filter) {
         return message -> queryName.equals(message.type().qualifiedName()) && filter.test(message.payload());
     }
