@@ -42,7 +42,7 @@
              verbatim. This module only guarantees that samples compile against current APIs; it never runs them
              (many are illustrative fragments with an uninitialized fixture field, never meant to execute). -->
         <skipTests>true</skipTests>
-        <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
+        <build-helper-maven-plugin.version>3.6.1</build-helper-maven-plugin.version>
     </properties>
 
     <dependencies>
@@ -127,7 +127,7 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-            <version>11.14.1</version>
+            <version>12.11.0</version>
         </dependency>
     </dependencies>
 
