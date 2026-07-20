@@ -129,8 +129,9 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
     /**
      * Resolves the child entities of the given {@code parent}, keyed by an implementation-specific identity.
      * <p>
-     * The returned {@link Map} must preserve iteration order (e.g. {@link LinkedHashMap}), as that order determines the
-     * order in which candidates are offered to the {@link CommandTargetResolver} and {@link EventTargetMatcher}.
+     * The returned immutable {@link Map} must preserve iteration order (e.g. {@link LinkedHashMap}), as that order
+     * determines the order in which candidates are offered to the {@link CommandTargetResolver} and
+     * {@link EventTargetMatcher}.
      *
      * @param parent the parent entity to resolve the child entities from
      * @return the child entities of the given {@code parent}, keyed by an implementation-specific identity

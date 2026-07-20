@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.child;
 import org.axonframework.modelling.entity.EntityMetamodel;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +64,7 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
         for (int i = 0; i < childEntities.size(); i++) {
             indexedChildEntities.put(i, childEntities.get(i));
         }
-        return indexedChildEntities;
+        return Collections.unmodifiableMap(indexedChildEntities);
     }
 
     @Override

@@ -18,6 +18,7 @@ package org.axonframework.modelling.entity.child;
 
 import org.axonframework.modelling.entity.EntityMetamodel;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -78,7 +79,7 @@ public class MapEntityChildMetamodel<K, C, P> extends AbstractEntityChildMetamod
     @Override
     protected Map<Object, C> getChildEntities(P parent) {
         Map<K, C> childEntities = childEntityFieldDefinition.getChildValue(parent);
-        return childEntities == null ? Map.of() : new LinkedHashMap<>(childEntities);
+        return childEntities == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(childEntities));
     }
 
     @Override
