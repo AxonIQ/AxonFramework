@@ -154,6 +154,7 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
     void canGrantAndRevokeCertificationsForEmployee() {
         sendCommand(CREATE_EMPLOYEE_1_COMMAND);
 
+        sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "Axon Pro", "Axoniq"));
         sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA", "Amazon"));
 
         assertThrowsExceptionWithText("Employee already holds certification AWS-SAA", () -> {
