@@ -31,7 +31,7 @@ import java.util.Objects;
 /**
  * Implementation of the {@link EntityIdResolver} that converts the payload through the configured
  * {@link MessageConverter} then takes the expected representation of the message handler from the
- * {@link AnnotatedEntityMetamodel}.
+ * {@link RepresentationResolvingEntityEvolver}.
  * <p>
  * It will then use the delegate {@link EntityIdResolver} to resolve the id, defaulting to the
  * {@link AnnotationBasedEntityIdResolver}.
@@ -42,33 +42,33 @@ import java.util.Objects;
  */
 public class AnnotatedEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
 
-    private final AnnotatedEntityMetamodel<?> metamodel;
+    private final RepresentationResolvingEntityEvolver<?> entityEvolver;
     private final MessageConverter converter;
     private final EntityIdResolver<ID> delegate;
     private final Class<ID> idType;
 
     /**
      * Constructs an {@code AnnotatedEntityMetamodelEntityIdResolver} for the provided
-     * {@link AnnotatedEntityMetamodel}.
+     * {@link RepresentationResolvingEntityEvolver}.
      *
-     * @param metamodel The metamodel that dictates the expected representation of the message.
+     * @param entityEvolver The entity evolver that dictates the expected representation of the message.
      * @param idType    The type of the id that will be resolved.
      * @param converter The {@link MessageConverter} to use.
      * @param delegate  The {@link EntityIdResolver} to use on the message after conversion.
      */
-    public AnnotatedEntityIdResolver(AnnotatedEntityMetamodel<?> metamodel,
+    public AnnotatedEntityIdResolver(RepresentationResolvingEntityEvolver<?> entityEvolver,
                                      Class<ID> idType,
                                      MessageConverter converter,
                                      EntityIdResolver<ID> delegate) {
         this.idType = Objects.requireNonNull(idType, "The idType should not be null.");
-        this.metamodel = Objects.requireNonNull(metamodel, "The metamodel should not be null,");
+        this.entityEvolver = Objects.requireNonNull(entityEvolver, "The entityEvolver should not be null,");
         this.converter = Objects.requireNonNull(converter, "The converter should not be null.");
         this.delegate = Objects.requireNonNull(delegate, "The delegate should not be null.");
     }
 
     @Override
     public ID resolve(Message message, ProcessingContext context) throws EntityIdResolutionException {
-        Class<?> expectedRepresentation = metamodel.getExpectedRepresentation(message.type().qualifiedName());
+        Class<?> expectedRepresentation = entityEvolver.getExpectedRepresentation(message.type().qualifiedName());
         if (expectedRepresentation != null) {
             return delegate.resolve(message.withConvertedPayload(expectedRepresentation, converter), context);
         }
@@ -82,6 +82,6 @@ public class AnnotatedEntityIdResolver<ID> implements EntityIdResolver<ID>, Desc
         descriptor.describeWrapperOf(delegate);
         descriptor.describeProperty("converter", converter);
         descriptor.describeProperty("idType", idType);
-        descriptor.describeProperty("metaModel", metamodel);
+        descriptor.describeProperty("entityEvolver", entityEvolver);
     }
 }

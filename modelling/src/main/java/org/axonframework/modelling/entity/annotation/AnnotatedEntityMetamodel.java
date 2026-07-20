@@ -89,7 +89,8 @@ import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspec
  * @author Allard Buijze
  * @since 3.1.0
  */
-public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, DescribableComponent {
+public class AnnotatedEntityMetamodel<E>
+        implements EntityMetamodel<E>, DescribableComponent, RepresentationResolvingEntityEvolver<E> {
 
     private static final Logger logger = LoggerFactory.getLogger(AnnotatedEntityMetamodel.class);
 
@@ -367,6 +368,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      * @return The {@link Class} of the expected representation for handlers of the given {@code qualifiedName}, or
      * {@code null} if no such representation is found.
      */
+    @Override
     @Nullable
     public Class<?> getExpectedRepresentation(QualifiedName qualifiedName) {
         if (payloadTypes.containsKey(qualifiedName)) {

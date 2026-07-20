@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.configuration;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.DecoratorDefinition;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
 import org.axonframework.common.infra.ComponentDescriptor;
@@ -38,7 +39,12 @@ import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.annotation.AnnotatedEntityIdResolver;
+import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.annotation.RepresentationResolvingEntityEvolver;
 import org.axonframework.modelling.repository.Repository;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -57,10 +63,12 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.withSettings;
 
 /**
  * Test class validating the {@link AnnotatedEventSourcedEntityModule}.
@@ -421,6 +429,72 @@ class AnnotatedEventSourcedEntityModuleTest {
             result.describeTo(componentDescriptor);
 
             verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), isA(SnapshottingEntityLifecycleHandler.class));
+        }
+    }
+
+    @Nested
+    class WhenEntityMetamodelIsDecorated {
+
+        private static final String COURSE_ENTITY_NAME = Course.class.getName() + "#" + CourseId.class.getName();
+
+        @Test
+        void idResolverBuildsAgainstDecoratedMetamodelThatImplementsRepresentationResolvingEntityEvolver() {
+            componentRegistry.registerModule(EventSourcedEntityModule.autodetected(CourseId.class, Course.class));
+            componentRegistry.registerDecorator(DecoratorDefinition
+                    .forType(EntityMetamodel.class)
+                    .with((config, name, delegate) -> mock(EntityMetamodel.class,
+                            withSettings().extraInterfaces(RepresentationResolvingEntityEvolver.class)
+                                          .defaultAnswer(delegatesTo(delegate)))));
+
+            Configuration entityConfiguration =
+                    entityModuleConfiguration(componentRegistry.build(lifecycleRegistry), COURSE_ENTITY_NAME);
+
+            // Sanity check that the decorator actually reached the entity's (nested) EntityMetamodel component —
+            // otherwise the id-resolver assertion below would pass vacuously against the undecorated metamodel.
+            assertThat(entityConfiguration.getComponent(EntityMetamodel.class, COURSE_ENTITY_NAME))
+                    .isInstanceOf(RepresentationResolvingEntityEvolver.class)
+                    .isNotInstanceOf(AnnotatedEntityMetamodel.class);
+
+            // Building the EntityIdResolver resolves that decorated metamodel; the module accepts it precisely
+            // because the decorator preserved RepresentationResolvingEntityEvolver.
+            assertThat(entityConfiguration.getComponent(EntityIdResolver.class, COURSE_ENTITY_NAME))
+                    .isInstanceOf(AnnotatedEntityIdResolver.class);
+        }
+
+        @Test
+        void idResolverBuildFailsWhenDecoratedMetamodelDropsRepresentationResolvingEntityEvolver() {
+            componentRegistry.registerModule(EventSourcedEntityModule.autodetected(CourseId.class, Course.class));
+            // Decorate the EntityMetamodel with a wrapper that does NOT implement
+            // RepresentationResolvingEntityEvolver. Building the EntityIdResolver must fail fast with a
+            // helpful message rather than an opaque ClassCastException.
+            componentRegistry.registerDecorator(DecoratorDefinition
+                    .forType(EntityMetamodel.class)
+                    .with((config, name, delegate) -> mock(EntityMetamodel.class, delegatesTo(delegate))));
+
+            Configuration entityConfiguration =
+                    entityModuleConfiguration(componentRegistry.build(lifecycleRegistry), COURSE_ENTITY_NAME);
+
+            assertThatThrownBy(() -> entityConfiguration.getComponent(EntityIdResolver.class, COURSE_ENTITY_NAME))
+                    .hasStackTraceContaining("does not implement RepresentationResolvingEntityEvolver");
+        }
+
+        /**
+         * Returns the (nested) module configuration that holds the entity's components. Annotated event-sourced
+         * entities register their components in a nested module, so a plain {@code getComponent} on the parent does
+         * not find them. Located via the always-buildable {@code EntityMetamodel} so it works for both the positive
+         * and negative cases above.
+         */
+        private static Configuration entityModuleConfiguration(Configuration configuration, String name) {
+            if (configuration.getOptionalComponent(EntityMetamodel.class, name).isPresent()) {
+                return configuration;
+            }
+            for (Configuration child : configuration.getModuleConfigurations()) {
+                Configuration found = entityModuleConfiguration(child, name);
+                if (found != null) {
+                    return found;
+                }
+            }
+            return null;
         }
     }
 

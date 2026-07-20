@@ -38,6 +38,7 @@ import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.annotation.RepresentationResolvingEntityEvolver;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -153,8 +154,12 @@ class AnnotatedEventSourcedEntityModule<I, E>
         var type = (Class<EntityIdResolverDefinition>) annotationAttributes.get("entityIdResolverDefinition");
         var definition = getConstructorFunctionWithZeroArguments(type).get();
         return c -> {
-            var component = (AnnotatedEntityMetamodel<E>) c.getComponent(EntityMetamodel.class, entityName());
-            return definition.createIdResolver(entityType, idType, component, c);
+            var component = c.getComponent(EntityMetamodel.class, entityName());
+            if(component instanceof RepresentationResolvingEntityEvolver representationResolvingEntityEvolver) {
+                return definition.createIdResolver(entityType, idType, representationResolvingEntityEvolver, c);
+            }
+            // Not possible, except when decorating, as this is a component configured by this module.
+            throw new IllegalArgumentException("The EntityMetamodel does not implement RepresentationResolvingEntityEvolver. Make sure that all decorators implement and delegate this interface.");
         };
     }
 

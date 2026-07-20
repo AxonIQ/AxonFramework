@@ -26,8 +26,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 
 /**
  * {@link EntityIdResolverDefinition} that converts the payload of incoming messages based on the
- * {@link AnnotatedEntityMetamodel#getExpectedRepresentation(QualifiedName) expected payload type} of the message
- * handler in the model, and then looks for a {@link TargetEntityId}-annotated
+ * {@link RepresentationResolvingEntityEvolver#getExpectedRepresentation(QualifiedName) expected payload type}
+ * of the message handler in the model, and then looks for a {@link TargetEntityId}-annotated
  * member in the payload, through the {@link AnnotationBasedEntityIdResolver}.
  *
  * @author Mitchell Herrijgers
@@ -38,10 +38,10 @@ public class AnnotatedEntityIdResolverDefinition implements EntityIdResolverDefi
     @Override
     public <E, ID> EntityIdResolver<ID> createIdResolver(Class<E> entityType,
                                                          Class<ID> idType,
-                                                         AnnotatedEntityMetamodel<E> entityMetamodel,
+                                                         RepresentationResolvingEntityEvolver<E> entityEvolver,
                                                          Configuration configuration) {
         return new AnnotatedEntityIdResolver<>(
-                entityMetamodel,
+                entityEvolver,
                 idType,
                 configuration.getComponent(MessageConverter.class),
                 new AnnotationBasedEntityIdResolver<>()
