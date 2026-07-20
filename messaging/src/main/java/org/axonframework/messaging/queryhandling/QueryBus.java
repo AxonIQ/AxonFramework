@@ -15,12 +15,12 @@
  */
 package org.axonframework.messaging.queryhandling;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
@@ -41,7 +41,7 @@ import java.util.function.Supplier;
  *
  * @author Marc Gathier
  * @author Allard Buijze
- * @since 3.1
+ * @since 3.1.0
  */
 public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableComponent {
 
@@ -68,11 +68,11 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * {@code query}, the returned {@code MessageStream} will have {@link MessageStream#failed(Throwable) failed} with a
      * {@link NoHandlerForQueryException}.
      *
-     * @param query   The query to dispatch.
-     * @param context The processing context under which the query is being published (can be {@code null}).
-     * @return A {@code MessageStream} containing either 0, 1, or N {@link QueryResponseMessage QueryResponseMessages}.
-     * @throws NoHandlerForQueryException When no {@link QueryHandler} is registered for the given {@code query}'s
-     *                                    {@link MessageType#qualifiedName() query name}.
+     * @param query   the query to dispatch
+     * @param context the processing context under which the query is being published (can be {@code null})
+     * @return a {@code MessageStream} containing either 0, 1, or N {@link QueryResponseMessage QueryResponseMessages}
+     * @throws NoHandlerForQueryException when no {@link QueryHandler} is registered for the given {@code query}'s
+     *                                    {@link MessageType#qualifiedName() query name}
      */
     MessageStream<QueryResponseMessage> query(QueryMessage query, @Nullable ProcessingContext context);
 
@@ -94,12 +94,12 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * {@link SubscriptionQueryAlreadyRegisteredException} instead of throwing the exception. This allows callers to
      * handle double subscription scenarios gracefully through the stream API.
      *
-     * @param query            The subscription query to dispatch.
-     * @param context          The processing context under which the query is being published (can be {@code null}).
-     * @param updateBufferSize The size of the buffer which accumulates update.
+     * @param query            the subscription query to dispatch
+     * @param context          the processing context under which the query is being published (can be {@code null})
+     * @param updateBufferSize the size of the buffer which accumulates update
      * @return query result containing initial result and incremental update, or a failed {@link MessageStream} with
      * {@link SubscriptionQueryAlreadyRegisteredException} if a subscription with the same query identifier already
-     * exists.
+     * exists
      */
     MessageStream<QueryResponseMessage> subscriptionQuery(QueryMessage query,
                                                           @Nullable ProcessingContext context,
@@ -120,11 +120,11 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * {@link MessageStream} will be {@link MessageStream#failed(Throwable) failed} with a
      * {@link SubscriptionQueryAlreadyRegisteredException} instead of throwing the exception.
      *
-     * @param query            The subscription query for which we register an update handler.
-     * @param updateBufferSize The size of the buffer that accumulates update.
+     * @param query            the subscription query for which we register an update handler
+     * @param updateBufferSize the size of the buffer that accumulates update
      * @return a MessageStream of update for the given subscription query, or a failed {@link MessageStream} with
      * {@link SubscriptionQueryAlreadyRegisteredException} if a subscription with the same query identifier already
-     * exists.
+     * exists
      */
     MessageStream<SubscriptionQueryUpdateMessage> subscribeToUpdates(QueryMessage query,
                                                                      int updateBufferSize);
@@ -134,14 +134,14 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries}
      * matching the given {@code queryName} and given {@code filter}.
      *
-     * @param filter         A predicate filtering on {@link QueryMessage QueryMessages}. The
-     *                       {@code updateSupplier} will only be sent to subscription queries matching this filter.
-     * @param updateSupplier The update supplier to emit for
+     * @param filter         a predicate filtering on {@link QueryMessage QueryMessages}. The
+     *                       {@code updateSupplier} will only be sent to subscription queries matching this filter
+     * @param updateSupplier the update supplier to emit for
      *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int)
-     *                       subscription queries} matching the given {@code filter}.
-     * @param context        The processing context under which the updateSupplier is being emitted (can be
-     *                       {@code null}).
-     * @return A future completing whenever the updateSupplier has been emitted.
+     *                       subscription queries} matching the given {@code filter}
+     * @param context        the processing context under which the updateSupplier is being emitted (can be
+     *                       {@code null})
+     * @return a future completing whenever the updateSupplier has been emitted
      */
     CompletableFuture<Void> emitUpdate(Predicate<QueryMessage> filter,
                                        Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
@@ -179,12 +179,12 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * To be used whenever there are no subsequent update to
      * {@link #emitUpdate(Predicate, Supplier, ProcessingContext) emit} left.
      *
-     * @param filter  A predicate filtering on {@link QueryMessage QueryMessages}. Subscription
-     *                queries matching this filter will be completed.
-     * @param context The processing context within which to complete subscription queries (can be {@code null}).
-     * @return A future completing whenever all matching
+     * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription
+     *                queries matching this filter will be completed
+     * @param context the processing context within which to complete subscription queries (can be {@code null})
+     * @return a future completing whenever all matching
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} have
-     * been completed.
+     * been completed
      */
     CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
                                                   @Nullable ProcessingContext context);
@@ -214,14 +214,14 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * To be used whenever {@link #emitUpdate(Predicate, Supplier, ProcessingContext) emitting update} should be
      * stopped due to some exception.
      *
-     * @param filter  A predicate filtering on {@link QueryMessage QueryMessages}. Subscription
-     *                queries matching this filter will be completed exceptionally.
+     * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription
+     *                queries matching this filter will be completed exceptionally
      * @param cause   the cause of an error
-     * @param context The processing context within which to complete subscription queries exceptionally (can be
-     *                {@code null}).
-     * @return A future completing whenever all matching
+     * @param context the processing context within which to complete subscription queries exceptionally (can be
+     *                {@code null})
+     * @return a future completing whenever all matching
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} have
-     * been completed exceptionally.
+     * been completed exceptionally
      */
     CompletableFuture<Void> completeSubscriptionsExceptionally(Predicate<QueryMessage> filter,
                                                                Throwable cause,

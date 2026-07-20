@@ -51,17 +51,17 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Creates a query update emitter for the given {@link ProcessingContext}.
      * <p>
-     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
-     * of emitting directly through a {@link QueryBus}: the emitter returned here is bound to that {@code context},
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead of
+     * emitting directly through a {@link QueryBus}: the emitter returned here is bound to that {@code context},
      * ensuring updates are emitted in the correct order relative to the lifecycle of whatever is currently being
      * handled.
      * <p>
-     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
-     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
-     * instance across such branches would risk it silently operating against the wrong one.
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may override
+     * resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an instance across
+     * such branches would risk it silently operating against the wrong one.
      *
-     * @param context The {@link ProcessingContext} to create the emitter for.
-     * @return A fresh emitter specific for the given {@code context}.
+     * @param context the {@link ProcessingContext} to create the emitter for
+     * @return a fresh emitter specific for the given {@code context}
      */
     static QueryUpdateEmitter forContext(ProcessingContext context) {
         return new SimpleQueryUpdateEmitter(
@@ -76,22 +76,18 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Emits given {@code update} to subscription queries matching the given {@code queryType} and given
      * {@code filter}.
      *
-     * @param queryType The type of the {@link QueryMessage} to filter on.
-     * @param filter    A predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
-     *                  converted to the given {@code queryType}.
-     * @param update    The incremental update to emit for
-     *                  {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
-     *                  queries} matching the given {@code filter}.
-     * @param <Q>       The type of the {@link QueryMessage} to filter on.
-     * @throws MessageTypeNotResolvedException                     If the given {@code queryType} has no known
-     *                                                             {@link MessageType}
-     *                                                             equivalent required to filter the
-     *                                                             {@link QueryMessage#payload()}.
-     * @throws ConversionException If the {@link QueryMessage#payload()}
-     *                                                             could not be converted to the given {@code queryType}
-     *                                                             to perform the given {@code filter}. Will only occur
-     *                                                             if a {@link MessageType}
-     *                                                             could be found for the given {@code queryType}.
+     * @param queryType the type of the {@link QueryMessage} to filter on
+     * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
+     *                  converted to the given {@code queryType}
+     * @param update    the incremental update to emit for
+     *                  {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries}
+     *                  matching the given {@code filter}
+     * @param <Q>       the type of the {@link QueryMessage} to filter on
+     * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
+     *                                         equivalent required to filter the {@link QueryMessage#payload()}
+     * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
+     *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
+     *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
     default <Q> void emit(Class<Q> queryType, Predicate<? super Q> filter, @Nullable Object update) {
         emit(queryType, filter, () -> update);
@@ -103,22 +99,18 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * <p>
      * The {@code updateSupplier} is only invoked whenever there are matching queries.
      *
-     * @param queryType      The type of the {@link QueryMessage} to filter on.
-     * @param filter         A predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
-     *                       converted to the given {@code queryType}
-     * @param updateSupplier The update supplier to emit for
-     *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int)
-     *                       subscription queries} matching the given {@code queryType} and {@code filter}.
-     * @param <Q>            The type of the {@link QueryMessage} to filter on.
-     * @throws MessageTypeNotResolvedException                     If the given {@code queryType} has no known
-     *                                                             {@link MessageType}
-     *                                                             equivalent required to filter the
-     *                                                             {@link QueryMessage#payload()}.
-     * @throws ConversionException If the {@link QueryMessage#payload()}
-     *                                                             could not be converted to the given {@code queryType}
-     *                                                             to perform the given {@code filter}. Will only occur
-     *                                                             if a {@link MessageType}
-     *                                                             could be found for the given {@code queryType}.
+     * @param queryType      the type of the {@link QueryMessage} to filter on
+     * @param filter         a predicate to filter matching subscription queries based on the
+     *                       {@link QueryMessage#payload()} converted to the given {@code queryType}
+     * @param updateSupplier the update supplier to emit for
+     *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
+     *                       queries} matching the given {@code queryType} and {@code filter}
+     * @param <Q>            the type of the {@link QueryMessage} to filter on
+     * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
+     *                                         equivalent required to filter the {@link QueryMessage#payload()}
+     * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
+     *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
+     *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
     <Q> void emit(Class<Q> queryType,
                   Predicate<? super Q> filter,
@@ -156,12 +148,12 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Emits given {@code update} to subscription queries matching the given {@code queryName} and given
      * {@code filter}.
      *
-     * @param queryName The qualified name of the {@link QueryMessage#type()} to filter on.
-     * @param filter    A predicate to filter matching subscription queries based on the raw
-     *                  {@link QueryMessage#payload()}.
-     * @param update    The incremental update to emit for
-     *                  {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
-     *                  queries} matching the given {@code filter}.
+     * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
+     * @param filter    a predicate to filter matching subscription queries based on the raw
+     *                  {@link QueryMessage#payload()}
+     * @param update    the incremental update to emit for
+     *                  {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries}
+     *                  matching the given {@code filter}
      */
     default void emit(QualifiedName queryName, Predicate<Object> filter, @Nullable Object update) {
         emit(queryName, filter, () -> update);
@@ -173,12 +165,12 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * <p>
      * The {@code updateSupplier} is only invoked whenever there are matching queries.
      *
-     * @param queryName      The qualified name of the {@link QueryMessage#type()} to filter on.
-     * @param filter         A predicate to filter matching subscription queries based on the raw
-     *                       {@link QueryMessage#payload()}.
-     * @param updateSupplier The update supplier to emit for
-     *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int)
-     *                       subscription queries} matching the given {@code queryName} and {@code filter}.
+     * @param queryName      the qualified name of the {@link QueryMessage#type()} to filter on
+     * @param filter         a predicate to filter matching subscription queries based on the raw
+     *                       {@link QueryMessage#payload()}
+     * @param updateSupplier the update supplier to emit for
+     *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
+     *                       queries} matching the given {@code queryName} and {@code filter}
      */
     void emit(QualifiedName queryName,
               Predicate<Object> filter,
@@ -209,19 +201,15 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Completes subscription queries matching the given {@code queryType} and {@code filter}.
      *
-     * @param queryType The type of the {@link QueryMessage} to filter on.
-     * @param filter    A predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
+     * @param queryType the type of the {@link QueryMessage} to filter on
+     * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
      *                  converted to the given {@code queryType}
-     * @param <Q>       The type of the {@link QueryMessage} to filter on.
-     * @throws MessageTypeNotResolvedException                     If the given {@code queryType} has no known
-     *                                                             {@link MessageType}
-     *                                                             equivalent required to filter the
-     *                                                             {@link QueryMessage#payload()}.
-     * @throws ConversionException If the {@link QueryMessage#payload()}
-     *                                                             could not be converted to the given {@code queryType}
-     *                                                             to perform the given {@code filter}. Will only occur
-     *                                                             if a {@link MessageType}
-     *                                                             could be found for the given {@code queryType}.
+     * @param <Q>       the type of the {@link QueryMessage} to filter on
+     * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
+     *                                         equivalent required to filter the {@link QueryMessage#payload()}
+     * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
+     *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
+     *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
     <Q> void complete(Class<Q> queryType, Predicate<? super Q> filter);
 
@@ -251,8 +239,8 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Completes subscription queries matching the given {@code queryName} and {@code filter}.
      *
-     * @param queryName The qualified name of the {@link QueryMessage#type()} to filter on.
-     * @param filter    A predicate testing the raw {@link QueryMessage#payload()} as is.
+     * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
+     * @param filter    a predicate testing the raw {@link QueryMessage#payload()} as is
      */
     void complete(QualifiedName queryName, Predicate<Object> filter);
 
@@ -275,20 +263,16 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Completes subscription queries with the given {@code cause} matching given {@code queryType} and {@code filter}.
      *
-     * @param queryType The type of the {@link QueryMessage} to filter on.
-     * @param filter    A predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
+     * @param queryType the type of the {@link QueryMessage} to filter on
+     * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
      *                  converted to the given {@code queryType}
-     * @param cause     The cause of an error leading to exceptionally complete subscription queries.
-     * @param <Q>       The type of the {@link QueryMessage} to filter on.
-     * @throws MessageTypeNotResolvedException                     If the given {@code queryType} has no known
-     *                                                             {@link MessageType}
-     *                                                             equivalent required to filter the
-     *                                                             {@link QueryMessage#payload()}.
-     * @throws ConversionException If the {@link QueryMessage#payload()}
-     *                                                             could not be converted to the given {@code queryType}
-     *                                                             to perform the given {@code filter}. Will only occur
-     *                                                             if a {@link MessageType}
-     *                                                             could be found for the given {@code queryType}.
+     * @param cause     the cause of an error leading to exceptionally complete subscription queries
+     * @param <Q>       the type of the {@link QueryMessage} to filter on
+     * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
+     *                                         equivalent required to filter the {@link QueryMessage#payload()}
+     * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
+     *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
+     *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
     <Q> void completeExceptionally(Class<Q> queryType,
                                    Predicate<? super Q> filter,
@@ -323,10 +307,10 @@ public interface QueryUpdateEmitter extends DescribableComponent {
     /**
      * Completes subscription queries with the given {@code cause} matching given {@code queryName} and {@code filter}.
      *
-     * @param queryName The qualified name of the {@link QueryMessage#type()} to filter on.
-     * @param filter    A predicate to filter matching subscription queries based on the raw
-     *                  {@link QueryMessage#payload()}.
-     * @param cause     The cause of an error leading to exceptionally complete subscription queries.
+     * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
+     * @param filter    a predicate to filter matching subscription queries based on the raw
+     *                  {@link QueryMessage#payload()}
+     * @param cause     the cause of an error leading to exceptionally complete subscription queries
      */
     void completeExceptionally(QualifiedName queryName,
                                Predicate<Object> filter,
