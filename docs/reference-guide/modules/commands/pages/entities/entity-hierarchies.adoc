@@ -35,6 +35,13 @@ include::example$commands/entities/entityhierarchies/EnrollmentEntity.java[tag=c
 <4> A getter exposing the value that identifies this particular child instance.
 The name matches the field used to address this child in incoming commands.
 
+A child field can take one of three shapes:
+
+* A single field, for exactly one child instance.
+* A `List<Child>`, for an ordered collection of children.
+* A `Map<Key, Child>`, for children addressed by their own key.
+The map's keys are independent of the routing key and are preserved automatically as children are added, evolved, or removed.
+
 == Configuring the hierarchy
 
 Three approaches are available:
@@ -77,7 +84,7 @@ include::example$commands/entities/entityhierarchies/AxonConfiguration.java[tag=
 ----
 
 <1> `EntityChildMetamodel.list()` wires the child into the parent for a `List` field.
-Other factory methods cover a single child field or different collection shapes.
+`EntityChildMetamodel.single()` covers a single child field, and `EntityChildMetamodel.map()` covers a `Map` field the same way, taking a `Map`-typed getter and evolver instead of a `List`-typed one.
 
 <2> The getter that reads the child list from a parent instance, plus the evolver that produces a new parent instance with an updated list.
 
@@ -110,13 +117,6 @@ Register the entity:
 ----
 include::example$commands/entities/entityhierarchies/autodetected/CourseHierarchyConfiguration.java[tag=autodetected-registration,indent=0]
 ----
-
-[NOTE]
-====
-Only `List` fields are supported for collections of child entities in the annotated approach.
-Using a `Map` field will not route commands to the map values.
-Use a `List` instead and manage key-based lookup within the entity.
-====
 
 [#_spring_boot]
 === Spring Boot

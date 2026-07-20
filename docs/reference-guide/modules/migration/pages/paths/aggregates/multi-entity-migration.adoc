@@ -102,10 +102,9 @@ If you need to suppress event forwarding entirely, do not declare `@EventSourcin
 
 - xref:commands:entities/entity-hierarchies.adoc[Entity Hierarchies]: full reference for `@EntityMember`, routing key configuration, and event routing in Axon Framework 5
 
-[IMPORTANT]
-.Maps are not supported
+[NOTE]
+.Maps are supported too
 ====
-`@AggregateMember` could be used on `Map<Key,Value>` fields to represent child entities identified by a key.
-
-The `@EntityMember` annotation in Axon Framework 5 supports `List<Value>` only. If you need to model child entities identified by a key, consider using a `List<Value>` and managing the identification logic within the entity itself or through a custom resolver.
+`@AggregateMember` on a `Map<Key,Value>` field maps directly to `@EntityMember` on the same `Map<Key,Value>` field.
+The map's own keys are preserved automatically as entries are added, evolved, or removed, so no extra identification logic is needed.
 ====
