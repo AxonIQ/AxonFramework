@@ -25,6 +25,8 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Comp
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.junit.jupiter.api.*;
@@ -146,6 +148,24 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
 
         // And assign a new one
         sendCommand(new AssignTaskCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "task-4", "Task " + 4));
+    }
+
+    @Test
+    void canGrantAndRevokeCertificationsForEmployee() {
+        sendCommand(CREATE_EMPLOYEE_1_COMMAND);
+
+        sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "Axon Pro", "Axoniq"));
+        sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA", "Amazon"));
+
+        assertThrowsExceptionWithText("Employee already holds certification AWS-SAA", () -> {
+            sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA", "Amazon"));
+        });
+
+        sendCommand(new RevokeCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA"));
+
+        assertThrowsExceptionWithText("Certification is already revoked", () -> {
+            sendCommand(new RevokeCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA"));
+        });
     }
 
 
