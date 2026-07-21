@@ -61,7 +61,7 @@ public class AnnotatedEntityIdResolver<ID> implements EntityIdResolver<ID>, Desc
                                      MessageConverter converter,
                                      EntityIdResolver<ID> delegate) {
         this.idType = Objects.requireNonNull(idType, "The idType should not be null.");
-        this.entityEvolver = Objects.requireNonNull(entityEvolver, "The entityEvolver should not be null,");
+        this.entityEvolver = Objects.requireNonNull(entityEvolver, "The entityEvolver should not be null.");
         this.converter = Objects.requireNonNull(converter, "The converter should not be null.");
         this.delegate = Objects.requireNonNull(delegate, "The delegate should not be null.");
     }

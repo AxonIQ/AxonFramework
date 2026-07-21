@@ -449,7 +449,7 @@ class AnnotatedEventSourcedEntityModuleTest {
             Configuration entityConfiguration =
                     entityModuleConfiguration(componentRegistry.build(lifecycleRegistry), COURSE_ENTITY_NAME);
 
-            // Sanity check that the decorator actually reached the entity's (nested) EntityMetamodel component —
+            // Sanity check that the decorator actually reached the entity's (nested) EntityMetamodel component,
             // otherwise the id-resolver assertion below would pass vacuously against the undecorated metamodel.
             assertThat(entityConfiguration.getComponent(EntityMetamodel.class, COURSE_ENTITY_NAME))
                     .isInstanceOf(RepresentationResolvingEntityEvolver.class)

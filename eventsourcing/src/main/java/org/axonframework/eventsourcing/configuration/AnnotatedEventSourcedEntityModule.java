@@ -155,11 +155,11 @@ class AnnotatedEventSourcedEntityModule<I, E>
         var definition = getConstructorFunctionWithZeroArguments(type).get();
         return c -> {
             var component = c.getComponent(EntityMetamodel.class, entityName());
-            if(component instanceof RepresentationResolvingEntityEvolver representationResolvingEntityEvolver) {
+            if (component instanceof RepresentationResolvingEntityEvolver representationResolvingEntityEvolver) {
                 return definition.createIdResolver(entityType, idType, representationResolvingEntityEvolver, c);
             }
             // Not possible, except when decorating, as this is a component configured by this module.
-            throw new IllegalArgumentException("The EntityMetamodel does not implement RepresentationResolvingEntityEvolver. Make sure that all decorators implement and delegate this interface.");
+            throw new AxonConfigurationException("The EntityMetamodel does not implement RepresentationResolvingEntityEvolver. Make sure that all decorators implement and delegate this interface.");
         };
     }
 

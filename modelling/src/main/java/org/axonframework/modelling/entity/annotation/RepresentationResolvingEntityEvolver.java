@@ -25,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  * {@link QualifiedName}. This is useful for components that provide annotation-based usage of entities as it provides
  * information on the wanted Java class (the representation) by the user.
  *
- * @param <E> The entity type this evolver applies to.
+ * @param <E> the entity type this evolver applies to
  * @author Mitchell Herrijgers
  * @since 5.3.0
  */
@@ -34,9 +34,9 @@ public interface RepresentationResolvingEntityEvolver<E> extends EntityEvolver<E
     /**
      * Returns the {@link Class} of the expected representation for handlers of the given {@code qualifiedName}.
      *
-     * @param qualifiedName The {@link QualifiedName} of the handler to look for.
-     * @return The {@link Class} of the expected representation for handlers of the given {@code qualifiedName}, or
-     * {@code null} if no such representation is found.
+     * @param qualifiedName the {@link QualifiedName} of the handler to look for
+     * @return the {@link Class} of the expected representation for handlers of the given {@code qualifiedName}, or
+     * {@code null} if no such representation is found
      */
     @Nullable
     Class<?> getExpectedRepresentation(QualifiedName qualifiedName);
