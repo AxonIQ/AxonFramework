@@ -148,7 +148,7 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
                 continue;
             }
             if (component.supports(event.type().qualifiedName())
-                    && canSegmentHandle(segment, component, event, context)) {
+                    && canHandleInSegment(segment, component, event, context)) {
                 var componentResult = component.handle(event, context);
                 result = result.concatWith(componentResult);
             }
@@ -163,8 +163,7 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
     }
 
     /**
-     * Determines whether the given {@code segment} should handle the {@code event} through the given
-     * {@code component}.
+     * Determines whether the given {@code component} can handle the {@code event} in the given {@code segment}.
      * <p>
      * This reuses the same {@link SegmentMatcher} routing that is applied while scheduling the event, so a component
      * handles an event only when its
@@ -177,12 +176,12 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * @param component the component that would handle the event
      * @param event     the event being handled
      * @param context   the processing context in which the event is handled
-     * @return {@code true} when the component should handle the event within the given segment
+     * @return {@code true} when the component can handle the event in the given segment
      */
-    private static boolean canSegmentHandle(@Nullable Segment segment,
-                                            EventHandlingComponent component,
-                                            EventMessage event,
-                                            ProcessingContext context) {
+    private static boolean canHandleInSegment(@Nullable Segment segment,
+                                              EventHandlingComponent component,
+                                              EventMessage event,
+                                              ProcessingContext context) {
         if (segment == null) {
             return true;
         }
