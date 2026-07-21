@@ -251,6 +251,7 @@ class AxonTestFixtureStatefulCommandHandlerTest {
                                     c.getComponent(EventStore.class),
                                     EventSourcedEntityFactory.fromIdentifier(Student::new),
                                     (id, context) -> EventCriteria.havingTags("Student", id),
+                                    new AnnotationBasedTagResolver(),
                                     new AnnotationBasedEntityEvolvingComponent<>(
                                             Student.class,
                                             c.getComponent(EventConverter.class),

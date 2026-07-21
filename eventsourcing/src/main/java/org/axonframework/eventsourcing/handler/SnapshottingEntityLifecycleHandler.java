@@ -27,6 +27,7 @@ import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SnapshotEventMessage;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
+import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.snapshot.api.EvolutionResult;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
@@ -79,6 +80,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
     private final EventStore eventStore;
     private final CriteriaResolver<I> criteriaResolver;
+    private final TagResolver tagResolver;
     private final MessageType messageType;
     private final SnapshotPolicy snapshotPolicy;
     private final Class<?> entityType;
@@ -91,6 +93,9 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
      *
      * @param eventStore the {@link EventStore} used to source events, cannot be {@code null}
      * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param tagResolver the {@link TagResolver} used to resolve the tags of events appended during the entity's
+     *                    lifetime, so live updates can be filtered by the entity's {@link EventCriteria}, cannot be
+     *                    {@code null}
      * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
      * @param snapshotPolicy the {@link SnapshotPolicy}, cannot be {@code null}
      * @param messageType the {@link MessageType}, cannot be {@code null}
@@ -102,6 +107,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     public SnapshottingEntityLifecycleHandler(
         EventStore eventStore,
         CriteriaResolver<I> criteriaResolver,
+        TagResolver tagResolver,
         InitializingEntityEvolver<I, E> evolver,
         SnapshotPolicy snapshotPolicy,
         MessageType messageType,
@@ -111,6 +117,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     ) {
         this.eventStore = Objects.requireNonNull(eventStore, "The eventStore parameter must not be null.");
         this.criteriaResolver = Objects.requireNonNull(criteriaResolver, "The criteriaResolver parameter must not be null.");
+        this.tagResolver = Objects.requireNonNull(tagResolver, "The tagResolver parameter must not be null.");
         this.evolver = Objects.requireNonNull(evolver, "The evolver parameter must not be null.");
         this.snapshotPolicy = Objects.requireNonNull(snapshotPolicy, "The snapshotPolicy parameter must not be null.");
         this.messageType = Objects.requireNonNull(messageType, "The messageType parameter must not be null.");
@@ -126,13 +133,18 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
     @Override
     public void subscribe(ManagedEntity<I, E> entity, ProcessingContext context) {
+        EventCriteria criteria = criteriaResolver.resolve(entity.identifier(), context);
         eventStore.transaction(context)
-            .onAppend(event -> entity.applyStateChange(e -> evolver.evolve(
-                    entity.identifier(),
-                    entity.entity(),
-                    event,
-                    context
-            )));
+            .onAppend(event -> {
+                if (criteria.matches(event.type().qualifiedName(), tagResolver.resolve(event))) {
+                    entity.applyStateChange(e -> evolver.evolve(
+                            entity.identifier(),
+                            entity.entity(),
+                            event,
+                            context
+                    ));
+                }
+            });
     }
 
     @Override
@@ -230,6 +242,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("eventStore", eventStore);
         descriptor.describeProperty("criteriaResolver", criteriaResolver);
+        descriptor.describeProperty("tagResolver", tagResolver);
         descriptor.describeProperty("evolver", evolver);
         descriptor.describeProperty("messageType", messageType);
         descriptor.describeProperty("entityType", entityType);
