@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing;
 
+import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
@@ -87,6 +88,7 @@ class EventSourcingRepositoryIT {
             new SimpleEntityLifecycleHandler<>(
                 eventStore,
                 (id, context) -> EventCriteria.havingAnyTag(),
+                new AnnotationBasedTagResolver(),
                 new InitializingEntityEvolver<>(
                     (id, event, context) -> factory.create(id, event, context),
                     (entity, event, context) -> entity + "-" + event.payload()
