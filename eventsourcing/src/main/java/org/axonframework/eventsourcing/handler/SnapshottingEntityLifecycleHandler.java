@@ -136,7 +136,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         EventCriteria criteria = criteriaResolver.resolve(entity.identifier(), context);
         eventStore.transaction(context)
             .onAppend(event -> {
-                if (criteria.matches(event.type().qualifiedName(), tagResolver.resolve(event))) {
+                if (criteria.matches(event.type().qualifiedName(), tagResolver.resolve(event, context))) {
                     entity.applyStateChange(e -> evolver.evolve(
                             entity.identifier(),
                             entity.entity(),
