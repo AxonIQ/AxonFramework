@@ -69,6 +69,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -241,6 +242,98 @@ class PooledStreamingEventProcessorTest {
                    long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
                    assertThat(currentPosition).isEqualTo(2);
                });
+    }
+
+    @Nested
+    class SegmentRouting {
+
+        // Integer.hashCode(n) == n, so with two segments a sequence identifier of 0 routes to segment 0
+        // (matches even hashes) and 1 routes to segment 1 (matches odd hashes).
+
+        @Test
+        void eachComponentHandlesEventOnceInItsOwnSegment() {
+            // given two components supporting the same event but routing to different segments
+            var componentForSegmentZero = recordingComponent("even", new QualifiedName(String.class), 0);
+            var componentForSegmentOne = recordingComponent("odd", new QualifiedName(String.class), 1);
+            List<EventHandlingComponent> components = List.of(componentForSegmentZero, componentForSegmentOne);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event (each claims it via its own matching component)
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then each component handles the event exactly once, in the single segment its identifier routes to
+            assertThat(componentForSegmentZero.recorded()).containsExactly(event);
+            assertThat(componentForSegmentOne.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void eventIsHandledOnlyByComponentsSupportingItsType() {
+            // given two components supporting different event types, routing to different segments
+            var stringComponent = recordingComponent("string", new QualifiedName(String.class), 0);
+            var longComponent = recordingComponent("long", new QualifiedName(Long.class), 1);
+            List<EventHandlingComponent> components = List.of(stringComponent, longComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when one event of each type is published
+            EventMessage stringEvent = EventTestUtils.asEventMessage("Payload");
+            EventMessage longEvent = EventTestUtils.asEventMessage(42L);
+            stubMessageSource.publishMessage(stringEvent);
+            stubMessageSource.publishMessage(longEvent);
+            startEventProcessor();
+
+            // then both segments advance past both events (a segment advances its token past events it does not handle)
+            awaitSegmentsAtPosition(2L, 0, 1);
+
+            // then each component only handles the event whose type it supports
+            assertThat(stringComponent.recorded()).containsExactly(stringEvent);
+            assertThat(longComponent.recorded()).containsExactly(longEvent);
+        }
+
+        @Test
+        void componentsSharingSequenceIdentifierHandleEventInSameSegment() {
+            // given two components supporting the same event with the same sequence identifier
+            var firstComponent = recordingComponent("first", new QualifiedName(String.class), 0);
+            var secondComponent = recordingComponent("second", new QualifiedName(String.class), 0);
+            List<EventHandlingComponent> components = List.of(firstComponent, secondComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments advance, but only segment 0 claims the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then both components sharing that segment handle the event exactly once
+            assertThat(firstComponent.recorded()).containsExactly(event);
+            assertThat(secondComponent.recorded()).containsExactly(event);
+        }
+
+        private RecordingEventHandlingComponent recordingComponent(String name,
+                                                                   QualifiedName supportedEvent,
+                                                                   Object sequenceIdentifier) {
+            SimpleEventHandlingComponent component =
+                    SimpleEventHandlingComponent.create(name, (event, ctx) -> Optional.of(sequenceIdentifier));
+            component.subscribe(supportedEvent, (event, ctx) -> MessageStream.empty());
+            return new RecordingEventHandlingComponent(component);
+        }
+
+        private void awaitSegmentsAtPosition(long position, int... segmentIds) {
+            await().atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> {
+                       for (int segmentId : segmentIds) {
+                           assertThat(testSubject.processingStatus()).containsKey(segmentId);
+                           assertThat(testSubject.processingStatus().get(segmentId).getCurrentPosition().orElse(0))
+                                   .isEqualTo(position);
+                       }
+                   });
+        }
     }
 
     private ProcessingContext createProcessingContext() {
