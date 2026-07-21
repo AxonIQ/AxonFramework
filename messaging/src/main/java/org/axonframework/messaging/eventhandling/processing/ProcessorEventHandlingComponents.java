@@ -28,6 +28,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentMatcher;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequencingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -165,10 +166,10 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * Determines whether the given {@code segment} should handle the {@code event} through the given
      * {@code component}.
      * <p>
-     * A segmented processor claims an event for a segment when the component's
+     * This reuses the same {@link SegmentMatcher} routing that is applied while scheduling the event, so a component
+     * handles an event only when its
      * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage, ProcessingContext) sequence identifier} hashes
-     * into that segment, mirroring the routing decision made while scheduling the event. When {@code segment} is
-     * {@code null} (for example, a
+     * into that segment. When {@code segment} is {@code null} (for example, a
      * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor}), handling is
      * not segmented and the component always handles the event.
      *
@@ -182,8 +183,11 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
                                             EventHandlingComponent component,
                                             EventMessage event,
                                             ProcessingContext context) {
-        return segment == null
-                || segment.matches(component.sequenceIdentifierFor(event, context));
+        if (segment == null) {
+            return true;
+        }
+        return new SegmentMatcher((e, ctx) -> Optional.of(component.sequenceIdentifierFor(e, ctx)))
+                .matches(segment, event, context);
     }
 
     /**
