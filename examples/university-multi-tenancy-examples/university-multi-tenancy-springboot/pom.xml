@@ -136,18 +136,23 @@
                     <mainClass>org.axonframework.examples.demo.multitenancy.MultiTenancyApplication</mainClass>
                 </configuration>
             </plugin>
-            <!-- Copy the Enterprise Edition license onto the test classpath, so the integration test can
-                 mount it into the Axon Server container for the multiple contexts the tenants need. The
-                 license stays uncommitted: locally it is the file kept next to the demos; in CI it is
-                 written there from a secret before the build (see the examples workflow). -->
-            <!-- The include is optional: if the file is absent the copy is a no-op, and the integration
-                 test skips itself (see its @EnabledIf), so a build without a license stays green. -->
+            <!-- Copy the local Axon Server credentials next to the demos onto the test classpath, so the
+                 integration test can license the Axon Server container it starts for the tenants' contexts.
+                 Both files are optional and uncommitted, and each include is a no-op when the file is absent.
+                 - axon-server.license is an Enterprise Edition license file. Locally it is the file kept next
+                   to the demos. In CI it is written there from a secret before the build (see the examples
+                   workflow).
+                 - .env is the same file docker-compose reads. Its AXONIQ_PLATFORM_AUTHENTICATION entry lets
+                   the test license the container from Axoniq Platform when no license file is present, so the
+                   token is configured in one place for both docker-compose and this test.
+                 When neither yields a usable license source, the integration test skips itself (see its
+                 @EnabledIf), so a build without credentials stays green. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>copy-axon-server-license</id>
+                        <id>copy-axon-server-credentials</id>
                         <phase>process-test-resources</phase>
                         <goals>
                             <goal>copy-resources</goal>
@@ -159,6 +164,7 @@
                                     <directory>${project.basedir}/..</directory>
                                     <includes>
                                         <include>axon-server.license</include>
+                                        <include>.env</include>
                                     </includes>
                                 </resource>
                             </resources>

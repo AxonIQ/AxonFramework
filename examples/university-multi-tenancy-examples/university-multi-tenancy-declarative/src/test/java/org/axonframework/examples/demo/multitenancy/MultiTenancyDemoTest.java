@@ -24,9 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Smoke test running the demo through its own entry point and asserting the observed outcome:
- * per-tenant isolation across both component types, the unknown-tenant guardrail, destroy on tenant
- * removal, and cleanup on shutdown. The configuration-time ambiguity guardrail is asserted separately,
- * as it is a config-time check rather than part of the runtime lifecycle.
+ * per-tenant isolation, the unknown-tenant guardrail, destroy on tenant removal, and cleanup on
+ * shutdown. The configuration-time ambiguity guardrail is asserted separately.
  */
 class MultiTenancyDemoTest {
 

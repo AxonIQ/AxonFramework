@@ -1,26 +1,70 @@
+# Axon Server for the multi-tenancy demos. One context per tenant is an Enterprise Edition feature, so
+# the server has to be licensed. There are two ways to license it. Pick the profile that matches what
+# you have. The README explains both in full.
+#
+#   License file: docker compose --profile license up -d
+#   Platform token: docker compose --profile token up -d
+#
+# Both start the same Enterprise Edition server and expose the dashboard at http://localhost:8024.
+
+x-axon-server: &axon-server
+  # Multiple contexts (one per tenant) are an Enterprise Edition feature, so this uses the Enterprise
+  # Edition image. Without a valid license, the server runs a trial that cannot create the extra
+  # contexts.
+  image: docker.axoniq.io/axoniq/axonserver:2026.0.0
+  hostname: axon-server
+  ports:
+    - "8024:8024"
+    - "8124:8124"
+  environment: &axon-server-environment
+    AXONIQ_AXONSERVER_HOSTNAME: axon-server
+    AXONIQ_AXONSERVER_DEVMODE_ENABLED: true
+    # This auto-creates the built-in _admin and default (DCB) contexts on the first boot, so no manual
+    # cluster initialization is needed. Creating the per-tenant contexts still requires a license.
+    AXONIQ_AXONSERVER_STANDALONE_DCB: true
+    # A demo-specific node name. It matters on the token path, where it is the server's identity in your
+    # Axoniq Platform workspace and must not clash with another server there. A clash shows up as "Node
+    # names must be unique" and stops licensing. Override it if the name is already taken.
+    AXONIQ_AXONSERVER_NAME: ${AXONIQ_AXONSERVER_NAME:-university-multitenancy-demo}
+
 services:
+  # Option 1 is the license file. The server boots from a mounted license file and never contacts
+  # Axoniq Platform. It requires a license that allows running disconnected.
   axon-server:
-    # Enterprise Edition image: one context per tenant is an Enterprise Edition feature. It needs a
-    # license (see the README): without one, the server runs a trial that cannot create extra contexts.
-    image: docker.axoniq.io/axoniq/axonserver:2026.0.0
-    hostname: axon-server
-    ports:
-      - "8024:8024"
-      - "8124:8124"
-    environment:
-      AXONIQ_AXONSERVER_HOSTNAME: axon-server
-      AXONIQ_AXONSERVER_DEVMODE_ENABLED: true
-      # Auto-create the built-in _admin and default (DCB) contexts on the first boot, so no manual cluster
-      # initialization is needed. Creating the per-tenant contexts still requires the license below.
-      AXONIQ_AXONSERVER_STANDALONE_DCB: true
+    <<: *axon-server
+    profiles: [ "license" ]
     volumes:
-      - data:/axonserver/data
-      - events:/axonserver/events
-      # Provide a license in the file `axon-server.license` to create the per-tenant contexts: drop your license file in the same directory as this file
+      # Named volumes, so the contexts survive `down` and `up`. Each profile keeps its own storage. The
+      # license (offline) and token (connection to Axoniq Platform) paths build up incompatible cluster state, so
+      # sharing volumes between them corrupts startup.
+      - data-license:/axonserver/data
+      - events-license:/axonserver/events
+      # Drop your license file, named `axon-server.license`, next to this file.
       - ./axon-server.license:/axonserver/config/axoniq.license:ro
 
+  # Option 2 is the Axoniq Platform token. The server connects to Axoniq Platform, which provides and
+  # renews its license automatically, so no license file is needed.
+  axon-server-platform:
+    <<: *axon-server
+    profiles: [ "token" ]
+    environment:
+      <<: *axon-server-environment
+      # This is your Axoniq Platform token. Get it from
+      # https://platform.axoniq.io/resource-center/install/server/download/?version=latest
+      # Set it in a `.env` file next to this file, or export it in your shell.
+      AXONIQ_PLATFORM_AUTHENTICATION: ${AXONIQ_PLATFORM_AUTHENTICATION:-}
+    volumes:
+      # Named volumes, so the contexts survive `down` and `up`. Own storage per profile, as explained on
+      # the license service above.
+      - data-platform:/axonserver/data
+      - events-platform:/axonserver/events
+
 volumes:
-  data:
+  data-license:
     driver: local
-  events:
+  events-license:
+    driver: local
+  data-platform:
+    driver: local
+  events-platform:
     driver: local

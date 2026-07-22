@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.demo.multitenancy.university.write.enrol;
 
+import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
@@ -24,11 +25,12 @@ import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
  * Handles the {@link EnrolStudent} command, recording the enrolment for the tenant the command
  * carries.
  * <p>
- * The handler declares a {@link CourseStatsStore} and an {@link AuditLog} parameter and is
- * handed the instances of the command's tenant, each matched by its own type, so it never resolves a
- * tenant itself. This is the whole developer-facing surface of tenant-aware components: register a
- * component per tenant, declare it as a handler parameter, and the framework injects the right
- * tenant's instance based on the message's metadata.
+ * The handler declares a {@link CourseStatsStore} and an {@link AuditLog} parameter, each marked
+ * {@link TenantScoped}, and is handed the instances of the command's tenant, each matched by its own
+ * type, so it never resolves a tenant itself. This is the whole developer-facing surface of
+ * tenant-aware components: register a component per tenant, declare it as a {@link TenantScoped}
+ * handler parameter, and the framework injects the right tenant's instance based on the message's
+ * metadata.
  */
 public class EnrolStudentCommandHandler {
 
@@ -40,7 +42,9 @@ public class EnrolStudentCommandHandler {
      * @param auditLog   the injected audit log of the command's tenant
      */
     @CommandHandler
-    public void handle(EnrolStudent command, CourseStatsStore statistics, AuditLog auditLog) {
+    public void handle(EnrolStudent command,
+                       @TenantScoped CourseStatsStore statistics,
+                       @TenantScoped AuditLog auditLog) {
         statistics.recordEnrolment(command.courseId());
         auditLog.record("Enrolled student [" + command.studentId() + "] in course [" + command.courseId() + "]");
     }

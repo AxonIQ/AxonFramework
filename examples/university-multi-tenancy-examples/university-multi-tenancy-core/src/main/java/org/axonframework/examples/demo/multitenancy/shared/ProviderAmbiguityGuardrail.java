@@ -20,6 +20,7 @@ import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigur
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTenancyConfigurationDefaults;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
@@ -36,7 +37,7 @@ import org.slf4j.LoggerFactory;
  * resolve it. This is driven through the normal command-handling path, so it fails exactly where a
  * real application would: registering the {@link EnrolStudentCommandHandler} and starting the
  * configuration triggers handler inspection, which cannot decide which provider feeds the handler's
- * {@code CourseStatsStore} parameter.
+ * {@code @TenantScoped CourseStatsStore} parameter.
  * <p>
  * It builds its own throwaway {@link MessagingConfigurer}, so both demos can show the same framework
  * guardrail regardless of how their own application is wired.
@@ -51,8 +52,8 @@ public final class ProviderAmbiguityGuardrail {
 
     /**
      * Builds a throwaway configuration that registers the {@link EnrolStudentCommandHandler} with two
-     * providers for its {@code CourseStatsStore} parameter, and checks that building and starting
-     * it is rejected because the framework cannot know which provider to inject.
+     * providers for its {@code @TenantScoped CourseStatsStore} parameter, and checks that building and
+     * starting it is rejected because the framework cannot know which provider to inject.
      *
      * @return {@code true} if the ambiguity was rejected with an {@link AxonConfigurationException}
      */
@@ -61,9 +62,12 @@ public final class ProviderAmbiguityGuardrail {
         configurer.componentRegistry(registry -> {
             // The parameter resolver that rejects the ambiguity is installed by the multi-tenancy
             // enhancer, so it is enabled here too. This guardrail is about provider ambiguity, so it
-            // runs in memory regardless of whether the demo itself runs against Axon Server.
+            // runs in memory regardless of whether the demo itself runs against Axon Server. Both
+            // Axon Server enhancers are disabled: the multi-tenancy defaults would otherwise register a
+            // multi-tenant command bus connector that needs an AxonServerConnectionManager we do not have.
             MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
+                    .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
                     .registerComponent(TenantProvider.class,
                                        config -> new DemoTenantProvider(TenantDescriptor.tenantWithId("sample")))
                     // Two providers for CourseStatsStore make that handler parameter ambiguous.

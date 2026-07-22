@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
+import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
@@ -24,10 +25,10 @@ import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
  * Handles the {@link GetTenantStatistics} query, reading back the statistics of the tenant the query
  * carries.
  * <p>
- * Like the enrolment command handler, it declares its per-tenant components as parameters, here a
- * {@link CourseStatsStore} and an {@link AuditLog}, and the framework injects the query tenant's
- * instances. It is the read-side proof that the same tenant-aware injection works for query handlers,
- * not only command handlers.
+ * Like the enrolment command handler, it declares its per-tenant components as {@link TenantScoped}
+ * parameters, here a {@link CourseStatsStore} and an {@link AuditLog}, and the framework injects the
+ * query tenant's instances. It is the read-side proof that the same tenant-aware injection works for
+ * query handlers, not only command handlers.
  */
 public class TenantStatisticsQueryHandler {
 
@@ -41,7 +42,9 @@ public class TenantStatisticsQueryHandler {
      * @return the querying tenant's isolated statistics
      */
     @QueryHandler
-    public TenantStatistics handle(GetTenantStatistics query, CourseStatsStore statistics, AuditLog auditLog) {
+    public TenantStatistics handle(GetTenantStatistics query,
+                                   @TenantScoped CourseStatsStore statistics,
+                                   @TenantScoped AuditLog auditLog) {
         return new TenantStatistics(statistics.statistics(), auditLog.entries().size());
     }
 }

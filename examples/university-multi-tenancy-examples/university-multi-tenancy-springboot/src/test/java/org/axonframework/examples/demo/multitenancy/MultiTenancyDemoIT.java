@@ -42,13 +42,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration test booting the auto-configured Spring Boot application against a real Axon Server, and
- * driving the shared demo lifecycle through the framework beans the multi-tenancy auto-configuration
+ * Integration test booting the autoconfigured Spring Boot application against a real Axon Server, and
+ * driving the shared demo lifecycle through the framework beans the multi-tenancy autoconfiguration
  * wired. Because the Spring Boot multi-tenancy path activates only against Axon Server, the test runs
  * one in a container. It asserts the same observed outcome as the declarative demo: per-tenant
  * isolation across both component types, the unknown-tenant and ambiguity guardrails, destroy on tenant
@@ -60,23 +61,28 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code test} profile keeps the application's own {@link DemoRunner} from running, so this test drives
  * the lifecycle.
  * <p>
- * Tenants are separate Axon Server contexts, and hosting several of them needs an Enterprise Edition
- * license, which is mounted into the container. The license is expected on the test classpath as
- * {@code axon-server.license}: locally it is the file kept next to the demos and copied in by this
- * module's POM; in a repository CI run it is written from a secret before the build (see the examples
- * workflow). When no license is available -- a fork PR, or a clone without the license file -- there is
- * nothing to run the multiple tenant contexts against, so the test skips itself rather than fail. In a
- * repository CI run and locally the license is present, so it always runs there. The test needs Docker.
+ * The test runs a licensed Enterprise Edition Axon Server in a container, so it needs Docker. The README
+ * explains how the container is licensed, with a license file or an Axoniq Platform token. The test skips
+ * itself when no license source is available.
  */
 @Testcontainers
-@EnabledIf("licenseAvailable")
+@EnabledIf("axonServerLicensable")
 class MultiTenancyDemoIT {
 
     private static final String LICENSE_RESOURCE = "axon-server.license";
+    private static final String TOKEN_ENV_FILE = ".env";
+    private static final String PLATFORM_TOKEN_ENV = "AXONIQ_PLATFORM_AUTHENTICATION";
+    // A test-specific node name, so the token path does not clash with another Axon Server registered
+    // under the default name in the developer's Axoniq Platform workspace (a clash blocks licensing).
+    private static final String NODE_NAME = "university-multitenancy-it";
     private static final String ADMIN_CONTEXT = "_admin";
 
-    @SuppressWarnings("unused") // Referenced by @EnabledIf to gate the test on a usable license.
-    static boolean licenseAvailable() {
+    @SuppressWarnings("unused") // Referenced by @EnabledIf to gate the test on a usable license source.
+    static boolean axonServerLicensable() {
+        return licenseAvailable() || platformToken() != null;
+    }
+
+    private static boolean licenseAvailable() {
         try (InputStream license = MultiTenancyDemoIT.class.getClassLoader().getResourceAsStream(LICENSE_RESOURCE)) {
             return license != null && license.read() != -1;
         } catch (IOException e) {
@@ -84,16 +90,75 @@ class MultiTenancyDemoIT {
         }
     }
 
+    // Resolves the Axoniq Platform token from the AXONIQ_PLATFORM_AUTHENTICATION environment variable, or,
+    // when that is not set, from an AXONIQ_PLATFORM_AUTHENTICATION entry in the .env file next to the demos.
+    // That is the same file docker-compose reads, so the token is configured in one place for both, with no
+    // shell or IDE setup. CI sets a real environment variable, which takes precedence.
+    private static String platformToken() {
+        String fromEnvironment = System.getenv(PLATFORM_TOKEN_ENV);
+        if (fromEnvironment != null && !fromEnvironment.isBlank()) {
+            return fromEnvironment;
+        }
+        return tokenFromDotEnvFile();
+    }
+
+    private static String tokenFromDotEnvFile() {
+        try (InputStream dotEnv = MultiTenancyDemoIT.class.getClassLoader().getResourceAsStream(TOKEN_ENV_FILE)) {
+            if (dotEnv == null) {
+                return null;
+            }
+            String prefix = PLATFORM_TOKEN_ENV + "=";
+            return new String(dotEnv.readAllBytes(), StandardCharsets.UTF_8)
+                    .lines()
+                    .map(String::strip)
+                    .filter(line -> line.startsWith(prefix))
+                    .map(line -> line.substring(prefix.length()).strip())
+                    .map(MultiTenancyDemoIT::stripSurroundingQuotes)
+                    .filter(value -> !value.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    // A .env value may be wrapped in a pair of double or single quotes. Those quotes are not part of the
+    // token, so one surrounding pair is removed before the value is used.
+    private static String stripSurroundingQuotes(String value) {
+        if (value.length() >= 2
+                && ((value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"')
+                || (value.charAt(0) == '\'' && value.charAt(value.length() - 1) == '\''))) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
+    }
+
     @Container
-    private static final AxonServerContainer AXON_SERVER = new AxonServerContainer()
-            .withAxonServerHostname("localhost")
-            .withDevMode(true)
-            .withDcbContext(true)
-            .withLicense(LICENSE_RESOURCE);
+    private static final AxonServerContainer AXON_SERVER = licensedContainer();
+
+    // The license file wins over the token, so a repository CI run (which writes the license from a
+    // secret) always boots from the license file. The token path is the local fallback for developers
+    // who have an Axoniq Platform token but no license file.
+    private static AxonServerContainer licensedContainer() {
+        AxonServerContainer container = new AxonServerContainer()
+                .withAxonServerHostname("localhost")
+                .withDevMode(true)
+                .withDcbContext(true);
+        if (licenseAvailable()) {
+            return container.withLicense(LICENSE_RESOURCE);
+        }
+        String token = platformToken();
+        if (token != null) {
+            return container.withAxonServerName(NODE_NAME)
+                            .withEnv(PLATFORM_TOKEN_ENV, token);
+        }
+        // Neither source is present, so the @EnabledIf gate skips the test. The field still needs a value.
+        return container;
+    }
 
     @Test
     void runsTheTenantLifecycleEndToEnd() {
-        // given the auto-configured Spring Boot application, booted against the containerized Axon Server
+        // given the autoconfigured Spring Boot application, booted against the containerized Axon Server
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(MultiTenancyApplication.class)
                 .web(WebApplicationType.NONE)
                 .profiles("test")
@@ -112,7 +177,7 @@ class MultiTenancyDemoIT {
             assertThat(serverContexts.allContexts()).contains(ADMIN_CONTEXT);
             assertThat(tenantProvider.tenants()).extracting(TenantDescriptor::tenantId).doesNotContain(ADMIN_CONTEXT);
 
-            // when the demo runs end to end through the beans the multi-tenancy auto-configuration wired
+            // when the demo runs end to end through the beans, the multi-tenancy autoconfiguration wired
             DemoOutcome outcome = DemoLifecycle.run(context.getBean(CommandGateway.class),
                                                     context.getBean(QueryGateway.class),
                                                     courseStatsProvider(context),

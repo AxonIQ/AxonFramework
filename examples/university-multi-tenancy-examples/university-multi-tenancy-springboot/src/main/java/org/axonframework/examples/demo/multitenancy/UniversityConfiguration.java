@@ -36,8 +36,8 @@ import org.springframework.context.annotation.Configuration;
  * these provider beans up, subscribes them to the tenant lifecycle, and installs the tenant parameter
  * resolver and interceptor. It also registers the default auto-discovering {@link AxonServerTenantProvider},
  * which watches Axon Server's contexts and registers each as a tenant (filtering out {@code _admin}). So
- * the framework hands each command and query handler the components of the message's tenant, matched by
- * type, with no explicit multi-tenancy wiring here at all.
+ * the framework hands each command and query handler the components of the message's tenant for their
+ * {@code @TenantScoped} parameters, matched by type, with no explicit multi-tenancy wiring here at all.
  */
 @Configuration
 public class UniversityConfiguration {
@@ -63,7 +63,8 @@ public class UniversityConfiguration {
     }
 
     /**
-     * The enrolment command handler, whose per-tenant components the framework injects by type.
+     * The enrolment command handler, whose {@code @TenantScoped} parameters the framework injects with
+     * the message tenant's per-tenant components, matched by type.
      *
      * @return the enrolment command handler
      */
@@ -73,7 +74,8 @@ public class UniversityConfiguration {
     }
 
     /**
-     * The statistics query handler, whose per-tenant components the framework injects by type.
+     * The statistics query handler, whose {@code @TenantScoped} parameters the framework injects with
+     * the message tenant's per-tenant components, matched by type.
      *
      * @return the statistics query handler
      */

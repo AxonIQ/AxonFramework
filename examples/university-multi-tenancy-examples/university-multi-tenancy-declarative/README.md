@@ -56,7 +56,8 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 The same lifecycle runs against Axon Server, where each tenant is a real context rather than an entry
 in the in-memory tenant provider.
 
-1. Provide a license and start Axon Server as described in the [parent README](../README.md#axon-server).
+1. License and start Axon Server (with a license file or an Axoniq Platform token) as described in the
+   [parent README](../README.md#axon-server).
 2. Flip `demo.axon-server.enabled` to `true` in `src/main/resources/application.properties`.
 3. Re-run `MultiTenancyApplication#main` (or run `runWithAxonServer` directly).
 

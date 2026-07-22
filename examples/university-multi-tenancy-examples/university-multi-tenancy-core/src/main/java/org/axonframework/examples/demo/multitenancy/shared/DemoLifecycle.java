@@ -40,12 +40,12 @@ import java.util.function.BooleanSupplier;
 /**
  * The tenant lifecycle both demos walk through, once the application has been configured and started.
  * This is "what the app does", identical whether the application was assembled through the declarative
- * Configuration API or Spring Boot auto-configuration. Only the configuration around it differs, so it
- * lives here and each demo calls it with its own gateways, providers, provisioning, and shutdown.
+ * Configuration API or Spring Boot autoconfiguration. Only the surrounding configuration differs, so it
+ * lives here, and each demo calls it with its own gateways, providers, provisioning, and shutdown.
  * <p>
  * A platform hosts several universities, each an isolated tenant. Enrolling a student is an
  * {@link EnrolStudentCommandHandler} command and reading a tenant's statistics is a
- * {@link TenantStatisticsQueryHandler} query; each carries its tenant in message metadata, and the
+ * {@link TenantStatisticsQueryHandler} query. Each carries its tenant in message metadata, and the
  * framework injects that tenant's {@link CourseStatsStore} and {@link AuditLog} into the handler,
  * matched by type. {@link #run} reads top to bottom as the story: tenants known at startup, a tenant
  * added at runtime, an unknown tenant rejected, a tenant removed, and shutdown.
@@ -111,7 +111,7 @@ public final class DemoLifecycle {
 
         // 2. Add a tenant at runtime. Its instances materialize on its first command, no config change.
         provisioning.addTenant(OGDENVILLE);
-        Enrolments.enrol(commandGateway, OGDENVILLE, COURSE_CS_101, "dan");
+        enrolWhenTenantReady(commandGateway);
         logTenantView("Ogdenville University (added at runtime)", queryGateway, OGDENVILLE);
 
         // 3. A command for a tenant the application does not know is rejected.
@@ -134,6 +134,21 @@ public final class DemoLifecycle {
         Enrolments.enrol(commandGateway, SPRINGFIELD, COURSE_CS_101, "alice");
         Enrolments.enrol(commandGateway, SPRINGFIELD, COURSE_CS_101, "bob");
         Enrolments.enrol(commandGateway, SHELBYVILLE, COURSE_LAW_200, "carol");
+    }
+
+    /**
+     * Enrols in a tenant added at runtime, retrying until it is ready. Creating a tenant's context and
+     * command bus connector is asynchronous, so the first command can arrive before the connector exists.
+     * A failed attempt fails at dispatch without enrolling, so the enrolment still lands exactly once.
+     */
+    private static void enrolWhenTenantReady(CommandGateway commandGateway) {
+        Awaitility.await("tenant [" + DemoLifecycle.OGDENVILLE.tenantId() + "] ready for commands")
+                  .atMost(Duration.ofSeconds(15))
+                  .ignoreExceptionsMatching(Enrolments::causedByTenantNotResolved)
+                  .until(() -> {
+                      Enrolments.enrol(commandGateway, DemoLifecycle.OGDENVILLE, COURSE_CS_101, "dan");
+                      return true;
+                  });
     }
 
     /**
@@ -185,8 +200,6 @@ public final class DemoLifecycle {
      * what the run observed into a {@link DemoOutcome}, confirming shutdown closed every still-registered
      * tenant's instances (the canceled provider subscriptions destroy them).
      */
-    // Holds the components to check isClosed() after shutdown. The framework, not this method, closes them.
-    @SuppressWarnings("resource")
     private static DemoOutcome shutDownAndBuildOutcome(Runnable shutdown,
                                                        QueryGateway queryGateway,
                                                        TenantComponentProvider<CourseStatsStore> statsProvider,

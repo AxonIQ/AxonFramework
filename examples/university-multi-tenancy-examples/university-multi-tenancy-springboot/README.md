@@ -37,7 +37,8 @@ demo's job.
 
 ## Running
 
-1. Provide a license and start Axon Server as described in the [parent README](../README.md#axon-server).
+1. License and start Axon Server (with a license file or an Axoniq Platform token) as described in the
+   [parent README](../README.md#axon-server).
 2. From this module's directory:
 
    ```
@@ -57,20 +58,27 @@ Testcontainers container, and drives the lifecycle. It asserts the same outcome 
 declarative demo, this time proving the auto-configuration path. It also asserts that the `_admin`
 context, which exists on the server, is filtered out of the discovered tenants.
 
-Because hosting several tenant contexts needs an Enterprise Edition license, the test mounts one into
-the container, expecting it on the test classpath as `axon-server.license`:
+Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
+the container in one of two ways, checked in that order:
 
-* Locally, place your license as `axon-server.license` next to the [parent README](../README.md)
-  (git-ignored). The module copies it onto the test classpath.
-* In a repository CI run, the examples workflow writes the license from a secret to the same location
-  before the build.
+* **License file** (the path CI uses): the test mounts a license expected on the test classpath as
+  `axon-server.license`. Locally, place your license as `axon-server.license` next to the
+  [parent README](../README.md). It is git-ignored, and the module copies it onto the test classpath. In
+  a repository CI run, the examples workflow writes the license from a secret to the same location before
+  the build.
+* **Axoniq Platform token** (local fallback): if no license file is present, the test uses the token
+  from the `AXONIQ_PLATFORM_AUTHENTICATION` environment variable, or, when that is not set, from the
+  `AXONIQ_PLATFORM_AUTHENTICATION` entry in the `.env` file next to the demos. That is the same file
+  docker-compose reads, so putting your token in `.env` is enough to run the test, with no shell or IDE
+  setup. The test passes the token to the container so it fetches its license from Axoniq Platform. Find
+  the token at <https://platform.axoniq.io/resource-center/install/server/download/?version=latest>.
 
-When no license is available (a fork PR, whose CI receives no repository secrets, or a clone without
-the license file), the test skips itself so the build stays green. It runs in the repository's own CI
-and locally, where the license is present. The test needs Docker (for the container). Run it with
-`mvn verify` (it runs at the `verify` phase).
+When neither is available (a fork PR, whose CI receives no repository secrets, or a clone with neither
+a license file nor a token), the test skips itself so the build stays green. It runs in the
+repository's own CI and locally, where the license is present. The test needs Docker (for the
+container). Run it with `mvn verify` (it runs at the `verify` phase).
 
-`MultiTenancyDisabledTest` proves the disable toggle: with `axon.multitenancy.enabled=false`, the
-auto-configuration installs nothing, so the tenant-scoped handler parameter can no longer be resolved
-and the application fails to start. That failure is the observable proof that the feature is fully off.
-This test needs no Axon Server, so it runs as an ordinary unit test.
+`MultiTenancyDisabledTest` proves the disable toggle. With `axon.multitenancy.enabled=false`, the
+auto-configuration installs no tenant resolution, so dispatching a tenant-scoped enrolment fails because
+its tenant is never resolved. That failure is the observable proof that the feature is fully off. The
+test disables Axon Server as well, so it needs none and runs as an ordinary unit test.
