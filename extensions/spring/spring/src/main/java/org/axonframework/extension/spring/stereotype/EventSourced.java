@@ -27,9 +27,9 @@ import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefin
 import org.axonframework.eventsourcing.annotation.reflection.AnnotationBasedEventSourcedEntityFactoryDefinition;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.TargetEntityId;
-import org.axonframework.modelling.entity.annotation.AnnotatedEntityIdResolverDefinition;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.annotation.AliasFor;
@@ -116,12 +116,12 @@ public @interface EventSourced {
     /**
      * The definition of the {@link EntityIdResolverDefinition} to use to resolve the entity id from a
      * {@link CommandMessage command message}. Defaults to the
-     * {@link AnnotatedEntityIdResolverDefinition}, which resolves the entity id based on the
-     * {@link TargetEntityId} annotation on a payload field or method, after
-     * converting the payload to the representation wanted by the entity.
+     * {@link AnnotationBasedEntityIdResolverDefinition}, which resolves the entity id based on the
+     * {@link TargetEntityId} annotation on a payload field or method. Conversion of the payload to the
+     * representation wanted by the entity is applied by the module before resolution.
      *
      * @return The definition to construct an {@link EntityIdResolverDefinition}.
      */
     @AliasFor(annotation = EventSourcedEntity.class, attribute = "entityIdResolverDefinition")
-    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotatedEntityIdResolverDefinition.class;
+    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotationBasedEntityIdResolverDefinition.class;
 }

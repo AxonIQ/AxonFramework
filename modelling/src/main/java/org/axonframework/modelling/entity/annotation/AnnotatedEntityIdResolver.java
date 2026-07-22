@@ -39,7 +39,13 @@ import java.util.Objects;
  * @param <ID> The type of the identifier to resolve.
  * @author Mitchell Herrijgers
  * @since 5.0.0
+ * @deprecated Coupling the id resolver directly to the {@link AnnotatedEntityMetamodel} prevents the
+ * {@code EntityMetamodel} from being decorated or replaced, since resolution would break whenever the registered
+ * component is not an {@code AnnotatedEntityMetamodel}. Payload conversion to the handler's expected representation
+ * is now applied independently of the metamodel component, so annotation-based resolution only needs the plain
+ * {@link AnnotationBasedEntityIdResolver}. No direct replacement is required.
  */
+@Deprecated(since = "5.3.0")
 public class AnnotatedEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
 
     private final AnnotatedEntityMetamodel<?> metamodel;
