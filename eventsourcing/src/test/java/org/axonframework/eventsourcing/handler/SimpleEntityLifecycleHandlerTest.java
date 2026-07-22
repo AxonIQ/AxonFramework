@@ -90,13 +90,13 @@ class SimpleEntityLifecycleHandlerTest {
             AtomicReference<Bike> stateRef = new AtomicReference<>(initial);
             handler.subscribe(managedEntity("bike1", stateRef), pc);
 
-            // when — an event tagged for bike2 is appended within the same context
+            // when -- an event tagged for bike2 is appended within the same context
             eventStore.transaction(pc).appendEvent(new GenericEventMessage(
                     new MessageType(SpeedometerRemoved.class),
                     new SpeedometerRemoved("bike2", "speedo2")
             ));
 
-            // then — bike1 must be untouched, it does not carry bike2's tag
+            // then -- bike1 must be untouched, it does not carry bike2's tag
             assertThat(stateRef.get()).isEqualTo(initial);
             assertThat(stateRef.get().mountedSpeedometerId()).isEqualTo("speedo1");
         }
@@ -110,13 +110,13 @@ class SimpleEntityLifecycleHandlerTest {
             AtomicReference<Bike> stateRef = new AtomicReference<>(initial);
             handler.subscribe(managedEntity("bike1", stateRef), pc);
 
-            // when — an event tagged for bike1 is appended within the same context
+            // when -- an event tagged for bike1 is appended within the same context
             eventStore.transaction(pc).appendEvent(new GenericEventMessage(
                     new MessageType(SpeedometerRemoved.class),
                     new SpeedometerRemoved("bike1", "speedo1")
             ));
 
-            // then — bike1 evolves, the event carries its tag
+            // then -- bike1 evolves, the event carries its tag
             assertThat(stateRef.get().mountedSpeedometerId()).isNull();
         }
     }
