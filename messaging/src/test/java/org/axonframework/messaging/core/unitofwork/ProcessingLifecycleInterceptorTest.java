@@ -43,7 +43,7 @@ class ProcessingLifecycleInterceptorTest {
     private final SimpleUnitOfWorkFactory factory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
 
     private UnitOfWork unitOfWorkWith(ProcessingLifecycleInterceptor interceptor) {
-        return (UnitOfWork) factory.create("test", config -> config.interceptor(interceptor));
+        return (UnitOfWork) factory.create("test", config -> config.lifecycleInterceptor(interceptor));
     }
 
     @Nested
@@ -54,7 +54,7 @@ class ProcessingLifecycleInterceptorTest {
             // given
             AtomicInteger interceptions = new AtomicInteger();
             List<Boolean> contextsPresent = new CopyOnWriteArrayList<>();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> {
                         interceptions.incrementAndGet();
                         contextsPresent.add(context != null);
@@ -76,10 +76,10 @@ class ProcessingLifecycleInterceptorTest {
 
         @Test
         void interceptorSeesActionsRegisteredFromInsideAnotherAction() {
-            // given — mirrors DefaultEventStoreTransaction, which registers COMMIT/AFTER_COMMIT from an earlier phase
+            // given -- mirrors DefaultEventStoreTransaction, which registers COMMIT/AFTER_COMMIT from an earlier phase
             AtomicInteger interceptions = new AtomicInteger();
             AtomicInteger nestedRan = new AtomicInteger();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> {
                         interceptions.incrementAndGet();
                         return action.get();
@@ -96,7 +96,7 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — both the outer and the dynamically registered inner action are intercepted
+            // then -- both the outer and the dynamically registered inner action are intercepted
             assertThat(nestedRan.get()).isEqualTo(1);
             assertThat(interceptions.get()).isEqualTo(2);
         }
@@ -105,7 +105,7 @@ class ProcessingLifecycleInterceptorTest {
         void interceptorSeesCompletionHandler() {
             // given
             AtomicInteger interceptions = new AtomicInteger();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> {
                         interceptions.incrementAndGet();
                         return action.get();
@@ -125,7 +125,7 @@ class ProcessingLifecycleInterceptorTest {
         void interceptorSeesErrorHandler() {
             // given
             AtomicInteger interceptions = new AtomicInteger();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> {
                         interceptions.incrementAndGet();
                         return action.get();
@@ -135,7 +135,7 @@ class ProcessingLifecycleInterceptorTest {
             uow.onError((c, phase, error) -> {
             });
 
-            // when / then — one interception for the failing action, one for the error handler dispatch
+            // when / then -- one interception for the failing action, one for the error handler dispatch
             assertThatThrownBy(() -> uow.execute().join()).hasRootCauseMessage("boom");
             assertThat(interceptions.get()).isEqualTo(2);
         }
@@ -171,19 +171,19 @@ class ProcessingLifecycleInterceptorTest {
             AtomicInteger completions = new AtomicInteger();
             ProcessingLifecycleInterceptor interceptor = new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     return action.get();
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     completions.incrementAndGet();
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     action.run();
                 }
@@ -195,7 +195,7 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — the completion handler is routed through its own method, distinct from phase actions
+            // then -- the completion handler is routed through its own method, distinct from phase actions
             assertThat(completions.get()).isEqualTo(1);
         }
 
@@ -206,18 +206,18 @@ class ProcessingLifecycleInterceptorTest {
             List<Throwable> causes = new CopyOnWriteArrayList<>();
             ProcessingLifecycleInterceptor interceptor = new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     return action.get();
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     failedPhases.add(failedPhase);
                     causes.add(cause);
@@ -238,23 +238,23 @@ class ProcessingLifecycleInterceptorTest {
 
         @Test
         void errorPrecedingTheFirstPhaseReportsANullFailedPhase() {
-            // given — no phase action is registered, so the failure (if any) cannot carry a failed phase; instead we
+            // given -- no phase action is registered, so the failure (if any) cannot carry a failed phase; instead we
             // simulate the "no failing phase action" case directly by never entering a phase before the error.
             List<Phase> failedPhases = new CopyOnWriteArrayList<>();
             ProcessingLifecycleInterceptor interceptor = new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     return action.get();
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     failedPhases.add(failedPhase);
                     action.run();
@@ -267,18 +267,18 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — no phase action failed, so nothing routes through interceptErrorHandler
+            // then -- no phase action failed, so nothing routes through interceptError
             assertThat(failedPhases).isEmpty();
         }
 
         @Test
         void interceptorCanLimitItselfToSpecificPhasesWhileStillCoveringOtherKinds() {
-            // given — an interceptor wrapping COMMIT actions only, passing all other phases through untouched, while
+            // given -- an interceptor wrapping COMMIT actions only, passing all other phases through untouched, while
             // completion/error dispatch (abstract, so they must be implemented) simply run the action.
             List<String> order = new CopyOnWriteArrayList<>();
             ProcessingLifecycleInterceptor commitOnly = new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     if (!DefaultPhases.COMMIT.equals(phase)) {
                         return action.get();
@@ -290,12 +290,12 @@ class ProcessingLifecycleInterceptorTest {
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     action.run();
                 }
@@ -313,7 +313,7 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — only the COMMIT action is wrapped
+            // then -- only the COMMIT action is wrapped
             assertThat(order).containsExactly("invocation-action",
                                               "before-commit-action",
                                               "commit-action",
@@ -323,19 +323,19 @@ class ProcessingLifecycleInterceptorTest {
         private ProcessingLifecycleInterceptor recordingPhases(List<Phase> phases) {
             return new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     phases.add(phase);
                     return action.get();
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     action.run();
                 }
@@ -352,37 +352,37 @@ class ProcessingLifecycleInterceptorTest {
             AtomicInteger phaseActions = new AtomicInteger();
             AtomicInteger completions = new AtomicInteger();
             AtomicInteger errors = new AtomicInteger();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> action.get());
             ProcessingLifecycleInterceptor counting = interceptor.andThen(new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     phaseActions.incrementAndGet();
                     return action.get();
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     completions.incrementAndGet();
                     action.run();
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     errors.incrementAndGet();
                     action.run();
                 }
             });
-            UnitOfWork uow = (UnitOfWork) factory.create("test", config -> config.interceptor(counting));
+            UnitOfWork uow = (UnitOfWork) factory.create("test", config -> config.lifecycleInterceptor(counting));
             uow.on(DefaultPhases.INVOCATION, c -> CompletableFuture.failedFuture(new RuntimeException("boom")));
             uow.onError((c, phase, error) -> {
             });
             uow.whenComplete(c -> {
             });
 
-            // when / then — the lifecycle fails, so only the error handler (not the completion handler) dispatches
+            // when / then -- the lifecycle fails, so only the error handler (not the completion handler) dispatches
             assertThatThrownBy(() -> uow.execute().join()).hasRootCauseMessage("boom");
             assertThat(phaseActions.get()).isEqualTo(1);
             assertThat(errors.get()).isEqualTo(1);
@@ -391,9 +391,9 @@ class ProcessingLifecycleInterceptorTest {
 
         @Test
         void uniformNeverUnderCoversASite() {
-            // given — a happy-path lifecycle exercising phase actions and the completion dispatch
+            // given -- a happy-path lifecycle exercising phase actions and the completion dispatch
             AtomicInteger interceptions = new AtomicInteger();
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> {
                         interceptions.incrementAndGet();
                         return action.get();
@@ -406,7 +406,7 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — one for the phase action, one for the completion dispatch
+            // then -- one for the phase action, one for the completion dispatch
             assertThat(interceptions.get()).isEqualTo(2);
         }
     }
@@ -430,7 +430,7 @@ class ProcessingLifecycleInterceptorTest {
             // when
             uow.execute().join();
 
-            // then — outer wraps inner wraps the action, for every dispatch kind
+            // then -- outer wraps inner wraps the action, for every dispatch kind
             assertThat(order).containsExactly("outer-phase-before", "inner-phase-before", "action",
                                               "inner-phase-after", "outer-phase-after",
                                               "outer-completion-before", "inner-completion-before", "completion",
@@ -439,16 +439,16 @@ class ProcessingLifecycleInterceptorTest {
 
         @Test
         void multipleContributorsCompose() {
-            // given — two independent installers must both fire, not clobber each other
+            // given -- two independent installers must both fire, not clobber each other
             AtomicInteger first = new AtomicInteger();
             AtomicInteger second = new AtomicInteger();
             Supplier<UnitOfWork> build = () -> (UnitOfWork) factory.create(
                     "test",
-                    config -> config.interceptor(ProcessingLifecycleInterceptor.uniform((c, a) -> {
+                    config -> config.addLifecycleInterceptor(ProcessingLifecycleInterceptor.intercept((c, a) -> {
                                         first.incrementAndGet();
                                         return a.get();
                                     }))
-                                    .interceptor(ProcessingLifecycleInterceptor.uniform((c, a) -> {
+                                    .addLifecycleInterceptor(ProcessingLifecycleInterceptor.intercept((c, a) -> {
                                         second.incrementAndGet();
                                         return a.get();
                                     }))
@@ -467,7 +467,7 @@ class ProcessingLifecycleInterceptorTest {
         private ProcessingLifecycleInterceptor wrapping(List<String> order, String label) {
             return new ProcessingLifecycleInterceptor() {
                 @Override
-                public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
                                                                   Supplier<CompletableFuture<?>> action) {
                     order.add(label + "-phase-before");
                     CompletableFuture<?> result = action.get();
@@ -476,14 +476,14 @@ class ProcessingLifecycleInterceptorTest {
                 }
 
                 @Override
-                public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
                     order.add(label + "-completion-before");
                     action.run();
                     order.add(label + "-completion-after");
                 }
 
                 @Override
-                public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase,
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
                                                   Throwable cause, Runnable action) {
                     order.add(label + "-error-before");
                     action.run();
@@ -500,7 +500,7 @@ class ProcessingLifecycleInterceptorTest {
         void exceptionsFromActionPropagateUnchanged() {
             // given
             IllegalStateException failure = new IllegalStateException("expected");
-            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.uniform(
+            ProcessingLifecycleInterceptor interceptor = ProcessingLifecycleInterceptor.intercept(
                     (context, action) -> action.get());
             UnitOfWork uow = unitOfWorkWith(interceptor);
             uow.on(DefaultPhases.INVOCATION, c -> {
@@ -512,8 +512,8 @@ class ProcessingLifecycleInterceptorTest {
         }
 
         @Test
-        void passThroughDefaultKeepsBehaviorUnchanged() {
-            // given — default configuration, PASS_THROUGH interceptor, no custom wrapping
+        void noInterceptorDefaultKeepsBehaviorUnchanged() {
+            // given -- default configuration, no interceptor installed, no custom wrapping
             AtomicInteger ran = new AtomicInteger();
             UnitOfWork uow = (UnitOfWork) factory.create("test", config -> config);
             uow.on(DefaultPhases.INVOCATION, c -> {
@@ -528,6 +528,76 @@ class ProcessingLifecycleInterceptorTest {
             result.join();
             assertThat(ran.get()).isEqualTo(1);
             assertThat(result).isCompleted();
+        }
+
+        @Test
+        void misbehavingCompletionInterceptorIsSwallowedAndDoesNotBlockRemainingHandlersOrFailTheUnitOfWork() {
+            // given -- an interceptor that runs each completion dispatch and then throws
+            AtomicInteger completionsRun = new AtomicInteger();
+            ProcessingLifecycleInterceptor throwingOnCompletion = new ProcessingLifecycleInterceptor() {
+                @Override
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
+                                                           Supplier<CompletableFuture<?>> action) {
+                    return action.get();
+                }
+
+                @Override
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
+                    action.run();
+                    throw new RuntimeException("interceptor boom");
+                }
+
+                @Override
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
+                                           Throwable cause, Runnable action) {
+                    action.run();
+                }
+            };
+            UnitOfWork uow = unitOfWorkWith(throwingOnCompletion);
+            uow.whenComplete(c -> completionsRun.incrementAndGet());
+            uow.whenComplete(c -> completionsRun.incrementAndGet());
+
+            // when
+            CompletableFuture<Void> result = uow.execute();
+
+            // then -- both completion handlers ran and the throwing interceptor did not fail the unit of work
+            result.join();
+            assertThat(completionsRun.get()).isEqualTo(2);
+            assertThat(result).isCompleted();
+        }
+
+        @Test
+        void misbehavingErrorInterceptorIsSwallowedAndDoesNotBlockRemainingHandlersNorMaskTheOriginalCause() {
+            // given -- an interceptor that runs each error dispatch and then throws
+            AtomicInteger errorsRun = new AtomicInteger();
+            ProcessingLifecycleInterceptor throwingOnError = new ProcessingLifecycleInterceptor() {
+                @Override
+                public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
+                                                           Supplier<CompletableFuture<?>> action) {
+                    return action.get();
+                }
+
+                @Override
+                public void interceptCompletion(ProcessingContext context, Runnable action) {
+                    action.run();
+                }
+
+                @Override
+                public void interceptError(ProcessingContext context, @Nullable Phase failedPhase,
+                                           Throwable cause, Runnable action) {
+                    action.run();
+                    throw new RuntimeException("interceptor boom");
+                }
+            };
+            UnitOfWork uow = unitOfWorkWith(throwingOnError);
+            RuntimeException failure = new RuntimeException("boom");
+            uow.on(DefaultPhases.INVOCATION, c -> CompletableFuture.failedFuture(failure));
+            uow.onError((c, phase, error) -> errorsRun.incrementAndGet());
+            uow.onError((c, phase, error) -> errorsRun.incrementAndGet());
+
+            // when / then -- both error handlers ran and the lifecycle still fails with the original cause
+            assertThatThrownBy(() -> uow.execute().join()).hasRootCause(failure);
+            assertThat(errorsRun.get()).isEqualTo(2);
         }
     }
 }

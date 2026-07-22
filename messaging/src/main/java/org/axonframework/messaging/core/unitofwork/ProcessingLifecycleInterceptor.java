@@ -17,6 +17,7 @@
 package org.axonframework.messaging.core.unitofwork;
 
 import org.axonframework.common.FutureUtils;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.Phase;
 import org.jspecify.annotations.Nullable;
 
@@ -25,49 +26,43 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * Vendor-neutral seam that is invoked <em>immediately around</em> every action executed by a {@link UnitOfWork} — on
- * the very thread that runs the action.
+ * Seam that is invoked <em>immediately around</em> every action executed by a {@link UnitOfWork}, on the very thread
+ * that runs the action.
  * <p>
- * Every registered phase action (INVOCATION, PREPARE_COMMIT, COMMIT, AFTER_COMMIT, …), as well as the completion- and
+ * Every registered phase action (INVOCATION, PREPARE_COMMIT, COMMIT, AFTER_COMMIT, ...), as well as the completion- and
  * error-handler dispatch sites, passes through this interceptor. This makes it the single choke point for bridging
- * thread-bound state — distributed tracing context, MDC, security context — into the segments that the framework
- * executes on its own {@link UnitOfWorkConfiguration#workScheduler() work scheduler} threads.
+ * thread-bound state, such as distributed tracing context, MDC, or security context, into the segments that the
+ * framework executes on its own {@link UnitOfWorkConfiguration#workScheduler() work scheduler} threads.
  * <p>
- * The three dispatch kinds are exposed as three separate, all-{@code abstract} methods —
- * {@link #interceptPhaseAction(ProcessingContext, Phase, Supplier)},
- * {@link #interceptCompletionHandler(ProcessingContext, Runnable)}, and
- * {@link #interceptErrorHandler(ProcessingContext, Phase, Throwable, Runnable)} — rather than a single method
- * discriminated by a nullable flag. The compiler therefore forces every implementation to consider all three sites,
- * removing the risk of an implementation that silently covers phase actions while missing the completion- or
- * error-handler dispatch. Implementations that want to apply the same behavior uniformly to all three kinds (the
- * common case for state-bridging infrastructure such as a tracing binding) should use {@link #uniform(UniformInterceptor)}
- * instead of implementing this interface directly.
+ * The three dispatch kinds are exposed as three separate, all-{@code abstract} methods,
+ * {@link #interceptPhase(ProcessingContext, Phase, Supplier)},
+ * {@link #interceptCompletion(ProcessingContext, Runnable)}, and
+ * {@link #interceptError(ProcessingContext, Phase, Throwable, Runnable)}, rather than a single method discriminated by
+ * a nullable flag. The compiler therefore forces every implementation to consider all three sites, removing the risk
+ * of an implementation that silently covers phase actions while missing the completion- or error-handler dispatch.
+ * Implementations that want to apply the same behavior uniformly to all three kinds (the common case for state-bridging
+ * infrastructure such as a tracing binding) should use {@link #intercept(UniformInterceptor)} instead of implementing
+ * this interface directly.
  * <p>
- * The interceptor is <b>dormant by default</b>: the {@link #PASS_THROUGH} instance simply invokes the action, adding no
- * behavior and no overhead. It is meant to be installed by infrastructure (for example a tracing binding) through
- * {@link UnitOfWorkConfiguration#interceptor(ProcessingLifecycleInterceptor)}, which composes contributors
+ * No interceptor is installed by default: {@link UnitOfWorkConfiguration#defaultValues()} leaves the interceptor
+ * {@code null}, and the {@link UnitOfWork} then runs actions directly, adding no behavior and no overhead. An
+ * interceptor is meant to be installed by infrastructure (for example a tracing binding) through
+ * {@link UnitOfWorkConfiguration#addLifecycleInterceptor(ProcessingLifecycleInterceptor)}, which composes contributors
  * via {@link #andThen(ProcessingLifecycleInterceptor)} so multiple installers never clobber one another.
  * <p>
  * Implementations run on the action's thread and MUST restore any thread-bound state they mutate before returning,
  * regardless of the action's outcome (typically via try-with-resources).
  * <p>
- * <b>Evolution policy:</b> this is a public SPI. Should a future minor release introduce another dispatch-kind
- * method, its default implementation MUST delegate to an existing method of this interface (safe-by-default), never
- * pass through the action unintercepted (skip-by-default). This preserves the guarantee that a wrap-everything
- * implementor (any implementation obtained through {@link #uniform(UniformInterceptor)}) keeps covering every
- * dispatch site across releases.
+ * <b>Evolution policy:</b> should a future minor release introduce another dispatch-kind method, its default
+ * implementation MUST delegate to an existing method of this interface (safe-by-default), never pass through the action
+ * unintercepted (skip-by-default). This preserves the guarantee that a wrap-everything implementor (any implementation
+ * obtained through {@link #intercept(UniformInterceptor)}) keeps covering every dispatch site across releases.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
  */
+@Internal
 public interface ProcessingLifecycleInterceptor {
-
-    /**
-     * A no-op interceptor that invokes every action unchanged. This is the default installed by
-     * {@link UnitOfWorkConfiguration#defaultValues()}, guaranteeing zero behavioral change when no contributor is
-     * registered.
-     */
-    ProcessingLifecycleInterceptor PASS_THROUGH = uniform((context, action) -> action.get());
 
     /**
      * Invoked on the thread that executes the {@code action}, immediately around it. This is the seam for bridging
@@ -78,8 +73,8 @@ public interface ProcessingLifecycleInterceptor {
      * @param action  the action to execute, returning a {@link CompletableFuture} that completes when the action is done
      * @return the result of executing the {@code action}
      */
-    CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
-                                              Supplier<CompletableFuture<?>> action);
+    CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
+                                        Supplier<CompletableFuture<?>> action);
 
     /**
      * Invoked on the thread that executes the {@code action}, immediately around it. This is the seam for bridging
@@ -89,7 +84,7 @@ public interface ProcessingLifecycleInterceptor {
      * @param context the {@link ProcessingContext} of the {@link UnitOfWork} whose completion handler is dispatched
      * @param action  the completion-handler dispatch to execute
      */
-    void interceptCompletionHandler(ProcessingContext context, Runnable action);
+    void interceptCompletion(ProcessingContext context, Runnable action);
 
     /**
      * Invoked on the thread that executes the {@code action}, immediately around it. This is the seam for bridging
@@ -101,42 +96,42 @@ public interface ProcessingLifecycleInterceptor {
      * @param cause       the failure that moved the lifecycle into its error state
      * @param action      the error-handler dispatch to execute
      */
-    void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
-                               Runnable action);
+    void interceptError(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
+                        Runnable action);
 
     /**
-     * Creates a {@link ProcessingLifecycleInterceptor} that applies the given {@code around} interceptor
-     * uniformly to all three dispatch kinds — phase actions, completion-handler dispatch, and error-handler dispatch.
+     * Creates a {@link ProcessingLifecycleInterceptor} that applies the given {@code interceptor} uniformly to all
+     * three dispatch kinds: phase actions, completion-handler dispatch, and error-handler dispatch.
      * <p>
      * This is the shape most infrastructure contributors need: state-bridging behavior (restoring thread-locals,
-     * activating a live span, …) that does not depend on which kind of dispatch is being intercepted, expressed as a
+     * activating a live span, ...) that does not depend on which kind of dispatch is being intercepted, expressed as a
      * single lambda that can never under-cover a dispatch site.
      *
-     * @param around the kind-agnostic interceptor applied to every dispatch site
-     * @return a {@link ProcessingLifecycleInterceptor} delegating every dispatch kind to {@code around}
+     * @param interceptor the kind-agnostic interceptor applied to every dispatch site
+     * @return a {@link ProcessingLifecycleInterceptor} delegating every dispatch kind to {@code interceptor}
      */
-    static ProcessingLifecycleInterceptor uniform(UniformInterceptor around) {
-        Objects.requireNonNull(around, "around may not be null.");
+    static ProcessingLifecycleInterceptor intercept(UniformInterceptor interceptor) {
+        Objects.requireNonNull(interceptor, "interceptor may not be null.");
         return new ProcessingLifecycleInterceptor() {
 
             @Override
-            public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
-                                                              Supplier<CompletableFuture<?>> action) {
-                return around.intercept(context, action);
+            public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
+                                                       Supplier<CompletableFuture<?>> action) {
+                return interceptor.intercept(context, action);
             }
 
             @Override
-            public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
-                around.intercept(context, () -> {
+            public void interceptCompletion(ProcessingContext context, Runnable action) {
+                interceptor.intercept(context, () -> {
                     action.run();
                     return FutureUtils.emptyCompletedFuture();
                 });
             }
 
             @Override
-            public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
-                                              Runnable action) {
-                around.intercept(context, () -> {
+            public void interceptError(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
+                                       Runnable action) {
+                interceptor.intercept(context, () -> {
                     action.run();
                     return FutureUtils.emptyCompletedFuture();
                 });
@@ -145,40 +140,40 @@ public interface ProcessingLifecycleInterceptor {
     }
 
     /**
-     * Composes this interceptor with the {@code next} one, invoking {@code this} on the outside and {@code next} on
+     * Composes this interceptor with the {@code other} one, invoking {@code this} on the outside and {@code other} on
      * the inside (closest to the action), per dispatch kind. Composition ensures multiple contributors never clobber
      * each other.
      *
-     * @param next the interceptor to invoke inside this one
+     * @param other the interceptor to invoke inside this one
      * @return a composed {@link ProcessingLifecycleInterceptor}
      */
-    default ProcessingLifecycleInterceptor andThen(ProcessingLifecycleInterceptor next) {
-        Objects.requireNonNull(next, "next may not be null.");
+    default ProcessingLifecycleInterceptor andThen(ProcessingLifecycleInterceptor other) {
+        Objects.requireNonNull(other, "other may not be null.");
         ProcessingLifecycleInterceptor self = this;
         return new ProcessingLifecycleInterceptor() {
 
             @Override
-            public CompletableFuture<?> interceptPhaseAction(ProcessingContext context, Phase phase,
-                                                              Supplier<CompletableFuture<?>> action) {
-                return self.interceptPhaseAction(context, phase, () -> next.interceptPhaseAction(context, phase, action));
+            public CompletableFuture<?> interceptPhase(ProcessingContext context, Phase phase,
+                                                       Supplier<CompletableFuture<?>> action) {
+                return self.interceptPhase(context, phase, () -> other.interceptPhase(context, phase, action));
             }
 
             @Override
-            public void interceptCompletionHandler(ProcessingContext context, Runnable action) {
-                self.interceptCompletionHandler(context, () -> next.interceptCompletionHandler(context, action));
+            public void interceptCompletion(ProcessingContext context, Runnable action) {
+                self.interceptCompletion(context, () -> other.interceptCompletion(context, action));
             }
 
             @Override
-            public void interceptErrorHandler(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
-                                              Runnable action) {
-                self.interceptErrorHandler(context, failedPhase, cause,
-                                           () -> next.interceptErrorHandler(context, failedPhase, cause, action));
+            public void interceptError(ProcessingContext context, @Nullable Phase failedPhase, Throwable cause,
+                                       Runnable action) {
+                self.interceptError(context, failedPhase, cause,
+                                    () -> other.interceptError(context, failedPhase, cause, action));
             }
         };
     }
 
     /**
-     * Kind-agnostic interceptor applied uniformly to all dispatch sites by {@link #uniform(UniformInterceptor)}.
+     * Kind-agnostic interceptor applied uniformly to all dispatch sites by {@link #intercept(UniformInterceptor)}.
      */
     @FunctionalInterface
     interface UniformInterceptor {

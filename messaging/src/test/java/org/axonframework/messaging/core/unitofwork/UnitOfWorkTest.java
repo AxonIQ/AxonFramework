@@ -49,7 +49,7 @@ class UnitOfWorkTest extends ProcessingLifecycleTest<UnitOfWork> {
 
     @Override
     UnitOfWork createTestSubject() {
-        return new UnitOfWork("unit-of-work-id", DirectExecutor.instance(), false, EmptyApplicationContext.INSTANCE, ProcessingLifecycleInterceptor.PASS_THROUGH);
+        return new UnitOfWork("unit-of-work-id", DirectExecutor.instance(), false, EmptyApplicationContext.INSTANCE, null);
     }
 
     @Override
@@ -160,7 +160,7 @@ class UnitOfWorkTest extends ProcessingLifecycleTest<UnitOfWork> {
                                             Runnable::run,
                                             true,
                                             EmptyApplicationContext.INSTANCE,
-                                            ProcessingLifecycleInterceptor.PASS_THROUGH);
+                                            null);
 
             uow.on(ProcessingLifecycle.DefaultPhases.INVOCATION, c -> captureThreadName(threadNames, executor));
             uow.on(ProcessingLifecycle.DefaultPhases.COMMIT, c -> captureThreadName(threadNames, executor));
@@ -185,7 +185,7 @@ class UnitOfWorkTest extends ProcessingLifecycleTest<UnitOfWork> {
                                             Runnable::run,
                                             true,
                                             EmptyApplicationContext.INSTANCE,
-                                            ProcessingLifecycleInterceptor.PASS_THROUGH);
+                                            null);
 
             uow.on(ProcessingLifecycle.DefaultPhases.INVOCATION, c -> captureThreadName(threadNames, executor));
             uow.on(ProcessingLifecycle.DefaultPhases.INVOCATION, c -> captureThreadName(threadNames, executor));
