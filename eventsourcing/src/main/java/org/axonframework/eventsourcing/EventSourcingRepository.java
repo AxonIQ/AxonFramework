@@ -17,8 +17,8 @@
 package org.axonframework.eventsourcing;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
 import org.axonframework.eventsourcing.handler.SimpleEntityLifecycleHandler;
@@ -78,9 +78,12 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * <ul>
      *   <li>sources events from the given event store</li>
      *   <li>uses the criteria resolver to locate the event stream</li>
+     *   <li>uses the framework-default {@link AnnotationBasedTagResolver} to resolve event tags</li>
      *   <li>applies the provided entity evolver for state transitions</li>
      *   <li>initializes entities when no event stream exists</li>
      * </ul>
+     * To use a custom tag resolver, construct an {@link EntityLifecycleHandler} and use
+     * {@link #EventSourcingRepository(Class, Class, EntityLifecycleHandler)} instead.
      *
      * @param idType           the type of the identifier for the event sourced entity this repository serves
      * @param entityType       the type of the event sourced entity this repository serves
@@ -89,8 +92,6 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      *                         provided identifier
      * @param criteriaResolver converts the given identifier to an {@link EventCriteria} used to load a matching event
      *                         stream
-     * @param tagResolver      resolves the tags of events appended during an entity's lifetime, so live updates can be
-     *                         filtered by the entity's {@link EventCriteria}
      * @param entityEvolver    the function used to evolve the state of loaded entities based on events
      * @deprecated use {@link EventSourcingRepository#EventSourcingRepository(Class, Class, EntityLifecycleHandler)}
      */
@@ -100,7 +101,6 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
                                    EventStore eventStore,
                                    EventSourcedEntityFactory<ID, E> entityFactory,
                                    CriteriaResolver<ID> criteriaResolver,
-                                   TagResolver tagResolver,
                                    EntityEvolver<E> entityEvolver
     ) {
         this(
@@ -109,7 +109,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
             new SimpleEntityLifecycleHandler<>(
                 requireNonNull(eventStore, "The event store must not be null."),
                 requireNonNull(criteriaResolver, "The criteria resolver must not be null."),
-                requireNonNull(tagResolver, "The tag resolver must not be null."),
+                new AnnotationBasedTagResolver(),
                 new InitializingEntityEvolver<>(
                     requireNonNull(entityFactory, "The entity factory must not be null."),
                     requireNonNull(entityEvolver, "The entity evolver must not be null.")

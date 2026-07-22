@@ -94,4 +94,24 @@ class TagResolverTest {
         // then — each context resolves independently
         assertThat(resolveCalls.get()).isEqualTo(2);
     }
+
+    @Test
+    void resolvesWithoutCachingWhenContextIsNull() {
+        // given
+        Tag tag = new Tag("key", "value");
+        TagResolver resolver = event -> {
+            resolveCalls.incrementAndGet();
+            return Set.of(tag);
+        };
+        EventMessage event = new GenericEventMessage(new MessageType("SomeEvent"), "payload");
+
+        // when
+        Set<Tag> first = resolver.resolve(event, null);
+        Set<Tag> second = resolver.resolve(event, null);
+
+        // then
+        assertThat(first).containsExactly(tag);
+        assertThat(second).isEqualTo(first);
+        assertThat(resolveCalls.get()).isEqualTo(2);
+    }
 }
