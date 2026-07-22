@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Integration test proving that when a single command handler loads two entities in one unit of work, an appended event
- * is only applied to the entity it belongs to (as determined by the entity's {@link EventCriteria}/tags) — not to every
+ * is only applied to the entity it belongs to (as determined by the entity's {@link EventCriteria}/tags) -- not to every
  * loaded entity that happens to declare an {@link EventSourcingHandler} for that event type.
  * <p>
  * The scenario is the "speedometer moved between bikes" case: two {@code RentableBike} entities are injected into one
@@ -84,15 +84,15 @@ public abstract class MultiEntitySameEventHandlersIT extends AbstractIT {
 
     @Test
     void appendedEventEvolvesOnlyTheEntityItBelongsTo() {
-        // given — bike1 has a speedometer mounted, bike2 exists without one
+        // given -- bike1 has a speedometer mounted, bike2 exists without one
         publish(new RentableBikeWasAdded(BIKE_1));
         publish(new SpeedoMeterMounted(BIKE_1, SPEEDO));
         publish(new RentableBikeWasAdded(BIKE_2));
 
-        // when — a single handler loads both bikes and moves the speedometer from bike1 to bike2
+        // when -- a single handler loads both bikes and moves the speedometer from bike1 to bike2
         sendCommand(new MoveSpeedometerCommand(BIKE_1, BIKE_2));
 
-        // then — SpeedoMeterRemoved(bike1) must not have been applied to bike2, and the move succeeds
+        // then -- SpeedoMeterRemoved(bike1) must not have been applied to bike2, and the move succeeds
         assertNull(loadBike(BIKE_1).mountedSpeedometer(), "bike1 should no longer have a speedometer");
         assertEquals(SPEEDO, loadBike(BIKE_2).mountedSpeedometer(), "bike2 should now hold the speedometer");
     }

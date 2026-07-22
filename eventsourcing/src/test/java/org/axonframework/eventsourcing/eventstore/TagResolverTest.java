@@ -87,11 +87,11 @@ class TagResolverTest {
         };
         EventMessage event = new GenericEventMessage(new MessageType("SomeEvent"), "payload");
 
-        // when — resolving the same event in two different contexts
+        // when -- resolving the same event in two different contexts
         resolver.resolve(event, new StubProcessingContext());
         resolver.resolve(event, new StubProcessingContext());
 
-        // then — each context resolves independently
+        // then -- each context resolves independently
         assertThat(resolveCalls.get()).isEqualTo(2);
     }
 

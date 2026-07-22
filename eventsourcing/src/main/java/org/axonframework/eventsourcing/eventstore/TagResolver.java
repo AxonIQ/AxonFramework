@@ -44,8 +44,8 @@ public interface TagResolver {
     /**
      * Resolves a {@link Set} of {@link Tag Tags} for the given {@code event}.
      *
-     * @param event The event to resolve a {@link Set} of {@link Tag Tags} for.
-     * @return A {@link Set} of {@link Tag Tags} for the given {@code event}.
+     * @param event the event to resolve a {@link Set} of {@link Tag Tags} for
+     * @return a {@link Set} of {@link Tag Tags} for the given {@code event}
      */
     Set<Tag> resolve(EventMessage event);
 
@@ -53,15 +53,16 @@ public interface TagResolver {
      * Resolves a {@link Set} of {@link Tag Tags} for the given {@code event}, caching the result in the given
      * {@code context} so repeated resolutions of the same event within one unit of work are computed only once.
      * <p>
-     * The same event is frequently tagged more than once within a single {@link ProcessingContext} — for example while
+     * The same event is frequently tagged more than once within a single {@link ProcessingContext} -- for example while
      * appending an event and while filtering it against the {@link org.axonframework.messaging.eventstreaming.EventCriteria}
      * of each entity loaded in that unit of work. This default implementation caches per
      * {@link EventMessage#identifier() event identifier} to avoid re-resolving; implementations that are genuinely
      * context-aware may override it.
      *
-     * @param event   The event to resolve a {@link Set} of {@link Tag Tags} for.
-     * @param context The {@link ProcessingContext} used to cache resolved tags, if available.
-     * @return A {@link Set} of {@link Tag Tags} for the given {@code event}.
+     * @param event   the event to resolve a {@link Set} of {@link Tag Tags} for
+     * @param context the {@link ProcessingContext} used to cache resolved tags, or {@code null} to resolve without
+     *                caching
+     * @return a {@link Set} of {@link Tag Tags} for the given {@code event}
      */
     default Set<Tag> resolve(EventMessage event, @Nullable ProcessingContext context) {
         if (context == null) {
