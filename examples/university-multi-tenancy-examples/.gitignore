@@ -1,5 +1,4 @@
 # Never commit license files
-../../../../../../Library/Application Support/JetBrains/IntelliJIdea2025.3/scratches/axon-server.license
 *.license
 
 # Never commit the Axoniq Platform token (set via AXONIQ_PLATFORM_AUTHENTICATION in .env)
