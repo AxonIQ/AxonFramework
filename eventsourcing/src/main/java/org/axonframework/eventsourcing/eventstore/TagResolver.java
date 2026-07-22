@@ -20,6 +20,7 @@ import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.Set;
@@ -59,10 +60,13 @@ public interface TagResolver {
      * context-aware may override it.
      *
      * @param event   The event to resolve a {@link Set} of {@link Tag Tags} for.
-     * @param context The {@link ProcessingContext} used to cache resolved tags.
+     * @param context The {@link ProcessingContext} used to cache resolved tags, if available.
      * @return A {@link Set} of {@link Tag Tags} for the given {@code event}.
      */
-    default Set<Tag> resolve(EventMessage event, ProcessingContext context) {
+    default Set<Tag> resolve(EventMessage event, @Nullable ProcessingContext context) {
+        if (context == null) {
+            return resolve(event);
+        }
         return context
                 .computeResourceIfAbsent(RESOLVED_TAGS_CACHE_KEY, ConcurrentHashMap::new)
                 .computeIfAbsent(event.identifier(), id -> resolve(event));
