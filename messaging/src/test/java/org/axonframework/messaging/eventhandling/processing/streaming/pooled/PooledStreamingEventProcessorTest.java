@@ -34,6 +34,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -332,6 +333,29 @@ class PooledStreamingEventProcessorTest {
             // then both components sharing that segment handle the event exactly once
             assertThat(firstComponent.recorded()).containsExactly(event);
             assertThat(secondComponent.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void broadcastComponentHandlesEventInEverySegmentWhileRegularComponentHandlesOnlyInItsOwn() {
+            // given a component routing to segment 0 and a component using the broadcast sequence identifier
+            var regularComponent = recordingComponent("regular", new QualifiedName(String.class), 0);
+            var broadcastComponent = recordingComponent(
+                    "broadcast", new QualifiedName(String.class), SequencingPolicy.BROADCAST);
+            List<EventHandlingComponent> components = List.of(regularComponent, broadcastComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then the regular component handles it only in the single segment its identifier routes to
+            assertThat(regularComponent.recorded()).containsExactly(event);
+            // and the broadcast component handles it in every segment, exactly once per segment
+            assertThat(broadcastComponent.recorded()).containsExactly(event, event);
         }
 
         private RecordingEventHandlingComponent recordingComponent(String name,
