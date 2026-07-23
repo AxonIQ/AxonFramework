@@ -54,8 +54,9 @@ handler should dispatch a command (e.g., as with process automations), it is str
 
 For a removal perspective, similarly as with the `CommandBus`, the `CommandCallback` has not returned on this interface.
 To deal with successes or failures of command handling, the now default `CompletableFuture` should be consulted instead.
-Furthermore, the `Metadata` adding operations have mostly been removed. The only version left expects the user to deal
-with the `CommandResult` manually. Lastly, we dropped the timeout options on the `sendAndWait` operations. Whenever
+Furthermore, metadata can be attached to a command upon dispatch: besides the `CommandResult`-returning `send`
+operations, both the typed `send` and `sendAndWait` operations accept a `Metadata` argument next to the result `Class`
+and a nullable `ProcessingContext`. Lastly, we dropped the timeout options on the `sendAndWait` operations. Whenever
 needed, adding these yourself around the `CompletableFuture` or `CommandResult` are straightforward. However, as with
 anything, if you feel strongly about certain supported features that have been adjusted, please
 construct [an issue](https://github.com/AxonFramework/AxonFramework/issues) for us.
