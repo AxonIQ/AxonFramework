@@ -80,7 +80,8 @@ public class StorageEngineBackedEventStore implements EventStore {
         return processingContext.computeResourceIfAbsent(
                 eventStoreTransactionKey,
                 () -> {
-                    var eventStoreTransaction = new DefaultEventStoreTransaction(eventStorageEngine, processingContext, this::tagEvents);
+                    var eventStoreTransaction = new DefaultEventStoreTransaction(
+                            eventStorageEngine, processingContext, event -> tagEvents(event, processingContext));
                     eventStoreTransaction.onAppend(events -> eventBus.publish(processingContext, events).join());
                     return eventStoreTransaction;
                 }
@@ -111,6 +112,10 @@ public class StorageEngineBackedEventStore implements EventStore {
 
     private TaggedEventMessage<EventMessage> tagEvents(EventMessage event) {
         return new GenericTaggedEventMessage<>(event, tagResolver.resolve(event));
+    }
+
+    private TaggedEventMessage<EventMessage> tagEvents(EventMessage event, ProcessingContext context) {
+        return new GenericTaggedEventMessage<>(event, tagResolver.resolve(event, context));
     }
 
     private void appendToTransaction(ProcessingContext context,

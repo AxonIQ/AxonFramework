@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
@@ -77,9 +78,12 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * <ul>
      *   <li>sources events from the given event store</li>
      *   <li>uses the criteria resolver to locate the event stream</li>
+     *   <li>uses the framework-default {@link AnnotationBasedTagResolver} to resolve event tags</li>
      *   <li>applies the provided entity evolver for state transitions</li>
      *   <li>initializes entities when no event stream exists</li>
      * </ul>
+     * To use a custom tag resolver, construct an {@link EntityLifecycleHandler} and use
+     * {@link #EventSourcingRepository(Class, Class, EntityLifecycleHandler)} instead.
      *
      * @param idType           the type of the identifier for the event sourced entity this repository serves
      * @param entityType       the type of the event sourced entity this repository serves
@@ -105,6 +109,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
             new SimpleEntityLifecycleHandler<>(
                 requireNonNull(eventStore, "The event store must not be null."),
                 requireNonNull(criteriaResolver, "The criteria resolver must not be null."),
+                new AnnotationBasedTagResolver(),
                 new InitializingEntityEvolver<>(
                     requireNonNull(entityFactory, "The entity factory must not be null."),
                     requireNonNull(entityEvolver, "The entity evolver must not be null.")
