@@ -29,21 +29,21 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A stateful command handler for which the entity is created based on a no-arg constructor, will succeed for instance
- * command handlers because the handler lives outside the entity and receives a {@code null} entity when it does not
- * exist yet.
+ * A stateful command handler for which the entity is created based on the first event, will succeed for instance
+ * command handlers <b>but</b> receive a {@code null} entity.
  * <p>
- * This holds as we can simply construct the empty entity based on said no-arg constructor out of the box. Note that for
- * users, this means they need to be mindful to draft correct defaults for all the required fields or have conscious
- * commands to set those!
+ * This holds as we are simply unable to construct the initial entity as there is no preceding event to create it with.
+ * But, the handler lives outside the entity, so the entity is not mandatory for the invocation. The
+ * {@code @InjectEntity} parameter is annotated {@code @Nullable} to opt into this create-or-update style, instead of
+ * the default behavior of propagating an {@link org.axonframework.modelling.repository.EntityNotFoundException}.
  *
  * @author Steven van Beelen
  */
-public class GiftCardNoArgCreatorStateful {
+public class NullableGiftCardEventCreatorStateful {
 
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity,
+                       @InjectEntity @Nullable GiftCard entity,
                        EventAppender appender) {
         if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
@@ -68,16 +68,11 @@ public class GiftCardNoArgCreatorStateful {
     @EventSourcedEntity(tagKey = "cardId")
     public static class GiftCard {
 
-        String cardId;
+        final String cardId;
         double amount;
 
         @EntityCreator
-        public GiftCard() {
-            // No-arg constructor
-        }
-
-        @EventSourcingHandler
-        public void on(CardIssuedEvent event) {
+        public GiftCard(CardIssuedEvent event) {
             cardId = event.cardId();
             amount = event.amount();
         }

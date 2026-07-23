@@ -26,6 +26,7 @@ import org.axonframework.integrationtests.testsuite.giftcard.events.CardRedeemed
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A stateful command handler for which the entity is created based on the first event, will succeed for instance
@@ -53,7 +54,7 @@ public class GiftCardEventCreatorStateful {
 
     @CommandHandler
     public void handle(RedeemCardCommand command,
-                       @InjectEntity GiftCard entity,
+                       @InjectEntity @Nullable GiftCard entity,
                        EventAppender appender) {
         if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), 9001));

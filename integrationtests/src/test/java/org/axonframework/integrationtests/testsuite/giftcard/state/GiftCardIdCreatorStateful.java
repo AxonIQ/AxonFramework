@@ -27,10 +27,11 @@ import org.axonframework.integrationtests.testsuite.giftcard.events.CardRedeemed
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A stateful command handler for which the entity is created based on the identifier, will succeed for instance command
- * handlers since the entity can be defaulted clearly.
+ * handlers because the handler lives outside the entity and receives a {@code null} entity when it does not exist yet.
  * <p>
  * This holds as the command defines the identifier, so we can pass the identifier from the creational command right
  * away. Note that for users, this means they need to be mindful to draft correct defaults for all the required fields
@@ -44,28 +45,24 @@ public class GiftCardIdCreatorStateful {
     public void handle(IssueCardCommand command,
                        @InjectEntity GiftCard entity,
                        EventAppender appender) {
-        if (entity != null) {
+        if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
         } else {
-            throw new IllegalStateException(
-                    "The entity should have been constructed, because it is created based on the identifier"
-            );
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
         }
     }
 
     @CommandHandler
     public void handle(RedeemCardCommand command,
-                       @InjectEntity GiftCard entity,
+                       @InjectEntity @Nullable GiftCard entity,
                        EventAppender appender) {
         if (entity == null) {
-            throw new IllegalStateException(
-                    "The entity should have been constructed, because it is created based on the identifier"
-            );
+            appender.append(new CardIssuedEvent(command.cardId(), 9001));
         }
-        if (entity.amount - command.amount() < 0) {
+        if (entity != null && entity.amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
-        appender.append(new CardRedeemedEvent(entity.cardId, command.amount()));
+        appender.append(new CardRedeemedEvent(command.cardId(), command.amount()));
     }
 
     @EventSourcedEntity(tagKey = "cardId")

@@ -33,17 +33,17 @@ import org.jspecify.annotations.Nullable;
  * command handlers because the handler lives outside the entity and receives a {@code null} entity when it does not
  * exist yet.
  * <p>
- * This holds as we can simply construct the empty entity based on said no-arg constructor out of the box. Note that for
- * users, this means they need to be mindful to draft correct defaults for all the required fields or have conscious
- * commands to set those!
+ * Although the no-arg constructor could produce an empty entity without any preceding event, the
+ * {@code @InjectEntity} parameter is annotated {@code @Nullable} here, so it consistently resolves to {@code null}
+ * when there is no event to source the entity from, just as the id-based and event-based creator styles do.
  *
  * @author Steven van Beelen
  */
-public class GiftCardNoArgCreatorStateful {
+public class NullableGiftCardNoArgCreatorStateful {
 
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity,
+                       @InjectEntity @Nullable GiftCard entity,
                        EventAppender appender) {
         if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));

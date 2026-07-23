@@ -19,6 +19,7 @@ package org.axonframework.integrationtests.testsuite.giftcard.state;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.IssueCardCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.RedeemCardCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.events.CardIssuedEvent;
@@ -29,21 +30,20 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A stateful command handler for which the entity is created based on a no-arg constructor, will succeed for instance
- * command handlers because the handler lives outside the entity and receives a {@code null} entity when it does not
- * exist yet.
+ * A stateful command handler for which the entity is created based on the identifier, will succeed for instance command
+ * handlers because the handler lives outside the entity and receives a {@code null} entity when it does not exist yet.
  * <p>
- * This holds as we can simply construct the empty entity based on said no-arg constructor out of the box. Note that for
- * users, this means they need to be mindful to draft correct defaults for all the required fields or have conscious
- * commands to set those!
+ * Although the command defines the identifier and the constructor could produce an entity without any preceding event,
+ * the {@code @InjectEntity} parameter is annotated {@code @Nullable} here, so it consistently resolves to {@code null}
+ * when there is no event to source the entity from, just as the no-arg and event-based creator styles do.
  *
  * @author Steven van Beelen
  */
-public class GiftCardNoArgCreatorStateful {
+public class NullableGiftCardIdCreatorStateful {
 
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity,
+                       @InjectEntity @Nullable GiftCard entity,
                        EventAppender appender) {
         if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
@@ -72,8 +72,9 @@ public class GiftCardNoArgCreatorStateful {
         double amount;
 
         @EntityCreator
-        public GiftCard() {
-            // No-arg constructor
+        public GiftCard(@InjectEntityId String cardId) {
+            this.cardId = cardId;
+            this.amount = 9001;
         }
 
         @EventSourcingHandler
