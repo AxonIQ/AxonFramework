@@ -56,7 +56,7 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
      * state applier, it would construct methods, which would then require the {@link StateManager} to be created during
      * the construction of the parameter resolvers. This would lead to a circular dependency.
      *
-     * @param configuration The {@link Configuration} to use for loading entities.
+     * @param configuration the {@link Configuration} to use for loading entities
      */
     public InjectEntityParameterResolverFactory(Configuration configuration) {
         this.configuration = requireNonNull(configuration, "The Configuration is required");
@@ -82,11 +82,14 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
             ParameterizedType parameterizedType = (ParameterizedType) parameter.getParameterizedType();
             entityClass = (Class<?>) parameterizedType.getActualTypeArguments()[1];
         }
+        // org.jspecify.annotationsNullable targets TYPE_USE only, hence use of Parameter#getAnnotatedType
+        boolean isNullable = parameter.getAnnotatedType().isAnnotationPresent(Nullable.class);
         return new InjectEntityParameterResolver(
                 configuration,
                 entityClass,
                 entityIdResolver,
-                isManagedEntity
+                isManagedEntity,
+                isNullable
         );
     }
 

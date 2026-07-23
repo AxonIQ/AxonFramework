@@ -36,10 +36,11 @@ import static java.util.Objects.requireNonNullElseGet;
  * A {@link ParameterResolver} implementation that loads an entity from the {@link StateManager} of the given
  * {@link Configuration}.
  * <p>
- * The entity is loaded based on the id resolved from the message using the given {@link EntityIdResolver}. Can either
- * load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself. Will return
- * {@code null} if the entity loading resulted in a {@link EntityNotFoundException}, allowing the users to validate if
- * the given entity existed already themselves.
+ * The entity is loaded based on the identifier resolved from the message using the given {@link EntityIdResolver}. Can
+ * either load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself. If the entity
+ * could not be found, a {@code nullable}-annotated parameter will resolve to {@code null}, allowing users to validate
+ * if the given entity existed already themselves. A non-nullable parameter will instead propagate the
+ * {@link EntityNotFoundException}, failing the message being handled.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
@@ -50,6 +51,7 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
     private final Class<?> type;
     private final EntityIdResolver<?> identifierResolver;
     private final boolean managedEntity;
+    private final boolean nullableMarked;
 
     /**
      * Instantiate a {@link ParameterResolver} that loads an entity of {@code type} using the given
@@ -60,21 +62,28 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
      * state applier, it would construct methods, which would then require the {@link StateManager} to be created during
      * the construction of the parameter resolvers. This would lead to a circular dependency.
      *
-     * @param configuration      The {@link Configuration} from which a {@link StateManager} can be retrieved to load
-     *                           the entity.
-     * @param type               The type of the entity to load.
-     * @param identifierResolver The {@link EntityIdResolver} to resolve the id of the entity.
+     * @param configuration      the {@link Configuration} from which a {@link StateManager} can be retrieved to load
+     *                           the entity
+     * @param type               the type of the entity to load
+     * @param identifierResolver the {@link EntityIdResolver} to resolve the id of the entity
+     * @param managedEntity      whether the parameter is a {@link org.axonframework.modelling.repository.ManagedEntity}
+     *                           instead of the entity itself
+     * @param nullableMarked     whether the parameter is annotated as nullable. When {@code true}, a missing entity
+     *                           resolves to {@code null}. When {@code false}, a missing entity results in an
+     *                           {@link EntityNotFoundException} being propagated
      */
     public InjectEntityParameterResolver(
             Configuration configuration,
             Class<?> type,
             EntityIdResolver<?> identifierResolver,
-            boolean managedEntity
+            boolean managedEntity,
+            boolean nullableMarked
     ) {
         this.configuration = requireNonNull(configuration, "The Configuration is required");
         this.type = requireNonNull(type, "The type is required");
         this.identifierResolver = requireNonNull(identifierResolver, "The ModelIdentifierResolver is required");
         this.managedEntity = managedEntity;
+        this.nullableMarked = nullableMarked;
     }
 
     @Override
@@ -92,9 +101,14 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
                         .loadManagedEntity(type, resolvedId, context);
                 return castCompletableFuture;
             }
+
             @SuppressWarnings("unchecked")
             CompletableFuture<Object> castCompletableFuture =
                     (CompletableFuture<Object>) stateManager.loadEntity(type, resolvedId, context);
+            if (!nullableMarked) {
+                return castCompletableFuture;
+            }
+
             return castCompletableFuture.exceptionally(e -> {
                 Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
                 if (cause instanceof EntityNotFoundException) {
