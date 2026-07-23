@@ -330,7 +330,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             preparedContext = Message.addToContext(preparedContext, firstEventMessage);
         }
         return findMostSpecificMethod(id, firstEventMessage, preparedContext)
-                .invoke(id, preparedContext);
+                .invoke(id, firstEventMessage, preparedContext);
     }
 
     /**
@@ -362,7 +362,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.hasMessageParameter = hasMessageParameter;
         }
 
-        private E invoke(ID id, ProcessingContext context) {
+        private E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
             ProcessingContext contextWithId = context.withResource(ID_KEY, id);
             ProcessingContext convertedContext = mapContextWithMessageIfNecessary(contextWithId);
 
@@ -371,7 +371,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                           .map(resolver -> tryResolveParameterValue(resolver, convertedContext))
                           .toArray(CompletableFuture[]::new);
 
-            if (isNoArgOrIdBasedCreatorWithoutFirstEvent(context.getResource(Message.RESOURCE_KEY))) {
+            if (isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
                 throw new EntityNotFoundException(id);
             }
 
@@ -412,7 +412,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
          * @return {@code true} when the constructor requires no event to produce an entity but no event was supplied,
          * meaning the entity does not exist yet
          */
-        private boolean isNoArgOrIdBasedCreatorWithoutFirstEvent(@Nullable Message firstEventMessage) {
+        private boolean isNoArgOrIdBasedCreatorWithoutFirstEvent(@Nullable EventMessage firstEventMessage) {
             return executable instanceof Constructor
                     && firstEventMessage == null
                     && Arrays.stream(parameterResolvers).allMatch(r -> r == idTypeParameterResolver);
