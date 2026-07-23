@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.axonframework.examples</groupId>
+        <artifactId>university-multi-tenancy-examples</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>university-multi-tenancy-springboot</artifactId>
+    <name>Axon Example - Multi-Tenancy - Spring Boot</name>
+    <description>
+        Demonstrates the Axoniq Framework 5.3 tenant-aware components feature wired through Spring Boot
+        auto-configuration: dropping the starter on the classpath and declaring the tenant provider and
+        the per-tenant components as beans is enough for the framework to inject the right tenant's
+        instance into command and query handlers, with the same tenant lifecycle the declarative demo
+        shows.
+    </description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Testcontainers first, so its versions win over the ones Spring Boot would otherwise
+                 manage. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <!-- Jackson 3 BOM before Spring Boot, so jackson-annotations is the version the framework's
+                 Jackson 3 serialization needs rather than the older one Spring Boot manages. -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <!-- Spring Boot's own dependency management, scoped to this module so it does not affect
+                 the core or declarative modules. -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- The core module: the university model, driving utilities, and the lifecycle both demos run. -->
+        <dependency>
+            <groupId>org.axonframework.examples</groupId>
+            <artifactId>university-multi-tenancy-core</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- A minimal Spring Boot application: no web server, just a runner. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- The Axoniq Framework Spring Boot starter, which contributes the multi-tenancy
+             auto-configuration that wires the feature from the beans declared in this module. -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Axon Server connector, so tenants can be sourced from Axon Server contexts when enabled. -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+        </dependency>
+
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Starts a real Axon Server in a container, since the Spring Boot multi-tenancy path
+             activates only against Axon Server. -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-testcontainer</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <defaultGoal>clean verify</defaultGoal>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+                <configuration>
+                    <mainClass>org.axonframework.examples.demo.multitenancy.MultiTenancyApplication</mainClass>
+                </configuration>
+            </plugin>
+            <!-- Copy the local Axon Server credentials next to the demos onto the test classpath, so the
+                 integration test can license the Axon Server container it starts for the tenants' contexts.
+                 Both files are optional and uncommitted, and each include is a no-op when the file is absent.
+                 - axon-server.license is an Enterprise Edition license file. Locally it is the file kept next
+                   to the demos. In CI it is written there from a secret before the build (see the examples
+                   workflow).
+                 - .env is the same file docker-compose reads. Its AXONIQ_PLATFORM_AUTHENTICATION entry lets
+                   the test license the container from Axoniq Platform when no license file is present, so the
+                   token is configured in one place for both docker-compose and this test.
+                 When neither yields a usable license source, the integration test skips itself (see its
+                 @EnabledIf), so a build without credentials stays green. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-axon-server-credentials</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/..</directory>
+                                    <includes>
+                                        <include>axon-server.license</include>
+                                        <include>.env</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The Axon Server integration test (*IT) needs Docker, so it runs at the verify phase via
+                 Failsafe, keeping the default test phase free of a Docker requirement. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

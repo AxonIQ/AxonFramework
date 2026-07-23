@@ -36,10 +36,6 @@
     </description>
 
     <properties>
-        <!-- AxonIQ Framework -->
-        <axoniq-framework.version>5.2.0</axoniq-framework.version>
-        <axoniq-platform-framework-client.version>5.1.1</axoniq-platform-framework-client.version>
-
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
         <jline.version>4.3.1</jline.version>
@@ -47,28 +43,11 @@
 
         <!-- Test libraries -->
         <assertj.version>3.27.7</assertj.version>
-        <junit.version>6.1.1</junit.version>
+        <junit.version>6.1.2</junit.version>
 
         <!-- Build plugins -->
         <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
     </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <!--
-            Align every Axon module on ${axoniq-framework.version}, overriding the older line
-            managed by the examples parent. Required because the event transformation feature uses
-            APIs only present in the 5.2.0-SNAPSHOT line.
-            -->
-            <dependency>
-                <groupId>io.axoniq.framework</groupId>
-                <artifactId>axoniq-framework-bom</artifactId>
-                <version>${axoniq-framework.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Axon Framework Dependencies -->
@@ -91,7 +70,7 @@
             <artifactId>axon-server-connector</artifactId>
         </dependency>
 
-        <!-- The feature under demonstration (version managed by the axoniq-framework BOM above) -->
+        <!-- The feature under demonstration (version managed by the axoniq-framework BOM in the parent pom) -->
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-message-transformation</artifactId>
@@ -105,7 +84,6 @@
         <dependency>
             <groupId>io.axoniq.platform</groupId>
             <artifactId>axoniq-platform-framework-client</artifactId>
-            <version>${axoniq-platform-framework-client.version}</version>
         </dependency>
 
         <!-- Logging Dependencies -->

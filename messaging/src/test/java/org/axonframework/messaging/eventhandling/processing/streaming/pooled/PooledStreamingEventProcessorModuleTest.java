@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
@@ -48,6 +49,7 @@ import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.junit.jupiter.api.*;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -57,6 +59,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -709,6 +712,44 @@ class PooledStreamingEventProcessorModuleTest {
             assertThat(processorConfig).isNotNull();
             assertThat(customCoordinator.get()).isNotNull();
             assertThat(customWorker.get()).isNotNull();
+        }
+    }
+
+    @Nested
+    class MissingHardRequirementsValidationTest {
+
+        @Test
+        void constructingProcessorWithoutEventSourceReportsProcessorNameAndRemedies() {
+            // given
+            String processorName = "no-source-processor";
+            var configurationWithoutSource = new PooledStreamingEventProcessorConfiguration(
+                    new EventProcessorConfiguration(processorName, null)
+            );
+
+            // when / then
+            assertThatThrownBy(() -> new PooledStreamingEventProcessor(processorName,
+                                                                       List.of(),
+                                                                       configurationWithoutSource))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("event processor '" + processorName + "'")
+                    .hasMessageContaining("StreamableEventSource");
+        }
+
+        @Test
+        void constructingProcessorWithoutTokenStoreReportsProcessorNameAndRemedies() {
+            // given
+            String processorName = "no-token-store-processor";
+            var configurationWithoutTokenStore = new PooledStreamingEventProcessorConfiguration(
+                    new EventProcessorConfiguration(processorName, null)
+            ).eventSource(new AsyncInMemoryStreamableEventSource());
+
+            // when / then
+            assertThatThrownBy(() -> new PooledStreamingEventProcessor(processorName,
+                                                                       List.of(),
+                                                                       configurationWithoutTokenStore))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("event processor '" + processorName + "'")
+                    .hasMessageContaining("TokenStore");
         }
     }
 

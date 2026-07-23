@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.axonframework</groupId>
+        <artifactId>axon-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../build/parent/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>axon-docs-samples</artifactId>
+
+    <name>Axon Framework - Documentation Code Samples</name>
+    <description>
+        Compiles the code samples that are included in the documentation. The Java sources live in the Antora
+        "examples" directories of each documentation component (docs/*/modules/*/examples) and are included in the
+        documentation pages through tagged regions. This module exists solely to guarantee that every documented
+        code sample compiles against the current framework APIs. It is never deployed.
+    </description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <!-- Testing-module samples use AxonTestFixture and JUnit @Test methods to reproduce documented test code
+             verbatim. This module only guarantees that samples compile against current APIs; it never runs them
+             (many are illustrative fragments with an uninitialized fixture field, never meant to execute). -->
+        <skipTests>true</skipTests>
+        <build-helper-maven-plugin.version>3.6.1</build-helper-maven-plugin.version>
+    </properties>
+
+    <dependencies>
+        <!-- Axon Dependencies -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-eventsourcing</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring-boot-autoconfigure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Spring Boot test support, for samples demonstrating @AxonSpringBootTest -->
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring-boot-starter-test</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Spring, for samples demonstrating Spring (Boot) configuration -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Spring Web, for samples demonstrating REST controllers dispatching commands -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <!-- Reactor, for samples demonstrating reactive (Mono/Flux) message handler return types -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+        <!-- JPA, for samples demonstrating a JpaTokenStore -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+
+        <!-- Serialization, for samples demonstrating conversion -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- XML conversion sample on ROOT/conversion.adoc -->
+        <dependency>
+            <groupId>tools.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-xml</artifactId>
+        </dependency>
+        <!-- Avro conversion samples on ROOT/conversion.adoc -->
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+        </dependency>
+        <!-- JPA event storage engine sample on tuning/rdbms-tuning.adoc -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+        </dependency>
+        <!-- Metrics extension samples on monitoring/metrics.adoc -->
+        <dependency>
+            <groupId>org.axonframework.extensions.metrics</groupId>
+            <artifactId>axon-metrics-dropwizard</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.metrics</groupId>
+            <artifactId>axon-metrics-micrometer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Flyway Java migration sample on migration/paths/token-store.adoc -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <version>12.11.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>${build-helper-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>add-documentation-sample-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.basedir}/../reference-guide/modules/ROOT/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/commands/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/events/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/messaging-concepts/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/monitoring/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/queries/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/tuning/examples</source>
+                                <source>${project.basedir}/../getting-started/modules/ROOT/examples</source>
+                                <source>${project.basedir}/../identifier-generation-guide/modules/ROOT/examples</source>
+                                <source>${project.basedir}/../message-handler-customization-guide/modules/ROOT/examples</source>
+                                <source>${project.basedir}/../meta-annotations-guide/modules/ROOT/examples</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-documentation-test-sample-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <!-- Samples on the testing pages use test-scoped dependencies (JUnit, AxonTestFixture) -->
+                                <source>${project.basedir}/../reference-guide/modules/testing/examples</source>
+                                <!-- Migration samples include AxonTestFixture/JUnit-based pages (e.g. test-fixtures.adoc)
+                                     alongside plain configuration samples; test scope is a superset of compile scope,
+                                     so the whole module compiles fine as test sources -->
+                                <source>${project.basedir}/../reference-guide/modules/migration/examples</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -13,6 +13,7 @@ through schema evolution, and exercises them end to end.
 | Transformation | From / To | What it teaches |
 |---|---|---|
 | `CourseOfferedToCoursePublished` | `CourseOffered#1.0.0` / `CoursePublished#1.0.0` | A rename (`EventTransformation.rename`): only the identity changes, the payload is carried over. The renamed event then flows through the `CoursePublished` version chain. |
+| `CourseListedWithSeatsSplit` | `CourseListedWithSeats#1.0.0` / `CoursePublished#1.0.0` + `CourseCapacityChanged#1.0.0` | A split (`EventTransformation.split`): one stored event becomes several. The `CoursePublished` output then flows through the `CoursePublished` version chain, while `CourseCapacityChanged` passes through. |
 | `CoursePublishedV1ToV2` | `CoursePublished#1.0.0` / `#2.0.0` | A single `capacity` field becomes `minCapacity` + `maxCapacity`. |
 | `CoursePublishedV2ToV3` | `CoursePublished#2.0.0` / `#3.0.0` | Two-hop chain: a stored v1 event reaches handlers as v3. |
 | `StudentRegisteredV1ToV2` | `StudentRegistered#1.0.0` / `#2.0.0` | `TypeReference<Map<String,Object>>` overload, no Jackson dependency in user code. |
@@ -122,9 +123,10 @@ course-catalog> capacity ai-101 5 50
 
 course-catalog> view
 Registered students: 4
-Courses (7):
+Courses (8):
   ...
   - Course:ai-101 "AI Fundamentals" range=CapacityRange[min=5, max=50] enrolments=1
+  - Course:streaming-systems "Streaming Systems" range=CapacityRange[min=45, max=45] enrolments=0
   ...
 Enrolments (1):
   - Student:alice in Course:ai-101 region=EU
@@ -176,7 +178,7 @@ Tests live next to the production code they cover, in the matching package:
 | Where | What you'll find |
 |---|---|
 | `catalog/transformations/` | each transformation in isolation, with fixture JSON under `src/test/resources/transformations/` |
-| `catalog/chain/` | the composed chain (build log, locking, identity check, concurrency, decoration order, rename behavior) |
+| `catalog/chain/` | the composed chain (build log, locking, identity check, concurrency, decoration order, rename behavior, split behavior) |
 | `catalog/write/<slice>/` | one write slice per package, full app fixture |
 | `catalog/read/catalogview/` | the catalog projection and query |
 | `catalog/automation/overbookingnotifier/` | the overbooking notifier |

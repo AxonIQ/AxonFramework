@@ -50,30 +50,7 @@ Payloads matching a listWithAllOf() containing matches()::
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.axonframework.test.matchers.Matchers.*;
-import static org.hamcrest.MatcherAssert.assertThat;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void listWithAllOfMatchers() {
-        fixture.when()
-               .command(new ProcessOrderCommand("order-1"))
-               .then()
-               .eventsSatisfy(events -> assertThat(events, payloadsMatching(
-                       listWithAllOf(
-                               matches(payload -> payload instanceof OrderProcessedEvent),
-                               matches(payload -> payload instanceof InventoryIncrementedEvent)
-                       )
-               )));
-    }
-}
+include::example$testing/matchersandfieldfilters/matchers/listwithallof/AccountTest.java[tag=list-with-all-of-matchers,indent=0]
 ----
 --
 
@@ -83,29 +60,7 @@ Exact sequence of messageWithPayload() containing exactClassOf() and no more::
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.axonframework.test.matchers.Matchers.*;
-import static org.hamcrest.MatcherAssert.assertThat;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void exactSequenceOfExactClasses() {
-        fixture.when()
-               .command(new CompleteOrderCommand("order-1"))
-               .then()
-               .eventsSatisfy(events -> assertThat(events, exactSequenceOf(
-                       messageWithPayload(exactClassOf(OrderCompletedEvent.class)),
-                       messageWithPayload(exactClassOf(PaymentProcessedEvent.class)),
-                       andNoMore()
-               )));
-    }
-}
+include::example$testing/matchersandfieldfilters/matchers/exactsequence/AccountTest.java[tag=exact-sequence-of-exact-classes,indent=0]
 ----
 --
 
@@ -115,25 +70,7 @@ No events::
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.axonframework.test.matchers.Matchers.*;
-import static org.hamcrest.MatcherAssert.assertThat;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void noEvents() {
-        fixture.when()
-               .command(new CompleteOrderCommand("unknown"))
-               .then()
-               .eventsSatisfy(events -> assertThat(events, Matchers.noEvents()));
-    }
-}
+include::example$testing/matchersandfieldfilters/matchers/noevents/AccountTest.java[tag=no-events,indent=0]
 ----
 --
 ======
@@ -146,11 +83,7 @@ To explain the benefits of field filters, let us look at the following example e
 
 [source,java]
 ----
-public record AccountCreatedEvent(
-    String accountId,
-    double initialBalance
-) {
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/AccountCreatedEvent.java[tag=account-created-event,indent=0]
 ----
 
 When testing, you want to verify the `initialBalance`, but not the `accountId` since it is generated at runtime.
@@ -159,23 +92,7 @@ As such, a plain test as shown below would not work:
 
 [source,java]
 ----
-import org.axonframework.test.fixture.AxonTestFixture;
-
-class AccountTest {
-
-    private AxonTestFixture fixture;
-
-    @Test
-    void test() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand(500.00))
-               .then()
-               .events(new AccountCreatedEvent("???", 500.00));
-               // Verify fails as we are unaware of the accountId
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/plaintest/AccountTest.java[tag=plain-test-without-field-filter,indent=0]
 ----
 
 The field filter solves this problem by instructing the fixture that certain fields can be "filtered" from verification.
@@ -208,26 +125,7 @@ Thus, if you want to ignore a field for a specific message, you can use the `reg
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.registerIgnoredField(
-                        AccountCreatedEvent.class, "accountId"
-                )
-        );
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/registerignoredfield/AccountTest.java[tag=register-ignored-field,indent=0]
 ----
 
 With this filter in place, the fixture will ignore fields named `"accountId"` for messages with the payload type `AccountCreatedEvent`.
@@ -235,32 +133,13 @@ If you need more control, you can provide a (custom) `FieldFilter` through the `
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.registerFieldFilter(
-                        field -> !field.getName().equals("accountId")
-                )
-        );
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/registerfieldfilter/AccountTest.java[tag=register-field-filter,indent=0]
 ----
 
 The above example will filter out **all** occurrences of fields name `"accountId"` regardless of the message type.
 Note that the `FieldFilter` is a functional interface:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 @FunctionalInterface
 public interface FieldFilter {
@@ -296,31 +175,7 @@ This custom `FieldFilter` registered below will ignore fields that are named `"t
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-
-import java.time.Instant;
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.registerFieldFilter(field -> {
-                    String name = field.getName();
-                    return !(name.contains("timestamp")
-                            || name.contains("createDate")
-                            || name.contains("updateDate"))
-                            && !field.getType().equals(Instant.class);
-                })
-        );
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/filtertimestamp/AccountTest.java[tag=filter-timestamp-fields,indent=0]
 ----
 --
 
@@ -332,29 +187,7 @@ This custom `FieldFilter` registered below will ignore fields that are contain `
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.util.UUID;
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.registerFieldFilter(
-                        field -> !field.getType().equals(UUID.class)
-                                && !field.getName().toLowerCase().contains("id")
-                )
-        );
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/filteridentifier/AccountTest.java[tag=filter-identifier-fields,indent=0]
 ----
 --
 
@@ -368,43 +201,7 @@ In the example below, we have constructed an `@IgnoreInTest` annotation that we 
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
-@interface IgnoreInTest {
-    // Annotation is named as-s for example purposes only!
-}
-
-record AccountCreatedEvent(
-        @IgnoreInTest String accountId,
-        double amount
-) {
-}
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(
-                configurer,
-                customization -> customization.registerFieldFilter(
-                        field -> !field.isAnnotationPresent(IgnoreInTest.class)
-                )
-        );
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/filterannotated/AccountTest.java[tag=filter-annotated-fields,indent=0]
 ----
 
 --
@@ -417,31 +214,7 @@ All filters are combined with AND logic - a field must pass all filters to be in
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.axonframework.test.matchers.NonTransientFieldsFilter;
-import org.junit.jupiter.api.*;
-
-class AccountTest {
-
-    private ApplicationConfigurer configurer;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = AxonTestFixture.with(configurer, AccountTest::registerFilters);
-    }
-
-    private static AxonTestFixture.Customization registerFilters(
-            AxonTestFixture.Customization customization
-    ) {
-        return customization.registerIgnoredField(AccountCreatedEvent.class, "accountId")
-                            .registerIgnoredField(OrderCreatedEvent.class, "orderId")
-                            .registerFieldFilter(NonTransientFieldsFilter.instance())
-                            .registerFieldFilter(field -> !field.getName().contains("internal"));
-    }
-}
+include::example$testing/matchersandfieldfilters/fieldfilters/combiningfilters/AccountTest.java[tag=combining-filters,indent=0]
 ----
 --
 ======

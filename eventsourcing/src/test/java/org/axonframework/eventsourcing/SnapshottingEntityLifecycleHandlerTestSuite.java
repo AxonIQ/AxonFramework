@@ -17,10 +17,10 @@
 package org.axonframework.eventsourcing;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
-import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
-import org.apache.logging.log4j.core.test.junit.Named;
 import org.apache.logging.log4j.message.Message;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
@@ -70,12 +70,12 @@ import static org.awaitility.Awaitility.await;
  *
  * @author John Hendrikx
  */
-@LoggerContextSource("log4j2-list-appender.xml")
 public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
-    private static volatile int evolveCalls;
-
     protected final String ACCOUNT_ID = UUID.randomUUID().toString();
 
+    private volatile int evolveCalls;
+
+    private ListAppender handlerLog;
     private StateManager stateManager;
     private EventStore eventStore;
     private UnitOfWorkFactory unitOfWorkFactory;
@@ -92,6 +92,10 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
     @BeforeEach
     void beforeEach() {
+        handlerLog = new ListAppender("HandlerLog");
+        handlerLog.start();
+        ((Logger) LogManager.getLogger(SnapshottingEntityLifecycleHandler.class)).addAppender(handlerLog);
+
         ObjectMapper objectMapper = JsonMapper.builder()
             .enable(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION)
             .build();
@@ -105,7 +109,10 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
             .componentRegistry(this::registerComponents)
             .registerEntity(
                 EventSourcedEntityModule.declarative(String.class, Account.class)
-                    .messagingModel((c, model) -> model.entityEvolver(new SealedEntityEvolver<>(AccountEvents.class, Account::onEvent)).build())
+                    .messagingModel((c, model) -> model.entityEvolver(new SealedEntityEvolver<>(AccountEvents.class, (acc, events) -> {
+                        evolveCalls++;
+                        return Account.onEvent(acc, events);
+                    })).build())
                     .entityFactory(c -> (id, msg, ctx) -> {
                         AccountCreated ac = msg.payloadAs(AccountCreated.class, eventConverter);
 
@@ -123,6 +130,12 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         this.stateManager = configuration.getComponent(StateManager.class);
         this.eventStore = configuration.getComponent(EventStore.class);
         this.unitOfWorkFactory = configuration.getComponent(UnitOfWorkFactory.class);
+    }
+
+    @AfterEach
+    void afterEach() {
+        ((Logger) LogManager.getLogger(SnapshottingEntityLifecycleHandler.class)).removeAppender(handlerLog);
+        handlerLog.stop();
     }
 
     @Test
@@ -161,7 +174,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
@@ -219,7 +232,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {
@@ -233,7 +246,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
     }
 
     @Test
-    protected void shouldIgnoreSnapshotIfVersionUnsupported(@Named("TestAppender") ListAppender appender) {
+    protected void shouldIgnoreSnapshotIfVersionUnsupported() {
         publish(
             new AccountCreated(ACCOUNT_ID, "My Account"),
             new FundsDeposited(ACCOUNT_ID, 10050)
@@ -250,10 +263,11 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
                 new Account(ACCOUNT_ID, "My Account", 262144),
                 Instant.now(),
                 Map.of()
-            )
+            ),
+            null
         ).join();
 
-        appender.clear();
+        handlerLog.clear();
 
         {   // Expect that a full evolution is needed, despite the snapshot
             evolveCalls = 0;
@@ -262,9 +276,10 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
             assertThat(evolveCalls).isEqualTo(2);
             assertThat(account.balance).isEqualTo(10050);  // if snapshot was not ignored, would be far higher
-            assertThat(appender.getEvents())
+            assertThat(handlerLog.getEvents())
                 .extracting(LogEvent::getMessage)
                 .extracting(Message::getFormattedMessage)
+                .filteredOn(msg -> msg.contains(ACCOUNT_ID))
                 .containsExactly("Unsupported snapshot version. Snapshot of " + qualifiedName + "#0.0.1 for identifier " + ACCOUNT_ID + " had unsupported version: 42");
         }
 
@@ -286,7 +301,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
 
         // snapshot might be written async, so we need to await the snapshot to be present
         await().atMost(Duration.ofSeconds(2))
-               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID)
+               .untilAsserted(() -> assertThat(snapshotStore.load(new QualifiedName(Account.class), ACCOUNT_ID, null)
                                                             .get(1, TimeUnit.SECONDS)).isNotNull());
 
         {   // New snapshot (overwriting the bad one) should be available now
@@ -300,7 +315,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
     }
 
     @Test
-    protected void shouldIgnoreExceptionsWhileLoadingSnapshot(@Named("TestAppender") ListAppender appender) {
+    protected void shouldIgnoreExceptionsWhileLoadingSnapshot() {
         publish(
             new AccountCreated(ACCOUNT_ID, "My Account"),
             new FundsDeposited(ACCOUNT_ID, 10050)
@@ -317,10 +332,11 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
                 "Junk",  // incorrect data, which leads to deserialization error
                 Instant.now(),
                 Map.of()
-            )
+            ),
+            null
         ).join();
 
-        appender.clear();
+        handlerLog.clear();
 
         // Expect that a full evolution is needed, despite the snapshot
         evolveCalls = 0;
@@ -330,9 +346,10 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         assertThat(evolveCalls).isEqualTo(2);
         assertThat(account.balance).isEqualTo(10050);
 
-        assertThat(appender.getEvents())
+        assertThat(handlerLog.getEvents())
             .extracting(LogEvent::getMessage)
             .extracting(Message::getFormattedMessage)
+            .filteredOn(msg -> msg.contains(ACCOUNT_ID))
             .containsExactly("Snapshot incompatible, falling back to full reconstruction for: " + qualifiedName + "#0.0.1 (" + ACCOUNT_ID + ")");
     }
 
@@ -341,13 +358,13 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
      * logged as a warning) to indicate no snapshot exists; they should return null in those cases.
      */
     @Test
-    protected void whenLoadingSnapshotShouldNotWarnThatNoSnapshotExists(@Named("TestAppender") ListAppender appender) {
+    protected void whenLoadingSnapshotShouldNotWarnThatNoSnapshotExists() {
         publish(
             new AccountCreated(ACCOUNT_ID, "My Account"),
             new FundsDeposited(ACCOUNT_ID, 10050)
         );
 
-        appender.clear();
+        handlerLog.clear();
 
         // Expect a full evolution as there is no snapshot
         evolveCalls = 0;
@@ -357,7 +374,11 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         assertThat(evolveCalls).isEqualTo(2);
         assertThat(account.balance).isEqualTo(10050);
 
-        assertThat(appender.getEvents()).isEmpty();  // expect no log messages
+        assertThat(handlerLog.getEvents())
+            .extracting(LogEvent::getMessage)
+            .extracting(Message::getFormattedMessage)
+            .filteredOn(msg -> msg.contains(ACCOUNT_ID))
+            .isEmpty();  // expect no log messages
     }
 
     /**
@@ -405,8 +426,6 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         }
 
         static Account onEvent(Account input, AccountEvents events) {
-            evolveCalls++;
-
             return switch(events) {
                 case AccountCreated ac -> new Account(ac.id, ac.name, 0);
                 case FundsWithdrawn fw -> input.withBalance(input.balance - fw.amountWithdrawn);

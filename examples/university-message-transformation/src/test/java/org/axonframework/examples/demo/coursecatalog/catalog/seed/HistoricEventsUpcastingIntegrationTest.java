@@ -138,7 +138,7 @@ class HistoricEventsUpcastingIntegrationTest {
                .then()
                .await(r -> r.expect(cfg -> {
                    CourseCatalogView view = queryView(cfg);
-                   assertThat(view.courses()).hasSize(6);
+                   assertThat(view.courses()).hasSize(7);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).containsExactly("Catalog launched in 2023");
                    // Three beta WelcomeMessageSent versions (0.5 / 0.7 / 0.9) folded to 1.0.0,
@@ -161,6 +161,11 @@ class HistoricEventsUpcastingIntegrationTest {
                    assertThat(view.courses()).contains(new CatalogViewReadModel(
                            CourseId.of("hexagonal-architecture"), "Hexagonal Architecture",
                            new CapacityRange(10, 30), 0, false));
+                   // Bundled CourseListedWithSeats split into a CoursePublished (lifted to the current shape)
+                   // and a CourseCapacityChanged, both reaching the projection at the seeded seat count.
+                   assertThat(view.courses()).contains(new CatalogViewReadModel(
+                           CourseId.of("streaming-systems"), "Streaming Systems",
+                           new CapacityRange(45, 45), 0, false));
                }));
     }
 
@@ -174,7 +179,7 @@ class HistoricEventsUpcastingIntegrationTest {
                .then()
                .await(r -> r.expect(cfg -> {
                    CourseCatalogView view = queryView(cfg);
-                   assertThat(view.courses()).hasSize(6);
+                   assertThat(view.courses()).hasSize(7);
                    assertThat(view.registeredStudents()).isEqualTo(4);
                    assertThat(view.announcements()).hasSize(1);
                }));

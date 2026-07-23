@@ -16,10 +16,10 @@
 
 package org.axonframework.eventsourcing.handler;
 
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
-import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
-import org.apache.logging.log4j.core.test.junit.Named;
 import org.apache.logging.log4j.message.Message;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
@@ -34,6 +34,8 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -42,6 +44,8 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.repository.ManagedEntity;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -49,7 +53,6 @@ import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
@@ -96,6 +99,7 @@ class SnapshottingEntityLifecycleHandlerTest {
     private final SnapshottingEntityLifecycleHandler<String, Account> handler = new SnapshottingEntityLifecycleHandler<>(
         eventStore,
         (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+        new AnnotationBasedTagResolver(),
         new InitializingEntityEvolver<>(
             (id, msg, ctx) -> {
                 AccountCreated ac = (AccountCreated) msg.payload();
@@ -117,8 +121,22 @@ class SnapshottingEntityLifecycleHandlerTest {
         snapshotStore
     );
 
+    private ListAppender handlerLog;
+
+    @BeforeEach
+    void beforeEach() {
+        handlerLog = new ListAppender("HandlerLog");
+        handlerLog.start();
+        ((Logger) LogManager.getLogger(SnapshottingEntityLifecycleHandler.class)).addAppender(handlerLog);
+    }
+
+    @AfterEach
+    void afterEach() {
+        ((Logger) LogManager.getLogger(SnapshottingEntityLifecycleHandler.class)).removeAppender(handlerLog);
+        handlerLog.stop();
+    }
+
     @Nested
-    @LoggerContextSource("log4j2-list-appender.xml")
     class WhenSourcedFromEvents {
 
         @Test
@@ -131,13 +149,13 @@ class SnapshottingEntityLifecycleHandlerTest {
         }
 
         @Test
-        void noWarningWhenNoSnapshotExists(@Named("TestAppender") ListAppender appender) {
+        void noWarningWhenNoSnapshotExists() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-            appender.clear();
+            handlerLog.clear();
             source();
 
-            assertThat(appender.getEvents()).isEmpty();
+            assertThat(handlerLog.getEvents()).isEmpty();
         }
     }
 
@@ -179,30 +197,29 @@ class SnapshottingEntityLifecycleHandlerTest {
     }
 
     @Nested
-    @LoggerContextSource("log4j2-list-appender.xml")
     class WhenObservingLogOutput {
 
         @Test
-        void noWarningWhenNoSnapshotExists(@Named("TestAppender") ListAppender appender) {
+        void noWarningWhenNoSnapshotExists() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-            appender.clear();
+            handlerLog.clear();
             source();
 
-            assertThat(appender.getEvents()).isEmpty();
+            assertThat(handlerLog.getEvents()).isEmpty();
         }
 
         @Test
-        void fallsBackToFullReconstructionAndLogsWarningOnVersionMismatch(@Named("TestAppender") ListAppender appender) {
+        void fallsBackToFullReconstructionAndLogsWarningOnVersionMismatch() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
             storeSnapshot(new Account(ACCOUNT_ID, "Alice", 999), GlobalIndexPositions.of(2), "42.0");
 
-            appender.clear();
+            handlerLog.clear();
 
             Account account = source();
 
             assertThat(account.balance()).isEqualTo(100);
-            assertThat(appender.getEvents())
+            assertThat(handlerLog.getEvents())
                 .extracting(LogEvent::getMessage)
                 .extracting(Message::getFormattedMessage)
                 .contains(
@@ -212,7 +229,7 @@ class SnapshottingEntityLifecycleHandlerTest {
         }
 
         @Test
-        void fallsBackToFullReconstructionAndLogsWarningOnIncompatiblePayload(@Named("TestAppender") ListAppender appender) {
+        void fallsBackToFullReconstructionAndLogsWarningOnIncompatiblePayload() {
             publish(
                 new AccountCreated(ACCOUNT_ID, "Alice"),
                 new FundsDeposited(ACCOUNT_ID, 100)
@@ -220,12 +237,12 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             storeSnapshot("not-an-account", GlobalIndexPositions.of(2));
 
-            appender.clear();
+            handlerLog.clear();
 
             Account account = source();
 
             assertThat(account.balance()).isEqualTo(100);
-            assertThat(appender.getEvents())
+            assertThat(handlerLog.getEvents())
                 .extracting(LogEvent::getMessage)
                 .extracting(Message::getFormattedMessage)
                 .contains("Snapshot incompatible, falling back to full reconstruction for: Account#0.0.1 (" + ACCOUNT_ID + ")");
@@ -246,7 +263,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source();
 
-            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID).join();
+            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join();
 
             assertThat(snapshot).isNotNull();
             assertThat(snapshot.payload()).isEqualTo(new Account(ACCOUNT_ID, "Alice", 300));
@@ -265,7 +282,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source(matchHandler);
 
-            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID).join()).isNotNull();
+            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join()).isNotNull();
         }
 
         @Test
@@ -287,24 +304,39 @@ class SnapshottingEntityLifecycleHandlerTest {
         void liveEventUpdatesEntityState() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-            UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+            ProcessingContext pc = new StubProcessingContext();
+            Account initial = handler.source(ACCOUNT_ID, pc).join();
+            AtomicReference<Account> stateRef = new AtomicReference<>(initial);
 
-            uow.executeWithResult(pc -> {
-                Account initial = handler.source(ACCOUNT_ID, pc).join();
-                AtomicReference<Account> stateRef = new AtomicReference<>(initial);
+            handler.subscribe(managedEntity(stateRef), pc);
+            eventStore.transaction(pc).appendEvent(
+                new GenericEventMessage(
+                    new MessageType(FundsDeposited.class),
+                    new FundsDeposited(ACCOUNT_ID, 50)
+                )
+            );
 
-                handler.subscribe(managedEntity(stateRef), pc);
-                eventStore.transaction(pc).appendEvent(
-                    new GenericEventMessage(
-                        new MessageType(FundsDeposited.class),
-                        new FundsDeposited(ACCOUNT_ID, 50)
-                    )
-                );
+            assertThat(stateRef.get().balance()).isEqualTo(150);
+        }
 
-                assertThat(stateRef.get().balance()).isEqualTo(150);
+        @Test
+        void liveEventForAnotherEntityIsNotApplied() {
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-                return CompletableFuture.completedFuture(null);
-            }).join();
+            ProcessingContext pc = new StubProcessingContext();
+            Account initial = handler.source(ACCOUNT_ID, pc).join();
+            AtomicReference<Account> stateRef = new AtomicReference<>(initial);
+
+            handler.subscribe(managedEntity(stateRef), pc);
+            // A deposit tagged for a different account must not evolve this account.
+            eventStore.transaction(pc).appendEvent(
+                new GenericEventMessage(
+                    new MessageType(FundsDeposited.class),
+                    new FundsDeposited("account-2", 50)
+                )
+            );
+
+            assertThat(stateRef.get().balance()).isEqualTo(100);
         }
     }
 
@@ -335,7 +367,8 @@ class SnapshottingEntityLifecycleHandlerTest {
         snapshotStore.store(
             ACCOUNT_TYPE.qualifiedName(),
             ACCOUNT_ID,
-            new Snapshot(position, version, payload, Instant.now(), Map.of())
+            new Snapshot(position, version, payload, Instant.now(), Map.of()),
+            null
         ).join();
     }
 
@@ -343,6 +376,7 @@ class SnapshottingEntityLifecycleHandlerTest {
         return new SnapshottingEntityLifecycleHandler<>(
             eventStore,
             (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+            new AnnotationBasedTagResolver(),
             new InitializingEntityEvolver<>(
                 (id, msg, ctx) -> {
                     AccountCreated ac = (AccountCreated) msg.payload();

@@ -20,7 +20,6 @@ import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.eventhandling.EventSink;
 import org.axonframework.messaging.eventhandling.annotation.EventAppenderParameterResolverFactory;
-import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.annotation.MessageHandler;
@@ -50,32 +49,38 @@ import java.util.Objects;
 public interface EventAppender extends DescribableComponent {
 
     /**
-     * The {@link Context.ResourceKey} used to store the {@link EventAppender} in the {@link ProcessingContext}.
-     */
-    Context.ResourceKey<ProcessingContextEventAppender> RESOURCE_KEY = Context.ResourceKey.withLabel("EventAppender");
-
-    /**
      * Creates an appender for the given {@link ProcessingContext}.
      * <p>
-     * You can use this appender only for the context it was created for. There is no harm in using this method more
-     * than once, as the same appender will be returned.
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of appending directly through an {@link EventSink}: the appender returned here is bound to that
+     * {@code context}, so every event it appends is published with that context's resources correctly applied.
+     * <p>
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context The {@link ProcessingContext} to create the appender for.
-     * @return The created appender.
+     * @return A fresh appender specific for the given {@code context}.
      */
     static EventAppender forContext(ProcessingContext context) {
         return forContext(context, context.component(EventSink.class), context.component(MessageTypeResolver.class));
     }
 
     /**
-     * Creates an appender for the given {@link ProcessingContext} and {@link EventSink}. You can use this appender only
-     * for the context it was created for. There is no harm in using this method more than once, as the same appender
-     * will be returned.
+     * Creates an appender for the given {@link ProcessingContext} and {@link EventSink}.
+     * <p>
+     * Use this from within a message handler, or any other method that receives a {@link ProcessingContext}, instead
+     * of appending directly through an {@link EventSink}: the appender returned here is bound to that
+     * {@code context}, so every event it appends is published with that context's resources correctly applied.
+     * <p>
+     * Every invocation returns a fresh instance bound to the given {@code context}, since {@code context} may
+     * override resources on top of a shared parent (see {@link ProcessingContext#withResource}) - reusing an
+     * instance across such branches would risk it silently operating against the wrong one.
      *
      * @param context             The {@link ProcessingContext} to create the appender for.
      * @param eventSink           The {@link EventSink} to use for the appender.
      * @param messageTypeResolver The {@link MessageTypeResolver} to use for the appender.
-     * @return The created appender.
+     * @return A fresh appender specific for the given {@code context}.
      */
     static EventAppender forContext(
             ProcessingContext context,
@@ -83,10 +88,7 @@ public interface EventAppender extends DescribableComponent {
             MessageTypeResolver messageTypeResolver
     ) {
         Objects.requireNonNull(context, "ProcessingContext may not be null");
-        return context.computeResourceIfAbsent(
-                RESOURCE_KEY,
-                () -> new ProcessingContextEventAppender(context, eventSink, messageTypeResolver)
-        );
+        return new ProcessingContextEventAppender(context, eventSink, messageTypeResolver);
     }
 
     /**

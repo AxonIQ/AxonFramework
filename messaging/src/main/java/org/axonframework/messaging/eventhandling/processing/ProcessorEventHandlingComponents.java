@@ -27,6 +27,8 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentMatcher;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequencingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -34,6 +36,7 @@ import org.axonframework.messaging.eventhandling.replay.GenericReplayStatusChang
 import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -104,8 +107,13 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * <p>
      * The result of handling is an {@link MessageStream.Empty empty stream}. It's guaranteed that events with the same
      * {@link #sequenceIdentifiersFor(EventMessage, ProcessingContext)} value are processed by a single component in the
-     * order they are received, but sequencing is not preserved across different event handling components — this is
+     * order they are received, but sequencing is not preserved across different event handling components; this is
      * intentional, as they may have different sequencing policies.
+     * <p>
+     * When a {@link Segment} is attached to the {@code context} (as done by a segmented processor), a component only
+     * handles an event when the component's sequence identifier hashes into that segment, ensuring each event is handled
+     * exactly once per component across all segments. Without a {@link Segment} in the {@code context}, every supporting
+     * component handles the event.
      *
      * @param entries the batch of message stream entries to be processed
      * @param context the processing context in which the event messages are processed
@@ -131,6 +139,7 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
     ) {
         Optional<TrackingToken> token = TrackingToken.fromContext(context);
         boolean isReplaying = token.isPresent() && ReplayToken.isReplay(token.get());
+        Segment segment = Segment.fromContext(context).orElse(null);
 
         MessageStream<Message> result = MessageStream.empty();
         for (var component : components) {
@@ -138,7 +147,8 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
             if (isReplaying && !component.supportsReset()) {
                 continue;
             }
-            if (component.supports(event.type().qualifiedName())) {
+            if (component.supports(event.type().qualifiedName())
+                    && canHandleInSegment(segment, component, event, context)) {
                 var componentResult = component.handle(event, context);
                 result = result.concatWith(componentResult);
             }
@@ -150,6 +160,33 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
             }
         }
         return result.ignoreEntries().cast();
+    }
+
+    /**
+     * Determines whether the given {@code component} can handle the {@code event} in the given {@code segment}.
+     * <p>
+     * This reuses the same {@link SegmentMatcher} routing that is applied while scheduling the event, so a component
+     * handles an event only when its
+     * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage, ProcessingContext) sequence identifier} hashes
+     * into that segment. When {@code segment} is {@code null} (for example, a
+     * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor}), handling is
+     * not segmented and the component always handles the event.
+     *
+     * @param segment   the {@link Segment} currently handling the event, or {@code null} when handling is not segmented
+     * @param component the component that would handle the event
+     * @param event     the event being handled
+     * @param context   the processing context in which the event is handled
+     * @return {@code true} when the component can handle the event in the given segment
+     */
+    private static boolean canHandleInSegment(@Nullable Segment segment,
+                                              EventHandlingComponent component,
+                                              EventMessage event,
+                                              ProcessingContext context) {
+        if (segment == null) {
+            return true;
+        }
+        return new SegmentMatcher((e, ctx) -> Optional.of(component.sequenceIdentifierFor(e, ctx)))
+                .matches(segment, event, context);
     }
 
     /**
@@ -183,7 +220,9 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * @return A set of sequence identifiers associated with the given event and context.
      */
     public Set<Object> sequenceIdentifiersFor(EventMessage event, ProcessingContext context) {
+        QualifiedName eventName = event.type().qualifiedName();
         return components.stream()
+                         .filter(c -> c.supports(eventName))
                          .map(c -> c.sequenceIdentifierFor(event, context))
                          .collect(Collectors.toSet());
     }

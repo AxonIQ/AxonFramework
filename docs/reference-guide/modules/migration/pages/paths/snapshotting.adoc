@@ -28,7 +28,7 @@ In Axon Framework 5.1, snapshot decisions are made by a `SnapshotPolicy`, which 
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 SnapshotTriggerDefinition triggerDefinition = new EventCountSnapshotTriggerDefinition(100);
 repository.setSnapshotTriggerDefinition(triggerDefinition);
@@ -38,14 +38,7 @@ Axon Framework 5.1::
 +
 [source,java]
 ----
-SnapshotPolicy snapshotPolicy =
-        SnapshotPolicy.afterEvents(100)
-                      .or(SnapshotPolicy.whenSourcingTimeExceeds(java.time.Duration.ofMillis(500)));
-
-EventSourcedEntityModule<String, Account> accountModule =
-        EventSourcedEntityModule.declarative(String.class, Account.class)
-                                .snapshotPolicy(c -> snapshotPolicy)
-                                .build();
+include::example$migration/paths/snapshotting/triggertopolicy/TriggerToPolicyConfiguration.java[tag=snapshot-trigger-to-policy,indent=0]
 ----
 ====
 
@@ -60,17 +53,7 @@ This is the recommended approach for applications that want explicit control ove
 
 [source,java]
 ----
-SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(250);
-
-EventSourcedEntityModule<String, Account> accountModule =
-        EventSourcedEntityModule.declarative(String.class, Account.class)
-                                .snapshotPolicy(c -> snapshotPolicy)
-                                .build();
-
-EventSourcingConfigurer.create()
-        .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()))
-        .componentRegistry(cr -> cr.registerModule(accountModule))
-        .start();
+include::example$migration/paths/snapshotting/declarativeconfiguration/DeclarativeSnapshotConfiguration.java[tag=snapshot-declarative-configuration,indent=0]
 ----
 
 This configuration keeps snapshotting local to the entity definition:
@@ -88,9 +71,7 @@ For Spring Boot applications, snapshotting can be enabled by adding `@Snapshotti
 
 [source,java]
 ----
-@EventSourced
-@Snapshotting(afterEvents = 100)
-public class Account { ... }
+include::example$migration/paths/snapshotting/springbootannotation/Account.java[tag=spring-boot-snapshotting-annotation,indent=0]
 ----
 
 The annotation supports two threshold attributes:
@@ -105,26 +86,27 @@ See xref:tuning:snapshotting.adoc#_annotation_based_configuration[annotation-bas
 For more complex policies that require payload inspection, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` programmatically.
 Spring's component registry picks up `Module` beans automatically, so this integrates with the regular Spring Boot setup:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @Configuration
 class AccountConfiguration {
 
     @Bean
     EventSourcedEntityModule<String, Account> accountModule() {
+        SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(250)
+                .or(SnapshotPolicy.whenEventMatches(
+                        msg -> msg.type().qualifiedName().equals(
+                                new QualifiedName(AccountClosed.class)
+                        )
+                ));
         return EventSourcedEntityModule.declarative(String.class, Account.class)
-                .snapshotPolicy(c -> SnapshotPolicy.afterEvents(250)
-                        .or(SnapshotPolicy.whenEventMatches(
-                                msg -> msg.type().qualifiedName().equals(
-                                        new QualifiedName(AccountClosed.class)
-                                )
-                        )))
+                .snapshotPolicy(snapshotPolicy)
                 .build();
     }
 
     @Bean
-    SnapshotStore snapshotStore() {
-        return new AxonServerSnapshotStore(/* Axon Server connection */, /* Converter */);
+    SnapshotStore snapshotStore(AxonServerConnectionManager connectionManager, EventConverter converter) {
+        return new AxonServerSnapshotStore(connectionManager.getConnection(), converter);
     }
 }
 ----

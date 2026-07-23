@@ -8,26 +8,13 @@ In Axon Framework 4, the `@AggregateIdentifier` field on the aggregate was the s
 ====
 * `@AggregateIdentifier` is **no longer required** on the entity (also see xref:migration:paths/aggregates/configuration-migration.adoc[entity configuration migration]).
 * Each event must declare an `@EventTag` whose key matches the entity's `tagKey` and whose value is the entity identifier.
-* Without migrating to xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Consistency Boundaries (DCB)], **exactly one `@EventTag` per event is supported and required**—the one matching the entity it belongs to.
+* Without migrating to xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Consistency Boundaries (DCB)], **exactly one `@EventTag` per event is supported and required**, the one matching the entity it belongs to.
 ====
 
 [source,java]
 ----
-// Entity
-@EventSourcedEntity(tagKey = "Bike") // <1>
-public class Bike {
-
-    private String bikeId;
-
-    // command and event sourcing handlers omitted
-}
-
-// Event
-public record BikeRegisteredEvent(
-        @EventTag(key = "Bike") String bikeId, // <2>
-        String bikeType,
-        String location
-) { }
+include::example$migration/paths/aggregates/eventtagging/explicitkey/Bike.java[tag=bike-entity,indent=0]
+include::example$migration/paths/aggregates/eventtagging/explicitkey/BikeRegisteredEvent.java[tag=bike-registered-event,indent=0]
 ----
 <1> The entity declares a `tagKey` that the event store uses to locate its events. In Spring environments, use `@EventSourced(tagKey = "Bike")` instead.
 <2> Each event carries an `@EventTag` with the **same key** as the entity's `tagKey`. The tag value is derived by calling `toString()` on the annotated field.
@@ -38,17 +25,8 @@ When `@EventTag` is used without specifying a `key`, the framework derives the k
 
 [source,java]
 ----
-@EventSourcedEntity(tagKey = "bikeId")
-public class Bike {
-    private String bikeId;
-    // ...
-}
-
-public record BikeRegisteredEvent(
-        @EventTag String bikeId, // tag key derived from field name → "bikeId"
-        String bikeType,
-        String location
-) { }
+include::example$migration/paths/aggregates/eventtagging/derivedkey/Bike.java[tag=bike-entity-derived-key,indent=0]
+include::example$migration/paths/aggregates/eventtagging/derivedkey/BikeRegisteredEvent.java[tag=bike-registered-event-derived-key,indent=0]
 ----
 
 [TIP]
@@ -62,18 +40,8 @@ For an architecture-neutral migration that keeps the existing aggregate model, e
 
 [source,java]
 ----
-// Architecture-neutral migration: ONE tag, matching the entity's tagKey.
-public record BikeReturnedEvent(
-        @EventTag(key = "Bike") String bikeId,
-        String location
-) { }
-
-// DCB-style: an event tagged for multiple entities (only after migrating to DCB).
-public record BikeRequestedEvent(
-        @EventTag(key = "Bike") String bikeId,
-        String renter,
-        @EventTag(key = "Rental") String rentalReference
-) { }
+include::example$migration/paths/aggregates/eventtagging/singletag/BikeReturnedEvent.java[tag=bike-returned-event,indent=0]
+include::example$migration/paths/aggregates/eventtagging/singletag/BikeRequestedEvent.java[tag=bike-requested-event,indent=0]
 ----
 
 For deeper reference material on tags, custom `TagResolver` implementations, and consistency boundary mechanics, see xref:events:event-publishing.adoc#event_tagging[Event tagging] in the events reference guide.

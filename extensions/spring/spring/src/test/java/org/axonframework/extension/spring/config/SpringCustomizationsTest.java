@@ -27,7 +27,11 @@ import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
+import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
@@ -35,11 +39,11 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 /**
- * Test class validating how the {@link SpringCustomizations.SpringSubscribingEventProcessingModuleCustomization}
- * resolves the {@link SubscribableEventSource} from the
- * {@link EventProcessorSettings.SubscribingEventProcessorSettings#source() source setting}.
+ * Test class validating how {@link SpringCustomizations} resolve processor components from
+ * {@link EventProcessorSettings}.
  *
  * @author Jakob Hatzl
  */
@@ -48,7 +52,7 @@ class SpringCustomizationsTest {
     private static final String PROCESSOR_NAME = "test-processor";
 
     @Nested
-    class ExplicitlyConfiguredSource {
+    class SubscribingExplicitlyConfiguredSource {
 
         @Test
         void appliesTheSourceRegisteredUnderTheConfiguredName() {
@@ -59,7 +63,7 @@ class SpringCustomizationsTest {
             );
 
             // when
-            var result = customize(configuration, "my-source");
+            var result = customizeSubscribing(configuration, "my-source");
 
             // then
             assertThat(result.eventSource()).isSameAs(namedSource);
@@ -73,7 +77,7 @@ class SpringCustomizationsTest {
             });
 
             // when / then
-            assertThatThrownBy(() -> customize(configuration, "unknown-source"))
+            assertThatThrownBy(() -> customizeSubscribing(configuration, "unknown-source"))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("'unknown-source'")
                     .hasMessageContaining(PROCESSOR_NAME);
@@ -81,7 +85,7 @@ class SpringCustomizationsTest {
     }
 
     @Nested
-    class UnsetSource {
+    class SubscribingUnsetSource {
 
         @Test
         void appliesTheUniqueTypeLevelDefaultWhenTheSourceIsUnset() {
@@ -90,7 +94,7 @@ class SpringCustomizationsTest {
             });
 
             // when
-            var result = customize(configuration, null);
+            var result = customizeSubscribing(configuration, null);
 
             // then - the default EventBus is the unique type-level SubscribableEventSource
             assertThat(result.eventSource()).isSameAs(configuration.getComponent(EventBus.class));
@@ -99,14 +103,14 @@ class SpringCustomizationsTest {
         @Test
         void leavesTheSourceUnsetWhenNoTypeLevelDefaultIsPresent() {
             // given - only a named source is registered, which an unset source setting must not resolve to
-            var configuration = configurationWithoutTypeLevelSource(
+            var configuration = configurationWithoutTypeLevelSubscribableSource(
                     cr -> cr.registerComponent(SubscribableEventSource.class,
                                                "named-source",
                                                cfg -> new SimpleEventBus())
             );
 
             // when
-            var result = customize(configuration, null);
+            var result = customizeSubscribing(configuration, null);
 
             // then - a customization applied after this one, like an EventProcessorDefinition, may supply the source
             assertThat(result.eventSource()).isNull();
@@ -116,9 +120,9 @@ class SpringCustomizationsTest {
         void keepsAnAlreadyAssignedSourceWhenNoTypeLevelDefaultIsPresent() {
             // given
             SimpleEventBus assignedSource = new SimpleEventBus();
-            var configuration = configurationWithoutTypeLevelSource(cr -> {
+            var configuration = configurationWithoutTypeLevelSubscribableSource(cr -> {
             });
-            var processorConfiguration = processorConfiguration().eventSource(assignedSource);
+            var processorConfiguration = subscribingProcessorConfiguration().eventSource(assignedSource);
 
             // when
             var result = SpringCustomizations
@@ -133,7 +137,7 @@ class SpringCustomizationsTest {
         void allowsASubsequentCustomizationToSupplyTheSourceWhenTheSettingIsUnset() {
             // given
             SimpleEventBus definitionSource = new SimpleEventBus();
-            var configuration = configurationWithoutTypeLevelSource(cr -> {
+            var configuration = configurationWithoutTypeLevelSubscribableSource(cr -> {
             });
             // mirrors how settings customizations are chained before definition customizations
             var chained = SpringCustomizations
@@ -141,7 +145,7 @@ class SpringCustomizationsTest {
                     .andThen((cfg, processorConfig) -> processorConfig.eventSource(definitionSource));
 
             // when
-            var result = chained.apply(configuration, processorConfiguration());
+            var result = chained.apply(configuration, subscribingProcessorConfiguration());
 
             // then
             assertThat(result.eventSource()).isSameAs(definitionSource);
@@ -149,7 +153,7 @@ class SpringCustomizationsTest {
     }
 
     @Nested
-    class EmptySourceName {
+    class SubscribingEmptySourceName {
 
         @Test
         void appliesTheUniqueTypeLevelDefaultWhenTheSourceIsEmpty() {
@@ -158,7 +162,7 @@ class SpringCustomizationsTest {
             });
 
             // when
-            var result = customize(configuration, "");
+            var result = customizeSubscribing(configuration, "");
 
             // then
             assertThat(result.eventSource()).isSameAs(configuration.getComponent(EventBus.class));
@@ -167,14 +171,144 @@ class SpringCustomizationsTest {
         @Test
         void leavesTheSourceUnsetWhenTheSourceIsEmptyAndNoTypeLevelDefaultIsPresent() {
             // given
-            var configuration = configurationWithoutTypeLevelSource(cr -> {
+            var configuration = configurationWithoutTypeLevelSubscribableSource(cr -> {
             });
 
             // when
-            var result = customize(configuration, "");
+            var result = customizeSubscribing(configuration, "");
 
             // then
             assertThat(result.eventSource()).isNull();
+        }
+    }
+
+    @Nested
+    class PooledExplicitlyConfiguredComponents {
+
+        @Test
+        void appliesTheSourceAndTokenStoreRegisteredUnderTheConfiguredNames() {
+            // given
+            StreamableEventSource namedSource = mock(StreamableEventSource.class);
+            TokenStore namedTokenStore = new InMemoryTokenStore();
+            var configuration = configuration(cr -> cr
+                    .registerComponent(StreamableEventSource.class, "my-source", cfg -> namedSource)
+                    .registerComponent(TokenStore.class, "my-token-store", cfg -> namedTokenStore)
+            );
+
+            // when
+            var result = customizePooled(configuration, "my-source", "my-token-store");
+
+            // then
+            assertThat(result.eventSource()).isSameAs(namedSource);
+            assertThat(result.tokenStore()).isSameAs(namedTokenStore);
+            assertThat(result.unitOfWorkFactory()).isSameAs(configuration.getComponent(UnitOfWorkFactory.class));
+        }
+
+        @Test
+        void failsWhenTheConfiguredSourceCannotBeResolved() {
+            // given
+            var configuration = configuration(cr -> cr.registerComponent(TokenStore.class,
+                                                                         "tokenStore",
+                                                                         cfg -> new InMemoryTokenStore()));
+
+            // when / then
+            assertThatThrownBy(() -> customizePooled(configuration, "unknown-source", "tokenStore"))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("'unknown-source'")
+                    .hasMessageContaining(PROCESSOR_NAME);
+        }
+
+        @Test
+        void failsWhenTheConfiguredTokenStoreCannotBeResolved() {
+            // given
+            StreamableEventSource namedSource = mock(StreamableEventSource.class);
+            var configuration = configuration(cr -> cr.registerComponent(StreamableEventSource.class,
+                                                                         "my-source",
+                                                                         cfg -> namedSource));
+
+            // when / then
+            assertThatThrownBy(() -> customizePooled(configuration, "my-source", "unknown-token-store"))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("'unknown-token-store'")
+                    .hasMessageContaining(PROCESSOR_NAME);
+        }
+    }
+
+    @Nested
+    class PooledUnsetComponents {
+
+        @Test
+        void appliesUniqueTypeLevelDefaultsWhenSourceAndTokenStoreAreUnset() {
+            // given
+            StreamableEventSource typeLevelSource = mock(StreamableEventSource.class);
+            TokenStore typeLevelTokenStore = new InMemoryTokenStore();
+            var configuration = configuration(cr -> cr
+                    .registerComponent(StreamableEventSource.class, cfg -> typeLevelSource)
+                    .registerComponent(TokenStore.class, cfg -> typeLevelTokenStore)
+            );
+
+            // when
+            var result = customizePooled(configuration, null, null);
+
+            // then
+            assertThat(result.eventSource()).isSameAs(typeLevelSource);
+            assertThat(result.tokenStore()).isSameAs(typeLevelTokenStore);
+        }
+
+        @Test
+        void leavesSourceAndTokenStoreUnsetWhenNoTypeLevelDefaultsArePresent() {
+            // given - only named components are registered
+            var configuration = configuration(cr -> cr
+                    .registerComponent(StreamableEventSource.class, "named-source", cfg -> mock(StreamableEventSource.class))
+                    .registerComponent(TokenStore.class, "named-token-store", cfg -> new InMemoryTokenStore())
+            );
+
+            // when
+            var result = customizePooled(configuration, null, null);
+
+            // then
+            assertThat(result.eventSource()).isNull();
+            assertThat(result.tokenStore()).isNull();
+        }
+
+        @Test
+        void allowsASubsequentCustomizationToSupplySourceAndTokenStoreWhenSettingsAreUnset() {
+            // given
+            StreamableEventSource definitionSource = mock(StreamableEventSource.class);
+            TokenStore definitionTokenStore = new InMemoryTokenStore();
+            var configuration = configuration(cr -> {
+            });
+            var chained = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(null, null))
+                    .andThen((cfg, processorConfig) -> processorConfig.eventSource(definitionSource)
+                                                                      .tokenStore(definitionTokenStore));
+
+            // when
+            var result = chained.apply(configuration, pooledProcessorConfiguration());
+
+            // then
+            assertThat(result.eventSource()).isSameAs(definitionSource);
+            assertThat(result.tokenStore()).isSameAs(definitionTokenStore);
+        }
+    }
+
+    @Nested
+    class PooledEmptyComponentNames {
+
+        @Test
+        void treatsEmptySourceAndTokenStoreNamesAsUnset() {
+            // given
+            var configuration = configuration(cr -> cr
+                    .registerComponent(StreamableEventSource.class, "named-source", cfg -> mock(StreamableEventSource.class))
+                    .registerComponent(TokenStore.class, "named-token-store", cfg -> new InMemoryTokenStore())
+            );
+
+            // when
+            var result = customizePooled(configuration, "", "");
+
+            // then
+            assertThat(result.eventSource()).isNull();
+            assertThat(result.tokenStore()).isNull();
         }
     }
 
@@ -186,7 +320,9 @@ class SpringCustomizationsTest {
         return configurer.build();
     }
 
-    private static AxonConfiguration configurationWithoutTypeLevelSource(Consumer<ComponentRegistry> components) {
+    private static AxonConfiguration configurationWithoutTypeLevelSubscribableSource(
+            Consumer<ComponentRegistry> components
+    ) {
         MessagingConfigurer configurer = MessagingConfigurer.create();
         // without the default EventBus and classpath enhancers no type-level SubscribableEventSource is present
         configurer.componentRegistry(cr -> cr.disableEnhancerScanning()
@@ -195,19 +331,55 @@ class SpringCustomizationsTest {
         return configurer.build();
     }
 
-    private static SubscribingEventProcessorConfiguration customize(Configuration configuration,
-                                                                    @Nullable String source) {
+    private static SubscribingEventProcessorConfiguration customizeSubscribing(Configuration configuration,
+                                                                               @Nullable String source) {
         return SpringCustomizations
                 .subscribingCustomizations(PROCESSOR_NAME, new TestSubscribingSettings(source))
-                .apply(configuration, processorConfiguration());
+                .apply(configuration, subscribingProcessorConfiguration());
     }
 
-    private static SubscribingEventProcessorConfiguration processorConfiguration() {
+    private static PooledStreamingEventProcessorConfiguration customizePooled(Configuration configuration,
+                                                                              @Nullable String source,
+                                                                              @Nullable String tokenStore) {
+        return SpringCustomizations
+                .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(source, tokenStore))
+                .apply(configuration, pooledProcessorConfiguration());
+    }
+
+    private static SubscribingEventProcessorConfiguration subscribingProcessorConfiguration() {
         return new SubscribingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null));
+    }
+
+    private static PooledStreamingEventProcessorConfiguration pooledProcessorConfiguration() {
+        return new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null));
     }
 
     private record TestSubscribingSettings(@Nullable String source)
             implements EventProcessorSettings.SubscribingEventProcessorSettings {
 
+    }
+
+    private record TestPooledSettings(@Nullable String source, @Nullable String tokenStore)
+            implements EventProcessorSettings.PooledEventProcessorSettings {
+
+        @Override
+        public int initialSegmentCount() {
+            return 1;
+        }
+
+        @Override
+        public long tokenClaimIntervalInMillis() {
+            return 5000;
+        }
+
+        @Override
+        public int threadCount() {
+            return 1;
+        }
+
+        @Override
+        public int batchSize() {
+            return 1;
+        }
     }
 }

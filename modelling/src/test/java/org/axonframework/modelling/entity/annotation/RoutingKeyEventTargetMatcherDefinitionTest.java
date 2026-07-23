@@ -27,6 +27,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.*;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -78,10 +79,51 @@ class RoutingKeyEventTargetMatcherDefinitionTest {
     }
 
     @Test
-    void doesNotAllowRoutingKeyMismatchBetweenMessageAndEntity() throws NoSuchFieldException {
+    void doesNotAllowRoutingKeyMismatchBetweenMessageAndListEntity() throws NoSuchFieldException {
         EventTargetMatcher<ChildEntity> result = definition.createChildEntityMatcher(
                 childEntityMetamodel,
                 ListChildEntityWithNonMatchingRoutingKey.class.getDeclaredField("child")
+        );
+
+        MessageType messageType = new MessageType(TestEvent.class);
+        //noinspection unchecked,rawtypes
+        when(childEntityMetamodel.getExpectedRepresentation(messageType.qualifiedName()))
+                .thenReturn((Class) TestEvent.class);
+
+        assertThatThrownBy(() -> result.matches(
+                new ChildEntity(),
+                new GenericEventMessage(messageType, new TestEvent("someValue")),
+                new StubProcessingContext()
+        )).isInstanceOf(UnknownRoutingKeyException.class);
+    }
+
+    @Test
+    void doesNotAllowMissingRoutingKeyOnMapTypeMember() {
+        assertThatThrownBy(
+                () -> definition.createChildEntityMatcher(
+                        childEntityMetamodel,
+                        MapChildEntityWithoutRoutingKey.class.getDeclaredField("child")
+                ),
+                "Expected AxonConfigurationException when no routing key is present on a Map type member"
+        ).isInstanceOf(AxonConfigurationException.class);
+    }
+
+    @Test
+    void returnsMatcherForListMapEntityWithRoutingKey() throws NoSuchFieldException {
+        EventTargetMatcher<ChildEntity> result = definition.createChildEntityMatcher(
+                childEntityMetamodel,
+                MapChildEntityWithRoutingKey.class.getDeclaredField("child")
+        );
+
+        assertThat(result).isNotNull()
+                          .isNotEqualTo(EventTargetMatcher.MATCH_ANY());
+    }
+
+    @Test
+    void doesNotAllowRoutingKeyMismatchBetweenMessageAndMapEntity() throws NoSuchFieldException {
+        EventTargetMatcher<ChildEntity> result = definition.createChildEntityMatcher(
+                childEntityMetamodel,
+                MapChildEntityWithNonMatchingRoutingKey.class.getDeclaredField("child")
         );
 
         MessageType messageType = new MessageType(TestEvent.class);
@@ -123,6 +165,27 @@ class RoutingKeyEventTargetMatcherDefinitionTest {
         @SuppressWarnings("unused")
         @EntityMember(routingKey = "incorrect")
         private List<ChildEntity> child;
+    }
+
+    static class MapChildEntityWithoutRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember
+        private Map<String, ChildEntity> child;
+    }
+
+    static class MapChildEntityWithRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember(routingKey = "key")
+        private Map<String, ChildEntity> child;
+    }
+
+    static class MapChildEntityWithNonMatchingRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember(routingKey = "incorrect")
+        private Map<String, ChildEntity> child;
     }
 
     static class ChildEntity {

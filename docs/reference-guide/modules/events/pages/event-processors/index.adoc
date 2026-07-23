@@ -74,36 +74,7 @@ In the example below, a xref:events:event-processors/subscribing.adoc[subscribin
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.subscribing(
-                this::configureSubscribingProcessor
-        ));
-    }
-
-    private SubscribingEventProcessorsConfigurer configureSubscribingProcessor(
-            SubscribingEventProcessorsConfigurer subscribingConfigurer
-    ) {
-        return subscribingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new MyHandler())
-                                  .autodetected(c -> new ModuleHandler())
-                                  .autodetected(c -> new MyOtherHandler());
-    }
-}
+include::example$events/eventprocessors/index/declarative/AxonConfig.java[tag=declarative-subscribing-processor,indent=0]
 ----
 
 [#autodetected_config]
@@ -113,7 +84,7 @@ Using the `@Namespace` annotation on an event handling component allows you to e
 
 Assuming the autodetected approach is used, let us consider that the following event handling components have been registered:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 // MyHandler.java
 package org.axonframework.example.eventhandling;
@@ -144,7 +115,7 @@ This configuration would result in the creation of a single Streaming Processor 
 
 Now consider the same autodetected setup, but with the following event handling components registered without the `@Namespace` annotation:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 // MyHandler.java
 package org.axonframework.example.eventhandling;
@@ -225,23 +196,7 @@ See xref:event-processors/streaming.adoc#error-mode[Error mode] for more on how 
 
 [source,java]
 ----
-import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.messaging.eventhandling.processing.EventProcessor;
-
-public class ProcessorStateChecker {
-
-    private final AxonConfiguration configuration;
-
-    public ProcessorStateChecker(AxonConfiguration configuration) {
-        this.configuration = configuration;
-    }
-
-    public void printState(String processorName) {
-        EventProcessor processor = configuration.getComponent(EventProcessor.class, processorName);
-        System.out.println("Running: " + processor.isRunning());
-        System.out.println("Error:   " + processor.isError());
-    }
-}
+include::example$events/eventprocessors/index/lifecycle/ProcessorStateChecker.java[tag=processor-state-checker,indent=0]
 ----
 
 [[error-handling]]
@@ -270,19 +225,7 @@ To register a default `ErrorHandler` for any Event Processor, you can do the fol
 
 [source,java]
 ----
-import jakarta.annotation.Nonnull;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorContext;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.defaults(
-                defaults -> defaults.errorHandler(new CustomErrorHandler())
-        ));
-    }
-}
+include::example$events/eventprocessors/index/errorhandling/defaults/AxonConfig.java[tag=error-handler-default,indent=0]
 ----
 --
 
@@ -293,47 +236,18 @@ To register a custom `ErrorHandler` for a specific (in this case Subscribing) Pr
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.subscribing(
-                this::configureSubscribingProcessor
-        ));
-    }
-
-    private SubscribingEventProcessorsConfigurer configureSubscribingProcessor(
-            SubscribingEventProcessorsConfigurer subscribingConfigurer
-    ) {
-        return subscribingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .customized((c, subscribingConfig) -> subscribingConfig.errorHandler(
-                                        new CustomErrorHandler()
-                                ))
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new MyHandler());
-    }
-}
+include::example$events/eventprocessors/index/errorhandling/specific/AxonConfig.java[tag=error-handler-specific-processor,indent=0]
 ----
 --
 ====
 
 For providing a custom solution, the `ErrorHandler`'s single method needs to be implemented:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface ErrorHandler {
 
-    void handleError(@Nonnull ErrorContext errorContext) throws Exception;
+    void handleError(ErrorContext errorContext) throws Exception;
 }
 ----
 
@@ -370,21 +284,7 @@ Use the `withInterceptor(MessageHandlerInterceptor<? super EventMessage>)` opera
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-public class AxonConfig {
-
-    public void registerProcessorSpecificInterceptor(MessagingConfigurer configurer) {
-        // For SubscribingEventProcessor:
-        configurer.eventProcessing()
-                  .subscribing()
-                  .customize("my-processor", config -> config.withInterceptor(new CustomEventHandlerInterceptor()));
-        // For PooledStreamingEventProcessor:
-        configurer.eventProcessing()
-                  .pooledStreaming()
-                  .customize("my-processor", config -> config.withInterceptor(new CustomEventHandlerInterceptor()));
-    }
-}
+include::example$events/eventprocessors/index/interceptors/instance/AxonConfig.java[tag=processor-specific-interceptor,indent=0]
 ----
 
 ==== Interceptors for specific event handling components
@@ -395,37 +295,7 @@ Multiple `intercepted()` calls accumulate interceptors in registration order:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.subscribing(
-                this::configureSubscribingProcessor
-        ));
-    }
-
-    private SubscribingEventProcessorsConfigurer configureSubscribingProcessor(
-            SubscribingEventProcessorsConfigurer subscribingConfigurer
-    ) {
-        return subscribingConfigurer.processor(
-                "my-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponents)
-                                .notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.CompletePhase configureHandlingComponents(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected("orderHandler", cfg -> new OrderEventHandler())
-                                  .autodetected("inventoryHandler", cfg -> new InventoryEventHandler())
-                                  .intercepted(cfg -> new AuditLoggingInterceptor())
-                                  .intercepted(cfg -> new TenantFilterInterceptor(tenantId));
-    }
-}
+include::example$events/eventprocessors/index/interceptors/component/AxonConfig.java[tag=intercepted-handling-components,indent=0]
 ----
 
 Component registration ends when the first `.intercepted(...)` is called.
@@ -437,18 +307,7 @@ Return `MessageStream.failed(error)` (with the same or a different exception) to
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-
-private EventHandlingComponentsConfigurer.CompletePhase configureHandlingComponents(
-        EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-) {
-    return componentConfigurer.autodetected("orderHandler", cfg -> new OrderEventHandler())
-                              .withExceptionHandler((event, context, error) -> {
-                                  log.warn("Handler failed for {}: {}", event.qualifiedName(), error.getMessage());
-                                  return MessageStream.empty(); // suppress; use MessageStream.failed(error) to propagate
-                              });
-}
+include::example$events/eventprocessors/index/interceptors/exceptionhandler/ExceptionHandlingConfig.java[tags=with-exception-handler-import;with-exception-handler,indent=0]
 ----
 
 ==== Annotated interceptors on the handler class
@@ -467,58 +326,12 @@ Two styles are supported:
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-
-// Before-interceptor: runs before every @EventHandler on this component
-public class AuditingEventHandler {
-
-    private final AuditLog auditLog;
-
-    @EventHandlerInterceptor
-    void audit(EventMessage event) {
-        auditLog.record(event.qualifiedName());
-        // chain proceeds automatically after this returns
-    }
-
-    @EventHandler
-    void on(OrderPlaced event) { ... }
-
-    @EventHandler
-    void on(OrderCancelled event) { ... }
-}
+include::example$events/eventprocessors/index/interceptors/annotated/before/AuditingEventHandler.java[tag=event-handler-interceptor-before,indent=0]
 ----
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.eventhandling.annotation.EventHandlerInterceptor;
-
-// Surround-interceptor: short-circuit events intended for other tenants
-public class TenantScopedEventHandler {
-
-    private final TenantId tenantId;
-
-    @EventHandlerInterceptor
-    MessageStream<?> filterByTenant(
-            EventMessage event,
-            MessageHandlerInterceptorChain<EventMessage> chain,
-            ProcessingContext ctx
-    ) {
-        if (!tenantId.equals(event.metaData().get("tenantId"))) {
-            return MessageStream.empty(); // skip: not our tenant
-        }
-        return chain.proceed(event, ctx);
-    }
-
-    @EventHandler
-    void on(OrderPlaced event) { ... }
-}
+include::example$events/eventprocessors/index/interceptors/annotated/surround/TenantScopedEventHandler.java[tag=event-handler-interceptor-surround,indent=0]
 ----
 
 `@ExceptionHandler` methods handle exceptions thrown by `@EventHandler` methods on the same component.
@@ -530,27 +343,7 @@ Without it, the method is eligible for any exception that matches its declared p
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
-
-public class MyEventHandler {
-
-    @EventHandler
-    void on(OrderPlaced event) {
-        // may throw
-    }
-
-    @ExceptionHandler
-    void onException(RuntimeException ex) {
-        log.error("Handler failed: {}", ex.getMessage());
-        // return normally to suppress the exception and continue processing
-    }
-
-    @ExceptionHandler(resultType = OptimisticLockingFailureException.class)
-    void onConcurrencyFailure(OptimisticLockingFailureException ex) {
-        // handle a specific exception type; other exceptions are not affected
-    }
-}
+include::example$events/eventprocessors/index/interceptors/annotated/exceptionhandler/MyEventHandler.java[tag=annotated-exception-handler,indent=0]
 ----
 
 === Message monitors
@@ -563,12 +356,5 @@ To register a default `MessagMonitor` for events, you use the `MessageConfigurer
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-
-public class AxonConfig {
-
-    public void registerEventMonitor(MessagingConfigurer configurer) {
-        configurer.registerEventMonitor(config -> new CustomMessageMonitor());
-    }
-}
+include::example$events/eventprocessors/index/monitors/AxonConfig.java[tag=register-event-monitor,indent=0]
 ----

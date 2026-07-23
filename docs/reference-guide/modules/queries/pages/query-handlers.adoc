@@ -14,19 +14,7 @@ Taking the 'Gift Card' domain which contains a `CardSummary` Query Model, we can
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.annotation.Query;
-
-@Query(namespace = "giftcard", name = "FetchCardSummary", version = "1.0")
-public class FetchCardSummaryQuery {
-
-    private final String cardSummaryId;
-
-    public FetchCardSummaryQuery(String cardSummaryId) {
-        this.cardSummaryId = cardSummaryId;
-    }
-    // omitted getters, equals/hashCode, toString functions
-}
-
+include::example$queries/queryhandlers/FetchCardSummaryQuery.java[tag=fetch-card-summary-query,indent=0]
 ----
 
 The query message is annotated with `@Query` to define its message type. The annotation specifies:
@@ -56,19 +44,7 @@ This `FetchCardSummaryQuery` will be xref:query-dispatchers.adoc[dispatched] to 
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.QueryHandler;
-
-public class CardSummaryProjection {
-
-    private Map<String, CardSummary> cardSummaryStorage;
-
-    @QueryHandler // <1>
-    public CardSummary handle(FetchCardSummaryQuery query) { // <2>
-        return cardSummaryStorage.get(query.getCardSummaryId());
-    }
-    // omitted CardSummary event handlers which update the model
-}
-
+include::example$queries/queryhandlers/CardSummaryProjection.java[tag=card-summary-projection,indent=0]
 ----
 <1> The `@QueryHandler` annotation marks this method as a query handler.
 <2> The method signature defines the query payload (`FetchCardSummaryQuery`) as the first parameter and the return type (`CardSummary`) as the query response type.
@@ -98,30 +74,14 @@ Example using the `@Query` annotation:
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.annotation.Query;
-
-@Query(namespace = "giftcard", name = "FetchCardSummary", version = "1.0")
-public class FetchCardSummaryQuery {
-    private final String cardSummaryId;
-
-    public FetchCardSummaryQuery(String cardSummaryId) {
-        this.cardSummaryId = cardSummaryId;
-    }
-
-    public String getCardSummaryId() {
-        return cardSummaryId;
-    }
-}
+include::example$queries/queryhandlers/matching/FetchCardSummaryQuery.java[tag=fetch-card-summary-query-with-getter,indent=0]
 ----
 
 The query handler can then be written to handle this specific query type:
 
 [source,java]
 ----
-@QueryHandler
-public CardSummary handle(FetchCardSummaryQuery query) {
-    return cardSummaryStorage.get(query.getCardSummaryId());
-}
+include::example$queries/queryhandlers/matching/CardSummaryHandler.java[tag=handle-fetch-card-summary,indent=0]
 ----
 
 Since the handler's first parameter is `FetchCardSummaryQuery`, and that class is annotated with `@Query(namespace = "giftcard", name = "FetchCardSummary")`, the handler will match queries with the qualified name `giftcard.FetchCardSummary`.
@@ -132,11 +92,7 @@ If you want the handler to receive the query in a different representation (not 
 
 [source,java]
 ----
-@QueryHandler(queryName = "giftcard.FetchCardSummary") // <1>
-public CardSummary handle(Map<String, Object> queryData) { // <2>
-    String cardId = (String) queryData.get("cardSummaryId");
-    return cardSummaryStorage.get(cardId);
-}
+include::example$queries/queryhandlers/matching/MapRepresentationHandler.java[tag=handle-map-representation,indent=0]
 ----
 <1> The `queryName` attribute is **required** when the first parameter is not the `@Query` annotated payload class. Without it, Axon would resolve the query handler above to handle queries with the name `java.util.Map`. As such, it wouldn't know which query this handler should handle.
 <2> The handler receives the query as a `Map`, allowing flexible access to the query data.
@@ -153,18 +109,7 @@ Example:
 
 [source,java]
 ----
-// Handler expecting the query as a specific type
-@QueryHandler
-public CardSummary handle(FetchCardSummaryQuery query) {
-    return cardSummaryStorage.get(query.getCardSummaryId());
-}
-
-// Another handler in another application could receive the same query in a different representation
-@QueryHandler(queryName = "giftcard.FetchCardSummary") // Must specify queryName!
-public CardDetails handle(Map<String, Object> query) {
-    String cardId = (String) query.get("cardSummaryId");
-    return detailedCardStorage.get(cardId);
-}
+include::example$queries/queryhandlers/matching/PayloadConversionHandlers.java[tag=payload-conversion-handlers,indent=0]
 ----
 
 Both handlers can be invoked for queries with the same `MessageType`, but they receive the payload in their preferred format.
@@ -232,37 +177,14 @@ You can inject the `ProcessingContext` as a handler parameter:
 
 [source,java]
 ----
-@QueryHandler
-public CardSummary handle(FetchCardSummaryQuery query, ProcessingContext context) {
-    // Access correlation data
-    String correlationId = context.correlationId();
-
-    // Access resources
-    SomeService service = context.resource(SomeService.RESOURCE_KEY);
-
-    return cardSummaryStorage.get(query.getCardSummaryId());
-}
+include::example$queries/queryhandlers/parameters/ProcessingContextExample.java[tag=query-handler-processing-context,indent=0]
 ----
 
 When dispatching queries or commands from within a query handler, always pass the `ProcessingContext` to ensure correlation data flows correctly:
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.QueryGateway;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-
-@QueryHandler
-public OrderDetails handle(FetchOrderDetailsQuery query,
-                           ProcessingContext context,
-                           QueryGateway queryGateway) {
-    // Dispatch another query, passing the ProcessingContext for correlation
-    CompletableFuture<CustomerInfo> customerInfo =
-        queryGateway.query(new FetchCustomerQuery(query.getCustomerId()),
-                          CustomerInfo.class,
-                          context);
-
-    return orderStorage.get(query.getOrderId());
-}
+include::example$queries/queryhandlers/parameters/QueryChainingExample.java[tags=dispatch-with-processing-context-import;dispatch-with-processing-context,indent=0]
 ----
 
 === `QueryUpdateEmitter`
@@ -271,25 +193,7 @@ For subscription queries, you can inject a `QueryUpdateEmitter` to an xref:messa
 
 [source,java]
 ----
-import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
-import org.axonframework.messaging.eventhandling.EventHandler;
-
-@Component
-public class CardSummaryProjection {
-
-    @EventHandler
-    public void on(CardRedeemedEvent event, QueryUpdateEmitter emitter) {
-
-        // Update the model
-        CardSummary summary = cardSummaryStorage.get(event.getCardId());
-        summary.setRemainingValue(event.getRemainingValue());
-
-        // Emit update to subscription queries
-        emitter.emit(FetchCardSummaryQuery.class,
-                    query -> query.getCardSummaryId().equals(event.getCardId()),
-                    summary);
-    }
-}
+include::example$queries/queryhandlers/emitter/CardSummaryProjection.java[tag=query-update-emitter,indent=0]
 ----
 
 [WARNING]
@@ -299,25 +203,8 @@ The `QueryUpdateEmitter` must be created using `QueryUpdateEmitter.forContext(Pr
 
 [source,java]
 ----
-// WRONG - Do not inject as a field
-@Component
-public class CardSummaryProjection {
-    private final QueryUpdateEmitter emitter; // ❌ Wrong!
-
-    public CardSummaryProjection(QueryUpdateEmitter emitter) {
-        this.emitter = emitter;
-    }
-}
-
-// CORRECT - Create from ProcessingContext
-@Component
-public class CardSummaryProjection {
-    @EventHandler
-    public void on(CardRedeemedEvent event, QueryUpdateEmitter emitter) {
-        // ✅ Correct!
-        // Use emitter...
-    }
-}
+include::example$queries/queryhandlers/emitter/wrong/CardSummaryProjection.java[tag=emitter-field-injection-wrong,indent=0]
+include::example$queries/queryhandlers/emitter/correct/CardSummaryProjection.java[tag=emitter-parameter-injection-correct,indent=0]
 ----
 ====
 
@@ -333,16 +220,7 @@ Example:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.annotation.MetadataValue;
-
-@QueryHandler
-public CardSummary handle(FetchCardSummaryQuery query,
-                          Metadata metadata,
-                          @MetadataValue("userId") String userId) {
-    logger.info("Query from user: {}", userId);
-    return cardSummaryStorage.get(query.getCardSummaryId());
-}
+include::example$queries/queryhandlers/parameters/MetadataParametersExample.java[tags=metadata-and-value-parameters-import;metadata-and-value-parameters,indent=0]
 ----
 
 == Query handler return values
@@ -370,12 +248,7 @@ Among the usual Objects, it is also possible for queries to return primitive dat
 
 [source,java]
 ----
-public class QueryHandler {
-
-     @QueryHandler
-     public float handle(QueryPrimitive query) {
-     }
- }
+include::example$queries/queryhandlers/returnvalues/PrimitiveQueryHandler.java[tag=primitive-return-type,indent=0]
 ----
 
 Note that the querying party will retrieve a boxed result instead of the primitive type.
