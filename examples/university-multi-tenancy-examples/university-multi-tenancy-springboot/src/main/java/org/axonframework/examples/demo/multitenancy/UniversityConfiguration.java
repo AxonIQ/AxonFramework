@@ -18,18 +18,19 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
+import org.axonframework.common.configuration.Module;
 import org.axonframework.examples.demo.multitenancy.shared.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.course.CourseConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * The whole multi-tenancy configuration a Spring Boot developer writes for the feature: declare one
- * {@link TenantComponentProvider} bean per tenant-scoped component type, plus the message handlers, as
- * ordinary beans.
+ * {@link TenantComponentProvider} bean per tenant-scoped component type, the statistics query handler,
+ * and the event-sourced course modules, as ordinary beans.
  * <p>
  * The multi-tenancy auto-configuration from the Axoniq Framework Spring Boot starter activates the
  * feature (tenants are Axon Server contexts, so it activates only while Axon Server is enabled), picks
@@ -63,17 +64,6 @@ public class UniversityConfiguration {
     }
 
     /**
-     * The enrollment command handler, whose {@code @TenantScoped} parameters the framework injects with
-     * the message tenant's per-tenant components, matched by type.
-     *
-     * @return the enrollment command handler
-     */
-    @Bean
-    public EnrollStudentCommandHandler enrollStudentCommandHandler() {
-        return new EnrollStudentCommandHandler();
-    }
-
-    /**
      * The statistics query handler, whose {@code @TenantScoped} parameters the framework injects with
      * the message tenant's per-tenant components, matched by type.
      *
@@ -82,5 +72,28 @@ public class UniversityConfiguration {
     @Bean
     public TenantStatisticsQueryHandler tenantStatisticsQueryHandler() {
         return new TenantStatisticsQueryHandler();
+    }
+
+    /**
+     * The event-sourced course entity module, which the starter registers so a course can be sourced from
+     * and appended to its tenant's own event store.
+     *
+     * @return the course entity module
+     */
+    @Bean
+    public Module courseEntity() {
+        return CourseConfiguration.entityModule();
+    }
+
+    /**
+     * The course command handling module, holding the handler that opens courses and enrolls students. Its
+     * enrollment handler both appends to the tenant's event store and updates that tenant's
+     * {@code @TenantScoped} components.
+     *
+     * @return the course command handling module
+     */
+    @Bean
+    public Module courseCommandHandling() {
+        return CourseConfiguration.commandModule();
     }
 }

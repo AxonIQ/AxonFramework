@@ -49,6 +49,9 @@ class MultiTenancyDemoTest {
         assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
         // and shutting down closed every remaining tenant's instances
         assertThat(outcome.allClosedOnShutdown()).isTrue();
+        // and the per-tenant event-storage demonstration did not run, as it needs each tenant's own Axon Server
+        // event store, which the in-memory demo does not have
+        assertThat(outcome.eventStorage().demonstrated()).isFalse();
     }
 
     @Test

@@ -26,12 +26,15 @@ package org.axonframework.examples.demo.multitenancy.shared;
  * @param unknownTenantRejected      whether a command for an unknown tenant was rejected
  * @param shelbyvilleClosedOnRemoval whether Shelbyville's instances were closed when its tenant was removed
  * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
+ * @param eventStorage               what the per-tenant event-storage demonstration observed (only demonstrated
+ *                                   against Axon Server)
  */
 public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
                           int ogdenvilleEnrollments,
                           boolean unknownTenantRejected,
                           boolean shelbyvilleClosedOnRemoval,
-                          boolean allClosedOnShutdown) {
+                          boolean allClosedOnShutdown,
+                          EventStorageOutcome eventStorage) {
 
 }

@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
-/**
- * The enrollment write side: the {@link
- * org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudent} command and the
- * handler that records it with the command's tenant's components injected by type.
- */
-@NullMarked
-package org.axonframework.examples.demo.multitenancy.university.write.enroll;
+package org.axonframework.examples.demo.multitenancy.university.write.course;
 
-import org.jspecify.annotations.NullMarked;
+/**
+ * Command opening a course with a fixed number of seats. Like every message in the demo, the tenant it
+ * belongs to travels in the command's metadata rather than in the payload, so the framework resolves the
+ * tenant and routes the resulting events to that tenant's event store.
+ *
+ * @param courseId the identifier of the course to open
+ * @param capacity the number of seats the course offers
+ */
+public record OpenCourse(String courseId, int capacity) {
+
+}

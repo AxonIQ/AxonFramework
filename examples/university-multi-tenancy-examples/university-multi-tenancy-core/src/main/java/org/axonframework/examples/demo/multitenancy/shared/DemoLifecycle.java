@@ -24,7 +24,7 @@ import org.axonframework.examples.demo.multitenancy.university.component.AuditLo
 import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.course.EnrollStudent;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
@@ -42,11 +42,12 @@ import java.util.function.BooleanSupplier;
  * lives here, and each demo calls it with its own gateways, providers, provisioning, and shutdown.
  * <p>
  * A platform hosts several universities, each an isolated tenant. Enrolling a student is an
- * {@link EnrollStudentCommandHandler} command and reading a tenant's statistics is a
- * {@link TenantStatisticsQueryHandler} query. Each carries its tenant in message metadata, and the
- * framework injects that tenant's {@link CourseStatisticsStore} and {@link AuditLog} into the handler,
- * matched by type. {@link #run} reads top to bottom as the story: tenants known at startup, a tenant
- * added at runtime, an unknown tenant rejected, a tenant removed, and shutdown.
+ * {@link EnrollStudent} command and reading a tenant's statistics is a
+ * {@link TenantStatisticsQueryHandler} query. Enrolling both appends to the tenant's own event store and
+ * updates that tenant's {@link CourseStatisticsStore} and {@link AuditLog}, injected by type, so one
+ * command shows per-tenant event storage and per-tenant component injection together. {@link #run} reads
+ * top to bottom as the story: tenants known at startup, a tenant added at runtime, an unknown tenant
+ * rejected, a tenant removed, and shutdown.
  */
 public final class DemoLifecycle {
 
@@ -64,8 +65,16 @@ public final class DemoLifecycle {
     /** The tenants known before the application starts. */
     public static final List<TenantDescriptor> KNOWN_TENANTS = List.of(SPRINGFIELD, SHELBYVILLE);
 
-    private static final String COURSE_CS_101 = "cs-101";
-    private static final String COURSE_LAW_200 = "law-200";
+    // Springfield always uses this identifier, and against Axon Server Shelbyville opens a course under the
+    // same identifier to show the two event stores are isolated. Its capacity is the smallest that shows
+    // fill-then-reject.
+    private static final String SHARED_COURSE_ID = "cs-101";
+    private static final int COURSE_CAPACITY = 2;
+    // In memory there is one shared event store, so Shelbyville uses a distinct identifier to avoid
+    // colliding with Springfield's course on that shared store.
+    private static final String SHELBYVILLE_COURSE_ID = "law-200";
+    // The runtime-added tenant uses its own identifier as well.
+    private static final String OGDENVILLE_COURSE_ID = "econ-300";
 
     private DemoLifecycle() {
         // Utility class, not meant to be instantiated.
@@ -81,7 +90,8 @@ public final class DemoLifecycle {
      * @param queryGateway       the gateway statistics are read on
      * @param statisticsProvider the provider of the per-tenant course-statistics stores
      * @param auditProvider      the provider of the per-tenant audit logs
-     * @param provisioning       how this run adds and removes tenants (in memory or against Axon Server)
+     * @param provisioning       how this run adds and removes tenants, and whether it has a per-tenant
+     *                           event store (in memory or against Axon Server)
      * @param shutdown           shuts the started application down, which is where the framework closes
      *                           every remaining tenant's instances (the configuration or Spring context)
      * @return the observed outcome of the demo run
@@ -102,8 +112,10 @@ public final class DemoLifecycle {
         provisioning.prepareKnownTenants();
         logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statisticsProvider));
 
-        // 1. Enroll students in the tenants known at startup and show each tenant sees only its own.
-        enrollStudents(commandGateway);
+        // 1. Enroll students in the tenants known at startup. Each enrollment both appends to the tenant's
+        // own event store and updates that tenant's components, and against Axon Server the same course
+        // identifier in two tenants shows the event stores are isolated.
+        EventStorageOutcome eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());
         logTenantView("Springfield University", queryGateway, SPRINGFIELD);
         logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
@@ -121,30 +133,72 @@ public final class DemoLifecycle {
 
         // 5. Shutting down closes every remaining tenant's instances.
         return shutDownAndBuildOutcome(shutdown, queryGateway, statisticsProvider, auditProvider,
-                                       unknownTenantRejected, shelbyvilleClosedOnRemoval);
+                                       unknownTenantRejected, shelbyvilleClosedOnRemoval, eventStorage);
     }
 
     /**
-     * Enrolls students in the tenants known at startup. Each command is routed to the handler with both
-     * the tenant's {@link CourseStatisticsStore} and its {@link AuditLog} injected, matched by type.
+     * Enrolls students in the tenants known at startup and returns what the per-tenant event storage
+     * showed. Each enrollment is one command that both appends to the tenant's own event store, through the
+     * event-sourced course it sources, and updates that tenant's {@link CourseStatisticsStore} and
+     * {@link AuditLog}, injected by type.
+     * <p>
+     * Springfield fills its course to capacity. Shelbyville enrolls into its own course. Against Axon
+     * Server that course carries the same identifier as Springfield's, so it demonstrates event-store
+     * isolation: Shelbyville's enrollment is accepted even though Springfield's identically-named course
+     * is full, and a further enrollment into Springfield's course is rejected as full. In memory there is
+     * no per-tenant event store, so Shelbyville uses a distinct identifier and this isolation is not shown.
+     *
+     * @param commandGateway           the gateway enrollments are sent on
+     * @param hasPerTenantEventStore   whether each tenant has its own event store (only against Axon Server)
+     * @return what the event-storage isolation showed, or {@link EventStorageOutcome#notDemonstrated()} in memory
      */
-    private static void enrollStudents(CommandGateway commandGateway) {
-        Enrollments.enroll(commandGateway, SPRINGFIELD, COURSE_CS_101, "alice");
-        Enrollments.enroll(commandGateway, SPRINGFIELD, COURSE_CS_101, "bob");
-        Enrollments.enroll(commandGateway, SHELBYVILLE, COURSE_LAW_200, "carol");
+    private static EventStorageOutcome enrollStudents(CommandGateway commandGateway, boolean hasPerTenantEventStore) {
+        String shelbyvilleCourseId = hasPerTenantEventStore ? SHARED_COURSE_ID : SHELBYVILLE_COURSE_ID;
+
+        Enrollments.openCourse(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, COURSE_CAPACITY);
+        Enrollments.enroll(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "alice");
+        Enrollments.enroll(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "bob");
+
+        Enrollments.openCourse(commandGateway, SHELBYVILLE, shelbyvilleCourseId, COURSE_CAPACITY);
+        boolean shelbyvilleAccepted = Enrollments.tryEnroll(commandGateway, SHELBYVILLE, shelbyvilleCourseId, "carol");
+
+        return hasPerTenantEventStore
+                ? provePerTenantEventStoreIsolation(commandGateway, shelbyvilleAccepted)
+                : EventStorageOutcome.notDemonstrated();
+    }
+
+    /**
+     * Proves per-tenant event-store isolation, only against Axon Server where each tenant has its own
+     * store. Springfield's course was just filled to capacity, so a further enrollment is rejected,
+     * decided from Springfield's own events, while Shelbyville's identically-named course still accepted
+     * its student. That the same course identifier behaves differently in the two tenants shows their
+     * event stores are isolated.
+     *
+     * @param commandGateway                  the gateway enrollments are sent on
+     * @param shelbyvilleAcceptedSameCourseId whether Shelbyville accepted an enrollment into the same
+     *                                        course identifier Springfield filled
+     * @return the observed event-storage isolation outcome
+     */
+    private static EventStorageOutcome provePerTenantEventStoreIsolation(CommandGateway commandGateway,
+                                                                        boolean shelbyvilleAcceptedSameCourseId) {
+        boolean springfieldRejectedWhenFull =
+                !Enrollments.tryEnroll(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "frank");
+        return EventStorageOutcome.demonstratedWith(springfieldRejectedWhenFull, shelbyvilleAcceptedSameCourseId);
     }
 
     /**
      * Enrolls in a tenant added at runtime, retrying until it is ready. Creating a tenant's context and
      * command bus connector is asynchronous, so the first command can arrive before the connector exists.
-     * A failed attempt fails at dispatch without enrolling, so the enrollment still lands exactly once.
+     * A failed attempt fails at dispatch without enrolling, and opening and enrolling are idempotent, so
+     * the enrollment still lands exactly once.
      */
     private static void enrollWhenTenantReady(CommandGateway commandGateway) {
         Awaitility.await("tenant [" + DemoLifecycle.OGDENVILLE.tenantId() + "] ready for commands")
                   .atMost(Duration.ofSeconds(15))
-                  .ignoreExceptionsMatching(Enrollments::causedByTenantNotResolved)
+                  .ignoreExceptionsMatching(Enrollments::causedByTenantNotReady)
                   .until(() -> {
-                      Enrollments.enroll(commandGateway, DemoLifecycle.OGDENVILLE, COURSE_CS_101, "dan");
+                      Enrollments.openCourse(commandGateway, OGDENVILLE, OGDENVILLE_COURSE_ID, COURSE_CAPACITY);
+                      Enrollments.enroll(commandGateway, OGDENVILLE, OGDENVILLE_COURSE_ID, "dan");
                       return true;
                   });
     }
@@ -166,7 +220,7 @@ public final class DemoLifecycle {
     private static boolean unknownTenantIsRejected(CommandGateway commandGateway) {
         boolean rejected;
         try {
-            Enrollments.enroll(commandGateway, UNKNOWN, COURSE_CS_101, "eve");
+            Enrollments.enroll(commandGateway, UNKNOWN, SHARED_COURSE_ID, "eve");
             rejected = false;
         } catch (RuntimeException e) {
             rejected = Enrollments.causedByTenantNotResolved(e);
@@ -201,7 +255,8 @@ public final class DemoLifecycle {
                                                        TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                                        TenantComponentProvider<AuditLog> auditProvider,
                                                        boolean unknownTenantRejected,
-                                                       boolean shelbyvilleClosedOnRemoval) {
+                                                       boolean shelbyvilleClosedOnRemoval,
+                                                       EventStorageOutcome eventStorage) {
         // Read the totals through queries while the application is still running.
         TenantStatistics springfield = Enrollments.statistics(queryGateway, SPRINGFIELD);
         int ogdenvilleEnrollments = Enrollments.statistics(queryGateway, OGDENVILLE).totalEnrollments();
@@ -225,7 +280,8 @@ public final class DemoLifecycle {
                                ogdenvilleEnrollments,
                                unknownTenantRejected,
                                shelbyvilleClosedOnRemoval,
-                               allClosedOnShutdown);
+                               allClosedOnShutdown,
+                               eventStorage);
     }
 
     /**

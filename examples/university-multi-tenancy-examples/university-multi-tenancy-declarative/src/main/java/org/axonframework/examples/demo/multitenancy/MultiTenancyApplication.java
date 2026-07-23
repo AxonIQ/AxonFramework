@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.DemoTenantProvider;
@@ -27,7 +28,6 @@ import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
  * This class is only the assembly and the choice of tenant backing. The tenant lifecycle it runs, the
  * feature it demonstrates, lives in {@link DemoLifecycle} in the shared module, so this declarative
  * demo and the Spring Boot demo prove the exact same behavior and differ only in how the application is
- * configured. Here that is {@link UniversityConfiguration} on a {@link MessagingConfigurer}.
+ * configured. Here that is {@link UniversityConfiguration} on an {@link EventSourcingConfigurer}.
  * <p>
  * The same lifecycle runs two ways, selected by the {@code demo.axon-server.enabled} toggle: in memory by
  * default (tenants from a {@link DemoTenantProvider}), or against Axon Server (tenants are real
@@ -76,7 +76,7 @@ public class MultiTenancyApplication {
         TenantComponentProvider<CourseStatisticsStore> statisticsProvider = TenantComponents.courseStatisticsProvider();
         TenantComponentProvider<AuditLog> auditProvider = TenantComponents.auditLogProvider();
 
-        MessagingConfigurer configurer = MessagingConfigurer.create();
+        EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
         UniversityConfiguration.configure(configurer, tenantProvider, statisticsProvider, auditProvider);
         AxonConfiguration configuration = configurer.build();
         configuration.start();
@@ -101,7 +101,7 @@ public class MultiTenancyApplication {
         TenantComponentProvider<CourseStatisticsStore> statisticsProvider = TenantComponents.courseStatisticsProvider();
         TenantComponentProvider<AuditLog> auditProvider = TenantComponents.auditLogProvider();
 
-        MessagingConfigurer configurer = MessagingConfigurer.create();
+        EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
         UniversityConfiguration.configureForAxonServer(configurer, statisticsProvider, auditProvider);
         AxonConfiguration configuration = configurer.build();
         configuration.start();

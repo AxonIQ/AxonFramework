@@ -24,9 +24,9 @@ import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTena
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,9 +34,9 @@ import org.slf4j.LoggerFactory;
 /**
  * The demos' configuration-time guardrail: registering two {@link TenantComponentProvider}s for the
  * same component type makes a handler parameter of that type ambiguous, so the framework refuses to
- * resolve it. This is driven through the normal command-handling path, so it fails exactly where a
- * real application would: registering the {@link EnrollStudentCommandHandler} and starting the
- * configuration triggers handler inspection, which cannot decide which provider feeds the handler's
+ * resolve it. This is driven through the normal handling path, so it fails exactly where a real
+ * application would: registering the {@link TenantStatisticsQueryHandler} and starting the configuration
+ * triggers handler inspection, which cannot decide which provider feeds the handler's
  * {@code @TenantScoped CourseStatisticsStore} parameter.
  * <p>
  * It builds its own throwaway {@link MessagingConfigurer}, so both demos can show the same framework
@@ -51,7 +51,7 @@ public final class ProviderAmbiguityGuardrail {
     }
 
     /**
-     * Builds a throwaway configuration that registers the {@link EnrollStudentCommandHandler} with two
+     * Builds a throwaway configuration that registers the {@link TenantStatisticsQueryHandler} with two
      * providers for its {@code @TenantScoped CourseStatisticsStore} parameter, and checks that building and
      * starting it is rejected because the framework cannot know which provider to inject.
      *
@@ -76,13 +76,13 @@ public final class ProviderAmbiguityGuardrail {
                     .registerComponent(TenantComponentProvider.class, "courseStatisticsB",
                                        config -> TenantComponents.courseStatisticsProvider());
         });
-        // Register the command handler through the normal command-handling path, so its handler
-        // inspection resolves the ambiguous parameter exactly as it would in a real application.
-        configurer.registerCommandHandlingModule(
-                CommandHandlingModule.named("ambiguity-check")
-                                     .commandHandlers()
-                                     .autodetectedCommandHandlingComponent(
-                                             config -> new EnrollStudentCommandHandler()));
+        // Register the query handler through the normal handling path, so its handler inspection resolves
+        // the ambiguous parameter exactly as it would in a real application.
+        configurer.registerQueryHandlingModule(
+                QueryHandlingModule.named("ambiguity-check")
+                                   .queryHandlers()
+                                   .autodetectedQueryHandlingComponent(
+                                           config -> new TenantStatisticsQueryHandler()));
         AxonConfiguration configuration = null;
         try {
             configuration = configurer.build();

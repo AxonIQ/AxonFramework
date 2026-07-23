@@ -58,6 +58,15 @@ public interface TenantProvisioning {
     void removeTenant(TenantDescriptor tenant);
 
     /**
+     * Whether this backing gives each tenant its own event store, which only Axon Server does. The
+     * per-tenant event-storage demonstration of the demo needs this, so the lifecycle reads it to decide
+     * whether to run that demonstration rather than taking a separate flag that could disagree with the backing.
+     *
+     * @return {@code true} against Axon Server, {@code false} in memory
+     */
+    boolean hasPerTenantEventStore();
+
+    /**
      * Provisioning over an in-memory {@link DemoTenantProvider}: tenants are just entries in the
      * provider, with no Axon Server contexts to manage.
      *
@@ -79,6 +88,11 @@ public interface TenantProvisioning {
             @Override
             public void removeTenant(TenantDescriptor tenant) {
                 tenantProvider.removeTenant(tenant);
+            }
+
+            @Override
+            public boolean hasPerTenantEventStore() {
+                return false;
             }
         };
     }
@@ -124,6 +138,11 @@ public interface TenantProvisioning {
             public void removeTenant(TenantDescriptor tenant) {
                 contextManager.deleteContext(tenant.tenantId());
                 awaitTenant(tenantProvider, tenant, false);
+            }
+
+            @Override
+            public boolean hasPerTenantEventStore() {
+                return true;
             }
         };
     }

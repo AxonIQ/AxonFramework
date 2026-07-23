@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.demo.multitenancy.university.write.enroll;
+package org.axonframework.examples.demo.multitenancy.university.write.course;
 
 /**
- * Command enrolling a student in a course. The tenant it belongs to travels in the command's
- * metadata rather than in the payload, so the framework resolves the tenant and the payload stays
- * tenant-agnostic.
+ * Command enrolling a student in a course. The tenant it belongs to travels in the command's metadata
+ * rather than in the payload, so the framework resolves the tenant and the payload stays tenant-agnostic.
+ * <p>
+ * Handling it exercises both multi-tenancy features at once: the event-sourced {@link Course} it sources
+ * and appends to lives in the tenant's own event store, and the tenant's read-model components it updates
+ * are injected for that same tenant.
  *
  * @param courseId  the identifier of the course to enroll in
  * @param studentId the identifier of the enrolling student
