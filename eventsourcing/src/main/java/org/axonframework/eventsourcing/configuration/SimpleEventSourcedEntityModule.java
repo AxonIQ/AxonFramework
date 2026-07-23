@@ -30,6 +30,7 @@ import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
 import org.axonframework.eventsourcing.handler.SimpleEntityLifecycleHandler;
@@ -184,6 +185,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                     @SuppressWarnings("unchecked")
                     CriteriaResolver<ID> criteriaResolver = config.getComponent(CriteriaResolver.class, entityName());
                     EventStore eventStore = config.getComponent(EventStore.class);
+                    TagResolver tagResolver = config.getComponent(TagResolver.class);
                     SnapshotPolicy snapshotPolicy = config.getOptionalComponent(SnapshotPolicy.class, entityName()).orElse(null);
                     EntityLifecycleHandler<ID, E> entityLifecycleHandler;
 
@@ -194,7 +196,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                     );
 
                     if (snapshotPolicy == null) {
-                        entityLifecycleHandler = new SimpleEntityLifecycleHandler<>(eventStore, criteriaResolver, evolver);
+                        entityLifecycleHandler = new SimpleEntityLifecycleHandler<>(eventStore, criteriaResolver, tagResolver, evolver);
                     }
                     else {
                         Converter converter = config.getOptionalComponent(GeneralConverter.class)
@@ -208,6 +210,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                         entityLifecycleHandler = new SnapshottingEntityLifecycleHandler<>(
                             eventStore,
                             criteriaResolver,
+                            tagResolver,
                             evolver,
                             snapshotPolicy,
                             messageType,
