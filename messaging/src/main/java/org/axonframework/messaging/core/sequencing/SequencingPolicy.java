@@ -56,19 +56,19 @@ import java.util.Optional;
 public interface SequencingPolicy<M extends Message> {
 
     /**
-     * Well-known sentinel sequence identifier signaling that a message should be delivered to <b>every</b> segment of
-     * a streaming processor, rather than to the single segment its identifier hashes into.
+     * Well-known sentinel sequence identifier signaling that a message should be handled by <b>every</b> handler
+     * eligible for it, rather than being routed to a single one based on its sequence identifier.
      * <p>
-     * An event whose sequence identifier equals {@code BROADCAST} is delivered to every segment of the processor.
-     * Within each segment, the event is still handled sequentially relative to other events sharing the
-     * {@code BROADCAST} identifier.
+     * When the sequence identifier resolved for a message equals {@code BROADCAST_SEQUENCE_IDENTIFIER}, that message is
+     * delivered to every eligible handler instead of only the one its identifier would otherwise select. Such messages
+     * remain sequenced relative to one another wherever sequencing applies.
      * <p>
-     * Note: This uses a String constant to provide a consistent {@link Object#hashCode()} and
+     * Note: This uses a String constant to provide consistent {@link Object#hashCode()} and
      * {@link Object#equals(Object)} behaviour across JVM restarts.
      *
      * @since 5.3.0
      */
-    Object BROADCAST = "BROADCAST_SEQUENCE_IDENTIFIER";
+    Object BROADCAST_SEQUENCE_IDENTIFIER = "BROADCAST_SEQUENCE_IDENTIFIER";
 
     /**
      * Returns the sequence identifier for the given {@code message}. When two messages have the same identifier (as
