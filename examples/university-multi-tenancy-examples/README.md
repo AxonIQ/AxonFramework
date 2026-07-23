@@ -52,13 +52,12 @@ start.
 ## Axon Server
 
 The Axon Server paths above share one setup, done here once. Each tenant is its own Axon Server
-context, and multiple contexts are an Enterprise Edition feature: without a valid license the server
+context, and multiple contexts are an Enterprise feature: without a valid license the server
 runs a standalone trial that cannot create the per-tenant contexts the demos provision (it rejects them
 with `AXONIQ-1700 Maximum number of contexts reached`).
 
 There are two ways to license the server. Pick the one you have and start matching Docker Compose
-profile from this directory. Both use the Enterprise Edition image and expose the dashboard at
-<http://localhost:8024>. 
+profile from this directory. Both expose the dashboard at <http://localhost:8024>. 
 
 ### Option 1: license file
 

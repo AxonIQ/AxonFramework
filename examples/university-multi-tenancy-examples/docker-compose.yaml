@@ -1,16 +1,15 @@
-# Axon Server for the multi-tenancy demos. One context per tenant is an Enterprise Edition feature, so
+# Axon Server for the multi-tenancy demos. One context per tenant is an Enterprise feature, so
 # the server has to be licensed. There are two ways to license it. Pick the profile that matches what
 # you have. The README explains both in full.
 #
 #   License file: docker compose --profile license up -d
 #   Platform token: docker compose --profile token up -d
 #
-# Both start the same Enterprise Edition server and expose the dashboard at http://localhost:8024.
+# Both start the same server image and expose the dashboard at http://localhost:8024.
 
 x-axon-server: &axon-server
-  # Multiple contexts (one per tenant) are an Enterprise Edition feature, so this uses the Enterprise
-  # Edition image. Without a valid license, the server runs a trial that cannot create the extra
-  # contexts.
+  # Multiple contexts (one per tenant) are an Enterprise feature.
+  # Without a valid license, the server runs a trial that cannot create the extra contexts.
   image: docker.axoniq.io/axoniq/axonserver:2026.0.0
   hostname: axon-server
   ports:
