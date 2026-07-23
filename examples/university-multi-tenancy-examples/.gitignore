@@ -1,0 +1,5 @@
+# Never commit license files
+*.license
+
+# Never commit the Axoniq Platform token (set via AXONIQ_PLATFORM_AUTHENTICATION in .env)
+.env
