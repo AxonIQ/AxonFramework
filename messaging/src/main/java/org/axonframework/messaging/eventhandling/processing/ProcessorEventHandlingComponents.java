@@ -24,6 +24,7 @@ import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -171,6 +172,10 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * into that segment. When {@code segment} is {@code null} (for example, a
      * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor}), handling is
      * not segmented and the component always handles the event.
+     * <p>
+     * When the component's sequence identifier equals {@link SequencingPolicy#BROADCAST_SEQUENCE_IDENTIFIER}, segment
+     * matching is skipped and the component handles the event in every segment, mirroring the admission decision made
+     * while scheduling.
      *
      * @param segment   the {@link Segment} currently handling the event, or {@code null} when handling is not segmented
      * @param component the component that would handle the event
@@ -185,7 +190,11 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
         if (segment == null) {
             return true;
         }
-        return new SegmentMatcher((e, ctx) -> Optional.of(component.sequenceIdentifierFor(e, ctx)))
+        Object sequenceIdentifier = component.sequenceIdentifierFor(event, context);
+        if (SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER.equals(sequenceIdentifier)) {
+            return true;
+        }
+        return new SegmentMatcher((e, ctx) -> Optional.of(sequenceIdentifier))
                 .matches(segment, event, context);
     }
 
