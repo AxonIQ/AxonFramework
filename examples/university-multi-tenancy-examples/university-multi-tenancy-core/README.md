@@ -10,23 +10,30 @@ overview and what the demo shows, see the [parent README](../README.md).
 
 ```
 org.axonframework.examples.demo.multitenancy
-+- university                         the modeled domain
-|  +- component                       the tenant-aware components: CourseStatisticsStore and AuditLog (+ in-memory impls)
-|  +- write/course                    the event-sourced course: Course, OpenCourse + EnrollStudent, events, handler, wiring
-|  +- read/statistics                 the statistics query, its response, and its query handler
-+- shared                             the driving utilities both runnable demos use
-   +- DemoLifecycle                   the tenant lifecycle the demos walk, top to bottom
-   +- TenantComponents                the two TenantComponentProviders
-   +- Enrollments                     opens courses, enrolls, and reads statistics through the gateways
-   +- EventStorageOutcome             what the per-tenant event-storage isolation observed, asserted by the tests
-   +- TenantMetadataFactory           builds the metadata that carries a tenant on a message
-   +- RemoteExceptions                recognizes a handler failure whether raised as itself or reconstructed over Axon Server
-   +- TenantView                      renders one tenant's isolated view
-   +- DemoTenantProvider              an in-memory TenantProvider (the declarative demo's default)
-   +- TenantProvisioning              in-memory vs Axon Server tenant provisioning (and whether it isolates event stores)
-   +- AxonServerTenantContextManager  creates and deletes Axon Server contexts
-   +- ProviderAmbiguityGuardrail      the configuration-time guardrail
-   +- DemoOutcome                     what a run observed, asserted by the demos' tests
++- university                         the modeled domain, organized as vertical slices
+|  +- UniversityTags                  the shared event tag keys (courseId)
+|  +- UniversityModuleConfiguration   registers every slice on an EventSourcingConfigurer
+|  +- events                          the domain events: CourseOpened, StudentEnrolledInCourse
+|  +- write/opencourse                the open-course slice: command, handler (+ its State entity), wiring
+|  +- write/enrollstudent             the enroll-student slice: command, handler (+ its State entity), exceptions, wiring
+|  +- read/statistics                 the statistics read slice: query, response, handler, the CourseStatisticsStore read model, wiring
++- shared                             the demo harness both runnable demos use, grouped by what each part does
+   +- run                             runs the scenario and reports what it observed
+   |  +- DemoLifecycle                the tenant lifecycle the demos walk, top to bottom
+   |  +- DemoOutcome                  what a run observed, asserted by the demos' tests
+   |  +- EventStorageOutcome          what the per-tenant event-storage isolation observed, asserted by the tests
+   |  +- TenantView                   renders one tenant's isolated view
+   |  +- ProviderAmbiguityGuardrail   the configuration-time guardrail
+   +- messaging                       drives the command and query gateways
+   |  +- Enrollments                  opens courses, enrolls, and reads statistics through the gateways
+   |  +- TenantMetadataFactory        builds the metadata that carries a tenant on a message
+   |  +- RemoteExceptions             recognizes a handler failure whether raised as itself or reconstructed over Axon Server
+   +- tenant                          supplies the tenants and their per-tenant components
+   |  +- TenantProvisioning           in-memory vs Axon Server tenant provisioning (and whether it isolates event stores)
+   |  +- DemoTenantProvider           an in-memory TenantProvider (the declarative demo's default)
+   |  +- AxonServerTenantContextManager  creates and deletes Axon Server contexts
+   |  +- TenantComponents             the two TenantComponentProviders
+   +- audit                           the tenant-scoped audit component: AuditLog + its in-memory implementation
 ```
 
 ## The lifecycle

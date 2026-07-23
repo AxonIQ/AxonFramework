@@ -16,8 +16,6 @@
 
 package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatistics;
-
 import java.util.List;
 
 /**

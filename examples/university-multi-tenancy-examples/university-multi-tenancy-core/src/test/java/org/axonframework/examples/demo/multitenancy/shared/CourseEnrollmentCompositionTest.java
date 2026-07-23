@@ -17,6 +17,7 @@
 package org.axonframework.examples.demo.multitenancy.shared;
 
 import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
+import io.axoniq.framework.messaging.multitenancy.api.MetadataBasedTenantResolver;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
@@ -24,14 +25,16 @@ import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTena
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatistics;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
-import org.axonframework.examples.demo.multitenancy.university.write.course.CourseConfiguration;
-import org.axonframework.examples.demo.multitenancy.university.write.course.CourseFullException;
-import org.axonframework.examples.demo.multitenancy.university.write.course.CourseNotOpenException;
-import org.axonframework.examples.demo.multitenancy.university.write.course.EnrollStudent;
-import org.axonframework.examples.demo.multitenancy.university.write.course.OpenCourse;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatistics;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseNotOpenException;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudent;
+import org.axonframework.examples.demo.multitenancy.university.write.opencourse.OpenCourse;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.Metadata;
 import org.junit.jupiter.api.AfterEach;
@@ -71,19 +74,15 @@ class CourseEnrollmentCompositionTest {
         TenantProvider tenantProvider = new DemoTenantProvider(TENANT);
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        CourseConfiguration.configure(configurer)
-                           .componentRegistry(registry -> {
-                               MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
-                               registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
-                                       .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
-                                       .registerComponent(TenantProvider.class, config -> tenantProvider)
-                                       .registerComponent(TenantComponentProvider.class,
-                                                          "courseStatistics",
-                                                          config -> statisticsProvider)
-                                       .registerComponent(TenantComponentProvider.class,
-                                                          "auditLog",
-                                                          config -> auditProvider);
-                           });
+        UniversityModuleConfiguration.configure(configurer);
+        configurer.componentRegistry(registry -> {
+            MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
+            registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
+                    .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
+                    .registerComponent(TenantProvider.class, config -> tenantProvider)
+                    .registerComponent(TenantComponentProvider.class, "courseStatistics", config -> statisticsProvider)
+                    .registerComponent(TenantComponentProvider.class, "auditLog", config -> auditProvider);
+        });
         configuration = configurer.build();
         configuration.start();
         commandGateway = configuration.getComponent(CommandGateway.class);
@@ -167,7 +166,8 @@ class CourseEnrollmentCompositionTest {
     }
 
     private void send(Object command) {
-        Metadata tenantMetadata = TenantMetadataFactory.forTenant(TENANT);
+        Metadata tenantMetadata = Metadata.with(MetadataBasedTenantResolver.DEFAULT_TENANT_METADATA_KEY,
+                                                TENANT.tenantId());
         commandGateway.send(command, tenantMetadata)
                       .getResultMessage()
                       .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)

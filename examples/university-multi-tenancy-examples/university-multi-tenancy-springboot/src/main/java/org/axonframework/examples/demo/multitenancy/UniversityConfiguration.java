@@ -19,18 +19,19 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
 import org.axonframework.common.configuration.Module;
-import org.axonframework.examples.demo.multitenancy.shared.TenantComponents;
-import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.course.CourseConfiguration;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
+import org.axonframework.examples.demo.multitenancy.university.write.opencourse.OpenCourseConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * The whole multi-tenancy configuration a Spring Boot developer writes for the feature: declare one
  * {@link TenantComponentProvider} bean per tenant-scoped component type, the statistics query handler,
- * and the event-sourced course modules, as ordinary beans.
+ * and each write slice's modules, as ordinary beans.
  * <p>
  * The multi-tenancy auto-configuration from the Axoniq Framework Spring Boot starter activates the
  * feature (tenants are Axon Server contexts, so it activates only while Axon Server is enabled), picks
@@ -75,25 +76,45 @@ public class UniversityConfiguration {
     }
 
     /**
-     * The event-sourced course entity module, which the starter registers so a course can be sourced from
-     * and appended to its tenant's own event store.
+     * The open-course slice's event-sourced entity module, which the starter registers so a course can be
+     * sourced from its tenant's own event store.
      *
-     * @return the course entity module
+     * @return the open-course entity module
      */
     @Bean
-    public Module courseEntity() {
-        return CourseConfiguration.entityModule();
+    public Module openCourseEntity() {
+        return OpenCourseConfiguration.entityModule();
     }
 
     /**
-     * The course command handling module, holding the handler that opens courses and enrolls students. Its
-     * enrollment handler both appends to the tenant's event store and updates that tenant's
-     * {@code @TenantScoped} components.
+     * The open-course slice's command handling module, holding the handler that opens courses.
      *
-     * @return the course command handling module
+     * @return the open-course command handling module
      */
     @Bean
-    public Module courseCommandHandling() {
-        return CourseConfiguration.commandModule();
+    public Module openCourseCommandHandling() {
+        return OpenCourseConfiguration.commandModule();
+    }
+
+    /**
+     * The enroll-student slice's event-sourced entity module, sourced from and appended to the tenant's
+     * own event store.
+     *
+     * @return the enroll-student entity module
+     */
+    @Bean
+    public Module enrollStudentEntity() {
+        return EnrollStudentConfiguration.entityModule();
+    }
+
+    /**
+     * The enroll-student slice's command handling module, whose handler both appends to the tenant's event
+     * store and updates that tenant's {@code @TenantScoped} components.
+     *
+     * @return the enroll-student command handling module
+     */
+    @Bean
+    public Module enrollStudentCommandHandling() {
+        return EnrollStudentConfiguration.commandModule();
     }
 }

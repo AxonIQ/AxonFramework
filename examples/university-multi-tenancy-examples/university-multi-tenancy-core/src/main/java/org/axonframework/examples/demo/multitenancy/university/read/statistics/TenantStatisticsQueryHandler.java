@@ -17,8 +17,7 @@
 package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
-import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 
 /**

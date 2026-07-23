@@ -16,8 +16,8 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
-import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
-import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuardrail;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
+import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
