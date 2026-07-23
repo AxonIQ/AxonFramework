@@ -43,6 +43,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -70,6 +71,7 @@ class AnnotatedEventSourcedEntityModule<I, E>
     private final Class<I> idType;
     private final Class<E> entityType;
     private final Set<Class<? extends E>> concreteTypes;
+    private final AtomicReference<AnnotatedEntityMetamodel<E>> metamodelCache = new AtomicReference<>();
 
     AnnotatedEventSourcedEntityModule(Class<I> idType, Class<E> entityType) {
         super("AnnotatedEventSourcedEntityModule<%s, %s>".formatted(idType.getName(), entityType.getName()));
@@ -84,7 +86,7 @@ class AnnotatedEventSourcedEntityModule<I, E>
 
         OptionalPhase<I, E> phase = EventSourcedEntityModule
                 .declarative(idType, entityType)
-                .messagingModel((c, b) -> this.buildMetaModel(c))
+                .messagingModel((c, b) -> this.getOrBuildMetamodel(c))
                 .entityFactory(entityFactory(annotationAttributes, concreteTypes))
                 .criteriaResolver(criteriaResolver(annotationAttributes))
                 .entityIdResolver(entityIdResolver(annotationAttributes));
@@ -109,6 +111,10 @@ class AnnotatedEventSourcedEntityModule<I, E>
         }
 
         componentRegistry(cr -> cr.registerModule(phase.build()));
+    }
+
+    private AnnotatedEntityMetamodel<E> getOrBuildMetamodel(Configuration c) {
+        return metamodelCache.updateAndGet(existing -> existing != null ? existing : buildMetaModel(c));
     }
 
     private AnnotatedEntityMetamodel<E> buildMetaModel(Configuration c) {
@@ -153,8 +159,14 @@ class AnnotatedEventSourcedEntityModule<I, E>
         var type = (Class<EntityIdResolverDefinition>) annotationAttributes.get("entityIdResolverDefinition");
         var definition = getConstructorFunctionWithZeroArguments(type).get();
         return c -> {
-            var component = (AnnotatedEntityMetamodel<E>) c.getComponent(EntityMetamodel.class, entityName());
-            return definition.createIdResolver(entityType, idType, component, c);
+            AnnotatedEntityMetamodel<E> annotatedMetamodel = getOrBuildMetamodel(c);
+            EntityMetamodel<E> metamodel = c.getComponent(EntityMetamodel.class, entityName());
+            EntityIdResolver<I> inner = definition.createIdResolver(entityType, idType, metamodel, c);
+            return new RepresentationConvertingEntityIdResolver<>(
+                    inner,
+                    annotatedMetamodel::getExpectedRepresentation,
+                    c.getComponent(MessageConverter.class)
+            );
         };
     }
 
