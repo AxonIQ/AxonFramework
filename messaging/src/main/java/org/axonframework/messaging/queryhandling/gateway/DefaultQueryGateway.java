@@ -22,6 +22,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -57,12 +58,12 @@ public class DefaultQueryGateway implements QueryGateway {
      * The {@link QualifiedName names} for {@link QueryMessage QueryMessages} are resolved
      * through the given {@code nameResolver}.
      *
-     * @param queryBus            The {@link QueryBus} to send queries on.
-     * @param messageTypeResolver The {@link MessageTypeResolver} resolving the
+     * @param queryBus            the {@link QueryBus} to send queries on
+     * @param messageTypeResolver the {@link MessageTypeResolver} resolving the
      *                            {@link QualifiedName names} for
-     *                            {@link QueryMessage QueryMessages} being dispatched on the {@code queryBus}.
-     * @param priorityCalculator  The {@link QueryPriorityCalculator} determining the priority of queries.
-     * @param converter           The converter to use for converting the result of query handling.
+     *                            {@link QueryMessage QueryMessages} being dispatched on the {@code queryBus}
+     * @param priorityCalculator  the {@link QueryPriorityCalculator} determining the priority of queries
+     * @param converter           the converter to use for converting the result of query handling
      */
     public DefaultQueryGateway(QueryBus queryBus,
                                MessageTypeResolver messageTypeResolver,
@@ -80,7 +81,15 @@ public class DefaultQueryGateway implements QueryGateway {
     public <R> CompletableFuture<R> query(Object query,
                                           Class<R> responseType,
                                           @Nullable ProcessingContext context) {
-        QueryMessage queryMessage = asQueryMessage(query);
+        return query(query, responseType, Metadata.emptyInstance(), context);
+    }
+
+    @Override
+    public <R> CompletableFuture<R> query(Object query,
+                                          Class<R> responseType,
+                                          Metadata metadata,
+                                          @Nullable ProcessingContext context) {
+        QueryMessage queryMessage = asQueryMessage(query, metadata);
         MessageStream<QueryResponseMessage> resultStream = queryBus.query(queryMessage, context);
         CompletableFuture<R> resultFuture =
                 resultStream.first()
@@ -104,7 +113,15 @@ public class DefaultQueryGateway implements QueryGateway {
     public <R> CompletableFuture<List<R>> queryMany(Object query,
                                                     Class<R> responseType,
                                                     @Nullable ProcessingContext context) {
-        QueryMessage queryMessage = asQueryMessage(query);
+        return queryMany(query, responseType, Metadata.emptyInstance(), context);
+    }
+
+    @Override
+    public <R> CompletableFuture<List<R>> queryMany(Object query,
+                                                    Class<R> responseType,
+                                                    Metadata metadata,
+                                                    @Nullable ProcessingContext context) {
+        QueryMessage queryMessage = asQueryMessage(query, metadata);
         MessageStream<QueryResponseMessage> resultStream = queryBus.query(queryMessage, context);
         CompletableFuture<List<R>> resultFuture =
                 resultStream.collect(ArrayList::new, (list, message) -> list.add(message.payloadAs(responseType, converter)));
@@ -121,7 +138,15 @@ public class DefaultQueryGateway implements QueryGateway {
     public <R> Publisher<R> streamingQuery(Object query,
                                            Class<R> responseType,
                                            @Nullable ProcessingContext context) {
-        return Mono.fromSupplier(() -> asQueryMessage(query))
+        return streamingQuery(query, responseType, Metadata.emptyInstance(), context);
+    }
+
+    @Override
+    public <R> Publisher<R> streamingQuery(Object query,
+                                           Class<R> responseType,
+                                           Metadata metadata,
+                                           @Nullable ProcessingContext context) {
+        return Mono.fromSupplier(() -> asQueryMessage(query, metadata))
                    .flatMapMany(queryMessage -> FluxUtils.of(queryBus.query(queryMessage, context)))
                    .map(MessageStream.Entry::message)
                    .mapNotNull(m -> m.payloadAs(responseType, converter));
@@ -137,7 +162,16 @@ public class DefaultQueryGateway implements QueryGateway {
                                               Class<R> responseType,
                                               @Nullable ProcessingContext context,
                                               int updateBufferSize) {
-        return subscriptionQuery(query,
+        return subscriptionQuery(query, responseType, Metadata.emptyInstance(), context, updateBufferSize);
+    }
+
+    @Override
+    public <R> Publisher<R> subscriptionQuery(Object query,
+                                              Class<R> responseType,
+                                              Metadata metadata,
+                                              @Nullable ProcessingContext context,
+                                              int updateBufferSize) {
+        return subscriptionQuery(asQueryMessage(query, metadata),
                                  responseType,
                                  m -> m.payloadAs(responseType, converter),
                                  context,
@@ -176,6 +210,10 @@ public class DefaultQueryGateway implements QueryGateway {
         return query instanceof Message message
                 ? new GenericQueryMessage(message)
                 : new GenericQueryMessage(resolveTypeFor(query), query);
+    }
+
+    private QueryMessage asQueryMessage(Object query, Metadata metadata) {
+        return asQueryMessage(query).andMetadata(metadata);
     }
 
     private MessageType resolveTypeFor(Object payload) {
