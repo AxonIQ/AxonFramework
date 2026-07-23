@@ -59,7 +59,7 @@ public interface SequencingPolicy<M extends Message> {
      * Well-known sentinel sequence identifier signaling that a message should be handled by <b>every</b> handler
      * eligible for it, rather than being routed to a single one based on its sequence identifier.
      * <p>
-     * When the sequence identifier resolved for a message equals {@code BROADCAST_SEQUENCE_IDENTIFIER}, that message is
+     * When the sequence identifier resolved for a message equals {@code BROADCAST}, that message is
      * delivered to every eligible handler instead of only the one its identifier would otherwise select. Such messages
      * remain sequenced relative to one another wherever sequencing applies.
      * <p>
@@ -68,7 +68,7 @@ public interface SequencingPolicy<M extends Message> {
      *
      * @since 5.3.0
      */
-    Object BROADCAST_SEQUENCE_IDENTIFIER = "BROADCAST_SEQUENCE_IDENTIFIER";
+    Object BROADCAST = "BROADCAST";
 
     /**
      * Returns the sequence identifier for the given {@code message}. When two messages have the same identifier (as

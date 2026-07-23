@@ -259,7 +259,7 @@ class ProcessorEventHandlingComponentsTest {
             // given a regular component routing to segment 0 and a component using the broadcast sequence identifier
             RecordingEventHandlingComponent regularComponent = recordingComponent("regular", EVENT_NAME, 0);
             RecordingEventHandlingComponent broadcastComponent =
-                    recordingComponent("broadcast", EVENT_NAME, SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER);
+                    recordingComponent("broadcast", EVENT_NAME, SequencingPolicy.BROADCAST);
             testSubject = new ProcessorEventHandlingComponents(List.of(regularComponent, broadcastComponent));
             EventMessage event = EventTestUtils.asEventMessage("payload");
 

@@ -72,7 +72,7 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
      * <p>
      * This implementation will delegate the decision to the {@link EventHandlingComponent}.
      * <p>
-     * When any of the components returns the {@link SequencingPolicy#BROADCAST_SEQUENCE_IDENTIFIER} sequence identifier
+     * When any of the components returns the {@link SequencingPolicy#BROADCAST} sequence identifier
      * for the given {@code eventMessage}, segment matching is skipped and the event is handled by every segment.
      *
      * @param eventMessage The message for which to identify if the processor can handle it.
@@ -108,7 +108,7 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
             }
 
             var sequenceIdentifiers = eventHandlingComponents.sequenceIdentifiersFor(eventMessage, context);
-            if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER)) {
+            if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST)) {
                 return true;
             }
             return sequenceIdentifiers.stream().anyMatch(identifier -> new SegmentMatcher(

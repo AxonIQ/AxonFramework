@@ -340,7 +340,7 @@ class PooledStreamingEventProcessorTest {
             // given a component routing to segment 0 and a component using the broadcast sequence identifier
             var regularComponent = recordingComponent("regular", new QualifiedName(String.class), 0);
             var broadcastComponent = recordingComponent(
-                    "broadcast", new QualifiedName(String.class), SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER);
+                    "broadcast", new QualifiedName(String.class), SequencingPolicy.BROADCAST);
             List<EventHandlingComponent> components = List.of(regularComponent, broadcastComponent);
             withTestSubject(components, c -> c.initialSegmentCount(2));
 

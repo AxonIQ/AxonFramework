@@ -66,7 +66,7 @@ class DefaultWorkPackageEventFilterTest {
     void broadcastSequenceIdentifierMatchesEverySegment() throws Exception {
         //given
         DefaultWorkPackageEventFilter testSubject = testSubjectWith(
-                componentWithSequenceIdentifier(STRING_EVENT_NAME, SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER)
+                componentWithSequenceIdentifier(STRING_EVENT_NAME, SequencingPolicy.BROADCAST)
         );
         EventMessage testEvent = EventTestUtils.asEventMessage("test-payload");
 
@@ -103,7 +103,7 @@ class DefaultWorkPackageEventFilterTest {
         //given
         DefaultWorkPackageEventFilter testSubject = testSubjectWith(
                 componentWithSequenceIdentifier(STRING_EVENT_NAME, "sample-identifier"),
-                componentWithSequenceIdentifier(STRING_EVENT_NAME, SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER)
+                componentWithSequenceIdentifier(STRING_EVENT_NAME, SequencingPolicy.BROADCAST)
         );
         EventMessage testEvent = EventTestUtils.asEventMessage("test-payload");
 
@@ -121,7 +121,7 @@ class DefaultWorkPackageEventFilterTest {
         //given
         QualifiedName unsupportedEventName = new QualifiedName("some.other.Event");
         DefaultWorkPackageEventFilter testSubject = testSubjectWith(
-                componentWithSequenceIdentifier(unsupportedEventName, SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER)
+                componentWithSequenceIdentifier(unsupportedEventName, SequencingPolicy.BROADCAST)
         );
         EventMessage testEvent = EventTestUtils.asEventMessage("test-payload");
 
