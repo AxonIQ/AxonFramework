@@ -23,7 +23,7 @@ import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
@@ -51,7 +51,7 @@ public class DemoRunner implements CommandLineRunner {
 
     private final CommandGateway commandGateway;
     private final QueryGateway queryGateway;
-    private final TenantComponentProvider<CourseStatsStore> statsProvider;
+    private final TenantComponentProvider<CourseStatisticsStore> statisticsProvider;
     private final TenantComponentProvider<AuditLog> auditProvider;
     private final AxonConfiguration axonConfiguration;
     private final ConfigurableApplicationContext applicationContext;
@@ -59,22 +59,22 @@ public class DemoRunner implements CommandLineRunner {
     /**
      * Constructs the runner from the autoconfigured framework and demo beans.
      *
-     * @param commandGateway     the gateway enrolments are sent on
+     * @param commandGateway     the gateway enrollments are sent on
      * @param queryGateway       the gateway statistics are read on
-     * @param statsProvider      the provider of the per-tenant course-statistics stores
+     * @param statisticsProvider the provider of the per-tenant course-statistics stores
      * @param auditProvider      the provider of the per-tenant audit logs
      * @param axonConfiguration  the Axon configuration, to resolve the Axon Server tenant provider from
      * @param applicationContext the context to close when the demo has finished, triggering cleanup
      */
     public DemoRunner(CommandGateway commandGateway,
                       QueryGateway queryGateway,
-                      TenantComponentProvider<CourseStatsStore> statsProvider,
+                      TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                       TenantComponentProvider<AuditLog> auditProvider,
                       AxonConfiguration axonConfiguration,
                       ConfigurableApplicationContext applicationContext) {
         this.commandGateway = commandGateway;
         this.queryGateway = queryGateway;
-        this.statsProvider = statsProvider;
+        this.statisticsProvider = statisticsProvider;
         this.auditProvider = auditProvider;
         this.axonConfiguration = axonConfiguration;
         this.applicationContext = applicationContext;
@@ -86,7 +86,7 @@ public class DemoRunner implements CommandLineRunner {
                     ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType());
         DemoOutcome outcome = DemoLifecycle.run(commandGateway,
                                                 queryGateway,
-                                                statsProvider,
+                                                statisticsProvider,
                                                 auditProvider,
                                                 TenantProvisioning.axonServer(axonConfiguration,
                                                                               DemoLifecycle.KNOWN_TENANTS),

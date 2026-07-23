@@ -41,6 +41,14 @@ public interface AuditLog extends AutoCloseable {
      */
     List<String> entries();
 
+    /**
+     * Indicates whether this audit log has been closed, which happens when its tenant is removed. It lets
+     * the demo observe the framework closing a tenant's per-tenant instances.
+     *
+     * @return {@code true} if this audit log was closed
+     */
+    boolean isClosed();
+
     @Override
     void close();
 }

@@ -18,15 +18,15 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 
 /**
  * Handles the {@link GetTenantStatistics} query, reading back the statistics of the tenant the query
  * carries.
  * <p>
- * Like the enrolment command handler, it declares its per-tenant components as {@link TenantScoped}
- * parameters, here a {@link CourseStatsStore} and an {@link AuditLog}, and the framework injects the
+ * Like the enrollment command handler, it declares its per-tenant components as {@link TenantScoped}
+ * parameters, here a {@link CourseStatisticsStore} and an {@link AuditLog}, and the framework injects the
  * query tenant's instances. It is the read-side proof that the same tenant-aware injection works for
  * query handlers, not only command handlers.
  */
@@ -36,15 +36,15 @@ public class TenantStatisticsQueryHandler {
      * Assembles the current tenant's statistics from its injected course-statistics store and
      * audit log.
      *
-     * @param query      the statistics query being handled
-     * @param statistics the injected course-statistics store of the query's tenant
-     * @param auditLog   the injected audit log of the query's tenant
+     * @param query                 the statistics query being handled
+     * @param courseStatisticsStore the injected course-statistics store of the query's tenant
+     * @param auditLog              the injected audit log of the query's tenant
      * @return the querying tenant's isolated statistics
      */
     @QueryHandler
     public TenantStatistics handle(GetTenantStatistics query,
-                                   @TenantScoped CourseStatsStore statistics,
+                                   @TenantScoped CourseStatisticsStore courseStatisticsStore,
                                    @TenantScoped AuditLog auditLog) {
-        return new TenantStatistics(statistics.statistics(), auditLog.entries().size());
+        return new TenantStatistics(courseStatisticsStore.statistics(), auditLog.entries().size());
     }
 }

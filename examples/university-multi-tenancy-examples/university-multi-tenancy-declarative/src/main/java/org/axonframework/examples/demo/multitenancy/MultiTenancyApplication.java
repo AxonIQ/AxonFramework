@@ -25,7 +25,7 @@ import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuar
 import org.axonframework.examples.demo.multitenancy.shared.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
@@ -73,17 +73,17 @@ public class MultiTenancyApplication {
     public DemoOutcome run() {
         DemoTenantProvider tenantProvider =
                 new DemoTenantProvider(DemoLifecycle.SPRINGFIELD, DemoLifecycle.SHELBYVILLE);
-        TenantComponentProvider<CourseStatsStore> statsProvider = TenantComponents.courseStatsProvider();
+        TenantComponentProvider<CourseStatisticsStore> statisticsProvider = TenantComponents.courseStatisticsProvider();
         TenantComponentProvider<AuditLog> auditProvider = TenantComponents.auditLogProvider();
 
         MessagingConfigurer configurer = MessagingConfigurer.create();
-        UniversityConfiguration.configure(configurer, tenantProvider, statsProvider, auditProvider);
+        UniversityConfiguration.configure(configurer, tenantProvider, statisticsProvider, auditProvider);
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 
         return DemoLifecycle.run(configuration.getComponent(CommandGateway.class),
                                  configuration.getComponent(QueryGateway.class),
-                                 statsProvider,
+                                 statisticsProvider,
                                  auditProvider,
                                  TenantProvisioning.inMemory(tenantProvider),
                                  configuration::shutdown);
@@ -98,17 +98,17 @@ public class MultiTenancyApplication {
      * @return the observed outcome of the demo run
      */
     public DemoOutcome runWithAxonServer() {
-        TenantComponentProvider<CourseStatsStore> statsProvider = TenantComponents.courseStatsProvider();
+        TenantComponentProvider<CourseStatisticsStore> statisticsProvider = TenantComponents.courseStatisticsProvider();
         TenantComponentProvider<AuditLog> auditProvider = TenantComponents.auditLogProvider();
 
         MessagingConfigurer configurer = MessagingConfigurer.create();
-        UniversityConfiguration.configureForAxonServer(configurer, statsProvider, auditProvider);
+        UniversityConfiguration.configureForAxonServer(configurer, statisticsProvider, auditProvider);
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 
         return DemoLifecycle.run(configuration.getComponent(CommandGateway.class),
                                  configuration.getComponent(QueryGateway.class),
-                                 statsProvider,
+                                 statisticsProvider,
                                  auditProvider,
                                  TenantProvisioning.axonServer(configuration, DemoLifecycle.KNOWN_TENANTS),
                                  configuration::shutdown);

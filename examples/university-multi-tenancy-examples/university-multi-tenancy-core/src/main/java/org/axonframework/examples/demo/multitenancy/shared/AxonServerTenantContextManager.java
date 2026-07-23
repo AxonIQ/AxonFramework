@@ -43,9 +43,9 @@ import static io.axoniq.framework.axonserver.connector.api.AxonServerConfigurati
  * out of the application flow. Managing contexts requires a multi-context (Enterprise Edition) Axon
  * Server, so this helper is only used on the Axon Server-backed path.
  */
-public final class AxonServerTenantContexts {
+public final class AxonServerTenantContextManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(AxonServerTenantContexts.class);
+    private static final Logger logger = LoggerFactory.getLogger(AxonServerTenantContextManager.class);
 
     private static final Duration ADMIN_TIMEOUT = Duration.ofSeconds(30);
 
@@ -56,7 +56,7 @@ public final class AxonServerTenantContexts {
      *
      * @param connectionManager the connection manager whose admin channel provisions the contexts
      */
-    public AxonServerTenantContexts(AxonServerConnectionManager connectionManager) {
+    public AxonServerTenantContextManager(AxonServerConnectionManager connectionManager) {
         this.connectionManager = Objects.requireNonNull(connectionManager, "The connection manager must not be null");
     }
 

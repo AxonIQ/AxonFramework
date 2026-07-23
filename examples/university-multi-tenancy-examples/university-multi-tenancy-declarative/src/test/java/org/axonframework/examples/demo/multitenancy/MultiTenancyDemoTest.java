@@ -37,12 +37,12 @@ class MultiTenancyDemoTest {
         // when the demo runs end to end
         DemoOutcome outcome = demo.run();
 
-        // then both of Springfield's components saw only its own two enrolments, matched by type
+        // then both of Springfield's components saw only its own two enrollments, matched by type
         // and isolated from the other tenants
-        assertThat(outcome.springfieldEnrolments()).isEqualTo(2);
+        assertThat(outcome.springfieldEnrollments()).isEqualTo(2);
         assertThat(outcome.springfieldAuditEntries()).isEqualTo(2);
-        // and the tenant added at runtime recorded its own enrolment in isolation
-        assertThat(outcome.ogdenvilleEnrolments()).isEqualTo(1);
+        // and the tenant added at runtime recorded its own enrollment in isolation
+        assertThat(outcome.ogdenvilleEnrollments()).isEqualTo(1);
         // and a command for an unknown tenant was rejected
         assertThat(outcome.unknownTenantRejected()).isTrue();
         // and removing Shelbyville closed its instances

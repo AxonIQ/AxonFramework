@@ -20,16 +20,16 @@ package org.axonframework.examples.demo.multitenancy.shared;
  * What a demo run observed, returned by the run, so the smoke test can assert the outcome through the
  * same entry point a user runs.
  *
- * @param springfieldEnrolments      the enrolments recorded in Springfield's course-statistics store
+ * @param springfieldEnrollments     the enrollments recorded in Springfield's course-statistics store
  * @param springfieldAuditEntries    the entries recorded in Springfield's audit log
- * @param ogdenvilleEnrolments       the enrolments recorded in the runtime-added Ogdenville's store
+ * @param ogdenvilleEnrollments      the enrollments recorded in the runtime-added Ogdenville's store
  * @param unknownTenantRejected      whether a command for an unknown tenant was rejected
  * @param shelbyvilleClosedOnRemoval whether Shelbyville's instances were closed when its tenant was removed
  * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
  */
-public record DemoOutcome(int springfieldEnrolments,
+public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
-                          int ogdenvilleEnrolments,
+                          int ogdenvilleEnrollments,
                           boolean unknownTenantRejected,
                           boolean shelbyvilleClosedOnRemoval,
                           boolean allClosedOnShutdown) {

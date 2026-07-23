@@ -14,16 +14,12 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.demo.multitenancy.university.write.enrol;
-
 /**
- * Command enrolling a student in a course. The tenant it belongs to travels in the command's
- * metadata rather than in the payload, so the framework resolves the tenant and the payload stays
- * tenant-agnostic.
- *
- * @param courseId  the identifier of the course to enrol in
- * @param studentId the identifier of the enrolling student
+ * The enrollment write side: the {@link
+ * org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudent} command and the
+ * handler that records it with the command's tenant's components injected by type.
  */
-public record EnrolStudent(String courseId, String studentId) {
+@NullMarked
+package org.axonframework.examples.demo.multitenancy.university.write.enroll;
 
-}
+import org.jspecify.annotations.NullMarked;

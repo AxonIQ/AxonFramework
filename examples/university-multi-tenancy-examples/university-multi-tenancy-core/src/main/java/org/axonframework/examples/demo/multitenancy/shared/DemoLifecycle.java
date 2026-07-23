@@ -21,12 +21,10 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
-import org.axonframework.examples.demo.multitenancy.university.component.InMemoryAuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.InMemoryCourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.enrol.EnrolStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
@@ -44,9 +42,9 @@ import java.util.function.BooleanSupplier;
  * lives here, and each demo calls it with its own gateways, providers, provisioning, and shutdown.
  * <p>
  * A platform hosts several universities, each an isolated tenant. Enrolling a student is an
- * {@link EnrolStudentCommandHandler} command and reading a tenant's statistics is a
+ * {@link EnrollStudentCommandHandler} command and reading a tenant's statistics is a
  * {@link TenantStatisticsQueryHandler} query. Each carries its tenant in message metadata, and the
- * framework injects that tenant's {@link CourseStatsStore} and {@link AuditLog} into the handler,
+ * framework injects that tenant's {@link CourseStatisticsStore} and {@link AuditLog} into the handler,
  * matched by type. {@link #run} reads top to bottom as the story: tenants known at startup, a tenant
  * added at runtime, an unknown tenant rejected, a tenant removed, and shutdown.
  */
@@ -79,39 +77,39 @@ public final class DemoLifecycle {
      * per-tenant components it reads for the cleanup checks are {@link AutoCloseable}, but the framework
      * closes them on tenant removal and shutdown, so this only reads their state.
      *
-     * @param commandGateway the gateway enrolments are sent on
-     * @param queryGateway   the gateway statistics are read on
-     * @param statsProvider  the provider of the per-tenant course-statistics stores
-     * @param auditProvider  the provider of the per-tenant audit logs
-     * @param provisioning   how this run adds and removes tenants (in memory or against Axon Server)
-     * @param shutdown       shuts the started application down, which is where the framework closes
-     *                       every remaining tenant's instances (the configuration or Spring context)
+     * @param commandGateway     the gateway enrollments are sent on
+     * @param queryGateway       the gateway statistics are read on
+     * @param statisticsProvider the provider of the per-tenant course-statistics stores
+     * @param auditProvider      the provider of the per-tenant audit logs
+     * @param provisioning       how this run adds and removes tenants (in memory or against Axon Server)
+     * @param shutdown           shuts the started application down, which is where the framework closes
+     *                           every remaining tenant's instances (the configuration or Spring context)
      * @return the observed outcome of the demo run
      */
     public static DemoOutcome run(CommandGateway commandGateway,
                                   QueryGateway queryGateway,
-                                  TenantComponentProvider<CourseStatsStore> statsProvider,
+                                  TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                   TenantComponentProvider<AuditLog> auditProvider,
                                   TenantProvisioning provisioning,
                                   Runnable shutdown) {
         Objects.requireNonNull(commandGateway, "The command gateway must not be null");
         Objects.requireNonNull(queryGateway, "The query gateway must not be null");
-        Objects.requireNonNull(statsProvider, "The course-statistics provider must not be null");
+        Objects.requireNonNull(statisticsProvider, "The course-statistics provider must not be null");
         Objects.requireNonNull(auditProvider, "The audit-log provider must not be null");
         Objects.requireNonNull(provisioning, "The tenant provisioning must not be null");
         Objects.requireNonNull(shutdown, "The shutdown action must not be null");
 
         provisioning.prepareKnownTenants();
-        logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statsProvider));
+        logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statisticsProvider));
 
-        // 1. Enrol students in the tenants known at startup and show each tenant sees only its own.
-        enrolStudents(commandGateway);
+        // 1. Enroll students in the tenants known at startup and show each tenant sees only its own.
+        enrollStudents(commandGateway);
         logTenantView("Springfield University", queryGateway, SPRINGFIELD);
         logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
         // 2. Add a tenant at runtime. Its instances materialize on its first command, no config change.
         provisioning.addTenant(OGDENVILLE);
-        enrolWhenTenantReady(commandGateway);
+        enrollWhenTenantReady(commandGateway);
         logTenantView("Ogdenville University (added at runtime)", queryGateway, OGDENVILLE);
 
         // 3. A command for a tenant the application does not know is rejected.
@@ -119,34 +117,34 @@ public final class DemoLifecycle {
 
         // 4. Removing a tenant closes its per-tenant instances.
         boolean shelbyvilleClosedOnRemoval =
-                removingTenantClosesItsInstances(provisioning, statsProvider, auditProvider);
+                removingTenantClosesItsInstances(provisioning, statisticsProvider, auditProvider);
 
         // 5. Shutting down closes every remaining tenant's instances.
-        return shutDownAndBuildOutcome(shutdown, queryGateway, statsProvider, auditProvider,
+        return shutDownAndBuildOutcome(shutdown, queryGateway, statisticsProvider, auditProvider,
                                        unknownTenantRejected, shelbyvilleClosedOnRemoval);
     }
 
     /**
-     * Enrols students in the tenants known at startup. Each command is routed to the handler with both
-     * the tenant's {@link CourseStatsStore} and its {@link AuditLog} injected, matched by type.
+     * Enrolls students in the tenants known at startup. Each command is routed to the handler with both
+     * the tenant's {@link CourseStatisticsStore} and its {@link AuditLog} injected, matched by type.
      */
-    private static void enrolStudents(CommandGateway commandGateway) {
-        Enrolments.enrol(commandGateway, SPRINGFIELD, COURSE_CS_101, "alice");
-        Enrolments.enrol(commandGateway, SPRINGFIELD, COURSE_CS_101, "bob");
-        Enrolments.enrol(commandGateway, SHELBYVILLE, COURSE_LAW_200, "carol");
+    private static void enrollStudents(CommandGateway commandGateway) {
+        Enrollments.enroll(commandGateway, SPRINGFIELD, COURSE_CS_101, "alice");
+        Enrollments.enroll(commandGateway, SPRINGFIELD, COURSE_CS_101, "bob");
+        Enrollments.enroll(commandGateway, SHELBYVILLE, COURSE_LAW_200, "carol");
     }
 
     /**
-     * Enrols in a tenant added at runtime, retrying until it is ready. Creating a tenant's context and
+     * Enrolls in a tenant added at runtime, retrying until it is ready. Creating a tenant's context and
      * command bus connector is asynchronous, so the first command can arrive before the connector exists.
-     * A failed attempt fails at dispatch without enrolling, so the enrolment still lands exactly once.
+     * A failed attempt fails at dispatch without enrolling, so the enrollment still lands exactly once.
      */
-    private static void enrolWhenTenantReady(CommandGateway commandGateway) {
+    private static void enrollWhenTenantReady(CommandGateway commandGateway) {
         Awaitility.await("tenant [" + DemoLifecycle.OGDENVILLE.tenantId() + "] ready for commands")
                   .atMost(Duration.ofSeconds(15))
-                  .ignoreExceptionsMatching(Enrolments::causedByTenantNotResolved)
+                  .ignoreExceptionsMatching(Enrollments::causedByTenantNotResolved)
                   .until(() -> {
-                      Enrolments.enrol(commandGateway, DemoLifecycle.OGDENVILLE, COURSE_CS_101, "dan");
+                      Enrollments.enroll(commandGateway, DemoLifecycle.OGDENVILLE, COURSE_CS_101, "dan");
                       return true;
                   });
     }
@@ -157,21 +155,21 @@ public final class DemoLifecycle {
      */
     private static void logTenantView(String label, QueryGateway queryGateway, TenantDescriptor tenant) {
         if (logger.isInfoEnabled()) {
-            logger.info("{}", TenantView.render(label, Enrolments.statistics(queryGateway, tenant)));
+            logger.info("{}", TenantView.render(label, Enrollments.statistics(queryGateway, tenant)));
         }
     }
 
     /**
-     * Sends an enrolment command for a tenant the application does not know and confirms it is
+     * Sends an enrollment command for a tenant the application does not know and confirms it is
      * rejected, so that no instance is ever built for it.
      */
     private static boolean unknownTenantIsRejected(CommandGateway commandGateway) {
         boolean rejected;
         try {
-            Enrolments.enrol(commandGateway, UNKNOWN, COURSE_CS_101, "eve");
+            Enrollments.enroll(commandGateway, UNKNOWN, COURSE_CS_101, "eve");
             rejected = false;
         } catch (RuntimeException e) {
-            rejected = Enrolments.causedByTenantNotResolved(e);
+            rejected = Enrollments.causedByTenantNotResolved(e);
         }
         logger.info("Command for an unknown tenant rejected: {}", rejected);
         return rejected;
@@ -182,15 +180,13 @@ public final class DemoLifecycle {
      * closed. The per-tenant components are {@link AutoCloseable} and closed by the framework on
      * removal, so this reads their state before and after removing the tenant.
      */
-    // Holds the components to check isClosed() after removal. The framework, not this method, closes them.
-    // The provider always yields the in-memory implementations, so their demo-only isClosed() is reachable.
     private static boolean removingTenantClosesItsInstances(TenantProvisioning provisioning,
-                                                            TenantComponentProvider<CourseStatsStore> statsProvider,
+                                                            TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                                             TenantComponentProvider<AuditLog> auditProvider) {
-        InMemoryCourseStatsStore statistics = (InMemoryCourseStatsStore) statsProvider.componentFor(SHELBYVILLE);
-        InMemoryAuditLog auditLog = (InMemoryAuditLog) auditProvider.componentFor(SHELBYVILLE);
+        CourseStatisticsStore courseStatisticsStore = statisticsProvider.componentFor(SHELBYVILLE);
+        AuditLog auditLog = auditProvider.componentFor(SHELBYVILLE);
         provisioning.removeTenant(SHELBYVILLE);
-        boolean closed = statistics.isClosed() && auditLog.isClosed();
+        boolean closed = courseStatisticsStore.isClosed() && auditLog.isClosed();
         logger.info("Tenant [{}] removed. Its instances are closed: {}", SHELBYVILLE.tenantId(), closed);
         return closed;
     }
@@ -202,31 +198,31 @@ public final class DemoLifecycle {
      */
     private static DemoOutcome shutDownAndBuildOutcome(Runnable shutdown,
                                                        QueryGateway queryGateway,
-                                                       TenantComponentProvider<CourseStatsStore> statsProvider,
+                                                       TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                                        TenantComponentProvider<AuditLog> auditProvider,
                                                        boolean unknownTenantRejected,
                                                        boolean shelbyvilleClosedOnRemoval) {
         // Read the totals through queries while the application is still running.
-        TenantStatistics springfield = Enrolments.statistics(queryGateway, SPRINGFIELD);
-        int ogdenvilleEnrolments = Enrolments.statistics(queryGateway, OGDENVILLE).totalEnrolments();
+        TenantStatistics springfield = Enrollments.statistics(queryGateway, SPRINGFIELD);
+        int ogdenvilleEnrollments = Enrollments.statistics(queryGateway, OGDENVILLE).totalEnrollments();
 
         // Both components of every still-registered tenant should be closed once shutdown cancels the
-        // provider subscriptions. The provider always yields the in-memory implementations.
-        List<InMemoryCourseStatsStore> stores = List.of(
-                (InMemoryCourseStatsStore) statsProvider.componentFor(SPRINGFIELD),
-                (InMemoryCourseStatsStore) statsProvider.componentFor(OGDENVILLE));
-        List<InMemoryAuditLog> auditLogs = List.of(
-                (InMemoryAuditLog) auditProvider.componentFor(SPRINGFIELD),
-                (InMemoryAuditLog) auditProvider.componentFor(OGDENVILLE));
+        // provider subscriptions.
+        List<CourseStatisticsStore> stores = List.of(
+                statisticsProvider.componentFor(SPRINGFIELD),
+                statisticsProvider.componentFor(OGDENVILLE));
+        List<AuditLog> auditLogs = List.of(
+                auditProvider.componentFor(SPRINGFIELD),
+                auditProvider.componentFor(OGDENVILLE));
         shutdown.run();
         boolean allClosedOnShutdown = awaitClosed(() ->
-                stores.stream().allMatch(InMemoryCourseStatsStore::isClosed)
-                        && auditLogs.stream().allMatch(InMemoryAuditLog::isClosed));
+                stores.stream().allMatch(CourseStatisticsStore::isClosed)
+                        && auditLogs.stream().allMatch(AuditLog::isClosed));
         logger.info("Shutdown complete. All remaining tenant instances closed: {}", allClosedOnShutdown);
 
-        return new DemoOutcome(springfield.totalEnrolments(),
+        return new DemoOutcome(springfield.totalEnrollments(),
                                springfield.auditEntries(),
-                               ogdenvilleEnrolments,
+                               ogdenvilleEnrollments,
                                unknownTenantRejected,
                                shelbyvilleClosedOnRemoval,
                                allClosedOnShutdown);
@@ -248,7 +244,7 @@ public final class DemoLifecycle {
         }
     }
 
-    private static List<String> tenantIds(TenantComponentProvider<CourseStatsStore> statsProvider) {
-        return statsProvider.tenants().stream().map(TenantDescriptor::tenantId).toList();
+    private static List<String> tenantIds(TenantComponentProvider<CourseStatisticsStore> statisticsProvider) {
+        return statisticsProvider.tenants().stream().map(TenantDescriptor::tenantId).toList();
     }
 }

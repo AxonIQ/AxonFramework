@@ -1,6 +1,6 @@
 # Multi-Tenancy Demo - Spring Boot Auto-Configuration
 
-Wires the Axoniq Framework 5.3 tenant-aware components feature through Spring Boot auto-configuration.
+Wires the Axoniq Framework tenant-aware components feature through Spring Boot auto-configuration.
 For the feature itself and the core module, see the [parent README](../README.md).
 
 Where the [declarative demo](../university-multi-tenancy-declarative/README.md) wires the feature by
@@ -79,6 +79,6 @@ repository's own CI and locally, where the license is present. The test needs Do
 container). Run it with `mvn verify` (it runs at the `verify` phase).
 
 `MultiTenancyDisabledTest` proves the disable toggle. With `axon.multitenancy.enabled=false`, the
-auto-configuration installs no tenant resolution, so dispatching a tenant-scoped enrolment fails because
+auto-configuration installs no tenant resolution, so dispatching a tenant-scoped enrollment fails because
 its tenant is never resolved. That failure is the observable proof that the feature is fully off. The
 test disables Axon Server as well, so it needs none and runs as an ordinary unit test.

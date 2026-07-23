@@ -29,7 +29,7 @@
     <artifactId>university-multi-tenancy-core</artifactId>
     <name>Axon Example - Multi-Tenancy - Core</name>
     <description>
-        The demo itself: the university model (the per-tenant components, the enrolment command and
+        The demo itself: the university model (the per-tenant components, the enrollment command and
         statistics query with their handlers) and the lifecycle that drives it. This is how
         multi-tenancy works, independent of how it is configured. The declarative and Spring Boot
         modules only add the configuration wiring around this core.

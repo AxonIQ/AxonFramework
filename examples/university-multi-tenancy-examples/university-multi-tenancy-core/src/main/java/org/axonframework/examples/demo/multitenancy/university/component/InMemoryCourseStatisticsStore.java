@@ -26,17 +26,17 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * In-memory {@link CourseStatsStore}, backing the demo without external infrastructure.
+ * In-memory {@link CourseStatisticsStore}, backing the demo without external infrastructure.
  * <p>
  * A real application would back this with the tenant's own datasource. The tenant identifier is
  * carried only so the closing of an instance is visible in the log when its tenant is removed.
  */
-public class InMemoryCourseStatsStore implements CourseStatsStore {
+public class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
 
-    private static final Logger logger = LoggerFactory.getLogger(InMemoryCourseStatsStore.class);
+    private static final Logger logger = LoggerFactory.getLogger(InMemoryCourseStatisticsStore.class);
 
     private final String tenantId;
-    private final ConcurrentMap<String, AtomicInteger> enrolmentsByCourse = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, AtomicInteger> enrollmentsByCourse = new ConcurrentHashMap<>();
     private volatile boolean closed = false;
 
     /**
@@ -44,30 +44,24 @@ public class InMemoryCourseStatsStore implements CourseStatsStore {
      *
      * @param tenantId the identifier of the tenant this store belongs to
      */
-    public InMemoryCourseStatsStore(String tenantId) {
+    public InMemoryCourseStatisticsStore(String tenantId) {
         this.tenantId = Objects.requireNonNull(tenantId, "The tenant id must not be null");
     }
 
     @Override
-    public void recordEnrolment(String courseId) {
-        enrolmentsByCourse.computeIfAbsent(courseId, ignored -> new AtomicInteger()).incrementAndGet();
+    public void recordEnrollment(String courseId) {
+        enrollmentsByCourse.computeIfAbsent(courseId, ignored -> new AtomicInteger()).incrementAndGet();
     }
 
     @Override
     public List<CourseStatistics> statistics() {
-        return enrolmentsByCourse.entrySet()
+        return enrollmentsByCourse.entrySet()
                                  .stream()
                                  .map(entry -> new CourseStatistics(entry.getKey(), entry.getValue().get()))
                                  .toList();
     }
 
-    /**
-     * Returns whether this store has been closed, meaning its tenant was removed. This is demo
-     * instrumentation for observing the framework-driven cleanup, so it lives on the in-memory
-     * implementation rather than on the tenant-aware {@link CourseStatsStore} interface users learn from.
-     *
-     * @return {@code true} if this store was closed
-     */
+    @Override
     public boolean isClosed() {
         return closed;
     }
@@ -75,6 +69,6 @@ public class InMemoryCourseStatsStore implements CourseStatsStore {
     @Override
     public void close() {
         closed = true;
-        logger.info("Closed course-stats store for tenant [{}].", tenantId);
+        logger.info("Closed course-statistics store for tenant [{}].", tenantId);
     }
 }

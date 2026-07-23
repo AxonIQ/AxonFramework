@@ -1,6 +1,6 @@
 # Multi-Tenancy Demo - Declarative Configuration API
 
-Wires the Axoniq Framework 5.3 tenant-aware components feature through the declarative Configuration
+Wires the Axoniq Framework tenant-aware components feature through the declarative Configuration
 API. For the feature itself and the core module, see the [parent README](../README.md).
 
 This demo runs fully in memory by default, so it needs no infrastructure, and can also run against
@@ -41,9 +41,9 @@ configuration-time guardrail.
 The run walks the whole tenant lifecycle (the behaviors listed in the
 [parent README](../README.md#what-the-demo-shows)), and the log shows each step:
 
-* **Multiple component types.** Every tenant view prints both an enrolment count and an audit-entry
+* **Multiple component types.** Every tenant view prints both an enrollment count and an audit-entry
   count, so both providers are injected, each matched by type.
-* **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrolments.
+* **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
 * **Unknown tenant rejected.** A command for a tenant the application does not know fails with a

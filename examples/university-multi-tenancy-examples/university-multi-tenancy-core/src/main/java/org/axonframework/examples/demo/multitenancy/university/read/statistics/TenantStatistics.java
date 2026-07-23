@@ -21,21 +21,21 @@ import org.axonframework.examples.demo.multitenancy.university.component.CourseS
 import java.util.List;
 
 /**
- * One tenant's isolated read model: its enrolment count per course and the size of its audit trail.
+ * One tenant's isolated read model: its enrollment count per course and the size of its audit trail.
  * Because it is assembled from the tenant's own injected components, it only ever contains that
  * tenant's data, which is what makes the isolation between tenants observable.
  *
- * @param perCourse    the enrolment count per course for this tenant
+ * @param perCourse    the enrollment count per course for this tenant
  * @param auditEntries the number of audit entries recorded for this tenant
  */
 public record TenantStatistics(List<CourseStatistics> perCourse, int auditEntries) {
 
     /**
-     * Returns the total number of enrolments recorded across all of this tenant's courses.
+     * Returns the total number of enrollments recorded across all of this tenant's courses.
      *
-     * @return the total number of enrolments for this tenant
+     * @return the total number of enrollments for this tenant
      */
-    public int totalEnrolments() {
-        return perCourse.stream().mapToInt(CourseStatistics::enrolments).sum();
+    public int totalEnrollments() {
+        return perCourse.stream().mapToInt(CourseStatistics::enrollments).sum();
     }
 }

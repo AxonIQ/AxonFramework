@@ -53,13 +53,7 @@ public class InMemoryAuditLog implements AuditLog {
         return List.copyOf(entries);
     }
 
-    /**
-     * Returns whether this audit log has been closed, meaning its tenant was removed. This is demo
-     * instrumentation for observing the framework-driven cleanup, so it lives on the in-memory
-     * implementation rather than on the tenant-aware {@link AuditLog} interface users learn from.
-     *
-     * @return {@code true} if this audit log was closed
-     */
+    @Override
     public boolean isClosed() {
         return closed;
     }

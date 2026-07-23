@@ -21,7 +21,7 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantNotResolvedException;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.GetTenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
-import org.axonframework.examples.demo.multitenancy.university.write.enrol.EnrolStudent;
+import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudent;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
@@ -29,40 +29,39 @@ import org.axonframework.messaging.queryhandling.GenericQueryMessage;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Drives the university through its command and query gateways, hiding the demo's messaging behind a
- * few verbs. Each enrolment is an {@link EnrolStudent} command and each read a {@link
+ * few verbs. Each enrollment is an {@link EnrollStudent} command and each read a {@link
  * GetTenantStatistics} query, both carrying their tenant in metadata under {@link
  * MetadataBasedTenantResolver#DEFAULT_TENANT_METADATA_KEY}. That metadata is how the framework routes
  * the message to the right tenant's components, so neither the payloads nor this class ever name a
  * tenant field.
  */
-public final class Enrolments {
+public final class Enrollments {
 
     private static final long TIMEOUT_SECONDS = 5;
 
-    private Enrolments() {
+    private Enrollments() {
         // Utility class, not meant to be instantiated.
     }
 
     /**
-     * Enrols a student by sending an {@link EnrolStudent} command for the given {@code tenant}, and
+     * Enrolls a student by sending an {@link EnrollStudent} command for the given {@code tenant}, and
      * blocks until it has been handled. The command handler receives that tenant's components, so the
-     * enrolment lands in the right tenant's read model.
+     * enrollment lands in the right tenant's read model.
      *
      * @param commandGateway the gateway to send the command on
-     * @param tenant         the tenant the enrolment belongs to
+     * @param tenant         the tenant the enrollment belongs to
      * @param courseId       the course enrolled in
      * @param studentId      the student enrolling
      */
-    public static void enrol(CommandGateway commandGateway,
+    public static void enroll(CommandGateway commandGateway,
                              TenantDescriptor tenant,
                              String courseId,
                              String studentId) {
-        commandGateway.send(new EnrolStudent(courseId, studentId), tenantMetadata(tenant))
+        commandGateway.send(new EnrollStudent(courseId, studentId), tenantMetadata(tenant))
                       .getResultMessage()
                       .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                       .join();
@@ -80,7 +79,7 @@ public final class Enrolments {
     public static TenantStatistics statistics(QueryGateway queryGateway, TenantDescriptor tenant) {
         QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
                                                      new GetTenantStatistics())
-                .andMetadata(Map.of(MetadataBasedTenantResolver.DEFAULT_TENANT_METADATA_KEY, tenant.tenantId()));
+                .andMetadata(tenantMetadata(tenant));
         return queryGateway.query(query, TenantStatistics.class)
                            .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                            .join();
