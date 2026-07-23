@@ -20,6 +20,7 @@ tenant's instance into each message handler, so a handler never resolves a tenan
   `_admin` context filtered out so it never becomes a tenant.
 * **The disable switch** (Spring Boot): setting `axon.multitenancy.enabled=false` turns the whole
   feature off.
+* **Tenant-scoped command distribution** dispatching commands via the tenants own Axon Server context
 * **Two configuration styles** produce the same result: the declarative Configuration API and Spring
   Boot autoconfiguration.
 
@@ -86,7 +87,7 @@ The server connects to Axoniq Platform under a demo-specific node name
 (`university-multitenancy-demo`), so it does not clash with any other Axon Server registered in your
 workspace. If the logs show `Node names must be unique` and the server never gets licensed, that name is
 already taken in your workspace (usually a leftover from an earlier run that did not shut down cleanly).
-Either remove that node from your workspace at <https://platform.axoniq.io/workspace/>or set a
+Either remove that node from your workspace at <https://platform.axoniq.io/workspace/> or set a
 different `AXONIQ_AXONSERVER_NAME` in your `.env` file. A node name is tied to the server's stored data,
 so after changing it start fresh with `docker compose --profile token down -v` before `up`.
 
