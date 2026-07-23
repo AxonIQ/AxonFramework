@@ -19,27 +19,35 @@ package org.axonframework.examples.demo.multitenancy.university.component;
 import java.util.List;
 
 /**
- * A tenant-scoped read model holding course enrolment statistics for a single tenant.
+ * A tenant-scoped read model holding course enrollment statistics for a single tenant.
  * <p>
  * One instance exists per tenant. Message handlers never look a tenant up: they declare this type
  * as a parameter, and the framework injects the instance belonging to the tenant of the message
  * being handled. Being {@link AutoCloseable}, the instance is closed when its tenant is removed.
  */
-public interface CourseStatsStore extends AutoCloseable {
+public interface CourseStatisticsStore extends AutoCloseable {
 
     /**
-     * Records one enrolment for the given {@code courseId}.
+     * Records one enrollment for the given {@code courseId}.
      *
-     * @param courseId the identifier of the course to record an enrolment for
+     * @param courseId the identifier of the course to record an enrollment for
      */
-    void recordEnrolment(String courseId);
+    void recordEnrollment(String courseId);
 
     /**
-     * Returns the enrolment statistics per course held for this tenant.
+     * Returns the enrollment statistics per course held for this tenant.
      *
-     * @return the enrolment statistics per course
+     * @return the enrollment statistics per course
      */
     List<CourseStatistics> statistics();
+
+    /**
+     * Indicates whether this store has been closed, which happens when its tenant is removed. It lets the
+     * demo observe the framework closing a tenant's per-tenant instances.
+     *
+     * @return {@code true} if this store was closed
+     */
+    boolean isClosed();
 
     @Override
     void close();

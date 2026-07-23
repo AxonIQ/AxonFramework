@@ -19,6 +19,7 @@ package org.axonframework.examples.demo.multitenancy.shared;
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
 
@@ -88,7 +89,7 @@ public interface TenantProvisioning {
      * tenant set the run walks through.
      * <p>
      * The tenants themselves are discovered, not declared: the default auto-discovering
-     * {@code AxonServerTenantProvider} resolved from the started {@code configuration} watches Axon
+     * {@link AxonServerTenantProvider} resolved from the started {@code configuration} watches Axon
      * Server's contexts and registers each as a tenant, applying its connect predicate. That predicate
      * filters out the {@code _admin} context, so it never becomes a tenant. Because discovery is
      * asynchronous, each operation here waits until the provider reflects it before returning, keeping
@@ -100,28 +101,28 @@ public interface TenantProvisioning {
      */
     static TenantProvisioning axonServer(AxonConfiguration configuration, List<TenantDescriptor> knownTenants) {
         TenantProvider tenantProvider = configuration.getComponent(TenantProvider.class);
-        AxonServerTenantContexts contexts =
-                new AxonServerTenantContexts(configuration.getComponent(AxonServerConnectionManager.class));
+        AxonServerTenantContextManager contextManager =
+                new AxonServerTenantContextManager(configuration.getComponent(AxonServerConnectionManager.class));
         return new TenantProvisioning() {
             @Override
             public void prepareKnownTenants() {
                 knownTenants.forEach(tenant -> {
-                    contexts.createContextIfAbsent(tenant.tenantId());
+                    contextManager.createContextIfAbsent(tenant.tenantId());
                     awaitTenant(tenantProvider, tenant, true);
                 });
                 // Show that _admin exists as a context on the server but is filtered out, so it is not a tenant.
-                contexts.logDiscoveredTenants(tenantProvider.tenants());
+                contextManager.logDiscoveredTenants(tenantProvider.tenants());
             }
 
             @Override
             public void addTenant(TenantDescriptor tenant) {
-                contexts.createContextIfAbsent(tenant.tenantId());
+                contextManager.createContextIfAbsent(tenant.tenantId());
                 awaitTenant(tenantProvider, tenant, true);
             }
 
             @Override
             public void removeTenant(TenantDescriptor tenant) {
-                contexts.deleteContext(tenant.tenantId());
+                contextManager.deleteContext(tenant.tenantId());
                 awaitTenant(tenantProvider, tenant, false);
             }
         };

@@ -25,9 +25,9 @@ import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConf
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.enrol.EnrolStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
@@ -37,7 +37,7 @@ import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModu
  * Configuration API's equivalent of what Spring Boot auto-configuration does for the Spring Boot demo.
  * <p>
  * This is the whole configuration a developer writes for the feature: register one
- * {@link TenantComponentProvider} per tenant-scoped component type, and register the enrolment command
+ * {@link TenantComponentProvider} per tenant-scoped component type, and register the enrollment command
  * handler and statistics query handler as ordinary handling components that mark their per-tenant
  * parameters {@link io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped}. From there the
  * framework hands each handler the components of the message's tenant, each matched by type, without
@@ -52,7 +52,7 @@ public final class UniversityConfiguration {
     /**
      * Registers the in-memory tenant-aware wiring on the given {@code configurer}: the
      * {@link TenantProvider} supplying the tenants, one {@link TenantComponentProvider} per
-     * tenant-scoped component type, and the enrolment command handler and statistics query handler.
+     * tenant-scoped component type, and the enrollment command handler and statistics query handler.
      * <p>
      * The {@link MultiTenancyConfigurationDefaults} enhancer, which installs the tenant parameter
      * resolver and subscribes the providers, only runs when multi-tenancy is enabled, so this method
@@ -60,14 +60,14 @@ public final class UniversityConfiguration {
      * Axon Server configuration enhancer is disabled and the {@code tenantProvider} is registered
      * explicitly, so the demo runs fully in memory.
      *
-     * @param configurer     the configurer to extend
-     * @param tenantProvider the provider of the application's tenants
-     * @param statsProvider  the provider of the per-tenant course-statistics stores
-     * @param auditProvider  the provider of the per-tenant audit logs
+     * @param configurer         the configurer to extend
+     * @param tenantProvider     the provider of the application's tenants
+     * @param statisticsProvider the provider of the per-tenant course-statistics stores
+     * @param auditProvider      the provider of the per-tenant audit logs
      */
     public static void configure(MessagingConfigurer configurer,
                                  TenantProvider tenantProvider,
-                                 TenantComponentProvider<CourseStatsStore> statsProvider,
+                                 TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                  TenantComponentProvider<AuditLog> auditProvider) {
         configurer.componentRegistry(registry -> {
             MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
@@ -75,14 +75,14 @@ public final class UniversityConfiguration {
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
                     .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
                     .registerComponent(TenantProvider.class, config -> tenantProvider);
-            registerTenantComponents(registry, statsProvider, auditProvider);
+            registerTenantComponents(registry, statisticsProvider, auditProvider);
         });
         registerHandlers(configurer);
     }
 
     /**
      * Registers the Axon Server backed tenant-aware wiring on the given {@code configurer}: one
-     * {@link TenantComponentProvider} per tenant-scoped component type and the enrolment command handler
+     * {@link TenantComponentProvider} per tenant-scoped component type and the enrollment command handler
      * and statistics query handler.
      * <p>
      * The difference with {@link #configure(MessagingConfigurer, TenantProvider, TenantComponentProvider,
@@ -93,19 +93,19 @@ public final class UniversityConfiguration {
      * queries still carry their tenant in metadata exactly as in the in-memory setup, so the framework
      * injects each context's per-tenant components.
      *
-     * @param configurer    the configurer to extend
-     * @param statsProvider the provider of the per-tenant course-statistics stores
-     * @param auditProvider the provider of the per-tenant audit logs
+     * @param configurer         the configurer to extend
+     * @param statisticsProvider the provider of the per-tenant course-statistics stores
+     * @param auditProvider      the provider of the per-tenant audit logs
      */
     public static void configureForAxonServer(MessagingConfigurer configurer,
-                                              TenantComponentProvider<CourseStatsStore> statsProvider,
+                                              TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                               TenantComponentProvider<AuditLog> auditProvider) {
         configurer.componentRegistry(registry -> {
             MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
             // Leave the Axon Server enhancer enabled, so the multi-tenancy enhancer registers its default
             // auto-discovering AxonServerTenantProvider and tenants are discovered from Axon Server's
             // contexts rather than declared up front.
-            registerTenantComponents(registry, statsProvider, auditProvider);
+            registerTenantComponents(registry, statisticsProvider, auditProvider);
         });
         registerHandlers(configurer);
     }
@@ -118,19 +118,19 @@ public final class UniversityConfiguration {
      * why one provider per component type is fine, while two providers for the same type make a
      * parameter of that type ambiguous.
      *
-     * @param registry      the registry to register the providers on
-     * @param statsProvider the provider of the per-tenant course-statistics stores
-     * @param auditProvider the provider of the per-tenant audit logs
+     * @param registry           the registry to register the providers on
+     * @param statisticsProvider the provider of the per-tenant course-statistics stores
+     * @param auditProvider      the provider of the per-tenant audit logs
      */
     private static void registerTenantComponents(ComponentRegistry registry,
-                                                 TenantComponentProvider<CourseStatsStore> statsProvider,
+                                                 TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                                  TenantComponentProvider<AuditLog> auditProvider) {
-        registry.registerComponent(TenantComponentProvider.class, "courseStats", config -> statsProvider)
+        registry.registerComponent(TenantComponentProvider.class, "courseStatistics", config -> statisticsProvider)
                 .registerComponent(TenantComponentProvider.class, "auditLog", config -> auditProvider);
     }
 
     /**
-     * Registers the enrolment command handler and the statistics query handler as annotation-based
+     * Registers the enrollment command handler and the statistics query handler as annotation-based
      * handling components. The tenant-descriptor interceptor the multi-tenancy enhancer installs runs
      * for command and query handlers, so both have their tenant resolved from the message metadata and
      * their {@code @TenantScoped} parameters injected with that tenant's per-tenant components, matched
@@ -140,10 +140,10 @@ public final class UniversityConfiguration {
      */
     private static void registerHandlers(MessagingConfigurer configurer) {
         configurer.registerCommandHandlingModule(
-                          CommandHandlingModule.named("enrolment")
+                          CommandHandlingModule.named("enrollment")
                                                .commandHandlers()
                                                .autodetectedCommandHandlingComponent(
-                                                       config -> new EnrolStudentCommandHandler()))
+                                                       config -> new EnrollStudentCommandHandler()))
                   .registerQueryHandlingModule(
                           QueryHandlingModule.named("tenant-statistics")
                                              .queryHandlers()

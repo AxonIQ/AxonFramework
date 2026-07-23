@@ -20,9 +20,9 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
-import org.axonframework.examples.demo.multitenancy.university.write.enrol.EnrolStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -43,13 +43,13 @@ import org.springframework.context.annotation.Configuration;
 public class UniversityConfiguration {
 
     /**
-     * The provider of per-tenant {@link CourseStatsStore} instances.
+     * The provider of per-tenant {@link CourseStatisticsStore} instances.
      *
      * @return the tenant-scoped course-statistics provider
      */
     @Bean
-    public TenantComponentProvider<CourseStatsStore> courseStatsProvider() {
-        return TenantComponents.courseStatsProvider();
+    public TenantComponentProvider<CourseStatisticsStore> courseStatisticsProvider() {
+        return TenantComponents.courseStatisticsProvider();
     }
 
     /**
@@ -63,14 +63,14 @@ public class UniversityConfiguration {
     }
 
     /**
-     * The enrolment command handler, whose {@code @TenantScoped} parameters the framework injects with
+     * The enrollment command handler, whose {@code @TenantScoped} parameters the framework injects with
      * the message tenant's per-tenant components, matched by type.
      *
-     * @return the enrolment command handler
+     * @return the enrollment command handler
      */
     @Bean
-    public EnrolStudentCommandHandler enrolStudentCommandHandler() {
-        return new EnrolStudentCommandHandler();
+    public EnrollStudentCommandHandler enrollStudentCommandHandler() {
+        return new EnrollStudentCommandHandler();
     }
 
     /**

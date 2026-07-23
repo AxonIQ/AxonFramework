@@ -1,6 +1,6 @@
 # Axoniq Framework Multi-Tenancy Demos
 
-A runnable demonstration of Axoniq Framework 5.3's multi-tenancy support, shown two ways: wired through
+A runnable demonstration of Axoniq Framework's multi-tenancy support, shown two ways: wired through
 the declarative Configuration API and through Spring Boot autoconfiguration.
 
 ## What the demo shows
@@ -28,7 +28,7 @@ tenant's instance into each message handler, so a handler never resolves a tenan
 
 | Module | What it adds |
 |---|---|
-| [`university-multi-tenancy-core`](university-multi-tenancy-core/README.md) | The demo itself: the university model (enrolment command, statistics query, their handlers, the two per-tenant components) and the `DemoLifecycle` that drives it. This is how multi-tenancy works, without any configuration wiring. It is a library, not runnable on its own. |
+| [`university-multi-tenancy-core`](university-multi-tenancy-core/README.md) | The demo itself: the university model (enrollment command, statistics query, their handlers, the two per-tenant components) and the `DemoLifecycle` that drives it. This is how multi-tenancy works, without any configuration wiring. It is a library, not runnable on its own. |
 | [`university-multi-tenancy-declarative`](university-multi-tenancy-declarative/README.md) | Runs the core against the declarative Configuration API wiring. In memory by default, or against Axon Server with a toggle. |
 | [`university-multi-tenancy-springboot`](university-multi-tenancy-springboot/README.md) | Runs the core against Spring Boot auto-configuration wiring. Against Axon Server, which is where that auto-configuration activates multi-tenancy. |
 
@@ -65,7 +65,7 @@ Use this if you have an Axon Server license file that allows running disconnecte
 
 1. Place your license file next to this README as `axon-server.license` (it is git-ignored).
 2. Run `docker compose --profile license up -d`. The compose file mounts the license into the server.
-3. Verify if axon-server is running with the correct enterprise license by visiting <http://localhost:8024/utilities/license> in your browser.
+3. Verify if Axon Server is running with the correct enterprise license by visiting <http://localhost:8024/utilities/license> in your browser.
 
 ### Option 2: Axoniq Platform authentication token
 
@@ -80,7 +80,7 @@ Server download page:
    ```
    (Or export `AXONIQ_PLATFORM_AUTHENTICATION` in your shell.)
 2. Run `docker compose --profile token up -d`.
-3. Verify if axon-server is running with the correct enterprise license by visiting <http://localhost:8024/utilities/license> in your browser.
+3. Verify if Axon Server is running with the correct enterprise license by visiting <http://localhost:8024/utilities/license> in your browser.
 
 The server connects to Axoniq Platform under a demo-specific node name
 (`university-multitenancy-demo`), so it does not clash with any other Axon Server registered in your

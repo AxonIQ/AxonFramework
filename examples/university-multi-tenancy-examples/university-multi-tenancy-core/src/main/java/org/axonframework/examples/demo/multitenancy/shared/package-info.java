@@ -17,9 +17,9 @@
 /**
  * Driving utilities shared by both multi-tenancy demos: enrolling students and reading their
  * statistics back through the message gateways ({@link
- * org.axonframework.examples.demo.multitenancy.shared.Enrolments}), rendering a tenant's isolated view
+ * org.axonframework.examples.demo.multitenancy.shared.Enrollments}), rendering a tenant's isolated view
  * ({@link org.axonframework.examples.demo.multitenancy.shared.TenantView}), provisioning Axon Server
- * contexts ({@link org.axonframework.examples.demo.multitenancy.shared.AxonServerTenantContexts}), and
+ * contexts ({@link org.axonframework.examples.demo.multitenancy.shared.AxonServerTenantContextManager}), and
  * the observed-outcome record ({@link org.axonframework.examples.demo.multitenancy.shared.DemoOutcome}).
  * Both the declarative and the Spring Boot demo drive the same lifecycle through these.
  */

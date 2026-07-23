@@ -37,13 +37,17 @@ jobs:
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
 
+      # Security: this workflow MUST stay on the `pull_request` trigger and never move to
+      # `pull_request_target`. GitHub withholds repository secrets from fork pull requests on
+      # `pull_request`, so the license is only ever written for same-repository runs. The license
+      # content is never echoed, and the file it writes to is git-ignored.
       - name: Write Axon Server test license
         env:
           AXON_SERVER_LICENSE: ${{ secrets.AXON_SERVER_LICENSE }}
         run: |
           if [ -n "$AXON_SERVER_LICENSE" ]; then
             printf '%s' "$AXON_SERVER_LICENSE" > examples/university-multi-tenancy-examples/axon-server.license
-            echo "Axon Server test license written ($(wc -c < examples/university-multi-tenancy-examples/axon-server.license) bytes)."
+            echo "Axon Server test license written."
           else
             echo "No Axon Server license secret available (e.g. a fork PR); the multi-tenancy integration test will skip itself."
           fi

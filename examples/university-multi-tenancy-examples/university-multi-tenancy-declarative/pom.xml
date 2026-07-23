@@ -29,7 +29,7 @@
     <artifactId>university-multi-tenancy-declarative</artifactId>
     <name>Axon Example - Multi-Tenancy - Declarative</name>
     <description>
-        Demonstrates the Axoniq Framework 5.3 tenant-aware components feature wired through the
+        Demonstrates the Axoniq Framework tenant-aware components feature wired through the
         declarative Configuration API: a per-tenant component is registered once and the correct
         tenant's instance is provided to message handling, with the full tenant lifecycle of replay,
         runtime add, remove, and cleanup.
@@ -67,11 +67,22 @@
             <artifactId>axoniq-multi-tenancy</artifactId>
         </dependency>
 
-        <!-- Logging Dependencies -->
+        <!-- Logging Dependencies: Log4j2 over SLF4J, the single logging solution the examples share. -->
         <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j2-impl</artifactId>
+            <version>${log4j.version}</version>
             <scope>runtime</scope>
         </dependency>
 

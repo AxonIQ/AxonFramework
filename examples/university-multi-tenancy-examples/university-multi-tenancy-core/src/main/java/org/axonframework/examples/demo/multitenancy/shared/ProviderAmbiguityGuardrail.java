@@ -24,7 +24,7 @@ import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTena
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.examples.demo.multitenancy.university.write.enrol.EnrolStudentCommandHandler;
+import org.axonframework.examples.demo.multitenancy.university.write.enroll.EnrollStudentCommandHandler;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.jspecify.annotations.Nullable;
@@ -35,9 +35,9 @@ import org.slf4j.LoggerFactory;
  * The demos' configuration-time guardrail: registering two {@link TenantComponentProvider}s for the
  * same component type makes a handler parameter of that type ambiguous, so the framework refuses to
  * resolve it. This is driven through the normal command-handling path, so it fails exactly where a
- * real application would: registering the {@link EnrolStudentCommandHandler} and starting the
+ * real application would: registering the {@link EnrollStudentCommandHandler} and starting the
  * configuration triggers handler inspection, which cannot decide which provider feeds the handler's
- * {@code @TenantScoped CourseStatsStore} parameter.
+ * {@code @TenantScoped CourseStatisticsStore} parameter.
  * <p>
  * It builds its own throwaway {@link MessagingConfigurer}, so both demos can show the same framework
  * guardrail regardless of how their own application is wired.
@@ -51,8 +51,8 @@ public final class ProviderAmbiguityGuardrail {
     }
 
     /**
-     * Builds a throwaway configuration that registers the {@link EnrolStudentCommandHandler} with two
-     * providers for its {@code @TenantScoped CourseStatsStore} parameter, and checks that building and
+     * Builds a throwaway configuration that registers the {@link EnrollStudentCommandHandler} with two
+     * providers for its {@code @TenantScoped CourseStatisticsStore} parameter, and checks that building and
      * starting it is rejected because the framework cannot know which provider to inject.
      *
      * @return {@code true} if the ambiguity was rejected with an {@link AxonConfigurationException}
@@ -70,11 +70,11 @@ public final class ProviderAmbiguityGuardrail {
                     .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
                     .registerComponent(TenantProvider.class,
                                        config -> new DemoTenantProvider(TenantDescriptor.tenantWithId("sample")))
-                    // Two providers for CourseStatsStore make that handler parameter ambiguous.
-                    .registerComponent(TenantComponentProvider.class, "courseStatsA",
-                                       config -> TenantComponents.courseStatsProvider())
-                    .registerComponent(TenantComponentProvider.class, "courseStatsB",
-                                       config -> TenantComponents.courseStatsProvider());
+                    // Two providers for CourseStatisticsStore make that handler parameter ambiguous.
+                    .registerComponent(TenantComponentProvider.class, "courseStatisticsA",
+                                       config -> TenantComponents.courseStatisticsProvider())
+                    .registerComponent(TenantComponentProvider.class, "courseStatisticsB",
+                                       config -> TenantComponents.courseStatisticsProvider());
         });
         // Register the command handler through the normal command-handling path, so its handler
         // inspection resolves the ambiguous parameter exactly as it would in a real application.
@@ -82,7 +82,7 @@ public final class ProviderAmbiguityGuardrail {
                 CommandHandlingModule.named("ambiguity-check")
                                      .commandHandlers()
                                      .autodetectedCommandHandlingComponent(
-                                             config -> new EnrolStudentCommandHandler()));
+                                             config -> new EnrollStudentCommandHandler()));
         AxonConfiguration configuration = null;
         try {
             configuration = configurer.build();

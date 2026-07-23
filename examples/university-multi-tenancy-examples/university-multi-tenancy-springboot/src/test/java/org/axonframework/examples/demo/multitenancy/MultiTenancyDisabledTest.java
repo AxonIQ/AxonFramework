@@ -17,7 +17,7 @@
 package org.axonframework.examples.demo.multitenancy;
 
 import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
-import org.axonframework.examples.demo.multitenancy.shared.Enrolments;
+import org.axonframework.examples.demo.multitenancy.shared.Enrollments;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Verifies that multi-tenancy can be switched off entirely through {@code axon.multitenancy.enabled=false}.
  * <p>
- * With the feature disabled, dispatching a tenant-scoped enrolment fails because its tenant is never
+ * With the feature disabled, dispatching a tenant-scoped enrollment fails because its tenant is never
  * resolved. That failure is the observable proof that the disable toggle takes the whole tenant-aware
  * machinery out, rather than leaving it partially wired.
  * <p>
@@ -48,10 +48,10 @@ class MultiTenancyDisabledTest {
 
             CommandGateway commandGateway = context.getBean(CommandGateway.class);
 
-            // when a tenant-scoped enrolment is dispatched with multi-tenancy disabled
+            // when a tenant-scoped enrollment is dispatched with multi-tenancy disabled
             // then it fails, because the tenant is never resolved without the multi-tenancy machinery
-            assertThatThrownBy(() -> Enrolments.enrol(commandGateway, DemoLifecycle.SPRINGFIELD, "cs-101", "alice"))
-                    .matches(Enrolments::causedByTenantNotResolved,
+            assertThatThrownBy(() -> Enrollments.enroll(commandGateway, DemoLifecycle.SPRINGFIELD, "cs-101", "alice"))
+                    .matches(Enrollments::causedByTenantNotResolved,
                              "caused by TenantNotResolvedException when multi-tenancy is disabled");
         }
     }

@@ -29,7 +29,7 @@
     <artifactId>university-multi-tenancy-springboot</artifactId>
     <name>Axon Example - Multi-Tenancy - Spring Boot</name>
     <description>
-        Demonstrates the Axoniq Framework 5.3 tenant-aware components feature wired through Spring Boot
+        Demonstrates the Axoniq Framework tenant-aware components feature wired through Spring Boot
         auto-configuration: dropping the starter on the classpath and declaring the tenant provider and
         the per-tenant components as beans is enough for the framework to inject the right tenant's
         instance into command and query handlers, with the same tenant lifecycle the declarative demo

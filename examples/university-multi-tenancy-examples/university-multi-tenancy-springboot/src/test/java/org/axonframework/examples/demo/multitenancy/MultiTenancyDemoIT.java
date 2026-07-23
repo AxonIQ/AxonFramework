@@ -23,13 +23,13 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.testcontainer.AxonServerContainer;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.examples.demo.multitenancy.shared.AxonServerTenantContexts;
+import org.axonframework.examples.demo.multitenancy.shared.AxonServerTenantContextManager;
 import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.junit.jupiter.api.Test;
@@ -167,8 +167,8 @@ class MultiTenancyDemoIT {
 
             AxonConfiguration configuration = context.getBean(AxonConfiguration.class);
             TenantProvider tenantProvider = configuration.getComponent(TenantProvider.class);
-            AxonServerTenantContexts serverContexts =
-                    new AxonServerTenantContexts(configuration.getComponent(AxonServerConnectionManager.class));
+            AxonServerTenantContextManager serverContexts =
+                    new AxonServerTenantContextManager(configuration.getComponent(AxonServerConnectionManager.class));
 
             // then the _admin context exists on the server but is filtered out, so it never becomes a tenant
             Awaitility.await("initial tenant discovery")
@@ -180,18 +180,18 @@ class MultiTenancyDemoIT {
             // when the demo runs end to end through the beans, the multi-tenancy autoconfiguration wired
             DemoOutcome outcome = DemoLifecycle.run(context.getBean(CommandGateway.class),
                                                     context.getBean(QueryGateway.class),
-                                                    courseStatsProvider(context),
+                                                    courseStatisticsProvider(context),
                                                     auditProvider(context),
                                                     TenantProvisioning.axonServer(configuration,
                                                                                   DemoLifecycle.KNOWN_TENANTS),
                                                     context::close);
 
-            // then both of Springfield's components saw only its own two enrolments, matched by type
+            // then both of Springfield's components saw only its own two enrollments, matched by type
             // and isolated from the other tenants
-            assertThat(outcome.springfieldEnrolments()).isEqualTo(2);
+            assertThat(outcome.springfieldEnrollments()).isEqualTo(2);
             assertThat(outcome.springfieldAuditEntries()).isEqualTo(2);
-            // and the tenant added at runtime recorded its own enrolment in isolation
-            assertThat(outcome.ogdenvilleEnrolments()).isEqualTo(1);
+            // and the tenant added at runtime recorded its own enrollment in isolation
+            assertThat(outcome.ogdenvilleEnrollments()).isEqualTo(1);
             // and a command for an unknown tenant was rejected
             assertThat(outcome.unknownTenantRejected()).isTrue();
             // and removing Shelbyville closed its instances
@@ -205,9 +205,9 @@ class MultiTenancyDemoIT {
     }
 
     @SuppressWarnings("unchecked")
-    private static TenantComponentProvider<CourseStatsStore> courseStatsProvider(
+    private static TenantComponentProvider<CourseStatisticsStore> courseStatisticsProvider(
             ConfigurableApplicationContext context) {
-        return context.getBean("courseStatsProvider", TenantComponentProvider.class);
+        return context.getBean("courseStatisticsProvider", TenantComponentProvider.class);
     }
 
     @SuppressWarnings("unchecked")

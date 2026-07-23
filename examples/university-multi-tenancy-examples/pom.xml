@@ -45,7 +45,8 @@
 
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
-        <logback.version>1.5.38</logback.version>
+        <!-- Log4j2 as the single logging solution, matching the other plain-Java examples. -->
+        <log4j.version>2.26.1</log4j.version>
 
         <!-- Spring Boot, for the Spring Boot demo. Kept in step with the version the framework builds
              against (build/parent), which is not inherited here because the flattened parent pom drops

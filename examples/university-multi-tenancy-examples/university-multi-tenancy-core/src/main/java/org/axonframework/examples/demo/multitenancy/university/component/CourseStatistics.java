@@ -17,11 +17,11 @@
 package org.axonframework.examples.demo.multitenancy.university.component;
 
 /**
- * The enrolment count for a single course within one tenant's read model.
+ * The enrollment count for a single course within one tenant's read model.
  *
  * @param courseId   the identifier of the course
- * @param enrolments the number of enrolments recorded for the course
+ * @param enrollments the number of enrollments recorded for the course
  */
-public record CourseStatistics(String courseId, int enrolments) {
+public record CourseStatistics(String courseId, int enrollments) {
 
 }

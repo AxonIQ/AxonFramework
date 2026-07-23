@@ -22,7 +22,7 @@ import org.axonframework.examples.demo.multitenancy.university.read.statistics.T
 import java.util.List;
 
 /**
- * Renders one tenant's isolated view from its {@link TenantStatistics}: its per-course enrolment
+ * Renders one tenant's isolated view from its {@link TenantStatistics}: its per-course enrollment
  * counts and its audit-entry count. Since the statistics are read back through a tenant-scoped query,
  * the view only ever shows the queried tenant's data, which is what makes the isolation between
  * tenants visible in the log.
@@ -45,13 +45,13 @@ public final class TenantView {
         StringBuilder view = new StringBuilder("\n").append(label).append(":\n");
         List<CourseStatistics> statisticsPerCourse = statistics.perCourse();
         if (statisticsPerCourse.isEmpty()) {
-            view.append("  (no enrolments)\n");
+            view.append("  (no enrollments)\n");
         } else {
             statisticsPerCourse.forEach(statistic -> view.append("  - ")
                                                          .append(statistic.courseId())
                                                          .append(": ")
-                                                         .append(statistic.enrolments())
-                                                         .append(" enrolments\n"));
+                                                         .append(statistic.enrollments())
+                                                         .append(" enrollments\n"));
         }
         view.append("  audit entries: ").append(statistics.auditEntries()).append('\n');
         return view.toString();

@@ -18,9 +18,9 @@ package org.axonframework.examples.demo.multitenancy.shared;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.component.InMemoryAuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.InMemoryCourseStatsStore;
+import org.axonframework.examples.demo.multitenancy.university.component.InMemoryCourseStatisticsStore;
 
 /**
  * The university's tenant-scoped component providers, shared by both demos so each registers exactly
@@ -35,14 +35,14 @@ public final class TenantComponents {
     }
 
     /**
-     * Creates the provider of per-tenant {@link CourseStatsStore} instances.
+     * Creates the provider of per-tenant {@link CourseStatisticsStore} instances.
      *
      * @return the tenant-scoped course-statistics provider
      */
-    public static TenantComponentProvider<CourseStatsStore> courseStatsProvider() {
+    public static TenantComponentProvider<CourseStatisticsStore> courseStatisticsProvider() {
         return TenantComponentProvider.withFactory(
-                CourseStatsStore.class,
-                tenant -> new InMemoryCourseStatsStore(tenant.tenantId())
+                CourseStatisticsStore.class,
+                tenant -> new InMemoryCourseStatisticsStore(tenant.tenantId())
         );
     }
 
