@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.LegacyResources;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.SimpleEntry;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -251,6 +252,25 @@ class ProcessorEventHandlingComponentsTest {
             // then every supporting component handles the event
             assertThat(componentRoutedToSegmentZero.recorded()).containsExactly(event);
             assertThat(componentRoutedToSegmentOne.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void broadcastComponentHandlesInEverySegmentWhileRegularComponentHandlesOnlyInItsOwn() {
+            // given a regular component routing to segment 0 and a component using the broadcast sequence identifier
+            RecordingEventHandlingComponent regularComponent = recordingComponent("regular", EVENT_NAME, 0);
+            RecordingEventHandlingComponent broadcastComponent =
+                    recordingComponent("broadcast", EVENT_NAME, SequencingPolicy.BROADCAST_SEQUENCE_IDENTIFIER);
+            testSubject = new ProcessorEventHandlingComponents(List.of(regularComponent, broadcastComponent));
+            EventMessage event = EventTestUtils.asEventMessage("payload");
+
+            // when the same event is handled in every segment
+            handleInSegment(event, segments[0]);
+            handleInSegment(event, segments[1]);
+
+            // then the regular component handles it only in the single segment its identifier routes to
+            assertThat(regularComponent.recorded()).containsExactly(event);
+            // and the broadcast component handles it in every segment, exactly once per segment
+            assertThat(broadcastComponent.recorded()).containsExactly(event, event);
         }
 
         @Test
