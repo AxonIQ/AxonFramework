@@ -60,6 +60,30 @@ Useful when the command targets multiple entities (see <<_injecting_multiple_ent
 
 Without either attribute set, Axon falls back to the default resolver, which reads the field marked with `@TargetEntityId` on the command payload (the form used in the example above).
 
+[#_handling_a_missing_entity]
+== Handling a missing entity
+
+By default, an `@InjectEntity` parameter requires the entity to exist.
+If no entity can be found for the resolved identifier, Axon throws an `EntityNotFoundException`, failing the command instead of invoking the handler.
+
+Annotate the parameter with `@Nullable` to opt into create-or-update semantics instead.
+A `@Nullable @InjectEntity` parameter resolves to `null` when the entity does not exist yet, allowing the handler to decide whether to create it:
+
+[source,java]
+----
+@CommandHandler
+public void handle(IssueCard command, @InjectEntity @Nullable GiftCard card, EventAppender appender) {
+    if (card == null) {
+        appender.append(new CardIssued(command.cardId(), command.amount()));
+    } else {
+        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+    }
+}
+----
+
+This existence check applies regardless of how the entity's `@EntityCreator` constructs it.
+Even a no-arg or identifier-based creator, which does not need a preceding event to produce an instance, only does so once that instance actually exists; before that, both a no-arg-created and an identifier-created entity behave the same as one that requires an event to construct.
+
 [#_injecting_multiple_entities]
 == Injecting multiple entities
 
