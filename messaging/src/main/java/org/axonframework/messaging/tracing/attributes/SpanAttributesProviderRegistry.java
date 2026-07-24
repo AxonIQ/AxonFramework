@@ -16,10 +16,10 @@
 
 package org.axonframework.messaging.tracing.attributes;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.common.configuration.ComponentBuilder;
-import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DecoratorDefinition;
 
@@ -33,20 +33,21 @@ import java.util.List;
  * {@link #providers(Configuration)} -- typically by the component builder constructing the {@code SpanFactory}, so the
  * factory receives its complete, immutable provider list at construction time.
  * <p>
- * Registration operations are expected to be invoked within a
- * {@link DecoratorDefinition DecoratorDefinition} on this registry component
- * (see {@link #register(ComponentRegistry, ComponentBuilder)}). As such, <b>any</b> registered provider is
- * <b>only</b> applied when the {@code SpanFactory} requiring it is constructed. Providers that are registered once
- * the {@code SpanFactory} has already been constructed are not taken into account.
+ * Registration operations are expected to be invoked within a {@link DecoratorDefinition DecoratorDefinition} on this
+ * registry component. As such, <b>any</b> registered provider is <b>only</b> applied when the {@code SpanFactory}
+ * requiring it is constructed. Providers that are registered once the {@code SpanFactory} has already been constructed
+ * are not taken into account.
  * <p>
- * The built-in providers are contributed by the tracing modules' configuration enhancers, driven by the
- * {@code *TracingSettings} components. Applications contribute custom providers through
- * {@link #register(ComponentRegistry, ComponentBuilder)} (plain Java) or by declaring a
- * {@code SpanAttributesProvider} bean (Spring Boot).
+ * This registry is {@link Internal}: the built-in providers are contributed by the tracing modules' configuration
+ * enhancers, driven by the {@code *TracingSettings} components, and applications contribute custom providers through
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerSpanAttributesProvider(ComponentBuilder)}
+ * (plain Java) or by declaring a {@code SpanAttributesProvider} bean (Spring Boot) -- never by interacting with this
+ * registry directly.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
  */
+@Internal
 public interface SpanAttributesProviderRegistry {
 
     /**
@@ -66,27 +67,4 @@ public interface SpanAttributesProviderRegistry {
      * @return the list of {@link SpanAttributesProvider SpanAttributesProviders}
      */
     List<SpanAttributesProvider> providers(Configuration config);
-
-    /**
-     * Contributes a custom {@link SpanAttributesProvider} to the registry component in the given
-     * {@code componentRegistry}.
-     * <p>
-     * This is the canonical contribution idiom: a decorator on the {@code SpanAttributesProviderRegistry} component,
-     * applied when the registry is resolved -- before the {@link SpanFactory} consuming it is constructed. Example:
-     * <pre>{@code
-     * configurer.componentRegistry(cr -> SpanAttributesProviderRegistry.register(
-     *         cr, config -> new TenantSpanAttributesProvider()));
-     * }</pre>
-     *
-     * @param componentRegistry the component registry to contribute the provider to
-     * @param providerBuilder   the {@link SpanAttributesProvider} builder to register
-     */
-    static void register(ComponentRegistry componentRegistry,
-                         ComponentBuilder<SpanAttributesProvider> providerBuilder) {
-        componentRegistry.registerDecorator(
-                SpanAttributesProviderRegistry.class,
-                0,
-                (config, name, delegate) -> delegate.registerProvider(providerBuilder)
-        );
-    }
 }

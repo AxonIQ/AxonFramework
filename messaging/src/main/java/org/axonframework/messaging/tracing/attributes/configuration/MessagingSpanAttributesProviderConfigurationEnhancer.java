@@ -20,7 +20,6 @@ import org.axonframework.messaging.tracing.attributes.MessageIdSpanAttributesPro
 import org.axonframework.messaging.tracing.attributes.MessageTypeSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.MetadataSpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
-import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.common.annotation.Internal;
