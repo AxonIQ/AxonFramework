@@ -458,7 +458,7 @@ class ReflectionUtilsTest {
         }
 
         @Test
-        void nonRecordFieldIsNotDroppedForCollidingSameNamedAccessor() {
+        void nonRecordFieldIsKeptForCollidingSameNamedAccessor() {
             var members = collectMatchingMethodsAndFields(Baz.class, it -> it.getName().startsWith("x"));
             assertThat(members).hasSize(2);
             assertThat(members).extracting(Member::getName)
