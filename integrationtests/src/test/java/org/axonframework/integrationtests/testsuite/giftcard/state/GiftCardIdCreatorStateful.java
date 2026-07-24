@@ -27,42 +27,35 @@ import org.axonframework.integrationtests.testsuite.giftcard.events.CardRedeemed
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
-import org.jspecify.annotations.Nullable;
 
 /**
- * A stateful command handler for which the entity is created based on the identifier, will succeed for instance command
- * handlers because the handler lives outside the entity and receives a {@code null} entity when it does not exist yet.
+ * A stateful command handler for which the entity is created based on the identifier, will fail for both creational and
+ * instance command handlers when the entity does not exist yet.
  * <p>
- * This holds as the command defines the identifier, so we can pass the identifier from the creational command right
- * away. Note that for users, this means they need to be mindful to draft correct defaults for all the required fields
- * or have conscious commands to set those!
+ * Although the command defines the identifier and the constructor could produce an entity without any preceding event,
+ * the non-nullable {@code @InjectEntity} parameter requires the entity to actually exist. Because of this, neither
+ * handler can ever run before the entity has been created; see {@link NullableGiftCardIdCreatorStateful} for the
+ * {@code @Nullable} counterpart that supports create-or-update semantics.
  *
  * @author Steven van Beelen
  */
 public class GiftCardIdCreatorStateful {
 
+    @SuppressWarnings("unused")
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity,
-                       EventAppender appender) {
-        if (entity == null) {
-            appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
-        } else {
-            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
-        }
+                       @InjectEntity GiftCard entity) {
+        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
     }
 
     @CommandHandler
     public void handle(RedeemCardCommand command,
-                       @InjectEntity @Nullable GiftCard entity,
+                       @InjectEntity GiftCard entity,
                        EventAppender appender) {
-        if (entity == null) {
-            appender.append(new CardIssuedEvent(command.cardId(), 9001));
-        }
-        if (entity != null && entity.amount - command.amount() < 0) {
+        if (entity.amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
-        appender.append(new CardRedeemedEvent(command.cardId(), command.amount()));
+        appender.append(new CardRedeemedEvent(entity.cardId, command.amount()));
     }
 
     @EventSourcedEntity(tagKey = "cardId")
