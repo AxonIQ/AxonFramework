@@ -83,7 +83,7 @@ public final class TracingQueryBus implements QueryBus {
     public static final String SUBSCRIPTION_QUERY_SPAN = "QueryBus.subscriptionQuery";
 
     /** Internal metadata marker allowing the receiving handler to identify a subscription query's initial result. */
-    static final String SUBSCRIPTION_QUERY_MARKER = "axon.tracing.subscriptionQuery";
+    static final String SUBSCRIPTION_QUERY_MARKER = "axoniq.tracing.subscription_query";
 
     /** Name of the query-update-emit span. */
     public static final String EMIT_UPDATE_SPAN = "QueryBus.emitUpdate";
