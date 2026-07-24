@@ -8,7 +8,7 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 
 === Release 5.2.1
 
-==== Bug Fixes
+==== Bug fixes
 
 - Validate return and parameter type against field type (PR link:https://github.com/AxonIQ/AxonFramework/pull/4780[#4780], by @smcvb)
 - Only deduplicate fluent accessors for records (PR link:https://github.com/AxonIQ/AxonFramework/pull/4779[#4779], by @smcvb)
