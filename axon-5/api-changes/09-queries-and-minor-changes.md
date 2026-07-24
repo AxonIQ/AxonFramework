@@ -104,6 +104,15 @@ As is clear, the `ResponseType` did not return for any of these methods either. 
 changes to the subscription query, for which we suggest you read up on
 in [this](#subscription-queries-and-the-query-update-emitter) section.
 
+Each of these dispatch operations also has a metadata-carrying variant, accepting a `Metadata` argument right before the
+(nullable) `ProcessingContext`. This allows attaching metadata directly on the dispatch, without pre-wrapping the query
+into a `QueryMessage`:
+
+1. `CompletableFuture<R> QueryGateway#query(Object, Class<R>, Metadata, ProcessingContext)`
+2. `CompletableFuture<List<R>> QueryGateway#queryMany(Object, Class<R>, Metadata, ProcessingContext)`
+3. `Publisher<R> QueryGateway#streamingQuery(Object, Class<R>, Metadata, ProcessingContext)`
+4. `Publisher<R> QueryGateway#subscriptionQuery(Object, Class<R>, Metadata, ProcessingContext, int)`
+
 As might be clear, the `QueryGateway` has an entirely new look and feel. If there are any operations we have
 removed/adjusted you miss, or if you have any other suggestions for improvement, please
 construct [an issue](https://github.com/AxonFramework/AxonFramework/issues) for us.
