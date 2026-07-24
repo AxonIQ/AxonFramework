@@ -46,13 +46,13 @@ import java.util.concurrent.CompletableFuture;
 public final class TracingSnapshotStore implements SnapshotStore {
 
     /** Prefix for the snapshot-store-write span ({@code "SnapshotStore.store <name>"}). */
-    public static final String STORE_SPAN = "SnapshotStore.store";
+    private static final String STORE_SPAN = "SnapshotStore.store";
 
     /** Prefix for the snapshot-store-read span ({@code "SnapshotStore.load <name>"}). */
-    public static final String LOAD_SPAN = "SnapshotStore.load";
+    private static final String LOAD_SPAN = "SnapshotStore.load";
 
     /** Attribute key for the entity type (same convention as the modelling tracing decorators). */
-    static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
+    private static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
 
     private final SnapshotStore delegate;
     private final SpanFactory spanFactory;

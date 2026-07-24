@@ -46,10 +46,10 @@ import java.util.concurrent.CompletableFuture;
 public final class TracingEntityLifecycleHandler<I, E> implements EntityLifecycleHandler<I, E> {
 
     /** Prefix for the entity-sourcing span ({@code "EntityLifecycleHandler.source <EntityType>"}). */
-    public static final String SOURCE_SPAN = "EntityLifecycleHandler.source";
+    private static final String SOURCE_SPAN = "EntityLifecycleHandler.source";
 
     /** Attribute key for the entity type (same convention as the modelling tracing decorators). */
-    static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
+    private static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
 
     private final EntityLifecycleHandler<I, E> delegate;
     private final SpanFactory spanFactory;

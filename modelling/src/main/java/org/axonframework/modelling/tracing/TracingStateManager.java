@@ -55,10 +55,10 @@ import java.util.concurrent.CompletableFuture;
 public final class TracingStateManager implements StateManager {
 
     /** Prefix for the state-manager-load-managed-entity span ({@code "StateManager.loadManagedEntity <EntityType>"}). */
-    public static final String LOAD_MANAGED_ENTITY_SPAN = "StateManager.loadManagedEntity";
+    private static final String LOAD_MANAGED_ENTITY_SPAN = "StateManager.loadManagedEntity";
 
     /** Attribute key for the entity type (same convention as {@link TracingRepository}). */
-    static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
+    private static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
 
     private final StateManager delegate;
     private final SpanFactory spanFactory;

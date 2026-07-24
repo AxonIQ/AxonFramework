@@ -50,19 +50,19 @@ import java.util.concurrent.CompletableFuture;
 public final class TracingRepository<ID, E> implements Repository.LifecycleManagement<ID, E> {
 
     /** Prefix for the repository-load span ({@code "Repository.load <EntityType>"}). */
-    public static final String LOAD_SPAN = "Repository.load";
+    private static final String LOAD_SPAN = "Repository.load";
 
     /** Prefix for the repository-load-or-create span. */
-    public static final String LOAD_OR_CREATE_SPAN = "Repository.loadOrCreate";
+    private static final String LOAD_OR_CREATE_SPAN = "Repository.loadOrCreate";
 
     /** Prefix for the repository-persist span. */
-    public static final String PERSIST_SPAN = "Repository.persist";
+    private static final String PERSIST_SPAN = "Repository.persist";
 
     /** Prefix for the repository-attach span. */
-    public static final String ATTACH_SPAN = "Repository.attach";
+    private static final String ATTACH_SPAN = "Repository.attach";
 
     /** Attribute key for the entity type. */
-    static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
+    private static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
 
     private final Repository.LifecycleManagement<ID, E> delegate;
     private final SpanFactory spanFactory;

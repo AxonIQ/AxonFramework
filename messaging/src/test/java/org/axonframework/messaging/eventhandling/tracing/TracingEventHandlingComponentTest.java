@@ -52,6 +52,7 @@ class TracingEventHandlingComponentTest {
     private static final String PROCESS_SPAN = "EventProcessor.process MyEvent";
     private static final String BATCH_SPAN = "StreamingEventProcessor.batch";
     private static final String PUBLISHER_SPAN = "publisher";
+    private static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event_processor.name";
 
     private TestSpanFactory spanFactory;
     private RecordingEventHandlingComponent delegate;
@@ -196,7 +197,7 @@ class TracingEventHandlingComponentTest {
 
             // then the handler span identifies its owning processor
             spanFactory.verifySpanHasAttributeValue(
-                    PROCESS_SPAN, TracingEventHandlingComponent.PROCESSOR_NAME_ATTRIBUTE, "my-processor");
+                    PROCESS_SPAN, PROCESSOR_NAME_ATTRIBUTE, "my-processor");
         }
 
         @Test
@@ -210,7 +211,7 @@ class TracingEventHandlingComponentTest {
 
             // then the batch root span identifies its owning processor too
             spanFactory.verifySpanHasAttributeValue(
-                    BATCH_SPAN, TracingEventHandlingComponent.PROCESSOR_NAME_ATTRIBUTE, "my-processor");
+                    BATCH_SPAN, PROCESSOR_NAME_ATTRIBUTE, "my-processor");
         }
 
         @Test
@@ -223,7 +224,7 @@ class TracingEventHandlingComponentTest {
 
             // then the handler span carries no processor-name attribute
             spanFactory.verifySpanHasNoAttribute(
-                    PROCESS_SPAN, TracingEventHandlingComponent.PROCESSOR_NAME_ATTRIBUTE);
+                    PROCESS_SPAN, PROCESSOR_NAME_ATTRIBUTE);
         }
     }
 

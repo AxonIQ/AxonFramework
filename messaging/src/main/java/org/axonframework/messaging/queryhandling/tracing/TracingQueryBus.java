@@ -61,38 +61,38 @@ import java.util.function.Supplier;
 public final class TracingQueryBus implements QueryBus {
 
     /** Prefix for the query-dispatch span ({@code "QueryBus.query <name>"}). */
-    public static final String DISPATCH_SPAN = "QueryBus.query";
+    private static final String DISPATCH_SPAN = "QueryBus.query";
 
     /** Prefix for the query-handle span ({@code "QueryBus.handle <name>"}). */
-    public static final String HANDLE_SPAN = "QueryBus.handle";
+    private static final String HANDLE_SPAN = "QueryBus.handle";
 
     /**
      * Prefix for the query-respond span ({@code "QueryBus.respond <name>"}): production and delivery of a response
      * stream after handling returned. Only opened while that response stream is not already completed.
      */
-    public static final String RESPOND_SPAN = "QueryBus.respond";
+    private static final String RESPOND_SPAN = "QueryBus.respond";
 
     /**
      * Prefix for the subscription-query-initial-response span
      * ({@code "QueryBus.initialResponse <name>"}): production of the finite initial result after handling returned.
      * Unlike the subscription dispatch span, this span never covers the potentially unbounded update stream.
      */
-    public static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse";
+    private static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse";
 
     /** Prefix for the subscription-query-dispatch span ({@code "QueryBus.subscriptionQuery <name>"}). */
-    public static final String SUBSCRIPTION_QUERY_SPAN = "QueryBus.subscriptionQuery";
+    private static final String SUBSCRIPTION_QUERY_SPAN = "QueryBus.subscriptionQuery";
 
     /** Internal metadata marker allowing the receiving handler to identify a subscription query's initial result. */
-    static final String SUBSCRIPTION_QUERY_MARKER = "axoniq.tracing.subscription_query";
+    private static final String SUBSCRIPTION_QUERY_MARKER = "axoniq.tracing.subscription_query";
 
     /** Name of the query-update-emit span. */
-    public static final String EMIT_UPDATE_SPAN = "QueryBus.emitUpdate";
+    private static final String EMIT_UPDATE_SPAN = "QueryBus.emitUpdate";
 
     /** Name of the subscription-completion span. */
-    public static final String COMPLETE_SUBSCRIPTIONS_SPAN = "QueryBus.completeSubscriptions";
+    private static final String COMPLETE_SUBSCRIPTIONS_SPAN = "QueryBus.completeSubscriptions";
 
     /** Name of the subscription-exceptional-completion span. */
-    public static final String COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN = "QueryBus.completeSubscriptionsExceptionally";
+    private static final String COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN = "QueryBus.completeSubscriptionsExceptionally";
 
     private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
 

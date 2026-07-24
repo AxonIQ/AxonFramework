@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TracingEventStorageEngineTest {
 
-    private static final String APPEND_SPAN = TracingEventStorageEngine.APPEND_TRANSACTION_SPAN;
+    private static final String APPEND_SPAN = "EventStorageEngine.appendTransaction";
 
     private TestSpanFactory spanFactory;
     private RecordingEventStorageEngine delegate;

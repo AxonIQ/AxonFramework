@@ -46,7 +46,7 @@ import java.util.concurrent.CompletableFuture;
 public final class TracingEventSink implements EventSink {
 
     /** Prefix for the per-event publish span ({@code "EventSink.publish <name>"}). */
-    public static final String PUBLISH_SPAN = "EventSink.publish";
+    private static final String PUBLISH_SPAN = "EventSink.publish";
 
     private final EventSink delegate;
     private final SpanFactory spanFactory;

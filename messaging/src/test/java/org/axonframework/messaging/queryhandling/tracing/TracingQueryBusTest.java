@@ -57,6 +57,7 @@ class TracingQueryBusTest {
     private static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse MyQuery";
     private static final String HANDLE_SPAN = "QueryBus.handle MyQuery";
     private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
+    private static final String SUBSCRIPTION_QUERY_MARKER = "axoniq.tracing.subscription_query";
 
     private TestSpanFactory spanFactory;
     private RecordingQueryBus delegate;
@@ -124,7 +125,7 @@ class TracingQueryBusTest {
             testSubject.query(query, null);
 
             // then
-            spanFactory.verifyNoSpanWithNamePrefix(TracingQueryBus.RESPOND_SPAN);
+            spanFactory.verifyNoSpanWithNamePrefix("QueryBus.respond");
         }
     }
 
@@ -178,7 +179,7 @@ class TracingQueryBusTest {
                                                     MESSAGE_CONVERSATION_ID_ATTRIBUTE,
                                                     query.identifier());
             assertThat(handledQuery.get().metadata())
-                    .doesNotContainKey(TracingQueryBus.SUBSCRIPTION_QUERY_MARKER);
+                    .doesNotContainKey(SUBSCRIPTION_QUERY_MARKER);
 
             // when
             deferredInitialResponse.complete(response);
@@ -210,7 +211,7 @@ class TracingQueryBusTest {
             assertThat(wrapped).isNotNull();
             spanFactory.verifySpanActive(HANDLE_SPAN);
             spanFactory.verifySpanHasType(HANDLE_SPAN, TestSpanType.HANDLER);
-            spanFactory.verifyNoSpanWithNamePrefix(TracingQueryBus.INITIAL_RESPONSE_SPAN);
+            spanFactory.verifyNoSpanWithNamePrefix("QueryBus.initialResponse");
         }
     }
 

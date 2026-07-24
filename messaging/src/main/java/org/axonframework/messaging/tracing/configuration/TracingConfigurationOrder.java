@@ -16,15 +16,21 @@
 
 package org.axonframework.messaging.tracing.configuration;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 
 /**
  * Ordering constants shared by the tracing modules' {@link ConfigurationEnhancer ConfigurationEnhancers} and
  * decorators.
+ * <p>
+ * This holder is {@link Internal}: it exists to keep the tracing modules' relative ordering in one place and is
+ * expected to be superseded by a framework-wide decorator-order constant holder. Applications ordering their own
+ * decorators relative to tracing should not depend on these values.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
  */
+@Internal
 public final class TracingConfigurationOrder {
 
     /**

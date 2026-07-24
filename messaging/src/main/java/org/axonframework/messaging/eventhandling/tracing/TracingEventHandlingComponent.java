@@ -77,10 +77,10 @@ import java.util.Set;
 public final class TracingEventHandlingComponent implements EventHandlingComponent {
 
     /** Prefix for the per-event handler span ({@code "EventProcessor.process <name>"}). */
-    public static final String PROCESS_SPAN = "EventProcessor.process";
+    private static final String PROCESS_SPAN = "EventProcessor.process";
 
     /** Name of the streaming-event-processor batch root span. */
-    public static final String BATCH_SPAN = "StreamingEventProcessor.batch";
+    private static final String BATCH_SPAN = "StreamingEventProcessor.batch";
 
     /**
      * Attribute key carrying the owning event processor's name on every span this component creates
@@ -88,7 +88,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      * on repository spans -- because the processor name is configuration, not message content, so no
      * {@link org.axonframework.messaging.tracing.SpanAttributesProvider} can contribute it.
      */
-    public static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event_processor.name";
+    private static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event_processor.name";
 
     private static final Context.ResourceKey<Span> BATCH_SPAN_KEY =
             Context.ResourceKey.withLabel("org.axonframework.messaging.tracing.batchSpan");

@@ -59,7 +59,7 @@ import java.util.function.Supplier;
 public final class TracingEventStorageEngine implements EventStorageEngine {
 
     /** Name of the span covering a complete append transaction. */
-    public static final String APPEND_TRANSACTION_SPAN = "EventStorageEngine.appendTransaction";
+    private static final String APPEND_TRANSACTION_SPAN = "EventStorageEngine.appendTransaction";
 
     private final EventStorageEngine delegate;
     private final SpanFactory spanFactory;
