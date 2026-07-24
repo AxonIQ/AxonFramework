@@ -432,6 +432,15 @@ class ReflectionUtilsTest {
             }
         }
 
+        static class Baz {
+
+            private String xfield;
+
+            private String xfield() {
+                return xfield;
+            }
+        }
+
         @Test
         void findAllMethodsAndFieldsOnSimpleClass() {
             var members = collectMatchingMethodsAndFields(Foo.class, it -> it.getName().startsWith("x"));
@@ -446,6 +455,14 @@ class ReflectionUtilsTest {
             assertThat(members).hasSize(2);
             assertThat(members).extracting(Member::getName)
                     .containsExactlyInAnyOrder("xfield", "xmethod");
+        }
+
+        @Test
+        void nonRecordFieldIsKeptForCollidingSameNamedAccessor() {
+            var members = collectMatchingMethodsAndFields(Baz.class, it -> it.getName().startsWith("x"));
+            assertThat(members).hasSize(2);
+            assertThat(members).extracting(Member::getName)
+                    .containsExactlyInAnyOrder("xfield", "xfield");
         }
     }
 

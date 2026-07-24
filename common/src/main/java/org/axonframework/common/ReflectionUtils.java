@@ -601,7 +601,7 @@ public final class ReflectionUtils {
     public static List<? extends Member> collectMatchingMethodsAndFields(Class<?> type,
                                                                          Predicate<Member> filter) {
         List<Method> methods = stream(ReflectionUtils.methodsOf(type).spliterator(), false).toList();
-        var deduplicateFilter = deduplicateRecordFields(methods);
+        Predicate<Field> deduplicateFilter = type.isRecord() ? deduplicateRecordFields(methods) : field -> true;
 
         var fields = stream(ReflectionUtils.fieldsOf(type).spliterator(), false)
                 .filter(deduplicateFilter);
