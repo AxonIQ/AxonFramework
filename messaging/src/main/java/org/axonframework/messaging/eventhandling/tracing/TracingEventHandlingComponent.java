@@ -84,11 +84,11 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
 
     /**
      * Attribute key carrying the owning event processor's name on every span this component creates
-     * ({@code "axoniq.event-processor.name"}). Attached directly by this decorator -- like the entity-id attributes
+     * ({@code "axoniq.event_processor.name"}). Attached directly by this decorator -- like the entity-id attributes
      * on repository spans -- because the processor name is configuration, not message content, so no
      * {@link org.axonframework.messaging.tracing.SpanAttributesProvider} can contribute it.
      */
-    public static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event-processor.name";
+    public static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event_processor.name";
 
     private static final Context.ResourceKey<Span> BATCH_SPAN_KEY =
             Context.ResourceKey.withLabel("org.axonframework.messaging.tracing.batchSpan");

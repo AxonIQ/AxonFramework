@@ -160,7 +160,7 @@ Update dashboards, alerts, and sampling rules that match on Axon Framework 4 spa
 |`AxonServerCommandBus.dispatch` / `.handle` |`CommandBusConnector.dispatch <commandName>` / `CommandBusConnector.handle <commandName>`
 |`$\{EventBusClass\}.publish($\{EventClass\})` |`EventSink.publish <eventName>`
 |`$\{EventBusClass\}.commit` |`EventStorageEngine.appendTransaction`, covering the complete storage transaction including commit and after-commit work
-|`$\{ProcessorType\}[$\{processorName\}].process($\{EventClass\})` |`EventProcessor.process <eventName>`, with the processor name in the `axoniq.event-processor.name` attribute
+|`$\{ProcessorType\}[$\{processorName\}].process($\{EventClass\})` |`EventProcessor.process <eventName>`, with the processor name in the `axoniq.event_processor.name` attribute
 |`$\{ProcessorType\}[$\{processorName\}].batch` |`StreamingEventProcessor.batch`
 |`$\{RepositoryClass\}.load $\{identifier\}` |`Repository.load <EntityType>`, with the identifier in the `axoniq.entity.id` attribute
 |`LockingRepository.obtainLock` |Removed
