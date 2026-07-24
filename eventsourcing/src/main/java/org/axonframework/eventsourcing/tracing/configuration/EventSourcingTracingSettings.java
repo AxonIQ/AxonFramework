@@ -16,15 +16,22 @@
 
 package org.axonframework.eventsourcing.tracing.configuration;
 
-import org.axonframework.common.annotation.Internal;
-
 /**
  * Per-component on/off toggles for event-sourcing tracing, read by
  * {@code EventSourcingTracingConfigurationEnhancer} to decide which {@code axon-eventsourcing} components to decorate,
  * and by {@code TracingEventTagsHandlerEnhancerDefinition} to decide whether event handler spans are enriched with the
  * event's tags.
  * <p>
- * Registered as a framework component by the Spring autoconfiguration. When absent, every toggle defaults to enabled.
+ * When no instance is registered, every toggle defaults to enabled ({@link #enabledByDefault()}). To adjust the
+ * toggles declaratively, register an instance as a component -- typically starting from the defaults and using the
+ * {@code with*} copy methods:
+ * <pre>{@code
+ * configurer.componentRegistry(cr -> cr.registerComponent(
+ *         EventSourcingTracingSettings.class,
+ *         c -> EventSourcingTracingSettings.enabledByDefault().withSnapshotStoreEnabled(false)));
+ * }</pre>
+ * Higher-level integrations (for example property-based configuration layers) register a translated instance on the
+ * application's behalf; an explicitly registered component always takes precedence.
  *
  * @param eventStoreEnabled       whether the {@code EventStorageEngine} is decorated with tracing
  * @param snapshotStoreEnabled    whether the {@code SnapshotStore} is decorated with tracing
@@ -32,7 +39,6 @@ import org.axonframework.common.annotation.Internal;
  * @author Mateusz Nowak
  * @since 5.3.0
  */
-@Internal
 public record EventSourcingTracingSettings(boolean eventStoreEnabled,
                                            boolean snapshotStoreEnabled,
                                            SpanAttributesProviders spanAttributesProviders) {
@@ -76,5 +82,35 @@ public record EventSourcingTracingSettings(boolean eventStoreEnabled,
      */
     public boolean eventTagsEnabled() {
         return spanAttributesProviders.eventTagsEnabled();
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventStoreEnabled()} replaced by the given value.
+     *
+     * @param eventStoreEnabled whether the {@code EventStorageEngine} is decorated with tracing
+     * @return a copy of these settings with the given {@code eventStoreEnabled}
+     */
+    public EventSourcingTracingSettings withEventStoreEnabled(boolean eventStoreEnabled) {
+        return new EventSourcingTracingSettings(eventStoreEnabled, snapshotStoreEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #snapshotStoreEnabled()} replaced by the given value.
+     *
+     * @param snapshotStoreEnabled whether the {@code SnapshotStore} is decorated with tracing
+     * @return a copy of these settings with the given {@code snapshotStoreEnabled}
+     */
+    public EventSourcingTracingSettings withSnapshotStoreEnabled(boolean snapshotStoreEnabled) {
+        return new EventSourcingTracingSettings(eventStoreEnabled, snapshotStoreEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #spanAttributesProviders()} replaced by the given value.
+     *
+     * @param spanAttributesProviders toggles for the built-in span attribute providers contributed by this module
+     * @return a copy of these settings with the given {@code spanAttributesProviders}
+     */
+    public EventSourcingTracingSettings withSpanAttributesProviders(SpanAttributesProviders spanAttributesProviders) {
+        return new EventSourcingTracingSettings(eventStoreEnabled, snapshotStoreEnabled, spanAttributesProviders);
     }
 }

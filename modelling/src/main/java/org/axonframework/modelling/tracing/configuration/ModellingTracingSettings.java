@@ -16,14 +16,20 @@
 
 package org.axonframework.modelling.tracing.configuration;
 
-import org.axonframework.common.annotation.Internal;
-
 /**
  * Per-component on/off toggles for modelling tracing, read by {@code ModellingTracingConfigurationEnhancer} to decide
  * which {@code axon-modelling} components to decorate.
  * <p>
- * Registered as a framework component by the Spring autoconfiguration (populated from {@code axon.tracing.*}
- * properties). When absent from the configuration, every component defaults to enabled.
+ * When no instance is registered, every component defaults to enabled ({@link #enabledByDefault()}). To adjust the
+ * toggles declaratively, register an instance as a component -- typically starting from the defaults and using the
+ * {@code with*} copy methods:
+ * <pre>{@code
+ * configurer.componentRegistry(cr -> cr.registerComponent(
+ *         ModellingTracingSettings.class,
+ *         c -> ModellingTracingSettings.enabledByDefault().withStateManagerEnabled(false)));
+ * }</pre>
+ * Higher-level integrations (for example property-based configuration layers) register a translated instance on the
+ * application's behalf; an explicitly registered component always takes precedence.
  *
  * @param repositoryEnabled       whether the {@code Repository} is decorated with tracing
  * @param stateManagerEnabled     whether the {@code StateManager} is decorated with tracing
@@ -31,7 +37,6 @@ import org.axonframework.common.annotation.Internal;
  * @author Mateusz Nowak
  * @since 5.3.0
  */
-@Internal
 public record ModellingTracingSettings(boolean repositoryEnabled,
                                        boolean stateManagerEnabled,
                                        SpanAttributesProviders spanAttributesProviders) {
@@ -63,5 +68,35 @@ public record ModellingTracingSettings(boolean repositoryEnabled,
      */
     public static ModellingTracingSettings enabledByDefault() {
         return new ModellingTracingSettings(true, true, SpanAttributesProviders.enabledByDefault());
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #repositoryEnabled()} replaced by the given value.
+     *
+     * @param repositoryEnabled whether the {@code Repository} is decorated with tracing
+     * @return a copy of these settings with the given {@code repositoryEnabled}
+     */
+    public ModellingTracingSettings withRepositoryEnabled(boolean repositoryEnabled) {
+        return new ModellingTracingSettings(repositoryEnabled, stateManagerEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #stateManagerEnabled()} replaced by the given value.
+     *
+     * @param stateManagerEnabled whether the {@code StateManager} is decorated with tracing
+     * @return a copy of these settings with the given {@code stateManagerEnabled}
+     */
+    public ModellingTracingSettings withStateManagerEnabled(boolean stateManagerEnabled) {
+        return new ModellingTracingSettings(repositoryEnabled, stateManagerEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #spanAttributesProviders()} replaced by the given value.
+     *
+     * @param spanAttributesProviders toggles for the built-in span attribute providers contributed by this module
+     * @return a copy of these settings with the given {@code spanAttributesProviders}
+     */
+    public ModellingTracingSettings withSpanAttributesProviders(SpanAttributesProviders spanAttributesProviders) {
+        return new ModellingTracingSettings(repositoryEnabled, stateManagerEnabled, spanAttributesProviders);
     }
 }

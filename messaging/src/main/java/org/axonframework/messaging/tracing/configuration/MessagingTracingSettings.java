@@ -16,18 +16,22 @@
 
 package org.axonframework.messaging.tracing.configuration;
 
-import org.axonframework.common.annotation.Internal;
-
 import java.time.Duration;
 
 /**
  * Per-component on/off toggles for messaging tracing, read by {@code MessagingTracingConfigurationEnhancer} to decide
  * which {@code axon-messaging} components to decorate.
  * <p>
- * This is registered as a framework component by the Spring autoconfiguration (populated from
- * {@code axon.tracing.*} properties). When absent from the configuration, every component defaults to enabled. It is
- * {@code @Internal} because it is the integration point between the Spring property model and the ServiceLoader-
- * discovered enhancer, not a type applications construct directly.
+ * When no instance is registered, every component defaults to enabled ({@link #enabledByDefault()}). To adjust the
+ * toggles declaratively, register an instance as a component -- typically starting from the defaults and using the
+ * {@code with*} copy methods:
+ * <pre>{@code
+ * configurer.componentRegistry(cr -> cr.registerComponent(
+ *         MessagingTracingSettings.class,
+ *         c -> MessagingTracingSettings.enabledByDefault().withEventProcessorDistributedInSameTrace(true)));
+ * }</pre>
+ * Higher-level integrations (for example property-based configuration layers) register a translated instance on the
+ * application's behalf; an explicitly registered component always takes precedence.
  *
  * @param commandBusEnabled                          whether the {@code CommandBus} is decorated with tracing
  * @param eventSinkEnabled                           whether the {@code EventSink} is decorated with tracing
@@ -36,12 +40,11 @@ import java.time.Duration;
  * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default), it is parented to the streaming batch and links back to the publisher, or starts a linked trace if batch tracing is disabled
  * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (default {@code PT2M})
  * @param queryBusEnabled                            whether the {@code QueryBus} is decorated with tracing
- * @param eventSourcingHandlersEnabled                  when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
+ * @param eventSourcingHandlersEnabled               when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
  * @param spanAttributesProviders                    toggles for the built-in span attribute providers contributed by this module
  * @author Mateusz Nowak
  * @since 5.3.0
  */
-@Internal
 public record MessagingTracingSettings(boolean commandBusEnabled,
                                        boolean eventSinkEnabled,
                                        boolean eventProcessorEnabled,
@@ -59,7 +62,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
 
     /**
      * Toggles for the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
-     * contributed by the {@code axoniq-tracing-messaging} module (read by
+     * contributed by the {@code axon-messaging} module (read by
      * {@code MessagingSpanAttributesProviderConfigurationEnhancer}).
      *
      * @param messageIdEnabled   whether the {@code MessageIdSpanAttributesProvider} is contributed
@@ -96,12 +99,121 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     }
 
     /**
+     * Returns a copy of these settings with {@link #commandBusEnabled()} replaced by the given value.
+     *
+     * @param commandBusEnabled whether the {@code CommandBus} is decorated with tracing
+     * @return a copy of these settings with the given {@code commandBusEnabled}
+     */
+    public MessagingTracingSettings withCommandBusEnabled(boolean commandBusEnabled) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventSinkEnabled()} replaced by the given value.
+     *
+     * @param eventSinkEnabled whether the {@code EventSink} is decorated with tracing
+     * @return a copy of these settings with the given {@code eventSinkEnabled}
+     */
+    public MessagingTracingSettings withEventSinkEnabled(boolean eventSinkEnabled) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventProcessorEnabled()} replaced by the given value.
+     *
+     * @param eventProcessorEnabled whether event-handling components (event processors) are decorated with tracing
+     * @return a copy of these settings with the given {@code eventProcessorEnabled}
+     */
+    public MessagingTracingSettings withEventProcessorEnabled(boolean eventProcessorEnabled) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventProcessorDisableBatchTrace()} replaced by the given value.
+     *
+     * @param eventProcessorDisableBatchTrace when {@code true}, suppresses the streaming-processor batch span
+     * @return a copy of these settings with the given {@code eventProcessorDisableBatchTrace}
+     */
+    public MessagingTracingSettings withEventProcessorDisableBatchTrace(boolean eventProcessorDisableBatchTrace) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventProcessorDistributedInSameTrace()} replaced by the given
+     * value.
+     *
+     * @param eventProcessorDistributedInSameTrace when {@code true}, a handler span continues the publisher's trace
+     * @return a copy of these settings with the given {@code eventProcessorDistributedInSameTrace}
+     */
+    public MessagingTracingSettings withEventProcessorDistributedInSameTrace(
+            boolean eventProcessorDistributedInSameTrace) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #eventProcessorDistributedInSameTraceTimeLimit()} replaced by the
+     * given value.
+     *
+     * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's
+     *                                                      trace when {@code distributedInSameTrace} is {@code true}
+     * @return a copy of these settings with the given {@code eventProcessorDistributedInSameTraceTimeLimit}
+     */
+    public MessagingTracingSettings withEventProcessorDistributedInSameTraceTimeLimit(
+            Duration eventProcessorDistributedInSameTraceTimeLimit) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #queryBusEnabled()} replaced by the given value.
+     *
+     * @param queryBusEnabled whether the {@code QueryBus} is decorated with tracing
+     * @return a copy of these settings with the given {@code queryBusEnabled}
+     */
+    public MessagingTracingSettings withQueryBusEnabled(boolean queryBusEnabled) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
      * Returns a copy of these settings with {@link #eventSourcingHandlersEnabled()} replaced by the given value.
      *
      * @param eventSourcingHandlersEnabled whether {@code @EventSourcingHandler} invocations get their own span
      * @return a copy of these settings with the given {@code eventSourcingHandlersEnabled}
      */
     public MessagingTracingSettings withEventSourcingHandlersEnabled(boolean eventSourcingHandlersEnabled) {
+        return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
+                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorDistributedInSameTraceTimeLimit,
+                                            queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
+    }
+
+    /**
+     * Returns a copy of these settings with {@link #spanAttributesProviders()} replaced by the given value.
+     *
+     * @param spanAttributesProviders toggles for the built-in span attribute providers contributed by this module
+     * @return a copy of these settings with the given {@code spanAttributesProviders}
+     */
+    public MessagingTracingSettings withSpanAttributesProviders(SpanAttributesProviders spanAttributesProviders) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
                                             eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
