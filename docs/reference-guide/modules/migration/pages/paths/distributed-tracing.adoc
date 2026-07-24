@@ -2,7 +2,7 @@
 = Distributed Tracing Migration
 :navtitle: Distributed Tracing
 
-Axon Framework 5 rebuilds distributed tracing around a single `SpanFactory` abstraction and the Micrometer Tracing facade used by Spring Boot's observability stack.
+Axon Framework 5 rebuilds distributed tracing around a single `SpanFactory` abstraction.
 The tracing Service Provider Interface (SPI) and every component decorator are part of the open-source framework modules. Exporting spans to OpenTelemetry backends is provided by Axoniq Framework through its Micrometer Tracing binding, which replaces the Axon Framework 4 `axon-tracing-opentelemetry` module.
 
 This path covers the migration of tracing from Axon Framework 4 to Axon Framework 5.
@@ -14,7 +14,7 @@ endif::[]
 ====
 The most significant changes are:
 
-* **OpenTelemetry integration**: `axon-tracing-opentelemetry` is replaced by the Axoniq Framework `axoniq-tracing-micrometer` binding, which consumes the Micrometer `Tracer` and `Propagator` that Spring Boot Actuator supplies.
+* **OpenTelemetry integration**: `axon-tracing-opentelemetry` is replaced by the Axoniq Framework `axoniq-tracing-micrometer` binding, which consumes a Micrometer `Tracer` and `Propagator`. Spring Boot Actuator can auto-configure them, or an application can supply them directly.
 * **`MultiSpanFactory` removed**: sending spans to several destinations is now handled by the export layer (multiple OpenTelemetry span exporters) instead of a composite factory.
 * **Span names changed**: operation spans follow the OpenTelemetry `<operation> <target>` convention instead of the Axon Framework 4 `operation(SimpleName)` shape. Dashboards and alerts keyed on span names must be updated. Per-handler-method spans keep their Axon Framework 4 shape.
 * **Span attribute keys changed**: from `axon_*` underscore keys to dotted `axoniq.*` keys. The Axon Framework 4 keys can be restored per provider.
@@ -28,7 +28,7 @@ The most significant changes are:
 ====
 Axon Framework 4::
 +
-[source,xml]
+[source,xml,role=axon4]
 ----
 <dependency>
     <groupId>org.axonframework</groupId>
@@ -37,7 +37,7 @@ Axon Framework 4::
 </dependency>
 ----
 
-Axon Framework 5::
+Axon Framework 5 with Spring Boot::
 +
 [source,xml]
 ----
@@ -61,22 +61,26 @@ Axon Framework 5::
 ----
 ====
 
+This dependency set is the Spring Boot option.
+A plain-Java application instead selects and configures its tracing SDK and a compatible `SpanFactory` binding in its own observability bootstrap.
+
 Key changes:
 
-* The OpenTelemetry SDK is no longer wired by Axon Framework. Spring Boot configures the SDK, sampling, propagation, and exporters through the standard `management.tracing.*` and `management.otlp.tracing.*` properties.
+* The OpenTelemetry SDK is no longer wired by Axon Framework. The application configures the SDK, sampling, propagation, and exporters. Spring Boot applications can do this through the standard `management.tracing.*` and `management.otlp.tracing.*` properties.
 * The component decorators themselves ship inside the regular framework modules (`axon-messaging`, `axon-modelling`, `axon-eventsourcing`), so no dedicated tracing dependency is needed for them.
 * Without the Axoniq Framework binding, the open-source modules provide `LoggingSpanFactory` (SLF4J output) but no exporting implementation.
 
 == Configuring the span factory
 
 In Axon Framework 4 you configured a `SpanFactory` explicitly.
-In Axon Framework 5 the binding builds the active `SpanFactory` from the Micrometer `Tracer` and `Propagator`. With Spring Boot no tracing-specific configuration is required at all.
+In Axon Framework 5, register the active `SpanFactory` as a framework component.
+A provider binding can build it from an application's tracing SDK; with Spring Boot, a binding can consume the auto-configured tracing components.
 
 [tabs]
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class AxonConfig {
 
@@ -91,15 +95,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-// Spring Boot: nothing to configure. The binding consumes the
-// Tracer and Propagator beans supplied by Spring Boot Actuator.
-
-// Plain Java: register the Tracer and Propagator as components.
-MessagingConfigurer.create()
-                   .componentRegistry(registry -> registry
-                           .registerComponent(Tracer.class, c -> tracer)
-                           .registerComponent(Propagator.class, c -> propagator))
-                   .start();
+include::example$migration/paths/tracing/TracingConfiguration.java[tag=register-span-factory,indent=0]
 ----
 ====
 
@@ -110,11 +106,9 @@ Key changes:
 
 == Multiple tracing destinations
 
-[tabs]
-====
-Axon Framework 4::
-+
-[source,java]
+In Axon Framework 4, applications composed several factories:
+
+[source,java,role=axon4]
 ----
 @Bean
 public SpanFactory spanFactory() {
@@ -125,25 +119,10 @@ public SpanFactory spanFactory() {
 }
 ----
 
-Axon Framework 5::
-+
-[source,java]
-----
-// Every SpanExporter bean is picked up by Spring Boot's
-// OpenTelemetry auto-configuration; all exporters receive the same spans.
-@Bean
-public SpanExporter zipkinSpanExporter() {
-    return ZipkinSpanExporter.builder()
-                             .setEndpoint("http://zipkin:9411/api/v2/spans")
-                             .build();
-}
-----
-====
-
 Key changes:
 
-* `MultiSpanFactory` no longer exists. Fan-out moved to the export layer: register one `SpanExporter` bean per destination, or add exporter dependencies that Spring Boot auto-configures. Every Axon span is created and ended exactly once.
-* Individual exporters can be toggled per environment through `management.tracing.export.<name>.enabled`.
+* `MultiSpanFactory` no longer exists. Fan-out moved to the tracing SDK's export layer: configure one exporter per destination. Every Axon span is created and ended exactly once.
+* Exporters can be toggled per environment through the SDK's configuration. Spring Boot properties and exporter beans are one option, but fan-out is not tied to Spring.
 * The Axon Framework 4 pattern of combining `LoggingSpanFactory` with an exporting factory is covered by a logging span exporter at the export layer.
 
 == Span names
@@ -180,19 +159,16 @@ The built-in attribute providers moved from underscore keys to the OpenTelemetry
 
 |`axon_message_id` |`axoniq.message.id`
 |`axon_message_name`, `axon_message_type`, `axon_payload_type` |`axoniq.message.type`, the message's qualified name and version; the Java-class distinction no longer exists
-|`axon_metadata_{key}` |`axoniq.metadata.{key}`
+|`axon_metadata_$\{key}` |`axoniq.metadata.$\{key}`
 |`axon_aggregate_identifier` |`axoniq.aggregate.identifier`
-|(not present) |`axoniq.event_tag.{key}`, the event's tags resolved through the configured `TagResolver`
+|(not present) |`axoniq.event_tag.$\{key}`, the event's tags resolved through the configured `TagResolver`
 |===
 
 To keep existing dashboards working, each provider accepts a constructor argument that overrides its key:
 
 [source,java]
 ----
-@Bean
-public MessageIdSpanAttributesProvider messageIdSpanAttributesProvider() {
-    return new MessageIdSpanAttributesProvider("axon_message_id");
-}
+include::example$migration/paths/tracing/AttributeProviderConfiguration.java[tag=legacy-message-id-key,indent=0]
 ----
 
 Custom `SpanAttributesProvider` implementations need a signature update: `provideForMessage` now also receives the `ProcessingContext`:
@@ -201,7 +177,7 @@ Custom `SpanAttributesProvider` implementations need a signature update: `provid
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 public class TenantSpanAttributesProvider implements SpanAttributesProvider {
 
@@ -216,13 +192,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-public class TenantSpanAttributesProvider implements SpanAttributesProvider {
-
-    @Override
-    public Map<String, String> provideForMessage(Message message, @Nullable ProcessingContext context) {
-        return Map.of();
-    }
-}
+include::example$migration/paths/tracing/TenantSpanAttributesProvider.java[tag=provider-signature,indent=0]
 ----
 ====
 
@@ -241,7 +211,7 @@ public class TenantSpanAttributesProvider implements SpanAttributesProvider {
 |`axon.tracing.queryBus.distributedInSameTrace` |Removed: a distributed query handler always continues the dispatcher's trace
 |`axon.tracing.eventProcessor.distributedInSameTrace` |`axon.tracing.event-processor.distributed-in-same-trace`
 |`axon.tracing.eventProcessor.distributedInSameTraceTimeLimit` |`axon.tracing.event-processor.distributed-in-same-trace-time-limit`
-|`axon.tracing.eventProcessor.disableBatchTrace` |`axon.tracing.event-processor.batch-trace-enabled` -- semantics inverted: `disableBatchTrace=true` maps to `batch-trace-enabled=false`
+|`axon.tracing.eventProcessor.disableBatchTrace` |`axon.tracing.event-processor.batch-trace-enabled` (the semantics are inverted: `disableBatchTrace=true` maps to `batch-trace-enabled=false`)
 |`axon.tracing.snapshotter.separateTrace`, `.aggregateTypeInSpanName` |Removed: snapshot spans nest under the entity's trace through the `ProcessingContext`
 |`axon.tracing.deadlineManager.*`, `axon.tracing.sagaManager.*` |Removed: deadlines and sagas are not available in Axon Framework 5.0
 |(not present) |Per-component toggles such as `axon.tracing.command-bus.enabled`, `axon.tracing.event-store.enabled`, and `axon.tracing.attribute-providers.event-tags`
@@ -252,7 +222,7 @@ public class TenantSpanAttributesProvider implements SpanAttributesProvider {
 The relationships between spans changed in ways that improve navigability:
 
 * **Distributed commands and queries** always continue the dispatcher's trace. The caller is actively waiting, so the whole request-response path renders as one trace. The Axon Framework 4 opt-out no longer exists.
-* **Streaming event processors** now parent each `EventProcessor.process` span under the `StreamingEventProcessor.batch` span that executes it, with a span link back to the publisher. In Axon Framework 4 the batch span was a separate, childless trace. The publisher relationship stays a link because a batch can carry events from several publishers, and an event handled long after publication (catch-up, replay) must not stretch the publisher's finished trace.
+* **Consumers with streaming execution semantics**, including pooled streaming processors and Persistent Stream configurations, now parent each `EventProcessor.process` span under the `StreamingEventProcessor.batch` span that executes it, with a span link back to the publisher. In Axon Framework 4 the batch span was a separate, childless trace. The publisher relationship stays a link because a batch can carry events from several publishers, and an event handled long after publication (catch-up, replay) must not stretch the publisher's finished trace.
 * **Same-trace mode** for event processors works as before: fresh events continue the publisher's trace, guarded by `distributed-in-same-trace-time-limit`; stale events start a linked trace.
 * **Snapshot operations** are children of the entity's trace instead of the Axon Framework 4 `separateTrace` choice, so slow snapshot loads are visible inside command handling.
 * **Subscription query updates** produce a producer span on the emitting node and a consumer span on the subscribing node with a span link back to the originating subscription query.
@@ -260,4 +230,4 @@ The relationships between spans changed in ways that improve navigability:
 == Custom `SpanFactory` implementations
 
 Implementing a custom `SpanFactory` (against a tracing library other than Micrometer) remains possible: the interface lives in `org.axonframework.messaging.tracing` in `axon-messaging`, and a registered `SpanFactory` component takes precedence.
-Most applications never need this. The Micrometer binding covers OpenTelemetry and Brave through their bridges.
+Most applications never need this. The Micrometer binding can use OpenTelemetry and Brave bridges in plain Java or in a Spring-managed application.

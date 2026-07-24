@@ -2,7 +2,7 @@
 :navtitle: Tracing
 
 Distributed tracing lets you follow a message through your system to see how the system behaves and performs.
-Axon Framework 5 has tracing support built into the framework modules themselves: commands, events, queries, repositories, state managers, event storage, and snapshots are all covered by internal tracing decorators, and a per-method handler enhancer records every annotated handler invocation.
+Axon Framework has tracing support built into the framework modules themselves: commands, events, queries, repositories, state managers, event storage, and snapshots are all covered by internal tracing decorators, and a per-method handler enhancer records every annotated handler invocation.
 
 ifdef::advanced-framework[]
 [NOTE]
@@ -27,8 +27,7 @@ Exporting spans to a tracing backend such as OpenTelemetry requires a provider. 
 
 == Traced operations
 
-Span names use the layout `<Component>.<operation> <messageName>`, following the OpenTelemetry `{operation} {target}` convention, and the kinds follow the OpenTelemetry convention as well: `PRODUCER` for dispatch, `CONSUMER` for handling, `INTERNAL` for everything else.
-Each `Tracing*` decorator declares its span-name prefixes as `public static final String` constants, for example `TracingCommandBus.DISPATCH_SPAN` or `TracingEventStorageEngine.APPEND_TRANSACTION_SPAN`.
+Span names use the layout `<Component>.<operation> <messageName>`, following the OpenTelemetry `<operation> <target>` convention, and the kinds follow the OpenTelemetry convention as well: `PRODUCER` for dispatch, `CONSUMER` for handling, `INTERNAL` for everything else.
 
 A command handled locally produces this shape:
 
@@ -56,7 +55,7 @@ StreamingEventProcessor.batch                        [INTERNAL]
 The batch span is the structural parent because the processor owns the execution. The link preserves the causal relationship to the publisher.
 Because the publisher is a link rather than a parent, an event handled long after publication (processor lag, downtime catch-up, replay) starts a temporally coherent trace at processing time and never stretches the publisher's finished trace.
 Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead. Events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
-Event handlers invoked within the publication's unit of work -- such as a subscribing processor consuming directly from the local event sink -- always continue the publisher's trace. Consumers with streaming execution semantics (pooled streaming processors, persistent-stream-fed consumers) follow the batch-and-link topology above.
+Event handlers invoked within the publication's unit of work, such as a subscribing processor consuming directly from the local event sink, always continue the publisher's trace. Consumers with streaming execution semantics (pooled streaming processors, persistent-stream-fed consumers) follow the batch-and-link topology above.
 
 Queries follow the same pattern with `QueryBus.query`, `QueryBus.respond`, `QueryBus.subscriptionQuery`, `QueryBus.initialResponse`, `QueryBus.handle`, and `QueryBus.emitUpdate` spans.
 `QueryBus.respond` covers a finite direct-query response stream that continues after its handler returns.
@@ -77,8 +76,22 @@ Handlers running on a different thread than their dispatcher still nest correctl
 
 == Configuration
 
-With Spring Boot, tracing is configured through the `axon.tracing.*` namespace.
+Plain-Java applications configure tracing by registering the `SpanFactory`, optional tracing settings, and optional span attribute providers with the framework configurer.
+Spring Boot applications can use the `axon.tracing.*` property namespace instead.
+
+[tabs]
+====
+Plain Java::
++
+[source,java]
+----
+include::example$monitoring/tracing/TracingConfiguration.java[tag=plain-java,indent=0]
+----
+
+Spring Boot::
++
 Every component can be opted out individually:
++
 
 [cols="<,<,<"]
 |===
@@ -99,46 +112,31 @@ Every component can be opted out individually:
 |`axon.tracing.event-sourcing-handlers-enabled` |`false` |When `true`, `@EventSourcingHandler` invocations get their own per-method span. Off by default because they fire once per event during entity replay.
 |`axon.tracing.attribute-providers.*` |`true` |Toggles the built-in span attribute providers (`message-id`, `message-type`, `metadata`, `aggregate-identifier`, `event-tags`) individually.
 |===
+====
 
-Outside Spring, the same wiring happens automatically through the ServiceLoader-discovered enhancers as soon as a `SpanFactory` component is registered with the configurer.
+The framework registers tracing decorators only when the configuration contains a `SpanFactory`.
+The settings records are public configuration components, so plain-Java applications can adjust the same component toggles without depending on Spring.
 
 == Local development with `LoggingSpanFactory`
 
 For local development without a tracing backend, register `LoggingSpanFactory`.
 It emits one INFO line per span lifecycle event, formatted as `[spanId][operationName]`, including the type and identifier of the traced message.
 
-[tabs]
-====
-Spring Boot::
-+
+In Spring Boot, declare the same factory as a bean:
+
 [source,java]
 ----
-@Configuration
-public class TracingConfig {
-
-    @Bean
-    public SpanFactory spanFactory() {
-        return LoggingSpanFactory.INSTANCE;
-    }
-}
+include::example$monitoring/tracing/TracingConfiguration.java[tag=spring-boot-logging,indent=0]
 ----
 
-Plain Java::
-+
-[source,java]
-----
-MessagingConfigurer.create()
-                   .componentRegistry(registry -> registry.registerComponent(
-                           SpanFactory.class, config -> LoggingSpanFactory.INSTANCE))
-                   .start();
-----
-====
+The plain-Java example in <<Configuration>> already registers `LoggingSpanFactory` as a component.
 
 == Exporting spans to a tracing backend
 
 The open-source framework modules ship no exporting `SpanFactory` implementation. `LoggingSpanFactory` writes to the log only.
-Sending spans to OpenTelemetry-compatible backends such as Jaeger, Tempo, or Zipkin is provided by Axoniq Framework through its Micrometer Tracing binding (`io.axoniq.framework:axoniq-tracing-micrometer`).
-That binding builds on the `Tracer` and `Propagator` supplied by Spring Boot Actuator and a Micrometer bridge such as `micrometer-tracing-bridge-otel`.
+Sending spans to OpenTelemetry-compatible backends such as Jaeger, Tempo, or Zipkin requires a provider binding and an application-configured tracing SDK.
+Axoniq Framework provides a Micrometer Tracing binding (`io.axoniq.framework:axoniq-tracing-micrometer`).
+It builds on a Micrometer `Tracer` and `Propagator`; applications can create those components directly, while Spring Boot Actuator can auto-configure them through a bridge such as `micrometer-tracing-bridge-otel`.
 It also traces the distributed connector legs between applications, makes instrumented gRPC, JDBC, and WebClient calls plus Mapped Diagnostic Context (MDC) logging nest under the correct Axon span, and carries the active span into Reactor pipelines through Micrometer's context propagation.
 
 ifdef::advanced-framework[]
@@ -149,4 +147,7 @@ The complete setup is described in the Axoniq Framework documentation.
 endif::[]
 
 Alternatively, implement the `SpanFactory` interface against the tracing library of your choice and register it as a component. The framework decorators are provider-agnostic.
-Sending spans to several destinations at once is a concern of the chosen provider's export layer (for example, multiple OpenTelemetry span exporters), not of the framework: Axon Framework always uses one active `SpanFactory`, so every span is created and ended exactly once.
+SDK setup, sampling, propagation, and export belong to the application's observability bootstrap rather than the framework.
+To send spans to several destinations, configure one exporter per destination in that SDK.
+Spring Boot properties and exporter beans are one way to do this, but fan-out is not Spring-specific.
+Axon Framework always uses one active `SpanFactory`, so every span is created and ended exactly once.
