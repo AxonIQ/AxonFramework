@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress;
+package org.axonframework.messaging.eventhandling.processing.streaming.progress;
 
 import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;

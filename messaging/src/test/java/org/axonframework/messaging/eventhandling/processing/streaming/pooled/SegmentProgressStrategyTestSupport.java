@@ -25,8 +25,8 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategy;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategyFactory;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -58,7 +58,7 @@ import static org.mockito.Mockito.spy;
  * lifecycle operations.
  * <p>
  * This base is deliberately checkpoint-agnostic: it is typed only on the progress-persistence seam, so it serves the
- * default {@link org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.TokenStoringProgressStrategy}
+ * default {@link org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy}
  * as well as any advanced strategy.
  *
  * @author Allard Buijze

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress;
+package org.axonframework.messaging.eventhandling.processing.streaming.progress;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -26,18 +26,17 @@ import java.util.concurrent.CompletableFuture;
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
 
 /**
- * Decides how a single {@link Segment}'s progress is persisted as a work package processes events. One instance exists
- * per work package (per segment); the work package invokes it around every batch and on claim/release, while the
- * {@link SegmentProgressContext} performs the actual store.
+ * Decides how a single {@link Segment}'s progress is persisted as its events are processed. One instance exists per
+ * segment; it is invoked around every batch and on claim/release, while the {@link SegmentProgressContext} performs the
+ * actual store.
  * <p>
- * The default {@link TokenStoringProgressStrategy} persists the batch-end token every batch (the verbatim behaviour of a
- * processor without advanced progress handling). A strategy may instead defer persistence and advance the stored token
- * only on its own signal (for example, self-checkpointing), reconciling several participants to a single safe position
- * before persisting.
+ * The default {@link TokenStoringProgressStrategy} persists the batch-end token every batch. A strategy may instead
+ * defer persistence and advance the stored token only on its own signal (for example, self-checkpointing), reconciling
+ * several participants to a single safe position before persisting.
  * <p>
  * <b>Internal API.</b> This interface is marked {@link Internal}: it is the extension point through which advanced (and
- * out-of-module) progress handling plugs into the pooled streaming event processor, not stable end-user API, and its
- * shape may change in a minor or patch release.
+ * out-of-module) progress handling is provided, not stable end-user API, and its shape may change in a minor or patch
+ * release.
  *
  * @author Allard Buijze
  * @see SegmentProgressContext
@@ -73,9 +72,9 @@ public interface SegmentProgressStrategy {
     /**
      * Indicates whether the strategy has out-of-band work that requires a worker cycle even when no events are queued
      * (for example, an asynchronous checkpoint request recorded between cycles). Drives the post-cycle reschedule and
-     * lets an idle segment run a commit cycle. Strategies that act only within the work package's batches never schedule
-     * out-of-band and return {@code false}; this is deliberately <em>not</em> a throttle for idle catch-up stores, which
-     * the work package drives on its own claim-extension beat.
+     * lets an idle segment run a commit cycle. Strategies that act only within their batches never schedule out-of-band
+     * and return {@code false}; this is deliberately <em>not</em> a throttle for idle catch-up stores, which are driven
+     * on the claim-extension beat.
      *
      * @return {@code true} if a worker cycle is needed for out-of-band work, {@code false} otherwise
      */
@@ -101,8 +100,8 @@ public interface SegmentProgressStrategy {
     }
 
     /**
-     * Invoked when the work package aborts, so the strategy can deactivate any out-of-band signal (for example, render a
-     * checkpoint trigger inert so a late request becomes a no-op). Defaults to a no-op.
+     * Invoked when processing of the segment aborts, so the strategy can deactivate any out-of-band signal (for
+     * example, render a checkpoint trigger inert so a late request becomes a no-op). Defaults to a no-op.
      */
     default void onAbort() {
         // No-op by default; a strategy with an out-of-band trigger overrides this.

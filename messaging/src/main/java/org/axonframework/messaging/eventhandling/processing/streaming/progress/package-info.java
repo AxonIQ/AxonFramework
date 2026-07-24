@@ -16,14 +16,15 @@
 
 
 /**
- * Part of the Axon Messaging module. Defines the per-segment progress-persistence seam used by the pooled streaming
- * event processor: a {@code WorkPackage} drives a
- * {@link org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategy} around
- * each batch (and on claim/release) to decide which {@code TrackingToken} to persist. The default
- * {@link org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.TokenStoringProgressStrategy}
+ * Part of the Axon Messaging module. Defines the per-segment progress-persistence seam for streaming event processing.
+ * A {@link org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy} is invoked
+ * around each batch (and on claim/release) to decide which {@code TrackingToken} to persist, while a
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressContext} performs the
+ * actual store for the segment. The default
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy}
  * stores the batch-end token; advanced strategies (such as self-checkpointing) plug in through the same seam.
  */
 @NullMarked
-package org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress;
+package org.axonframework.messaging.eventhandling.processing.streaming.progress;
 
 import org.jspecify.annotations.NullMarked;

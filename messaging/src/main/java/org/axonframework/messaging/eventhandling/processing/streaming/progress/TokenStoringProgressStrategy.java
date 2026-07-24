@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress;
+package org.axonframework.messaging.eventhandling.processing.streaming.progress;
 
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.annotation.Internal;
@@ -27,12 +27,12 @@ import static java.util.Objects.requireNonNull;
 
 /**
  * Default {@link SegmentProgressStrategy}: persists the batch-end token ({@link SegmentProgressContext#lastConsumedToken()})
- * on every commit. This is the verbatim behaviour of a pooled streaming event processor without advanced progress
- * handling: the stored {@link TrackingToken} advances to the position consumed by each batch.
+ * on every commit, so the stored {@link TrackingToken} advances to the position consumed by each batch. This is the
+ * behaviour to expect when no advanced progress handling is configured.
  * <p>
- * It schedules no out-of-band work ({@link #hasPendingWork()} is always {@code false}) and acts only within the work
- * package's batch and idle cycles. On an idle cycle the work package still invokes {@link #onBatchCommit(ProcessingContext)}
- * on its claim-extension beat, so a token advanced purely by ignored events is caught up then.
+ * It schedules no out-of-band work ({@link #hasPendingWork()} is always {@code false}) and acts only within the batch
+ * and idle cycles it is invoked on. On an idle cycle {@link #onBatchCommit(ProcessingContext)} is still invoked on the
+ * claim-extension beat, so a token advanced purely by ignored events is caught up then.
  * <p>
  * <b>Internal API.</b> This class is marked {@link Internal}: it is the default implementation of the progress seam and
  * not stable end-user API.
@@ -49,7 +49,7 @@ public final class TokenStoringProgressStrategy implements SegmentProgressStrate
     /**
      * Constructs a {@code TokenStoringProgressStrategy} bound to the given {@code context}.
      *
-     * @param context the work package's progress context to persist progress through
+     * @param context the progress context to persist progress through
      */
     public TokenStoringProgressStrategy(SegmentProgressContext context) {
         this.context = requireNonNull(context, "The SegmentProgressContext may not be null.");
@@ -65,7 +65,7 @@ public final class TokenStoringProgressStrategy implements SegmentProgressStrate
 
     @Override
     public boolean hasPendingWork() {
-        // Acts only within Coordinator-driven batches and the work package's idle beat; never schedules out-of-band.
+        // Acts only within the batches and idle beat it is invoked on; never schedules out-of-band.
         return false;
     }
 }

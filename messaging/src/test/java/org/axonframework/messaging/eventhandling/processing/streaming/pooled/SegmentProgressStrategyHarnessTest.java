@@ -17,7 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.FutureUtils;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategyFactory;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * Exercises the published {@link SegmentProgressStrategyTestSupport} harness with the default
- * {@link org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.TokenStoringProgressStrategy},
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy},
  * keeping the support base verified in-repo. Out-of-module strategy suites (consuming the messaging test-jar) rely on
  * exactly the bridge operations driven here.
  */

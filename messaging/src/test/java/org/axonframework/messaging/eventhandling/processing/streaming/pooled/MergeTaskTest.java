@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -47,6 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -109,11 +111,13 @@ class MergeTaskTest {
 
         when(workPackageOne.segment()).thenReturn(SEGMENT_ZERO);
         when(workPackageOne.abort(null)).thenReturn(FutureUtils.emptyCompletedFuture());
+        when(workPackageOne.onSegmentReleased(any())).thenReturn(FutureUtils.emptyCompletedFuture());
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
                 .thenReturn(completedFuture(testTokenToMerge));
         workPackages.put(SEGMENT_TO_MERGE, workPackageOne);
         when(workPackageTwo.segment()).thenReturn(SEGMENT_ONE);
         when(workPackageTwo.abort(null)).thenReturn(FutureUtils.emptyCompletedFuture());
+        when(workPackageTwo.onSegmentReleased(any())).thenReturn(FutureUtils.emptyCompletedFuture());
         when(tokenStore.deleteToken(anyString(), anyInt(), any())).thenReturn(FutureUtils.emptyCompletedFuture());
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
                 .thenReturn(completedFuture(testTokenToBeMerged));
@@ -139,6 +143,13 @@ class MergeTaskTest {
         assertEquals(testTokenToMerge, ((MergedTrackingToken) resultToken).lowerSegmentToken());
         assertEquals(testTokenToBeMerged, ((MergedTrackingToken) resultToken).upperSegmentToken());
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // each aborted work package's final progress is flushed before its token is read, so the merged segment inherits it
+        InOrder releaseBeforeFetchOne = inOrder(workPackageOne, tokenStore);
+        releaseBeforeFetchOne.verify(workPackageOne).onSegmentReleased(any());
+        releaseBeforeFetchOne.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any());
+        InOrder releaseBeforeFetchTwo = inOrder(workPackageTwo, tokenStore);
+        releaseBeforeFetchTwo.verify(workPackageTwo).onSegmentReleased(any());
+        releaseBeforeFetchTwo.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any());
 
         assertTrue(result.isDone());
         assertTrue(result.get());

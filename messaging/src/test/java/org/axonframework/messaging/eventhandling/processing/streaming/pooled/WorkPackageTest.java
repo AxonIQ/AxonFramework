@@ -19,8 +19,8 @@ package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 import org.jspecify.annotations.NonNull;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategy;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.TokenStoringProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -35,6 +35,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -408,6 +409,35 @@ class WorkPackageTest {
 
         // then: the claim was extended without driving the strategy at an unchanged position
         verify(strategySpy.get(), never()).onBatchCommit(any());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenThatDoesNotAdvanceBeyondTheStoredToken() {
+        // given: the stored token has advanced to position 5
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a token that does not advance beyond the stored token is persisted
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(3L));
+
+        // then: the non-advancing token is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(new GlobalSequenceTrackingToken(3L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+    }
+
+    private void persistProgressInUnitOfWork(TrackingToken candidate) {
+        FutureUtils.joinAndUnwrap(
+                UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                                  .executeWithResult(ctx -> testSubject.persistProgress(candidate, ctx))
+        );
+    }
+
+    private TrackingToken fetchStoredToken() {
+        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null));
     }
 
     @Test

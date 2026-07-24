@@ -29,9 +29,9 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressContext;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategy;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress.SegmentProgressStrategyFactory;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressContext;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -263,7 +263,7 @@ class WorkPackage implements SegmentProgressContext {
 
     /**
      * The given {@code eventEntry} should not be scheduled if the {@link TrackingToken} extracted from its context
-     * {@link TrackingToken#covers(TrackingToken)} the last delivered token.
+     * {@link TrackingToken#covers(TrackingToken)} is the last delivered token.
      * <p>
      * This validation ensures events that this work package already covered are ignored.
      *
@@ -502,7 +502,7 @@ class WorkPackage implements SegmentProgressContext {
      * Stores {@code safe}, keeping the stored {@link TrackingToken} monotonic. A {@code null} or already-stored token
      * is ignored. A token that does not
      * {@link TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last
-     * stored checkpoint (whether a strict regression or an <em>incomparable</em> position, such as a
+     * stored token (whether a strict regression or an <em>incomparable</em> position, such as a
      * partially-regressed multi-source token where one source advanced while another fell behind) is ignored with a
      * warning rather than persisted, so a misbehaving component can never rewind progress on any source. A concluding
      * replay is still recognized as an advance, as the coverage is judged on the unwrapped positions.
@@ -513,7 +513,7 @@ class WorkPackage implements SegmentProgressContext {
         }
         if (lastStoredToken != null && !TrackingTokenUtils.coversWhenUnwrapped(safe, lastStoredToken)) {
             logger.warn(
-                    "Work Package [{}]-[{}] ignoring checkpoint token [{}]; it does not advance beyond the stored token [{}].",
+                    "Work Package [{}]-[{}] ignoring safe token [{}]; it does not advance beyond the stored token [{}].",
                     name,
                     segment.getSegmentId(),
                     safe,

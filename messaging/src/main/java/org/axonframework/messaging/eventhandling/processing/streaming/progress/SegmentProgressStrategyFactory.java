@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling.processing.streaming.pooled.progress;
+package org.axonframework.messaging.eventhandling.processing.streaming.progress;
 
 import org.axonframework.common.annotation.Internal;
 
 /**
- * Creates a {@link SegmentProgressStrategy} for a single work package, binding it to that package's
- * {@link SegmentProgressContext}. One factory is selected per processor and applied to every work package the processor
- * spawns, so all segments of a processor share the same progress-handling behaviour.
+ * Creates a {@link SegmentProgressStrategy} for a single segment, binding it to that segment's
+ * {@link SegmentProgressContext}. One factory is selected per processor and applied to every segment it processes, so
+ * all segments of a processor share the same progress-handling behaviour.
  * <p>
  * The default {@link #tokenStoring()} factory produces a {@link TokenStoringProgressStrategy}. A processor with advanced
  * progress handling (such as self-checkpointing) supplies a different factory.
@@ -39,12 +39,12 @@ import org.axonframework.common.annotation.Internal;
 public interface SegmentProgressStrategyFactory {
 
     /**
-     * Creates the {@link SegmentProgressStrategy} for the work package owning the given {@code context}.
+     * Creates the {@link SegmentProgressStrategy} for the segment owning the given {@code context}.
      * <p>
      * The {@code context} is bound to a single {@link SegmentProgressContext#segment() segment}; the returned strategy
      * should retain it to observe and persist that segment's progress.
      *
-     * @param context the work package's progress context to bind the strategy to
+     * @param context the progress context to bind the strategy to
      * @return a strategy bound to {@code context}
      */
     SegmentProgressStrategy create(SegmentProgressContext context);
