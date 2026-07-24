@@ -54,10 +54,10 @@ import org.jspecify.annotations.Nullable;
  * class evolved.
  * <p>
  * The enrichment is a no-op when no span is active, when no {@link TagResolver} or {@link EventConverter} component is
- * configured, or when {@link EventSourcingTracingSettings#eventTagsEnabled()} is {@code false}
- * ({@code axon.tracing.attribute-providers.event-tags} in Spring Boot). {@code @EventSourcingHandler} members are never
- * wrapped: they fire once per event during entity replay (a hot path), and their enclosing span (the repository load)
- * would collect misleading, mutually-overwriting tag attributes from every replayed event.
+ * configured, or when {@link EventSourcingTracingSettings#eventTagsEnabled()} is {@code false}.
+ * {@code @EventSourcingHandler} members are never wrapped: they fire once per event during entity replay (a hot path),
+ * and their enclosing span (the repository load) would collect misleading, mutually-overwriting tag attributes from
+ * every replayed event.
  * <p>
  * Registered conditionally by {@code EventSourcingTracingConfigurationEnhancer}: the
  * {@link org.axonframework.messaging.core.annotation.HandlerDefinition HandlerDefinition} component is decorated with

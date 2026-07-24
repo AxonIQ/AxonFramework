@@ -163,8 +163,8 @@ public interface SpanFactory {
      * context's active span, so spans created next with that context nest under this root.
      * <p>
      * When {@code context} carries an active span, implementations MUST attach that span as a span <em>link</em> (not
-     * as a parent), so the new trace stays navigable in APM UIs back to the operation that triggered it -- without
-     * any parent-of relationship to that operation.
+     * as a parent), preserving the relationship to the operation that triggered it without creating a parent-of
+     * relationship to that operation.
      *
      * @param operationName the span name
      * @param context       the processing context the root should become the active span of (and link back to), or

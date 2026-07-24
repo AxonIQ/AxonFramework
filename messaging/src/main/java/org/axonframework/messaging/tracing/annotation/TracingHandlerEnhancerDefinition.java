@@ -57,8 +57,7 @@ import java.util.stream.Collectors;
  * attribute are suppressed by default: they fire once per event during entity replay (a hot path) and would flood
  * traces with one span per replayed event. Suppression is decided <em>before</em> any span name is built or the
  * {@link SpanFactory} is resolved, so a suppressed invocation carries no tracing cost beyond a boolean check. Set
- * {@link MessagingTracingSettings#eventSourcingHandlersEnabled()} to {@code true}
- * ({@code axon.tracing.event-sourcing-handlers-enabled} in Spring Boot) to trace them anyway.
+ * {@link MessagingTracingSettings#eventSourcingHandlersEnabled()} to {@code true} to trace them anyway.
  *
  * @author Mitchell Herrijgers
  * @author Mateusz Nowak

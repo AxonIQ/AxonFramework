@@ -42,8 +42,7 @@ import java.util.List;
  * enhancers, driven by the {@code *TracingSettings} components, and applications contribute custom providers through
  * {@link
  * org.axonframework.messaging.core.configuration.MessagingConfigurer#registerSpanAttributesProvider(ComponentBuilder)}
- * (plain Java) or by declaring a {@code SpanAttributesProvider} bean (Spring Boot) -- never by interacting with this
- * registry directly.
+ * rather than interacting with this registry directly.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
