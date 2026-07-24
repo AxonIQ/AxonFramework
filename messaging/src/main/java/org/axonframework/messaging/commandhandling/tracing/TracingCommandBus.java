@@ -51,11 +51,11 @@ import java.util.concurrent.CompletableFuture;
 @Internal
 public final class TracingCommandBus implements CommandBus {
 
-    /** Prefix for the command-dispatch span ({@code "CommandBus.dispatchCommand <name>"}). */
-    public static final String DISPATCH_SPAN = "CommandBus.dispatchCommand";
+    /** Prefix for the command-dispatch span ({@code "CommandBus.dispatch <name>"}). */
+    public static final String DISPATCH_SPAN = "CommandBus.dispatch";
 
-    /** Prefix for the command-handle span ({@code "CommandBus.handleCommand <name>"}). */
-    public static final String HANDLE_SPAN = "CommandBus.handleCommand";
+    /** Prefix for the command-handle span ({@code "CommandBus.handle <name>"}). */
+    public static final String HANDLE_SPAN = "CommandBus.handle";
 
     private final CommandBus delegate;
     private final SpanFactory spanFactory;

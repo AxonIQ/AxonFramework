@@ -63,8 +63,8 @@ public final class TracingQueryBus implements QueryBus {
     /** Prefix for the query-dispatch span ({@code "QueryBus.query <name>"}). */
     public static final String DISPATCH_SPAN = "QueryBus.query";
 
-    /** Prefix for the query-handle span ({@code "QueryBus.handleQuery <name>"}). */
-    public static final String HANDLE_SPAN = "QueryBus.handleQuery";
+    /** Prefix for the query-handle span ({@code "QueryBus.handle <name>"}). */
+    public static final String HANDLE_SPAN = "QueryBus.handle";
 
     /**
      * Prefix for the query-respond span ({@code "QueryBus.respond <name>"}): production and delivery of a response

@@ -33,8 +33,8 @@ Each `Tracing*` decorator declares its span-name prefixes as `public static fina
 A command handled locally produces this shape:
 
 ----
-CommandBus.dispatchCommand RegisterStudent           [PRODUCER]
-+- CommandBus.handleCommand RegisterStudent          [CONSUMER]
+CommandBus.dispatch RegisterStudent           [PRODUCER]
++- CommandBus.handle RegisterStudent          [CONSUMER]
    +- Repository.loadOrCreate Student                [INTERNAL]
    +- Student.decide(RegisterStudent,EventAppender)  [INTERNAL]
    |  +- EventSink.publish StudentRegistered         [PRODUCER]
@@ -58,7 +58,7 @@ Because the publisher is a link rather than a parent, an event handled long afte
 Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead. Events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
 Subscribing processors run inside the publisher's processing context and always continue its trace.
 
-Queries follow the same pattern with `QueryBus.query`, `QueryBus.respond`, `QueryBus.subscriptionQuery`, `QueryBus.initialResponse`, `QueryBus.handleQuery`, and `QueryBus.emitUpdate` spans.
+Queries follow the same pattern with `QueryBus.query`, `QueryBus.respond`, `QueryBus.subscriptionQuery`, `QueryBus.initialResponse`, `QueryBus.handle`, and `QueryBus.emitUpdate` spans.
 `QueryBus.respond` covers a finite direct-query response stream that continues after its handler returns.
 `QueryBus.initialResponse` covers only the finite first answer of a subscription query, never its potentially unbounded update stream.
 

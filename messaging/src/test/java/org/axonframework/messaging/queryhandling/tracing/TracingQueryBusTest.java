@@ -55,7 +55,7 @@ class TracingQueryBusTest {
     private static final String RESPOND_SPAN = "QueryBus.respond MyQuery";
     private static final String SUBSCRIPTION_DISPATCH_SPAN = "QueryBus.subscriptionQuery MyQuery";
     private static final String INITIAL_RESPONSE_SPAN = "QueryBus.initialResponse MyQuery";
-    private static final String HANDLE_SPAN = "QueryBus.handleQuery MyQuery";
+    private static final String HANDLE_SPAN = "QueryBus.handle MyQuery";
     private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
 
     private TestSpanFactory spanFactory;

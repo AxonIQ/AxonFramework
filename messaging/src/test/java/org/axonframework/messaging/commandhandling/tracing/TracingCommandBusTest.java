@@ -45,8 +45,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TracingCommandBusTest {
 
-    private static final String DISPATCH_SPAN = "CommandBus.dispatchCommand MyCommand";
-    private static final String HANDLE_SPAN = "CommandBus.handleCommand MyCommand";
+    private static final String DISPATCH_SPAN = "CommandBus.dispatch MyCommand";
+    private static final String HANDLE_SPAN = "CommandBus.handle MyCommand";
 
     private TestSpanFactory spanFactory;
     private RecordingCommandBus delegate;
