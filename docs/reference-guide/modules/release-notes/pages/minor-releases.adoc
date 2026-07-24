@@ -3,6 +3,34 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+[#release_5_2]
+== Release 5.2
+
+=== Release 5.2.1
+
+==== Bug Fixes
+
+- Validate return and parameter type against field type (PR link:https://github.com/AxonIQ/AxonFramework/pull/4780[#4780], by @smcvb)
+- Only deduplicate fluent accessors for records (PR link:https://github.com/AxonIQ/AxonFramework/pull/4779[#4779], by @smcvb)
+- Active entities should only receive tag-matching events during command handling phase ([link:https://github.com/AxonIQ/AxonFramework/issues/4766[#4766], [PR link:https://github.com/AxonIQ/AxonFramework/pull/4773[#4773], by @MateuszNaKodach)
+- Resolve incorrect event routing in heterogeneous Sequencing Policy setup among Event Handling Components (PR link:https://github.com/AxonIQ/AxonFramework/pull/4771[#4771], by @MateuszNaKodach)
+- Only resolve replay context during an active replay (PR link:https://github.com/AxonIQ/AxonFramework/pull/4754[#4754], by @abuijze)
+- Do not report rolled-back events in AxonTestFixture (PR link:https://github.com/AxonIQ/AxonFramework/pull/4749[#4749], by @abuijze)
+
+==== Documentation
+
+- Fix navigation item for the dataprotection-extension migration path (PR link:https://github.com/AxonIQ/AxonFramework/pull/4741[#4741], by @hatzlj)
+- Include AF 5.2.0 release notes (PR link:https://github.com/AxonIQ/AxonFramework/pull/4734[#4734], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/smcvb[@smcvb]
+
 [#release_5_1]
 == Release 5.1
 
