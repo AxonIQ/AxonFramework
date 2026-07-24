@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * @author Steven van Beelen
  */
-class MapEntityChildModelDefinitionTest extends AbstractAnnotatedEntityMetamodelTest<MapDefinitionTestTeam> {
+class MapEntityChildModelDefinitionTest
+        extends AbstractAnnotatedEntityMetamodelTest<MapEntityChildModelDefinitionTest.MapDefinitionTestTeam> {
 
     private final MapEntityChildModelDefinition definition = new MapEntityChildModelDefinition();
 
@@ -109,68 +110,68 @@ class MapEntityChildModelDefinitionTest extends AbstractAnnotatedEntityMetamodel
             Map rawMap;
         }
     }
-}
 
-class MapDefinitionTestTeam {
+    class MapDefinitionTestTeam {
 
-    @SuppressWarnings("unused")
-    private final String id;
+        @SuppressWarnings("unused")
+        private final String id;
 
-    @EntityMember(routingKey = "memberId")
-    private final Map<String, MapDefinitionTestTeamMember> members = new HashMap<>();
+        @EntityMember(routingKey = "memberId")
+        private final Map<String, MapDefinitionTestTeamMember> members = new HashMap<>();
 
-    MapDefinitionTestTeam(String id) {
-        this.id = id;
+        MapDefinitionTestTeam(String id) {
+            this.id = id;
+        }
+
+        @CommandHandler
+        public void handle(AddTeamMember command, EventAppender appender) {
+            appender.append(new TeamMemberAdded(command.teamId(), command.memberId(), command.name()));
+        }
+
+        @EventHandler
+        public void on(TeamMemberAdded event) {
+            members.put(event.memberId(), new MapDefinitionTestTeamMember(event.memberId(), event.name()));
+        }
+
+        public Map<String, MapDefinitionTestTeamMember> getMembers() {
+            return members;
+        }
     }
 
-    @CommandHandler
-    public void handle(AddTeamMember command, EventAppender appender) {
-        appender.append(new TeamMemberAdded(command.teamId(), command.memberId(), command.name()));
+    class MapDefinitionTestTeamMember {
+
+        private final String memberId;
+        private String name;
+
+        MapDefinitionTestTeamMember(String memberId, String name) {
+            this.memberId = memberId;
+            this.name = name;
+        }
+
+        @CommandHandler
+        public void handle(RenameTeamMember command) {
+            this.name = command.newName();
+        }
+
+        @SuppressWarnings("unused")
+        public String getMemberId() {
+            return memberId;
+        }
+
+        public String getName() {
+            return name;
+        }
     }
 
-    @EventHandler
-    public void on(TeamMemberAdded event) {
-        members.put(event.memberId(), new MapDefinitionTestTeamMember(event.memberId(), event.name()));
+    record AddTeamMember(String teamId, String memberId, String name) {
+
     }
 
-    public Map<String, MapDefinitionTestTeamMember> getMembers() {
-        return members;
-    }
-}
+    record RenameTeamMember(String memberId, String newName) {
 
-class MapDefinitionTestTeamMember {
-
-    private final String memberId;
-    private String name;
-
-    MapDefinitionTestTeamMember(String memberId, String name) {
-        this.memberId = memberId;
-        this.name = name;
     }
 
-    @CommandHandler
-    public void handle(RenameTeamMember command) {
-        this.name = command.newName();
+    record TeamMemberAdded(String teamId, String memberId, String name) {
+
     }
-
-    @SuppressWarnings("unused")
-    public String getMemberId() {
-        return memberId;
-    }
-
-    public String getName() {
-        return name;
-    }
-}
-
-record AddTeamMember(String teamId, String memberId, String name) {
-
-}
-
-record RenameTeamMember(String memberId, String newName) {
-
-}
-
-record TeamMemberAdded(String teamId, String memberId, String name) {
-
 }
