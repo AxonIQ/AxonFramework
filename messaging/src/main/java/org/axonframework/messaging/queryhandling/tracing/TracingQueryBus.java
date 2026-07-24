@@ -43,8 +43,8 @@ import java.util.function.Supplier;
  * <p>
  * Every {@code query} dispatch opens a dispatch span (kind producer), the active tracing context is propagated onto the
  * query's metadata so a remote handler can continue the trace, and the span is ended when the result stream completes.
- * Each subscribed {@link QueryHandler} is wrapped so that handling opens a handler span -- parented on the dispatch span
- * via the propagated context -- bound to the handling {@link ProcessingContext}'s lifecycle.
+ * Each subscribed {@link QueryHandler} is wrapped so that handling opens a handler span -- parented on the dispatch
+ * span via the propagated context -- bound to the handling {@link ProcessingContext}'s lifecycle.
  * <p>
  * Update emission is traced here too: {@code SimpleQueryUpdateEmitter} delegates {@code emit} / {@code complete} /
  * {@code completeExceptionally} to the matching {@link QueryBus} methods, so wrapping the bus naturally traces the
@@ -92,7 +92,8 @@ public final class TracingQueryBus implements QueryBus {
     private static final String COMPLETE_SUBSCRIPTIONS_SPAN = "QueryBus.completeSubscriptions";
 
     /** Name of the subscription-exceptional-completion span. */
-    private static final String COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN = "QueryBus.completeSubscriptionsExceptionally";
+    private static final String COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN =
+            "QueryBus.completeSubscriptionsExceptionally";
 
     private static final String MESSAGE_CONVERSATION_ID_ATTRIBUTE = "messaging.message.conversation_id";
 

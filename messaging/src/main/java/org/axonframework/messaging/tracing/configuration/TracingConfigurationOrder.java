@@ -56,12 +56,13 @@ public final class TracingConfigurationOrder {
 
     /**
      * {@link ConfigurationEnhancer#order() Enhancer order} for the {@code *SpanAttributesProviderConfigurationEnhancer}
-     * classes contributing the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider} implementations.
+     * classes contributing the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider}
+     * implementations.
      * <p>
      * These run at the default order, before the {@link #TRACING_DEFAULTS_ENHANCER_ORDER defaults enhancers}.
      * Correctness does not depend on this: contribution is decorator-based and only applied when the
-     * {@link org.axonframework.messaging.tracing.SpanFactory} consuming the registry is constructed -- after the enhance phase
-     * has completed.
+     * {@link org.axonframework.messaging.tracing.SpanFactory} consuming the registry is constructed -- after the
+     * enhance phase has completed.
      */
     public static final int PROVIDER_ENHANCER_ORDER = 0;
 

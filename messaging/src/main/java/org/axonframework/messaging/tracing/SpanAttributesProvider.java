@@ -28,9 +28,9 @@ import java.util.Map;
  * <p>
  * The {@code context} parameter is {@link Nullable} because some span-creation points have no
  * {@link ProcessingContext} available. Providers that do not need the context ignore it; providers that do need it
- * (for example {@link org.axonframework.messaging.tracing.attributes.AggregateIdentifierSpanAttributesProvider}, which reads
- * from {@link org.axonframework.messaging.core.LegacyResources#AGGREGATE_IDENTIFIER_KEY}) MUST handle {@code null}
- * gracefully.
+ * (for example {@link org.axonframework.messaging.tracing.attributes.AggregateIdentifierSpanAttributesProvider},
+ * which reads from {@link org.axonframework.messaging.core.LegacyResources#AGGREGATE_IDENTIFIER_KEY}) MUST handle
+ * {@code null} gracefully.
  * <p>
  * Implementations MUST NOT depend on message types that have been removed from the framework.
  *

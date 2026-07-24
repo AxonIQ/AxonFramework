@@ -44,7 +44,7 @@ import java.util.function.BiFunction;
  * {@code firstToken}/{@code latestToken}/{@code tokenAt}/{@code tokenSince} family, and
  * {@link #subscribe(BiFunction) subscribe}) straight through to the wrapped {@link EventStore}.
  * <p>
- * Implementing {@code EventStore} directly is required by AF5's component registry: a decorator registered against the
+ * Implementing {@code EventStore} directly is required by the component registry: a decorator registered against the
  * {@code EventStore.class} slot must return an instance assignable to that type (see
  * {@code DecoratedComponent#resolve}). Wrapping an {@code EventStore} in a plain {@code TracingEventSink} or
  * {@code TracingEventBus} would fail that assignment check and abort configuration.

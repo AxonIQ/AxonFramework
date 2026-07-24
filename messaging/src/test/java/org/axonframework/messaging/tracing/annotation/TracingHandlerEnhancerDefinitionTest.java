@@ -336,7 +336,8 @@ class TracingHandlerEnhancerDefinitionTest {
 
         @Test
         void leavesAMemberWithoutAnExecutableUntouchedWithoutBuildingASpanName() {
-            // given a member whose unwrap(Executable) yields nothing; if asked for the executable it would flip the flag
+            // given a member whose unwrap(Executable) yields nothing; if asked for the executable it would flip the
+            // flag
             AtomicBoolean executableRequested = new AtomicBoolean(false);
             StubHandlingMember<Object> member =
                     new StubHandlingMember<>(CommandMessage.class, /*executable*/ null);

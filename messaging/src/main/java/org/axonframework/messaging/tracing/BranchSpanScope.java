@@ -24,6 +24,9 @@ import java.util.function.Supplier;
 /**
  * Context carrier for a branch-scoped span and the parent scope inherited by that branch. While the delegate is open
  * it is the branch's active scope; after it closes, resolution continues with the parent carrier.
+ *
+ * @author Mateusz Nowak
+ * @since 5.3.0
  */
 final class BranchSpanScope implements SpanScope {
 

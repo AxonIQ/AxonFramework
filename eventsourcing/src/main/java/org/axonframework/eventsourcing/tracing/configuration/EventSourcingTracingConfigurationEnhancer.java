@@ -61,7 +61,8 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
      * Decorator order for the event-sourcing tracing decorators. Near-maximal so tracing is applied last and is the
      * <em>outermost</em> wrapper - spans cover all inner decorators, and tracing wrappers are reliably detectable by
      * an outermost {@code instanceof} check. Same value and rationale as
-     * {@link org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     * {@link
+     * org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
      */
     public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
 
@@ -93,7 +94,7 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
         );
         // Type-preserving decorator for EventStore: the messaging module's EventSink/EventBus decorators skip the
         // EventStore subtype (see MessagingTracingConfigurationEnhancer#isEventStore), so this enhancer owns the
-        // EventStore.class slot and produces an EventStore-typed wrapper that survives AF5's component-registry
+        // EventStore.class slot and produces an EventStore-typed wrapper that survives the component-registry
         // assignment check.
         registry.registerDecorator(
                 EventStore.class,

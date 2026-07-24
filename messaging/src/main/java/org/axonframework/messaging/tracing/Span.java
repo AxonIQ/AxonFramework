@@ -125,7 +125,8 @@ public interface Span {
     /**
      * Returns a copy of the given {@code message} with this span's tracing context injected into its metadata, so a
      * remote or asynchronous handler can continue the same trace by extracting it (see
-     * {@link SpanFactory#createHandlerSpan(String, Message, org.axonframework.messaging.core.unitofwork.ProcessingContext)}).
+     * {@link SpanFactory#createHandlerSpan(
+     * String, Message, org.axonframework.messaging.core.unitofwork.ProcessingContext)}).
      * The span propagates <em>itself</em>, without consulting ambient state. Implementations that perform no
      * propagation (no-op, logging) return the input unchanged and never throw.
      *

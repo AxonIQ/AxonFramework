@@ -81,9 +81,8 @@ class TracingEventHandlingComponentTest {
             // when
             testSubject.handle(event, context);
 
-            // then a per-event CONSUMER span is opened continuing the publisher's trace (non-streaming execution
-            // always does -- AF4 parity) and, since the delegate handled it synchronously, already completed (closes
-            // on its own stream termination, not at batch/context end)
+            // then a per-event CONSUMER span is opened continuing the publisher's trace and, since the delegate handled
+            // it synchronously, already completed (closes on its own stream termination, not at batch/context end)
             spanFactory.verifySpanCompleted(PROCESS_SPAN);
             spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.HANDLER);
             assertThat(delegate.handled).isTrue();
@@ -93,7 +92,7 @@ class TracingEventHandlingComponentTest {
         void nonStreamingExecutionContinuesThePublisherTraceEvenForStaleEventsAndRegardlessOfTheToggle() {
             // given non-streaming execution semantics and distributedInSameTrace = false with a stale event -- the
             // streaming-only toggle and its freshness limit must not apply when handlers run inside the publication's
-            // unit of work (AF4 parity: non-streaming always used the child handler span)
+            // unit of work
             TracingEventHandlingComponent subject = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ false,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
@@ -164,8 +163,7 @@ class TracingEventHandlingComponentTest {
         @Test
         void suppressesTheBatchSpanInDistributedInSameTraceMode() {
             // given streaming execution semantics with distributedInSameTrace = true -- per-event spans continue
-            // their publishers' traces, so a batch root would dangle without meaningful children (AF4 suppressed it
-            // too)
+            // their publishers' traces, so a batch root would dangle without meaningful children
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
@@ -278,8 +276,8 @@ class TracingEventHandlingComponentTest {
         @Test
         void fallsBackToADisconnectedSpanForAnEventOlderThanTheTimeLimit() {
             // given streaming execution semantics and distributedInSameTrace = true with a two-minute limit and an
-            // event published three minutes ago (AF4 parity: stale events -- e.g. replays -- must not stretch the
-            // publisher's long-finished trace)
+            // event published three minutes ago; stale events such as replays must not stretch the publisher's
+            // long-finished trace
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
@@ -323,7 +321,8 @@ class TracingEventHandlingComponentTest {
         @Test
         void asyncContinuationChildSpanParentsUnderItsOwnEventEvenAfterALaterEventStarted() {
             // given a streaming batch and a delegate that defers event 1's completion until triggered explicitly
-            // -- a real (branching) ProcessingContext is required here: unlike production contexts, the StubProcessingContext
+            // -- a real (branching) ProcessingContext is required here: unlike production contexts, the
+            // StubProcessingContext
             // mutates its resources map in place instead of branching on withResource, which would mask exactly the
             // bug this test guards against
             CompletableFuture<Void> event1Trigger = new CompletableFuture<>();

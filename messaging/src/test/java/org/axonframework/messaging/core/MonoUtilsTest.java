@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Guards that {@link MonoUtils#asSingle(Mono)} subscribes the given {@link Mono} with ThreadLocal context capture
  * ({@link Mono#contextCapture()}). {@link Mono#toFuture()} subscribes with a context-less subscriber, so without the
  * explicit capture the mono's Reactor {@code Context} would always be empty and thread-bound state present at
- * subscription — such as the tracing span a message handler runs under — could never reach the mono's operators or
+ * subscription -- such as the tracing span a message handler runs under -- could never reach the mono's operators or
  * context-reading instrumentation downstream. These tests register a plain test {@code ThreadLocal} with Micrometer's
  * {@link ContextRegistry} and assert its value is captured into the Reactor {@link ContextView}, acting as the
  * regression tripwire for that capture.

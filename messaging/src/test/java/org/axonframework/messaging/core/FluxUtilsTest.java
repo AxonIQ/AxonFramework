@@ -41,14 +41,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * For {@link FluxUtils#of(MessageStream)}: guards that the source {@link MessageStream} is
  * {@link MessageStream#close() closed} on <em>every</em> terminal signal of the resulting
- * {@link reactor.core.publisher.Flux Flux} — completion, error, and cancellation — so resources held by the source
+ * {@link reactor.core.publisher.Flux Flux} -- completion, error, and cancellation -- so resources held by the source
  * (e.g. a subscription query registration) are always released. The completion case is a regression guard: cleanup
  * used to be wired to cancellation only, so a normally-completing stream leaked its source.
  * <p>
  * For {@link FluxUtils#asMessageStream(Flux)}: guards that the given {@link Flux} is subscribed with ThreadLocal
  * context capture ({@link Flux#contextCapture()}). The resulting stream subscribes the flux with a plain,
  * context-less subscriber, so without the explicit capture the flux's Reactor {@code Context} would always be empty
- * and thread-bound state present at subscription — such as the tracing span a message handler runs under — could
+ * and thread-bound state present at subscription -- such as the tracing span a message handler runs under -- could
  * never reach the flux's operators or context-reading instrumentation downstream. Those tests register a plain test
  * {@code ThreadLocal} with Micrometer's {@link ContextRegistry} and assert its value is captured into the Reactor
  * {@link ContextView}, acting as the regression tripwire for that capture.

@@ -24,10 +24,10 @@ import org.jspecify.annotations.Nullable;
  * The sole public abstraction for creating tracing {@link Span spans} in Axon Framework.
  * <p>
  * A single {@code SpanFactory} is registered against the framework's {@code ComponentRegistry}; the per-concern
- * tracing modules then wrap messaging, modelling and event-sourcing components with delegating tracing decorators
- * that obtain their spans from this factory. There is intentionally no per-bus or per-component {@code SpanFactory}
- * interface -- the per-component span shapes (names, kinds, attributes, cross-process metadata propagation) are
- * implementation details of those internal decorators.
+ * tracing modules then wrap components with delegating tracing decorators that obtain their spans from this factory.
+ * There is intentionally no per-bus or per-component {@code SpanFactory} interface -- the per-component span shapes
+ * (names, kinds, attributes, cross-process metadata propagation) are implementation details of those internal
+ * decorators.
  * <p>
  * <b>Parent resolution.</b> Parents are resolved from (1) the propagated context carried in a {@link Message}'s
  * metadata (cross-thread / cross-process) and (2) the active span recorded on the supplied {@link ProcessingContext}
@@ -46,8 +46,8 @@ import org.jspecify.annotations.Nullable;
  * additionally prefer not installing a tracing decorator at all when the configured factory is {@link NoOpSpanFactory}
  * or absent, so the un-traced path carries no name-building cost whatsoever.
  * <p>
- * Fan-out to multiple tracing destinations is configured through Micrometer Tracing and the exporters behind it, below
- * the {@code SpanFactory}. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component at all --
+ * Fan-out to multiple tracing destinations is a concern of the {@code SpanFactory} implementation's export layer,
+ * below this abstraction. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component at all --
  * the tracing enhancers then leave every component undecorated (zero overhead). {@link NoOpSpanFactory} is a
  * null-object for tests, not an off-switch.
  *
@@ -107,11 +107,11 @@ public interface SpanFactory {
 
     /**
      * Creates a {@link Span} for an inbound (handler / consumer) operation on the given {@link Message}, with an
-     * additional link to {@code linkedMessage}'s span context. The link is rendered by APM UIs as a clickable
-     * cross-trace navigation (not a parent-of relationship, not an attribute). Implementations MUST extract the
-     * propagated context from {@code linkedMessage}'s metadata and attach it as a span link; when no link can be
-     * extracted the span is still created without the link, and this method never throws. Parent resolution is as in
-     * {@link #createHandlerSpan(String, Message, ProcessingContext)}.
+     * additional link to {@code linkedMessage}'s span context. The link expresses a relationship between traces
+     * without changing the span's parent; tracing backends typically render it as navigation between the linked
+     * traces. Implementations MUST extract the propagated context from {@code linkedMessage}'s metadata and attach it
+     * as a span link; when no link can be extracted the span is still created without the link, and this method never
+     * throws. Parent resolution is as in {@link #createHandlerSpan(String, Message, ProcessingContext)}.
      *
      * @param operationName the span name
      * @param message       the message being handled
@@ -140,10 +140,9 @@ public interface SpanFactory {
      * (root) yet remain navigable to the producing trace through a span <em>link</em>. The link target is the tracing
      * context propagated in {@code message}'s metadata.
      * <p>
-     * This is the "distributed-in-different-trace" handling mode (event-processor
-     * {@code distributedInSameTrace=false}). Use it when joining the publisher's trace would either flood it (long-
-     * running consumers, batch processors) or cross trust / lifecycle boundaries, but you still want the APM UI to
-     * surface a clickable link from the producer's span to the consumer's new trace.
+     * This is the "distributed-in-different-trace" handling mode. Use it when joining the publisher's trace would
+     * either flood it (long-running consumers, batch processors) or cross trust / lifecycle boundaries, while keeping
+     * the consumer's new trace navigable back to the producer through the link.
      * <p>
      * Implementations MUST start a new trace (no parent-of relationship to the producer), extract the producer's
      * context from {@code message}'s metadata and attach it as a span link. When no link can be extracted (e.g. no

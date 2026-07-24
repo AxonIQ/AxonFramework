@@ -35,13 +35,26 @@ import java.time.Duration;
  *
  * @param commandBusEnabled                          whether the {@code CommandBus} is decorated with tracing
  * @param eventSinkEnabled                           whether the {@code EventSink} is decorated with tracing
- * @param eventProcessorEnabled                      whether event-handling components (event processors) are decorated with tracing
- * @param eventProcessorBatchTraceEnabled            whether streaming-processor batches get an enclosing batch span; when disabled, each event handler span becomes a trace root of its own
- * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default), it is parented to the streaming batch and links back to the publisher, or starts a linked trace if batch tracing is disabled
- * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (default {@code PT2M})
+ * @param eventProcessorEnabled                      whether event-handling components (event processors) are decorated
+ *                                                   with tracing
+ * @param eventProcessorBatchTraceEnabled            whether streaming-processor batches get an enclosing batch span;
+ *                                                   when disabled, each event handler span becomes a trace root
+ *                                                   of its own
+ * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace;
+ *                                                   when {@code false} (default), it is parented to the streaming
+ *                                                   batch and links back to the publisher, or starts a linked trace if
+ *                                                   batch tracing is disabled
+ * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace
+ *                                                      when {@code distributedInSameTrace} is {@code true}; older
+ *                                                      events (e.g. replays) start their own trace linked back to the
+ *                                                      publisher (default {@code PT2M})
  * @param queryBusEnabled                            whether the {@code QueryBus} is decorated with tracing
- * @param eventSourcingHandlersEnabled               when {@code true}, {@code @EventSourcingHandler} invocations get their own per-method span; defaults to {@code false} because event sourcing handlers fire once per event during entity replay and would flood traces
- * @param spanAttributesProviders                    toggles for the built-in span attribute providers contributed by this module
+ * @param eventSourcingHandlersEnabled               when {@code true}, {@code @EventSourcingHandler} invocations get
+ *                                                   their own per-method span; defaults to {@code false} because event
+ *                                                   sourcing handlers fire once per event during entity replay and
+ *                                                   would flood traces
+ * @param spanAttributesProviders                    toggles for the built-in span attribute providers contributed by
+ *                                                   this module
  * @author Mateusz Nowak
  * @since 5.3.0
  */
@@ -61,7 +74,8 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     public static final Duration DEFAULT_DISTRIBUTED_IN_SAME_TRACE_TIME_LIMIT = Duration.ofMinutes(2);
 
     /**
-     * Toggles for the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
+     * Toggles for the built-in
+     * {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
      * contributed by the {@code axon-messaging} module (read by
      * {@code MessagingSpanAttributesProviderConfigurationEnhancer}).
      *
@@ -87,8 +101,8 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      * Returns the default settings, with every messaging component enabled for tracing and default values for the
      * event-processor sub-toggles ({@code batchTraceEnabled=true}, {@code distributedInSameTrace=false},
      * {@code distributedInSameTraceTimeLimit=PT2M}) and the handler enhancer
-     * ({@code eventSourcingHandlersEnabled=false} -- replay-noisy event sourcing handlers are not traced). Every built-in
-     * span attribute provider is enabled.
+     * ({@code eventSourcingHandlersEnabled=false} -- replay-noisy event sourcing handlers are not traced). Every
+     * built-in span attribute provider is enabled.
      *
      * @return the all-enabled default settings
      */

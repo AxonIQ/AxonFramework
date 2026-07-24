@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Recording {@link SpanFactory} test double. Each created span records whether it was started, ended, errored, the
  * attributes set on it, and the message it was created for. Tests assert on the recorded state through the
  * {@code verify*} methods rather than mocking. Ported from Axon Framework 4's {@code TestSpanFactory} and adapted to
- * the consolidated Axon Framework 5 {@link SpanFactory} API.
+ * the consolidated {@link SpanFactory} API.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers
@@ -271,7 +271,8 @@ public class TestSpanFactory implements SpanFactory {
                 .isInstanceOfSatisfying(TestSpan.class,
                                         span -> assertThat(span.name)
                                                 .withFailMessage(() -> String.format(
-                                                        "Expected the context to carry the scope of span '%s' but it carries '%s'",
+                                                        "Expected the context to carry the scope of span '%s' but it "
+                                                                + "carries '%s'",
                                                         name, span.name))
                                                 .isEqualTo(name));
     }
@@ -289,7 +290,8 @@ public class TestSpanFactory implements SpanFactory {
         assertThat(span).withFailMessage(() -> errorMessage(name)).isPresent();
         assertThat(span.get().scopeEntries)
                 .withFailMessage(() -> String.format(
-                        "Expected the scope of span '%s' to have been entered at least %d time(s) but it was entered %d time(s)",
+                        "Expected the scope of span '%s' to have been entered at least %d time(s) but it was entered "
+                                + "%d time(s)",
                         name, times, span.get().scopeEntries))
                 .isGreaterThanOrEqualTo(times);
     }
@@ -366,7 +368,9 @@ public class TestSpanFactory implements SpanFactory {
         assertThat(child.get().contextualParent)
                 .withFailMessage(() -> String.format(
                         "Span '%s' expected parent '%s' but had %s", childName, parentName,
-                        child.get().contextualParent == null ? "no parent" : "parent '" + child.get().contextualParent.name + "'"))
+                        child.get().contextualParent == null
+                                ? "no parent"
+                                : "parent '" + child.get().contextualParent.name + "'"))
                 .isNotNull()
                 .extracting(parent -> parent.name)
                 .isEqualTo(parentName);
@@ -426,7 +430,9 @@ public class TestSpanFactory implements SpanFactory {
     private String errorMessage(String name) {
         return String.format("No span matching name '%s'. Recorded spans:%n%s",
                              name,
-                             createdSpans.stream().map(TestSpan::toString).collect(Collectors.joining(System.lineSeparator())));
+                             createdSpans.stream()
+                                         .map(TestSpan::toString)
+                                         .collect(Collectors.joining(System.lineSeparator())));
     }
 
     /**

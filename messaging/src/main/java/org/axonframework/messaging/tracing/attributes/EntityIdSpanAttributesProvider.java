@@ -20,10 +20,11 @@ package org.axonframework.messaging.tracing.attributes;
  * Holder for the shared span attribute key under which an entity's identifier is recorded, regardless of whether
  * that entity is a legacy aggregate or a dynamic-consistency-boundary entity.
  * <p>
- * Unlike {@link AggregateIdentifierSpanAttributesProvider}, this is not a {@link org.axonframework.messaging.tracing.SpanAttributesProvider}:
- * there is no generic resource on the {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} holding
- * "the current entity id" for an arbitrary entity type. Instead, tracing decorators that already know an entity's
- * identifier locally - such as {@code TracingRepository}, {@code TracingStateManager},
+ * Unlike {@link AggregateIdentifierSpanAttributesProvider}, this is not a
+ * {@link org.axonframework.messaging.tracing.SpanAttributesProvider}: there is no generic resource on the
+ * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} holding "the current entity id" for an
+ * arbitrary entity type. Instead, tracing decorators that already know an entity's identifier locally - such as
+ * {@code TracingRepository}, {@code TracingStateManager},
  * {@code TracingEntityLifecycleHandler}, and {@code TracingSnapshotStore} - tag their spans with it directly under
  * {@link #DEFAULT_ATTRIBUTE_KEY}.
  * <p>

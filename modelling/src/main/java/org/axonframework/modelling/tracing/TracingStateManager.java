@@ -54,7 +54,7 @@ import java.util.concurrent.CompletableFuture;
 @Internal
 public final class TracingStateManager implements StateManager {
 
-    /** Prefix for the state-manager-load-managed-entity span ({@code "StateManager.loadManagedEntity <EntityType>"}). */
+    /** Prefix for the state-manager-load-managed-entity span. */
     private static final String LOAD_MANAGED_ENTITY_SPAN = "StateManager.loadManagedEntity";
 
     /** Attribute key for the entity type (same convention as {@link TracingRepository}). */

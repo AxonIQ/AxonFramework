@@ -89,7 +89,10 @@ public final class FluxUtils {
     public static <M extends Message> MessageStream<M> asMessageStream(Flux<M> flux,
                                                                        Function<M, Context> contextSupplier) {
         return new FluxMessageStream<>(flux.<MessageStream.Entry<M>>map(
-                                                   message -> new SimpleEntry<>(message, contextSupplier.apply(message)))
+                                                   message -> new SimpleEntry<>(
+                                                           message,
+                                                           contextSupplier.apply(message)
+                                                   ))
                                            .contextCapture());
     }
 

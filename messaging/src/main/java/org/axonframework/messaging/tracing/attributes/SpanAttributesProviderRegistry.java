@@ -40,7 +40,8 @@ import java.util.List;
  * <p>
  * This registry is {@link Internal}: the built-in providers are contributed by the tracing modules' configuration
  * enhancers, driven by the {@code *TracingSettings} components, and applications contribute custom providers through
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerSpanAttributesProvider(ComponentBuilder)}
+ * {@link
+ * org.axonframework.messaging.core.configuration.MessagingConfigurer#registerSpanAttributesProvider(ComponentBuilder)}
  * (plain Java) or by declaring a {@code SpanAttributesProvider} bean (Spring Boot) -- never by interacting with this
  * registry directly.
  *

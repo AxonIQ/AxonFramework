@@ -53,7 +53,8 @@ public interface SpanScope extends AutoCloseable {
      * {@link #addToContext(ProcessingContext, SpanScope)}) -- and read with {@link #fromContext(ProcessingContext)}.
      * <p>
      * <b>Question it answers:</b> <em>"Which scope is the parent for a span created with this exact context instance,
-     * and what is the active span for provider-agnostic access (for example {@link Span#addAttribute(String, String)})?"</em>
+     * and what is the active span for provider-agnostic access (for example
+     * {@link Span#addAttribute(String, String)})?"</em>
      * <p>
      * <b>Why one key is enough.</b> Precise parent chaining no longer needs a provider-private stack: a
      * branch-scoped span branches the context it hands to its own operation, so every span created with that

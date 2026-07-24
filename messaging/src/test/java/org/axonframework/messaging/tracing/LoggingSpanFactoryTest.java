@@ -195,7 +195,7 @@ class LoggingSpanFactoryTest {
             // when
             span.start().close();
 
-            // then the message's type and identifier are part of the start log (AF4 line format, AF5 MessageType)
+            // then the message's type and identifier are part of the start log
             String startLog = events().get(0).getMessage().getFormattedMessage();
             assertThat(startLog).contains("Handler span started")
                                 .contains(message.type().toString())
@@ -208,7 +208,7 @@ class LoggingSpanFactoryTest {
             Span span = testSubject.createInternalSpan("op", null);
             SpanScope scope = span.start();
 
-            // when an attribute is added (improvement over AF4: the logging factory renders attributes at DEBUG)
+            // when an attribute is added (the logging factory renders attributes at DEBUG)
             span.addAttribute("key", "value");
             scope.close();
 

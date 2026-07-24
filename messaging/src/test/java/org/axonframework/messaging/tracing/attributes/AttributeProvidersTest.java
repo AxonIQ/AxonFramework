@@ -42,7 +42,10 @@ class AttributeProvidersTest {
             var attributes = new MessageIdSpanAttributesProvider().provideForMessage(event, null);
 
             // then
-            assertThat(attributes).containsEntry(MessageIdSpanAttributesProvider.DEFAULT_ATTRIBUTE_KEY, event.identifier());
+            assertThat(attributes).containsEntry(
+                    MessageIdSpanAttributesProvider.DEFAULT_ATTRIBUTE_KEY,
+                    event.identifier()
+            );
         }
     }
 
@@ -97,7 +100,8 @@ class AttributeProvidersTest {
 
             // when
             var attributes =
-                    new MetadataSpanAttributesProvider("axon_metadata_", Set.of()).provideForMessage(withMetadata, null);
+                    new MetadataSpanAttributesProvider("axon_metadata_", Set.of())
+                            .provideForMessage(withMetadata, null);
 
             // then
             assertThat(attributes).containsEntry("axon_metadata_tenant", "acme");
@@ -120,7 +124,8 @@ class AttributeProvidersTest {
 
         @Test
         void stagedCorrelationDataOverridesMessageMetadataWithTheSameKey() {
-            // given the same key on the message and staged on the context -- mirrors the interceptor's andMetadata merge
+            // given the same key on the message and staged on the context -- mirrors the interceptor's andMetadata
+            // merge
             Message withMetadata = event.andMetadata(java.util.Map.of("correlationId", "stale"));
             var context = new StubProcessingContext()
                     .withResource(CorrelationDataInterceptor.CORRELATION_DATA,
@@ -197,7 +202,8 @@ class AttributeProvidersTest {
         void emptyWhenResourceAbsent() {
             // when
             var attributes =
-                    new AggregateIdentifierSpanAttributesProvider().provideForMessage(event, new StubProcessingContext());
+                    new AggregateIdentifierSpanAttributesProvider()
+                            .provideForMessage(event, new StubProcessingContext());
 
             // then
             assertThat(attributes).isEmpty();

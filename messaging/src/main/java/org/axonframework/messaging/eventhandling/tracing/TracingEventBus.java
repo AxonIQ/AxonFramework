@@ -37,7 +37,7 @@ import java.util.function.BiFunction;
  * per-event publish span shape as a plain {@code TracingEventSink}) and passes
  * {@link #subscribe(BiFunction) subscribe} straight through to the wrapped {@link EventBus}.
  * <p>
- * Type preservation matters because AF5's component registry decorates by the slot's declared type
+ * Type preservation matters because the component registry decorates by the slot's declared type
  * ({@link EventBus#getClass()}). Returning a plain {@code TracingEventSink} for an {@code EventBus.class} slot would
  * fail {@code DecoratedComponent}'s assignment check and abort configuration. Implementing {@code EventBus} directly
  * mirrors {@code InterceptingEventBus} -- the in-tree precedent for type-preserving event-bus decoration.

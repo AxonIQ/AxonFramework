@@ -150,7 +150,9 @@ class TracingEventTagsHandlerEnhancerDefinitionTest {
                                                    c -> new EventSourcingTracingSettings(
                                                            true,
                                                            true,
-                                                           new EventSourcingTracingSettings.SpanAttributesProviders(false)
+                                                           new EventSourcingTracingSettings.SpanAttributesProviders(
+                                                                   false
+                                                           )
                                                    ));
                     }
             );

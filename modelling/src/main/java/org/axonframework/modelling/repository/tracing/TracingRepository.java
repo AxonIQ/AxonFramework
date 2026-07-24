@@ -36,7 +36,8 @@ import java.util.concurrent.CompletableFuture;
  * {@link #ENTITY_TYPE_KEY} attribute. The repository identifier - when known - is recorded under
  * {@link EntityIdSpanAttributesProvider#DEFAULT_ATTRIBUTE_KEY}.
  * <p>
- * This decorator is registered by {@link org.axonframework.modelling.tracing.configuration.ModellingTracingConfigurationEnhancer};
+ * This decorator is registered by
+ * {@link org.axonframework.modelling.tracing.configuration.ModellingTracingConfigurationEnhancer};
  * it is never instantiated directly by
  * applications.
  *

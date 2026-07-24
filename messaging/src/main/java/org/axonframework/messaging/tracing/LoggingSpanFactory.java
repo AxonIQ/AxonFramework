@@ -106,7 +106,8 @@ public final class LoggingSpanFactory implements SpanFactory {
         Message handledMessage = context == null ? null : Message.fromContext(context);
         if (handledMessage != null) {
             return String.format(
-                    "%s span started for message of type [%s] and identifier [%s] while handling message of type [%s] and identifier [%s]",
+                    "%s span started for message of type [%s] and identifier [%s] while handling message of type [%s] "
+                            + "and identifier [%s]",
                     spanType,
                     message.type(), message.identifier(),
                     handledMessage.type(), handledMessage.identifier());

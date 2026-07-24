@@ -49,7 +49,8 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
      * Decorator order for the modelling tracing decorators. Near-maximal so tracing is applied last and is the
      * <em>outermost</em> wrapper - spans cover all inner decorators, and tracing wrappers are reliably detectable by
      * an outermost {@code instanceof} check (see {@link TracingStateManager#register(Repository)}). Same value and
-     * rationale as {@link org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     * rationale as {@link
+     * org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
      */
     public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
 

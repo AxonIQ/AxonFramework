@@ -26,8 +26,8 @@ import java.util.Objects;
 
 /**
  * Adds the message's {@link org.axonframework.messaging.core.MessageType type} (its qualified name plus version) to the
- * span. By default the attribute key is {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.type}); a different key can be
- * supplied through the constructor.
+ * span. By default the attribute key is {@link #DEFAULT_ATTRIBUTE_KEY} ({@code axoniq.message.type}); a different key
+ * can be supplied through the constructor.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

@@ -34,7 +34,8 @@ import java.util.Objects;
  * span when lazy work starts and restore it around downstream callbacks.
  * <p>
  * The wrapped scope's lifecycle is not managed here: closing rides on the composition in
- * {@link Span#branchStream(org.axonframework.messaging.core.unitofwork.ProcessingContext, java.util.function.Function)}.
+ * {@link Span#branchStream(
+ * org.axonframework.messaging.core.unitofwork.ProcessingContext, java.util.function.Function)}.
  *
  * @param <M> the type of {@link Message} carried by the stream
  * @author Mateusz Nowak

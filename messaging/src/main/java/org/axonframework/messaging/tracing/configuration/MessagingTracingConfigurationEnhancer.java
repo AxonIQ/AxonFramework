@@ -85,7 +85,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                     return new TracingCommandBus(delegate, spanFactory);
                 }
         );
-        // Three type-preserving decorators cooperating via instanceof skip-guards. AF5's component registry stores
+        // Three type-preserving decorators cooperating via instanceof skip-guards. The component registry stores
         // each component under its declared type and enforces that a decorator's result is assignable to that type
         // (see DecoratedComponent#resolve). Each lambda below produces the wrapper that matches the actual subtype.
         registry.registerDecorator(
@@ -182,12 +182,16 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
     }
 
     /**
-     * Returns {@code true} when {@code delegate} is an instance of the AF5 {@code EventStore} type, without referencing
+     * Returns {@code true} when {@code delegate} is an instance of the {@code EventStore} type, without referencing
      * the {@code axon-eventsourcing} module at compile time.
      */
     private static boolean isEventStore(Object delegate) {
         try {
-            Class<?> eventStoreClass = Class.forName(EVENT_STORE_CLASS_NAME, false, delegate.getClass().getClassLoader());
+            Class<?> eventStoreClass = Class.forName(
+                    EVENT_STORE_CLASS_NAME,
+                    false,
+                    delegate.getClass().getClassLoader()
+            );
             return eventStoreClass.isInstance(delegate);
         } catch (ClassNotFoundException e) {
             return false;

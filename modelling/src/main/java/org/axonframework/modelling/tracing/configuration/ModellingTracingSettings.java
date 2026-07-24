@@ -42,8 +42,9 @@ public record ModellingTracingSettings(boolean repositoryEnabled,
                                        SpanAttributesProviders spanAttributesProviders) {
 
     /**
-     * Toggles for the built-in {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders}
-     * contributed by the {@code axon-modelling} module (read by
+     * Toggles for the built-in
+     * {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders} contributed by the
+     * {@code axon-modelling} module (read by
      * {@code ModellingSpanAttributesProviderConfigurationEnhancer}).
      *
      * @param aggregateIdentifierEnabled whether the {@code AggregateIdentifierSpanAttributesProvider} is contributed

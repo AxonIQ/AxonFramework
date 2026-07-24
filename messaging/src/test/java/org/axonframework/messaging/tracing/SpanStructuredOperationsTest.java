@@ -258,7 +258,10 @@ class SpanStructuredOperationsTest {
         void recordsAStreamFailureOnTheSpanAndEndsIt() {
             // when the operation produces an already-failed stream
             MessageStream<EventMessage> stream =
-                    internalSpan().branchStream(null, ignored -> MessageStream.failed(new IllegalStateException("boom")));
+                    internalSpan().branchStream(
+                            null,
+                            ignored -> MessageStream.failed(new IllegalStateException("boom"))
+                    );
 
             // then the failure is recorded, the span ends, and the stream still carries the error
             spanFactory.verifySpanHasException(OPERATION, IllegalStateException.class);
