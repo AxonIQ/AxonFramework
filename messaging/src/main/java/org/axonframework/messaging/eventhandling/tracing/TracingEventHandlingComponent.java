@@ -28,7 +28,6 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.jspecify.annotations.Nullable;
@@ -50,18 +49,20 @@ import java.util.Set;
  * (dispatch spans, asynchronous continuations, and provider-instrumented work) parent under their own event even when
  * a later event in the same batch has since started on the shared context.
  * <p>
- * The handler span's parent depends on the processor style: <b>subscribing</b> processors (no {@link Segment} on the
- * context) run inside the publisher's unit of work and always continue the publisher's trace; <b>streaming</b>
- * processors continue the publisher's trace only in distributed-in-same-trace mode for sufficiently fresh events. In
- * the default mode, a handler span is a child of the enclosing batch span and links back to the publisher. If batch
- * tracing is disabled, that handler span instead starts a new trace with the same publisher link.
+ * The handler span's parent depends on the processor's <b>execution semantics</b>, configured at construction time as
+ * the {@code streaming} flag. Non-streaming execution means the handler is invoked inside the publication's unit of
+ * work, so the handler span always continues the publisher's trace. Streaming execution -- asynchronous handling on a
+ * processing context of its own, as with pooled streaming processors or persistent-stream-fed consumers -- continues
+ * the publisher's trace only in distributed-in-same-trace mode for sufficiently fresh events. In the default mode, a
+ * streaming handler span is a child of the enclosing batch span and links back to the publisher; if batch tracing is
+ * disabled, it instead starts a new trace with the same publisher link.
  * <p>
  * The batch span, by contrast, is <b>context-lifetime</b>: it is opened lazily on the first event of a batch, only for
- * streaming processors, and only outside distributed-in-same-trace mode (in that mode per-event spans continue their
+ * streaming execution, and only outside distributed-in-same-trace mode (in that mode per-event spans continue their
  * publishers' traces, so a batch root would dangle without meaningful children). It is bound to the shared batch
  * context's root via {@link Span#coverLifecycle(ProcessingContext)}, so it legitimately stays the active span there
- * for every lifecycle action (commit, etc.) that runs against that root. Subscribing processors get no separate batch
- * span, matching the established trace shape.
+ * for every lifecycle action (commit, etc.) that runs against that root. Non-streaming execution gets no separate
+ * batch span, matching the established trace shape.
  * <p>
  * Every span this component creates -- the batch span and the per-event handler span -- carries the owning event
  * processor's name under the {@link #PROCESSOR_NAME_ATTRIBUTE} attribute (when the name is known), so spans of
@@ -96,20 +97,21 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
     private final EventHandlingComponent delegate;
     private final SpanFactory spanFactory;
     private final @Nullable String processorName;
+    private final boolean streaming;
     private final boolean batchTraceEnabled;
     private final boolean distributedInSameTrace;
     private final Duration distributedInSameTraceTimeLimit;
 
     /**
-     * Initializes a tracing {@link EventHandlingComponent} with the default sub-toggles
-     * ({@code batchTraceEnabled=true}, {@code distributedInSameTrace=false},
-     * {@code distributedInSameTraceTimeLimit=PT2M}) and no processor name.
+     * Initializes a tracing {@link EventHandlingComponent} with non-streaming execution semantics
+     * ({@code streaming=false}), the default sub-toggles ({@code batchTraceEnabled=true},
+     * {@code distributedInSameTrace=false}, {@code distributedInSameTraceTimeLimit=PT2M}), and no processor name.
      *
      * @param delegate    the event-handling component to delegate to
      * @param spanFactory the factory producing the tracing spans
      */
     public TracingEventHandlingComponent(EventHandlingComponent delegate, SpanFactory spanFactory) {
-        this(delegate, spanFactory, null, true, false, Duration.ofMinutes(2));
+        this(delegate, spanFactory, null, false, true, false, Duration.ofMinutes(2));
     }
 
     /**
@@ -119,25 +121,33 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      * @param delegate                        the event-handling component to delegate to
      * @param spanFactory                     the factory producing the tracing spans
      * @param processorName                   the name of the event processor owning the {@code delegate}, attached to
-     *                                        every created span under {@link #PROCESSOR_NAME_ATTRIBUTE}; or
-     *                                        {@code null} when unknown, in which case no attribute is attached
-     * @param batchTraceEnabled               whether an enclosing batch span is opened for streaming-processor batches
-     * @param distributedInSameTrace          when {@code true}, a streaming processor's handler span continues the
-     *                                        publisher's trace and no batch span is opened; when {@code false}, the
-     *                                        handler is parented to an enabled batch span and linked to its publisher,
-     *                                        or starts a linked trace when batch tracing is disabled; subscribing
-     *                                        processors always continue the publisher's trace
-     * @param distributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher instead of stretching the publisher's long-finished trace
+     *                                        every created span under the processor-name attribute; or {@code null}
+     *                                        when unknown, in which case no attribute is attached
+     * @param streaming                       whether the owning processor handles events asynchronously on a
+     *                                        processing context of its own (pooled streaming processors,
+     *                                        persistent-stream-fed consumers); {@code false} means handlers run inside
+     *                                        the publication's unit of work and always continue the publisher's trace
+     * @param batchTraceEnabled               whether an enclosing batch span is opened for streaming batches
+     * @param distributedInSameTrace          when {@code true}, a streaming handler span continues the publisher's
+     *                                        trace and no batch span is opened; when {@code false}, the handler is
+     *                                        parented to an enabled batch span and linked to its publisher, or starts
+     *                                        a linked trace when batch tracing is disabled
+     * @param distributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when
+     *                                        {@code distributedInSameTrace} is {@code true}; older events (e.g.
+     *                                        replays) start their own trace linked back to the publisher instead of
+     *                                        stretching the publisher's long-finished trace
      */
     public TracingEventHandlingComponent(EventHandlingComponent delegate,
                                          SpanFactory spanFactory,
                                          @Nullable String processorName,
+                                         boolean streaming,
                                          boolean batchTraceEnabled,
                                          boolean distributedInSameTrace,
                                          Duration distributedInSameTraceTimeLimit) {
         this.delegate = Objects.requireNonNull(delegate, "delegate may not be null");
         this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory may not be null");
         this.processorName = processorName;
+        this.streaming = streaming;
         this.batchTraceEnabled = batchTraceEnabled;
         this.distributedInSameTrace = distributedInSameTrace;
         this.distributedInSameTraceTimeLimit =
@@ -147,29 +157,27 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
 
     @Override
     public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
-        boolean streaming = Segment.fromContext(context).isPresent();
-
-        // Open the batch span once per batch, on the first event of a streaming-processor batch -- unless disabled by
+        // Open the batch span once per batch, on the first event of a streaming batch -- unless disabled by
         // configuration or running in distributed-in-same-trace mode. In same-trace mode per-event spans continue
-        // their publishers' traces, so a batch root would dangle without meaningful children. Note: the span is
-        // started (which mutates the context via putResource) OUTSIDE a
-        // computeResourceIfAbsent supplier -- mutating a ProcessingContext from within such a supplier is rejected as
-        // a re-entrant ("recursive") update; get-then-put is deliberate.
+        // their publishers' traces, so a batch root would dangle without meaningful children. putResourceIfAbsent
+        // guards the write; lifecycle coverage only happens for the span that won the slot (the getResource check is
+        // the fast path avoiding a span allocation per event once the batch span exists).
         if (streaming && batchTraceEnabled && !distributedInSameTrace
                 && context.getResource(BATCH_SPAN_KEY) == null) {
             Span batch = withProcessorName(spanFactory.createRootSpan(BATCH_SPAN, context));
-            batch.coverLifecycle(context);
-            context.putResource(BATCH_SPAN_KEY, batch);
+            if (context.putResourceIfAbsent(BATCH_SPAN_KEY, batch) == null) {
+                batch.coverLifecycle(context);
+            }
         }
 
-        // The handler span is branch-scoped. A subscribing or same-trace handler uses the propagated publisher as its
-        // parent. A handler inside a traced streaming batch uses the batch as its parent and links to the publisher.
-        // Without either relationship it starts a new trace linked to the publisher. Span#branchStream carries the
-        // selected span on a context branch passed to the delegate, so the delegate's children read back this exact
-        // scope, and closes it on this event's own stream termination, never at batch end.
+        // The handler span is branch-scoped. A non-streaming or same-trace handler uses the propagated publisher as
+        // its parent. A handler inside a traced streaming batch uses the batch as its parent and links to the
+        // publisher. Without either relationship it starts a new trace linked to the publisher. Span#branchStream
+        // carries the selected span on a context branch passed to the delegate, so the delegate's children read back
+        // this exact scope, and closes it on this event's own stream termination, never at batch end.
         //
-        // Subscribing processors (no Segment) run inside the publisher's unit of work and therefore always continue
-        // the publisher's trace, regardless of the distributedInSameTrace toggle, matching the established shape.
+        // Non-streaming execution runs inside the publisher's unit of work and therefore always continues the
+        // publisher's trace, regardless of the distributedInSameTrace toggle, matching the established shape.
         String spanName = PROCESS_SPAN + " " + event.type().qualifiedName().name();
         Span handlerSpan;
         if (!streaming || continuesPublisherTrace(event)) {

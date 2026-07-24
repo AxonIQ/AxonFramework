@@ -56,7 +56,7 @@ StreamingEventProcessor.batch                        [INTERNAL]
 The batch span is the structural parent because the processor owns the execution. The link preserves the causal relationship to the publisher.
 Because the publisher is a link rather than a parent, an event handled long after publication (processor lag, downtime catch-up, replay) starts a temporally coherent trace at processing time and never stretches the publisher's finished trace.
 Set `axon.tracing.event-processor.distributed-in-same-trace=true` to nest recent events' process spans under the publication trace instead. Events older than `distributed-in-same-trace-time-limit` (default two minutes) still become linked trace roots, so replays never inflate historical traces.
-Subscribing processors run inside the publisher's processing context and always continue its trace.
+Event handlers invoked within the publication's unit of work -- such as a subscribing processor consuming directly from the local event sink -- always continue the publisher's trace. Consumers with streaming execution semantics (pooled streaming processors, persistent-stream-fed consumers) follow the batch-and-link topology above.
 
 Queries follow the same pattern with `QueryBus.query`, `QueryBus.respond`, `QueryBus.subscriptionQuery`, `QueryBus.initialResponse`, `QueryBus.handle`, and `QueryBus.emitUpdate` spans.
 `QueryBus.respond` covers a finite direct-query response stream that continues after its handler returns.
