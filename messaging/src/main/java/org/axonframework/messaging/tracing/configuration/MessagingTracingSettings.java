@@ -36,7 +36,7 @@ import java.time.Duration;
  * @param commandBusEnabled                          whether the {@code CommandBus} is decorated with tracing
  * @param eventSinkEnabled                           whether the {@code EventSink} is decorated with tracing
  * @param eventProcessorEnabled                      whether event-handling components (event processors) are decorated with tracing
- * @param eventProcessorDisableBatchTrace            when {@code true}, suppresses the streaming-processor batch span (each event handler still gets its own span)
+ * @param eventProcessorBatchTraceEnabled            whether streaming-processor batches get an enclosing batch span; when disabled, each event handler span becomes a trace root of its own
  * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace; when {@code false} (default), it is parented to the streaming batch and links back to the publisher, or starts a linked trace if batch tracing is disabled
  * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace when {@code distributedInSameTrace} is {@code true}; older events (e.g. replays) start their own trace linked back to the publisher (default {@code PT2M})
  * @param queryBusEnabled                            whether the {@code QueryBus} is decorated with tracing
@@ -48,7 +48,7 @@ import java.time.Duration;
 public record MessagingTracingSettings(boolean commandBusEnabled,
                                        boolean eventSinkEnabled,
                                        boolean eventProcessorEnabled,
-                                       boolean eventProcessorDisableBatchTrace,
+                                       boolean eventProcessorBatchTraceEnabled,
                                        boolean eventProcessorDistributedInSameTrace,
                                        Duration eventProcessorDistributedInSameTraceTimeLimit,
                                        boolean queryBusEnabled,
@@ -85,7 +85,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
 
     /**
      * Returns the default settings, with every messaging component enabled for tracing and default values for the
-     * event-processor sub-toggles ({@code disableBatchTrace=false}, {@code distributedInSameTrace=false},
+     * event-processor sub-toggles ({@code batchTraceEnabled=true}, {@code distributedInSameTrace=false},
      * {@code distributedInSameTraceTimeLimit=PT2M}) and the handler enhancer
      * ({@code eventSourcingHandlersEnabled=false} -- replay-noisy event sourcing handlers are not traced). Every built-in
      * span attribute provider is enabled.
@@ -94,7 +94,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public static MessagingTracingSettings enabledByDefault() {
         return new MessagingTracingSettings(true, true, true,
-                                            false, false, DEFAULT_DISTRIBUTED_IN_SAME_TRACE_TIME_LIMIT,
+                                            true, false, DEFAULT_DISTRIBUTED_IN_SAME_TRACE_TIME_LIMIT,
                                             true, false, SpanAttributesProviders.enabledByDefault());
     }
 
@@ -106,7 +106,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withCommandBusEnabled(boolean commandBusEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -119,7 +119,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withEventSinkEnabled(boolean eventSinkEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -132,20 +132,20 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withEventProcessorEnabled(boolean eventProcessorEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
 
     /**
-     * Returns a copy of these settings with {@link #eventProcessorDisableBatchTrace()} replaced by the given value.
+     * Returns a copy of these settings with {@link #eventProcessorBatchTraceEnabled()} replaced by the given value.
      *
-     * @param eventProcessorDisableBatchTrace when {@code true}, suppresses the streaming-processor batch span
-     * @return a copy of these settings with the given {@code eventProcessorDisableBatchTrace}
+     * @param eventProcessorBatchTraceEnabled whether streaming-processor batches get an enclosing batch span
+     * @return a copy of these settings with the given {@code eventProcessorBatchTraceEnabled}
      */
-    public MessagingTracingSettings withEventProcessorDisableBatchTrace(boolean eventProcessorDisableBatchTrace) {
+    public MessagingTracingSettings withEventProcessorBatchTraceEnabled(boolean eventProcessorBatchTraceEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -160,7 +160,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     public MessagingTracingSettings withEventProcessorDistributedInSameTrace(
             boolean eventProcessorDistributedInSameTrace) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -176,7 +176,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     public MessagingTracingSettings withEventProcessorDistributedInSameTraceTimeLimit(
             Duration eventProcessorDistributedInSameTraceTimeLimit) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -189,7 +189,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withQueryBusEnabled(boolean queryBusEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -202,7 +202,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withEventSourcingHandlersEnabled(boolean eventSourcingHandlersEnabled) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }
@@ -215,7 +215,7 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
      */
     public MessagingTracingSettings withSpanAttributesProviders(SpanAttributesProviders spanAttributesProviders) {
         return new MessagingTracingSettings(commandBusEnabled, eventSinkEnabled, eventProcessorEnabled,
-                                            eventProcessorDisableBatchTrace, eventProcessorDistributedInSameTrace,
+                                            eventProcessorBatchTraceEnabled, eventProcessorDistributedInSameTrace,
                                             eventProcessorDistributedInSameTraceTimeLimit,
                                             queryBusEnabled, eventSourcingHandlersEnabled, spanAttributesProviders);
     }

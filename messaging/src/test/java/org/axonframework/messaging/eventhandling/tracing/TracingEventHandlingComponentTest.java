@@ -91,7 +91,7 @@ class TracingEventHandlingComponentTest {
             // the streaming-only toggle and its freshness limit must not apply to subscribing processors, which run
             // inside the publisher's unit of work (AF4 parity: non-streaming always used the child handler span)
             TracingEventHandlingComponent subject = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ false, /* distributedInSameTrace */ false,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ true, /* distributedInSameTrace */ false,
                     Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             EventMessage staleEvent = new GenericEventMessage(
@@ -141,10 +141,10 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
-        void suppressesTheBatchSpanWhenDisableBatchTraceIsTrue() {
-            // given a streaming-batch context but with disableBatchTrace = true
+        void suppressesTheBatchSpanWhenBatchTraceDisabled() {
+            // given a streaming-batch context but with batchTraceEnabled = false
             TracingEventHandlingComponent disabledBatchTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ true, /* distributedInSameTrace */ true,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ false, /* distributedInSameTrace */ true,
                     Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             context.putResource(Segment.RESOURCE_KEY, Segment.ROOT_SEGMENT);
@@ -163,7 +163,7 @@ class TracingEventHandlingComponentTest {
             // given a streaming-batch context with distributedInSameTrace = true -- per-event spans continue their
             // publishers' traces, so a batch root would dangle without meaningful children (AF4 suppressed it too)
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ false, /* distributedInSameTrace */ true,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ true, /* distributedInSameTrace */ true,
                     Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             context.putResource(Segment.RESOURCE_KEY, Segment.ROOT_SEGMENT);
@@ -182,7 +182,7 @@ class TracingEventHandlingComponentTest {
 
         private TracingEventHandlingComponent namedProcessorSubject() {
             return new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ "my-processor", /* disableBatchTrace */ false,
+                    delegate, spanFactory, /* processorName */ "my-processor", /* batchTraceEnabled */ true,
                     /* distributedInSameTrace */ false, Duration.ofMinutes(2));
         }
 
@@ -248,7 +248,7 @@ class TracingEventHandlingComponentTest {
         void usesDisconnectedHandlerSpanWhenBatchTracingIsDisabled() {
             // given a streaming context with no batch trace and distributedInSameTrace=false
             TracingEventHandlingComponent noBatch = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ true,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ false,
                     /* distributedInSameTrace */ false, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             context.putResource(Segment.RESOURCE_KEY, Segment.ROOT_SEGMENT);
@@ -265,7 +265,7 @@ class TracingEventHandlingComponentTest {
             // given a streaming context and distributedInSameTrace = true with a two-minute limit and an event
             // published just now
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ false, /* distributedInSameTrace */ true,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ true, /* distributedInSameTrace */ true,
                     Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             context.putResource(Segment.RESOURCE_KEY, Segment.ROOT_SEGMENT);
@@ -283,7 +283,7 @@ class TracingEventHandlingComponentTest {
             // published three minutes ago (AF4 parity: stale events -- e.g. replays -- must not stretch the
             // publisher's long-finished trace)
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* disableBatchTrace */ false, /* distributedInSameTrace */ true,
+                    delegate, spanFactory, /* processorName */ null, /* batchTraceEnabled */ true, /* distributedInSameTrace */ true,
                     Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
             context.putResource(Segment.RESOURCE_KEY, Segment.ROOT_SEGMENT);

@@ -159,7 +159,7 @@ class TracingAutoConfigurationTest {
         // given / when the event-processor sub-toggles are set, the settings component must carry them - the component
         // the messaging tracing enhancer reads when decorating event-handling components
         contextRunner.withPropertyValues(
-                             "axon.tracing.event-processor.disable-batch-trace=true",
+                             "axon.tracing.event-processor.batch-trace-enabled=false",
                              "axon.tracing.event-processor.distributed-in-same-trace=true",
                              "axon.tracing.event-processor.distributed-in-same-trace-time-limit=PT5M")
                      .run(context -> {
@@ -168,7 +168,7 @@ class TracingAutoConfigurationTest {
                          // then
                          MessagingTracingSettings settings =
                                  configuration.getComponent(MessagingTracingSettings.class);
-                         assertThat(settings.eventProcessorDisableBatchTrace()).isTrue();
+                         assertThat(settings.eventProcessorBatchTraceEnabled()).isFalse();
                          assertThat(settings.eventProcessorDistributedInSameTrace()).isTrue();
                          assertThat(settings.eventProcessorDistributedInSameTraceTimeLimit())
                                  .isEqualTo(Duration.ofMinutes(5));

@@ -241,7 +241,7 @@ public class TenantSpanAttributesProvider implements SpanAttributesProvider {
 |`axon.tracing.queryBus.distributedInSameTrace` |Removed: a distributed query handler always continues the dispatcher's trace
 |`axon.tracing.eventProcessor.distributedInSameTrace` |`axon.tracing.event-processor.distributed-in-same-trace`
 |`axon.tracing.eventProcessor.distributedInSameTraceTimeLimit` |`axon.tracing.event-processor.distributed-in-same-trace-time-limit`
-|`axon.tracing.eventProcessor.disableBatchTrace` |`axon.tracing.event-processor.disable-batch-trace`
+|`axon.tracing.eventProcessor.disableBatchTrace` |`axon.tracing.event-processor.batch-trace-enabled` -- semantics inverted: `disableBatchTrace=true` maps to `batch-trace-enabled=false`
 |`axon.tracing.snapshotter.separateTrace`, `.aggregateTypeInSpanName` |Removed: snapshot spans nest under the entity's trace through the `ProcessingContext`
 |`axon.tracing.deadlineManager.*`, `axon.tracing.sagaManager.*` |Removed: deadlines and sagas are not available in Axon Framework 5.0
 |(not present) |Per-component toggles such as `axon.tracing.command-bus.enabled`, `axon.tracing.event-store.enabled`, and `axon.tracing.attribute-providers.event-tags`

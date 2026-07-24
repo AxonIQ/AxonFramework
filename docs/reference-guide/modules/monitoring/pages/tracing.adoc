@@ -89,7 +89,7 @@ Every component can be opted out individually:
 |`axon.tracing.event-sink.enabled` |`true` |Traces event publication.
 |`axon.tracing.event-store.enabled` |`true` |Traces the storage append transaction.
 |`axon.tracing.event-processor.enabled` |`true` |Traces event-handling components.
-|`axon.tracing.event-processor.disable-batch-trace` |`false` |When `true`, suppresses the streaming-processor batch span; per-event spans become linked trace roots.
+|`axon.tracing.event-processor.batch-trace-enabled` |`true` |When `false`, suppresses the streaming-processor batch span; per-event spans become linked trace roots.
 |`axon.tracing.event-processor.distributed-in-same-trace` |`false` |When `true`, recent events' process spans continue the publisher's trace.
 |`axon.tracing.event-processor.distributed-in-same-trace-time-limit` |`PT2M` |How recent an event must be to continue the publisher's trace in same-trace mode.
 |`axon.tracing.query-bus.enabled` |`true` |Traces query dispatch, handling, and subscription-query updates.

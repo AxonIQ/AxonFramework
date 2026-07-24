@@ -138,7 +138,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                             delegate,
                             spanFactory,
                             processorConfig.get().processorName(),
-                            settings.eventProcessorDisableBatchTrace(),
+                            settings.eventProcessorBatchTraceEnabled(),
                             settings.eventProcessorDistributedInSameTrace(),
                             settings.eventProcessorDistributedInSameTraceTimeLimit()
                     );

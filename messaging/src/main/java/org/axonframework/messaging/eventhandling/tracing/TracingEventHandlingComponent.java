@@ -96,20 +96,20 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
     private final EventHandlingComponent delegate;
     private final SpanFactory spanFactory;
     private final @Nullable String processorName;
-    private final boolean disableBatchTrace;
+    private final boolean batchTraceEnabled;
     private final boolean distributedInSameTrace;
     private final Duration distributedInSameTraceTimeLimit;
 
     /**
      * Initializes a tracing {@link EventHandlingComponent} with the default sub-toggles
-     * ({@code disableBatchTrace=false}, {@code distributedInSameTrace=false},
+     * ({@code batchTraceEnabled=true}, {@code distributedInSameTrace=false},
      * {@code distributedInSameTraceTimeLimit=PT2M}) and no processor name.
      *
      * @param delegate    the event-handling component to delegate to
      * @param spanFactory the factory producing the tracing spans
      */
     public TracingEventHandlingComponent(EventHandlingComponent delegate, SpanFactory spanFactory) {
-        this(delegate, spanFactory, null, false, false, Duration.ofMinutes(2));
+        this(delegate, spanFactory, null, true, false, Duration.ofMinutes(2));
     }
 
     /**
@@ -121,7 +121,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      * @param processorName                   the name of the event processor owning the {@code delegate}, attached to
      *                                        every created span under {@link #PROCESSOR_NAME_ATTRIBUTE}; or
      *                                        {@code null} when unknown, in which case no attribute is attached
-     * @param disableBatchTrace               when {@code true}, no enclosing batch span is opened for streaming-processor batches
+     * @param batchTraceEnabled               whether an enclosing batch span is opened for streaming-processor batches
      * @param distributedInSameTrace          when {@code true}, a streaming processor's handler span continues the
      *                                        publisher's trace and no batch span is opened; when {@code false}, the
      *                                        handler is parented to an enabled batch span and linked to its publisher,
@@ -132,13 +132,13 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
     public TracingEventHandlingComponent(EventHandlingComponent delegate,
                                          SpanFactory spanFactory,
                                          @Nullable String processorName,
-                                         boolean disableBatchTrace,
+                                         boolean batchTraceEnabled,
                                          boolean distributedInSameTrace,
                                          Duration distributedInSameTraceTimeLimit) {
         this.delegate = Objects.requireNonNull(delegate, "delegate may not be null");
         this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory may not be null");
         this.processorName = processorName;
-        this.disableBatchTrace = disableBatchTrace;
+        this.batchTraceEnabled = batchTraceEnabled;
         this.distributedInSameTrace = distributedInSameTrace;
         this.distributedInSameTraceTimeLimit =
                 Objects.requireNonNull(distributedInSameTraceTimeLimit,
@@ -155,7 +155,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
         // started (which mutates the context via putResource) OUTSIDE a
         // computeResourceIfAbsent supplier -- mutating a ProcessingContext from within such a supplier is rejected as
         // a re-entrant ("recursive") update; get-then-put is deliberate.
-        if (streaming && !disableBatchTrace && !distributedInSameTrace
+        if (streaming && batchTraceEnabled && !distributedInSameTrace
                 && context.getResource(BATCH_SPAN_KEY) == null) {
             Span batch = withProcessorName(spanFactory.createRootSpan(BATCH_SPAN, context));
             batch.coverLifecycle(context);

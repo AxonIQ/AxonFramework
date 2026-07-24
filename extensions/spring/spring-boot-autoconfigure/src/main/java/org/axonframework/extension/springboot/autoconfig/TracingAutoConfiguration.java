@@ -87,7 +87,7 @@ public class TracingAutoConfiguration {
                             properties.getCommandBus().isEnabled(),
                             properties.getEventSink().isEnabled(),
                             properties.getEventProcessor().isEnabled(),
-                            properties.getEventProcessor().isDisableBatchTrace(),
+                            properties.getEventProcessor().isBatchTraceEnabled(),
                             properties.getEventProcessor().isDistributedInSameTrace(),
                             properties.getEventProcessor().getDistributedInSameTraceTimeLimit(),
                             properties.getQueryBus().isEnabled(),

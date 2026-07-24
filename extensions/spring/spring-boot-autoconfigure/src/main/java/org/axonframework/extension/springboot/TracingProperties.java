@@ -284,10 +284,10 @@ public class TracingProperties {
         private boolean enabled = true;
 
         /**
-         * When {@code true}, the streaming-processor batch span is suppressed. Each event handler invocation still
-         * gets its own span; only the enclosing batch root is dropped. Defaults to {@code false}.
+         * Whether streaming-processor batches get an enclosing batch span. When disabled, each event handler
+         * invocation still gets its own span; only the enclosing batch root is dropped. Defaults to {@code true}.
          */
-        private boolean disableBatchTrace = false;
+        private boolean batchTraceEnabled = true;
 
         /**
          * When {@code true}, the handler span continues the publisher's trace. When {@code false} (default), the
@@ -322,21 +322,21 @@ public class TracingProperties {
         }
 
         /**
-         * Returns whether the streaming-processor batch span is suppressed.
+         * Returns whether streaming-processor batches get an enclosing batch span.
          *
-         * @return {@code true} when the batch span is suppressed, {@code false} otherwise
+         * @return {@code true} when the batch span is opened, {@code false} when it is suppressed
          */
-        public boolean isDisableBatchTrace() {
-            return disableBatchTrace;
+        public boolean isBatchTraceEnabled() {
+            return batchTraceEnabled;
         }
 
         /**
-         * Sets whether the streaming-processor batch span is suppressed.
+         * Sets whether streaming-processor batches get an enclosing batch span.
          *
-         * @param disableBatchTrace {@code true} to suppress the batch span, {@code false} to keep it
+         * @param batchTraceEnabled {@code true} to open the batch span, {@code false} to suppress it
          */
-        public void setDisableBatchTrace(boolean disableBatchTrace) {
-            this.disableBatchTrace = disableBatchTrace;
+        public void setBatchTraceEnabled(boolean batchTraceEnabled) {
+            this.batchTraceEnabled = batchTraceEnabled;
         }
 
         /**
