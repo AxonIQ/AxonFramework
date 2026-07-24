@@ -25,6 +25,7 @@ import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -86,6 +87,13 @@ public abstract class DelegatingEventHandlingComponent implements EventHandlingC
     public MessageStream.Empty<Message> handle(ReplayStatusChanged statusChange,
                                                ProcessingContext context) {
         return delegate.handle(statusChange, context);
+    }
+
+    @Override
+    public <C> Optional<C> unwrap(Class<C> componentType) {
+        return componentType.isInstance(this)
+                ? Optional.of(componentType.cast(this))
+                : delegate.unwrap(componentType);
     }
 
     @Override
