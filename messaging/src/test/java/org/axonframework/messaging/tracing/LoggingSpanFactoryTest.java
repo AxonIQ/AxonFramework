@@ -17,14 +17,16 @@
 package org.axonframework.messaging.tracing;
 
 import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
-import org.apache.logging.log4j.core.test.junit.LoggerContextSource;
-import org.apache.logging.log4j.core.test.junit.Named;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -157,15 +159,32 @@ class LoggingSpanFactoryTest {
     }
 
     @Nested
-    @LoggerContextSource("log4j2-tracing-list-appender.xml")
     class LoggedContent {
 
         private ListAppender appender;
+        private Logger logger;
+        private Level previousLevel;
+        private boolean previousAdditive;
 
         @BeforeEach
-        void clearAppender(@Named("TracingTestAppender") ListAppender appender) {
-            this.appender = appender;
-            appender.clear();
+        void attachAppender() {
+            appender = new ListAppender("TracingTestAppender");
+            appender.start();
+
+            logger = (Logger) LogManager.getLogger(LoggingSpanFactory.class);
+            previousLevel = logger.getLevel();
+            previousAdditive = logger.isAdditive();
+            Configurator.setLevel(LoggingSpanFactory.class.getName(), Level.DEBUG);
+            logger.setAdditive(false);
+            logger.addAppender(appender);
+        }
+
+        @AfterEach
+        void detachAppender() {
+            logger.removeAppender(appender);
+            logger.setAdditive(previousAdditive);
+            Configurator.setLevel(LoggingSpanFactory.class.getName(), previousLevel);
+            appender.stop();
         }
 
         private List<LogEvent> events() {

@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,7 +74,7 @@ class TracingCommandBusTest {
             delegate.dispatchResult = CompletableFuture.completedFuture(result);
 
             // when
-            testSubject.dispatch(command, null).join();
+            testSubject.dispatch(command, null).orTimeout(2, TimeUnit.SECONDS).join();
 
             // then
             spanFactory.verifySpanCompleted(DISPATCH_SPAN);
@@ -90,7 +91,8 @@ class TracingCommandBusTest {
             CompletableFuture<CommandResultMessage> dispatched = testSubject.dispatch(command, null);
 
             // then
-            assertThatThrownBy(dispatched::join).hasRootCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> dispatched.orTimeout(2, TimeUnit.SECONDS).join())
+                    .hasRootCauseInstanceOf(IllegalStateException.class);
             spanFactory.verifySpanCompleted(DISPATCH_SPAN);
             spanFactory.verifySpanHasException(DISPATCH_SPAN, IllegalStateException.class);
         }

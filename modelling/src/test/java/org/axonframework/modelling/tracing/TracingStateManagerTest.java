@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,7 +57,9 @@ class TracingStateManagerTest {
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            testSubject.loadManagedEntity(Booking.class, "room-42", context).join();
+            testSubject.loadManagedEntity(Booking.class, "room-42", context)
+                       .orTimeout(2, TimeUnit.SECONDS)
+                       .join();
 
             // then
             spanFactory.verifySpanCompleted("StateManager.loadManagedEntity Booking");
@@ -82,7 +85,10 @@ class TracingStateManagerTest {
 
             // then the delegate received a traced wrapper, and loading through it opens the repository span
             assertThat(delegate.registered).isInstanceOf(TracingRepository.class);
-            ((Repository<String, Booking>) delegate.registered).load("room-42", new StubProcessingContext()).join();
+            ((Repository<String, Booking>) delegate.registered)
+                    .load("room-42", new StubProcessingContext())
+                    .orTimeout(2, TimeUnit.SECONDS)
+                    .join();
             spanFactory.verifySpanCompleted("Repository.load Booking");
         }
 

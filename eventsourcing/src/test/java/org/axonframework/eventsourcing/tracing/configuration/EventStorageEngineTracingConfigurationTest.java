@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 class EventStorageEngineTracingConfigurationTest {
 
@@ -63,7 +64,7 @@ class EventStorageEngineTracingConfigurationTest {
                 AppendCondition.none(),
                 null,
                 List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
-        ).join();
+        ).orTimeout(2, TimeUnit.SECONDS).join();
 
         // then
         spanFactory.verifySpanActive(APPEND_SPAN);
@@ -100,7 +101,7 @@ class EventStorageEngineTracingConfigurationTest {
                 AppendCondition.none(),
                 null,
                 List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
-        ).join();
+        ).orTimeout(2, TimeUnit.SECONDS).join();
         transaction.rollback();
 
         // then

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,7 +56,7 @@ class TracingRepositoryTest {
             delegate.loadResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.load("room-42", context).join();
+            testSubject.load("room-42", context).orTimeout(2, TimeUnit.SECONDS).join();
 
             // then
             spanFactory.verifySpanCompleted("Repository.load Booking");
@@ -99,7 +100,7 @@ class TracingRepositoryTest {
                                                            .close();
 
             // when
-            testSubject.load("room-42", context).join();
+            testSubject.load("room-42", context).orTimeout(2, TimeUnit.SECONDS).join();
 
             // then
             spanFactory.verifySpanHasParent("SnapshotStore.load", "Repository.load Booking");
@@ -115,7 +116,7 @@ class TracingRepositoryTest {
                                                            .close();
 
             // when
-            testSubject.loadOrCreate("room-42", context).join();
+            testSubject.loadOrCreate("room-42", context).orTimeout(2, TimeUnit.SECONDS).join();
 
             // then
             spanFactory.verifySpanHasParent("SnapshotStore.load", "Repository.loadOrCreate Booking");

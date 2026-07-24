@@ -87,6 +87,7 @@ class SpanStructuredOperationsTest {
                                });
                                return CompletableFuture.completedFuture("loaded");
                            })
+                           .orTimeout(2, TimeUnit.SECONDS)
                            .join();
             });
 
