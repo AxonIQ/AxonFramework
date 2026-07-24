@@ -17,16 +17,16 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.eventsourcing.handler.tracing.TracingEventTagsHandlerEnhancerDefinition;
-import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
+import org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition;
+import org.axonframework.eventsourcing.tracing.configuration.EventSourcingTracingSettings;
 import org.axonframework.extension.springboot.TracingProperties;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
-import org.axonframework.messaging.tracing.MessagingTracingSettings;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
-import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
-import org.axonframework.modelling.tracing.ModellingTracingSettings;
+import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
+import org.axonframework.modelling.tracing.configuration.ModellingTracingSettings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;

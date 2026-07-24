@@ -27,7 +27,7 @@ import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

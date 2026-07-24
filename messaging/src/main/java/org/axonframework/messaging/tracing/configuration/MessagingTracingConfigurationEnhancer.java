@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing;
+package org.axonframework.messaging.tracing.configuration;
 
-import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
+import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventBus;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventHandlingComponent;

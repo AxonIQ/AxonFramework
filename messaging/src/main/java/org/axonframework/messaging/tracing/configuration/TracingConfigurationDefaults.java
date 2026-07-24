@@ -24,7 +24,9 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.EnhancingHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.attributes.DefaultSpanAttributesProviderRegistry;
+import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 
 /**
  * {@link ConfigurationEnhancer} registering the tracing defaults of the {@code axon-messaging} module. Discovered

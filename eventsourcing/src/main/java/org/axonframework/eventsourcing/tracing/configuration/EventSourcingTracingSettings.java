@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.tracing;
+package org.axonframework.eventsourcing.tracing.configuration;
 
 import org.axonframework.common.annotation.Internal;
 

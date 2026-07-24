@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing;
+package org.axonframework.messaging.tracing.configuration;
 
 import org.axonframework.common.annotation.Internal;
 

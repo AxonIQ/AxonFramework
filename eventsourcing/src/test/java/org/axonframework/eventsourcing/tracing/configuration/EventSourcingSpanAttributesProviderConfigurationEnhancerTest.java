@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.tracing;
+package org.axonframework.eventsourcing.tracing.configuration;
 
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
-import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
-import org.axonframework.eventsourcing.eventstore.tracing.EventTagsSpanAttributesProvider;
+import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
+import org.axonframework.eventsourcing.eventstore.tracing.attributes.EventTagsSpanAttributesProvider;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.messaging.eventstreaming.Tag;

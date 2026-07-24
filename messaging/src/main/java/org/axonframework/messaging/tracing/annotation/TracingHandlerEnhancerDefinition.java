@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing;
+package org.axonframework.messaging.tracing.annotation;
 
 import org.axonframework.common.Priority;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.messaging.core.ApplicationContext;
+import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;

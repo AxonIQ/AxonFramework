@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.modelling.tracing;
+package org.axonframework.modelling.tracing.configuration;
 
 import org.axonframework.common.annotation.Internal;
 

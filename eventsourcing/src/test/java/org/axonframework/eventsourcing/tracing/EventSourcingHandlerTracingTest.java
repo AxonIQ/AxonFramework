@@ -17,8 +17,8 @@
 package org.axonframework.eventsourcing.tracing;
 
 import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.MessagingTracingSettings;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
+import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.messaging.core.MessageStream;

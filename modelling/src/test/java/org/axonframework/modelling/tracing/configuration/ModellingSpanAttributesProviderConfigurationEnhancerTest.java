@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package org.axonframework.modelling.tracing;
+package org.axonframework.modelling.tracing.configuration;
 
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.attributes.AggregateIdentifierSpanAttributesProvider;
-import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
+import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.junit.jupiter.api.Nested;

@@ -15,11 +15,10 @@
  */
 
 /**
- * Configuration support for {@code axon-messaging} tracing: the enhancers wiring the tracing decorators and
- * registering the tracing defaults, the per-component tracing settings, and the shared enhancer/decorator ordering
- * constants.
+ * Configuration support for {@code axon-eventsourcing} tracing: the enhancers wiring the tracing decorators and
+ * contributing the module's span attribute providers, and the per-component tracing settings.
  */
 @NullMarked
-package org.axonframework.messaging.tracing.configuration;
+package org.axonframework.eventsourcing.tracing.configuration;
 
 import org.jspecify.annotations.NullMarked;

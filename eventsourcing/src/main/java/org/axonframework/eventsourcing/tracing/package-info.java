@@ -15,7 +15,8 @@
  */
 
 /**
- * Module-level tracing wiring for {@code axon-eventsourcing}. Component-owned tracing decorators live in
+ * Module-level tracing wiring for {@code axon-eventsourcing}. The enhancers and settings live in the
+ * {@code configuration} sub-package; component-owned tracing decorators live in
  * {@code org.axonframework.eventsourcing.eventstore.tracing},
  * {@code org.axonframework.eventsourcing.snapshot.store.tracing}, and
  * {@code org.axonframework.eventsourcing.handler.tracing}.

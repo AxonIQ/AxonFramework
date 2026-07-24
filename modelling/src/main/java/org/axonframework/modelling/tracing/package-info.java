@@ -15,8 +15,9 @@
  */
 
 /**
- * Tracing wiring for {@code axon-modelling} components. The module-level enhancer and settings live here; repository
- * decorators live in {@code org.axonframework.modelling.repository.tracing}.
+ * Tracing decorators for {@code axon-modelling} components. The module-level enhancers and settings live in the
+ * {@code configuration} sub-package; repository decorators live in
+ * {@code org.axonframework.modelling.repository.tracing}.
  */
 @NullMarked
 package org.axonframework.modelling.tracing;

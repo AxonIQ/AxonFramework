@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing;
+package org.axonframework.messaging.tracing.annotation;
 
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;

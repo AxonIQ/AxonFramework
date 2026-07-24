@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.handler.tracing;
+package org.axonframework.eventsourcing.handler.tracing.annotation;
 
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.tracing.Span;
@@ -24,7 +24,7 @@ import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
-import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
+import org.axonframework.eventsourcing.tracing.configuration.EventSourcingTracingSettings;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;

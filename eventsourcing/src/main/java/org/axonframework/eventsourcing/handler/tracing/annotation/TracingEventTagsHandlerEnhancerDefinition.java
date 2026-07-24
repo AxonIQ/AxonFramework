@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.handler.tracing;
+package org.axonframework.eventsourcing.handler.tracing.annotation;
 
 import org.axonframework.messaging.tracing.SpanScope;
-import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
-import org.axonframework.eventsourcing.eventstore.tracing.EventTagsSpanAttributesProvider;
+import org.axonframework.eventsourcing.tracing.configuration.EventSourcingTracingSettings;
+import org.axonframework.eventsourcing.eventstore.tracing.attributes.EventTagsSpanAttributesProvider;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.eventsourcing.eventstore.TagResolver;

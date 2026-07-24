@@ -16,14 +16,14 @@
 
 package org.axonframework.extension.springboot.autoconfig;
 
-import org.axonframework.eventsourcing.handler.tracing.TracingEventTagsHandlerEnhancerDefinition;
+import org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
 import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.LoggingSpanFactory;
 import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition;
+import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

@@ -14,28 +14,24 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.tracing;
+package org.axonframework.modelling.tracing.configuration;
 
-import org.axonframework.messaging.tracing.configuration.SpanAttributesProviderRegistry;
+import org.axonframework.messaging.tracing.attributes.AggregateIdentifierSpanAttributesProvider;
+import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
-import org.axonframework.eventsourcing.eventstore.tracing.EventTagsSpanAttributesProvider;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.eventsourcing.eventstore.TagResolver;
 
 /**
- * {@link ConfigurationEnhancer} contributing the built-in event-sourcing
+ * {@link ConfigurationEnhancer} contributing the built-in modelling
  * {@link org.axonframework.messaging.tracing.SpanAttributesProvider SpanAttributesProviders} to the
  * {@link SpanAttributesProviderRegistry}. Discovered automatically via ServiceLoader.
  * <p>
- * The {@link EventTagsSpanAttributesProvider} requires a {@link TagResolver} - a framework-registered component - so
- * it is only contributed when one is present in the configuration. Contribution is a decorator on the registry
- * component, so both the {@link EventSourcingTracingSettings#spanAttributesProviders()} toggle and the
- * {@code TagResolver} presence are evaluated when the registry is resolved - right before the
- * {@link org.axonframework.messaging.tracing.SpanFactory} consuming it is constructed, once all component
- * registrations are known.
+ * Contribution is a decorator on the registry component, so the toggles in
+ * {@link ModellingTracingSettings#spanAttributesProviders()} are read when the registry is resolved - right before
+ * the {@link org.axonframework.messaging.tracing.SpanFactory} consuming it is constructed.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -44,7 +40,7 @@ import org.axonframework.eventsourcing.eventstore.TagResolver;
 @RegistrationScope("Contribute the providers once at the root; do not re-invoke in child module registries. "
         + "The registry decorator is copied down on its own - re-invoking per nesting level would register the "
         + "same providers multiple times, duplicating span attributes.")
-public final class EventSourcingSpanAttributesProviderConfigurationEnhancer implements ConfigurationEnhancer {
+public final class ModellingSpanAttributesProviderConfigurationEnhancer implements ConfigurationEnhancer {
 
     @Override
     public void enhance(ComponentRegistry registry) {
@@ -52,12 +48,11 @@ public final class EventSourcingSpanAttributesProviderConfigurationEnhancer impl
                 SpanAttributesProviderRegistry.class,
                 0,
                 (config, name, delegate) -> {
-                    if (!config.getComponent(EventSourcingTracingSettings.class).eventTagsEnabled()
-                            || config.getOptionalComponent(TagResolver.class).isEmpty()) {
-                        return delegate;
+                    var providers = config.getComponent(ModellingTracingSettings.class).spanAttributesProviders();
+                    if (providers.aggregateIdentifierEnabled()) {
+                        delegate.registerProvider(c -> new AggregateIdentifierSpanAttributesProvider());
                     }
-                    return delegate.registerProvider(
-                            c -> new EventTagsSpanAttributesProvider(c.getComponent(TagResolver.class)));
+                    return delegate;
                 }
         );
     }

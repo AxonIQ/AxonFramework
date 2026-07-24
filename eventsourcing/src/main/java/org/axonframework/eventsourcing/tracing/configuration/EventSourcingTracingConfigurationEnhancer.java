@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.tracing;
+package org.axonframework.eventsourcing.tracing.configuration;
 
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStore;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStorageEngine;
-import org.axonframework.eventsourcing.handler.tracing.TracingEventTagsHandlerEnhancerDefinition;
+import org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition;
 import org.axonframework.eventsourcing.snapshot.store.tracing.TracingSnapshotStore;
-import org.axonframework.messaging.tracing.MessagingTracingSettings;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
@@ -61,7 +61,7 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
      * Decorator order for the event-sourcing tracing decorators. Near-maximal so tracing is applied last and is the
      * <em>outermost</em> wrapper - spans cover all inner decorators, and tracing wrappers are reliably detectable by
      * an outermost {@code instanceof} check. Same value and rationale as
-     * {@link org.axonframework.messaging.tracing.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     * {@link org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
      */
     public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
 

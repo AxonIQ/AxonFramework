@@ -15,9 +15,13 @@
  */
 
 /**
- * Tracing wiring for {@code axon-messaging} components. The {@code internal} sub-package holds the
- * delegating tracing decorators; they are registered with the framework by the
- * ServiceLoader-discovered {@code MessagingTracingConfigurationEnhancer}.
+ * The tracing API of Axon Framework: {@code SpanFactory}, {@code Span}, {@code SpanScope}, and
+ * {@code SpanAttributesProvider}, plus the logging and no-op factory implementations.
+ * <p>
+ * The delegating tracing decorators live with the components they decorate (for example
+ * {@code org.axonframework.messaging.commandhandling.tracing}); the {@code configuration} sub-package holds the
+ * enhancers and settings wiring them, the {@code attributes} sub-package the built-in attribute providers and their
+ * registry, and the {@code annotation} sub-package the per-method handler-span enhancer.
  */
 @NullMarked
 package org.axonframework.messaging.tracing;

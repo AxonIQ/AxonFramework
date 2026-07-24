@@ -15,11 +15,10 @@
  */
 
 /**
- * Configuration support for {@code axon-messaging} tracing: the enhancers wiring the tracing decorators and
- * registering the tracing defaults, the per-component tracing settings, and the shared enhancer/decorator ordering
- * constants.
+ * Annotation-pipeline tracing support for {@code axon-messaging}: the handler enhancer producing per-method handler
+ * spans, registered conditionally on the {@code HandlerDefinition} component by the tracing configuration defaults.
  */
 @NullMarked
-package org.axonframework.messaging.tracing.configuration;
+package org.axonframework.messaging.tracing.annotation;
 
 import org.jspecify.annotations.NullMarked;

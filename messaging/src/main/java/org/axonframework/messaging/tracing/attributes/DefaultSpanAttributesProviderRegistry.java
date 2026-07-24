@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.tracing.configuration;
+package org.axonframework.messaging.tracing.attributes;
 
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.common.annotation.Internal;

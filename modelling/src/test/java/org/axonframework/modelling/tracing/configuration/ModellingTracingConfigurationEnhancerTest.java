@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package org.axonframework.modelling.tracing;
+package org.axonframework.modelling.tracing.configuration;
 
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.tracing.TracingStateManager;
 import org.axonframework.modelling.configuration.ModellingConfigurer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
