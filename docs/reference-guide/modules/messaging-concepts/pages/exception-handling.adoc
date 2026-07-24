@@ -30,29 +30,7 @@ Let's look at an example entity that handles the `PlaceOrderCommand`, returning 
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.CommandExecutionException;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.modelling.annotation.InjectEntity;
-
-class InventoryAutomation {
-
-    // Good: Returns a result object
-    @CommandHandler
-    public OrderResult placeOrder(PlaceOrderCommand command,
-                                  @InjectEntity Inventory inventory,
-                                  EventAppender appender) {
-        if (inventory.sufficientFor(command.productIds())) {
-            return OrderResult.failed("Insufficient balance");
-        }
-        if (!isAuthorized(command.userId())) {
-            return OrderResult.failed("User not authorized");
-        }
-        appender.append(new OrderPlacedEvent(orderId));
-        // Process order
-        return OrderResult.success(orderId);
-    }
-}
+include::example$messagingconcepts/exceptionhandling/results/InventoryAutomation.java[tag=result-object,indent=0]
 ----
 
 The result object can carry structured information about the failure that the receiver can use to make decisions or present appropriate feedback to users.
@@ -70,27 +48,7 @@ These represent situations where normal processing cannot continue and typically
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.CommandExecutionException;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.modelling.annotation.InjectEntity;
-
-class InventoryAutomation {
-
-    // Appropriate: Exception for infrastructure failure
-    @CommandHandler
-    public void handle(PlaceOrderCommand command,
-                       @InjectEntity Inventory inventory) {
-        try {
-            orderRepository.save(new Order(command.order()));
-        } catch (DatabaseUnavailableException e) {
-            // Truly exceptional - database is down
-            throw new CommandExecutionException(
-                    "Unable to process order due to system unavailability",
-                    e
-            );
-        }
-    }
-}
+include::example$messagingconcepts/exceptionhandling/exceptions/InventoryAutomation.java[tag=infrastructure-exception,indent=0]
 ----
 
 == Handler execution exceptions
@@ -114,33 +72,7 @@ To maintain support for conditional logic dependent on the type of exception thr
 
 [source,java]
 ----
-import org.axonframework.messaging.commandhandling.CommandExecutionException;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.modelling.annotation.InjectEntity;
-
-import java.util.Map;
-
-class InventoryAutomation {
-
-    @CommandHandler
-    public void handle(PlaceOrderCommand command,
-                       @InjectEntity Inventory inventory,
-                       EventAppender appender) {
-        if (criticalSystemError()) {
-            throw new CommandExecutionException(
-                    "System unavailable",
-                    null,
-                    // Exception details...
-                    Map.of(
-                            "errorCode", "SYSTEM_UNAVAILABLE",
-                            "retryable", "true"
-                    )
-            );
-        }
-        // Happy path, validating the inventory and publishing an event.
-    }
-}
+include::example$messagingconcepts/exceptionhandling/details/InventoryAutomation.java[tag=exception-details,indent=0]
 ----
 
 The details map allows you to pass structured information about the exception that the receiver can use to make decisions about retry logic, error presentation, or recovery strategies. Note that any `Object` is supported as the details. Other reasonable options are failure objects and status enumerations, specific to the domain.

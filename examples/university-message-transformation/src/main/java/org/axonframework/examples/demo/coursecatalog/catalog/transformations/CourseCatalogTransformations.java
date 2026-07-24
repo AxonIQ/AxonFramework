@@ -24,8 +24,10 @@ import io.axoniq.framework.messaging.transformation.events.EventTransformerChain
  * The chain matches each event by identity and re-applies transformations until none matches, so
  * multi-step version hops compose on their own. A stored v1 {@code CoursePublished} is lifted to v2 and
  * then to v3, and a {@code CourseOffered} is first renamed to {@code CoursePublished} before flowing
- * through those same version hops. Each step matches a different identity, so registration order does
- * not affect the outcome here; the transformations are grouped only for readability.
+ * through those same version hops. A {@code CourseListedWithSeats} is split into a {@code CoursePublished}
+ * and a {@code CourseCapacityChanged}, and the {@code CoursePublished} it produces flows through those
+ * same hops in turn. Each step matches a different identity, so registration order does not affect the
+ * outcome here; the transformations are grouped only for readability.
  * <p>
  * When several transformations could match the same event, the most specific one wins regardless of
  * registration order: an exact {@code from} always beats a predicate, and two transformations claiming
@@ -46,6 +48,7 @@ public final class CourseCatalogTransformations {
     public static EventTransformerChain chain() {
         return EventTransformerChain.builder()
                                     .register(CourseOfferedToCoursePublished.build())
+                                    .register(CourseListedWithSeatsSplit.build())
                                     .register(SystemAnnouncementLegacyUplift.build())
                                     .register(CoursePublishedV1ToV2.build())
                                     .register(CoursePublishedV2ToV3.build())

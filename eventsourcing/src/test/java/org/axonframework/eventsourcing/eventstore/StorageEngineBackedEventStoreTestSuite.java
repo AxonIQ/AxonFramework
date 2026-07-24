@@ -178,6 +178,17 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
      */
     protected abstract @NonNull UnitOfWork unitOfWork();
 
+    /**
+     * Indicates whether the tested {@link EventStorageEngine} supports Dynamic Consistency Boundaries
+     * (DCB) - events with more than one tag, and append conditions/conflict checks that are not confined
+     * to a single aggregate's own stream. Defaults to {@code true}.
+     *
+     * @return {@code true} if the tested storage engine supports DCB, {@code false} otherwise
+     */
+    protected boolean supportsDynamicConsistencyBoundaries() {
+        return true;
+    }
+
     @Nested
     protected class GivenSomePublishedEvents {
         protected EventMessage event1;
@@ -261,6 +272,99 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
             assertThat(source(SourcingCondition.conditionFor(EventCriteria.havingTags(TAG2))))
                 .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
                 .containsExactly(event3, event4);
+        }
+
+        /*
+         * A criterion listing two tags for the same key requires an event to have both values, not
+         * just one of them.
+         */
+        @Test
+        protected void sourcingShouldRequireAllTagValuesWhenCriterionRepeatsAKey() throws Exception {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine does not support DCB. Aborting test."
+            );
+
+            EventMessage eventWithBothGenres = message(new EventWithGenreTags(List.of("action", "adventure"), "both"));
+            EventMessage eventWithOnlyOneGenre = message(new EventWithGenreTags(List.of("action"), "only-one"));
+
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, eventWithOnlyOneGenre, eventWithBothGenres)).join();
+
+            EventCriteria bothGenresCriteria = EventCriteria.havingTags(new Tag("genre", "action"), new Tag("genre", "adventure"));
+
+            assertThat(source(SourcingCondition.conditionFor(bothGenresCriteria), EventWithGenreTags.class))
+                .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                .containsExactly(eventWithBothGenres);
+        }
+
+        /*
+         * Combining a tag filter with a type restriction narrows matches to only events of that type,
+         * even when another event type shares the exact same tag.
+         */
+        @Test
+        protected void sourcingShouldFilterByTypeWhenCombinedWithTags() throws Exception {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine does not support DCB. Aborting test."
+            );
+
+            EventMessage otherTypeSameTag = message(new OtherCourseEvent(TAG1.value(), "other"));
+
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, otherTypeSameTag)).join();
+
+            EventCriteria courseUpdatedOnly = EventCriteria.havingTags(TAG1)
+                                                           .andBeingOneOfTypes(RESOLVER, CourseUpdated.class);
+
+            assertThat(source(SourcingCondition.conditionFor(courseUpdatedOnly)))
+                .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                .containsExactly(event1, event2, event5);
+        }
+
+        /*
+         * A type restriction without any tags (built via {@link EventCriteria#havingAnyTag()}) filters
+         * purely on type, regardless of tags.
+         */
+        @Test
+        protected void sourcingShouldFilterByTypeAloneWithoutTags() throws Exception {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine does not support DCB. Aborting test."
+            );
+
+            record UniqueTypeMarker(@EventTag(key = "Course") String id, String data) {}
+
+            EventMessage uniqueEvent1 = message(new UniqueTypeMarker(TAG1.value(), "unique-1"));
+            EventMessage uniqueEvent2 = message(new UniqueTypeMarker(TAG2.value(), "unique-2"));
+
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, uniqueEvent1, uniqueEvent2)).join();
+
+            EventCriteria onlyUniqueTypeEvents = EventCriteria.havingAnyTag()
+                                                               .andBeingOneOfTypes(RESOLVER, UniqueTypeMarker.class);
+
+            assertThat(source(SourcingCondition.conditionFor(onlyUniqueTypeEvents), UniqueTypeMarker.class))
+                .usingComparatorForType(EVENT_COMPARATOR, GenericEventMessage.class)
+                .containsExactly(uniqueEvent1, uniqueEvent2);
+        }
+
+        /**
+         * A single criterion listing multiple types matches events of any of those types - types combine
+         * with OR semantics within one criterion, unlike tags (which combine with AND).
+         */
+        @Test
+        protected void sourcingShouldMatchAnyOfMultipleTypesInOneCriterion() throws Exception {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine does not support DCB. Aborting test."
+            );
+
+            EventMessage otherTypeSameTag = message(new OtherCourseEvent(TAG1.value(), "other"));
+
+            unitOfWork().executeWithResult(pc -> eventStore.publish(pc, otherTypeSameTag)).join();
+
+            EventCriteria eitherType = EventCriteria.havingTags(TAG1)
+                                                     .andBeingOneOfTypes(RESOLVER, CourseUpdated.class, OtherCourseEvent.class);
+
+            assertThat(sourceCount(SourcingCondition.conditionFor(eitherType))).isEqualTo(4);
         }
 
         @Test
@@ -690,6 +794,11 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
          */
         @Test
         protected void narrowedCriteriaShouldAvoidFalseConflict() {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine does not support DCB. Aborting test."
+            );
+
             // given - a course with subscriptions
             String courseId = UUID.randomUUID().toString();
             Tag courseIdTag = new Tag("courseId", courseId);
@@ -709,14 +818,7 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
                 EventStoreTransaction tx = eventStore.transaction(pc);
                 tx.appendEvent(initialSubscription);
             });
-            try {
-                execute(setup);
-            } catch (Exception e) {
-                Assumptions.assumeFalse(
-                        e instanceof TooManyTagsOnEventMessageException,
-                        "The tested storage engine does not support DCB. Aborting test."
-                );
-            }
+            execute(setup);
 
             CountDownLatch sourcingFinished = new CountDownLatch(2);
             CountDownLatch latch1 = new CountDownLatch(1);
@@ -787,6 +889,12 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
          */
         @Test
         protected void overrideReturningNoneShouldBypassConflictDetection() {
+            Assumptions.assumeTrue(
+                    supportsDynamicConsistencyBoundaries(),
+                    "The tested storage engine assumes aggregate identifier and sequence uniqueness, "
+                            + "but we're publishing for the same identifier twice. Aborting test."
+            );
+
             // given - a course name and first course already created with uniqueness check
             String courseName = UUID.randomUUID().toString();
             Tag courseNameTag = new Tag("courseName", courseName);
@@ -810,15 +918,7 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
             });
 
             // then - succeeds despite a CourseCreated with the same name already existing
-            try {
-                execute(uow);
-            } catch (Exception e) {
-                Assumptions.assumeFalse(
-                        e instanceof AppendEventsTransactionRejectedException,
-                        "The tested storage engine assume aggregate identifier and sequence uniqueness, "
-                                + "but we're publishing for the same identifier twice. Aborting test."
-                );
-            }
+            execute(uow);
 
             // verify both events are persisted
             assertThat(sourceCount(SourcingCondition.conditionFor(courseNameCriteria))).isEqualTo(2);
@@ -923,6 +1023,21 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
      * @return The list containing the sourced messages.
      */
     protected final List<EventMessage> source(SourcingCondition condition) {
+        return source(condition, CourseUpdated.class);
+    }
+
+    /**
+     * Fully sources all messages with the given sourcing condition, converting each payload to the
+     * given {@code payloadClass}, and returns them as a list.
+     * <p>
+     * Use this overload instead of {@link #source(SourcingCondition)} whenever the sourced events are
+     * not all {@link CourseUpdated}, since that method always converts payloads to {@link CourseUpdated}.
+     *
+     * @param condition    The condition, cannot be {@code null}.
+     * @param payloadClass The class to convert every sourced message's payload to.
+     * @return The list containing the sourced messages.
+     */
+    protected final List<EventMessage> source(SourcingCondition condition, Class<?> payloadClass) {
         return unitOfWork().executeWithResult(pc -> {
             EventStoreTransaction tx = eventStore.transaction(pc);
             MessageStream<? extends EventMessage> stream = tx.source(condition);
@@ -930,7 +1045,7 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
             return stream.reduce(
                 new ArrayList<EventMessage>(),
                 (list, entry) -> {
-                    list.add(entry.message().withConvertedPayload(CourseUpdated.class, CONVERTER));
+                    list.add(entry.message().withConvertedPayload(payloadClass, CONVERTER));
 
                     return list;
                 }
@@ -979,4 +1094,12 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
 
     @Event
     record CourseUpdated(@EventTag(key = "Course") String id, String data) {}
+
+    record EventWithGenreTags(@EventTag(key = "genre") List<String> genres, String data) {}
+
+    /**
+     * A distinct event type that can carry the same "Course" tag as {@link CourseUpdated}, used to verify
+     * that type restrictions actually narrow matches instead of only tags being effective.
+     */
+    record OtherCourseEvent(@EventTag(key = "Course") String id, String data) {}
 }

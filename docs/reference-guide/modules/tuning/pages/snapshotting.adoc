@@ -76,11 +76,7 @@ To create a policy which snapshots after 5 events or if sourcing time exceeds 50
 
 [source,java]
 ----
-SnapshotPolicy snapshotPolicy =
-        SnapshotPolicy.afterEvents(5)
-                      .or(SnapshotPolicy.whenSourcingTimeExceeds(
-                          Duration.millis(500)
-                      ));
+include::example$tuning/snapshotting/policies/SnapshotPolicyExamples.java[tag=combined-snapshot-policy,indent=0]
 ----
 
 === Snapshot storage
@@ -101,7 +97,7 @@ Future versions of the framework may allow storing multiple snapshots per entity
 A suitable `SnapshotStore` is typically registered automatically by Axon Framework, but may be overridden when required.
 For example, to register a custom Axon Server-based snapshot store:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 registry.registerComponent(SnapshotStore.class, c -> {
     AxonServerConnectionManager connectionManager =
@@ -118,10 +114,7 @@ For testing or simple setups, an in-memory store can be used instead:
 
 [source,java]
 ----
-registry.registerComponent(
-        SnapshotStore.class,
-        c -> new InMemorySnapshotStore()
-);
+include::example$tuning/snapshotting/storeconfig/InMemorySnapshotStoreConfiguration.java[tag=in-memory-snapshot-store,indent=0]
 ----
 
 === Configuring snapshotting
@@ -145,9 +138,7 @@ At least one threshold must be configured, either directly on the annotation or 
 
 [source,java]
 ----
-@EventSourcedEntity
-@Snapshotting(afterEvents = 100)
-public class Course { ... }
+include::example$tuning/snapshotting/annotationbased/afterevents/Course.java[tag=snapshot-after-events,indent=0]
 ----
 
 `afterEvents` sets the event-count threshold.
@@ -156,21 +147,19 @@ When both are set, either condition independently triggers a snapshot.
 
 [source,java]
 ----
-@EventSourcedEntity
-@Snapshotting(afterEvents = 100, afterSourcingTime = "PT5S")
-public class Course { ... }
+include::example$tuning/snapshotting/annotationbased/combinedthresholds/Course.java[tag=snapshot-combined-thresholds,indent=0]
 ----
 
 A shared default can be provided at the package level, so individual entity classes can opt in with a bare `@Snapshotting` annotation:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 // package-info.java
 @Snapshotting(afterEvents = 50)
 package com.example.faculty;
 ----
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @EventSourcedEntity
 @Snapshotting  // inherits afterEvents = 50 from the package annotation
@@ -188,18 +177,7 @@ The example below shows how to configure snapshotting for an event-sourced entit
 
 [source,java]
 ----
-SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(5)
-        .or(SnapshotPolicy.whenEventMatches(
-                msg -> msg.type().qualifiedName().equals(
-                        new QualifiedName(CourseRenamed.class)
-                )
-        ));
-
-EventSourcedEntityModule<CourseId, Course> courseModule =
-        EventSourcedEntityModule.declarative(CourseId.class, Course.class)
-                                // other entity configuration omitted
-                                .snapshotPolicy(c -> snapshotPolicy)
-                                .build();
+include::example$tuning/snapshotting/programmatic/SnapshotPolicyConfiguration.java[tag=declarative-snapshot-policy,indent=0]
 ----
 
 In this configuration:
@@ -222,28 +200,14 @@ Most JSON-based converters (such as Jackson, when compiled with parameter names 
 
 [source,java]
 ----
-public class Course {
-    private final String courseId;
-    private final String name;
-    private final int capacity;
-
-    public Course(String courseId, String name, int capacity) {
-        this.courseId = courseId;
-        this.name = name;
-        this.capacity = capacity;
-    }
-
-    public String getCourseId() { return courseId; }
-    public String getName() { return name; }
-    public int getCapacity() { return capacity; }
-}
+include::example$tuning/snapshotting/entityconversion/getterbased/Course.java[tag=getter-based-course,indent=0]
 ----
 
 Or using a `record`:
 
 [source,java]
 ----
-public record Course(String courseId, String name, int capacity) {}
+include::example$tuning/snapshotting/entityconversion/recordbased/Course.java[tag=record-based-course,indent=0]
 ----
 
 While setters and default constructors can still be used if necessary, the constructor-based approach ensures immutability and aligns with modern Java development practices.

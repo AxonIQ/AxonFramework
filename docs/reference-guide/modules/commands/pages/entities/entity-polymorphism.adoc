@@ -29,39 +29,7 @@ Polymorphism is handled by an `EventSourcedEntityFactory.fromEventMessage()` fac
 
 [source,java]
 ----
-// Abstract parent, no annotations needed
-public abstract class CourseEntity {
-
-    protected String courseId;
-    protected String title;
-    protected int capacity;
-    protected int enrolledCount;
-}
-
-// Concrete subtypes
-public class OnlineCourse extends CourseEntity {
-
-    protected String platformUrl;
-
-    public OnlineCourse(CourseCreated event) {
-        this.courseId = event.courseId();
-        this.title = event.title();
-        this.capacity = event.capacity();
-        this.platformUrl = event.platformUrl();
-    }
-}
-
-public class InPersonCourse extends CourseEntity {
-
-    protected String location;
-
-    public InPersonCourse(CourseCreated event) {
-        this.courseId = event.courseId();
-        this.title = event.title();
-        this.capacity = event.capacity();
-        this.location = event.location();
-    }
-}
+include::example$commands/entities/entitypolymorphism/declarative/CourseHierarchy.java[tag=declarative-hierarchy,indent=0]
 ----
 
 The polymorphism-specific piece is the `entityFactory`: an `EventSourcedEntityFactory.fromEventMessage` that inspects the first event and creates the right concrete type.
@@ -72,30 +40,12 @@ Only the polymorphism-specific snippets are shown below:
 
 [source,java]
 ----
-// Subtype-specific instance command handler. Cast to the concrete type.
-.instanceCommandHandler(
-    resolver.resolveOrThrow(UpdatePlatformUrl.class).qualifiedName(),
-    (command, entity, context) -> {
-        OnlineCourse online = (OnlineCourse) entity; // <1>
-        UpdatePlatformUrl cmd = command.payloadAs(UpdatePlatformUrl.class);
-        EventAppender.forContext(context).append(
-                new PlatformUrlUpdated(online.courseId, cmd.newUrl())
-        );
-        return MessageStream.empty().cast();
-    }
-)
+include::example$commands/entities/entitypolymorphism/declarative/CourseEntityConfiguration.java[tag=polymorphic-instance-command-handler,indent=0]
 ----
 
 [source,java]
 ----
-// Entity factory: pick the concrete type based on the first event.
-.entityFactory(c -> EventSourcedEntityFactory.fromEventMessage((id, firstEvent) -> { // <2>
-    CourseCreated e = firstEvent.payloadAs(CourseCreated.class);
-    return switch (e.courseType()) {
-        case ONLINE    -> new OnlineCourse(e);
-        case IN_PERSON -> new InPersonCourse(e);
-    };
-}))
+include::example$commands/entities/entitypolymorphism/declarative/CourseEntityConfiguration.java[tag=polymorphic-entity-factory,indent=0]
 ----
 
 <1> Cast the parameter to the concrete subtype to access subtype-specific fields.
@@ -118,23 +68,7 @@ Axon automatically collects all concrete (non-sealed) leaf types by recursively 
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-
-@EventSourcedEntity(tagKey = "courseId", concreteTypes = {OnlineCourse.class, InPersonCourse.class}) // <1>
-public abstract class CourseEntity {
-
-    // omitted: state, command handlers, event sourcing handlers
-    // see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities] for the structure of these members.
-
-    @EntityCreator
-    public static CourseEntity create(CourseCreated event) { // <2>
-        return switch (event.courseType()) {
-            case ONLINE    -> new OnlineCourse(event);
-            case IN_PERSON -> new InPersonCourse(event);
-        };
-    }
-}
+include::example$commands/entities/entitypolymorphism/autodetected/CourseEntity.java[tag=autodetected-entity,indent=0]
 ----
 
 <1> Subtypes do not need `@EventSourcedEntity`; Axon discovers them from `concreteTypes`.
@@ -145,14 +79,7 @@ Register the abstract parent class:
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-
-static void registerCourseEntity(EventSourcingConfigurer configurer) {
-    configurer.registerEntity(
-        EventSourcedEntityModule.autodetected(String.class, CourseEntity.class) // <1>
-    );
-}
+include::example$commands/entities/entitypolymorphism/autodetected/CourseEntityRegistration.java[tag=autodetected-registration,indent=0]
 ----
 
 <1> Pass the abstract parent class.

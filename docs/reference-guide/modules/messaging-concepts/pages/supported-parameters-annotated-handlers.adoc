@@ -48,6 +48,7 @@ By default, `@EventHandler` annotated methods allow the following parameter type
 |type: `String` annotated with `@MessageIdentifier` |Will resolve the identifier of the handled `EventMessage`.
 |type: `java.time.Instant` annotated with `@Timestamp` |Will resolve to the timestamp of the `EventMessage`. The resolved timestamp is the time at which the event was generated.
 |type: `TrackingToken` |Will have the current xref:events:event-processors/streaming.adoc#tracking_tokens[token] related to the processed event injected. Note that this will only work for streaming event processors, as otherwise there is no token attached to the events.
+|type: `Segment` |Will resolve to the xref:events:event-processors/streaming.adoc[segment] that the streaming event processor assigned to the handler for the processed event. This identifies the slice of the event stream the handler is responsible for. Resolves to `null` when the event is not processed by a streaming event processor, as there is no segment in that scenario.
 |type: `ReplayStatus` |Will resolve to the `ReplayStatus` indicating whether the event is delivered as a regular event or a replay event during event replay operations.
 |annotated with `@ReplayContext` |Will resolve to replay context values that were registered when the replay was started. This is only available during event replay and can be used to access replay-specific configuration or state.
 |type: `CommandDispatcher` |Will inject the `CommandDispatcher` for dispatching commands from within an event handler. This is useful when events should trigger command execution. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `CommandDispatcher` is processing context aware.
@@ -95,117 +96,46 @@ Here are some examples demonstrating the use of different parameter types:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(PlaceOrderCommand command,
-                   EventAppender appender) {
-    // Make business decision and append event...
-    PaymentRequestedEvent event = new PaymentRequestedEvent(
-            command.orderId(),
-            command.amount()
-    );
-    appender.append(event);
-}
+include::example$messagingconcepts/supportedparameters/BasicCommandHandlerExample.java[tag=command-handler-event-appender,indent=0]
 ----
 
 === Event handler with `ProcessingContext`
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event,
-               ProcessingContext context) {
-    // Register cleanup action
-    context.whenComplete(pc -> cleanupResources());
-    processEvent(event);
-}
+include::example$messagingconcepts/supportedparameters/EventHandlerProcessingContextExample.java[tag=event-handler-processing-context,indent=0]
 ----
 
 === Event handler with metadata and timestamp
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event,
-               @MetadataValue("userId") String userId,
-               @Timestamp Instant timestamp) {
-    // userId is extracted from metadata
-    // timestamp contains when the event was created
-    updateProjection(event, userId, timestamp);
-}
+include::example$messagingconcepts/supportedparameters/EventHandlerMetadataTimestampExample.java[tag=event-handler-metadata-timestamp,indent=0]
 ----
 
 === Query handler with `ProcessingContext`
 [source,java]
 ----
-@QueryHandler
-public CardSummary handle(FetchCardSummaryQuery query, ProcessingContext context) {
-    // Access correlation data
-    String correlationId = context.correlationId();
-
-    // Access resources
-    SomeService service = context.resource(SomeService.RESOURCE_KEY);
-
-    return cardSummaryStorage.get(query.getCardSummaryId());
-}
+include::example$messagingconcepts/supportedparameters/QueryHandlerProcessingContextExample.java[tag=query-handler-processing-context,indent=0]
 ----
 
 === Event handler with `QueryUpdateEmitter` for subscription query support
 
 [source,java]
 ----
-@EventHandler
-public void on(CardRedeemedEvent event, QueryUpdateEmitter emitter) {
-
-    // Update the model
-    CardSummary summary = cardSummaryStorage.get(event.getCardId());
-    summary.setRemainingValue(event.getRemainingValue());
-
-    // Emit update to subscription queries
-    emitter.emit(FetchCardSummaryQuery.class,
-                query -> query.getCardSummaryId().equals(event.getCardId()),
-                summary);
-}
+include::example$messagingconcepts/supportedparameters/EventHandlerQueryUpdateEmitterExample.java[tag=event-handler-query-update-emitter,indent=0]
 ----
 
 === Event handler dispatching follow-up commands
 
 [source,java]
 ----
-@EventHandler
-public CompletableFuture<Void> handle(OrderPlacedEvent event,
-                                      CommandDispatcher dispatcher) {
-    // Update the state based on the event
-    updateState(event);
-
-    // Dispatch follow-up command
-    CommandResult result = dispatcher.send(new ShipOrderCommand(event.orderId()));
-
-    // Return the CompletableFuture so the handler only completes when the command finishes
-    return result.getResultMessage()
-                 .thenAccept(r -> logger.info("Shipping initiated"))
-                 .exceptionally(ex -> {
-                     logger.error("Failed to initiate shipping: {}", ex.getMessage());
-                     // Handle error appropriately
-                     return null;
-                 });
-}
+include::example$messagingconcepts/supportedparameters/EventHandlerCommandDispatcherExample.java[tag=event-handler-command-dispatcher,indent=0]
 ----
 
 === Event handler accessing replay context
 
 [source,java]
 ----
-@EventHandler
-public void on(OrderPlacedEvent event,
-               ReplayStatus replayStatus,
-               @ReplayContext String replayReason) {
-    if (replayStatus == ReplayStatus.REPLAY) {
-        // Special handling during replay
-        logger.info("Replaying event due to: {}", replayReason);
-        // Skip side effects during replay
-    } else {
-        // Normal processing
-        sendEmailNotification(event);
-    }
-}
+include::example$messagingconcepts/supportedparameters/EventHandlerReplayContextExample.java[tag=event-handler-replay-context,indent=0]
 ----

@@ -82,7 +82,7 @@ To configure the `AggregateBasedAxonServerEventStorageEngine`, please regard the
 Configuration API::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -106,7 +106,7 @@ public class AxonConfig {
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -133,7 +133,7 @@ public class AxonConfig {
 Spring Boot::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -158,7 +158,7 @@ public class AxonConfig {
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -208,31 +208,7 @@ Configuration API::
 --
 [source,java]
 ----
-import jakarta.persistence.EntityManagerFactory;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerFactory factory,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        new JpaTransactionalExecutorProvider(factory),
-                        eventConverter,
-                        engineConfig -> engineConfig.eventTypeResolver(
-                            EventTypeResolver.withDefaultVersion("0.0.1")
-                        )
-                )
-        );
-    }
-}
+include::example$migration/paths/eventstore/eventtyperesolver/configapi/AxonConfig.java[tag=event-type-resolver-configuration,indent=0]
 ----
 --
 
@@ -243,20 +219,7 @@ Provide an `AggregateBasedJpaEventStorageEngineConfiguration` bean with the cust
 
 [source,java]
 ----
-import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public AggregateBasedJpaEventStorageEngineConfiguration storageEngineConfiguration() {
-        return AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT
-                .eventTypeResolver(
-                    EventTypeResolver.withDefaultVersion("0.0.1")
-                );
-    }
-}
+include::example$migration/paths/eventstore/eventtyperesolver/springboot/AxonConfig.java[tag=event-type-resolver-springboot,indent=0]
 ----
 --
 ====
@@ -457,65 +420,14 @@ Once done, we can register the `AggregateBasedJpaEventStorageEngine` with the `E
 
 [source,java]
 ----
-import jakarta.persistence.EntityManagerFactory;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerFactory factory,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        new JpaTransactionalExecutorProvider(factory),
-                        eventConverter,
-                        engineConfig -> engineConfig
-                )
-        );
-    }
-}
+include::example$migration/paths/eventstore/jpastorageengine/defaultconfig/AxonConfig.java[tag=jpa-storage-engine-configuration,indent=0]
 ----
 
 If you had customized the `JpaEventStorageEngine` in Axon Framework 4 to, for example, have a different gap cleaning threshold, you can now move that customization to the `AggregateBasedJpaEventStorageEngineConfiguration` lambda:
 
 [source,java]
 ----
-import jakarta.persistence.EntityManagerFactory;
-import org.axonframework.common.jdbc.PersistenceExceptionResolver;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerFactory factory,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        new JpaTransactionalExecutorProvider(factory),
-                        eventConverter,
-                        engineConfig -> engineConfig
-                                .batchSize(100)
-                                .gapCleaningThreshold(250)
-                                .gapTimeout(10000)
-                                .lowestGlobalSequence(1)
-                                .maxGapOffset(60000)
-                                .persistenceExceptionResolver(
-                                        config.getComponent(PersistenceExceptionResolver.class)
-                                )
-                )
-        );
-    }
-}
+include::example$migration/paths/eventstore/jpastorageengine/customconfig/AxonConfig.java[tag=jpa-storage-engine-custom-configuration,indent=0]
 ----
 --
 

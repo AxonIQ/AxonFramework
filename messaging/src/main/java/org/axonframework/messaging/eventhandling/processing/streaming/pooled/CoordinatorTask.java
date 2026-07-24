@@ -16,6 +16,9 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,6 +92,27 @@ abstract class CoordinatorTask {
         } else {
             result.complete(outcome);
         }
+    }
+
+    /**
+     * Persists the final progress of the given {@code workPackage} in its own <em>committed</em> transaction, before
+     * the task reads the segment's
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken}, so the segment(s) the
+     * task produces start from the freshly-reconciled token. The dedicated transaction is essential: a
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore} may only apply
+     * stores on commit, so a fetch sharing the flush's transaction would not observe it. A {@code null}
+     * {@code workPackage} (the segment was claimed from the token store rather than processed locally, so there is no
+     * local progress to release) is a no-op.
+     *
+     * @param workPackage       the locally-aborted work package whose final progress to persist, or {@code null} if none
+     * @param unitOfWorkFactory the factory creating the transaction the final store commits in
+     * @return a {@link CompletableFuture} completing when the final persistence (if any) has been committed
+     */
+    protected static CompletableFuture<Void> releaseProgressOf(@Nullable WorkPackage workPackage,
+                                                               UnitOfWorkFactory unitOfWorkFactory) {
+        return workPackage == null
+                ? FutureUtils.emptyCompletedFuture()
+                : unitOfWorkFactory.create().executeWithResult(workPackage::onSegmentReleased);
     }
 
     /**

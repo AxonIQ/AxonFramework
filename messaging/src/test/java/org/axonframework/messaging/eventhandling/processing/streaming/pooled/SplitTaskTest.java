@@ -81,6 +81,7 @@ class SplitTaskTest {
 
         when(workPackage.segment()).thenReturn(testSegmentToSplit);
         when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
+        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
                 .thenReturn(completedFuture(testTokenToSplit));
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))
@@ -107,6 +108,10 @@ class SplitTaskTest {
                                        eq(expectedOriginal.getSegment().getSegmentId()),
                                        any());
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // the aborted work package's final progress is flushed before the token is read, so both halves inherit it
+        InOrder releaseBeforeFetch = inOrder(workPackage, tokenStore);
+        releaseBeforeFetch.verify(workPackage).onSegmentReleased(any());
+        releaseBeforeFetch.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
@@ -146,6 +151,8 @@ class SplitTaskTest {
                                        eq(expectedOriginal.getSegment().getSegmentId()),
                                        any());
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // the segment was claimed from the token store, so there is no local work package progress to release
+        verify(workPackage, never()).onSegmentReleased(any());
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
@@ -201,6 +208,7 @@ class SplitTaskTest {
 
         when(workPackage.segment()).thenReturn(testSegmentToSplit);
         when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
+        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
                 .thenReturn(completedFuture(testTokenToSplit));
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))

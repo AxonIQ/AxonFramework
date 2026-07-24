@@ -31,6 +31,8 @@ public final class CourseCatalogMessageNames {
     public static final String COURSE_PUBLISHED          = NAMESPACE + ".CoursePublished";
     /** Qualified name of the legacy {@code CourseOffered} event, renamed to {@code CoursePublished}. */
     public static final String COURSE_OFFERED            = NAMESPACE + ".CourseOffered";
+    /** Qualified name of the legacy {@code CourseListedWithSeats} event, split into a publish and a capacity change. */
+    public static final String COURSE_LISTED_WITH_SEATS  = NAMESPACE + ".CourseListedWithSeats";
     /** Qualified name of {@code CourseCapacityChanged}. */
     public static final String COURSE_CAPACITY_CHANGED   = NAMESPACE + ".CourseCapacityChanged";
     /** Qualified name of {@code StudentRegistered}. */

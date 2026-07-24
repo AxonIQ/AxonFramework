@@ -26,10 +26,14 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Comp
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
 import org.axonframework.integrationtests.testsuite.administration.events.CustomerCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
+import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableCertification;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableCustomer;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableEmployee;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutablePerson;
@@ -91,6 +95,22 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                         })
                 .build();
 
+        // Certification is the map-based child-metamodel of Employee
+        EntityMetamodel<ImmutableCertification> certificationMetamodel = ConcreteEntityMetamodel
+                .forEntityClass(ImmutableCertification.class)
+                .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
+                        ImmutableCertification.class, eventConverter, typeResolver
+                ))
+                .instanceCommandHandler(typeResolver.resolveOrThrow(RevokeCertificationCommand.class).qualifiedName(),
+                                        (command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            RevokeCertificationCommand convertedPayload =
+                                                    command.payloadAs(RevokeCertificationCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        })
+                .build();
+
         // Employee is a concrete entity type
         EntityMetamodel<ImmutableEmployee> employeeMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(ImmutableEmployee.class)
@@ -111,6 +131,49 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                             entity.handle(convertedPayload, eventAppender);
                                             return MessageStream.empty().cast();
                                         }))
+                .instanceCommandHandler(typeResolver.resolveOrThrow(GrantCertificationCommand.class).qualifiedName(),
+                                        ((command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            GrantCertificationCommand convertedPayload =
+                                                    command.payloadAs(GrantCertificationCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        }))
+                .addChild(EntityChildMetamodel
+                                  .<String, ImmutableCertification, ImmutableEmployee>map(
+                                          ImmutableEmployee.class, certificationMetamodel
+                                  )
+                                  .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterEvolver(
+                                          ImmutableEmployee::getCertifications, ImmutableEmployee::evolveCertifications
+                                  ))
+                                  .commandTargetResolver((candidates, commandMessage, ctx) -> {
+                                      if (commandMessage.type().name().equals(RevokeCertificationCommand.class.getName())) {
+                                          RevokeCertificationCommand convertedPayload =
+                                                  commandMessage.payloadAs(RevokeCertificationCommand.class);
+                                          return candidates.stream()
+                                                           .filter(cert -> cert.getCertificationName().equals(
+                                                                   convertedPayload.certificationName()
+                                                           ))
+                                                           .findFirst()
+                                                           .orElse(null);
+                                      }
+                                      return null;
+                                  })
+                                  .eventTargetMatcher((o, eventMessage, ctx) -> {
+                                      if (eventMessage.type().name().equals(CertificationRevoked.class.getName())) {
+                                          CertificationRevoked certificationRevoked = eventConverter.convertPayload(
+                                                  eventMessage, CertificationRevoked.class
+                                          );
+                                          Objects.requireNonNull(
+                                                  certificationRevoked,
+                                                  "CertificationRevoked event payload cannot be null"
+                                          );
+                                          return o.getCertificationName().equals(certificationRevoked.certificationName());
+                                      }
+                                      return false;
+                                  })
+                                  .build()
+                )
                 .addChild(EntityChildMetamodel
                                   .list(ImmutableEmployee.class, taskMetamodel)
                                   .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterEvolver(

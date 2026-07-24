@@ -23,11 +23,18 @@ import org.axonframework.common.util.MockException;
 import org.axonframework.conversion.DelegatingGeneralConverter;
 import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.TestConverter;
+import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.commandhandling.gateway.CommandResult;
 import org.axonframework.messaging.core.ApplicationContext;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.conversion.MessageConverter;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -53,6 +60,9 @@ import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChangedHandler;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.queryhandling.QueryBus;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
+import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
@@ -66,9 +76,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -79,6 +91,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -119,6 +132,8 @@ class PooledStreamingEventProcessorTest {
     private SimpleEventHandlingComponent simpleEhc;
     private RecordingEventHandlingComponent defaultEventHandlingComponent;
     private GeneralConverter converter;
+    private CommandGateway commandGateway;
+    private QueryBus queryBus;
 
     @BeforeEach
     void setUp() {
@@ -133,6 +148,8 @@ class PooledStreamingEventProcessorTest {
         simpleEhc.subscribe(new QualifiedName(Integer.class), (event, ctx) -> MessageStream.empty());
         defaultEventHandlingComponent = spy(new RecordingEventHandlingComponent(simpleEhc));
         converter = new DelegatingGeneralConverter(TestConverter.JACKSON.getConverter());
+        commandGateway = mock(CommandGateway.class);
+        queryBus = mock(QueryBus.class);
         withTestSubject(List.of()); // default always applied
     }
 
@@ -156,6 +173,10 @@ class PooledStreamingEventProcessorTest {
 
         TestApplicationContext testApplicationContext = new TestApplicationContext();
         testApplicationContext.addComponent(GeneralConverter.class, null, converter);
+        testApplicationContext.addComponent(CommandGateway.class, null, commandGateway);
+        testApplicationContext.addComponent(QueryBus.class, null, queryBus);
+        testApplicationContext.addComponent(MessageTypeResolver.class, null, new ClassBasedMessageTypeResolver());
+        testApplicationContext.addComponent(MessageConverter.class, null, mock(MessageConverter.class));
         EventProcessorConfiguration baseConfig = new EventProcessorConfiguration(PROCESSOR_NAME, null);
         var testDefaultConfiguration = new PooledStreamingEventProcessorConfiguration(baseConfig)
                 .eventSource(stubMessageSource)
@@ -241,6 +262,121 @@ class PooledStreamingEventProcessorTest {
                    long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
                    assertThat(currentPosition).isEqualTo(2);
                });
+    }
+
+    @Nested
+    class SegmentRouting {
+
+        // Integer.hashCode(n) == n, so with two segments a sequence identifier of 0 routes to segment 0
+        // (matches even hashes) and 1 routes to segment 1 (matches odd hashes).
+
+        @Test
+        void eachComponentHandlesEventOnceInItsOwnSegment() {
+            // given two components supporting the same event but routing to different segments
+            var componentForSegmentZero = recordingComponent("even", new QualifiedName(String.class), 0);
+            var componentForSegmentOne = recordingComponent("odd", new QualifiedName(String.class), 1);
+            List<EventHandlingComponent> components = List.of(componentForSegmentZero, componentForSegmentOne);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event (each claims it via its own matching component)
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then each component handles the event exactly once, in the single segment its identifier routes to
+            assertThat(componentForSegmentZero.recorded()).containsExactly(event);
+            assertThat(componentForSegmentOne.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void eventIsHandledOnlyByComponentsSupportingItsType() {
+            // given two components supporting different event types, routing to different segments
+            var stringComponent = recordingComponent("string", new QualifiedName(String.class), 0);
+            var longComponent = recordingComponent("long", new QualifiedName(Long.class), 1);
+            List<EventHandlingComponent> components = List.of(stringComponent, longComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when one event of each type is published
+            EventMessage stringEvent = EventTestUtils.asEventMessage("Payload");
+            EventMessage longEvent = EventTestUtils.asEventMessage(42L);
+            stubMessageSource.publishMessage(stringEvent);
+            stubMessageSource.publishMessage(longEvent);
+            startEventProcessor();
+
+            // then both segments advance past both events (a segment advances its token past events it does not handle)
+            awaitSegmentsAtPosition(2L, 0, 1);
+
+            // then each component only handles the event whose type it supports
+            assertThat(stringComponent.recorded()).containsExactly(stringEvent);
+            assertThat(longComponent.recorded()).containsExactly(longEvent);
+        }
+
+        @Test
+        void componentsSharingSequenceIdentifierHandleEventInSameSegment() {
+            // given two components supporting the same event with the same sequence identifier
+            var firstComponent = recordingComponent("first", new QualifiedName(String.class), 0);
+            var secondComponent = recordingComponent("second", new QualifiedName(String.class), 0);
+            List<EventHandlingComponent> components = List.of(firstComponent, secondComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments advance, but only segment 0 claims the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then both components sharing that segment handle the event exactly once
+            assertThat(firstComponent.recorded()).containsExactly(event);
+            assertThat(secondComponent.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void broadcastComponentHandlesEventInEverySegmentWhileRegularComponentHandlesOnlyInItsOwn() {
+            // given a component routing to segment 0 and a component using the broadcast sequence identifier
+            var regularComponent = recordingComponent("regular", new QualifiedName(String.class), 0);
+            var broadcastComponent = recordingComponent(
+                    "broadcast", new QualifiedName(String.class), SequencingPolicy.BROADCAST);
+            List<EventHandlingComponent> components = List.of(regularComponent, broadcastComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then the regular component handles it only in the single segment its identifier routes to
+            assertThat(regularComponent.recorded()).containsExactly(event);
+            // and the broadcast component handles it in every segment, exactly once per segment
+            assertThat(broadcastComponent.recorded()).containsExactly(event, event);
+        }
+
+        private RecordingEventHandlingComponent recordingComponent(String name,
+                                                                   QualifiedName supportedEvent,
+                                                                   Object sequenceIdentifier) {
+            SimpleEventHandlingComponent component =
+                    SimpleEventHandlingComponent.create(name, (event, ctx) -> Optional.of(sequenceIdentifier));
+            component.subscribe(supportedEvent, (event, ctx) -> MessageStream.empty());
+            return new RecordingEventHandlingComponent(component);
+        }
+
+        private void awaitSegmentsAtPosition(long position, int... segmentIds) {
+            await().atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> {
+                       for (int segmentId : segmentIds) {
+                           assertThat(testSubject.processingStatus()).containsKey(segmentId);
+                           assertThat(testSubject.processingStatus().get(segmentId).getCurrentPosition().orElse(0))
+                                   .isEqualTo(position);
+                       }
+                   });
+        }
     }
 
     private ProcessingContext createProcessingContext() {
@@ -480,6 +616,126 @@ class PooledStreamingEventProcessorTest {
 
             // then
             assertTrue(countDownLatch.await(5, TimeUnit.SECONDS));
+        }
+
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link CommandDispatcher} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every dispatched command carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
+        @Test
+        void forContextDispatchesUsingEachEventsOwnPerEventResourceWithinABatch() {
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // CommandGateway actually saw when CommandDispatcher.forContext(ctx) dispatched.
+            Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
+            Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
+            Map<Object, TrackingToken> tokenSeenAtDispatch = Collections.synchronizedMap(new HashMap<>());
+
+            when(commandGateway.send(any(), any(ProcessingContext.class))).thenAnswer(invocation -> {
+                Object payload = invocation.getArgument(0);
+                ProcessingContext dispatchContext = invocation.getArgument(1);
+                TrackingToken.fromContext(dispatchContext).ifPresent(token -> tokenSeenAtDispatch.put(payload, token));
+                return mock(CommandResult.class);
+            });
+
+            var ehc = SimpleEventHandlingComponent.create("test");
+            ehc.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                Object payload = event.payload();
+                TrackingToken.fromContext(ctx).ifPresent(token -> tokenSeenByHandler.put(payload, token));
+                batchKeyOfEvent.put(payload, ctx.toString());
+                return MessageStream.fromFuture(CommandDispatcher.forContext(ctx).send(payload).getResultMessage()).ignoreEntries().cast();
+            });
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(List.of(ehc), c -> c.initialSegmentCount(1).batchSize(5));
+
+            // when - publish 3 events before starting; the WorkPackage groups whichever of them arrive together
+            // into the same batch
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            startEventProcessor();
+
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(tokenSeenAtDispatch.keySet())
+                           .containsExactlyInAnyOrder("event-1", "event-2", "event-3"));
+
+            // sanity precondition - this only proves anything if at least one batch actually contained 2+ events
+            Map<String, List<Object>> eventsByBatch = batchKeyOfEvent.entrySet().stream()
+                    .collect(Collectors.groupingBy(Map.Entry::getValue,
+                                                    Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+            assertThat(eventsByBatch.values())
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
+                    .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
+
+            // then - each event's dispatch must have used its own per-event token, matching what its handler saw
+            assertThat(tokenSeenAtDispatch).isEqualTo(tokenSeenByHandler);
+        }
+
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link QueryUpdateEmitter} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every emitted update carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
+        @Test
+        void forContextEmitsUsingEachEventsOwnPerEventResourceWithinABatch() {
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // QueryBus actually saw when QueryUpdateEmitter.forContext(ctx) emitted.
+            Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
+            Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
+            Map<Object, TrackingToken> tokenSeenAtEmit = Collections.synchronizedMap(new HashMap<>());
+
+            when(queryBus.emitUpdate(any(), any(), any())).thenAnswer(invocation -> {
+                Supplier<SubscriptionQueryUpdateMessage> updateSupplier = invocation.getArgument(1);
+                ProcessingContext emitContext = invocation.getArgument(2);
+                Object payload = updateSupplier.get().payload();
+                TrackingToken.fromContext(emitContext).ifPresent(token -> tokenSeenAtEmit.put(payload, token));
+                return CompletableFuture.completedFuture(null);
+            });
+
+            var ehc = SimpleEventHandlingComponent.create("test");
+            ehc.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                Object payload = event.payload();
+                TrackingToken.fromContext(ctx).ifPresent(token -> tokenSeenByHandler.put(payload, token));
+                batchKeyOfEvent.put(payload, ctx.toString());
+                QueryUpdateEmitter.forContext(ctx).emit(String.class, q -> true, payload);
+                return MessageStream.empty();
+            });
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(List.of(ehc), c -> c.initialSegmentCount(1).batchSize(5));
+
+            // when - publish 3 events before starting; the WorkPackage groups whichever of them arrive together
+            // into the same batch
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            startEventProcessor();
+
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(tokenSeenAtEmit.keySet())
+                           .containsExactlyInAnyOrder("event-1", "event-2", "event-3"));
+
+            // sanity precondition - this only proves anything if at least one batch actually contained 2+ events
+            Map<String, List<Object>> eventsByBatch = batchKeyOfEvent.entrySet().stream()
+                    .collect(Collectors.groupingBy(Map.Entry::getValue,
+                                                    Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+            assertThat(eventsByBatch.values())
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
+                    .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
+
+            // then - each event's emit must have used its own per-event token, matching what its handler saw
+            assertThat(tokenSeenAtEmit).isEqualTo(tokenSeenByHandler);
         }
     }
 

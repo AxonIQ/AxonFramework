@@ -23,6 +23,8 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.queryhandling.GenericQueryMessage;
 import org.axonframework.messaging.queryhandling.GenericQueryResponseMessage;
 import org.axonframework.messaging.queryhandling.GenericSubscriptionQueryUpdateMessage;
@@ -40,8 +42,10 @@ import reactor.util.concurrent.Queues;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 /**
@@ -123,6 +127,25 @@ class DefaultQueryGatewayTest {
             Metadata resultMetadata = resultMessage.metadata();
             assertThat(resultMetadata).containsKey(expectedKey);
             assertThat(resultMetadata).containsValue(expectedValue);
+        }
+
+        @Test
+        void queryWithMetadataParameterAttachesMetadataToPlainPayload() throws Exception {
+            // given...
+            QueryResponseMessage testResponse = new GenericQueryResponseMessage(RESPONSE_TYPE, RESPONSE_PAYLOAD);
+            when(queryBus.query(any(), eq(null))).thenReturn(MessageStream.just(testResponse));
+            Metadata testMetadata = Metadata.with("key", "value");
+            // when...
+            CompletableFuture<String> result = testSubject.query(QUERY_PAYLOAD, String.class, testMetadata, null);
+            // then...
+            assertThat(result).isDone();
+            assertThat(result.get()).isEqualTo(RESPONSE_PAYLOAD);
+
+            verify(queryBus).query(queryCaptor.capture(), eq(null));
+
+            QueryMessage resultMessage = queryCaptor.getValue();
+            assertThat(resultMessage.payload()).isEqualTo(QUERY_PAYLOAD);
+            assertThat(resultMessage.metadata()).containsKey("key").containsValue("value");
         }
 
         @Test
@@ -238,6 +261,25 @@ class DefaultQueryGatewayTest {
         }
 
         @Test
+        void queryManyWithMetadataParameterAttachesMetadataToPlainPayload() throws Exception {
+            // given...
+            QueryResponseMessage testResponse = new GenericQueryResponseMessage(RESPONSE_TYPE, RESPONSE_PAYLOAD);
+            when(queryBus.query(any(), eq(null))).thenReturn(MessageStream.fromIterable(List.of(testResponse)));
+            Metadata testMetadata = Metadata.with("key", "value");
+            // when...
+            CompletableFuture<List<String>> result = testSubject.queryMany(QUERY_PAYLOAD, String.class, testMetadata, null);
+            // then...
+            assertThat(result).isDone();
+            assertThat(result.get()).containsExactly(RESPONSE_PAYLOAD);
+
+            verify(queryBus).query(queryCaptor.capture(), eq(null));
+
+            QueryMessage resultMessage = queryCaptor.getValue();
+            assertThat(resultMessage.payload()).isEqualTo(QUERY_PAYLOAD);
+            assertThat(resultMessage.metadata()).containsKey("key").containsValue("value");
+        }
+
+        @Test
         void queryManyReturningFailedMessageStreamReturnsExceptionalCompletableFuture() {
             // given...
             Throwable expected = new Throwable("oops");
@@ -333,6 +375,24 @@ class DefaultQueryGatewayTest {
         }
 
         @Test
+        void streamingQueryWithMetadataParameterAttachesMetadataToPlainPayload() {
+            // given...
+            QueryResponseMessage testResponse = new GenericQueryResponseMessage(RESPONSE_TYPE, RESPONSE_PAYLOAD);
+            when(queryBus.query(any(), eq(null))).thenReturn(MessageStream.just(testResponse));
+            Metadata testMetadata = Metadata.with("key", "value");
+            // when...
+            StepVerifier.create(testSubject.streamingQuery(QUERY_PAYLOAD, String.class, testMetadata, null))
+                        .expectNext(RESPONSE_PAYLOAD)
+                        .verifyComplete();
+            // then...
+            verify(queryBus).query(streamingQueryCaptor.capture(), eq(null));
+
+            QueryMessage resultMessage = streamingQueryCaptor.getValue();
+            assertThat(resultMessage.payload()).isEqualTo(QUERY_PAYLOAD);
+            assertThat(resultMessage.metadata()).containsKey("key").containsValue("value");
+        }
+
+        @Test
         void streamingQueryIsLazy() {
             // given...
             MessageStream<QueryResponseMessage> response = MessageStream.fromItems(
@@ -419,6 +479,29 @@ class DefaultQueryGatewayTest {
             Metadata resultMetadata = resultMessage.metadata();
             assertThat(resultMetadata).containsKey(expectedKey);
             assertThat(resultMetadata).containsValue(expectedValue);
+        }
+
+        @Test
+        void subscriptionQueryWithMetadataParameterAttachesMetadataToPlainPayload() {
+            // given...
+            when(queryBus.subscriptionQuery(any(), eq(null), eq(Queues.SMALL_BUFFER_SIZE)))
+                    .thenReturn(MessageStream.fromItems(new GenericQueryResponseMessage(QUERY_TYPE, "a"),
+                                                        new GenericSubscriptionQueryUpdateMessage(UPDATE_TYPE, "1")));
+            Metadata testMetadata = Metadata.with("key", "value");
+            // when/then ...
+            StepVerifier.create(testSubject.subscriptionQuery(QUERY_PAYLOAD,
+                                                              String.class,
+                                                              testMetadata,
+                                                              null,
+                                                              Queues.SMALL_BUFFER_SIZE))
+                        .expectNext("a", "1")
+                        .verifyComplete();
+            verify(queryBus).subscriptionQuery(
+                    queryCaptor.capture(), eq(null), eq(Queues.SMALL_BUFFER_SIZE)
+            );
+            QueryMessage resultMessage = queryCaptor.getValue();
+            assertThat(resultMessage.payload()).isEqualTo(QUERY_PAYLOAD);
+            assertThat(resultMessage.metadata()).containsKey("key").containsValue("value");
         }
 
         @Test
@@ -554,6 +637,76 @@ class DefaultQueryGatewayTest {
             StepVerifier.create(result)
                         .expectNext("a", "b")
                         .verifyComplete();
+        }
+    }
+
+    @Nested
+    class MetadataDefaultsWithoutOverride {
+
+        // A QueryGateway that implements only the non-metadata terminals, leaving the metadata-carrying defaults in
+        // place. The default implementations must signal that metadata is unsupported rather than silently dropping it.
+        private final QueryGateway gatewayWithoutMetadataSupport = new QueryGateway() {
+            @Override
+            public <R> CompletableFuture<R> query(Object query, Class<R> responseType, ProcessingContext context) {
+                return null;
+            }
+
+            @Override
+            public <R> CompletableFuture<List<R>> queryMany(Object query, Class<R> responseType,
+                                                            ProcessingContext context) {
+                return null;
+            }
+
+            @Override
+            public <R> Publisher<R> streamingQuery(Object query, Class<R> responseType, ProcessingContext context) {
+                return null;
+            }
+
+            @Override
+            public <R> Publisher<R> subscriptionQuery(Object query, Class<R> responseType, ProcessingContext context,
+                                                      int updateBufferSize) {
+                return null;
+            }
+
+            @Override
+            public <R> Publisher<R> subscriptionQuery(Object query, Class<R> responseType,
+                                                      Function<QueryResponseMessage, R> mapper,
+                                                      ProcessingContext context, int updateBufferSize) {
+                return null;
+            }
+
+            @Override
+            public void describeTo(ComponentDescriptor descriptor) {
+                // no-op
+            }
+        };
+
+        @Test
+        void queryWithMetadataThrowsUnsupportedOperation() {
+            assertThatThrownBy(() -> gatewayWithoutMetadataSupport.query(
+                    QUERY_PAYLOAD, String.class, Metadata.with("key", "value"), null
+            )).isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void queryManyWithMetadataThrowsUnsupportedOperation() {
+            assertThatThrownBy(() -> gatewayWithoutMetadataSupport.queryMany(
+                    QUERY_PAYLOAD, String.class, Metadata.with("key", "value"), null
+            )).isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void streamingQueryWithMetadataThrowsUnsupportedOperation() {
+            assertThatThrownBy(() -> gatewayWithoutMetadataSupport.streamingQuery(
+                    QUERY_PAYLOAD, String.class, Metadata.with("key", "value"), null
+            )).isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void subscriptionQueryWithMetadataThrowsUnsupportedOperation() {
+            assertThatThrownBy(() -> gatewayWithoutMetadataSupport.subscriptionQuery(
+                    QUERY_PAYLOAD, String.class, Metadata.with("key", "value"), null, Queues.SMALL_BUFFER_SIZE
+            )).isInstanceOf(UnsupportedOperationException.class);
         }
     }
 }

@@ -26,18 +26,7 @@ Use the `EventProcessingConfigurer` to register pooled streaming processors and 
 
 [source,java]
 ----
-public void configureEventProcessing(MessagingConfigurer configurer) {
-
-    configurer.eventProcessing(eventProcessing -> eventProcessing
-                           .pooledStreaming(pooled -> pooled
-                                  .defaults((configuration, processorConfig) -> processorConfig
-                                           .initialSegmentCount(8)
-                                           .batchSize(50)
-                                           .tokenClaimInterval(5000)
-                                           .claimExtensionThreshold(5000))
-                                   .defaultProcessor("order-processor", components ->
-                                           components.declarative("OrderUpdated", cfg -> orderProjection))));
-}
+include::example$tuning/eventprocessing/PooledStreamingProcessorConfiguration.java[tag=configure-pooled-streaming,indent=0]
 ----
 
 Spring Boot users typically configure pooled streaming processors by declaring an `EventProcessorDefinition` bean.
@@ -46,21 +35,7 @@ For example:
 
 [source,java]
 ----
-@Configuration
-public class NotificationAutomationConfiguration {
-
-    @Bean
-    EventProcessorDefinition notificationProcessor() {
-        return EventProcessorDefinition
-                .pooledStreaming("notification-processor")
-                .assigningHandlers(descriptor -> descriptor.beanName().endsWith("Notification")
-                        && descriptor.beanType().getPackageName().endsWith("automation"))
-                .customized(config -> config
-                        .initialSegmentCount(4)
-                        .batchSize(100)
-                );
-    }
-}
+include::example$tuning/eventprocessing/NotificationAutomationConfiguration.java[tag=notification-processor-definition,indent=0]
 ----
 
 This Spring Boot style keeps the processor definition explicit while still allowing the framework to bind the rest of the configuration from properties and defaults.

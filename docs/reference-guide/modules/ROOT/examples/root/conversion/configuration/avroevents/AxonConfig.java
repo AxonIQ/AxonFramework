@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package root.conversion.configuration.avroevents;
+
+// tag::avro-events-configuration[]
+import org.apache.avro.message.SchemaStore;
+import org.axonframework.conversion.avro.AvroConverter;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+
+class AxonConfig {
+
+    public void configureAvroConverterForEvents(MessagingConfigurer configurer,
+                                                SchemaStore schemaStore) {
+        // Use Avro for event conversion
+        configurer.componentRegistry(cr -> cr.registerComponent(
+                EventConverter.class,
+                config -> {
+                    AvroConverter avroConverter = new AvroConverter(
+                            schemaStore,
+                            cfg -> cfg  // Customize configuration
+                    );
+                    return new DelegatingEventConverter(avroConverter);
+                }
+        ));
+    }
+}
+// end::avro-events-configuration[]

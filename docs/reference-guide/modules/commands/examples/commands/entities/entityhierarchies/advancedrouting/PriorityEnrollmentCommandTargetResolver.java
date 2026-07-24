@@ -1,0 +1,32 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package commands.entities.entityhierarchies.advancedrouting;
+
+import java.lang.reflect.Member;
+
+import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.annotation.CommandTargetResolverDefinition;
+import org.axonframework.modelling.entity.child.CommandTargetResolver;
+
+class PriorityEnrollmentCommandTargetResolver implements CommandTargetResolverDefinition {
+
+    @Override
+    public <E> CommandTargetResolver<E> createCommandTargetResolver(AnnotatedEntityMetamodel<E> metamodel,
+                                                                    Member member) {
+        // Custom selection logic: here, simply the first candidate wins.
+        return (candidates, message, context) -> candidates.isEmpty() ? null : candidates.get(0);
+    }
+}

@@ -20,7 +20,9 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Assi
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.PersonCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -43,7 +45,9 @@ class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentif
                 AssignTaskCommand.class,
                 ChangeEmailAddress.class,
                 CompleteTaskCommand.class,
-                GiveRaise.class
+                GiveRaise.class,
+                GrantCertificationCommand.class,
+                RevokeCertificationCommand.class
         );
         var clazz = personCommandTypes.stream()
                                       .filter(type -> type.getName().equals(message.type().name()))

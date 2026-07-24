@@ -29,12 +29,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.EventProcessingException;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.ProcessorEventHandlingComponents;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.EventTrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
@@ -55,11 +55,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -101,6 +101,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
     private final ScheduledExecutorService workerExecutor;
     private final Coordinator coordinator;
     private final WorkPackage.EventFilter workPackageEventFilter;
+    private final SegmentProgressStrategyFactory progressStrategyFactory;
 
     private final AtomicReference<@Nullable String> tokenStoreIdentifier = new AtomicReference<>();
     private final Map<Integer, TrackerStatus> processingStatus = new ConcurrentHashMap<>();
@@ -141,6 +142,11 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         this.workerExecutor = configuration.workerExecutor();
 
         this.eventHandlingComponents = new ProcessorEventHandlingComponents(eventHandlingComponents);
+
+        // Select the per-segment progress-persistence strategy for this processor's components. The default selector
+        // stores the batch-end token every batch; advanced selectors (such as self-checkpointing) are wired through the
+        // configuration. The same factory is applied to every WorkPackage this processor spawns.
+        this.progressStrategyFactory = configuration.progressStrategyFactoryBuilder().apply(eventHandlingComponents);
 
         this.workPackageEventFilter = new DefaultWorkPackageEventFilter(
                 this.name,
@@ -435,6 +441,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                           .initialToken(initialToken)
                           .batchSize(batchSize)
                           .claimExtensionThreshold(claimExtensionThreshold)
+                          .progressStrategyFactory(progressStrategyFactory)
                           .segmentStatusUpdater(singleStatusUpdater(
                                   segment.getSegmentId(), new TrackerStatus(segment, initialToken)
                           ))

@@ -31,6 +31,7 @@ import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.AsyncInMemoryStreamableEventSource;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
@@ -41,6 +42,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.pooled.Poo
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
+import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
@@ -159,6 +161,44 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
             return EventProcessorDefinition.subscribing("definition-sourced-processor")
                                            .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
                                            .customized(c -> c.eventSource(definitionSuppliedSource));
+        }
+    }
+
+    /**
+     * Lean context for pooled definition-source coverage. Avoids scanning the fixture packages so package-named
+     * processors are not created alongside the definition-sourced processor under test.
+     */
+    @ContextConfiguration
+    @EnableAutoConfiguration
+    @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
+    private static class LeanPooledDefinitionContext {
+
+        @Bean(name = "tokenStore")
+        public TokenStore tokenStore() {
+            return new InMemoryTokenStore();
+        }
+    }
+
+    @org.springframework.context.annotation.Configuration
+    public static class DefinitionSuppliedPooledEventSourceContext {
+
+        @Bean
+        public AsyncInMemoryStreamableEventSource definitionSuppliedPooledSource() {
+            return new AsyncInMemoryStreamableEventSource();
+        }
+
+        @Bean
+        public RecordingEventHandler recordingEventHandler() {
+            return new RecordingEventHandler();
+        }
+
+        @Bean
+        public EventProcessorDefinition definitionSourcedPooledProcessorDefinition(
+                AsyncInMemoryStreamableEventSource definitionSuppliedPooledSource
+        ) {
+            return EventProcessorDefinition.pooledStreaming("definition-sourced-pooled-processor")
+                                           .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
+                                           .customized(c -> c.eventSource(definitionSuppliedPooledSource));
         }
     }
 
@@ -486,6 +526,55 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
             await().atMost(Duration.ofSeconds(2))
                    .untilAsserted(() -> assertThat(recordingEventHandler.handledEvents())
                            .contains("definition-sourced-event"));
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
+            classes = {LeanPooledDefinitionContext.class, DefinitionSuppliedPooledEventSourceContext.class},
+            properties = {
+                    "axon.eventstorage.jpa.polling-interval=0",
+                    // empty source so settings customization does not require a named StreamableEventSource
+                    "axon.eventhandling.processors[definition-sourced-pooled-processor].source="
+            },
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class DefinitionSuppliedPooledEventSourceTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Autowired
+        private AsyncInMemoryStreamableEventSource definitionSuppliedPooledSource;
+
+        @Autowired
+        private RecordingEventHandler recordingEventHandler;
+
+        @Test
+        void processorUsesTheDefinitionSuppliedEventSourceWhenNoSourceSettingIsPresent() {
+            // given - no unique type-level StreamableEventSource is resolvable (the event store and the
+            // definition-supplied source are both candidates), so only the EventProcessorDefinition can
+            // supply the source for the processor
+            assertThat(context.getBeanProvider(StreamableEventSource.class).getIfUnique()).isNull();
+
+            AxonConfiguration axonApplication = context.getBean(AxonConfiguration.class);
+            Configuration processorConfig = axonApplication.getModuleConfiguration(
+                    "EventProcessor[definition-sourced-pooled-processor]").orElseThrow();
+            assertThat(processorConfig.getOptionalComponent(StreamingEventProcessor.class,
+                                                            "definition-sourced-pooled-processor"))
+                    .isPresent();
+            assertThat(processorConfig.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class))
+                    .hasValueSatisfying(
+                            config -> assertThat(config.eventSource()).isSameAs(definitionSuppliedPooledSource)
+                    );
+
+            // when
+            definitionSuppliedPooledSource.publishMessage(EventTestUtils.asEventMessage("definition-sourced-pooled-event"));
+
+            // then
+            await().atMost(Duration.ofSeconds(5))
+                   .untilAsserted(() -> assertThat(recordingEventHandler.handledEvents())
+                           .contains("definition-sourced-pooled-event"));
         }
     }
 

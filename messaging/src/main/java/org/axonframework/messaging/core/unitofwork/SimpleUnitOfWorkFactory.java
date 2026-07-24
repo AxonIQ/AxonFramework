@@ -77,7 +77,8 @@ public class SimpleUnitOfWorkFactory implements UnitOfWorkFactory {
             identifier,
             configuration.workScheduler(),
             !configuration.allowAsyncProcessing(),
-            applicationContext
+            applicationContext,
+            configuration.lifecycleInterceptor()
         );
 
         configuration.processingLifecycleEnhancers().forEach(enhancer -> enhancer.accept(uow));

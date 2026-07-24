@@ -25,6 +25,7 @@ import java.util.Collections;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.axonframework.conversion.PassThroughConverter;
 import org.junit.jupiter.api.*;
 
 /**
@@ -100,6 +101,54 @@ class ReplayTokenTest {
         TrackingToken actual = testSubject.advancedTo(GapAwareTrackingToken.newInstance(6, emptySet()));
         assertInstanceOf(ReplayToken.class, actual);
         assertEquals(testSubject.getTokenAtReset(), innerToken);
+    }
+
+    @Test
+    void replayContextIsResolvedWhileReplaying() {
+        byte[] context = "context".getBytes();
+        TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(10);
+        TrackingToken startPosition = new GlobalSequenceTrackingToken(2);
+
+        TrackingToken replayToken = ReplayToken.createReplayToken(tokenAtReset, startPosition, context);
+
+        assertTrue(ReplayToken.isReplay(replayToken), "Precondition: token should still be replaying");
+        assertThat(ReplayToken.replayContext(replayToken, byte[].class, PassThroughConverter.INSTANCE))
+                .containsSame(context);
+    }
+
+    @Test
+    void replayContextIsNotResolvedForNonReplayEventWhileTokenIsStillWrapped() {
+        // A gap in the current token that the reset token doesn't share makes the freshly delivered event a "new"
+        // event that does not strictly pass the reset point. The ReplayToken therefore keeps its wrapper (and context)
+        // while reporting lastMessageWasReplay=false. Such live events must not resolve the reset context.
+        byte[] context = "context".getBytes();
+        TrackingToken tokenAtReset = GapAwareTrackingToken.newInstance(10, Collections.singleton(8L));
+        TrackingToken startPosition = GapAwareTrackingToken.newInstance(8, emptySet());
+
+        TrackingToken replayToken = ReplayToken.createReplayToken(tokenAtReset, startPosition, context);
+
+        assertInstanceOf(ReplayToken.class, replayToken, "Precondition: token should still be wrapped");
+        assertFalse(ReplayToken.isReplay(replayToken), "Precondition: token should not be replaying");
+        assertThat(ReplayToken.replayContext(replayToken, byte[].class, PassThroughConverter.INSTANCE))
+                .as("Context must not be resolved once the token is no longer replaying")
+                .isEmpty();
+    }
+
+    @Test
+    void getTokenAtResetIsEmptyForNonReplayEventWhileTokenIsStillWrapped() {
+        // Same still-wrapped-but-not-replaying scenario: getResetPosition must report empty, matching its documented
+        // contract ("In case a replay finished or no replay is active, an OptionalLong.empty()").
+        byte[] context = "context".getBytes();
+        TrackingToken tokenAtReset = GapAwareTrackingToken.newInstance(10, Collections.singleton(8L));
+        TrackingToken startPosition = GapAwareTrackingToken.newInstance(8, emptySet());
+
+        TrackingToken replayToken = ReplayToken.createReplayToken(tokenAtReset, startPosition, context);
+
+        assertInstanceOf(ReplayToken.class, replayToken, "Precondition: token should still be wrapped");
+        assertFalse(ReplayToken.isReplay(replayToken), "Precondition: token should not be replaying");
+        assertThat(ReplayToken.getTokenAtReset(replayToken))
+                .as("Reset position must not be reported once the token is no longer replaying")
+                .isEmpty();
     }
 
     @Test
