@@ -39,15 +39,17 @@ import java.util.stream.Collectors;
 
 /**
  * {@link HandlerEnhancerDefinition} that wraps annotated message handlers in a tracing span named after the handling
- * method (for example {@code "BookRoomHandler.handle(BookRoom)"}). Message-type agnostic: the same wrapper applies to
- * {@code @CommandHandler}, {@code @EventHandler} and {@code @QueryHandler} alike -- the span lifecycle is driven
- * entirely by {@link MessageHandlingMember} / {@link ProcessingContext}.
+ * method (for example {@code "BookRoomHandler.handle(BookRoom)"}). Message-type agnostic: every annotated handler kind
+ * receives the same enhancement -- the span lifecycle is driven entirely by {@link MessageHandlingMember} /
+ * {@link ProcessingContext}. Each wrapper preserves the original member's marker interface (command, event, or query
+ * handling member), so metamodel construction that classifies handlers by marker interface is unaffected by tracing.
  * <p>
- * Discovered via the standard {@code META-INF/services} {@link HandlerEnhancerDefinition} {@link java.util.ServiceLoader}
- * entry, so dropping {@code axoniq-tracing-messaging} on the classpath is enough; no explicit registration is required.
- * The configured {@link SpanFactory} is resolved from the {@link ProcessingContext}'s
- * {@link ApplicationContext#component(Class) ApplicationContext} at handle time -- when no factory is registered, the
- * wrapper is a pass-through.
+ * Registered conditionally by the {@code axon-messaging} tracing configuration defaults: the
+ * {@link org.axonframework.messaging.core.annotation.HandlerDefinition HandlerDefinition} component is decorated with
+ * this enhancer only when a {@link SpanFactory} component is configured, so without one no handler is ever wrapped.
+ * At handle time the {@code SpanFactory} is resolved from the {@link ProcessingContext}'s
+ * {@link ApplicationContext#component(Class) ApplicationContext} -- when the invocation runs against a context without
+ * one (for example a bare test context), the wrapper is a pass-through.
  * <p>
  * <b>{@code @EventSourcingHandler} suppression.</b> Members carrying the {@code EventSourcingHandler} handler
  * attribute are suppressed by default: they fire once per event during entity replay (a hot path) and would flood
@@ -56,8 +58,9 @@ import java.util.stream.Collectors;
  * {@link MessagingTracingSettings#eventSourcingHandlersEnabled()} to {@code true}
  * ({@code axon.tracing.event-sourcing-handlers-enabled} in Spring Boot) to trace them anyway.
  *
+ * @author Mitchell Herrijgers
  * @author Mateusz Nowak
- * @since 5.3.0
+ * @since 4.6.0
  */
 @Internal
 @Priority(Priority.LAST)
@@ -69,13 +72,6 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
      * module needs no dependency on {@code axon-eventsourcing}.
      */
     private static final String EVENT_SOURCING_HANDLER_ATTRIBUTE = "EventSourcingHandler.payloadType";
-
-    /**
-     * Constructor for {@link java.util.ServiceLoader} discovery. The {@link SpanFactory} is resolved from the
-     * {@link ProcessingContext}'s {@link ApplicationContext} at handle time.
-     */
-    public TracingHandlerEnhancerDefinition() {
-    }
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
@@ -155,8 +151,9 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
             try {
                 return context.component(SpanFactory.class);
             } catch (ComponentNotFoundException | UnsupportedOperationException e) {
-                // No SpanFactory configured, or a context without an application context (e.g. tests). Tracing
-                // degrades to a pass-through.
+                // Defensive: registration of this enhancer is already conditional on a configured SpanFactory, but
+                // an invocation may run against a context without an application context (e.g. stub contexts in
+                // tests). Tracing then degrades to a pass-through.
                 return null;
             }
         }

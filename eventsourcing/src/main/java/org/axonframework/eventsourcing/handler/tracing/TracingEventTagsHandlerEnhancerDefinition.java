@@ -59,8 +59,10 @@ import org.jspecify.annotations.Nullable;
  * wrapped: they fire once per event during entity replay (a hot path), and their enclosing span (the repository load)
  * would collect misleading, mutually-overwriting tag attributes from every replayed event.
  * <p>
- * Discovered via the standard {@code META-INF/services} {@link HandlerEnhancerDefinition}
- * {@link java.util.ServiceLoader} entry, so dropping {@code axon-eventsourcing} on the classpath is enough.
+ * Registered conditionally by {@code EventSourcingTracingConfigurationEnhancer}: the
+ * {@link org.axonframework.messaging.core.annotation.HandlerDefinition HandlerDefinition} component is decorated with
+ * this enhancer only when a {@link org.axonframework.messaging.tracing.SpanFactory SpanFactory} component is
+ * configured, so without one no handler is ever wrapped.
  *
  * @author Mateusz Nowak
  * @since 5.3.0

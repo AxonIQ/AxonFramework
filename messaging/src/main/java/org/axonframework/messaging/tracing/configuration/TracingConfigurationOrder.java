@@ -70,6 +70,27 @@ public final class TracingConfigurationOrder {
      */
     public static final int TRACING_DEFAULTS_ENHANCER_ORDER = Integer.MAX_VALUE;
 
+    /**
+     * Decorator order on the {@link org.axonframework.messaging.core.annotation.HandlerDefinition} component for the
+     * event-tags handler enhancer contributed by {@code axon-eventsourcing}.
+     * <p>
+     * Deliberately below {@link #METHOD_SPAN_HANDLER_ENHANCER_ORDER}: the tag-enriching wrapper must sit
+     * <em>inside</em> the method-span wrapper, so that at invocation time the method span is already active and the
+     * resolved event tags land on it (falling back to the event processor's handler span when method spans are
+     * suppressed).
+     */
+    public static final int EVENT_TAG_HANDLER_ENHANCER_ORDER = TRACING_DECORATOR_ORDER;
+
+    /**
+     * Decorator order on the {@link org.axonframework.messaging.core.annotation.HandlerDefinition} component for the
+     * per-method handler-span enhancer contributed by {@code axon-messaging}.
+     * <p>
+     * Deliberately above {@link #EVENT_TAG_HANDLER_ENHANCER_ORDER} so the method-span wrapper is applied last and ends
+     * up <em>outermost</em>: the span it opens covers every inner handler enhancement, matching the outermost-tracing
+     * convention of {@link #TRACING_DECORATOR_ORDER}.
+     */
+    public static final int METHOD_SPAN_HANDLER_ENHANCER_ORDER = TRACING_DECORATOR_ORDER + 1;
+
     private TracingConfigurationOrder() {
         // Constants class
     }

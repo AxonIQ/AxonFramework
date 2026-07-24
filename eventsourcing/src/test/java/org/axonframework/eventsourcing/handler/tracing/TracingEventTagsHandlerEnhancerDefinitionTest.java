@@ -16,9 +16,12 @@
 
 package org.axonframework.eventsourcing.handler.tracing;
 
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.tracing.Span;
+import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.eventsourcing.annotation.EventTag;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.tracing.EventSourcingTracingSettings;
@@ -26,20 +29,23 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
-import java.util.ServiceLoader;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -186,15 +192,85 @@ class TracingEventTagsHandlerEnhancerDefinitionTest {
     }
 
     @Nested
-    class ServiceLoaderDiscovery {
+    class ConditionalRegistrationOnTheHandlerDefinitionComponent {
+
+        private AxonConfiguration configuration;
+
+        @AfterEach
+        void tearDown() {
+            if (configuration != null) {
+                configuration.shutdown();
+            }
+        }
 
         @Test
-        void theEnhancerIsDiscoverableThroughTheStandardHandlerEnhancerSpi() {
-            // when
-            ServiceLoader<HandlerEnhancerDefinition> loader = ServiceLoader.load(HandlerEnhancerDefinition.class);
+        void handlerDefinitionComponentAppliesTagEnrichmentInsideTheMethodSpan() {
+            // given a configuration with a SpanFactory component
+            configuration = EventSourcingConfigurer.create()
+                                                   .componentRegistry(registry -> registry.registerComponent(
+                                                           SpanFactory.class, c -> spanFactory))
+                                                   .build();
+            MessageHandlingMember<AnnotatedRoomBookedHandler> member = memberFrom(configuration);
+            EventMessage event = new GenericEventMessage(new MessageType("RoomBooked"), "the-payload");
+            ProcessingContext context = StubProcessingContext.withComponents(registry -> {
+                registry.registerComponent(TagResolver.class, c -> e -> Set.of(Tag.of("Army", "army-42")));
+                registry.registerComponent(SpanFactory.class, c -> spanFactory);
+            });
 
-            // then
-            assertThat(loader).anyMatch(definition -> definition instanceof TracingEventTagsHandlerEnhancerDefinition);
+            // when
+            member.handle(event, context, new AnnotatedRoomBookedHandler());
+
+            // then both enhancers applied, with the tag enricher INSIDE the method-span wrapper: the resolved tags
+            // land on the method span, which is the active span at enrichment time
+            spanFactory.verifySpanCompleted("AnnotatedRoomBookedHandler.on(String)");
+            spanFactory.verifySpanHasAttributeValue("AnnotatedRoomBookedHandler.on(String)",
+                                                    "axoniq.event_tag.Army",
+                                                    "army-42");
+        }
+
+        @Test
+        void handlerDefinitionComponentCreatesUntracedMembersWithoutASpanFactory() {
+            // given a configuration WITHOUT a SpanFactory component
+            configuration = EventSourcingConfigurer.create().build();
+            MessageHandlingMember<AnnotatedRoomBookedHandler> member = memberFrom(configuration);
+            EventMessage event = new GenericEventMessage(new MessageType("RoomBooked"), "the-payload");
+            ProcessingContext context = StubProcessingContext.withComponents(registry -> {
+                registry.registerComponent(TagResolver.class, c -> e -> Set.of(Tag.of("Army", "army-42")));
+                registry.registerComponent(SpanFactory.class, c -> spanFactory);
+            });
+            startProcessSpan(event, context);
+
+            // when invoked with a context that WOULD supply a SpanFactory and TagResolver at handle time
+            member.handle(event, context, new AnnotatedRoomBookedHandler());
+
+            // then neither enhancer was registered on the handler chain: no method span, no tag enrichment
+            spanFactory.verifyNoSpan("AnnotatedRoomBookedHandler.on(String)");
+            spanFactory.verifySpanHasNoAttribute(PROCESS_SPAN, "axoniq.event_tag.Army");
+        }
+
+        private MessageHandlingMember<AnnotatedRoomBookedHandler> memberFrom(AxonConfiguration configuration) {
+            HandlerDefinition definition = configuration.getComponent(HandlerDefinition.class);
+            Method onMethod;
+            try {
+                onMethod = AnnotatedRoomBookedHandler.class.getDeclaredMethod("on", String.class);
+            } catch (NoSuchMethodException e) {
+                throw new IllegalStateException(e);
+            }
+            return definition.<AnnotatedRoomBookedHandler>createHandler(
+                                     AnnotatedRoomBookedHandler.class,
+                                     onMethod,
+                                     ClasspathParameterResolverFactory.forClass(AnnotatedRoomBookedHandler.class),
+                                     result -> MessageStream.empty())
+                             .orElseThrow();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static final class AnnotatedRoomBookedHandler {
+
+        @EventHandler
+        public void on(String event) {
+            // invoked through the member created by the HandlerDefinition component
         }
     }
 

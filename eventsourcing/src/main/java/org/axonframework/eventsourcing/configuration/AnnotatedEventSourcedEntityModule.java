@@ -31,6 +31,8 @@ import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefin
 import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
@@ -118,11 +120,16 @@ class AnnotatedEventSourcedEntityModule<I, E>
     }
 
     private AnnotatedEntityMetamodel<E> buildMetaModel(Configuration c) {
+        // Prefer the configured HandlerDefinition component so entity handlers receive the same conditional handler
+        // enhancements (e.g. tracing) as other annotated handlers; fall back to plain classpath scanning otherwise.
+        HandlerDefinition handlerDefinition = c.getOptionalComponent(HandlerDefinition.class)
+                                               .orElseGet(() -> ClasspathHandlerDefinition.forClass(entityType));
         if (!concreteTypes.isEmpty()) {
             return AnnotatedEntityMetamodel.forPolymorphicType(
                     entityType,
                     concreteTypes,
                     c.getComponent(ParameterResolverFactory.class),
+                    handlerDefinition,
                     c.getComponent(MessageTypeResolver.class),
                     c.getComponent(MessageConverter.class),
                     c.getComponent(EventConverter.class)
@@ -132,6 +139,7 @@ class AnnotatedEventSourcedEntityModule<I, E>
         return AnnotatedEntityMetamodel.forConcreteType(
                 entityType,
                 c.getComponent(ParameterResolverFactory.class),
+                handlerDefinition,
                 c.getComponent(MessageTypeResolver.class),
                 c.getComponent(MessageConverter.class),
                 c.getComponent(EventConverter.class)

@@ -24,10 +24,13 @@ import org.axonframework.common.configuration.LifecycleRegistry;
 import org.axonframework.extension.spring.config.SpringAxonApplication;
 import org.axonframework.extension.spring.config.SpringComponentRegistry;
 import org.axonframework.extension.spring.config.SpringLifecycleRegistry;
-import org.axonframework.extension.spring.config.annotation.HandlerDefinitionFactoryBean;
 import org.axonframework.extension.spring.config.annotation.SpringParameterResolverFactoryBean;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
+import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -150,23 +153,37 @@ public class AxonAutoConfiguration {
     }
 
     /**
-     * Bean creation method registering the {@link HandlerDefinitionFactoryBean}.
+     * Bean creation method registering the application's {@link HandlerDefinition}.
      * <p>
-     * This {@link HandlerDefinition} {@link org.springframework.beans.factory.FactoryBean} will make it so all
-     * annotated handling components will use the given {@code handlerDefinitions}, {@code handlerEnhancerDefinitions},
-     * and Axon's default enhancer definitions to derive the required enhancements for
-     * {@link org.axonframework.messaging.core.annotation.MessageHandler} annotated methods.
+     * The returned definition makes all annotated handling components use the given {@code handlerDefinitions},
+     * {@code handlerEnhancerDefinitions}, and Axon's ServiceLoader-discovered defaults to derive the required
+     * enhancements for {@link org.axonframework.messaging.core.annotation.MessageHandler} annotated methods.
+     * <p>
+     * Deliberately declared as a plain {@code HandlerDefinition} bean rather than a
+     * {@link org.springframework.beans.factory.FactoryBean}, so the bean definition's type matches the
+     * {@code HandlerDefinition} component type: decorators registered against that type through the
+     * {@link ComponentRegistry} (for example the tracing handler enhancer, applied only when a {@code SpanFactory} is
+     * configured) are then applied to this bean by the {@link SpringComponentRegistry}.
      *
-     * @param handlerDefinitions         the list of {@code HandlerDefinitions} to pass along to the
-     *                                   {@link HandlerDefinitionFactoryBean}
-     * @param handlerEnhancerDefinitions the list of {@code HandlerEnhancerDefinitions} to pass along to the
-     *                                   {@link HandlerDefinitionFactoryBean}
-     * @return a {@link HandlerDefinition} {@link org.springframework.beans.factory.FactoryBean}
+     * @param applicationContext         the application context supplying the class loader used for ServiceLoader
+     *                                   discovery of the default definitions and enhancers
+     * @param handlerDefinitions         the list of {@code HandlerDefinitions} to combine with the classpath defaults
+     * @param handlerEnhancerDefinitions the list of {@code HandlerEnhancerDefinitions} to combine with the classpath
+     *                                   defaults
+     * @return the combined {@link HandlerDefinition}
      */
     @Primary
     @Bean
-    HandlerDefinitionFactoryBean handlerDefinition(List<HandlerDefinition> handlerDefinitions,
-                                                   List<HandlerEnhancerDefinition> handlerEnhancerDefinitions) {
-        return new HandlerDefinitionFactoryBean(handlerDefinitions, handlerEnhancerDefinitions);
+    HandlerDefinition handlerDefinition(ApplicationContext applicationContext,
+                                        List<HandlerDefinition> handlerDefinitions,
+                                        List<HandlerEnhancerDefinition> handlerEnhancerDefinitions) {
+        ClassLoader classLoader = applicationContext.getClassLoader();
+        return MultiHandlerDefinition.ordered(
+                MultiHandlerEnhancerDefinition.ordered(
+                        ClasspathHandlerEnhancerDefinition.forClassLoader(classLoader),
+                        MultiHandlerEnhancerDefinition.ordered(handlerEnhancerDefinitions)),
+                MultiHandlerDefinition.ordered(
+                        ClasspathHandlerDefinition.forClassLoader(classLoader),
+                        MultiHandlerDefinition.ordered(handlerDefinitions)));
     }
 }

@@ -20,4 +20,3 @@ org.axonframework.messaging.eventhandling.annotation.MethodSequencingPolicyEvent
 org.axonframework.messaging.eventhandling.replay.annotation.ReplayAwareMessageHandlerWrapper
 org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorDefinition
 org.axonframework.messaging.queryhandling.annotation.MethodQueryHandlerDefinition
-org.axonframework.messaging.tracing.TracingHandlerEnhancerDefinition
