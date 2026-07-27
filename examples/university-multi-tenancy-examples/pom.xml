@@ -58,7 +58,7 @@
 
         <!-- Test libraries -->
         <assertj.version>3.27.7</assertj.version>
-        <junit.version>6.1.1</junit.version>
+        <junit.version>6.1.2</junit.version>
         <!-- Testcontainers, for the Spring Boot demo's Axon Server integration test. -->
         <testcontainers.version>2.0.5</testcontainers.version>
 
