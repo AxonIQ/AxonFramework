@@ -236,55 +236,6 @@ The built-in attribute providers moved from underscore keys to the OpenTelemetry
 |(not present) |`axoniq.event_tag.$\{key}`, the event's tags resolved through the configured `TagResolver`
 |===
 
-To keep existing dashboards working, each provider accepts a constructor argument that overrides its key.
-Register the customized provider through the Configuration API or expose it as a Spring bean:
-
-[tabs]
-====
-Configuration API::
-+
-[source,java]
-----
-include::example$migration/paths/tracing/AttributeProviderConfiguration.java[tag=legacy-message-id-key,indent=0]
-----
-
-Spring Boot::
-+
-[source,java]
-----
-include::example$migration/paths/tracing/springboot/AttributeProviderConfiguration.java[tag=legacy-message-id-key-spring,indent=0]
-----
-====
-
-Custom `SpanAttributesProvider` implementations need a signature update: `provideForMessage` now also receives the `ProcessingContext`:
-
-[tabs]
-====
-Axon Framework 4::
-+
-[source,java,role=axon4]
-----
-public class TenantSpanAttributesProvider implements SpanAttributesProvider {
-
-    @Override
-    public Map<String, String> provideForMessage(Message<?> message) {
-        return Map.of();
-    }
-}
-----
-
-Axon Framework 5::
-+
-[source,java]
-----
-include::example$migration/paths/tracing/TenantSpanAttributesProvider.java[tag=provider-signature,indent=0]
-----
-====
-
-The provider shares `TENANT_ID` with the interceptor or handler that stores the tenant identifier through
-`ProcessingContext.putResource(...)`.
-It omits the attribute when the provider runs without a processing context or when no tenant is available.
-
 == Tracing settings
 
 Tracing behavior is configured through framework components.

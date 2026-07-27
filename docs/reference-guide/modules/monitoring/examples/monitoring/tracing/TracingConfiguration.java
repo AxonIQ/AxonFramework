@@ -18,13 +18,10 @@ package monitoring.tracing;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.tracing.LoggingSpanFactory;
-import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.util.Map;
 
 public class TracingConfiguration {
 
@@ -44,12 +41,7 @@ public class TracingConfiguration {
                                                   MessagingTracingSettings.class,
                                                   config -> tracingSettings
                                           ))
-                                  .registerSpanAttributesProvider(config -> tenantSpanAttributes())
                                   .start();
-    }
-
-    private SpanAttributesProvider tenantSpanAttributes() {
-        return (message, context) -> Map.of("application.tenant", "example-tenant");
     }
     // end::plain-java[]
 

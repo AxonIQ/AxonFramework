@@ -37,10 +37,8 @@ import org.springframework.context.annotation.Bean;
  * <p>
  * This layer is deliberately thin: it registers the {@code *TracingSettings} components derived from
  * {@link TracingProperties} (via {@code registerIfNotPresent}, so a user-defined settings bean or component always
- * wins) and bridges user-declared {@link SpanAttributesProvider} beans into the
- * {@link SpanAttributesProviderRegistry}. Everything else - the built-in attribute providers, their toggles, the
- * tracing decorators - is wired natively by the ServiceLoader-discovered enhancers of the framework modules, driven
- * by these settings.
+ * wins). Everything else - the built-in attribute providers, their toggles, and the tracing decorators - is wired
+ * natively by the ServiceLoader-discovered enhancers of the framework modules, driven by these settings.
  * <p>
  * The {@link SpanFactory} is <b>optional</b> and contributed by a tracing backend (for example an
  * OpenTelemetry-backed {@code SpanFactory} registered by its own autoconfiguration). When no factory component is
@@ -59,15 +57,14 @@ public class TracingAutoConfiguration {
 
     /**
      * Constructs a {@link ConfigurationEnhancer} translating the {@code axon.tracing.*} properties into the tracing
-     * settings components and bridging user-declared {@link SpanAttributesProvider} beans into the
-     * {@link SpanAttributesProviderRegistry}.
+     * settings components.
      * <p>
      * Settings are registered with {@code registerIfNotPresent}: a user-defined settings bean (or an explicitly
      * registered component) takes precedence over the property translation, which in turn takes precedence over the
      * framework modules' native {@code enabledByDefault()} defaults (registered by enhancers running at maximal
      * order).
      *
-     * @param customProviders the user-declared {@link SpanAttributesProvider} beans to contribute to the registry
+     * @param customProviders the Spring-managed {@link SpanAttributesProvider} instances available to tracing
      * @param properties      the bound {@link TracingProperties}
      * @return a {@link ConfigurationEnhancer} registering the tracing settings with the framework
      */
@@ -106,9 +103,8 @@ public class TracingAutoConfiguration {
                             properties.getSnapshotStore().isEnabled(),
                             new EventSourcingTracingSettings.SpanAttributesProviders(providers.isEventTags()))
             );
-            // Bridge user-declared SpanAttributesProvider beans into the registry. The built-in providers are not
-            // beans (they are contributed natively per the settings above), so the ObjectProvider yields only
-            // application-defined providers.
+            // Bridge Spring-managed providers into the registry. Built-in providers are contributed by the framework
+            // configuration enhancers rather than as Spring beans.
             registry.registerDecorator(
                     SpanAttributesProviderRegistry.class,
                     0,

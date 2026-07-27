@@ -126,10 +126,10 @@ class DefaultSpanAttributesProviderRegistryTest {
         }
 
         @Test
-        void configurerMethodContributesAProviderToTheRegistryComponent() {
-            // given a custom provider contributed through the canonical idiom
+        void registryHelperContributesAProviderToTheRegistryComponent() {
+            // given a provider contributed through the registry helper
             Configuration configuration = MessagingConfigurer.create()
-                    .registerSpanAttributesProvider(c -> PROVIDER_A)
+                    .componentRegistry(cr -> SpanAttributesProviderRegistry.register(cr, c -> PROVIDER_A))
                     .build();
 
             // when

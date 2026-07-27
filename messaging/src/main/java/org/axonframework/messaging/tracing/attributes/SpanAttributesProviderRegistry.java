@@ -17,11 +17,12 @@
 package org.axonframework.messaging.tracing.attributes;
 
 import org.axonframework.common.annotation.Internal;
-import org.axonframework.messaging.tracing.SpanAttributesProvider;
-import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.common.configuration.ComponentBuilder;
+import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DecoratorDefinition;
+import org.axonframework.messaging.tracing.SpanAttributesProvider;
+import org.axonframework.messaging.tracing.SpanFactory;
 
 import java.util.List;
 
@@ -37,12 +38,6 @@ import java.util.List;
  * registry component. As such, <b>any</b> registered provider is <b>only</b> applied when the {@code SpanFactory}
  * requiring it is constructed. Providers that are registered once the {@code SpanFactory} has already been constructed
  * are not taken into account.
- * <p>
- * This registry is {@link Internal}: the built-in providers are contributed by the tracing modules' configuration
- * enhancers, driven by the {@code *TracingSettings} components, and applications contribute custom providers through
- * {@link
- * org.axonframework.messaging.core.configuration.MessagingConfigurer#registerSpanAttributesProvider(ComponentBuilder)}
- * rather than interacting with this registry directly.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -67,4 +62,24 @@ public interface SpanAttributesProviderRegistry {
      * @return the list of {@link SpanAttributesProvider SpanAttributesProviders}
      */
     List<SpanAttributesProvider> providers(Configuration config);
+
+    /**
+     * Contributes a {@link SpanAttributesProvider} to the registry component in the given
+     * {@code componentRegistry}.
+     * <p>
+     * Registers a decorator that contributes the provider when the registry is resolved, before the
+     * {@link SpanFactory} consuming it is constructed.
+     *
+     * @param componentRegistry the component registry to contribute the provider to
+     * @param providerBuilder   the {@link SpanAttributesProvider} builder to register
+     */
+    @Internal
+    static void register(ComponentRegistry componentRegistry,
+                         ComponentBuilder<SpanAttributesProvider> providerBuilder) {
+        componentRegistry.registerDecorator(
+                SpanAttributesProviderRegistry.class,
+                0,
+                (config, name, delegate) -> delegate.registerProvider(providerBuilder)
+        );
+    }
 }

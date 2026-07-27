@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.tracing;
 
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -38,6 +39,7 @@ import java.util.Map;
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
+@Internal
 @FunctionalInterface
 public interface SpanAttributesProvider {
 

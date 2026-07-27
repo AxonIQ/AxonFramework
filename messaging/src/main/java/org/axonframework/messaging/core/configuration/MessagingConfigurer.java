@@ -53,8 +53,6 @@ import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-import org.axonframework.messaging.tracing.SpanAttributesProvider;
-import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 
 
 import java.util.Objects;
@@ -447,35 +445,6 @@ public class MessagingConfigurer implements ApplicationConfigurer {
                 HandlerInterceptorRegistry.class,
                 0,
                 (config, name, delegate) -> delegate.registerQueryInterceptor(interceptorBuilder)
-        ));
-        return this;
-    }
-
-    /**
-     * Registers the given {@link SpanAttributesProvider} builder in this {@code Configurer}.
-     * <p>
-     * The {@code providerBuilder} receives the {@link Configuration} as input and is expected to return a
-     * {@link SpanAttributesProvider} instance. Registered providers contribute attributes to every message-based span
-     * the configured {@link org.axonframework.messaging.tracing.SpanFactory} creates. Without a {@code SpanFactory}
-     * component, tracing is off and registered providers are never invoked.
-     * <p>
-     * Example:
-     * <pre>{@code
-     * MessagingConfigurer.create()
-     *                    .registerSpanAttributesProvider(config -> new TenantSpanAttributesProvider());
-     * }</pre>
-     *
-     * @param providerBuilder The builder constructing the {@link SpanAttributesProvider}.
-     * @return The current instance of the {@code Configurer} for a fluent API
-     */
-    public MessagingConfigurer registerSpanAttributesProvider(
-            ComponentBuilder<SpanAttributesProvider> providerBuilder
-    ) {
-        Objects.requireNonNull(providerBuilder, "The providerBuilder cannot be null.");
-        delegate.componentRegistry(cr -> cr.registerDecorator(
-                SpanAttributesProviderRegistry.class,
-                0,
-                (config, name, delegate) -> delegate.registerProvider(providerBuilder)
         ));
         return this;
     }

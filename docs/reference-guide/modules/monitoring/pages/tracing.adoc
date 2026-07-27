@@ -76,7 +76,7 @@ Handlers running on a different thread than their dispatcher still nest correctl
 
 == Configuration
 
-Plain-Java applications configure tracing by registering the `SpanFactory`, optional tracing settings, and optional span attribute providers with the framework configurer.
+Plain-Java applications configure tracing by registering the `SpanFactory` and optional tracing settings with the framework configurer.
 Spring Boot applications can use the `axon.tracing.*` property namespace instead.
 
 [tabs]

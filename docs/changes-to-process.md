@@ -318,6 +318,7 @@ The old `modeling/` files and the `modeling/` directory have been deleted.
 - Documented platform-neutral tracing SDK, propagation, sampling, and exporter configuration.
 - Documented renamed spans, attribute keys, Spring Boot properties, and streaming trace topology.
 - Externalized all Axon Framework 5 Java examples into compiling documentation samples.
+- Removed custom span attribute provider setup from the application documentation.
 
 ---
 

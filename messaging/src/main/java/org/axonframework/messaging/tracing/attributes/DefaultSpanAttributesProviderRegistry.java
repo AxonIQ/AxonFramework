@@ -29,8 +29,8 @@ import java.util.List;
  * Default implementation of the {@link SpanAttributesProviderRegistry}, maintaining a list of
  * {@link SpanAttributesProvider} builders resolved on {@link #providers(Configuration)}.
  * <p>
- * This class is internal: it is registered as the default {@code SpanAttributesProviderRegistry} component by
- * {@link TracingConfigurationDefaults} and is not intended for direct instantiation by applications.
+ * Registered as the default {@code SpanAttributesProviderRegistry} component by
+ * {@link TracingConfigurationDefaults}.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
