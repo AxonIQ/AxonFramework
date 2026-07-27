@@ -16,6 +16,8 @@
 
 package org.axonframework.examples.demo.multitenancy.shared.messaging;
 
+import org.axonframework.common.ExceptionUtils;
+
 /**
  * Recognizes a failure that a handler raised, whether it reaches the caller as itself or crosses Axon
  * Server first. In memory the exception travels as itself, so the type is matched directly. Over Axon
@@ -40,15 +42,9 @@ final class RemoteExceptions {
      */
     static boolean causedBy(Throwable throwable, Class<? extends Throwable> type) {
         String exceptionName = type.getSimpleName();
-        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
-            if (type.isInstance(cause) || cause.getClass().getSimpleName().equals(exceptionName)) {
-                return true;
-            }
-            String message = cause.getMessage();
-            if (message != null && message.contains(exceptionName)) {
-                return true;
-            }
-        }
-        return false;
+        return ExceptionUtils.findException(throwable, cause -> type.isInstance(cause)
+                || cause.getClass().getSimpleName().equals(exceptionName)
+                || (cause.getMessage() != null && cause.getMessage().contains(exceptionName)))
+                             .isPresent();
     }
 }
