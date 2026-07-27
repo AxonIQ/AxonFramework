@@ -41,9 +41,9 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TracingEventHandlingComponentTest {
@@ -373,11 +373,7 @@ class TracingEventHandlingComponentTest {
                 action.accept(context);
                 return CompletableFuture.completedFuture(null);
             });
-            try {
-                unitOfWork.execute().get(2, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+            joinAndUnwrap(unitOfWork.execute());
         }
 
         @Test

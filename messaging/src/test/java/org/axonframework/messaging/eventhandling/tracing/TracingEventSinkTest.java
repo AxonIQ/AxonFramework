@@ -36,9 +36,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TracingEventSinkTest {
@@ -65,7 +65,7 @@ class TracingEventSinkTest {
         @Test
         void opensADispatchSpanPerEventAndPropagatesContextOntoIt() {
             // when
-            testSubject.publish(null, List.of(event)).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.publish(null, List.of(event)));
 
             // then
             spanFactory.verifySpanCompleted(PUBLISH_SPAN);
@@ -83,7 +83,7 @@ class TracingEventSinkTest {
                     ));
 
             // when
-            testSubject.publish(context, List.of(event)).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.publish(context, List.of(event)));
 
             // then
             spanFactory.verifySpanHasAttributeValue(
@@ -97,7 +97,7 @@ class TracingEventSinkTest {
         @Test
         void publishesWithoutOpeningACommitSpanWhenNoProcessingContext() {
             // when
-            testSubject.publish(null, List.of(event)).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.publish(null, List.of(event)));
 
             // then
             spanFactory.verifyNoSpanWithNamePrefix("EventBus.commitEvents");
@@ -110,7 +110,7 @@ class TracingEventSinkTest {
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            testSubject.publish(context, List.of(event)).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.publish(context, List.of(event)));
 
             // then
             spanFactory.verifyNoSpanWithNamePrefix("EventBus.commitEvents");

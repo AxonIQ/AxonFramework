@@ -30,10 +30,10 @@ import reactor.util.context.ContextView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -145,9 +145,10 @@ class FluxUtilsTest {
             });
 
             // when
-            List<Message> messages = FluxUtils.asMessageStream(flux)
-                                              .collect(ArrayList<Message>::new, List::add)
-                                              .get(5, TimeUnit.SECONDS);
+            List<Message> messages = joinAndUnwrap(
+                    FluxUtils.asMessageStream(flux)
+                             .collect(ArrayList<Message>::new, List::add)
+            );
 
             // then
             assertThat(messages).hasSize(2);
@@ -172,9 +173,10 @@ class FluxUtilsTest {
                                      }));
 
             // when
-            List<Message> messages = FluxUtils.asMessageStream(flux)
-                                              .collect(ArrayList<Message>::new, List::add)
-                                              .get(5, TimeUnit.SECONDS);
+            List<Message> messages = joinAndUnwrap(
+                    FluxUtils.asMessageStream(flux)
+                             .collect(ArrayList<Message>::new, List::add)
+            );
 
             // then
             assertThat(messages).hasSize(1);

@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TracingSnapshotStoreTest {
@@ -59,7 +59,7 @@ class TracingSnapshotStoreTest {
             delegate.storeResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.store(name, "room-42", aSnapshot(), null).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.store(name, "room-42", aSnapshot(), null));
 
             // then
             spanFactory.verifySpanCompleted("SnapshotStore.store Booking");
@@ -75,7 +75,7 @@ class TracingSnapshotStoreTest {
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            testSubject.store(name, "room-42", aSnapshot(), context).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.store(name, "room-42", aSnapshot(), context));
 
             // then
             assertThat(delegate.storeContext).isSameAs(context);
@@ -92,7 +92,7 @@ class TracingSnapshotStoreTest {
             delegate.loadResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.load(name, "room-42", null).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.load(name, "room-42", null));
 
             // then
             spanFactory.verifySpanCompleted("SnapshotStore.load Booking");
@@ -106,7 +106,7 @@ class TracingSnapshotStoreTest {
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            testSubject.load(name, "room-42", context).orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(testSubject.load(name, "room-42", context));
 
             // then
             assertThat(delegate.loadContext).isSameAs(context);

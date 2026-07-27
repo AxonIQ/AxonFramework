@@ -30,10 +30,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -63,11 +63,7 @@ class SpanStructuredOperationsTest {
             action.accept(context);
             return CompletableFuture.completedFuture(null);
         });
-        try {
-            unitOfWork.execute().get(2, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        joinAndUnwrap(unitOfWork.execute());
     }
 
     @Nested
@@ -79,16 +75,16 @@ class SpanStructuredOperationsTest {
             inUnitOfWork(context -> {
                 spanFactory.createInternalSpan("lifecycle", context).coverLifecycle(context);
 
-                spanFactory.createInternalSpan("repository", context)
-                           .branchAsync(context, branch -> {
-                               branch.onPrepareCommit(deferredContext -> {
-                                   spanFactory.createInternalSpan("deferred", deferredContext).start().close();
-                                   return CompletableFuture.completedFuture(null);
-                               });
-                               return CompletableFuture.completedFuture("loaded");
-                           })
-                           .orTimeout(2, TimeUnit.SECONDS)
-                           .join();
+                joinAndUnwrap(
+                        spanFactory.createInternalSpan("repository", context)
+                                   .branchAsync(context, branch -> {
+                                       branch.onPrepareCommit(deferredContext -> {
+                                           spanFactory.createInternalSpan("deferred", deferredContext).start().close();
+                                           return CompletableFuture.completedFuture(null);
+                                       });
+                                       return CompletableFuture.completedFuture("loaded");
+                                   })
+                );
             });
 
             // when PREPARE_COMMIT runs after repository completion, the closed repository scope is skipped
@@ -249,7 +245,7 @@ class SpanStructuredOperationsTest {
 
             // when the entry arrives and the stream is drained to its terminal
             gate.complete(EventTestUtils.createEvent(0));
-            assertThat(stream.first().asCompletableFuture().orTimeout(2, TimeUnit.SECONDS).join()).isNotNull();
+            assertThat(joinAndUnwrap(stream.first().asCompletableFuture())).isNotNull();
 
             // then the span ends with the stream
             spanFactory.verifySpanCompleted(OPERATION);
@@ -328,8 +324,8 @@ class SpanStructuredOperationsTest {
             });
 
             // when the unit of work is executed
-            assertThatThrownBy(() -> unitOfWork.execute().get(2, TimeUnit.SECONDS))
-                    .hasCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> joinAndUnwrap(unitOfWork.execute()))
+                    .isInstanceOf(IllegalStateException.class);
 
             // then the processing error is recorded on the span and the span still ends
             spanFactory.verifySpanHasException("covering", IllegalStateException.class);

@@ -43,11 +43,11 @@ import org.junit.jupiter.api.Test;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TracingQueryBusTest {
@@ -85,11 +85,11 @@ class TracingQueryBusTest {
             delegate.queryResult = MessageStream.just(response);
 
             // when
-            testSubject.query(query, null)
-                       .first()
-                       .asCompletableFuture()
-                       .orTimeout(2, TimeUnit.SECONDS)
-                       .join();
+            joinAndUnwrap(
+                    testSubject.query(query, null)
+                               .first()
+                               .asCompletableFuture()
+            );
 
             // then
             spanFactory.verifySpanCompleted(DISPATCH_SPAN);
@@ -115,7 +115,7 @@ class TracingQueryBusTest {
 
             // when
             deferredResponse.complete(response);
-            result.orTimeout(2, TimeUnit.SECONDS).join();
+            joinAndUnwrap(result);
 
             // then
             spanFactory.verifySpanCompleted(RESPOND_SPAN);
@@ -143,11 +143,11 @@ class TracingQueryBusTest {
             delegate.subscriptionQueryResult = MessageStream.just(response);
 
             // when
-            testSubject.subscriptionQuery(query, null, 256)
-                       .first()
-                       .asCompletableFuture()
-                       .orTimeout(2, TimeUnit.SECONDS)
-                       .join();
+            joinAndUnwrap(
+                    testSubject.subscriptionQuery(query, null, 256)
+                               .first()
+                               .asCompletableFuture()
+            );
 
             // then
             spanFactory.verifySpanCompleted(SUBSCRIPTION_DISPATCH_SPAN);
@@ -233,9 +233,7 @@ class TracingQueryBusTest {
             delegate.emitResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.emitUpdate(q -> true, () -> updateMessage(), null)
-                       .orTimeout(2, TimeUnit.SECONDS)
-                       .join();
+            joinAndUnwrap(testSubject.emitUpdate(q -> true, () -> updateMessage(), null));
 
             // then
             spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
@@ -248,9 +246,7 @@ class TracingQueryBusTest {
             delegate.completeResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.completeSubscriptions(q -> true, null)
-                       .orTimeout(2, TimeUnit.SECONDS)
-                       .join();
+            joinAndUnwrap(testSubject.completeSubscriptions(q -> true, null));
 
             // then
             spanFactory.verifySpanCompleted("QueryBus.completeSubscriptions");
@@ -263,9 +259,13 @@ class TracingQueryBusTest {
             delegate.completeExceptionallyResult = CompletableFuture.completedFuture(null);
 
             // when
-            testSubject.completeSubscriptionsExceptionally(q -> true, new IllegalStateException("boom"), null)
-                       .orTimeout(2, TimeUnit.SECONDS)
-                       .join();
+            joinAndUnwrap(
+                    testSubject.completeSubscriptionsExceptionally(
+                            q -> true,
+                            new IllegalStateException("boom"),
+                            null
+                    )
+            );
 
             // then
             spanFactory.verifySpanCompleted("QueryBus.completeSubscriptionsExceptionally");

@@ -27,8 +27,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -56,7 +56,7 @@ class TracingEntityLifecycleHandlerTest {
         delegate.sourceResult = CompletableFuture.completedFuture(new Booking());
 
         // when
-        testSubject.source("room-42", context).orTimeout(2, TimeUnit.SECONDS).join();
+        joinAndUnwrap(testSubject.source("room-42", context));
 
         // then
         String spanName = "EntityLifecycleHandler.source Booking";

@@ -36,9 +36,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -67,7 +67,7 @@ class TracingEventStorageEngineTest {
         context = new StubProcessingContext();
 
         // when
-        AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
+        AppendTransaction<?> result = joinAndUnwrap(append());
 
         // then
         spanFactory.verifySpanActive(APPEND_SPAN);
@@ -75,14 +75,14 @@ class TracingEventStorageEngineTest {
         spanFactory.verifyContextCarriesScopeOf(APPEND_SPAN, delegate.receivedContext);
 
         // when
-        Object commitResult = result.commit().orTimeout(2, TimeUnit.SECONDS).join();
+        Object commitResult = joinAndUnwrap(result.commit());
 
         // then
         assertThat(commitResult).isEqualTo("commit-result");
         spanFactory.verifySpanActive(APPEND_SPAN);
 
         // when
-        afterCommit(result, commitResult).orTimeout(2, TimeUnit.SECONDS).join();
+        joinAndUnwrap(afterCommit(result, commitResult));
 
         // then
         spanFactory.verifySpanCompleted(APPEND_SPAN);
@@ -92,7 +92,7 @@ class TracingEventStorageEngineTest {
     @Test
     void rollsBackWithinTheSpanAndThenEndsIt() {
         // given
-        AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
+        AppendTransaction<?> result = joinAndUnwrap(append());
 
         // when
         result.rollback();
@@ -113,7 +113,7 @@ class TracingEventStorageEngineTest {
         });
 
         // when the unit of work completes without a commit or rollback
-        unitOfWork.execute().orTimeout(2, TimeUnit.SECONDS).join();
+        joinAndUnwrap(unitOfWork.execute());
 
         // then the context-completion leak backstop ends the span
         spanFactory.verifySpanCompleted(APPEND_SPAN);
@@ -144,8 +144,8 @@ class TracingEventStorageEngineTest {
             );
 
             // when / then
-            assertThatThrownBy(() -> append().orTimeout(2, TimeUnit.SECONDS).join())
-                    .hasCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> joinAndUnwrap(append()))
+                    .isInstanceOf(IllegalStateException.class);
             verifyFailureEnded();
         }
 
@@ -155,8 +155,8 @@ class TracingEventStorageEngineTest {
             delegate.append = ignored -> CompletableFuture.completedFuture(null);
 
             // when / then
-            assertThatThrownBy(() -> append().orTimeout(2, TimeUnit.SECONDS).join())
-                    .hasCauseInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> joinAndUnwrap(append()))
+                    .isInstanceOf(NullPointerException.class);
             spanFactory.verifySpanHasException(APPEND_SPAN, NullPointerException.class);
             spanFactory.verifySpanCompleted(APPEND_SPAN);
         }
@@ -171,7 +171,7 @@ class TracingEventStorageEngineTest {
             transaction.commit = () -> {
                 throw new IllegalStateException("commit failed");
             };
-            AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
+            AppendTransaction<?> result = joinAndUnwrap(append());
 
             // when / then
             assertThatThrownBy(result::commit)
@@ -186,11 +186,11 @@ class TracingEventStorageEngineTest {
             transaction.commit = () -> CompletableFuture.failedFuture(
                     new IllegalStateException("commit failed")
             );
-            AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
+            AppendTransaction<?> result = joinAndUnwrap(append());
 
             // when / then
-            assertThatThrownBy(() -> result.commit().orTimeout(2, TimeUnit.SECONDS).join())
-                    .hasCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> joinAndUnwrap(result.commit()))
+                    .isInstanceOf(IllegalStateException.class);
             verifyFailureEnded();
         }
     }
@@ -204,8 +204,8 @@ class TracingEventStorageEngineTest {
             transaction.afterCommit = ignored -> {
                 throw new IllegalStateException("after commit failed");
             };
-            AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
-            Object commitResult = result.commit().orTimeout(2, TimeUnit.SECONDS).join();
+            AppendTransaction<?> result = joinAndUnwrap(append());
+            Object commitResult = joinAndUnwrap(result.commit());
 
             // when / then
             assertThatThrownBy(() -> afterCommit(result, commitResult))
@@ -220,12 +220,12 @@ class TracingEventStorageEngineTest {
             transaction.afterCommit = ignored -> CompletableFuture.failedFuture(
                     new IllegalStateException("after commit failed")
             );
-            AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
-            Object commitResult = result.commit().orTimeout(2, TimeUnit.SECONDS).join();
+            AppendTransaction<?> result = joinAndUnwrap(append());
+            Object commitResult = joinAndUnwrap(result.commit());
 
             // when / then
-            assertThatThrownBy(() -> afterCommit(result, commitResult).orTimeout(2, TimeUnit.SECONDS).join())
-                    .hasCauseInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> joinAndUnwrap(afterCommit(result, commitResult)))
+                    .isInstanceOf(IllegalStateException.class);
             verifyFailureEnded();
         }
     }
@@ -234,7 +234,7 @@ class TracingEventStorageEngineTest {
     void recordsRollbackFailureAndStillEndsTheSpan() {
         // given
         transaction.rollbackFailure = new IllegalStateException("rollback failed");
-        AppendTransaction<?> result = append().orTimeout(2, TimeUnit.SECONDS).join();
+        AppendTransaction<?> result = joinAndUnwrap(append());
 
         // when / then
         assertThatThrownBy(result::rollback)

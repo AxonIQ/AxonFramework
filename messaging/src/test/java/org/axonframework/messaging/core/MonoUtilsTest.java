@@ -27,9 +27,9 @@ import reactor.util.context.ContextView;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -79,8 +79,9 @@ class MonoUtilsTest {
             });
 
             // when
-            MessageStream.Entry<Message> entry =
-                    MonoUtils.asSingle(mono).asCompletableFuture().get(5, TimeUnit.SECONDS);
+            MessageStream.Entry<Message> entry = joinAndUnwrap(
+                    MonoUtils.asSingle(mono).asCompletableFuture()
+            );
 
             // then
             assertThat(entry).isNotNull();
@@ -105,7 +106,7 @@ class MonoUtilsTest {
                                      }));
 
             // when
-            MonoUtils.asSingle(mono).asCompletableFuture().get(5, TimeUnit.SECONDS);
+            joinAndUnwrap(MonoUtils.asSingle(mono).asCompletableFuture());
 
             // then
             assertThat(observedThread.get())
@@ -132,7 +133,7 @@ class MonoUtilsTest {
                     MonoUtils.asSingle(mono).asCompletableFuture();
             THREAD_LOCAL.set("changed-after-subscription");
             sink.tryEmitValue(message("payload"));
-            result.get(5, TimeUnit.SECONDS);
+            joinAndUnwrap(result);
 
             // then
             assertThat(observedContext.get().<String>getOrDefault(THREAD_LOCAL_KEY, null))
@@ -155,9 +156,9 @@ class MonoUtilsTest {
             });
 
             // when
-            MessageStream.Entry<Message> entry = MonoUtils.asSingle(mono, message -> Context.empty())
-                                                          .asCompletableFuture()
-                                                          .get(5, TimeUnit.SECONDS);
+            MessageStream.Entry<Message> entry = joinAndUnwrap(
+                    MonoUtils.asSingle(mono, message -> Context.empty()).asCompletableFuture()
+            );
 
             // then
             assertThat(entry).isNotNull();

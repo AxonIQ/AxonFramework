@@ -31,7 +31,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 class EventStorageEngineTracingConfigurationTest {
 
@@ -60,11 +61,13 @@ class EventStorageEngineTracingConfigurationTest {
         EventStorageEngine storageEngine = configuration.getComponent(EventStorageEngine.class);
 
         // when
-        AppendTransaction<?> transaction = storageEngine.appendEvents(
-                AppendCondition.none(),
-                null,
-                List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
-        ).orTimeout(2, TimeUnit.SECONDS).join();
+        AppendTransaction<?> transaction = joinAndUnwrap(
+                storageEngine.appendEvents(
+                        AppendCondition.none(),
+                        null,
+                        List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
+                )
+        );
 
         // then
         spanFactory.verifySpanActive(APPEND_SPAN);
@@ -97,11 +100,13 @@ class EventStorageEngineTracingConfigurationTest {
         EventStorageEngine storageEngine = configuration.getComponent(EventStorageEngine.class);
 
         // when
-        AppendTransaction<?> transaction = storageEngine.appendEvents(
-                AppendCondition.none(),
-                null,
-                List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
-        ).orTimeout(2, TimeUnit.SECONDS).join();
+        AppendTransaction<?> transaction = joinAndUnwrap(
+                storageEngine.appendEvents(
+                        AppendCondition.none(),
+                        null,
+                        List.of(new GenericTaggedEventMessage<>(EventTestUtils.createEvent(0), Set.of()))
+                )
+        );
         transaction.rollback();
 
         // then
