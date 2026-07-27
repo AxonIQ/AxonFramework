@@ -1,2 +1,5 @@
 org.axonframework.hunt.checker.ModelConformanceChecker
 org.axonframework.hunt.checker.VisibilityChecker
+org.axonframework.hunt.checker.ConservationChecker
+org.axonframework.hunt.checker.AppendOutcomeChecker
+org.axonframework.hunt.checker.FaultLandingChecker

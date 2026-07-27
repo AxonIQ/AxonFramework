@@ -279,3 +279,252 @@ Recorded so that nobody re-derives the decision.
 | Ownership and claim scenarios | Unbuildable on `InMemoryTokenStore` (F-2), and per-node skew is unreachable through `ClockUtils` (F-4). Needs a claim-capable store, and a claim-aware fake or separate processes for skew. | P2 |
 | Backend differential matrix | Needs the `TestInfrastructure` implementations. The `backend` field is already in the history header so that per-backend verdict vectors can be attributed once they exist. | P3 |
 | TLA+ models | The reference-model rules are named and tabulated in `INVARIANTS.md` section 3.1 precisely so that the operators can be written against them. | P4 |
+
+---
+
+# Phase P1a -- the L1 harness
+
+## 1. Determinism seams (continued)
+
+### 1.4 What the probe actually measured
+
+Full table and verbatim output in `formal/INVARIANTS.md` section 2. The short version, because it is
+the thing a later agent will otherwise assume wrongly:
+
+- **`REAL_THREADS` reproduces nothing.** Not the record order, not the operation counts, not which
+  appends were accepted. Two runs of seed 77 differed by 38 records, by 3 in the accepted-append
+  count, and by ~100 events in the store. A seed fixes which transfers are *attempted* and nothing
+  about which of them *commit*, because that is decided by which writer wins a race.
+  **Never tell anyone a failing seed reproduces a `REAL_THREADS` failure.** It does not. The history
+  file is the only exact record of a run.
+- **`SINGLE_THREADED` reproduces the write side exactly** -- same append verdicts, same store
+  contents, every time -- and nothing else. The record sequence still differs, from record #9
+  onwards, because the projection's deliveries interleave with the writer's appends and the
+  streaming processor's threads are not the writer's thread.
+- The component that stops `SINGLE_THREADED` being fully deterministic is
+  `PooledStreamingEventProcessor`: its coordinator and worker executors are injected (used), but it
+  still has its own threads (unavoidable without stopping it being event processing).
+
+### 1.5 Injection points that exist, and one that was deliberately not used
+
+Verified against 5.3.0-SNAPSHOT:
+
+| Seam | Exists? | Used? |
+|---|---|---|
+| `PooledStreamingEventProcessorConfiguration.coordinatorExecutor(ScheduledExecutorService)` | yes | yes |
+| `PooledStreamingEventProcessorConfiguration.workerExecutor(ScheduledExecutorService)` | yes | yes |
+| `.initialSegmentCount`, `.tokenClaimInterval(long ms)`, `.claimExtensionThreshold(long ms)`, `.batchSize` | yes | yes |
+| `.initialToken(Function<TrackingTokenSource, CompletableFuture<TrackingToken>>)` | yes | yes -- `source -> source.firstToken(null)`, to get a plain token rather than the default replay-wrapped one |
+| `.clock(Clock)` on the processor | yes, but `@Deprecated(forRemoval)` | no |
+| A per-run clock on the token-claim path | **no** -- `ClockUtils` is one static `AtomicReference<Clock>` for the process (F-4) | no; setting it would leak across every test in the JVM, and nothing on the L1 path decides anything from it |
+| `EventStoreTransaction.overrideAppendCondition(UnaryOperator<AppendCondition>)` | yes | yes -- it is how a workload produces an ORIGIN-anchored append |
+
+No seam was added to framework code. The only substitution is `ControllableEventStorageEngine`,
+which wraps a real engine.
+
+## 2. API traps (continued)
+
+### 2.9 Plain-Java wiring that compiles, verbatim
+
+```java
+EventStore eventStore = new StorageEngineBackedEventStore(storageEngine, new SimpleEventBus(), tagResolver);
+SimpleCommandBus commandBus = new SimpleCommandBus(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE));
+PooledStreamingEventProcessorConfiguration configuration =
+        new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration("name", null))
+                .eventSource(eventStore)              // StorageEngineBackedEventStore is a StreamableEventSource
+                .tokenStore(new InMemoryTokenStore())
+                .coordinatorExecutor(scheduled).workerExecutor(scheduled)
+                .initialToken(source -> source.firstToken(null));
+PooledStreamingEventProcessor processor =
+        new PooledStreamingEventProcessor("name", List.of(component), configuration);
+processor.start().orTimeout(30, TimeUnit.SECONDS).join();
+```
+
+`EventProcessorConfiguration`'s second argument is a nullable `Configuration`; `null` is fine
+outside the configuration module. No `Converter` is needed anywhere on this path: the in-memory
+engine stores the `EventMessage` itself and the handler reads `event.payload()` back as the original
+object.
+
+### 2.10 A command handler's return type
+
+`CommandHandler.handle(CommandMessage, ProcessingContext)` returns
+`MessageStream.Single<CommandResultMessage>`. Two ways to produce one:
+
+- `MessageStream.just(new GenericCommandResultMessage(new MessageType("x"), payload))` for a
+  synchronous result;
+- `MessageStream.fromFuture(future)` when the handler had to source first. **Not**
+  `MessageStream.fromItems(...)`, which is not `Single`.
+
+### 2.11 How to get each shape of append condition out of the framework
+
+The condition the storage engine receives is derived, never the one the caller built. To exercise
+each shape from a workload:
+
+| Wanted condition | How |
+|---|---|
+| `AppendCondition.none()`, marker INFINITY | append **without sourcing anything** in that processing context |
+| Marker at the sourced position, criteria OR-ed from the sourcings | source, then append -- the normal path |
+| ORIGIN-anchored with criteria | `transaction.overrideAppendCondition(ignored -> AppendCondition.withCriteria(criteria))` |
+
+### 2.12 `DefaultEventStoreTransaction` filters the terminal entry for you
+
+`transaction.source(condition)` already filters out the entry carrying the `ConsistencyMarker` and
+the `TerminalEventMessage` (`DefaultEventStoreTransaction.java:123`). A `reduce` over that stream
+sees real events only. The engine's own `source(...)` does not filter, which is why the post-run scan
+in `ScenarioRunner` still has to skip the marker entry itself.
+
+### 2.13 The append transaction is generic, and the wrapper has to erase it
+
+`EventStorageEngine.appendEvents(...)` returns `CompletableFuture<AppendTransaction<?>>`, and
+`afterCommit(R)` takes whatever `commit()` returned. A wrapper cannot preserve that type parameter
+usefully; cast once to `AppendTransaction<Object>` in the wrapper's constructor and be done. A
+wrapper that reports a commit it did not make must return `null` from `commit()` and answer
+`ConsistencyMarker.ORIGIN` from `afterCommit(null)`.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The whole module, which is the gate.
+./mvnw -q -Phunt -pl simulation -am test > /tmp/hunt.log 2>&1; echo "EXIT=$?"
+
+# Iterating on one test class, offline, much faster.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ScenarioRunnerTest
+
+# Replay one run. This is the command every violation prints, and it works.
+./mvnw -Phunt -pl simulation -am test -Dtest=HuntReproduceTest \
+    -Dhunt.scenario=dcb_append_rejected_after_marker_under_contention \
+    -Dhunt.seed=2 -Dhunt.backend=in-memory -Dhunt.timescale=compressed \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The seed sweep, which is tagged out of every normal build.
+./mvnw -Phunt -pl simulation -am test -Dhunt.excludedGroups= -Dtest=HuntFuzzTest \
+    -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.seeds=500 -Dhunt.startSeed=10000
+
+# The determinism measurement.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=DeterminismProbeTest
+```
+
+**Counting tests with `@Nested` classes: the surefire XML `tests=` attribute lies too.** P0 recorded
+that the per-class `.txt` reports `Tests run: 0`; the XML's `tests=` attribute is also wrong (it
+reported `1` for a class with two nested cases). Count the `<testcase>` elements:
+
+```bash
+grep -ho '<testcase ' simulation/target/surefire-reports/*.xml | wc -l
+```
+
+Histories are written under `simulation/target/hunt-histories/<name>/`, not to a temporary
+directory, because the reproduce command a failure prints is only useful next to the file it came
+from.
+
+**Checking that no invariant statement has drifted.** The registry and the checker constants must be
+character-identical, and the only way that stays true is to check it mechanically. This script reads
+every `*_STATEMENT` constant in the checker package, finds its MachineName's row in
+`formal/INVARIANTS.md`, and reports any difference:
+
+```bash
+python3 - <<'"'"'EOF'"'"'
+import re, glob
+stmts = {}
+for f in glob.glob('"'"'simulation/src/main/java/org/axonframework/hunt/checker/*.java'"'"'):
+    src = open(f).read()
+    for m in re.finditer(r'"'"'public static final String (\w+_STATEMENT)\s*=\s*(.*?);'"'"', src, re.S):
+        stmts[m.group(1)] = '"'"''"'"'.join(re.findall(r'"'"'"((?:[^"\\]|\\.)*)"'"'"', m.group(2)))
+names = {}
+for f in glob.glob('"'"'simulation/src/main/java/org/axonframework/hunt/checker/*.java'"'"'):
+    for m in re.finditer(r'"'"'public static final String (\w+)\s*=\s*"([^"]+)";'"'"', open(f).read()):
+        if not m.group(1).endswith('"'"'_STATEMENT'"'"'):
+            names[m.group(1)] = m.group(2)
+inv = open('"'"'formal/INVARIANTS.md'"'"').read()
+for key, stmt in sorted(stmts.items()):
+    mn = names.get(key[:-10])
+    row = re.search(r'"'"'\|\s*`'"'"' + re.escape(mn or '"'"'?'"'"') + r'"'"'`\s*\|\s*(.*?)\s*\|'"'"', inv) if mn else None
+    if mn and (not row or row.group(1) != stmt):
+        print('"'"'DRIFT'"'"', mn)
+EOF
+```
+
+It printed nothing at the end of P1a, across nine statements.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.12 A concurrent history cannot be replayed in invocation order
+
+The first concurrent run produced model-conformance violations that were not real. Two writers race;
+the one that asked first is often not the one that landed first, and replaying in invocation order
+therefore feeds the model a store state the store never had. `ModelConformanceChecker` now replays in
+the order of the **authoritative post-run scan**, which is the store's own answer to that question,
+and falls back to completion order only for a history with no scan (a hand-written one, or a run that
+ended early). Rejections are checked against the **final** store state, which is sound because a
+conflict is monotone in a growing store: an append that still has no conflict at the end never had
+one earlier.
+
+### 4.13 An event is visible before the record saying it was committed
+
+Same first run, same kind of false violation. The store publishes inside `commit()`; the harness
+writes its record after that call returns; a fast consumer legitimately lands in between. Two
+changes: the wrapper records the commit's **invocation** before calling the delegate, and
+`VisibilityChecker` compares a delivery against that invocation rather than the completion -- and
+against the **earliest** one, because a store that duplicates an append commits the same event twice
+and it became visible at the first.
+
+### 4.14 An injected failure is not a protocol rejection
+
+If the harness makes a commit fail, the reference model knows nothing about it and would say the
+append should have succeeded. Recording every failure the same way would turn every faulted run into
+a protocol violation. The wrapper therefore records an injected refusal under
+`InjectedStoreFailureException`, and every checker treats only
+`AppendEventsTransactionRejectedException` as the protocol saying no.
+
+### 4.15 A fault that rewrites the store makes the model oracle undecidable, on purpose
+
+`Fault.perturbsStoreContents()` declares it. Vanish, duplicate and partial-batch all set it, and both
+`ModelConformanceChecker` and `ConservationChecker` downgrade to notes when one of them fired. The
+alternative -- reporting the money the harness itself destroyed as a framework defect -- is a false
+finding with a very convincing-looking violation message attached.
+
+`ConflictCheckBypassFault` deliberately does **not** set it: the batch stored is exactly the batch
+offered, and what changed is whether the append should have been allowed. That is what makes it the
+canary. A run under it goes red, which is the only evidence that the oracle is an oracle.
+
+### 4.16 Warmup is wall-clock, and that is a trap worth knowing about
+
+A fault window opens `warmup` after the run starts. If the workload finishes issuing its commands
+inside the warmup, the window opens over an idle system and the fault fires zero times -- the run is
+correctly reported inconclusive, and it looks like a broken fault. It is a badly sized scenario.
+1000 ledger commands take about 250 ms, so a 100 ms warmup already overlaps most of the run. Size the
+command count against the warmup, not the other way round; the landing-evidence rule will catch it
+either way, which is exactly what it is for.
+
+### 4.17 Conservation is checked against the projection, not against the events
+
+The ledger's transfers each append a withdrawal *and* a deposit in one batch, so a torn batch
+destroys money. The oracle compares the sum of the projection's balances against the opening total,
+and the projection is built by a real streaming processor over a real event store. That makes the
+check genuinely end to end: it fails if the write side lost a conflict check, if the store tore a
+batch, or if the read side lost or doubled a delivery -- without the suite having to guess which.
+
+### 4.18 The scenario catalogue is a convenience, not the registry
+
+`ScenarioRunner` never looks a scenario up. `HuntScenarios` exists only so that
+`-Dhunt.scenario=<id>` can resolve a name, which is what the reproduce command needs. A scenario that
+is never reproduced by name does not have to be there at all, and
+`ScenarioRunnerTest.ANewScenario` proves it by declaring one at the call site.
+
+### 4.19 What a scenario's `oracles` set does, and does not, do
+
+It does not select which checkers run. Every registered checker runs against every history, because
+an invariant that only runs where somebody remembered it will be forgotten. The set is a guard: the
+runner notes, and the run is downgraded, if a MachineName the scenario requires is not enforced by
+any registered checker. That catches an oracle deleted or unregistered by accident, which otherwise
+turns into a suite that passes because it stopped looking.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| Scenarios S3, S10, S16 | The harness they need is done; they are declarations plus their oracles. S16 needs the reader-during-commit probe, which is a workload rather than a scenario knob. | P1b |
+| Lincheck (D9) | Orthogonal to the scenario harness and lands with its own dependency. | P1b |
+| The canary run and `CANARIES.md` (D8) | `ConflictCheckBypassFault` is the first canary and is already pinned by two tests; the rest of the mutation set and the document are a phase of their own. | P1b |
+| The CI workflow | The tags and properties it needs are in place: `-Dhunt.excludedGroups=`, `-Dhunt.seeds`, `-Dhunt.startSeed`, `-Dhunt.scenario`, `-Dhunt.seed`, `-Dhunt.tier`, and `surefire.rerunFailingTestsCount` is pinned to 0 in the module's POM. | P1b |
+| A realistic-timescale arm that is actually run | `HuntTimescale.realistic()` exists and is selectable; no scenario declares it, because at L1 nothing depends on a real timeout. It becomes meaningful when a claim-capable token store lands. | P2 |
+| Per-tier fault schedules | A scenario carries one schedule. The faulted arm of a scenario is a second record with its own identifier, which also keeps a reproduce command unambiguous. Revisit only if the duplication becomes real. | when it hurts |

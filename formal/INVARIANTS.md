@@ -51,36 +51,124 @@ distributed-systems test suite that broke it stopped being able to find bugs.
 
 ---
 
-## 2. Determinism boundary
+## 2. Determinism boundary -- measured, not asserted
 
 What a seed fixes, and what it does not. Overclaiming here is the fastest way to turn a harness bug
-into a phantom finding.
+into a phantom finding, so nothing in this section is a design intention: it is the output of
+`DeterminismProbe`, which runs the same seed twice and diffs the two histories.
 
-**Deterministic given a seed:**
+Reproduce the measurement:
 
-- The workload shape: the number of writers, the tag pool, the tag-selection distribution, the
-  operation mix, the batch sizes, and the order in which one process issues its operations.
+```bash
+./mvnw -q -Phunt -pl simulation -o test -Dtest=DeterminismProbeTest
+```
+
+### 2.1 What the probe measured
+
+Scenario: 300 ledger commands over hot accounts, in-memory backend, compressed timescale, seed 77.
+The probe compares record sequence (ignoring only `wallTs` and `logicalTs`), operation shape (per
+process, per operation, per record type), append verdicts, and the set of events left in the store.
+
+| Property | `REAL_THREADS` | `SINGLE_THREADED` |
+|---|---|---|
+| Record sequence identical | **no** | **no** |
+| Operation shape identical | **no** | **yes** |
+| Append verdicts identical (accepted / rejected / unknown counts) | **no** | **yes** |
+| Store contents identical | **no** | **yes** |
+
+Verbatim first difference in `SINGLE_THREADED`:
+
+```
+record #9 differs: 9|writer-0|append|INVOKE|null|null
+             against 9|projection|deliver|INVOKE|acct-0|null
+```
+
+Verbatim differences in `REAL_THREADS` (one run of many; the numbers move every time):
+
+```
+record count differs: 2172 against 2134
+append verdicts differ: {FAIL=157, OK=139, UNKNOWN=0} against {FAIL=160, OK=136, UNKNOWN=0}
+store contents differ: 102 event(s) only in the first run, 96 only in the second
+```
+
+### 2.2 What that means, stated plainly
+
+**`REAL_THREADS` -- the default mode, and the one every scenario in the corpus runs in -- is not
+reproducible in any sense.** Not the record order, not the operation counts, not even which appends
+were accepted. This is not a defect in the harness; it is the point of the mode. Whether writer A or
+writer B wins a race for the same consistency boundary decides which of the two appends is rejected,
+and that decision is the thread schedule's, not the seed's. A seed fixes *which transfers are
+attempted*; it fixes nothing about *which of them commit*.
+
+The practical consequence: **a seed does not reproduce a `REAL_THREADS` failure.** Re-running a
+failing seed re-runs the same workload shape against a new schedule and may well be green. That is
+why the suite's oracles are history-based rather than expectation-based -- a checker judges the run
+that happened, not the run that was expected -- and why a violation carries its history file, which
+is the only exact record of the run that failed.
+
+**`SINGLE_THREADED` is reproducible on the write side and only there.** One writer issuing a seeded
+sequence against a store nothing else writes to reaches the same verdicts and leaves the same events
+behind, every time; that is asserted, not merely observed, by `DeterminismProbeTest`. What is *not*
+stable is where the projection's deliveries land relative to the writer's appends, because the
+streaming processor's coordinator and workers are separate threads and must be: a mode that ran the
+processor on the writer's thread would not be event processing.
+
+The one component that breaks full determinism in `SINGLE_THREADED` mode is therefore
+`PooledStreamingEventProcessor`, through its coordinator and worker executors
+(`messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/PooledStreamingEventProcessorConfiguration.java:340`
+and `:352`). Both are injected as `ScheduledExecutorService` instances and the harness supplies
+single-threaded ones, which removes concurrency *within* the processor. It cannot remove the
+processor's own thread, which is what leaves the interleaving between delivery and append free.
+
+### 2.3 Seams: what exists, and what was deliberately not used
+
+- **Used, because the framework already offers them:** `coordinatorExecutor` and `workerExecutor` on
+  `PooledStreamingEventProcessorConfiguration`; `initialSegmentCount`, `tokenClaimInterval`,
+  `claimExtensionThreshold` and `batchSize` on the same record; `initialToken` for the replay
+  position. No seam was invented where one existed.
+- **Not used: the clock.** `ClockUtils` holds a single static `AtomicReference<Clock>`
+  (`common/src/main/java/org/axonframework/common/ClockUtils.java:49`) for the whole process, and
+  token-claim expiry reads it
+  (`messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java:159-160`).
+  Setting it would leak across every test in the same JVM, and nothing on the L1 path makes a
+  decision from it: the in-memory token store has no claim expiry to evaluate (finding F-2), and
+  event timestamps are pinned to a constant by the workload rather than read from a clock. Per-node
+  clock skew inside one process remains impossible through that seam (finding F-4).
+- **Not used: any seam added to framework code.** None was added. The only substitution anywhere is
+  `ControllableEventStorageEngine`, which wraps a real storage engine and is the harness's own class.
+
+**Deterministic regardless of mode, because nothing concurrent touches them:**
+
+- The workload shape: writer count, account pool, access distribution, overlap degree, operation mix
+  and batch sizes are all pure functions of the seed (`SwarmShape`), and the whole shape is written
+  into the history header.
 - The reference model. `DcbStoreModel` is pure and depends on the JDK only; the same operation
   sequence always produces the same verdicts and the same store contents.
 - Every checker's verdict for a given history file. Checkers are pure functions of the history.
-- The history schema and the assignment of record sequence numbers within a run.
 
-**Not deterministic, seed or no seed:**
+**Never deterministic, in any mode:**
 
-- **Interleaving across threads and nodes.** Real threads are used deliberately, because the bugs
-  being hunted live in interleavings. A seed fixes the shape of the load, never the schedule.
 - **Wall-clock timestamps** (`HistoryRecord.wallTs`) and logical timestamps
   (`HistoryRecord.logicalTs`, derived from `System.nanoTime()`). Only the record sequence number
   defines the history's order.
 - **The file order of history lines.** Records are serialized outside the recorder's write lock, so
   under contention a line may reach the file out of sequence. `HistoryView` sorts by sequence number
   on read; nothing else may assume file order.
-- **Anything reading the JVM-global clock.** `ClockUtils` holds a single static
-  `AtomicReference<Clock>` (`common/src/main/java/org/axonframework/common/ClockUtils.java:49`), and
-  token-claim expiry reads it
-  (`messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java:159-160`).
-  Per-node clock skew inside one JVM is therefore impossible through that seam. See
-  `formal/HUNT-NOTES.md`.
+
+### 2.4 Two consequences for checkers, both learned the hard way
+
+Both of these produced false violations on the first concurrent run and are now part of the
+contract:
+
+1. **A concurrent history cannot be replayed in invocation order.** Two writers race and the one
+   that asked first is often not the one that landed first. `ModelConformanceChecker` replays in the
+   order of the authoritative post-run scan, which is the store's own answer, and falls back to
+   completion order only for a history that has no scan in it.
+2. **An event becomes visible before the record saying it was committed is written.** The store
+   publishes inside `commit()`, and the harness writes its record after that call returns, so a fast
+   consumer can legitimately be recorded ahead of it. `VisibilityChecker` therefore compares a
+   delivery against the *invocation* of the commit, and against the earliest such record when an
+   event was committed more than once.
 
 **Deliberately out of the model's reach:** `DcbStoreModel` is sequential. It defines what the store
 contains once an operation has taken effect, and says nothing about what a concurrent reader may
@@ -99,11 +187,33 @@ modelling the same property.
 |---|---|---|---|---|---|
 | `AppendConformsToDcbModel` | Every append recorded as successful is accepted by the DCB reference model at its point in the history, and every append recorded as rejected is rejected by it. | C1, C2, C3, C5, C6, C7, C8, C10 | `ModelConformanceChecker` | (P1: S1) | (P4: `DcbAppend.tla`) |
 | `NoVisibilityBeforeCommit` | No event is delivered to a consumer before the commit of the transaction that appended it. | C4, C29 | `VisibilityChecker` | (P1: S3) | -- |
-| `RolledBackEventsNeverObservable` | No event of a rolled-back transaction is ever delivered to a consumer or present in a post-run scan of the store. | C29 | `VisibilityChecker` | (P1: S3) | -- |
+| `RolledBackEventsNeverObservable` | No event of a rolled-back transaction is ever delivered to a consumer or present in a post-run scan of the store. | C29 | `VisibilityChecker` | (P1b: S3) | -- |
+| `UnconditionalAppendNeverRejected` | An append made without a consistency condition is never rejected as conflicting. | C2 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention` | (P4: `DcbAppend.tla`) |
+| `RejectedAppendLeavesNoEvents` | No event offered by an append recorded as rejected is present in the authoritative scan taken after the run has quiesced. | C9, C10 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention` | -- |
+| `LedgerConservesTotalBalance` | The balances the projection reports sum to the ledger's opening total. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
+| `LedgerBalanceNeverNegative` | No account balance is negative at any point in the sequence of committed transfers. | C1, C5, C8 | `ConservationChecker` | every scenario driving the ledger | -- |
+| `ProjectionMatchesFoldOfCommittedEvents` | The balance projection at the end of the run equals the fold of the transfers the run committed. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
+| `DeclaredFaultsLand` | Every fault a run declares fires at least once, and the run records how often and against what. | -- (suite constitution, rule 4) | `FaultLandingChecker` | every scenario declaring a fault | -- |
 
 Scenario columns are filled in as the scenarios land; an invariant with no scenario is asserted by
 its unit-level canaries only, and the registry says so rather than implying coverage it does not
 have.
+
+Two rows are not properties of Axon Framework and are marked as such. `DeclaredFaultsLand` is an
+evidence rule: it never reports a violation, only a note, because a fault that did not fire is
+missing evidence rather than a broken guarantee, and the two must not be reported the same way. The
+three ledger rows are properties of the ledger workload, which is the vehicle: they hold if and only
+if the framework did not lose, double or tear anything, which is exactly why a conservation law is
+worth more than the assertions somebody would otherwise have thought to write.
+
+**When a checker must not decide.** Three situations downgrade a verdict to a note rather than
+producing a violation, and every checker that can meet them handles them explicitly:
+
+| Situation | Why deciding would be wrong |
+|---|---|
+| An operation's outcome is unknown | The replayed state is no longer known to be the store's. |
+| A fault made the store hold something other than what was offered | The missing or doubled data is the harness's doing; blaming the framework for it is a false finding. `Fault.perturbsStoreContents()` declares which faults can do this. |
+| An append failed for a reason other than the store's own consistency check | An injected infrastructure failure carries no protocol verdict for the model to be held to. |
 
 ### 3.1 Reference-model rules
 
@@ -252,8 +362,60 @@ The whole point of the harness is that this costs no surgery. Following this rec
 "holds?" note, and pin the observed behaviour with an expected-gap test that flips red when the gap
 is closed.
 
-## 6. Adding a fault, a workload, or a backend
+## 6. Adding a scenario, a fault, a workload, or a backend
 
-The same shape applies; the recipes land with the phases that build those registries. What is fixed
-already is the contract they all meet: whatever drives the system records the history described in
-section 4, and gets the whole checker set for free.
+Every one of these costs a declaration and no surgery. That is the charter, and it is checked by
+`ScenarioRunnerTest`, which declares a scenario at the call site and runs it through the same runner
+as the shipped ones.
+
+### 6.1 A scenario
+
+A scenario is a `Scenario` record. Build one with `Scenario.builder(id, name)` and declare:
+
+| Field | What it says |
+|---|---|
+| `claims` | The C-numbers and M-numbers from the plan this scenario tries to falsify. A scenario with no claim does not get written. |
+| `workload` | A `Supplier<Workload>`, because every run gets its own instance and its own state. |
+| `faults` | A `FaultSchedule`: warmup, windows, heal, settle. `FaultSchedule.none(settle)` for a scenario whose claim needs no fault. |
+| `backend` | The name of a registered `HuntBackend`. |
+| `timescale` | `HuntTimescale.compressed()` or `.realistic()`. |
+| `determinism` | `REAL_THREADS` or `SINGLE_THREADED`; see section 2 for what each buys. |
+| `oracles` | The MachineNames that must be registered and must hold. The whole registered checker set runs regardless: this is a guard against an oracle silently disappearing, not a filter. |
+| `seed` | The base seed a tier's seeds count up from. |
+| `budget` | Per tier: how many commands, how many seeds, how long a seed may take. |
+
+Run it with `ScenarioRunner.run(scenario, tier, seed, directory)` or
+`ScenarioRunner.runTier(scenario, tier, directory)`. Add it to `HuntScenarios.all()` only if it
+should be reachable by name from `-Dhunt.scenario`, which is what the reproduce command needs.
+
+The verdict is three-valued and the runner will not report a pass unless every required oracle is
+registered, every declared fault fired, the read side caught up, and nothing was found broken.
+
+### 6.2 A fault
+
+One class implementing `Fault`. It declares its `kind()`, its `parameters()`, and whether it
+`perturbsStoreContents()`; it reaches the system only through the `FaultSite` it is handed, and it
+increments the `FaultEvidence` it is given every time it actually perturbs something. Nothing else
+changes: `FaultSchedule` takes whatever it is given, and the runner writes the evidence into the
+history without knowing what the fault was.
+
+The evidence is not optional. A declared fault whose fire count is zero makes the run inconclusive,
+which is `FaultLandingChecker`'s only job, and it is what stops a green run under a fault that never
+landed from being reported as a pass.
+
+Prove a new fault lands by adding a case to `FaultsLandTest`, which drives a short run with one
+fault installed and asserts the fire count is positive.
+
+### 6.3 A workload
+
+One class implementing `Workload`: the command handlers it registers, the projection it returns, the
+tags its events carry, the shape it derives from the seed, and the final read-model state it records
+so a checker can compare against it. Conservation hooks are optional; a workload that records
+nothing a checker recognises simply gets no verdict from that checker rather than noise.
+
+### 6.4 A backend
+
+One class implementing `HuntBackend`, plus one line in
+`simulation/src/main/resources/META-INF/services/org.axonframework.hunt.harness.HuntBackend`. Every
+existing scenario then runs against it by name, and the per-backend verdict vector that attributes a
+finding to the framework or to one adapter becomes available for free.

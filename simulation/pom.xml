@@ -36,6 +36,17 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
+        <!--
+          Every test in this module is judged by an oracle over a recorded history. A rerun would hide exactly the
+          intermittent break the suite exists to surface, so this module never inherits a rerun count.
+        -->
+        <surefire.rerunFailingTestsCount>0</surefire.rerunFailingTestsCount>
+        <!--
+          JUnit tags kept out of the default build. Defaults to "fuzz" so the long seed sweep never runs on a normal
+          build; a nightly job clears it with -Dhunt.excludedGroups= . It must be a property rather than a literal in
+          the surefire configuration, or the command-line override cannot reach it.
+        -->
+        <hunt.excludedGroups>fuzz</hunt.excludedGroups>
     </properties>
 
     <dependencies>
@@ -45,12 +56,36 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Testing: the reference model is differentially compared against the real storage engine -->
+        <!--
+          The harness drives the real framework: a real command bus, a real event store over the fault-injecting
+          storage-engine wrapper, and real event processing. Compile scope, because the harness itself is main code
+          that both the scenario tests and any future module reuse.
+        -->
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-eventsourcing</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${hunt.excludedGroups}</excludedGroups>
+                    <systemPropertyVariables>
+                        <hunt.scenario>${hunt.scenario}</hunt.scenario>
+                        <hunt.seed>${hunt.seed}</hunt.seed>
+                        <hunt.seeds>${hunt.seeds}</hunt.seeds>
+                        <hunt.startSeed>${hunt.startSeed}</hunt.startSeed>
+                        <hunt.backend>${hunt.backend}</hunt.backend>
+                        <hunt.timescale>${hunt.timescale}</hunt.timescale>
+                        <hunt.tier>${hunt.tier}</hunt.tier>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

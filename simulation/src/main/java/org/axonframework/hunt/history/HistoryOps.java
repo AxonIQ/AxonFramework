@@ -100,6 +100,39 @@ public final class HistoryOps {
      */
     public static final String SCAN = "scan";
 
+    /**
+     * The evidence one injected fault leaves behind: what was declared, how often it fired, and against what.
+     * Recorded as a standalone {@link RecordType#INFO} record once the fault has been removed. A declared fault whose
+     * fire count is zero is what makes a run inconclusive rather than a pass.
+     */
+    public static final String FAULT = "fault";
+
+    /**
+     * The boundary between two phases of a run: warmup, a fault window, heal, settle, verdict. Recorded as a
+     * standalone {@link RecordType#INFO} record so that a reader can place every other record in a phase.
+     */
+    public static final String PHASE = "phase";
+
+    /**
+     * A commit that stored something other than what was offered, because a fault interfered. Recorded as a
+     * standalone {@link RecordType#INFO} record naming what was offered and what was actually stored. A checker that
+     * replays a history against the reference model cannot decide a run containing one of these.
+     */
+    public static final String STORE_PERTURBED = "store-perturbed";
+
+    /**
+     * A workload's read model, as it stood once the run had quiesced. Recorded as a standalone
+     * {@link RecordType#INFO} record so that a checker can compare it against its own fold of the run's committed
+     * effects.
+     */
+    public static final String PROJECTION = "projection";
+
+    /**
+     * A ledger transfer: the workload-level operation that moves an amount from one account to another. Its value
+     * carries the accounts, the amount and the identifiers of the two events it appends.
+     */
+    public static final String TRANSFER = "transfer";
+
     private HistoryOps() {
         // Utility class.
     }

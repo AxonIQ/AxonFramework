@@ -164,9 +164,16 @@ public class VisibilityChecker implements Checker {
                 eventIds = completionEventIds(operation);
             }
             if (operation.outcome() == Outcome.OK) {
-                HistoryRecord completion = operation.completion();
-                HistoryRecord at = completion == null ? operation.invocation() : completion;
-                eventIds.forEach(eventId -> resolved.put(eventId, at));
+                // The invocation, not the completion: an event becomes visible somewhere inside the commit, and the
+                // record saying the commit returned is written after the store has already published it. Comparing a
+                // delivery against the completion would report every fast consumer as a visibility violation.
+                HistoryRecord at = operation.invocation();
+                // The earliest such record wins. An event can be committed more than once -- a store that duplicates
+                // an append writes it twice -- and it became visible at the first of them, not the last.
+                eventIds.forEach(eventId -> resolved.merge(eventId, at,
+                                                           (existing, candidate) ->
+                                                                   existing.idx() <= candidate.idx()
+                                                                           ? existing : candidate));
             } else if (operation.outcome() == Outcome.UNKNOWN) {
                 ambiguous.addAll(eventIds);
                 notes.add("The " + label + " of " + eventIds + " (record #" + operation.invocation().idx()

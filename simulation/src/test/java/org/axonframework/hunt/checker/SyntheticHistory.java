@@ -112,6 +112,46 @@ final class SyntheticHistory {
     }
 
     /**
+     * Records a ledger transfer that committed.
+     */
+    void transferOk(String from, String to, long amount) {
+        writer.invoke(HistoryOps.TRANSFER, from,
+                      Map.of("from", from, "to", to, "amount", amount)).ok(Map.of("committed", true));
+    }
+
+    /**
+     * Records a ledger transfer the run refused or the store rejected.
+     */
+    void transferFailed(String from, String to, long amount) {
+        writer.invoke(HistoryOps.TRANSFER, from,
+                      Map.of("from", from, "to", to, "amount", amount))
+              .fail("InsufficientFundsException", Map.of("committed", false));
+    }
+
+    /**
+     * Records the balance projection as it stood once the run had quiesced.
+     */
+    void projection(long openingTotal, Map<String, Long> balances) {
+        writer.info(HistoryOps.PROJECTION, null,
+                    Map.of("balances", balances, "openingTotal", openingTotal));
+    }
+
+    /**
+     * Records the evidence one injected fault left behind.
+     */
+    void faultEvidence(String kind, long fires) {
+        writer.info(HistoryOps.FAULT, null, Map.of("kind", kind, "fires", fires, "targets", List.of()));
+    }
+
+    /**
+     * Records that a fault made the store hold something other than what was offered.
+     */
+    void storePerturbed(String interference) {
+        writer.info(HistoryOps.STORE_PERTURBED, null,
+                    Map.of("interference", interference, "offered", List.of(), "stored", List.of()));
+    }
+
+    /**
      * Closes the recorder and reads the history back.
      */
     HistoryView view() {
