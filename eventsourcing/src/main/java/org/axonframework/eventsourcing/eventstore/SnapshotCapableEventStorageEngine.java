@@ -77,6 +77,15 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
         this.snapshotStore = Objects.requireNonNull(snapshotStore, "The snapshotStore parameter cannot be null.");
     }
 
+    /**
+     * Always {@code true}: resolving the snapshot sourcing strategy from the snapshot store is what this engine adds to
+     * its delegate.
+     */
+    @Override
+    public boolean handlesSnapshotSourcing() {
+        return true;
+    }
+
     @Override
     public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (condition.strategy() instanceof SourcingStrategy.Snapshot s) {

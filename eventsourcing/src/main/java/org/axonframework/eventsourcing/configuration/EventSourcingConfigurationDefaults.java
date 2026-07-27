@@ -55,7 +55,9 @@ import java.util.List;
  *     <li>The {@link EventStorageEngine} in a {@link SnapshotCapableEventStorageEngine} <b>if</b> a
  *     {@link SnapshotStore} is present and it is not the same instance as the engine. When the engine and the
  *     snapshot store are the same instance, the engine handles snapshots natively (potentially in a single
- *     round-trip) and wrapping it would degrade performance.</li>
+ *     round-trip) and wrapping it would degrade performance. An engine reporting
+ *     {@link EventStorageEngine#handlesSnapshotSourcing()} is left undecorated for the same reason, even when a
+ *     different {@link SnapshotStore} is present, since it resolves the snapshot sourcing strategy itself.</li>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  * </ul>
@@ -89,6 +91,9 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
                 EventStorageEngine.class,
                 SnapshotCapableEventStorageEngine.DECORATION_ORDER,
                 (config, name, engine) -> {
+                    if (engine.handlesSnapshotSourcing()) {
+                        return engine;
+                    }
                     SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class).orElse(null);
                     return snapshotStore == null || snapshotStore == engine
                             ? engine

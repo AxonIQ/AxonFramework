@@ -137,6 +137,27 @@ public interface EventStorageEngine extends DescribableComponent {
     MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context);
 
     /**
+     * Indicates whether {@link #source(SourcingCondition, ProcessingContext) sourcing} resolves a
+     * {@link SourcingStrategy.Snapshot snapshot sourcing strategy} itself.
+     * <p>
+     * An engine that does can serve the snapshot and the events following it in a single round trip, so it is not
+     * complemented with a {@link SnapshotCapableEventStorageEngine}. Complementing it would resolve the snapshot
+     * separately and pass an {@link SourcingStrategy.Absolute absolute strategy} inward, costing that optimization.
+     * <p>
+     * Resolving the strategy by delegating counts. An engine routing {@code source} to other engines may return
+     * {@code true} provided every engine it routes to resolves the snapshot sourcing strategy.
+     * <p>
+     * Returning {@code true} while ignoring the {@link SourcingStrategy.Snapshot} strategy means snapshots are never
+     * applied, and entities are reconstructed from their full event history instead.
+     *
+     * @return {@code true} if this engine resolves a snapshot sourcing strategy itself, {@code false} when it needs to
+     * be complemented with a snapshot store to do so
+     */
+    default boolean handlesSnapshotSourcing() {
+        return false;
+    }
+
+    /**
      * Creates an <b>infinite</b> {@link MessageStream} of {@link EventMessage events} matching the given
      * {@code condition}.
      * <p>

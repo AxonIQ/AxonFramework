@@ -177,6 +177,21 @@ class EventSourcingConfigurationDefaultsTest {
     }
 
     @Test
+    void doesNotDecorateEventStorageEngineThatHandlesSnapshotSourcingItself() {
+        SnapshotResolvingEngine snapshotResolvingEngine = new SnapshotResolvingEngine();
+        ApplicationConfigurer configurer = EventSourcingConfigurer.create();
+        configurer.componentRegistry(cr -> cr.registerComponent(EventStorageEngine.class,
+                                                                c -> snapshotResolvingEngine)
+                                             .registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()));
+        Configuration resultConfig = configurer.build();
+
+        // the engine resolves snapshots while sourcing, so wrapping would cost it that single round-trip
+        assertThat(resultConfig.getComponent(EventStorageEngine.class))
+                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class)
+                .isSameAs(snapshotResolvingEngine);
+    }
+
+    @Test
     void decoratorsEventStoreAsInterceptorEventStoreWhenDispatchInterceptorIsPresent(
             @Mock MessageDispatchInterceptor<Message> mockInterceptor) {
         ApplicationConfigurer configurer = EventSourcingConfigurer
@@ -192,6 +207,15 @@ class EventSourcingConfigurationDefaultsTest {
         @Override
         public @NonNull Set<Tag> resolve(@NonNull EventMessage event) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    // An engine reporting it resolves the snapshot sourcing strategy itself, so it must be left undecorated.
+    private static class SnapshotResolvingEngine extends InMemoryEventStorageEngine {
+
+        @Override
+        public boolean handlesSnapshotSourcing() {
+            return true;
         }
     }
 }
