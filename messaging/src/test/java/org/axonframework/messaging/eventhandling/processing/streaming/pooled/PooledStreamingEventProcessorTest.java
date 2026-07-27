@@ -79,6 +79,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -874,6 +875,160 @@ class PooledStreamingEventProcessorTest {
 
             // Unblock the WorkPackage after successful validation
             handleLatch.countDown();
+        }
+    }
+
+    @Nested
+    class StreamReopeningTest {
+
+        private RecordingEventHandlingComponent recordingComponent;
+
+        @BeforeEach
+        void setUpEventSourceRetainingEventsOnClose() {
+            // The events must survive the coordinator closing a stream, as a reopened stream has to resume on them.
+            stubMessageSource = spy(new AsyncInMemoryStreamableEventSource(true, false));
+            when(stubMessageSource.firstToken(null))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(-1)));
+            SimpleEventHandlingComponent component = SimpleEventHandlingComponent.create("test");
+            component.subscribe(new QualifiedName(String.class), (event, ctx) -> MessageStream.empty());
+            recordingComponent = new RecordingEventHandlingComponent(component);
+            withTestSubject(List.of(recordingComponent), c -> c.initialSegmentCount(1));
+        }
+
+        @Test
+        void reopensStreamWithoutWaitingForTheNextTokenClaim() {
+            // given - a token claim interval far beyond the assertion window, so only noticing the completed stream on
+            //         a coordination run can explain a timely reopen. The claim extension threshold keeps those runs
+            //         frequent, ruling out a lost availability callback as the reason for a slow reopen.
+            withTestSubject(List.of(recordingComponent),
+                            c -> c.initialSegmentCount(1).tokenClaimInterval(30_000).claimExtensionThreshold(100));
+            EventMessage eventOne = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(eventOne);
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).containsExactly(eventOne));
+
+            // when
+            stubMessageSource.completeOpenStreams();
+            EventMessage eventTwo = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(eventTwo);
+
+            // then - handled long before the next token claim would have come around
+            await().atMost(3, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(eventTwo));
+        }
+
+        @Test
+        void reopensStreamAtTheLastHandledEventWhenTheSourceCompletesIt() {
+            // given
+            EventMessage eventOne = EventTestUtils.asEventMessage("event-1");
+            EventMessage eventTwo = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(eventOne);
+            stubMessageSource.publishMessage(eventTwo);
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).containsExactly(eventOne, eventTwo));
+
+            // when - the source terminates the stream without reporting an error, as a broker ending a tailing stream
+            stubMessageSource.completeOpenStreams();
+            EventMessage eventThree = EventTestUtils.asEventMessage("event-3");
+            EventMessage eventFour = EventTestUtils.asEventMessage("event-4");
+            stubMessageSource.publishMessage(eventThree);
+            stubMessageSource.publishMessage(eventFour);
+
+            // then - a fresh stream resumes exactly where the completed one left off: no event is skipped or replayed
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded())
+                           .containsExactly(eventOne, eventTwo, eventThree, eventFour));
+            verify(stubMessageSource, atLeast(2)).open(any(), isNull());
+        }
+
+        @Test
+        void keepsSegmentClaimedAndReportsNoErrorWhenReopeningTheStream() {
+            // given
+            stubMessageSource.publishMessage(EventTestUtils.asEventMessage("event-1"));
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus()).containsKey(0));
+            clearInvocations(stubMessageSource);
+
+            // when
+            stubMessageSource.completeOpenStreams();
+
+            // then - the coordinator replaces the stream without giving up the segment it holds
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(stubMessageSource).open(any(), isNull()));
+            assertThat(testSubject.processingStatus()).containsKey(0);
+            assertThat(testSubject.isError()).isFalse();
+            verify(tokenStore, never()).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
+
+            // then - and it continues processing on the reopened stream
+            EventMessage nextEvent = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(nextEvent);
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(nextEvent));
+        }
+
+        @Test
+        void doesNotSpinWhenTheSourceKeepsHandingOutCompletedStreams() throws InterruptedException {
+            // given - a source that only ever returns completed streams, so every reopen attempt is futile
+            AtomicInteger openCount = new AtomicInteger();
+            doAnswer(invocation -> {
+                openCount.incrementAndGet();
+                return MessageStream.empty();
+            }).when(stubMessageSource).open(any(), isNull());
+
+            // when
+            startEventProcessor();
+            Thread.sleep(500);
+
+            // then - reopening is paced by the coordination runs, rather than looping on itself
+            assertThat(openCount.get()).describedAs("streams opened in 500ms").isLessThan(15);
+        }
+
+        @Test
+        void reportsErrorWhenTheStreamTurnsOutToBeFailedWhileReadingIt() {
+            // given - a stream that reports its failure as soon as the coordinator reads from it
+            doReturn(MessageStream.failed(new IllegalStateException("Stream failed")))
+                    .doCallRealMethod()
+                    .when(stubMessageSource).open(any(), isNull());
+
+            // when
+            startEventProcessor();
+
+            // then - reading the stream surfaces the failure, which is reported through the retry logic
+            assertWithin(1, TimeUnit.SECONDS, () -> assertTrue(testSubject.isError()));
+        }
+
+        @Test
+        void reopensStreamWhenItsSourceCompletesItWithAnErrorWhileTheCoordinatorIsIdle() {
+            // given - a stream reporting its terminal state without being read, as a stream fed by a remote source
+            //         does when that source signals a failure while the coordinator has nothing to read
+            AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicReference<Optional<Throwable>> streamError = new AtomicReference<>(Optional.empty());
+            //noinspection unchecked
+            MessageStream<EventMessage> remotelyFailingStream = mock(MessageStream.class);
+            when(remotelyFailingStream.isCompleted()).thenAnswer(invocation -> completed.get());
+            when(remotelyFailingStream.error()).thenAnswer(invocation -> streamError.get());
+            when(remotelyFailingStream.hasNextAvailable()).thenReturn(false);
+            when(remotelyFailingStream.next()).thenReturn(Optional.empty());
+            when(remotelyFailingStream.peek()).thenReturn(Optional.empty());
+            doReturn(remotelyFailingStream).doCallRealMethod().when(stubMessageSource).open(any(), isNull());
+
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus()).containsKey(0));
+
+            // when - the source terminates the stream with an error, in between two coordination runs
+            streamError.set(Optional.of(new IllegalStateException("Stream failed remotely")));
+            completed.set(true);
+
+            // then - a closed stream cannot be read from regardless of why it closed, so it is replaced by a fresh one
+            EventMessage nextEvent = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(nextEvent);
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(nextEvent));
+            verify(stubMessageSource, atLeast(2)).open(any(), isNull());
         }
     }
 
