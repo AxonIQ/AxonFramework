@@ -20,6 +20,7 @@ import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
@@ -40,7 +41,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
@@ -113,9 +119,33 @@ class TracingEventHandlingComponentTest {
     class BatchSpan {
 
         @Test
+        void concurrentFirstEventsCreateAndBindExactlyOneBatchSpan() {
+            // given two different first events entering the same streaming batch concurrently
+            CoordinatedBatchProcessingContext context = new CoordinatedBatchProcessingContext();
+            EventMessage firstEvent = new GenericEventMessage(new MessageType("FirstEvent"), "first");
+            EventMessage secondEvent = new GenericEventMessage(new MessageType("SecondEvent"), "second");
+
+            // when both handlers enter concurrently; the context coordinates the former check-then-put path so both
+            // observe the absent batch-span resource before either proceeds
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                CompletableFuture<Void> firstHandling =
+                        CompletableFuture.runAsync(() -> streamingSubject.handle(firstEvent, context), executor);
+                CompletableFuture<Void> secondHandling =
+                        CompletableFuture.runAsync(() -> streamingSubject.handle(secondEvent, context), executor);
+                joinAndUnwrap(CompletableFuture.allOf(firstHandling, secondHandling), Duration.ofSeconds(5));
+            }
+
+            // then exactly one fully bound batch span parents both per-event spans
+            spanFactory.verifySpanCount(BATCH_SPAN, 1);
+            spanFactory.verifySpanHasParent("EventProcessor.process FirstEvent", BATCH_SPAN);
+            spanFactory.verifySpanHasParent("EventProcessor.process SecondEvent", BATCH_SPAN);
+            spanFactory.verifyContextCarriesScopeOf(BATCH_SPAN, context);
+        }
+
+        @Test
         void opensABatchRootSpanForStreamingExecution() {
-            // given streaming execution semantics -- configured explicitly, with nothing streaming-specific (such as
-            // a Segment) on the context, covering asynchronous consumers like persistent-stream-fed processors
+            // given streaming execution semantics -- configured explicitly, with nothing streaming-specific on the
+            // context, covering asynchronous consumers like persistent-stream-fed processors
             ProcessingContext context = new StubProcessingContext();
             Span publisher = spanFactory.createDispatchSpan(PUBLISHER_SPAN, event, null);
             publisher.propagateContext(event);
@@ -175,6 +205,34 @@ class TracingEventHandlingComponentTest {
             // then no batch root span is produced; the per-event span continues the publisher's trace
             spanFactory.verifyNoSpan(BATCH_SPAN);
             spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.HANDLER);
+        }
+
+        private static final class CoordinatedBatchProcessingContext extends StubProcessingContext {
+
+            private static final String BATCH_SPAN_RESOURCE_LABEL =
+                    "org.axonframework.messaging.tracing.batchSpan";
+
+            private final CyclicBarrier absentBatchSpanReads = new CyclicBarrier(2);
+
+            @Override
+            public <T> T getResource(Context.ResourceKey<T> key) {
+                T resource = super.getResource(key);
+                if (resource == null && BATCH_SPAN_RESOURCE_LABEL.equals(key.label())) {
+                    awaitConcurrentBatchSpanRead();
+                }
+                return resource;
+            }
+
+            private void awaitConcurrentBatchSpanRead() {
+                try {
+                    absentBatchSpanReads.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Interrupted while coordinating concurrent batch-span reads", e);
+                } catch (BrokenBarrierException | TimeoutException e) {
+                    throw new AssertionError("Both handlers did not observe the absent batch span concurrently", e);
+                }
+            }
         }
     }
 
