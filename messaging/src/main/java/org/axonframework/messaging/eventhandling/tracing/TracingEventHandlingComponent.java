@@ -90,8 +90,8 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
      */
     private static final String PROCESSOR_NAME_ATTRIBUTE = "axoniq.event_processor.name";
 
-    private static final Context.ResourceKey<Span> BATCH_SPAN_KEY =
-            Context.ResourceKey.withLabel("org.axonframework.messaging.tracing.batchSpan");
+    private static final Context.ResourceKey<BatchSpanInitializer> BATCH_SPAN_INITIALIZER_KEY =
+            Context.ResourceKey.withLabel("org.axonframework.messaging.tracing.batchSpanInitializer");
 
     private final EventHandlingComponent delegate;
     private final SpanFactory spanFactory;
@@ -156,19 +156,6 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
 
     @Override
     public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
-        // Open the batch span once per batch, on the first event of a streaming batch -- unless disabled by
-        // configuration or running in distributed-in-same-trace mode. In same-trace mode per-event spans continue
-        // their publishers' traces, so a batch root would dangle without meaningful children. putResourceIfAbsent
-        // guards the write; lifecycle coverage only happens for the span that won the slot (the getResource check is
-        // the fast path avoiding a span allocation per event once the batch span exists).
-        if (streaming && batchTraceEnabled && !distributedInSameTrace
-                && context.getResource(BATCH_SPAN_KEY) == null) {
-            Span batch = withProcessorName(spanFactory.createRootSpan(BATCH_SPAN, context));
-            if (context.putResourceIfAbsent(BATCH_SPAN_KEY, batch) == null) {
-                batch.coverLifecycle(context);
-            }
-        }
-
         // The handler span is branch-scoped. A non-streaming or same-trace handler uses the propagated publisher as
         // its parent. A handler inside a traced streaming batch uses the batch as its parent and links to the
         // publisher. Without either relationship it starts a new trace linked to the publisher. Span#branchStream
@@ -182,13 +169,28 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
         Span handlerSpan;
         if (!streaming || continuesPublisherTrace(event)) {
             handlerSpan = spanFactory.createHandlerSpan(spanName, event, context);
-        } else if (context.getResource(BATCH_SPAN_KEY) != null) {
+        } else if (batchTraceEnabled && !distributedInSameTrace) {
+            ensureBatchSpan(context);
             handlerSpan = spanFactory.createContextParentHandlerSpan(spanName, event, context);
         } else {
             handlerSpan = spanFactory.createDisconnectedHandlerSpan(spanName, event, context);
         }
         return withProcessorName(handlerSpan).branchStream(context, spanned -> delegate.handle(event, spanned))
                                              .ignoreEntries();
+    }
+
+    /**
+     * Ensures a batch span is created and bound to the given {@code context}'s lifecycle exactly once. Installing the
+     * initializer is deliberately side-effect free; span lifecycle binding happens afterward, outside the context
+     * resource-map callback.
+     */
+    private void ensureBatchSpan(ProcessingContext context) {
+        BatchSpanInitializer initializer =
+                context.computeResourceIfAbsent(BATCH_SPAN_INITIALIZER_KEY, BatchSpanInitializer::new);
+        initializer.initialize(() -> {
+            Span batchSpan = withProcessorName(spanFactory.createRootSpan(BATCH_SPAN, context));
+            batchSpan.coverLifecycle(context);
+        });
     }
 
     /**
@@ -208,6 +210,22 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
     private boolean continuesPublisherTrace(EventMessage event) {
         return distributedInSameTrace
                 && !event.timestamp().isBefore(Instant.now().minus(distributedInSameTraceTimeLimit));
+    }
+
+    /**
+     * Context-scoped initializer that marks the batch span ready only after it is fully bound to the processing
+     * lifecycle. Synchronizing on it coordinates every decorator instance sharing the same context.
+     */
+    private static final class BatchSpanInitializer {
+
+        private boolean initialized;
+
+        private synchronized void initialize(Runnable initialization) {
+            if (!initialized) {
+                initialization.run();
+                initialized = true;
+            }
+        }
     }
 
     @Override

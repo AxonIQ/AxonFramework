@@ -20,6 +20,7 @@ import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
@@ -40,7 +41,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
@@ -75,7 +81,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void opensAConsumerHandlerSpanPerEvent() {
-            // given non-streaming execution semantics -- handlers run inside the publication's unit of work
+            // given the non-streaming trace topology
             ProcessingContext context = new StubProcessingContext();
 
             // when
@@ -89,10 +95,9 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
-        void nonStreamingExecutionContinuesThePublisherTraceEvenForStaleEventsAndRegardlessOfTheToggle() {
-            // given non-streaming execution semantics and distributedInSameTrace = false with a stale event -- the
-            // streaming-only toggle and its freshness limit must not apply when handlers run inside the publication's
-            // unit of work
+        void nonStreamingTopologyContinuesThePublisherTraceEvenForStaleEventsAndRegardlessOfTheToggle() {
+            // given the non-streaming trace topology and distributedInSameTrace = false with a stale event -- the
+            // streaming-only toggle and its freshness limit must not apply
             TracingEventHandlingComponent subject = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ false,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
@@ -113,9 +118,32 @@ class TracingEventHandlingComponentTest {
     class BatchSpan {
 
         @Test
-        void opensABatchRootSpanForStreamingExecution() {
-            // given streaming execution semantics -- configured explicitly, with nothing streaming-specific (such as
-            // a Segment) on the context, covering asynchronous consumers like persistent-stream-fed processors
+        void concurrentFirstEventsCreateAndBindExactlyOneBatchSpan() {
+            // given two different first events entering the same streaming batch concurrently
+            CoordinatedBatchProcessingContext context = new CoordinatedBatchProcessingContext();
+            EventMessage firstEvent = new GenericEventMessage(new MessageType("FirstEvent"), "first");
+            EventMessage secondEvent = new GenericEventMessage(new MessageType("SecondEvent"), "second");
+
+            // when both handlers enter concurrently; the context coordinates the former check-then-put path so both
+            // observe the absent batch-span resource before either proceeds
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                CompletableFuture<Void> firstHandling =
+                        CompletableFuture.runAsync(() -> streamingSubject.handle(firstEvent, context), executor);
+                CompletableFuture<Void> secondHandling =
+                        CompletableFuture.runAsync(() -> streamingSubject.handle(secondEvent, context), executor);
+                joinAndUnwrap(CompletableFuture.allOf(firstHandling, secondHandling), Duration.ofSeconds(5));
+            }
+
+            // then exactly one fully bound batch span parents both per-event spans
+            spanFactory.verifySpanCount(BATCH_SPAN, 1);
+            spanFactory.verifySpanHasParent("EventProcessor.process FirstEvent", BATCH_SPAN);
+            spanFactory.verifySpanHasParent("EventProcessor.process SecondEvent", BATCH_SPAN);
+            spanFactory.verifyContextCarriesScopeOf(BATCH_SPAN, context);
+        }
+
+        @Test
+        void opensABatchRootSpanForStreamingTopology() {
+            // given the explicitly configured streaming trace topology
             ProcessingContext context = new StubProcessingContext();
             Span publisher = spanFactory.createDispatchSpan(PUBLISHER_SPAN, event, null);
             publisher.propagateContext(event);
@@ -132,20 +160,20 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
-        void doesNotOpenABatchSpanForNonStreamingExecution() {
-            // given non-streaming execution semantics
+        void doesNotOpenABatchSpanForNonStreamingTopology() {
+            // given the non-streaming trace topology
             ProcessingContext context = new StubProcessingContext();
 
             // when
             testSubject.handle(event, context);
 
-            // then no batch span is produced (AF parity: the handler runs inside the publisher's unit of work)
+            // then no batch span is produced
             spanFactory.verifyNoSpan(BATCH_SPAN);
         }
 
         @Test
         void suppressesTheBatchSpanWhenBatchTraceDisabled() {
-            // given streaming execution semantics but with batchTraceEnabled = false
+            // given the streaming trace topology with batchTraceEnabled = false
             TracingEventHandlingComponent disabledBatchTrace = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
                     /* batchTraceEnabled */ false, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
@@ -162,7 +190,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void suppressesTheBatchSpanInDistributedInSameTraceMode() {
-            // given streaming execution semantics with distributedInSameTrace = true -- per-event spans continue
+            // given the streaming trace topology with distributedInSameTrace = true -- per-event spans continue
             // their publishers' traces, so a batch root would dangle without meaningful children
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
@@ -175,6 +203,34 @@ class TracingEventHandlingComponentTest {
             // then no batch root span is produced; the per-event span continues the publisher's trace
             spanFactory.verifyNoSpan(BATCH_SPAN);
             spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.HANDLER);
+        }
+
+        private static final class CoordinatedBatchProcessingContext extends StubProcessingContext {
+
+            private static final String BATCH_SPAN_RESOURCE_LABEL =
+                    "org.axonframework.messaging.tracing.batchSpan";
+
+            private final CyclicBarrier absentBatchSpanReads = new CyclicBarrier(2);
+
+            @Override
+            public <T> T getResource(Context.ResourceKey<T> key) {
+                T resource = super.getResource(key);
+                if (resource == null && BATCH_SPAN_RESOURCE_LABEL.equals(key.label())) {
+                    awaitConcurrentBatchSpanRead();
+                }
+                return resource;
+            }
+
+            private void awaitConcurrentBatchSpanRead() {
+                try {
+                    absentBatchSpanReads.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Interrupted while coordinating concurrent batch-span reads", e);
+                } catch (BrokenBarrierException | TimeoutException e) {
+                    throw new AssertionError("Both handlers did not observe the absent batch span concurrently", e);
+                }
+            }
         }
     }
 
@@ -231,8 +287,8 @@ class TracingEventHandlingComponentTest {
     class DistributedInSameTrace {
 
         @Test
-        void usesContextParentHandlerSpanForStreamingExecutionWhenBatchTracingIsEnabled() {
-            // given streaming execution semantics (batch tracing enabled, distributedInSameTrace=false)
+        void usesContextParentHandlerSpanForStreamingTopologyWhenBatchTracingIsEnabled() {
+            // given the streaming trace topology (batch tracing enabled, distributedInSameTrace=false)
             ProcessingContext context = new StubProcessingContext();
 
             // when
@@ -244,7 +300,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void usesDisconnectedHandlerSpanWhenBatchTracingIsDisabled() {
-            // given streaming execution semantics with no batch trace and distributedInSameTrace=false
+            // given the streaming trace topology with no batch trace and distributedInSameTrace=false
             TracingEventHandlingComponent noBatch = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
                     /* batchTraceEnabled */ false, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
@@ -259,7 +315,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void staysInTheSameTraceForAnEventWithinTheTimeLimit() {
-            // given streaming execution semantics and distributedInSameTrace = true with a two-minute limit and an
+            // given the streaming trace topology and distributedInSameTrace = true with a two-minute limit and an
             // event published just now
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
                     delegate, spanFactory, /* processorName */ null, /* streaming */ true,
@@ -275,7 +331,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void fallsBackToADisconnectedSpanForAnEventOlderThanTheTimeLimit() {
-            // given streaming execution semantics and distributedInSameTrace = true with a two-minute limit and an
+            // given the streaming trace topology and distributedInSameTrace = true with a two-minute limit and an
             // event published three minutes ago; stale events such as replays must not stretch the publisher's
             // long-finished trace
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
