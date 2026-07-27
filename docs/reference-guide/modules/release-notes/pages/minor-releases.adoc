@@ -6,6 +6,18 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_2]
 == Release 5.2
 
+=== Release 5.2.2
+
+==== Bug fixes
+
+- Reopen the event stream when its source completed it link:https://github.com/AxonIQ/AxonFramework/pull/4785[#4785]
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+
 === Release 5.2.1
 
 ==== Bug fixes
