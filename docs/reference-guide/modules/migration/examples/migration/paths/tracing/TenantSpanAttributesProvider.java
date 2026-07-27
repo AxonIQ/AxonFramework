@@ -15,6 +15,7 @@
  */
 package migration.paths.tracing;
 
+import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
@@ -25,9 +26,17 @@ import java.util.Map;
 // tag::provider-signature[]
 public class TenantSpanAttributesProvider implements SpanAttributesProvider {
 
+    public static final ResourceKey<String> TENANT_ID = ResourceKey.withLabel("tenantIdentifier");
+
     @Override
     public Map<String, String> provideForMessage(Message message, @Nullable ProcessingContext context) {
-        return Map.of();
+        if (context == null) {
+            return Map.of();
+        }
+        String tenantIdentifier = context.getResource(TENANT_ID);
+        return tenantIdentifier == null
+                ? Map.of()
+                : Map.of("tenant.id", tenantIdentifier);
     }
 }
 // end::provider-signature[]

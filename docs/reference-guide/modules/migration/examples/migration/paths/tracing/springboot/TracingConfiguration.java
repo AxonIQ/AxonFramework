@@ -13,19 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package migration.paths.tracing;
+package migration.paths.tracing.springboot;
 
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.tracing.attributes.MessageIdSpanAttributesProvider;
+import org.axonframework.messaging.tracing.LoggingSpanFactory;
+import org.axonframework.messaging.tracing.SpanFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-public class AttributeProviderConfiguration {
+// tag::register-span-factory-spring[]
+@Configuration
+public class TracingConfiguration {
 
-    // tag::legacy-message-id-key[]
-    public void configure(MessagingConfigurer configurer) {
-        configurer.registerSpanAttributesProvider(
-                config -> new MessageIdSpanAttributesProvider("axon_message_id")
-        );
+    @Bean
+    SpanFactory spanFactory() {
+        return LoggingSpanFactory.INSTANCE;
     }
-    // end::legacy-message-id-key[]
-
 }
+// end::register-span-factory-spring[]

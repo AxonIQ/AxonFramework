@@ -18,6 +18,9 @@ package migration.paths.tracing;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.tracing.SpanFactory;
+import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
+
+import java.time.Duration;
 
 public class TracingConfiguration {
 
@@ -31,4 +34,22 @@ public class TracingConfiguration {
                                   .start();
     }
     // end::register-span-factory[]
+
+    // tag::register-tracing-settings[]
+    public void configureTracingSettings(MessagingConfigurer configurer) {
+        MessagingTracingSettings tracingSettings = MessagingTracingSettings.enabledByDefault()
+                                                                            .withEventSourcingHandlersEnabled(true)
+                                                                            .withEventProcessorDistributedInSameTrace(
+                                                                                    true
+                                                                            )
+                                                                            .withEventProcessorDistributedInSameTraceTimeLimit(
+                                                                                    Duration.ofMinutes(1)
+                                                                            );
+
+        configurer.componentRegistry(registry -> registry.registerComponent(
+                MessagingTracingSettings.class,
+                config -> tracingSettings
+        ));
+    }
+    // end::register-tracing-settings[]
 }
