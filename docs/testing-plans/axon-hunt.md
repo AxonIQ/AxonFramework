@@ -1,4 +1,4 @@
-# Axon Hunt — Project-Wide Bug-Hunting Test Suite for Axon Framework 5
+# Axon Hunt -- Project-Wide Bug-Hunting Test Suite for Axon Framework 5
 
 Plan slug: `axon-hunt`. Mode: **project-wide** (holistic, claims-driven).
 Destination when implementation starts: `docs/testing-plans/axon-hunt.md` on branch
@@ -16,8 +16,8 @@ Axon Framework 5 is a Java 21 CQRS/event-sourcing framework. Commands mutate sta
 sourcing events from an `EventStore` under a `SourcingCondition` (tag-based
 `EventCriteria`), deciding, and appending new events under an `AppendCondition` whose
 `ConsistencyMarker` makes conflicting concurrent appends fail
-(`AppendEventsTransactionRejectedException`) — the DCB protocol. Everything runs inside a
-phased `ProcessingContext` (PRE_INVOCATION → … → PREPARE_COMMIT → COMMIT → AFTER_COMMIT);
+(`AppendEventsTransactionRejectedException`) -- the DCB protocol. Everything runs inside a
+phased `ProcessingContext` (PRE_INVOCATION -> ... -> PREPARE_COMMIT -> COMMIT -> AFTER_COMMIT);
 events become visible only on commit. Downstream, `PooledStreamingEventProcessor` (PSEP)
 streams events from a `StreamableEventSource`, splits work across up to 16 `Segment`s,
 each `WorkPackage` holding an exclusive claim on a `TokenStore` token (claim timeout 10s,
@@ -26,26 +26,26 @@ UnitOfWork; exactly-once holds only when token and projection share a transactio
 resource, else at-least-once. Storage backends: `InMemoryEventStorageEngine` (DCB-native),
 `AggregateBasedJpaEventStorageEngine` (no DCB tags, gap-aware global sequence with
 gapTimeout=60s/maxGapOffset=10000), Axon Server (DCB-native, via connector from Maven
-Central — module absent in this tree), and commercial
+Central -- module absent in this tree), and commercial
 `io.axoniq.framework:PostgresqlEventStorageEngine` (DCB-native Postgres). Observability:
 none purpose-built for testing; the suite must record its own operation histories.
 
 ## 1b. Claims (spine)
 
-40 claims C1–C40 extracted with sources (see Appendix A, verbatim from the claims-mining
+40 claims C1-C40 extracted with sources (see Appendix A, verbatim from the claims-mining
 pass). Highest-severity clusters:
 
 - **DCB append safety**: C1 (reject after marker), C2/C3 (none()/ORIGIN semantics),
-  C5–C8 (marker derivation, lowerBound merge, deferred conflict check).
+  C5-C8 (marker derivation, lowerBound merge, deferred conflict check).
 - **Commit atomicity/visibility**: C4, C29 (append in PREPARE_COMMIT, visible only after
   COMMIT, rollback discards), C37 (store+bus duality).
-- **Ordering**: C10–C12 (append order, per-aggregate seq, global sequence), C32–C34
+- **Ordering**: C10-C12 (append order, per-aggregate seq, global sequence), C32-C34
   (sequencing policies), C13/C14 (gap-aware token, gap timeout).
-- **Segment/token membership**: C18/C19 (single-owner claim), C20–C22 (steal semantics,
-  nodeId), C23–C25 (split/merge preconditions).
+- **Segment/token membership**: C18/C19 (single-owner claim), C20-C22 (steal semantics,
+  nodeId), C23-C25 (split/merge preconditions).
 - **Delivery semantics**: C15 (batch+token one tx), C16 (exactly-once iff shared
-  resource), C17 (steal ⇒ possible duplicate).
-- **Replay**: C26–C28 (reset requires all claims, ReplayToken, 5.1+).
+  resource), C17 (steal => possible duplicate).
+- **Replay**: C26-C28 (reset requires all claims, ReplayToken, 5.1+).
 
 ### 1c. Missing claims discovered (first-class findings, already)
 
@@ -65,7 +65,7 @@ segments, sequencing, ProcessingContext, command bus dispatch as workload driver
 integrationtests infrastructure, real backends (in-memory, Axon Server, PostgreSQL via
 JPA engine + optional commercial engine). Out of scope (this iteration): queries/
 subscription queries (workload-level only), sagas/process managers (absent), DLQ (absent
-from tree — placeholder invariant only), Spring extension internals, tracing/metrics
+from tree -- placeholder invariant only), Spring extension internals, tracing/metrics
 extensions, multi-region.
 
 ## 2b. Existing-test inventory (condensed; full table in Appendix B)
@@ -93,28 +93,28 @@ extensions, multi-region.
 ## 3. Architecture of the suite (three layers, one invariant spine)
 
 Lesson from axon-flow-spec tla_dst: the invariant spine (one `MachineName` per property,
-verbatim across TLA+ ↔ DST assertion ↔ docs) is the thing that makes findings
-trustworthy. Its weaknesses — single-node, in-memory only, per-invariant tolerance creep,
-workflow-scoped invariants, weak liveness — dictate this suite's shape.
+verbatim across TLA+ <-> DST assertion <-> docs) is the thing that makes findings
+trustworthy. Its weaknesses -- single-node, in-memory only, per-invariant tolerance creep,
+workflow-scoped invariants, weak liveness -- dictate this suite's shape.
 
 ```
-             ┌──────────────────────────────────────────────────┐
-             │  INVARIANTS.md  (MachineName registry, C-refs)   │
-             │  + OperationHistory recorder + Checkers (oracle) │
-             └───────┬──────────────┬──────────────┬────────────┘
-                     │              │              │
-        ┌────────────▼───┐  ┌───────▼────────┐  ┌──▼──────────────────┐
-        │ L1 DST core    │  │ L2 multi-node  │  │ L3 real infra       │
-        │ 1 JVM, seeded, │  │ sim: N engine  │  │ Testcontainers:     │
-        │ virtual time,  │  │ instances, one │  │ Axon Server, PG16,  │
-        │ fault store,   │  │ shared store + │  │ Toxiproxy nemesis,  │
-        │ BUGGIFY        │  │ token store    │  │ kill -9 / restart   │
-        │ per-PR smoke   │  │ per-PR + fuzz  │  │ nightly             │
-        └────────────────┘  └────────────────┘  └─────────────────────┘
-                     └── same workloads, same history format, same checkers ──┘
+             +--------------------------------------------------+
+             |  INVARIANTS.md  (MachineName registry, C-refs)   |
+             |  + OperationHistory recorder + Checkers (oracle) |
+             +-------+--------------+--------------+------------+
+                     |              |              |
+        +------------v---+  +-------v--------+  +--v------------------+
+        | L1 DST core    |  | L2 multi-node  |  | L3 real infra       |
+        | 1 JVM, seeded, |  | sim: N engine  |  | Testcontainers:     |
+        | virtual time,  |  | instances, one |  | Axon Server, PG16,  |
+        | fault store,   |  | shared store + |  | Toxiproxy nemesis,  |
+        | BUGGIFY        |  | token store    |  | kill -9 / restart   |
+        | per-PR smoke   |  | per-PR + fuzz  |  | nightly             |
+        +----------------+  +----------------+  +---------------------+
+                     +-- same workloads, same history format, same checkers --+
 ```
 
-**L1 — DST core** (technique: `deterministic-simulation.md`). Seeded single-JVM harness
+**L1 -- DST core** (technique: `deterministic-simulation.md`). Seeded single-JVM harness
 driving real AF5 components: real `SimpleCommandBus`, real `EventStore` over a
 `ControllableEventStorageEngine` wrapper (fault hooks: vanish-next-commit,
 duplicate-next-commit, latency, reject), real PSEP with injected deterministic clock +
@@ -123,66 +123,66 @@ same-thread/carrier executors, in-memory TokenStore behind a fault wrapper
 Fuzz: one seed fixes workload shape + fault schedule; failing seed prints reproduce
 command; regression seeds pinned.
 
-**L2 — multi-node simulation** (fixes tla_dst weakness #1). N framework "nodes" (separate
+**L2 -- multi-node simulation** (fixes tla_dst weakness #1). N framework "nodes" (separate
 Configurers/processors, same JVM) share one store + one TokenStore. Simulates: token
 steal via clock jump past claimTimeout, node crash (drop node, keep store), rebalance,
 split/merge under load, competing appends on overlapping tags. Deterministic per seed at
 per-node level; global interleaving explicitly fuzzed (schedule axis).
 
-**L3 — real infrastructure** (fixes weakness #2; techniques:
+**L3 -- real infrastructure** (fixes weakness #2; techniques:
 `chaos-and-fault-injection.md`, `crash-recovery-and-upgrade.md`, `jepsen-and-elle.md`
 style histories). Implements the missing `TestInfrastructure` backends:
 
-- `AxonServerTestInfrastructure` — Testcontainers `axoniq/axonserver` (DCB context),
-  connector from Maven Central (module absent in tree — released artifact used).
-- `PostgresTestInfrastructure` — `postgres:16` + `AggregateBasedJpaEventStorageEngine`
-  (+ JDBC/JPA TokenStore on same or separate DB — both matrix arms).
-- `PostgresDcbTestInfrastructure` — commercial `io.axoniq.framework`
+- `AxonServerTestInfrastructure` -- Testcontainers `axoniq/axonserver` (DCB context),
+  connector from Maven Central (module absent in tree -- released artifact used).
+- `PostgresTestInfrastructure` -- `postgres:16` + `AggregateBasedJpaEventStorageEngine`
+  (+ JDBC/JPA TokenStore on same or separate DB -- both matrix arms).
+- `PostgresDcbTestInfrastructure` -- commercial `io.axoniq.framework`
   `PostgresqlEventStorageEngine` (DCB-native Postgres). DECIDED: both Postgres engines
   from day one.
 
 This instantly multiplies the ~40 existing abstract ITs across real backends, then adds
-chaos scenarios: every app↔store connection goes through **Toxiproxy** (partition,
+chaos scenarios: every app<->store connection goes through **Toxiproxy** (partition,
 latency, bandwidth, half-open); containers get `kill -9` + restart for crash-recovery;
 app JVMs get killed mid-batch for token/claim recovery.
 
-**Oracle discipline** (fixes weakness #3 — no tolerance creep). The PRIMARY oracle is the
+**Oracle discipline** (fixes weakness #3 -- no tolerance creep). The PRIMARY oracle is the
 model-conformance check (D1) run differentially across backends (D2); property checkers
 below are the secondary net. All three layers emit the same **operation history** (JSONL): `{op, invocation_ts, completion_ts, node, payload}`
 for append-attempt (condition, tags, outcome incl. UNKNOWN), commit/rollback, claim/
 extend/release/steal, delivery (event id, segment, token position, replay flag),
 reset/split/merge. Checkers run post-hoc over the history:
 
-- **DcbConflictChecker** — no two committed appends conflict under their conditions
+- **DcbConflictChecker** -- no two committed appends conflict under their conditions
   (serializability of the DCB protocol per tag-set).
-- **VisibilityChecker** — no delivery of an event without a prior commit; no rolled-back
+- **VisibilityChecker** -- no delivery of an event without a prior commit; no rolled-back
   event ever delivered.
-- **OwnershipChecker** — per segment, claim intervals never overlap (from claim history,
+- **OwnershipChecker** -- per segment, claim intervals never overlap (from claim history,
   with clock-skew allowance = explicit parameter, not silent tolerance).
-- **DeliveryChecker** — per backend mode: exactly-once (shared-tx arm) or
+- **DeliveryChecker** -- per backend mode: exactly-once (shared-tx arm) or
   at-least-once-no-loss (split-store arm); duplicates counted and bounded.
-- **OrderChecker** — per sequencing-policy key, delivery order equals append order.
-- **LivenessChecker** — every committed event delivered within horizon (virtual time in
+- **OrderChecker** -- per sequencing-policy key, delivery order equals append order.
+- **LivenessChecker** -- every committed event delivered within horizon (virtual time in
   L1/L2, wall budget in L3); every accepted command completes.
 - Ambiguous outcomes (timeout, connection-drop during commit) recorded as UNKNOWN and
-  treated as "may or may not have happened" by checkers — never silently dropped.
+  treated as "may or may not have happened" by checkers -- never silently dropped.
 
 **Formal layer** (technique: `formal-methods-tla.md`). Two small TLA+ models with the
 MachineName bridge:
-- `DcbAppend.tla` — writers, tags, markers, deferred conflict check; invariants
+- `DcbAppend.tla` -- writers, tags, markers, deferred conflict check; invariants
   `AppendRejectedAfterMarker`, `NoConflictingCommits`, `MarkerMonotonic`.
-- `TokenClaim.tla` — claims, steals, clock skew bound, crash; invariants
+- `TokenClaim.tla` -- claims, steals, clock skew bound, crash; invariants
   `AtMostOneSegmentOwner` (parameterized by skew), `ClaimEventuallyAvailable`.
 Violated/fixed cfg pairs where a gap is found (copy tla_dst's fix-detector pattern).
 
-## 3b. Design commitments — 14 expert-hardening decisions (binding)
+## 3b. Design commitments -- 14 expert-hardening decisions (binding)
 
 Each entry: WHAT (the commitment), WHY (the failure mode it prevents), HOW (concrete
 implementation). These are binding constraints on P0-P5; an implementing agent may not
-skip one silently — deviations get written into FINDINGS.adoc as harness decisions.
+skip one silently -- deviations get written into FINDINGS.adoc as harness decisions.
 
 **D1. Model-conformance oracle is the SPINE (not an add-on).**
-WHAT: an executable reference model (~300 lines) of the DCB event store semantics —
+WHAT: an executable reference model (~300 lines) of the DCB event store semantics --
 append with condition, conflict rules (tag-AND within criterion, OR across criteria,
 marker validity), source, visibility. Every layer replays its operation history against
 the model; SUT-observed state must match model state.
@@ -191,7 +191,7 @@ drift we didn't enumerate (AWS S3 ShardStore "lightweight formal methods", Tiger
 VOPR state checking). It is also the differential base for D2.
 HOW: `simulation` main scope: `DcbStoreModel` (pure, deterministic, no framework deps) +
 `ModelConformanceChecker` consuming the history JSONL. Built in P0 alongside the
-recorder. TLA+ `DcbAppend.tla` (P4) and `DcbStoreModel` must encode the same rules —
+recorder. TLA+ `DcbAppend.tla` (P4) and `DcbStoreModel` must encode the same rules --
 cross-check by generating traces from the model and TLC-validating a sample.
 
 **D2. Backend-differential is the attribution strategy.**
@@ -205,7 +205,7 @@ CI matrix runs the same scenario class per backend; FINDINGS.adoc records the
 per-backend verdict vector for every finding (e.g. `inmem:PASS axonserver:FAIL pg:PASS`).
 
 **D3. Canonical conservation-law workload: the Ledger.**
-WHAT: one default workload for all scenarios — accounts, DCB-conditioned transfers,
+WHAT: one default workload for all scenarios -- accounts, DCB-conditioned transfers,
 balance projection. Global invariants: sum of balances constant (money neither created
 nor destroyed), no balance below zero when the append condition enforced it, projection
 converges to fold(committed events).
@@ -219,7 +219,7 @@ in EVERY scenario regardless of the scenario's primary claim.
 **D4. Process PAUSE nemesis (distinct from crash).**
 WHAT: SIGSTOP/SIGCONT of app JVMs (L3) and an injected safepoint-stall fake (L1/L2)
 lasting longer than claimTimeout.
-WHY: the classic production claim-loss bug — GC pause/VM freeze; owner alive, mid-batch,
+WHY: the classic production claim-loss bug -- GC pause/VM freeze; owner alive, mid-batch,
 token stolen, zombie wakes and commits. kill -9 can never produce it; Jepsen runs pause
 on every system for this reason.
 HOW: L3: `docker pause`/`kill -STOP` via Testcontainers exec on the app container (apps
@@ -301,7 +301,7 @@ WHAT: N nodes boot simultaneously against an empty token store: concurrent
 join/leave racing split/merge.
 WHY: classic first-deploy bug class; C-claims cover steady state, not genesis.
 HOW: scenario `S15 concurrent_bootstrap_initializes_segments_exactly_once` (falsifies
-C18, initializeTokenSegments contract) in L2 + L3; added to §5 list.
+C18, initializeTokenSegments contract) in L2 + L3; added to Sec.5 list.
 
 **D13. Contention shape as seeded swarm dimensions.**
 WHAT: workload knobs - tag-access distribution (Zipfian hot-key vs uniform), tag
@@ -324,114 +324,114 @@ determinism scoping. CI hunt jobs assert `rerunFailingTestsCount` is absent.
 
 ## 4. Failure-mode hypotheses (pitfall-catalog walk)
 
-| Pitfall | Applies | Hypothesis (→ claims) |
+| Pitfall | Applies | Hypothesis (-> claims) |
 |---|---|---|
-| 1 lost updates under partition | y | H1 concurrent DCB appends on overlapping tags both commit when conflict check is deferred and the store connection flaps (→C1,C8) |
-| 2 stale reads | y | H2 projection lag violates read-your-writes assumptions in subscription-style reads; monotonic per segment only (→C15, M7) |
-| 3 replica divergence | maybe | H3 two nodes' projections diverge permanently after steal + replay overlap (→C17,C27) |
-| 4 linearizability under timing | y | H4 marker validity broken by commit-order vs global-sequence-order mismatch on JPA engine (→C11,C12) |
-| 5 lost acks | y | H5 command returns success but append rolled back on connection drop after server-side commit ambiguity; or error returned yet append durable (→C4,C29, M5) |
-| 6 membership races | y | H6 split/merge racing claim-steal loses or double-claims a child segment (→C23–C25, M10) |
-| 7 crash-recovery divergence | y | H7 kill -9 during append storm loses acked events or resurrects rolled-back ones on Postgres restart (→C35) |
-| 9 seq collision | y | H8 JPA global sequence gap dropped after gapTimeout while a long tx later commits → event silently never streamed (→C13,C14, M2). Prime bug candidate. |
-| 10 change-feed loss/dup | y | H9 Axon Server stream reconnect after partition skips or redelivers events without token reflecting it (→M9) |
-| 12 clock skew | y | H10 claim steal with skewed node clocks yields overlapping ownership → concurrent duplicate processing beyond documented window (→C20, M3) |
-| 14 lease expiry under contention | y | H11 slow batch (handler latency injection) starves claim extension past claimTimeout; owner loses claim mid-batch; effects doubled (→C19,C20, M1) |
-| 15 idempotency cold cache | maybe | H12 processor restart between handler effect and token store write replays batch — duplicate effects when stores split (→C16,C17, M4) |
-| 16 outbox head-of-line | n/a now | DLQ absent from tree; placeholder invariant `DlqNoHeadOfLineBlock` reserved (→C39) |
-| 8 schema migration | deferred | §9 followup (message transformation is 5.2 commercial) |
-| 11 cross-shard atomicity | partial | H13 multi-tag append spanning "boundaries" is atomic by design — verify visible atomically to streaming consumers (→C4,C10) |
+| 1 lost updates under partition | y | H1 concurrent DCB appends on overlapping tags both commit when conflict check is deferred and the store connection flaps (->C1,C8) |
+| 2 stale reads | y | H2 projection lag violates read-your-writes assumptions in subscription-style reads; monotonic per segment only (->C15, M7) |
+| 3 replica divergence | maybe | H3 two nodes' projections diverge permanently after steal + replay overlap (->C17,C27) |
+| 4 linearizability under timing | y | H4 marker validity broken by commit-order vs global-sequence-order mismatch on JPA engine (->C11,C12) |
+| 5 lost acks | y | H5 command returns success but append rolled back on connection drop after server-side commit ambiguity; or error returned yet append durable (->C4,C29, M5) |
+| 6 membership races | y | H6 split/merge racing claim-steal loses or double-claims a child segment (->C23-C25, M10) |
+| 7 crash-recovery divergence | y | H7 kill -9 during append storm loses acked events or resurrects rolled-back ones on Postgres restart (->C35) |
+| 9 seq collision | y | H8 JPA global sequence gap dropped after gapTimeout while a long tx later commits -> event silently never streamed (->C13,C14, M2). Prime bug candidate. |
+| 10 change-feed loss/dup | y | H9 Axon Server stream reconnect after partition skips or redelivers events without token reflecting it (->M9) |
+| 12 clock skew | y | H10 claim steal with skewed node clocks yields overlapping ownership -> concurrent duplicate processing beyond documented window (->C20, M3) |
+| 14 lease expiry under contention | y | H11 slow batch (handler latency injection) starves claim extension past claimTimeout; owner loses claim mid-batch; effects doubled (->C19,C20, M1) |
+| 15 idempotency cold cache | maybe | H12 processor restart between handler effect and token store write replays batch -- duplicate effects when stores split (->C16,C17, M4) |
+| 16 outbox head-of-line | n/a now | DLQ absent from tree; placeholder invariant `DlqNoHeadOfLineBlock` reserved (->C39) |
+| 8 schema migration | deferred | Sec.9 followup (message transformation is 5.2 commercial) |
+| 11 cross-shard atomicity | partial | H13 multi-tag append spanning "boundaries" is atomic by design -- verify visible atomically to streaming consumers (->C4,C10) |
 | 13 auth divergence | n/a | no auth layer in scope |
 
 ## 5. Scenarios (claim-named; each = executable spec)
 
 Format: name (falsifies) | layers/backends | workload | faults | oracle | tiers.
 Serious scenarios (safety/durability/idempotency/isolation/ordering/membership) carry
-§7.M: model + history + checker + nemesis evidence + ambiguity + reduction. Target test
+Sec.7.M: model + history + checker + nemesis evidence + ambiguity + reduction. Target test
 files live under `simulation/src/test/java/.../scenarios/` (L1/L2) and
 `integrationtests/src/test/java/.../chaos/` (L3), `*IT.java` naming for failsafe.
 
-- **S1 `dcb_append_rejected_after_marker_under_contention`** (C1,C5,C6,C8; H1) —
+- **S1 `dcb_append_rejected_after_marker_under_contention`** (C1,C5,C6,C8; H1) --
   L1+L2+L3 all backends. Workload: K writers, overlapping tag sets, mixed
   source-then-append and withCriteria/ORIGIN appends. Faults: none (smoke) / latency +
-  duplicated-append (hardening). Oracle: DcbConflictChecker. §7.M: model=DCB-serializable
+  duplicated-append (hardening). Oracle: DcbConflictChecker. Sec.7.M: model=DCB-serializable
   register per tag-set; nemesis evidence=fault-schedule log. Smoke: 1k commands, 3 seeds.
-  Hardening: 100k, 100 seeds. Release: nightly 1000 seeds × 3 backends.
-- **S2 `commit_ack_matches_durability_under_partition`** (C4,C29,M5; H5, pitfall 5) —
+  Hardening: 100k, 100 seeds. Release: nightly 1000 seeds x 3 backends.
+- **S2 `commit_ack_matches_durability_under_partition`** (C4,C29,M5; H5, pitfall 5) --
   L3 AxonServer+Postgres. Workload: append storm. Faults: Toxiproxy cut/half-open exactly
   around commit; app kill between COMMIT and AFTER_COMMIT. Oracle: client verdicts vs
-  post-heal authoritative store scan; SUCCESS⇒present, ERROR⇒absent, UNKNOWN⇒either.
-  §7.M filled. Release: 30-min soak, partitions every 20–60s.
-- **S3 `uncommitted_never_visible_rolledback_never_delivered`** (C4,C29; H13) — L1+L3.
+  post-heal authoritative store scan; SUCCESS=>present, ERROR=>absent, UNKNOWN=>either.
+  Sec.7.M filled. Release: 30-min soak, partitions every 20-60s.
+- **S3 `uncommitted_never_visible_rolledback_never_delivered`** (C4,C29; H13) -- L1+L3.
   Faults: injected handler exception in PREPARE_COMMIT vs COMMIT vs AFTER_COMMIT phases;
   vanish-next-commit. Oracle: VisibilityChecker.
-- **S4 `at_most_one_segment_owner_with_skew`** (C18,C19,C20,C22,M3; H10,H11) — L2 + L3
-  Postgres TokenStore. Workload: 2–4 nodes, contended segments. Faults: clock jump past
+- **S4 `at_most_one_segment_owner_with_skew`** (C18,C19,C20,C22,M3; H10,H11) -- L2 + L3
+  Postgres TokenStore. Workload: 2-4 nodes, contended segments. Faults: clock jump past
   claimTimeout, node stall (BUGGIFY sleep at claim-extension), node crash. Oracle:
   OwnershipChecker with explicit skew parameter; DeliveryChecker duplicate window
-  bounded + reported. §7.M filled — this quantifies M1/M3 instead of trusting docs.
-- **S5 `exactly_once_when_token_and_projection_share_tx`** (C15,C16; H12) — L3 Postgres,
+  bounded + reported. Sec.7.M filled -- this quantifies M1/M3 instead of trusting docs.
+- **S5 `exactly_once_when_token_and_projection_share_tx`** (C15,C16; H12) -- L3 Postgres,
   same-DB arm. Faults: app kill -9 mid-batch, restart; DB restart. Oracle: projection ==
-  fold(history) exactly once; token monotone. §7.M filled.
-- **S6 `at_least_once_no_loss_when_stores_split`** (C16,C17,M4) — L3 Postgres arm with
+  fold(history) exactly once; token monotone. Sec.7.M filled.
+- **S6 `at_least_once_no_loss_when_stores_split`** (C16,C17,M4) -- L3 Postgres arm with
   separate token DB. Faults: token-DB outage mid-batch, app crash. Oracle:
   DeliveryChecker no-loss; duplicates counted, must be finite and attributable to
   documented steal/retry windows.
-- **S7 `no_event_skipped_by_gap_timeout`** (C13,C14,M2; H8) — L3 Postgres/JPA. Workload:
+- **S7 `no_event_skipped_by_gap_timeout`** (C13,C14,M2; H8) -- L3 Postgres/JPA. Workload:
   writer A holds a tx open > gapTimeout (60s, and shrunk-config variant), writer B
-  streams past it; A commits late. Oracle: LivenessChecker — A's event eventually
-  delivered; else falsified (silent skip). **Highest expected-yield scenario.** §7.M.
-- **S8 `replay_sees_full_prefix_and_flags_redelivery`** (C26,C27) — L2+L3. Reset during
-  traffic (must fail while running — C26 precondition check), then legal reset; oracle:
+  streams past it; A commits late. Oracle: LivenessChecker -- A's event eventually
+  delivered; else falsified (silent skip). **Highest expected-yield scenario.** Sec.7.M.
+- **S8 `replay_sees_full_prefix_and_flags_redelivery`** (C26,C27) -- L2+L3. Reset during
+  traffic (must fail while running -- C26 precondition check), then legal reset; oracle:
   post-replay projection == fold(full history); ReplayToken flag correct per delivery.
-- **S9 `split_merge_no_loss_no_dup_under_load`** (C23,C24,C25,M10; H6) — L2 + L3
+- **S9 `split_merge_no_loss_no_dup_under_load`** (C23,C24,C25,M10; H6) -- L2 + L3
   AxonServer. Split/merge storm concurrent with appends + a steal. Oracle:
-  DeliveryChecker + OrderChecker per sequencing key across segment epochs. §7.M.
-- **S10 `sequencing_policy_order_preserved`** (C32,C33,C34; M7 probe) — L1+L3. Mixed
+  DeliveryChecker + OrderChecker per sequencing key across segment epochs. Sec.7.M.
+- **S10 `sequencing_policy_order_preserved`** (C32,C33,C34; M7 probe) -- L1+L3. Mixed
   policies (Sequential, PerAggregate, custom-key, empty=parallel). Oracle: OrderChecker;
-  the empty-Optional arm documents (not asserts) cross-tag causal reordering → M7
+  the empty-Optional arm documents (not asserts) cross-tag causal reordering -> M7
   evidence.
-- **S11 `axonserver_stream_resume_no_loss_no_silent_dup`** (M9; H9, pitfall 10) — L3
+- **S11 `axonserver_stream_resume_no_loss_no_silent_dup`** (M9; H9, pitfall 10) -- L3
   AxonServer. Faults: Toxiproxy partition mid-stream, server restart, connector
   reconnect. Oracle: DeliveryChecker no-loss + token-monotonic; duplicates must
   correspond to token regressions visible in history.
-- **S12 `crash_recovery_no_acked_loss_postgres`** (C35; H7, pitfall 7) — L3. kill -9
-  Postgres during append storm (fsync contract), restart, full scan vs acked set. §7.M.
-- **S13 `liveness_all_committed_eventually_processed`** (liveness umbrella) — all layers,
-  fault storms with heal; horizon oracle. Non-serious → §7.M n/a.
-- **S14 formal: `DcbAppend.tla` + `TokenClaim.tla`** — TLC cfgs per invariant, violated/
+- **S12 `crash_recovery_no_acked_loss_postgres`** (C35; H7, pitfall 7) -- L3. kill -9
+  Postgres during append storm (fsync contract), restart, full scan vs acked set. Sec.7.M.
+- **S13 `liveness_all_committed_eventually_processed`** (liveness umbrella) -- all layers,
+  fault storms with heal; horizon oracle. Non-serious -> Sec.7.M n/a.
+- **S14 formal: `DcbAppend.tla` + `TokenClaim.tla`** -- TLC cfgs per invariant, violated/
   fixed pairs when gaps found. Bridged by MachineName to S1/S4 assertions.
 - **S15 `concurrent_bootstrap_initializes_segments_exactly_once`** (C18,
-  initializeTokenSegments contract; D12) — L2+L3. N nodes boot simultaneously against an
+  initializeTokenSegments contract; D12) -- L2+L3. N nodes boot simultaneously against an
   empty token store; concurrent segment init, first-claim stampede, join/leave racing
   split/merge. Oracle: exactly 16 segments exist once, OwnershipChecker from t=0.
 
-§7.M.S: no boundary/fairness claims in this iteration (single-tenant framework surface)
-— `not applicable` on all scenarios; noted honestly rather than invented.
+Sec.7.M.S: no boundary/fairness claims in this iteration (single-tenant framework surface)
+-- `not applicable` on all scenarios; noted honestly rather than invented.
 
 ## 5b. Coverage adequacy & residual uncertainty
 
-Adequacy: every safety cluster has ≥2 independent falsification paths (e.g. C1 via S1
-history checker on 3 backends AND TLA model AND S2 partition arm). Claim→scenario matrix
+Adequacy: every safety cluster has >=2 independent falsification paths (e.g. C1 via S1
+history checker on 3 backends AND TLA model AND S2 partition arm). Claim->scenario matrix
 in Appendix C. Residual, accepted for iteration 1: no multi-region/AZ faults (no such
 deploys targeted); XA/two-phase datasources (M8) documented not tested; DLQ absent in
 tree; query side exercised only as workload; commercial Postgres engine arm contingent on
-dependency access; kernel-level disk-fault injection (dm-flakey) deferred — container
+dependency access; kernel-level disk-fault injection (dm-flakey) deferred -- container
 kill approximates. CI reruns (`rerunFailingTestsCount=5`) must be DISABLED for suite jobs
-or findings get masked — suite runs with rerun=0 always.
+or findings get masked -- suite runs with rerun=0 always.
 
 ## 6. Environment requirements
 
 Docker + Testcontainers; images: `axoniq/axonserver` (DCB-enabled version), `postgres:16`,
 `ghcr.io/shopify/toxiproxy`; JDK 21 (CI also 25); Maven wrapper; no libfaketime (clock is
-an injected seam in-JVM — L3 skew via TokenStore-clock wrapper, not OS clock); Axon Server
+an injected seam in-JVM -- L3 skew via TokenStore-clock wrapper, not OS clock); Axon Server
 license/image access for CI; optional `io.axoniq.framework` credentials for commercial
-Postgres engine arm; CI runners with ≥4 CPU for nightly chaos.
+Postgres engine arm; CI runners with >=4 CPU for nightly chaos.
 
 ## 7. Repo layout & CI (implementation)
 
 DECIDED: in-repo (AxonFramework), branch `feature/dst-testing-suite` in a dedicated
-worktree. Layout mirrors axon-flow-spec exactly — `formal/` + `simulation/` at root:
+worktree. Layout mirrors axon-flow-spec exactly -- `formal/` + `simulation/` at root:
 
 ```
 formal/                     # NOT in Maven reactor
@@ -455,28 +455,28 @@ Default `./mvnw verify` unchanged (simulation behind profile; formal outside rea
   `RegressionSeedsTest`.
 - CI (`.github/workflows/hunt.yml`): `hunt-smoke` on PR (L1+L2 fixed seeds + in-memory
   L3 subset, <10 min, rerun=0); `hunt-nightly` (fuzz 1000+ seeds, chaos matrix
-  in-memory × axonserver × postgres, Toxiproxy nemeses); `hunt-weekly` (release-tier
+  in-memory x axonserver x postgres, Toxiproxy nemeses); `hunt-weekly` (release-tier
   soaks). Never `-Dsurefire.rerunFailingTestsCount` in any hunt job.
 
 Phases (DECIDED: P0-P5, user approval checkpoint between phases; the old "P5 CI
 automation" is deferred and NOT part of this plan):
 
-- **P0 scaffolding** — worktree, modules, INVARIANTS.md (incl. suite constitution D14 +
+- **P0 scaffolding** -- worktree, modules, INVARIANTS.md (incl. suite constitution D14 +
   determinism-boundary statement), history recorder (D7 discipline, D10 schema),
   `DcbStoreModel` + ModelConformanceChecker (D1) + VisibilityChecker.
-- **P1 L1 DST core** — harness + fault injectors (incl. PauseFault D4) + FaultSchedule
+- **P1 L1 DST core** -- harness + fault injectors (incl. PauseFault D4) + FaultSchedule
   grammar (D6) + LedgerWorkload/ConservationChecker (D3) + HuntTimescale (D5) +
   Lincheck suite (D9) + scenarios S1/S3/S10 + smoke CI job. Exit gate: L1 canaries
   (D8) all caught.
-- **P2 L2 multi-node** — shared-store nodes, steal/pause/crash, SwarmShape knobs (D13),
+- **P2 L2 multi-node** -- shared-store nodes, steal/pause/crash, SwarmShape knobs (D13),
   scenarios S4/S8/S9/S15 (D12), remaining checkers (Ownership/Delivery/Order/Liveness).
-- **P3 L3 real infra** — TestInfrastructure x3 (AxonServer, Postgres-JPA, Postgres-DCB
+- **P3 L3 real infra** -- TestInfrastructure x3 (AxonServer, Postgres-JPA, Postgres-DCB
   commercial; D2 differential matrix), existing-IT multiplication, containerized app
   for docker-pause (D4), Toxiproxy nemeses, chaos scenarios S2/S5/S6/S7/S11/S12,
   coverage-fed corpus (D11). Exit gate: backend canaries (D8).
-- **P4 formal** — DcbAppend.tla + TokenClaim.tla, MachineName bridge, violated/fixed
+- **P4 formal** -- DcbAppend.tla + TokenClaim.tla, MachineName bridge, violated/fixed
   cfg pairs, model<->TLA cross-check (D1 HOW).
-- **P5 suite-usage skill (LAST PHASE)** — author a SCENARIO-AGNOSTIC skill (working
+- **P5 suite-usage skill (LAST PHASE)** -- author a SCENARIO-AGNOSTIC skill (working
   name `axon-hunt`) that teaches any future agent how to use the suite for maximum
   yield. Modeled on `axon-flow-tla-dst` (the method skill, pointing at live docs, never
   duplicating them). Must cover, scenario-agnostically:
@@ -486,7 +486,7 @@ automation" is deferred and NOT part of this plan):
   - the bug-hunting loop (hunt read-only -> triage -> reproduce -> verify yourself ->
     pin or reject), inherited from axon-flow-tla-dst and adapted;
   - how to add: an invariant, a checker, a fault, a workload shape, a backend, a
-    canary — each as a recipe with the golden rule (a property is done only when it
+    canary -- each as a recipe with the golden rule (a property is done only when it
     exists in INVARIANTS.md + assertion + scenario/seed, wording identical);
   - how to interpret failures: attribution via backend vector (D2), flake
     classification (D14), landing-evidence and open-history rules (D6/D7);
@@ -502,14 +502,14 @@ Each phase lands green and independently valuable.
 
 ## 8. Extensibility charter (binding design constraint)
 
-The scenarios in §5 are INSTANCES, not the product. The product is the harness: any
+The scenarios in Sec.5 are INSTANCES, not the product. The product is the harness: any
 future property, fault, workload, backend, or scenario class must be addable without
 touching existing ones. Implementing agents design for this from P0:
 
 - **Scenario = data, not code.** A scenario is a declarative record: workload shape +
   fault schedule + backend selector + timescale arm + oracle set + seed. New scenarios
   (including ones reproducing client issues or targeting a PR's blast radius) are new
-  records, no harness changes. The §5 list is merely the initial corpus.
+  records, no harness changes. The Sec.5 list is merely the initial corpus.
 - **Five open registries, each an SPI with its own recipe** (recipes land in the P5
   skill): invariants/checkers (new checker = implement `Checker` over `HistoryView` +
   register + INVARIANTS.md entry), faults (new `Fault` kind = one class; FaultSchedule
@@ -518,13 +518,13 @@ touching existing ones. Implementing agents design for this from P0:
   backend-agnostic scenario and the differential matrix), TLA models (new .tla + cfg
   pair bridged by MachineName).
 - **History schema is the stable contract.** Checkers, converters, and future tools
-  (Elle, dashboards, triage agents) consume the JSONL history — schema versioned in
+  (Elle, dashboards, triage agents) consume the JSONL history -- schema versioned in
   INVARIANTS.md; fields are added, never repurposed. Anything that can emit this
   history (a new module, an example app, a client reproduction rig) gets the full
   oracle set for free.
 - **Claims list is append-only and versioned.** New framework features (DLQ when it
   lands, message transformation, persistent streams, query side) enter by adding
-  C-numbers + hypotheses + scenario records — the §4/§5 method re-runs incrementally;
+  C-numbers + hypotheses + scenario records -- the Sec.4/Sec.5 method re-runs incrementally;
   the plan file is a living document on the branch.
 - **No scenario-count assumptions anywhere**: caps, CI matrices, corpus sizes, and fuzz
   assertions derive from the registries, not hardcoded lists (tla_dst hard rule: grow
@@ -553,14 +553,14 @@ open WHEN, WHAT to take from it, and what NOT to do. Follow it phase by phase.
 2. Read this plan top to bottom. The claims (C1-C40, Appendix A) and missing claims
    (M1-M10) are the ONLY justification for any test you write. A test you cannot tie
    to a C or M number does not get written.
-3. Load the **`axoniq-framework-5-expert`** skill once per session — it carries this
+3. Load the **`axoniq-framework-5-expert`** skill once per session -- it carries this
    repo's contribution conventions (module layout, Javadoc style, test rules). All
    suite code must pass this repo's checkstyle and conventions; CLAUDE.md rules apply:
    Java 21, ASCII-only, LF, JSpecify nullability, fragment-style Javadoc tags,
    JUnit5 + AssertJ + Awaitility, `// given / // when / // then` comments, no mocks
    where a simple implementation works, no `join()`/`get()` without timeout.
 
-### 9.2 How to navigate the codebase — graphify FIRST, grep second
+### 9.2 How to navigate the codebase -- graphify FIRST, grep second
 
 The repo has a prebuilt knowledge graph: `graphify-out/graph.json` (26k nodes, all of
 messaging/modelling/eventsourcing + design docs + diagrams). Use it before grepping:
@@ -574,18 +574,18 @@ graphify explain "ConsistencyMarker"                             # one-node expl
 
 When to use which: `query` to orient in an unfamiliar subsystem before opening files;
 `path` to find the wiring between two components (e.g. where PSEP touches the store);
-`explain` for a single class's role. Then open the cited `file:line` with Read — the
+`explain` for a single class's role. Then open the cited `file:line` with Read -- the
 graph orients, the source decides. If you change framework-adjacent code significantly,
 `graphify . --update` refreshes only changed files. Keep `graphify-out/` ignored
 (`.git/info/exclude`), never commit it.
 
-### 9.3 The reference implementation — axon-flow-spec (the method to copy)
+### 9.3 The reference implementation -- axon-flow-spec (the method to copy)
 
 Location: `/Users/stefandragisic/Projects/axon-flow-spec`, branch **`poc/tla_dst`**
-(NOT `tla_dst` — that name does not exist). Do not check the branch out over someone's
+(NOT `tla_dst` -- that name does not exist). Do not check the branch out over someone's
 working tree; read via `git show poc/tla_dst:<path>` or a temp worktree.
 
-Load the **`axon-flow-tla-dst`** skill BEFORE designing any harness class — it is the
+Load the **`axon-flow-tla-dst`** skill BEFORE designing any harness class -- it is the
 distilled method. What to copy, and from where:
 
 | Need | Copy from (poc/tla_dst) | Adapt how |
@@ -593,23 +593,23 @@ distilled method. What to copy, and from where:
 | Invariant registry + cross-ref table | `formal/INVARIANTS.md` | Same structure; our MachineNames map to C/M numbers instead of workflow invariants |
 | Findings doc format | `formal/POC-TLA-DST.adoc` | Ours is `formal/FINDINGS.adoc`; keep F-numbers, severity, candidate-fix, reproduce cmd |
 | Fault-injectable store | `ControllableEventStorageEngine` | Same pattern over `InMemoryEventStorageEngine`; add reject/claim-fault hooks for TokenStore too |
-| Determinism seams | `MutableClock`, `ManualWorkflowScheduler`, `SeededWorkflowIdGenerator`, `SameThreadExecutorService`, `DeterministicVirtualThreadExecutor` | AF5 already injects `Clock` and executors in PSEP config — prefer existing injection points; add seams ONLY as interface + registerIfNotPresent default + fake (production byte-identical) |
+| Determinism seams | `MutableClock`, `ManualWorkflowScheduler`, `SeededWorkflowIdGenerator`, `SameThreadExecutorService`, `DeterministicVirtualThreadExecutor` | AF5 already injects `Clock` and executors in PSEP config -- prefer existing injection points; add seams ONLY as interface + registerIfNotPresent default + fake (production byte-identical) |
 | BUGGIFY | `runtime/.../util/Buggify.java` | Same class shape; place fire() points in HARNESS wrappers, not framework code (we never patch the engine) |
 | Fuzz/smoke/reproduce tests | `DstFuzzTest`, `DstReproduceTest`, `RegressionSeedsTest`, `@Tag("fuzz")` exclusion | Copy the surefire wiring incl. `-Ddst.seed`/`-Ddst.seeds`/`-Ddst.startSeed` |
 | Anti-hang design | wall-clock deadline primary + max-steps cap secondary + enriched `InvariantViolation` with seed + fault trace + reproduce command | Copy verbatim |
 | TLA layout | `formal/tla/` (MC.tla + per-property cfgs, violated/fixed pairs, tools/tla2tools.jar fetch) | Same; our two models are DcbAppend and TokenClaim |
 
 Hard rules to inherit VERBATIM (from the skill; violating these is how a suite starts
-lying): never patch the engine — findings get expected-gap tests that flip when fixed;
+lying): never patch the engine -- findings get expected-gap tests that flip when fixed;
 never mask flakiness with surefire reruns; judge builds by exit code, not banner;
 determinism claims must be scoped honestly (per-node, not global) on BOTH sides of an
 assertion; invariant wording identical across INVARIANTS.md, .tla operator, and Java
 assert method; paste real command output, never claim an unrun result.
 
 Also read its `references/expanding.md` when adding an invariant, fault, scenario, or
-regression seed — it has the step-by-step recipes.
+regression seed -- it has the step-by-step recipes.
 
-### 9.4 AF5 API knowledge — which skill/file for which task
+### 9.4 AF5 API knowledge -- which skill/file for which task
 
 - **`axoniq-app-dev`** skill (routing table inside): the API reference for everything
   the harness wires up.
@@ -625,7 +625,7 @@ regression seed — it has the step-by-step recipes.
     `testing/*.md`
   - Anything not covered: published Javadoc https://apidocs.axoniq.io/5.2/
 - **`dcb-axoniq`** / **`dynamic-consistency-boundaries`** skills: conceptual depth on
-  DCB — read before writing the DcbConflictChecker or DcbAppend.tla so the checker
+  DCB -- read before writing the DcbConflictChecker or DcbAppend.tla so the checker
   encodes the REAL semantics (tag-AND within criterion, OR across criteria, marker
   lower/upper bounds), not a folk version.
 - In-repo claim sources (ground truth for oracle semantics): the Javadoc of the classes
@@ -638,45 +638,45 @@ regression seed — it has the step-by-step recipes.
   gapTimeout and maxGapOffset are inverted (10000ms / 60000); see M12. Any scenario
   touching gap behaviour MUST state which configuration path built the engine.**)
 - External library docs (Testcontainers, Toxiproxy, TLA+ tooling): `ctx7` CLI
-  (context7) — `npx ctx7@latest library <name> "<question>"` then `docs`.
+  (context7) -- `npx ctx7@latest library <name> "<question>"` then `docs`.
 
-### 9.5 Test-methodology knowledge — when designing vs running
+### 9.5 Test-methodology knowledge -- when designing vs running
 
 - **`designing-distributed-system-tests`** skill: this plan already applied it. Reopen
   its `references/` only when EXTENDING the plan: `common-distributed-systems-pitfalls.md`
   (new hypothesis), `deterministic-simulation.md` (P1/P2 design), `chaos-and-fault-injection.md`
   + `crash-recovery-and-upgrade.md` (P3 nemeses), `formal-methods-tla.md` (P4),
-  `history-discipline.md` (operation-history schema — READ THIS before writing the
+  `history-discipline.md` (operation-history schema -- READ THIS before writing the
   recorder in P0; our JSONL format must follow its 11-field discipline and
   ambiguous-outcome rules).
 - **`executing-distributed-system-tests`** skill: load when RUNNING scenarios (P1
   onward). Non-negotiables from it: every fault needs LANDING EVIDENCE (proof the
-  nemesis actually fired — e.g. Toxiproxy API state, container exit code) or the run is
+  nemesis actually fired -- e.g. Toxiproxy API state, container exit code) or the run is
   INCONCLUSIVE, not PASS; run the green-but-broken audit before declaring any scenario
   PASS; its `references/oracle-patterns.md` "Checker picker" table is where our checker
-  designs came from — consult it before writing a new checker.
+  designs came from -- consult it before writing a new checker.
 
 ### 9.6 Existing repo assets to REUSE (do not reinvent)
 
 - `integrationtests` `TestInfrastructure` strategy (`AbstractIT`,
-  `InMemoryTestInfrastructure`) — P3 implements new backends AGAINST this interface;
+  `InMemoryTestInfrastructure`) -- P3 implements new backends AGAINST this interface;
   do not build a parallel mechanism.
 - `eventsourcing` shared suites: `StorageEngineTestSuite`,
-  `AggregateBasedStorageEngineTestSuite`, `StorageEngineBackedEventStoreTestSuite` —
+  `AggregateBasedStorageEngineTestSuite`, `StorageEngineBackedEventStoreTestSuite` --
   extend them for new backends; their existing concurrent-append tests are workload
   seeds for S1.
-- `test/` module: `AxonTestFixture`, `RecordingEventStore`, `RecordingCommandBus` —
+- `test/` module: `AxonTestFixture`, `RecordingEventStore`, `RecordingCommandBus` --
   workload construction and sanity checks. NOT oracle material (recording != history
   discipline).
 - Package-local test utils: `messaging/.../eventhandling/EventTestUtils` (sample
-  events — CLAUDE.md mandates it), `StubProcessingContext`, `UnitOfWorkTestUtils`.
+  events -- CLAUDE.md mandates it), `StubProcessingContext`, `UnitOfWorkTestUtils`.
 - CI conventions: mirror `.github/workflows/pullrequest.yml` matrix (JDK 21/25, Zulu);
   hunt jobs NEVER set `rerunFailingTestsCount` (main CI's `=5` is a documented risk,
   not a pattern to copy).
 
 ## 10. Open questions / followups
 
-Schema-evolution (message transformation) chaos; upgrade/rollback (AF 5.1→5.2 rolling)
+Schema-evolution (message transformation) chaos; upgrade/rollback (AF 5.1->5.2 rolling)
 scenarios; query-side + subscription-query oracles; DLQ scenarios when the module lands;
 XA arm (M8); dm-flakey disk faults; Elle integration if histories warrant full
 transactional-anomaly checking.
