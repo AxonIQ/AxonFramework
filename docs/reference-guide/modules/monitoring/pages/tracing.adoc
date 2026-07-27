@@ -20,7 +20,7 @@ Tracing is built into the framework modules: each module automatically registers
 The only step needed to turn tracing on is providing a `SpanFactory`, the single abstraction through which all spans are created.
 
 * With a `SpanFactory` present, every framework component on the classpath is traced, with nothing to enable per component.
-* Without one, every component stays undecorated and the un-traced path carries zero overhead.
+* Without one, component decorators are not installed.
 
 The open-source modules ship `LoggingSpanFactory`, which writes span lifecycle events to SLF4J for local development.
 Exporting spans to a tracing backend such as OpenTelemetry requires a provider. See <<Exporting spans to a tracing backend>>.

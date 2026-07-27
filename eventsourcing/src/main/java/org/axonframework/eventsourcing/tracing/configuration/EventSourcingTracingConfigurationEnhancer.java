@@ -20,7 +20,6 @@ import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStore;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStorageEngine;
-import org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition;
 import org.axonframework.eventsourcing.snapshot.store.tracing.TracingSnapshotStore;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
@@ -31,8 +30,6 @@ import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
-import org.axonframework.messaging.core.annotation.EnhancingHandlerDefinition;
-import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -41,12 +38,6 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * A component is only decorated when a non-no-op {@link SpanFactory} is configured and the corresponding toggle in
  * {@link EventSourcingTracingSettings} is enabled.
- * <p>
- * Also owns the conditional registration of the {@link TracingEventTagsHandlerEnhancerDefinition}: the
- * {@link HandlerDefinition} component (registered by the {@code axon-messaging} tracing defaults) is decorated with the
- * tag-enriching enhancer only when a {@code SpanFactory} is configured, at
- * {@link TracingConfigurationOrder#EVENT_TAG_HANDLER_ENHANCER_ORDER} -- inside the method-span enhancer, so resolved
- * tags land on the method span when one is active.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -107,19 +98,6 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
                         return delegate;
                     }
                     return new TracingEventStore(delegate, spanFactory);
-                }
-        );
-        // The event-tags handler enhancer only exists in the handler chain when a SpanFactory is configured. Its
-        // order keeps it INSIDE the method-span enhancer registered by the axon-messaging tracing defaults, so the
-        // tags it resolves are recorded on the method span when one is active.
-        registry.registerDecorator(
-                HandlerDefinition.class,
-                TracingConfigurationOrder.EVENT_TAG_HANDLER_ENHANCER_ORDER,
-                (config, name, delegate) -> {
-                    if (spanFactory(config) == null) {
-                        return delegate;
-                    }
-                    return new EnhancingHandlerDefinition(delegate, new TracingEventTagsHandlerEnhancerDefinition());
                 }
         );
     }

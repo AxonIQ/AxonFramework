@@ -48,8 +48,7 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * Fan-out to multiple tracing destinations is a concern of the {@code SpanFactory} implementation's export layer,
  * below this abstraction. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component at all --
- * the tracing enhancers then leave every component undecorated (zero overhead). {@link NoOpSpanFactory} is a
- * null-object for tests, not an off-switch.
+ * component decorators are then not installed. {@link NoOpSpanFactory} is a null-object for tests, not an off-switch.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

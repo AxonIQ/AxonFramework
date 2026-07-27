@@ -17,19 +17,15 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition;
 import org.axonframework.eventsourcing.tracing.configuration.EventSourcingTracingSettings;
 import org.axonframework.extension.springboot.TracingProperties;
-import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 import org.axonframework.modelling.tracing.configuration.ModellingTracingSettings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -48,9 +44,8 @@ import org.springframework.context.annotation.Bean;
  * <p>
  * The {@link SpanFactory} is <b>optional</b> and contributed by a tracing backend (for example an
  * OpenTelemetry-backed {@code SpanFactory} registered by its own autoconfiguration). When no factory component is
- * present, the tracing decorators leave every component undecorated - tracing is off with zero overhead. The whole
- * configuration backs off when {@code axon.tracing.enabled} is set to {@code false}, in which case no settings are
- * registered.
+ * present, component decorators are not installed. The whole configuration backs off when
+ * {@code axon.tracing.enabled} is set to {@code false}, in which case no settings are registered.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers
@@ -123,42 +118,5 @@ public class TracingAutoConfiguration {
                     }
             );
         };
-    }
-
-    /**
-     * Constructs the per-method tracing {@link HandlerEnhancerDefinition}, only when a {@link SpanFactory} bean is
-     * present.
-     * <p>
-     * This is the Spring counterpart of the conditional registration the framework's tracing configuration defaults
-     * perform on the {@code HandlerDefinition} component: without a {@code SpanFactory}, the enhancer does not exist
-     * and no handler is ever wrapped. The bean flows into the combined {@code handlerDefinition} bean through the
-     * regular {@code HandlerEnhancerDefinition} bean collection; its {@code @Priority(LAST)} keeps the method span as
-     * the outermost handler enhancement.
-     * <p>
-     * A {@code SpanFactory} bean contributed by another autoconfiguration must be ordered before this one for the
-     * condition to see it.
-     *
-     * @return the tracing handler enhancer definition producing per-method handler spans
-     */
-    @Bean
-    @ConditionalOnBean(SpanFactory.class)
-    public HandlerEnhancerDefinition tracingHandlerEnhancerDefinition() {
-        return new TracingHandlerEnhancerDefinition();
-    }
-
-    /**
-     * Constructs the event-tags tracing {@link HandlerEnhancerDefinition}, only when a {@link SpanFactory} bean is
-     * present.
-     * <p>
-     * Spring counterpart of the conditional registration the {@code axon-eventsourcing} tracing enhancer performs on
-     * the {@code HandlerDefinition} component. Runs at default priority, so it enhances <em>inside</em> the
-     * {@code @Priority(LAST)} method-span enhancer and resolved tags land on the method span when one is active.
-     *
-     * @return the tracing handler enhancer definition enriching handler spans with the event's tags
-     */
-    @Bean
-    @ConditionalOnBean(SpanFactory.class)
-    public HandlerEnhancerDefinition tracingEventTagsHandlerEnhancerDefinition() {
-        return new TracingEventTagsHandlerEnhancerDefinition();
     }
 }

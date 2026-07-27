@@ -28,8 +28,8 @@ import java.util.function.Supplier;
  * operation reduces to a single dispatch returning a shared no-op span.
  * <p>
  * This is <em>not</em> an off-switch: tracing is disabled by not registering a {@code SpanFactory} component at all,
- * in which case the tracing enhancers leave every component undecorated (zero overhead). There is no default
- * {@code SpanFactory}; a factory only exists when a tracing backend contributes one.
+ * in which case component decorators are not installed. There is no default {@code SpanFactory}; a factory only exists
+ * when a tracing backend contributes one.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

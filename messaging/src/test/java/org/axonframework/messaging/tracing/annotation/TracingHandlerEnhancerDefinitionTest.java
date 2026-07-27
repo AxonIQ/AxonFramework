@@ -16,21 +16,17 @@
 
 package org.axonframework.messaging.tracing.annotation;
 
-import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
-import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -39,7 +35,6 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandlingMember;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -48,6 +43,7 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Optional;
+import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -263,71 +259,17 @@ class TracingHandlerEnhancerDefinitionTest {
     }
 
     @Nested
-    class ConditionalRegistrationOnTheHandlerDefinitionComponent {
-
-        private AxonConfiguration configuration;
-
-        @AfterEach
-        void tearDown() {
-            if (configuration != null) {
-                configuration.shutdown();
-            }
-        }
+    class ServiceLoaderDiscovery {
 
         @Test
-        void handlerDefinitionComponentCreatesTracedMembersWhenASpanFactoryIsConfigured() {
-            // given a configuration with a SpanFactory component
-            configuration = MessagingConfigurer.create()
-                                               .componentRegistry(registry -> registry.registerComponent(
-                                                       SpanFactory.class, c -> spanFactory))
-                                               .build();
-            MessageHandlingMember<AnnotatedBookRoomHandler> member = memberFrom(configuration);
-            CommandMessage command = new GenericCommandMessage(new MessageType("BookRoom"), "payload");
-
+        void theNoArgEnhancerIsDiscoverableThroughTheStandardHandlerEnhancerSpi() {
             // when
-            member.handle(command, contextWithSpanFactory(), new AnnotatedBookRoomHandler());
+            ServiceLoader<HandlerEnhancerDefinition> loader = ServiceLoader.load(HandlerEnhancerDefinition.class);
 
-            // then the member created through the HandlerDefinition component carries the method span
-            spanFactory.verifySpanCompleted("AnnotatedBookRoomHandler.handle(String)");
-        }
-
-        @Test
-        void handlerDefinitionComponentCreatesUntracedMembersWithoutASpanFactory() {
-            // given a configuration WITHOUT a SpanFactory component
-            configuration = MessagingConfigurer.create().build();
-            MessageHandlingMember<AnnotatedBookRoomHandler> member = memberFrom(configuration);
-            CommandMessage command = new GenericCommandMessage(new MessageType("BookRoom"), "payload");
-
-            // when invoked with a context that WOULD supply a SpanFactory at handle time
-            member.handle(command, contextWithSpanFactory(), new AnnotatedBookRoomHandler());
-
-            // then no method span exists: the tracing enhancer was never registered on the handler chain
-            spanFactory.verifyNoSpan("AnnotatedBookRoomHandler.handle(String)");
-        }
-
-        private MessageHandlingMember<AnnotatedBookRoomHandler> memberFrom(AxonConfiguration configuration) {
-            HandlerDefinition definition = configuration.getComponent(HandlerDefinition.class);
-            Method handleMethod;
-            try {
-                handleMethod = AnnotatedBookRoomHandler.class.getDeclaredMethod("handle", String.class);
-            } catch (NoSuchMethodException e) {
-                throw new IllegalStateException(e);
-            }
-            return definition.<AnnotatedBookRoomHandler>createHandler(
-                                     AnnotatedBookRoomHandler.class,
-                                     handleMethod,
-                                     ClasspathParameterResolverFactory.forClass(AnnotatedBookRoomHandler.class),
-                                     result -> MessageStream.empty())
-                             .orElseThrow();
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static final class AnnotatedBookRoomHandler {
-
-        @CommandHandler
-        public void handle(String command) {
-            // invoked through the member created by the HandlerDefinition component
+            // then the no-arg TracingHandlerEnhancerDefinition is contributed via META-INF/services so it is wired into
+            // the default ClasspathHandlerEnhancerDefinition without any explicit ConfigurationEnhancer registration
+            assertThat(loader)
+                    .anyMatch(definition -> definition instanceof TracingHandlerEnhancerDefinition);
         }
     }
 

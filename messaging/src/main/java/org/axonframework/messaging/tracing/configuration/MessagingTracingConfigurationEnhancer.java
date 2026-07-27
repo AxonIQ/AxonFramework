@@ -41,12 +41,11 @@ import java.util.Optional;
  * {@link ConfigurationEnhancer} that wires tracing into {@code axon-messaging} components. Discovered automatically via
  * ServiceLoader, so dropping the {@code axon-messaging} module on the classpath is enough to enable messaging tracing.
  * <p>
- * A component is only decorated when a non-no-op {@link SpanFactory} is configured (so tracing imposes no overhead when
- * disabled) and the corresponding toggle in {@link MessagingTracingSettings} is enabled. Per-method handler spans are
- * produced by {@code TracingHandlerEnhancerDefinition}, registered -- equally conditional on a configured
- * {@code SpanFactory} -- onto the {@code HandlerDefinition} component by
- * {@code org.axonframework.messaging.tracing.configuration.TracingConfigurationDefaults}; no additional registration is
- * needed here.
+ * A component is only decorated when a non-no-op {@link SpanFactory} is configured (so component-level tracing imposes
+ * no overhead when disabled) and the corresponding toggle in {@link MessagingTracingSettings} is enabled. Per-method
+ * handler spans (for {@code @CommandHandler} / {@code @EventHandler} / {@code @QueryHandler}) are produced by
+ * {@code TracingHandlerEnhancerDefinition}, which is contributed via the standard {@code HandlerEnhancerDefinition}
+ * ServiceLoader entry shipped with this module -- no additional registration is needed here.
  *
  * @author Mateusz Nowak
  * @since 5.3.0

@@ -59,10 +59,8 @@ import org.jspecify.annotations.Nullable;
  * and their enclosing span (the repository load) would collect misleading, mutually-overwriting tag attributes from
  * every replayed event.
  * <p>
- * Registered conditionally by {@code EventSourcingTracingConfigurationEnhancer}: the
- * {@link org.axonframework.messaging.core.annotation.HandlerDefinition HandlerDefinition} component is decorated with
- * this enhancer only when a {@link org.axonframework.messaging.tracing.SpanFactory SpanFactory} component is
- * configured, so without one no handler is ever wrapped.
+ * Discovered via the standard {@code META-INF/services} {@link HandlerEnhancerDefinition}
+ * {@link java.util.ServiceLoader} entry, so dropping {@code axon-eventsourcing} on the classpath is enough.
  *
  * @author Mateusz Nowak
  * @since 5.3.0

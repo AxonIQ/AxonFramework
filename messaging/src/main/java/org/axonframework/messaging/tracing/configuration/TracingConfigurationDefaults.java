@@ -20,11 +20,6 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
-import org.axonframework.messaging.core.annotation.EnhancingHandlerDefinition;
-import org.axonframework.messaging.core.annotation.HandlerDefinition;
-import org.axonframework.messaging.tracing.SpanFactory;
-import org.axonframework.messaging.tracing.annotation.TracingHandlerEnhancerDefinition;
 import org.axonframework.messaging.tracing.attributes.DefaultSpanAttributesProviderRegistry;
 import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegistry;
 
@@ -35,12 +30,6 @@ import org.axonframework.messaging.tracing.attributes.SpanAttributesProviderRegi
  * Registers the {@link SpanAttributesProviderRegistry} component (a {@link DefaultSpanAttributesProviderRegistry})
  * when none is present. Runs at {@link TracingConfigurationOrder#TRACING_DEFAULTS_ENHANCER_ORDER} so user-supplied
  * registrations take precedence.
- * <p>
- * Additionally owns the conditional registration of the per-method tracing handler enhancer: a
- * {@link HandlerDefinition} component is registered when none is present (the same classpath-scanning default the
- * handling modules fall back to), and it is decorated with the {@link TracingHandlerEnhancerDefinition} <em>only</em>
- * when a {@link SpanFactory} component is configured. Without a {@code SpanFactory}, the handler chain is left
- * completely untouched -- no handler is wrapped and tracing imposes no cost.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
@@ -55,18 +44,6 @@ public final class TracingConfigurationDefaults implements ConfigurationEnhancer
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(SpanAttributesProviderRegistry.class,
                                       c -> new DefaultSpanAttributesProviderRegistry());
-        registry.registerIfNotPresent(HandlerDefinition.class,
-                                      c -> ClasspathHandlerDefinition.forClass(c.getClass()));
-        registry.registerDecorator(
-                HandlerDefinition.class,
-                TracingConfigurationOrder.METHOD_SPAN_HANDLER_ENHANCER_ORDER,
-                (config, name, delegate) -> {
-                    if (config.getOptionalComponent(SpanFactory.class).isEmpty()) {
-                        return delegate;
-                    }
-                    return new EnhancingHandlerDefinition(delegate, new TracingHandlerEnhancerDefinition());
-                }
-        );
     }
 
     @Override
