@@ -284,15 +284,16 @@ public class TracingProperties {
         private boolean enabled = true;
 
         /**
-         * Whether streaming-processor batches get an enclosing batch span. When disabled, each event handler
-         * invocation still gets its own span; only the enclosing batch root is dropped. Defaults to {@code true}.
+         * Whether event-processing batches outside the publication context get an enclosing batch span. When
+         * disabled, each event handler invocation still gets its own span; only the enclosing batch root is dropped.
+         * Defaults to {@code true}.
          */
         private boolean batchTraceEnabled = true;
 
         /**
          * When {@code true}, the handler span continues the publisher's trace. When {@code false} (default), the
-         * handler span links back to the publisher and is parented to the streaming batch span. If batch tracing is
-         * disabled, it starts a new trace with the same publisher link.
+         * handler span outside the publication context links back to the publisher and is parented to the processing
+         * batch span. If batch tracing is disabled, it starts a new trace with the same publisher link.
          */
         private boolean distributedInSameTrace = false;
 
@@ -322,7 +323,7 @@ public class TracingProperties {
         }
 
         /**
-         * Returns whether streaming-processor batches get an enclosing batch span.
+         * Returns whether event-processing batches outside the publication context get an enclosing batch span.
          *
          * @return {@code true} when the batch span is opened, {@code false} when it is suppressed
          */
@@ -331,7 +332,7 @@ public class TracingProperties {
         }
 
         /**
-         * Sets whether streaming-processor batches get an enclosing batch span.
+         * Sets whether event-processing batches outside the publication context get an enclosing batch span.
          *
          * @param batchTraceEnabled {@code true} to open the batch span, {@code false} to suppress it
          */

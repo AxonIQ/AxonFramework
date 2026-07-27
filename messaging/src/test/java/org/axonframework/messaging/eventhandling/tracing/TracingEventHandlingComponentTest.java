@@ -29,6 +29,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
+import org.axonframework.messaging.eventhandling.EventPublicationContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -39,7 +40,9 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
@@ -62,7 +65,6 @@ class TracingEventHandlingComponentTest {
     private TestSpanFactory spanFactory;
     private RecordingEventHandlingComponent delegate;
     private TracingEventHandlingComponent testSubject;
-    private TracingEventHandlingComponent streamingSubject;
 
     private final EventMessage event = new GenericEventMessage(new MessageType("MyEvent"), "the-payload");
 
@@ -71,9 +73,12 @@ class TracingEventHandlingComponentTest {
         spanFactory = new TestSpanFactory();
         delegate = new RecordingEventHandlingComponent();
         testSubject = new TracingEventHandlingComponent(delegate, spanFactory);
-        streamingSubject = new TracingEventHandlingComponent(
-                delegate, spanFactory, /* processorName */ null, /* streaming */ true,
-                /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
+    }
+
+    private ProcessingContext publicationContextFor(EventMessage event) {
+        return Objects.requireNonNull(
+                EventPublicationContext.forPublishedEvents(new StubProcessingContext(), List.of(event))
+        );
     }
 
     @Nested
@@ -81,31 +86,30 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void opensAConsumerHandlerSpanPerEvent() {
-            // given non-streaming execution semantics -- handlers run inside the publication's unit of work
-            ProcessingContext context = new StubProcessingContext();
+            // given an event delivered in the context in which it was published
+            ProcessingContext context = publicationContextFor(event);
 
             // when
             testSubject.handle(event, context);
 
-            // then a per-event CONSUMER span is opened continuing the publisher's trace and, since the delegate handled
-            // it synchronously, already completed (closes on its own stream termination, not at batch/context end)
+            // then a per-event CONSUMER span continues the event's propagated trace and, since the delegate handled it
+            // synchronously, is already completed (closes on its own stream termination, not at batch/context end)
             spanFactory.verifySpanCompleted(PROCESS_SPAN);
             spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.HANDLER);
             assertThat(delegate.handled).isTrue();
         }
 
         @Test
-        void nonStreamingExecutionContinuesThePublisherTraceEvenForStaleEventsAndRegardlessOfTheToggle() {
-            // given non-streaming execution semantics and distributedInSameTrace = false with a stale event -- the
-            // streaming-only toggle and its freshness limit must not apply when handlers run inside the publication's
-            // unit of work
+        void publicationContextContinuesThePublisherTraceEvenForStaleEventsAndRegardlessOfTheToggle() {
+            // given distributedInSameTrace = false with a stale event delivered in its publication context -- the
+            // distributed toggle and its freshness limit do not apply
             TracingEventHandlingComponent subject = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ false,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
-            ProcessingContext context = new StubProcessingContext();
             EventMessage staleEvent = new GenericEventMessage(
                     "event-id", new MessageType("MyEvent"), "the-payload", Map.of(),
                     Instant.now().minus(Duration.ofMinutes(30)));
+            ProcessingContext context = publicationContextFor(staleEvent);
 
             // when
             subject.handle(staleEvent, context);
@@ -120,7 +124,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void concurrentFirstEventsCreateAndBindExactlyOneBatchSpan() {
-            // given two different first events entering the same streaming batch concurrently
+            // given two different first events entering the same independently owned batch concurrently
             CoordinatedBatchProcessingContext context = new CoordinatedBatchProcessingContext();
             EventMessage firstEvent = new GenericEventMessage(new MessageType("FirstEvent"), "first");
             EventMessage secondEvent = new GenericEventMessage(new MessageType("SecondEvent"), "second");
@@ -129,9 +133,9 @@ class TracingEventHandlingComponentTest {
             // observe the absent batch-span resource before either proceeds
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 CompletableFuture<Void> firstHandling =
-                        CompletableFuture.runAsync(() -> streamingSubject.handle(firstEvent, context), executor);
+                        CompletableFuture.runAsync(() -> testSubject.handle(firstEvent, context), executor);
                 CompletableFuture<Void> secondHandling =
-                        CompletableFuture.runAsync(() -> streamingSubject.handle(secondEvent, context), executor);
+                        CompletableFuture.runAsync(() -> testSubject.handle(secondEvent, context), executor);
                 joinAndUnwrap(CompletableFuture.allOf(firstHandling, secondHandling), Duration.ofSeconds(5));
             }
 
@@ -143,15 +147,15 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
-        void opensABatchRootSpanForStreamingExecution() {
-            // given streaming execution semantics -- configured explicitly, with nothing streaming-specific on the
-            // context, covering asynchronous consumers like persistent-stream-fed processors
+        void opensABatchRootSpanOutsideThePublicationContext() {
+            // given an event source-owned context, covering persistent streams even though they feed a subscribing
+            // processor
             ProcessingContext context = new StubProcessingContext();
             Span publisher = spanFactory.createDispatchSpan(PUBLISHER_SPAN, event, null);
             publisher.propagateContext(event);
 
             // when
-            streamingSubject.handle(event, context);
+            testSubject.handle(event, context);
 
             // then a batch root span is opened, enclosing the per-event spans
             spanFactory.verifySpanActive(BATCH_SPAN);
@@ -162,22 +166,38 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
-        void doesNotOpenABatchSpanForNonStreamingExecution() {
-            // given non-streaming execution semantics
-            ProcessingContext context = new StubProcessingContext();
+        void doesNotOpenABatchSpanInThePublicationContext() {
+            // given an event delivered in the context in which it was published
+            ProcessingContext context = publicationContextFor(event);
 
             // when
             testSubject.handle(event, context);
 
-            // then no batch span is produced (AF parity: the handler runs inside the publisher's unit of work)
+            // then no batch span is produced
             spanFactory.verifyNoSpan(BATCH_SPAN);
         }
 
         @Test
+        void publicationMarkerOnlyAppliesToTheEventsDeliveredOnThatBranch() {
+            // given a context branch marked for a locally published event and another event from the source-owned
+            // batch; this mirrors local publication while handling a Persistent Stream event
+            ProcessingContext context = publicationContextFor(event);
+            EventMessage sourceEvent =
+                    new GenericEventMessage("source-event", event.type(), "the-payload", Map.of(), Instant.now());
+
+            // when the source event is handled on the same context lineage
+            testSubject.handle(sourceEvent, context);
+
+            // then it still uses the independently owned batch topology
+            spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.CONTEXT_PARENT_HANDLER);
+            spanFactory.verifySpanHasParent(PROCESS_SPAN, BATCH_SPAN);
+        }
+
+        @Test
         void suppressesTheBatchSpanWhenBatchTraceDisabled() {
-            // given streaming execution semantics but with batchTraceEnabled = false
+            // given an independently owned context but with batchTraceEnabled = false
             TracingEventHandlingComponent disabledBatchTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ false, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
 
@@ -192,10 +212,10 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void suppressesTheBatchSpanInDistributedInSameTraceMode() {
-            // given streaming execution semantics with distributedInSameTrace = true -- per-event spans continue
+            // given an independently owned context with distributedInSameTrace = true -- per-event spans continue
             // their publishers' traces, so a batch root would dangle without meaningful children
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
 
@@ -241,13 +261,13 @@ class TracingEventHandlingComponentTest {
 
         private TracingEventHandlingComponent namedProcessorSubject() {
             return new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ "my-processor", /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ "my-processor",
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
         }
 
         @Test
         void attachesTheProcessorNameToThePerEventHandlerSpan() {
-            // given a component owned by a named processor, handling on a subscribing-style context
+            // given a component owned by a named processor
             ProcessingContext context = new StubProcessingContext();
 
             // when
@@ -260,7 +280,7 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void attachesTheProcessorNameToTheBatchSpan() {
-            // given a component owned by a named processor, handling in a streaming batch
+            // given a component owned by a named processor, handling outside the publication context
             ProcessingContext context = new StubProcessingContext();
 
             // when
@@ -289,12 +309,12 @@ class TracingEventHandlingComponentTest {
     class DistributedInSameTrace {
 
         @Test
-        void usesContextParentHandlerSpanForStreamingExecutionWhenBatchTracingIsEnabled() {
-            // given streaming execution semantics (batch tracing enabled, distributedInSameTrace=false)
+        void usesContextParentHandlerSpanOutsidePublicationContextWhenBatchTracingIsEnabled() {
+            // given an independently owned context (batch tracing enabled, distributedInSameTrace=false)
             ProcessingContext context = new StubProcessingContext();
 
             // when
-            streamingSubject.handle(event, context);
+            testSubject.handle(event, context);
 
             // then the per-event span is parented to the batch context and linked to the publisher
             spanFactory.verifySpanHasType(PROCESS_SPAN, TestSpanType.CONTEXT_PARENT_HANDLER);
@@ -302,9 +322,9 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void usesDisconnectedHandlerSpanWhenBatchTracingIsDisabled() {
-            // given streaming execution semantics with no batch trace and distributedInSameTrace=false
+            // given an independently owned context with no batch trace and distributedInSameTrace=false
             TracingEventHandlingComponent noBatch = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ false, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
 
@@ -317,10 +337,10 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void staysInTheSameTraceForAnEventWithinTheTimeLimit() {
-            // given streaming execution semantics and distributedInSameTrace = true with a two-minute limit and an
+            // given an independently owned context and distributedInSameTrace = true with a two-minute limit and an
             // event published just now
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
 
@@ -333,11 +353,11 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void fallsBackToADisconnectedSpanForAnEventOlderThanTheTimeLimit() {
-            // given streaming execution semantics and distributedInSameTrace = true with a two-minute limit and an
+            // given an independently owned context and distributedInSameTrace = true with a two-minute limit and an
             // event published three minutes ago; stale events such as replays must not stretch the publisher's
             // long-finished trace
             TracingEventHandlingComponent sameTrace = new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ true, Duration.ofMinutes(2));
             ProcessingContext context = new StubProcessingContext();
 
@@ -370,15 +390,16 @@ class TracingEventHandlingComponentTest {
         private final EventMessage event1 = new GenericEventMessage(new MessageType(EVENT_1_TYPE), "e1");
         private final EventMessage event2 = new GenericEventMessage(new MessageType(EVENT_2_TYPE), "e2");
 
-        private TracingEventHandlingComponent streamingComponent(EventHandlingComponent delegate) {
+        private TracingEventHandlingComponent independentlyProcessingComponent(EventHandlingComponent delegate) {
             return new TracingEventHandlingComponent(
-                    delegate, spanFactory, /* processorName */ null, /* streaming */ true,
+                    delegate, spanFactory, /* processorName */ null,
                     /* batchTraceEnabled */ true, /* distributedInSameTrace */ false, Duration.ofMinutes(2));
         }
 
         @Test
         void asyncContinuationChildSpanParentsUnderItsOwnEventEvenAfterALaterEventStarted() {
-            // given a streaming batch and a delegate that defers event 1's completion until triggered explicitly
+            // given an independently owned batch and a delegate that defers event 1's completion until triggered
+            // explicitly
             // -- a real (branching) ProcessingContext is required here: unlike production contexts, the
             // StubProcessingContext
             // mutates its resources map in place instead of branching on withResource, which would mask exactly the
@@ -386,7 +407,7 @@ class TracingEventHandlingComponentTest {
             CompletableFuture<Void> event1Trigger = new CompletableFuture<>();
             DeferringEventHandlingComponent deferringDelegate =
                     new DeferringEventHandlingComponent(spanFactory, EVENT_1_TYPE, event1Trigger);
-            TracingEventHandlingComponent subject = streamingComponent(deferringDelegate);
+            TracingEventHandlingComponent subject = independentlyProcessingComponent(deferringDelegate);
 
             // when event 1's handling starts but does not complete yet, then event 2 starts and completes
             inRealProcessingContext(context -> {
@@ -402,9 +423,9 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void spanCreatedAfterTheBatchLoopParentsUnderTheBatchSpanNotTheLastHandlerSpan() {
-            // given a streaming batch of two synchronously-handled events -- a real (branching) ProcessingContext is
-            // required, see the note in the test above
-            TracingEventHandlingComponent subject = streamingComponent(delegate);
+            // given an independently owned batch of two synchronously-handled events -- a real (branching)
+            // ProcessingContext is required, see the note in the test above
+            TracingEventHandlingComponent subject = independentlyProcessingComponent(delegate);
             String postBatchSpan = "post-batch-span";
 
             // when both events are handled (simulating the batch loop), and something outside the loop creates a
@@ -436,9 +457,9 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void perEventScopeClosesOnItsOwnStreamTerminationNotAtBatchEnd() {
-            // given a streaming batch and a delegate that completes synchronously
+            // given an independently owned batch and a delegate that completes synchronously
             ProcessingContext context = new StubProcessingContext();
-            TracingEventHandlingComponent subject = streamingComponent(delegate);
+            TracingEventHandlingComponent subject = independentlyProcessingComponent(delegate);
 
             // when only the first event is handled -- its own stream already terminated -- and the batch itself
             // (the shared context) has not completed
@@ -450,13 +471,13 @@ class TracingEventHandlingComponentTest {
 
         @Test
         void syncTwoEventBatchEachCreatingAChildDuringTheBodyParentsUnderItsOwnEvent() {
-            // given a streaming batch context and a delegate that synchronously opens a child span while handling
+            // given an independently owned batch context and a delegate that synchronously opens a child span
             String childOfEvent1 = "child-of-event-1";
             String childOfEvent2 = "child-of-event-2";
             ProcessingContext context = new StubProcessingContext();
             SyncChildCreatingEventHandlingComponent syncDelegate = new SyncChildCreatingEventHandlingComponent(
                     spanFactory, Map.of(EVENT_1_TYPE, childOfEvent1, EVENT_2_TYPE, childOfEvent2));
-            TracingEventHandlingComponent subject = streamingComponent(syncDelegate);
+            TracingEventHandlingComponent subject = independentlyProcessingComponent(syncDelegate);
 
             // when both events are handled synchronously, each creating a child span during its own body
             subject.handle(event1, context);

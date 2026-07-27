@@ -19,7 +19,7 @@ The most significant changes are:
 * **`MultiSpanFactory` removed**: sending spans to several destinations is now handled by the export layer (multiple OpenTelemetry span exporters) instead of a composite factory.
 * **Span names changed**: operation spans follow the OpenTelemetry `<operation> <target>` convention instead of the Axon Framework 4 `operation(SimpleName)` shape. Dashboards and alerts keyed on span names must be updated. Per-handler-method spans keep their Axon Framework 4 shape.
 * **Span attribute keys changed**: from `axon_*` underscore keys to dotted `axoniq.*` keys. The Axon Framework 4 keys can be restored per provider.
-* **Trace topology changed**: distributed commands and queries always continue the dispatcher's trace, and a streaming processor's per-event spans are children of their batch span with a span link back to the publisher.
+* **Trace topology changed**: distributed commands and queries always continue the dispatcher's trace, and event handling outside the publication context uses per-event spans under a batch span with a link back to the publisher.
 * **Context propagation deepened**: with the Axoniq Framework binding, instrumented gRPC, JDBC, and WebClient calls plus Mapped Diagnostic Context (MDC) logging nest under the correct Axon span, and Micrometer's context-propagation carries the active span into Reactor pipelines.
 ====
 
@@ -334,7 +334,7 @@ The Axon Framework 4 property names map to the following Axon Framework 5 proper
 The relationships between spans changed in ways that improve navigability:
 
 * **Distributed commands and queries** always continue the dispatcher's trace. The caller is actively waiting, so the whole request-response path renders as one trace. The Axon Framework 4 opt-out no longer exists.
-* **Consumers with streaming execution semantics**, including pooled streaming processors and Persistent Stream configurations, now parent each `EventProcessor.process` span under the `StreamingEventProcessor.batch` span that executes it, with a span link back to the publisher. In Axon Framework 4 the batch span was a separate, childless trace. The publisher relationship stays a link because a batch can carry events from several publishers, and an event handled long after publication (catch-up, replay) must not stretch the publisher's finished trace.
+* **Consumers handling outside the publication context**, including pooled streaming processors and subscribing processors fed by a Persistent Stream, now parent each `EventProcessor.process` span under the `StreamingEventProcessor.batch` span that executes it, with a span link back to the publisher. In Axon Framework 4 the batch span was a separate, childless trace. The publisher relationship stays a link because a batch can carry events from several publishers, and an event handled long after publication (catch-up, replay) must not stretch the publisher's finished trace.
 * **Same-trace mode** for event processors works as before: fresh events continue the publisher's trace, guarded by `distributed-in-same-trace-time-limit`; stale events start a linked trace.
 * **Snapshot operations** are children of the entity's trace instead of the Axon Framework 4 `separateTrace` choice, so slow snapshot loads are visible inside command handling.
 * **Subscription query updates** produce a producer span on the emitting node and a consumer span on the subscribing node with a span link back to the originating subscription query.

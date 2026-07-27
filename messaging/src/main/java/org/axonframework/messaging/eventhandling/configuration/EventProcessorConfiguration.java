@@ -174,15 +174,6 @@ public class EventProcessorConfiguration implements ExtendedConfiguration, Exten
         return unitOfWorkFactory;
     }
 
-    /**
-     * Returns whether this configuration is for a streaming event processor.
-     *
-     * @return {@code false} for basic configuration, {@code true} for streaming configurations.
-     */
-    public boolean streaming() {
-        return false;
-    }
-
     @Override
     public <T extends ConfigurationExtension<?>> @Nullable T extension(Class<T> extensionType) {
         return extensions.extension(extensionType);

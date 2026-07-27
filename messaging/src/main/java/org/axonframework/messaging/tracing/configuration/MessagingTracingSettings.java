@@ -37,13 +37,13 @@ import java.time.Duration;
  * @param eventSinkEnabled                           whether the {@code EventSink} is decorated with tracing
  * @param eventProcessorEnabled                      whether event-handling components (event processors) are decorated
  *                                                   with tracing
- * @param eventProcessorBatchTraceEnabled            whether streaming-processor batches get an enclosing batch span;
- *                                                   when disabled, each event handler span becomes a trace root
- *                                                   of its own
+ * @param eventProcessorBatchTraceEnabled            whether event-processing batches outside the publication context
+ *                                                   get an enclosing batch span; when disabled, each event handler
+ *                                                   span becomes a trace root of its own
  * @param eventProcessorDistributedInSameTrace       when {@code true}, a handler span continues the publisher's trace;
- *                                                   when {@code false} (default), it is parented to the streaming
- *                                                   batch and links back to the publisher, or starts a linked trace if
- *                                                   batch tracing is disabled
+ *                                                   when {@code false} (default), handling outside the publication
+ *                                                   context is parented to the processing batch and links back to the
+ *                                                   publisher, or starts a linked trace if batch tracing is disabled
  * @param eventProcessorDistributedInSameTraceTimeLimit how recent an event must be to continue the publisher's trace
  *                                                      when {@code distributedInSameTrace} is {@code true}; older
  *                                                      events (e.g. replays) start their own trace linked back to the
@@ -154,7 +154,8 @@ public record MessagingTracingSettings(boolean commandBusEnabled,
     /**
      * Returns a copy of these settings with {@link #eventProcessorBatchTraceEnabled()} replaced by the given value.
      *
-     * @param eventProcessorBatchTraceEnabled whether streaming-processor batches get an enclosing batch span
+     * @param eventProcessorBatchTraceEnabled whether event-processing batches outside the publication context get an
+     *                                        enclosing batch span
      * @return a copy of these settings with the given {@code eventProcessorBatchTraceEnabled}
      */
     public MessagingTracingSettings withEventProcessorBatchTraceEnabled(boolean eventProcessorBatchTraceEnabled) {

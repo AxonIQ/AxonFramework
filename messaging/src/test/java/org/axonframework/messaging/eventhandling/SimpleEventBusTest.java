@@ -289,12 +289,14 @@ class SimpleEventBusTest {
             );
             ContextCapturingEventListener listener = new ContextCapturingEventListener();
             testSubject.subscribe(listener);
+            EventMessage event = newEvent("event1");
 
             // when
-            testSubject.publish(context, List.of(newEvent("event1")));
+            testSubject.publish(context, List.of(event));
             context.moveToPhase(DefaultPhases.PREPARE_COMMIT);
 
-            // then
+            // then the listener receives a branch that retains the publisher's context and identifies this event as
+            // having been delivered in that context
             assertThat(listener.getCapturedContexts())
                     .hasSize(1)
                     .first()
@@ -302,6 +304,7 @@ class SimpleEventBusTest {
                     .satisfies(ctx -> {
                         assertThat(ctx.component(String.class, null))
                                 .isEqualTo("TestComponent");
+                        assertThat(EventPublicationContext.isPublicationContextFor(event, ctx)).isTrue();
                     });
         }
 
@@ -508,4 +511,3 @@ class SimpleEventBusTest {
     }
 
 }
-

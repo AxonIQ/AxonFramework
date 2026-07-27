@@ -108,7 +108,7 @@ public class SimpleEventBus implements EventBus {
     public CompletableFuture<Void> publish(@Nullable ProcessingContext context, List<? extends EventMessage> events) {
         if (context == null) {
             // No processing context, publish immediately and propagate subscriber completion to the publisher.
-            return eventSubscribers.notifySubscribers(events, context);
+            return notifySubscribers(events, context);
         }
 
         registerEventPublishingHooks(context, events);
@@ -130,7 +130,7 @@ public class SimpleEventBus implements EventBus {
 
             context.onPrepareCommit(ctx -> {
                 List<EventMessage> queuedEvents = ctx.getResource(eventsKey);
-                return processEventsInPhase(queuedEvents, ctx, eventSubscribers::notifySubscribers);
+                return processEventsInPhase(queuedEvents, ctx, this::notifySubscribers);
             });
 
             // Clean up events resource on completion or error to free memory
@@ -140,6 +140,16 @@ public class SimpleEventBus implements EventBus {
         });
 
         eventQueue.addAll(events);
+    }
+
+    private CompletableFuture<Void> notifySubscribers(
+            List<? extends EventMessage> events,
+            @Nullable ProcessingContext publicationContext
+    ) {
+        return eventSubscribers.notifySubscribers(
+                events,
+                EventPublicationContext.forPublishedEvents(publicationContext, events)
+        );
     }
 
     /**

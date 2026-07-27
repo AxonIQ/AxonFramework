@@ -540,11 +540,6 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         );
     }
 
-    @Override
-    public boolean streaming() {
-        return true;
-    }
-
     /**
      * Returns the {@link StreamableEventSource} used to track events.
      *
