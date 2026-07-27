@@ -17,16 +17,19 @@ application and its beans:
 ```
 org.axonframework.examples.demo.multitenancy
 +- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: the two per-tenant providers and the two handlers
++- UniversityConfiguration   the beans: the two per-tenant providers, the query handler, and the course modules
 +- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
 ```
 
-`UniversityConfiguration` declares one `TenantComponentProvider` bean per tenant-scoped component type
-plus the handler beans, and nothing else. The starter's multi-tenancy auto-configuration picks the
-provider beans up, subscribes them to the tenant lifecycle, installs the tenant parameter resolver and
-interceptor, and registers the default auto-discovering `AxonServerTenantProvider`. There is no manual
-multi-tenancy wiring at all: the tenants are discovered from Axon Server's contexts (with `_admin`
-filtered out), exactly as in the declarative demo's Axon Server path.
+`UniversityConfiguration` declares one `TenantComponentProvider` bean per tenant-scoped component type,
+the statistics query handler, and the event-sourced course as two module beans, and nothing else. The
+enrollment command handler is registered with the course, so there is no separate handler bean for it.
+The starter's multi-tenancy auto-configuration picks the provider beans up, subscribes them to the tenant
+lifecycle, installs the tenant parameter resolver and interceptor, and registers the default
+auto-discovering `AxonServerTenantProvider`. The starter also registers the course module beans, so the
+course is sourced from and appended to its tenant's own event store. There is no manual multi-tenancy
+wiring at all: the tenants are discovered from Axon Server's contexts (with `_admin` filtered out),
+exactly as in the declarative demo's Axon Server path.
 
 ## Requires Axon Server
 
@@ -56,7 +59,10 @@ demo's job.
 `MultiTenancyDemoIT` boots the auto-configured application against a real Axon Server started in a
 Testcontainers container, and drives the lifecycle. It asserts the same outcome as the
 declarative demo, this time proving the auto-configuration path. It also asserts that the `_admin`
-context, which exists on the server, is filtered out of the discovered tenants.
+context, which exists on the server, is filtered out of the discovered tenants. Because it runs against a
+real Axon Server, it also asserts the per-tenant event-storage demonstration: the same course identifier fills
+to capacity and rejects a further enrollment in one tenant, while still accepting one in another,
+sourced from that tenant's own event store.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:

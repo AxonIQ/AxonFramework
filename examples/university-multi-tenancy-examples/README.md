@@ -10,8 +10,18 @@ Multi-tenancy lets you register a tenant-scoped component once and have the fram
 tenant's instance into each message handler, so a handler never resolves a tenant itself. The
 [core module](university-multi-tenancy-core/README.md) holds that code. The demo shows, at the moment:
 
-* **Tenant-scoped component injection** into command and query handlers, each component matched by
-  type, with the tenant resolved from the message metadata.
+* **One enrollment, both features at once.** Enrolling a student is a single event-sourced command whose
+  handler sources the `Course` from, and appends to, the tenant's own event store, and updates that
+  tenant's `@TenantScoped` read-model components, each resolved from the message's tenant. The realistic
+  part is the write side: event sourcing plus tenant-scoped injection in one handler. Updating the
+  read-model components from that same handler is a deliberate interim shortcut (see the next bullet).
+* **Per-tenant event storage** (Axon Server): because each tenant has its own event store, the same course
+  identifier in two tenants is two isolated event streams, so a course full in one tenant still has free
+  seats in another. Reading a tenant's events back as a stream, to rebuild the statistics as a projection
+  instead of updating them in the handler, is added in a later step. In memory there is one shared event
+  store, so this isolation is shown only against Axon Server.
+* **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
+  tenant's own components, matched by type, with the tenant resolved from the message metadata.
 * **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
   rejected, a tenant removed (closing its instances), and cleanup on shutdown.
 * **A configuration-time guardrail**: registering two providers for one component type is refused 
@@ -28,7 +38,7 @@ tenant's instance into each message handler, so a handler never resolves a tenan
 
 | Module | What it adds |
 |---|---|
-| [`university-multi-tenancy-core`](university-multi-tenancy-core/README.md) | The demo itself: the university model (enrollment command, statistics query, their handlers, the two per-tenant components) and the `DemoLifecycle` that drives it. This is how multi-tenancy works, without any configuration wiring. It is a library, not runnable on its own. |
+| [`university-multi-tenancy-core`](university-multi-tenancy-core/README.md) | The demo itself: the university model (the event-sourced course with its enrollment command, the statistics query, and the two per-tenant components) and the `DemoLifecycle` that drives it. This is how multi-tenancy works, without any configuration wiring. It is a library, not runnable on its own. |
 | [`university-multi-tenancy-declarative`](university-multi-tenancy-declarative/README.md) | Runs the core against the declarative Configuration API wiring. In memory by default, or against Axon Server with a toggle. |
 | [`university-multi-tenancy-springboot`](university-multi-tenancy-springboot/README.md) | Runs the core against Spring Boot auto-configuration wiring. Against Axon Server, which is where that auto-configuration activates multi-tenancy. |
 
