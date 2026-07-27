@@ -43,12 +43,12 @@ import org.jspecify.annotations.Nullable;
  * {@code Supplier<String>}. Callers building <em>expensive</em> names (e.g. reflective method signatures) must
  * therefore decide that a span will actually be created <em>before</em> computing the name, and build it only on the
  * span-creating branch. Decorator authors (including extension authors instrumenting their own components) should
- * additionally prefer not installing a tracing decorator at all when the configured factory is {@link NoOpSpanFactory}
- * or absent, so the un-traced path carries no name-building cost whatsoever.
+ * not install a tracing decorator when no factory is configured, so the un-traced path carries no name-building cost
+ * whatsoever.
  * <p>
  * Fan-out to multiple tracing destinations is a concern of the {@code SpanFactory} implementation's export layer,
  * below this abstraction. Tracing is disabled by <em>not registering</em> a {@code SpanFactory} component at all --
- * component decorators are then not installed. {@link NoOpSpanFactory} is a null-object for tests, not an off-switch.
+ * component decorators are then not installed.
  *
  * @author Mateusz Nowak
  * @author Mitchell Herrijgers

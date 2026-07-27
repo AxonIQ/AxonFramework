@@ -24,25 +24,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
- * A {@link SpanFactory} that produces spans which do nothing -- a null-object for tests and composition. Every
- * operation reduces to a single dispatch returning a shared no-op span.
- * <p>
- * This is <em>not</em> an off-switch: tracing is disabled by not registering a {@code SpanFactory} component at all,
- * in which case component decorators are not installed. There is no default {@code SpanFactory}; a factory only exists
- * when a tracing backend contributes one.
- *
- * @author Mateusz Nowak
- * @author Mitchell Herrijgers
- * @since 4.6.0
+ * Test-only {@link SpanFactory} that produces spans which do nothing.
  */
-public final class NoOpSpanFactory implements SpanFactory {
+final class NoOpSpanFactory implements SpanFactory {
 
-    /**
-     * The singleton {@link NoOpSpanFactory} instance.
-     */
-    public static final NoOpSpanFactory INSTANCE = new NoOpSpanFactory();
+    static final NoOpSpanFactory INSTANCE = new NoOpSpanFactory();
 
     private static final Span NO_OP_SPAN = new NoOpSpan();
+
     private NoOpSpanFactory() {
     }
 

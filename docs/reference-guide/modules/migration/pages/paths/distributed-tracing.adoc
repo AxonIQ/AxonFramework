@@ -143,7 +143,8 @@ include::example$migration/paths/tracing/springboot/TracingConfiguration.java[ta
 Key changes:
 
 * `Configurer.configureSpanFactory(...)` no longer exists. Register a `SpanFactory` component through the Configuration API or expose one as a Spring bean. An application-supplied component takes precedence over a binding's default.
-* When no `SpanFactory` component is present, component decorators are not installed. `NoOpSpanFactory` is a null object for tests, not an off switch.
+* `NoOpSpanFactory` has been removed. When no `SpanFactory` component is present, component decorators are not
+  installed.
 
 == Multiple tracing destinations
 
