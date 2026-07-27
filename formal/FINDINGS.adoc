@@ -1,0 +1,386 @@
+= Axon Hunt -- Findings
+:toc: left
+:toclevels: 2
+:icons: font
+
+Living log of everything the hunt suite has found in Axon Framework 5. Entries are numbered
+`F-<n>` and never renumbered.
+
+[NOTE]
+====
+*The engine is never patched by this suite.* A confirmed defect gets an entry here with a candidate
+fix, plus an expected-gap test that passes while the gap exists and flips red when it is closed. The
+fix itself is a separate, reviewed change made by whoever owns the code.
+====
+
+Every entry carries how it was found. A finding discovered *by reading* is legitimate and is
+labelled as such; it is weaker evidence than one a failing test produced, and saying so is the point
+of the label.
+
+Severity scale: *critical* (silent data loss or corruption in a documented configuration), *high*
+(a documented guarantee does not hold), *medium* (a real defect with a narrow blast radius or an
+easy workaround), *low* (a documentation or ergonomics gap).
+
+== At a glance
+
+[cols="1,3,1,1"]
+|===
+| Finding | In plain terms | Severity | Status
+
+| *F-1* `SpringBootInvertsGapSettings`
+| Under Spring Boot autoconfigure the JPA event store gets a 10-second gap timeout and a 60000-entry
+  gap window, where the core defaults are 60 seconds and 10000. The two values are swapped.
+| High
+| Confirmed by reading. Open.
+
+| *F-2* `InMemoryTokenStoreHasNoOwnership`
+| `InMemoryTokenStore` implements no claim or ownership at all, and its Javadoc does not warn about
+  it. Any test asserting claim semantics against it passes vacuously.
+| Medium
+| Confirmed by reading. Open, documented as a harness constraint.
+
+| *F-3* `PartialBatchVisibleDuringCommit`
+| A multi-event batch is not made visible atomically. A concurrent reader can observe a strict prefix
+  of a batch that is still committing.
+| Medium
+| Confirmed by reading. Open, not yet reproduced by a test.
+
+| *F-4* `ClaimExpiryReadsGlobalClock`
+| Token-claim expiry is evaluated against a JVM-global clock, not a per-node injected one, so
+  per-node clock skew cannot be simulated inside a single JVM.
+| Low
+| Confirmed by reading. Open, recorded as a harness constraint.
+
+| *F-5* `SplitBlocksReclaimForAHardcodedMinute`
+| A segment split blocks local re-claim of the segment for a hardcoded 60 seconds, not configurable
+  and not scaled by any timescale setting.
+| Low
+| Confirmed by reading. Open.
+
+| *F-6* `DefaultSequencingPolicyDegradesOnDcbStores`
+| The wired default sequencing policy resolves from a resource that DCB-native stores never set, so
+  on every DCB backend the default silently degrades to fully sequential single-key processing. The
+  Javadoc names a different default.
+| Medium
+| Confirmed by reading. Open.
+|===
+
+== F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
+
+*Severity:* High +
+*Status:* Open. Confirmed by reading; no test exists yet. +
+*Claims:* C14, M12 +
+*Backend verdict vector:* `postgres-jpa:AFFECTED (Spring Boot path only)`, `in-memory:N/A`,
+`axonserver:N/A`
+
+=== What is wrong
+
+The JPA event storage engine has two independent gap settings. `gapTimeout` is a duration in
+milliseconds after which a recorded gap is dropped from a tracking token. `maxGapOffset` is a count:
+how many positions ahead of a newly-seen index may be recorded as gaps.
+
+The core configuration defaults them to 60000 ms and 10000 entries. The Spring Boot autoconfigure
+properties default them to 10000 ms and 60000 entries. The two values are swapped, and the swapped
+values are applied unconditionally.
+
+=== Evidence
+
+Core defaults:
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngineConfiguration.java:84` -- `DEFAULT_MAX_GAP_OFFSET = 10000`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngineConfiguration.java:86` -- `DEFAULT_GAP_TIMEOUT = 60000`
+
+Spring Boot defaults:
+
+* `extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/JpaEventStorageEngineConfigurationProperties.java:44` -- `@DefaultValue("10000") int gapTimeout`
+* `extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/JpaEventStorageEngineConfigurationProperties.java:46` -- `@DefaultValue("60000") int maxGapOffset`
+
+Applied unconditionally:
+
+* `extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/autoconfig/JpaEventStoreAutoConfiguration.java:107` -- `.gapTimeout(properties.gapTimeout())`
+* `extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/autoconfig/JpaEventStoreAutoConfiguration.java:109` -- `.maxGapOffset(properties.maxGapOffset())`
+
+=== Why it matters
+
+The gap timeout is the window a not-yet-committed event has to become visible before a streaming
+consumer stops looking for it. Shrinking it from 60 seconds to 10 makes it six times more likely
+that a transaction outliving the window commits an event that is then never streamed to any
+consumer, which is silent event loss on the read side. Widening `maxGapOffset` from 10000 to 60000
+enlarges every tracking token by up to six times, which is a throughput and token-size cost rather
+than a correctness one.
+
+The direction of the error is the bad one: the setting that got smaller is the one guarding against
+loss. And it applies to the configuration path most production applications use, since nearly every
+Axon application on JPA is a Spring Boot application.
+
+=== How it was found
+
+By reading, during the claims-mining pass that preceded any test. The claim being verified was C14
+("a gap older than `gapTimeout` is dropped from the token"), and checking the default value through
+both configuration paths surfaced the disagreement. No test in the repository asserts that the two
+paths produce the same engine.
+
+=== Candidate fix
+
+Swap the two `@DefaultValue` annotations in `JpaEventStorageEngineConfigurationProperties`, so that
+`gapTimeout` defaults to `60000` and `maxGapOffset` to `10000`, matching the core configuration
+record. One-line change on each of two lines; no behavioural change for anyone who set the
+properties explicitly.
+
+A durable guard is worth more than the fix: a test that builds the engine through both configuration
+paths and asserts every effective setting is pairwise equal, or is listed in an explicit allow-list
+of deliberate differences. That catches this whole class of silent configuration drift rather than
+this one instance. Planned as scenario S19.
+
+=== Reproduce
+
+No automated reproduction yet. By inspection:
+
+[source,bash]
+----
+grep -n 'DefaultValue' extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/JpaEventStorageEngineConfigurationProperties.java
+grep -n 'DEFAULT_GAP_TIMEOUT\|DEFAULT_MAX_GAP_OFFSET' eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngineConfiguration.java
+----
+
+== F-2 -- `InMemoryTokenStore` implements no ownership, and does not say so
+
+*Severity:* Medium +
+*Status:* Open. Confirmed by reading. +
+*Claims:* C18, C19, C20, C21, C22, M11
+
+=== What is wrong
+
+The `TokenStore` interface documents that fetching a token claims it for the current process,
+"preventing access by other instances", that a claim may be taken only when the entry is unowned,
+owned by the same node, or expired, and that extending a lost claim fails. `InMemoryTokenStore`
+implements none of it. There is no owner field, no timestamp, no expiry.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/inmemory/InMemoryTokenStore.java:126` -- `fetchToken` never fails on ownership
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/inmemory/InMemoryTokenStore.java:140` -- `releaseClaim` is a documented no-op
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/inmemory/InMemoryTokenStore.java:191` -- `fetchAvailableSegments` returns every segment, claimed or not
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/inmemory/InMemoryTokenStore.java:50` -- the class Javadoc says only "thread-safe"
+
+=== Why it matters
+
+For the framework's users this is defensible: an in-memory store is not shared between processes, so
+there is nothing to arbitrate. The defect is that the class does not say so. A reader comparing the
+interface's contract against this implementation has no warning that five documented guarantees
+simply do not apply.
+
+For this suite it is a hard constraint. Any ownership assertion made against `InMemoryTokenStore`
+passes vacuously, which is worse than no test at all, because it looks like coverage. Every
+ownership scenario must run against a claim-capable store.
+
+=== How it was found
+
+By reading, while checking whether the planned multi-node layer could be built on the in-memory
+store. It cannot.
+
+=== Candidate fix
+
+Documentation, not code. Add to the class Javadoc that this implementation provides no ownership
+arbitration and that the claim-related guarantees of `TokenStore` do not hold for it, with a pointer
+to the JDBC and JPA stores for any multi-process use.
+
+=== Reproduce
+
+[source,bash]
+----
+grep -n 'releaseClaim\|fetchAvailableSegments\|fetchToken' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/inmemory/InMemoryTokenStore.java
+----
+
+== F-3 -- A committing batch is observable in part
+
+*Severity:* Medium +
+*Status:* Open. Confirmed by reading; not yet reproduced by a test. +
+*Claims:* C9, C4, M17
+
+=== What is wrong
+
+`EventStorageEngine` documents that events "may only be visible to consumers after the invocation of
+`commit()`". `InMemoryEventStorageEngine.commit()` inserts the batch one event at a time while
+holding an append lock, but readers traverse the storage map without taking that lock. A reader
+polling during a commit can therefore observe a strict prefix of a batch that has not finished
+committing.
+
+The documented guarantee is about the boundary between before-commit and after-commit. It says
+nothing about atomicity *within* the commit, and the implementation does not provide it.
+
+=== Evidence
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/inmemory/InMemoryEventStorageEngine.java:127-146` -- per-event `eventStorage.put(next, event)` inside `appendLock`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/inmemory/InMemoryEventStorageEngine.java:290-306` -- `next()` reads `eventStorage.containsKey` with no lock
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/EventStorageEngine.java:187` -- the guarantee, which is weaker than batch atomicity
+
+=== Why it matters
+
+A projection that assumes a multi-event transaction arrives whole will see a torn state. Whether
+that matters depends on the projection, but the framework gives no way to tell that a batch is
+incomplete, so a consumer cannot defend against it.
+
+=== How it was found
+
+By reading, during the claims-mining pass. The `DcbStoreModel` reference model does not reproduce
+it, and cannot: the model is sequential, so it has no notion of a reader observing an operation
+mid-flight. `ModelAndInMemoryEngineAgreeTest` applies operations one at a time to both sides and is
+therefore structurally unable to see this divergence. That is a stated boundary of the model rather
+than a gap in it, and it is why the finding is not yet reproduced.
+
+=== Candidate fix
+
+Two shapes are plausible, and choosing between them is a design decision for the framework's owners
+rather than for this suite. Either publish the batch under a single visible-position advance, so
+readers see a position boundary rather than individual map entries, or state explicitly in
+`EventStorageEngine`'s contract that a batch is not atomically visible and that consumers must not
+assume it is.
+
+=== Reproduce
+
+Not yet reproducible. Planned as scenario S16: a single writer committing 100-event batches while a
+reader polls at maximum rate, asserting that every observed batch member implies every lower-
+positioned member of the same batch is observable in the same poll. Until that lands, the finding
+rests on reading alone.
+
+== F-4 -- Token-claim expiry reads a JVM-global clock
+
+*Severity:* Low +
+*Status:* Open. Confirmed by reading. +
+*Claims:* C20, M3
+
+=== What is wrong
+
+Whether a token claim has expired is decided by comparing a stored timestamp against
+`ClockUtils.instant()`, which reads a single static `AtomicReference<Clock>` shared by the whole
+JVM. There is no per-node clock on that path, even though other parts of the processor take an
+injected `Clock`.
+
+=== Evidence
+
+* `common/src/main/java/org/axonframework/common/ClockUtils.java:49` -- `private static final AtomicReference<Clock> CLOCK`
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java:159-160` -- `expired()` reads `ClockUtils.instant()`
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:113` -- by contrast, uses an injected `clock` field
+
+=== Why it matters
+
+For the framework, this is a documentation gap: nothing states what clock skew between nodes the
+claim protocol tolerates, and the expiry check compares a remotely-written timestamp against the
+local clock with no stated allowance.
+
+For this suite it is a determinism-seam constraint. Two "nodes" in one JVM cannot be given different
+clocks through this path, so any scenario that needs per-node skew must either use a claim-aware
+fake token store whose expiry reads an injected clock, or run the nodes in separate processes.
+
+=== How it was found
+
+By reading, while mapping the injectable seams available for the multi-node layer.
+
+=== Candidate fix
+
+Two independent improvements. Document the tolerated clock skew for the claim protocol, since a
+protocol that compares timestamps written by different machines needs a stated bound. Separately,
+route the expiry check through an injectable clock so that skew is testable at all; that is a wider
+change than this suite should propose without the framework's owners weighing in.
+
+=== Reproduce
+
+[source,bash]
+----
+grep -n 'ClockUtils.instant' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java
+grep -n 'AtomicReference<Clock>' common/src/main/java/org/axonframework/common/ClockUtils.java
+----
+
+== F-5 -- A split blocks re-claim for a hardcoded minute
+
+*Severity:* Low +
+*Status:* Open. Confirmed by reading. +
+*Claims:* M10
+
+=== What is wrong
+
+When a processor splits a segment, it blocks its own coordinator from re-claiming that segment for
+60 seconds. The duration is a literal in the code, not a configuration setting, and it does not
+scale with any of the processor's other timing settings.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:113` -- `clock.instant().plusSeconds(60)`
+
+The guard is also stored in a per-coordinator map, so it constrains only the splitting node; nothing
+stops another node claiming the segment mid-split.
+
+=== Why it matters
+
+Two consequences. Operationally, a split costs a minute of unavailability for that segment on the
+splitting node regardless of how fast the split actually completed. For this suite, any scenario
+running with compressed timeouts has a 60-second term that does not compress, which will look like a
+liveness violation to a naive horizon.
+
+=== How it was found
+
+By reading, while budgeting the split and merge scenarios.
+
+=== Candidate fix
+
+Derive the block from `tokenClaimInterval` (or make it a configuration setting defaulting to the
+current value) so that a time-compressed configuration compresses it too. Separately, the per-node
+scope of the guard is worth documenting, since it reads as a global exclusion and is not one.
+
+=== Reproduce
+
+[source,bash]
+----
+grep -n 'plusSeconds(60)' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java
+----
+
+== F-6 -- The wired default sequencing policy does not match the documented one, and degrades on DCB stores
+
+*Severity:* Medium +
+*Status:* Open. Confirmed by reading. +
+*Claims:* C32, M14
+
+=== What is wrong
+
+`SequencingPolicy`'s Javadoc names `SequentialPerAggregatePolicy` as the default event-processing
+policy. The wired default is a hierarchical policy that tries `SequentialPerAggregatePolicy` first
+and falls back to `SequentialPolicy`. `SequentialPerAggregatePolicy` resolves its key from a legacy
+aggregate-identifier resource, which DCB-native stores never populate. On every DCB backend the
+fallback therefore always wins, and the effective default is fully sequential processing of the
+whole segment under a single key.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequencingPolicy.java:34-35` -- the documented default
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java:61-64` -- the wired default
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequentialPerAggregatePolicy.java:47` -- resolves from `LegacyResources.AGGREGATE_IDENTIFIER_KEY`
+
+=== Why it matters
+
+A user who reads the Javadoc expects per-aggregate parallelism within a segment and gets none. On a
+DCB backend the same application processes its segment strictly one event at a time. That is safe,
+and it is a throughput cliff nobody was told about. The behaviour also differs between the
+aggregate-based JPA backend, where the legacy resource is populated, and every DCB backend, where it
+is not, so the same configuration behaves differently depending on the store.
+
+=== How it was found
+
+By reading, while designing the ordering scenarios. It changed the design: the planned "empty policy
+means parallel" arm was testing a policy that is not the default.
+
+=== Candidate fix
+
+At minimum, correct the Javadoc on `SequencingPolicy` to name the hierarchical policy that is
+actually wired, and state that its per-aggregate half is inert on stores that do not populate the
+aggregate-identifier resource. The larger question, whether DCB-native stores should populate an
+equivalent resource so that per-key parallelism is available by default, is a design decision for
+the framework's owners.
+
+=== Reproduce
+
+[source,bash]
+----
+grep -n 'Default event processing policy' messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequencingPolicy.java
+sed -n '55,70p' messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java
+grep -n 'AGGREGATE_IDENTIFIER_KEY' messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequentialPerAggregatePolicy.java
+----

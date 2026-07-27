@@ -237,6 +237,19 @@
         </profile>
 
         <profile>
+            <id>hunt</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+                <property>
+                    <name>hunt</name>
+                </property>
+            </activation>
+            <modules>
+                <module>simulation</module>
+            </modules>
+        </profile>
+
+        <profile>
             <id>javadoc</id>
             <build>
                 <plugins>

@@ -1,0 +1,2 @@
+org.axonframework.hunt.checker.ModelConformanceChecker
+org.axonframework.hunt.checker.VisibilityChecker
