@@ -2374,3 +2374,21 @@ knowing before the next attempt: the matrix holds every `ScenarioResult` of ever
 several assertions can read one set of runs, and this column adds gRPC buffers plus a connection per run on top of that.
 Whoever widens it should give surefire an explicit heap and consider dropping the retained results to what the assertions
 actually read.
+
+### 4.76 When a checker's meaning changes, chase every document that already quoted its numbers
+
+The model-conformance replay was found to be unsound after its first mismatch, and the consequence
+was written into the finding and into these notes: the count of model violations from a run is not a
+magnitude, only the first one is evidence. What was NOT done at the same time was to revisit the
+canary tables written in earlier campaigns, which quote counts of 3567 and 3028 next to 52 and 46
+for that same invariant. Read cold, side by side, those look like a sensitivity comparison. After
+the correction they are not one, and nothing on the page said so.
+
+The rule this leaves behind: correcting a checker's semantics is not finished when the checker and
+its finding are fixed. Grep every document that quotes that invariant's numbers -- canary tables,
+coverage matrices, findings written before the change -- and annotate or re-derive each one. A
+number that changed meaning is more dangerous than a number that is missing, because the reader has
+no reason to doubt it.
+
+The same shape applies to any invariant whose statement is widened or narrowed: the registry entry
+is the definition, but the numbers quoted elsewhere are what people actually read.
