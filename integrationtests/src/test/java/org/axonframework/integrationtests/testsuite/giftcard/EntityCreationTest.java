@@ -30,6 +30,9 @@ import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardNoArg
 import org.axonframework.integrationtests.testsuite.giftcard.state.NullableGiftCardEventCreatorStateful;
 import org.axonframework.integrationtests.testsuite.giftcard.state.NullableGiftCardIdCreatorStateful;
 import org.axonframework.integrationtests.testsuite.giftcard.state.NullableGiftCardNoArgCreatorStateful;
+import org.axonframework.integrationtests.testsuite.giftcard.state.OptionalGiftCardEventCreatorStateful;
+import org.axonframework.integrationtests.testsuite.giftcard.state.OptionalGiftCardIdCreatorStateful;
+import org.axonframework.integrationtests.testsuite.giftcard.state.OptionalGiftCardNoArgCreatorStateful;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.modelling.annotation.InjectEntity;
@@ -85,10 +88,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  *     Succeeds, as this is a typical scenario.</li>
  *     <li>Stateful command handler, first-event-based entity creator, {@code Nullable} marked, instance command handler.
  *     Succeeds, as we can (1) return a {@code null} entity and (2) the command handling happens outside the entity.</li>
+ *     <li>Stateful command handler, no-arg entity creator, {@code Optional}-typed, creational command handler.
+ *     Succeeds, as this is a typical scenario.</li>
+ *     <li>Stateful command handler, no-arg entity creator, {@code Optional}-typed, instance command handler.
+ *     Succeeds, as we can (1) create the entity just fine and (2) the command handling happens outside the entity.</li>
+ *     <li>Stateful command handler, id-based entity creator, {@code Optional}-typed, creational command handler.
+ *     Succeeds, as this is a typical scenario.</li>
+ *     <li>Stateful command handler, id-based entity creator, {@code Optional}-typed, instance command handler.
+ *     Succeeds, as we can (1) create the entity just fine and (2) the command handling happens outside the entity.</li>
+ *     <li>Stateful command handler, first-event-based entity creator, {@code Optional}-typed, creational command handler.
+ *     Succeeds, as this is a typical scenario.</li>
+ *     <li>Stateful command handler, first-event-based entity creator, {@code Optional}-typed, instance command handler.
+ *     Succeeds, as we can (1) return an empty {@code Optional} and (2) the command handling happens outside the entity.</li>
  * </ol>
  * <p>
- * On top of the twelve scenarios above, this class also validates the default nullability contract of
- * {@link InjectEntity}, regardless of the creator style: a non-{@code @Nullable} {@code @InjectEntity} parameter
+ * On top of the scenarios above, this class also validates the default nullability contract of {@link InjectEntity},
+ * regardless of the creator style: a non-{@code @Nullable}, non-{@code Optional} {@code @InjectEntity} parameter
  * always propagates an {@link EntityNotFoundException} instead of receiving an entity that was implicitly
  * constructed without a preceding event.
  *
@@ -326,10 +341,6 @@ class EntityCreationTest {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
             assertThat(result).isNotCompletedExceptionally();
-
-            result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
-
-            assertThat(result).isNotCompletedExceptionally();
         }
 
         @Test
@@ -362,10 +373,6 @@ class EntityCreationTest {
         @Test
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
-
-            assertThat(result).isNotCompletedExceptionally();
-
-            result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
 
             assertThat(result).isNotCompletedExceptionally();
         }
@@ -402,8 +409,106 @@ class EntityCreationTest {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
             assertThat(result).isNotCompletedExceptionally();
+        }
 
-            result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
+        @Test
+        void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
+            CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).isNotCompletedExceptionally();
+        }
+    }
+
+    @Nested
+    class NoArgOptionalEntityCreationStatefulCommandHandler {
+
+        @BeforeEach
+        void setUp() {
+            CommandHandlingModule commandHandlingModule =
+                    CommandHandlingModule.named("OptionalGiftCardNoArgCreatorStateful")
+                                         .commandHandlers()
+                                         .autodetectedCommandHandlingComponent(
+                                                 c -> new OptionalGiftCardNoArgCreatorStateful()
+                                         )
+                                         .build();
+            EventSourcedEntityModule<String, OptionalGiftCardNoArgCreatorStateful.GiftCard> eventSourcedEntityModule =
+                    EventSourcedEntityModule.autodetected(String.class,
+                                                          OptionalGiftCardNoArgCreatorStateful.GiftCard.class);
+
+            startFor(commandHandlingModule, eventSourcedEntityModule);
+        }
+
+        @Test
+        void creationIsSuccessfulWhenCreateCommandComesFirst() {
+            CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).isNotCompletedExceptionally();
+        }
+
+        @Test
+        void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
+            CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).isNotCompletedExceptionally();
+        }
+    }
+
+    @Nested
+    class IdentifierOptionalEntityCreationStatefulCommandHandler {
+
+        @BeforeEach
+        void setUp() {
+            CommandHandlingModule commandHandlingModule =
+                    CommandHandlingModule.named("OptionalGiftCardIdCreatorStateful")
+                                         .commandHandlers()
+                                         .autodetectedCommandHandlingComponent(
+                                                 c -> new OptionalGiftCardIdCreatorStateful()
+                                         )
+                                         .build();
+            EventSourcedEntityModule<String, OptionalGiftCardIdCreatorStateful.GiftCard> eventSourcedEntityModule =
+                    EventSourcedEntityModule.autodetected(String.class,
+                                                          OptionalGiftCardIdCreatorStateful.GiftCard.class);
+
+            startFor(commandHandlingModule, eventSourcedEntityModule);
+        }
+
+        @Test
+        void creationIsSuccessfulWhenCreateCommandComesFirst() {
+            CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).isNotCompletedExceptionally();
+        }
+
+        @Test
+        void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
+            CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).isNotCompletedExceptionally();
+        }
+    }
+
+    @Nested
+    class EventOptionalEntityCreationStatefulCommandHandler {
+
+        @BeforeEach
+        void setUp() {
+            CommandHandlingModule commandHandlingModule =
+                    CommandHandlingModule.named("OptionalGiftCardEventCreatorStateful")
+                                         .commandHandlers()
+                                         .autodetectedCommandHandlingComponent(
+                                                 c -> new OptionalGiftCardEventCreatorStateful()
+                                         )
+                                         .build();
+            EventSourcedEntityModule<String, OptionalGiftCardEventCreatorStateful.GiftCard> eventSourcedEntityModule =
+                    EventSourcedEntityModule.autodetected(String.class,
+                                                          OptionalGiftCardEventCreatorStateful.GiftCard.class);
+
+            startFor(commandHandlingModule, eventSourcedEntityModule);
+        }
+
+        @Test
+        void creationIsSuccessfulWhenCreateCommandComesFirst() {
+            CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
             assertThat(result).isNotCompletedExceptionally();
         }
