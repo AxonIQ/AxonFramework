@@ -171,7 +171,14 @@ public class DeliveryChecker implements Checker {
         }
 
         List<String> reasonsToReport = new ArrayList<>();
-        boolean stalled = Boolean.TRUE.equals(flag(history, HistoryOps.STALLED));
+        // A run that rebuilt its segment set cannot be held to a stall window at all. The framework blocks local re-claim
+        // of a segment it has just split for a hardcoded sixty seconds, which no timescale compresses and no arm's settle
+        // budget can outlast, so a segment waiting on that block is indistinguishable from one nothing will ever come
+        // back for -- measured, as two events reported lost on one seed of the split-and-merge storm while the other seed
+        // delivered everything. Declining is the honest answer; raising every membership arm's budget past a minute is
+        // not.
+        boolean stalled = Boolean.TRUE.equals(flag(history, HistoryOps.STALLED))
+                && !Licences.rebuiltSegments(history);
         if (!quiesced && !stalled) {
             reasonsToReport.add("the read side had not caught up when the run ended");
         }

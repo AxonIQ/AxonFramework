@@ -163,7 +163,9 @@ The boundary is now drawn at the store. Three statements, all measured, all load
 
 The consequence for a verdict is that "the read side had not caught up" is no longer the end of the discussion. A drain
 that ends with the delivery count unchanged for longer than the run's stall window reports the read side as **stopped**,
-and loss is decided on that exactly as on a run that caught up. That distinction is what separates an interrupted run
+and loss is decided on that exactly as on a run that caught up -- except on a run that rebuilt its segment set, where
+the framework's own hardcoded sixty-second post-split re-claim block makes a blocked segment indistinguishable from an
+abandoned one, so the signal is ignored and the run stays undecided. That distinction is what separates an interrupted run
 from a lossy store; conflating them is what let canary C7 escape, and what hid finding F-16 for a phase.
 
 The stall window is derived as twice the greater of the scenario's liveness horizon and its token-claim timeout, capped at

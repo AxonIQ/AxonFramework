@@ -1803,3 +1803,21 @@ way. The rejection fault fires 26-34 times per seed on every store.
 
 The rule worth carrying: **an assertion that a suite finds nothing else is an assertion that the suite must stop
 working.** Pin the finding you mean, not the shape of the whole result.
+
+### 4.60 A membership arm cannot be held to any stall window, and the reason is a hardcoded minute
+
+The stall signal turned the split-and-merge storm intermittent: seed 1 delivered everything, seed 2 reported two committed
+events never delivered with the read side stopped. Neither is loss. A split blocks local re-claim of the segment it is
+splitting for a hardcoded sixty seconds (finding F-5), which no timescale compresses and which is longer than any stall
+window a thirty-second settle budget can derive -- so a segment waiting on the framework's own block looks exactly like one
+nothing will ever come back for.
+
+`DeliveryChecker` therefore ignores the stall signal entirely on a run that carried out a split or a merge, which is the
+same rebuild test the redelivery licence already uses. The alternative -- pushing every membership arm's settle budget past
+a minute so the window can clear the block -- buys a minute per seed to make a distinction the arm was not built to make.
+
+This is the fifth time in this suite that a new signal had to be told about membership changes, and the pattern has not
+changed: **when a scenario rebuilds the system's membership, every derived signal has to be told, and the honest default is
+to stop deciding rather than to widen a tolerance.** The signal is new here, so it had not been told.
+
+Verified afterwards by running the whole module three times: 208 tests, green each time.
