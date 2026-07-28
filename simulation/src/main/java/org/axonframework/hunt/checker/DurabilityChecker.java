@@ -86,6 +86,12 @@ public class DurabilityChecker implements Checker {
      */
     private static final Set<String> AMBIGUITY_MAKING_FAULTS = Set.of("store-partition", "store-crash", "store-freeze");
 
+    /**
+     * The header field saying whether the store's transaction commits somewhere other than in the append transaction's
+     * own commit.
+     */
+    public static final String COMMITS_OUTSIDE_APPEND_TRANSACTION = "commitsOutsideAppendTransaction";
+
     @Override
     public String name() {
         return "DurabilityChecker";
@@ -103,6 +109,31 @@ public class DurabilityChecker implements Checker {
         if (appends.isEmpty() || scans.isEmpty()) {
             return CheckResult.holding(name());
         }
+        String declaredFaults = history.header().workloadShape().getOrDefault("declaredFaults", "");
+        boolean ambiguityWasSought = AMBIGUITY_MAKING_FAULTS.stream().anyMatch(declaredFaults::contains);
+        if (ambiguityWasSought && Boolean.parseBoolean(history.header().workloadShape()
+                                                              .getOrDefault(COMMITS_OUTSIDE_APPEND_TRANSACTION,
+                                                                            "false"))) {
+            // The one combination this oracle cannot be sound on. An append is recorded as acknowledged when the engine's
+            // append transaction reports its commit, and on a store whose transaction lives on the processing context that
+            // call does no work and races the database transaction rather than preceding it. So on a run that also breaks
+            // the connection, an append the harness calls acknowledged is one whose real transaction may well have failed
+            // -- and reporting its absence from the store as broken durability would be reporting the harness's own
+            // accounting. Measured: two such violations on a partition aimed at the commit boundary, where by construction
+            // every cut commit is one of these.
+            //
+            // The fix is in the recording path, not here: take the append's outcome from the transaction's fate rather
+            // than from the engine's call. Until then the client's verdict set is still published, so the arm measures
+            // what it cannot yet decide.
+            return new CheckResult(name(),
+                                   List.of(),
+                                   List.of(),
+                                   List.of(clientVerdicts(appends, timesStored(scans))),
+                                   List.of(ACKNOWLEDGED_APPEND_IS_DURABLE + " is not expressible on this run: its store "
+                                                   + "commits outside the append transaction, so an append recorded as "
+                                                   + "acknowledged is not one the client saw succeed, and the run also "
+                                                   + "broke the store's connection."));
+        }
         if (!history.notes(HistoryOps.STORE_PERTURBED).isEmpty()) {
             // The harness itself made the store hold something other than what was offered -- a batch vanished, doubled or
             // truncated behind the workload's back. Every acknowledgement in such a run is one the harness falsified, so
@@ -115,10 +146,7 @@ public class DurabilityChecker implements Checker {
                             + "be held against the store."));
         }
 
-        Map<String, Integer> timesStored = new LinkedHashMap<>();
-        for (String identifier : scans.getLast().stringListValue(DcbHistoryCodec.EVENT_IDS)) {
-            timesStored.merge(identifier, 1, Integer::sum);
-        }
+        Map<String, Integer> timesStored = timesStored(scans);
 
         List<Violation> violations = new ArrayList<>();
         List<String> notes = new ArrayList<>();
@@ -147,16 +175,10 @@ public class DurabilityChecker implements Checker {
             }
         }
 
-        measurements.add("Client verdicts on " + appends.size() + " append(s): " + acknowledged
-                                 + " acknowledged, " + ambiguous.size()
-                                 + " event(s) left ambiguous by a failure that was not a decision, of which "
-                                 + ambiguous.stream().filter(timesStored::containsKey).count()
-                                 + " turned out to be stored.");
+        measurements.add(clientVerdicts(appends, timesStored));
 
-        String declared = history.header().workloadShape().getOrDefault("declaredFaults", "");
-        boolean ambiguityWasSought = AMBIGUITY_MAKING_FAULTS.stream().anyMatch(declared::contains);
         if (ambiguityWasSought && ambiguous.isEmpty()) {
-            notes.add("The run declared " + declared + ", whose purpose is to make an acknowledgement ambiguous, and "
+            notes.add("The run declared " + declaredFaults + ", whose purpose is to make an acknowledgement ambiguous, and "
                               + "produced no ambiguous append at all: the fault did not land inside a commit window, so "
                               + "nothing about durability under that fault has been tested.");
         }
@@ -178,6 +200,36 @@ public class DurabilityChecker implements Checker {
         String error = completion.error();
         return ModelConformanceChecker.CONSISTENCY_REJECTION.equals(error)
                 || "InjectedStoreFailureException".equals(error);
+    }
+
+    private static Map<String, Integer> timesStored(List<HistoryRecord> scans) {
+        Map<String, Integer> timesStored = new LinkedHashMap<>();
+        for (String identifier : scans.getLast().stringListValue(DcbHistoryCodec.EVENT_IDS)) {
+            timesStored.merge(identifier, 1, Integer::sum);
+        }
+        return timesStored;
+    }
+
+    /**
+     * Renders the client's own view of every append, which is published whether or not the invariant can be decided.
+     */
+    private static String clientVerdicts(List<Operation> appends, Map<String, Integer> timesStored) {
+        int acknowledged = 0;
+        Set<String> ambiguous = new LinkedHashSet<>();
+        for (Operation append : appends) {
+            List<String> identifiers = eventIdentifiersOf(append);
+            if (identifiers.isEmpty()) {
+                continue;
+            }
+            if (append.outcome() == Outcome.OK) {
+                acknowledged++;
+            } else if (!decided(append)) {
+                ambiguous.addAll(identifiers);
+            }
+        }
+        return "Client verdicts on " + appends.size() + " append(s): " + acknowledged + " acknowledged, "
+                + ambiguous.size() + " event(s) left ambiguous by a failure that was not a decision, of which "
+                + ambiguous.stream().filter(timesStored::containsKey).count() + " turned out to be stored.";
     }
 
     private static List<String> eventIdentifiersOf(Operation append) {

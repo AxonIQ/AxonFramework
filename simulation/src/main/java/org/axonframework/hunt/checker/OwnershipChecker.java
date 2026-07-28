@@ -334,7 +334,7 @@ public class OwnershipChecker implements Checker {
         for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
             for (Operation change : history.operations(instruction)) {
                 HistoryRecord completion = change.completion();
-                if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
+                if (completion != null && "true".equals(completion.stringValue(HistoryOps.CARRIED_OUT))) {
                     instants.add(change.invocation().logicalTs());
                 }
             }

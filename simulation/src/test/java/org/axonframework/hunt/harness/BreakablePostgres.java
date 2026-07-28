@@ -143,18 +143,17 @@ final class BreakablePostgres implements StoreInfrastructure {
     }
 
     @Override
-    public Evidence interruptConnections(Duration duration) {
-        List<String> facts = new ArrayList<>();
+    public Evidence cutConnections() {
         String cut = setEnabled(false);
-        facts.add("proxy after cut: " + cut);
         if (!cut.contains("\"enabled\":false")) {
             return Evidence.missed("the proxy did not report itself disabled: " + cut);
         }
-        sleep(duration);
-        String healed = setEnabled(true);
-        facts.add("proxy after heal: " + healed);
-        facts.add("cut held for " + duration.toMillis() + "ms");
-        return new Evidence(true, facts);
+        return new Evidence(true, List.of("proxy after cut: " + cut));
+    }
+
+    @Override
+    public Evidence healConnections() {
+        return new Evidence(true, List.of("proxy after heal: " + setEnabled(true)));
     }
 
     @Override

@@ -521,6 +521,10 @@ public final class ScenarioRunner {
         // that store does not implement, and report the difference as a defect on every append.
         shape.put(org.axonframework.hunt.checker.ModelConformanceChecker.SPEAKS_DCB,
                   String.valueOf(backend.speaksDynamicConsistencyBoundaries()));
+        // Without this a durability oracle would read an append the engine's no-op commit returned from as an append the
+        // client saw succeed, and report the harness's own accounting as the store failing to keep what it acknowledged.
+        shape.put(org.axonframework.hunt.checker.DurabilityChecker.COMMITS_OUTSIDE_APPEND_TRANSACTION,
+                  String.valueOf(backend.commitsOutsideAppendTransaction()));
         return Map.copyOf(shape);
     }
 

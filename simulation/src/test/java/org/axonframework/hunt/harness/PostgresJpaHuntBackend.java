@@ -289,6 +289,11 @@ public class PostgresJpaHuntBackend implements HuntBackend {
     }
 
     @Override
+    public boolean commitsOutsideAppendTransaction() {
+        return true;
+    }
+
+    @Override
     public TokenStores createTokenStores(String runId, Duration claimTimeout) {
         Objects.requireNonNull(runId, "The runId cannot be null.");
         Objects.requireNonNull(claimTimeout, "The claimTimeout cannot be null.");

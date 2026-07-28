@@ -48,21 +48,50 @@ public final class StorePartitionFault implements Fault {
     private final Duration cut;
     private final int cuts;
     private final Duration between;
+    private final boolean atCommitBoundary;
+    private final java.util.concurrent.atomic.AtomicInteger cutsMade =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile @org.jspecify.annotations.Nullable StoreHook hook;
 
     /**
-     * Creates the fault.
+     * Creates the fault, timed on a wall clock.
      *
      * @param cut     how long each partition lasts
      * @param cuts    how many partitions the window contains
      * @param between how long the network is whole between two partitions
      */
     public StorePartitionFault(Duration cut, int cuts, Duration between) {
+        this(cut, cuts, between, false);
+    }
+
+    private StorePartitionFault(Duration cut, int cuts, Duration between, boolean atCommitBoundary) {
         this.cut = Objects.requireNonNull(cut, "The cut cannot be null.");
         this.between = Objects.requireNonNull(between, "The between cannot be null.");
         if (cuts < 1) {
             throw new IllegalArgumentException("The cuts must be at least one, but was " + cuts + ".");
         }
         this.cuts = cuts;
+        this.atCommitBoundary = atCommitBoundary;
+    }
+
+    /**
+     * Creates the fault aimed at the commit boundary rather than at the clock.
+     * <p>
+     * <b>A partition timed on a wall clock is a nemesis that only sometimes lands where the claim is.</b> The window an
+     * acknowledgement is ambiguous in is the few milliseconds between a commit being sent and its reply arriving, so a
+     * cut placed by elapsed time hits one only by coincidence -- and an arm that asserts the ambiguity it produces is then
+     * flaky by construction, which is worse than an arm that does not assert it. Aiming the cut at the store boundary
+     * instead removes the coincidence: the network goes down after the rows have been written and before the transaction
+     * commits, so the commit is attempted across a dead connection every time.
+     * <p>
+     * The heal is scheduled rather than awaited, because the point is to return with the network still down.
+     *
+     * @param cut  how long each partition lasts before it heals itself
+     * @param cuts how many commits are cut into
+     * @return the fault
+     */
+    public static StorePartitionFault atCommitBoundary(Duration cut, int cuts) {
+        return new StorePartitionFault(cut, cuts, Duration.ZERO, true);
     }
 
     @Override
@@ -74,7 +103,8 @@ public final class StorePartitionFault implements Fault {
     public Map<String, String> parameters() {
         return Map.of("cutMs", String.valueOf(cut.toMillis()),
                       "cuts", String.valueOf(cuts),
-                      "betweenMs", String.valueOf(between.toMillis()));
+                      "betweenMs", String.valueOf(between.toMillis()),
+                      "aimedAt", atCommitBoundary ? "commit-boundary" : "wall-clock");
     }
 
     /**
@@ -87,6 +117,27 @@ public final class StorePartitionFault implements Fault {
     @Override
     public void activate(FaultSite site, FaultEvidence evidence) {
         StoreInfrastructure infrastructure = site.infrastructure();
+        if (atCommitBoundary) {
+            StoreHook installed = new StoreHook() {
+                @Override
+                public void afterAppend(AppendAttempt attempt) {
+                    if (cutsMade.getAndIncrement() >= cuts) {
+                        return;
+                    }
+                    StoreInfrastructure.Evidence cutEvidence = infrastructure.cutConnections();
+                    if (!cutEvidence.landed()) {
+                        return;
+                    }
+                    // Scheduled rather than awaited: the whole point is to return from here with the network still down,
+                    // so that the transaction this append belongs to is committed across a broken connection.
+                    healAfter(infrastructure, cut);
+                    evidence.fired(cutEvidence.describe() + "; aimed at the commit of " + attempt.describe());
+                }
+            };
+            hook = installed;
+            site.installStoreHook(installed);
+            return;
+        }
         for (int index = 0; index < cuts; index++) {
             StoreInfrastructure.Evidence cutEvidence = infrastructure.interruptConnections(cut);
             if (!cutEvidence.landed()) {
@@ -101,7 +152,24 @@ public final class StorePartitionFault implements Fault {
 
     @Override
     public void deactivate(FaultSite site) {
-        // Every cut heals itself before activate returns, so the heal phase starts on a whole network.
+        StoreHook installed = hook;
+        if (installed != null) {
+            site.removeStoreHook(installed);
+            hook = null;
+        }
+        // The network must be whole when the heal phase starts, whichever way it was cut. Healing an already-whole
+        // network is a no-op, so this is safe to do unconditionally and is the only guarantee that a scheduled heal
+        // which lost its race with the end of the window does not leave the run partitioned.
+        site.infrastructure().healConnections();
+    }
+
+    private static void healAfter(StoreInfrastructure infrastructure, Duration after) {
+        Thread healer = new Thread(() -> {
+            sleep(after);
+            infrastructure.healConnections();
+        }, "hunt-partition-heal");
+        healer.setDaemon(true);
+        healer.start();
     }
 
     private static void sleep(Duration duration) {

@@ -157,6 +157,27 @@ public interface HuntBackend {
     }
 
     /**
+     * Indicates whether this store's transaction commits somewhere other than in
+     * {@code EventStorageEngine.AppendTransaction.commit()}.
+     * <p>
+     * <b>This is what decides whether an acknowledged append is an observable thing at all.</b> On a store whose
+     * {@code commit()} does the work, that call returning is the moment of durability and the harness can record the
+     * append as acknowledged on the strength of it. On a store whose transaction lives on the processing context,
+     * {@code commit()} does nothing and races the database transaction rather than preceding it, so it returning says
+     * nothing about whether anything was kept -- and a run that then breaks the connection produces appends the harness
+     * calls acknowledged which the client's own command never saw succeed.
+     * <p>
+     * A durability oracle therefore refuses to decide on such a store rather than reporting the harness's accounting as
+     * the store's defect. Fixing that needs the append's outcome taken from the transaction's fate instead of the
+     * engine's call, which is a change to the recording path and not to any oracle.
+     *
+     * @return {@code true} when the transaction that makes an append durable is not the append transaction's own commit
+     */
+    default boolean commitsOutsideAppendTransaction() {
+        return false;
+    }
+
+    /**
      * Indicates whether this backend's token store decides who owns a segment.
      * <p>
      * Recorded in the history header so that an ownership oracle can hold vacuously, and say so, on a store that

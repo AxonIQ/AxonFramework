@@ -63,15 +63,51 @@ public interface StoreInfrastructure {
     }
 
     /**
-     * Cuts every connection between the application and the store, and refuses new ones, for the given duration.
+     * Cuts every connection between the application and the store, and refuses new ones, until healed.
      * <p>
      * The store itself keeps running throughout, which is the point: this is a network failure and not a store failure,
      * so an in-flight commit may well have been applied while the application will never learn that it was.
+     * <p>
+     * <b>This is the half a fault needs when the cut has to be inside something.</b> A partition timed on a wall clock
+     * lands inside a commit window only if it happens to; a partition cut from the store boundary itself, after the rows
+     * are written and before the transaction commits, lands inside one every time. The second needs the cut and the heal
+     * to be separate calls, because the commit has to be attempted while the network is still down.
      *
-     * @param duration how long the connections stay cut; the implementation heals itself afterwards
      * @return what the infrastructure reported, which is this fault's landing evidence
      */
-    Evidence interruptConnections(Duration duration);
+    Evidence cutConnections();
+
+    /**
+     * Restores the connections a {@link #cutConnections()} took away.
+     *
+     * @return what the infrastructure reported
+     */
+    Evidence healConnections();
+
+    /**
+     * Cuts every connection for the given duration and heals afterwards, blocking for the whole of it.
+     * <p>
+     * The convenience form, for a partition timed on a wall clock rather than aimed at a commit.
+     *
+     * @param duration how long the connections stay cut
+     * @return what the infrastructure reported, which is this fault's landing evidence
+     */
+    default Evidence interruptConnections(Duration duration) {
+        Evidence cut = cutConnections();
+        if (!cut.landed()) {
+            return cut;
+        }
+        try {
+            Thread.sleep(Math.max(1L, duration.toMillis()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        Evidence healed = healConnections();
+        java.util.List<String> facts = new java.util.ArrayList<>(cut.facts());
+        facts.addAll(healed.facts());
+        facts.add("cut held for " + duration.toMillis() + "ms");
+        return new Evidence(true, facts);
+    }
 
     /**
      * Kills the store's process outright and brings it back.
@@ -161,6 +197,16 @@ public interface StoreInfrastructure {
         @Override
         public boolean available() {
             return false;
+        }
+
+        @Override
+        public Evidence cutConnections() {
+            return NOTHING;
+        }
+
+        @Override
+        public Evidence healConnections() {
+            return NOTHING;
         }
 
         @Override

@@ -1061,14 +1061,16 @@ public final class HuntScenarios {
     public static Scenario commitAckMatchesDurabilityUnderPartition() {
         FaultSchedule schedule = FaultSchedule.builder()
                                              .warmup(Duration.ofSeconds(2))
-                                             // Short cuts, many of them. A commit window is milliseconds wide, so what
-                                             // decides whether the fault lands in one is how often the network is cut
-                                             // rather than how long each cut lasts.
+                                             // Aimed at the commit boundary, not at the clock. A commit window is
+                                             // milliseconds wide, so a cut placed by elapsed time lands in one only by
+                                             // coincidence -- and an arm that asserts the ambiguity such a cut produces
+                                             // is flaky by construction, which is worse than one that does not assert
+                                             // it. Cutting from inside the store boundary, after the rows are written
+                                             // and before the transaction commits, makes every cut land in a commit.
                                              .window(FaultWindow.immediately(
                                                      "network-cut",
                                                      Duration.ofSeconds(40),
-                                                     new StorePartitionFault(Duration.ofMillis(600), 8,
-                                                                             Duration.ofSeconds(2))))
+                                                     StorePartitionFault.atCommitBoundary(Duration.ofSeconds(2), 8)))
                                              .heal(Duration.ofSeconds(10))
                                              .settle(Duration.ofSeconds(60))
                                              .build();

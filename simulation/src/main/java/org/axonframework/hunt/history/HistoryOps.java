@@ -224,6 +224,13 @@ public final class HistoryOps {
      */
     public static final String STALLED = "stalled";
 
+    /**
+     * The value key a {@link #SPLIT} or {@link #MERGE} completion reports under, saying whether the framework actually
+     * carried the instruction out. A refused instruction is a fault that fired and a rebuild that did not happen, and
+     * the two must not be confused: only a carried-out one rebuilds the segment set.
+     */
+    public static final String CARRIED_OUT = "carriedOut";
+
     private HistoryOps() {
         // Utility class.
     }

@@ -177,8 +177,7 @@ public class DeliveryChecker implements Checker {
         // back for -- measured, as two events reported lost on one seed of the split-and-merge storm while the other seed
         // delivered everything. Declining is the honest answer; raising every membership arm's budget past a minute is
         // not.
-        boolean stalled = Boolean.TRUE.equals(flag(history, HistoryOps.STALLED))
-                && !Licences.rebuiltSegments(history);
+        boolean stalled = Boolean.TRUE.equals(flag(history, HistoryOps.STALLED)) && !history.rebuiltSegments();
         if (!quiesced && !stalled) {
             reasonsToReport.add("the read side had not caught up when the run ended");
         }
@@ -341,7 +340,7 @@ public class DeliveryChecker implements Checker {
         for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
             for (Operation change : history.operations(instruction)) {
                 HistoryRecord completion = change.completion();
-                if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
+                if (completion != null && "true".equals(completion.stringValue(HistoryOps.CARRIED_OUT))) {
                     windows.add(new Window(change.invocation().logicalTs() - allowance,
                                            completion.logicalTs() + claimTimeout + allowance));
                 }
@@ -400,7 +399,7 @@ public class DeliveryChecker implements Checker {
             // 3, and the claim on 3 came back at position 2952 -- so the rewind is visible, exactly one claim carries
             // it, and the segment that had delivered the event no longer exists. Matching per segment misses it
             // entirely; matching any segment keeps the position bound, which is the part that does the work.
-            boolean rebuilt = rebuiltSegments(history);
+            boolean rebuilt = history.rebuiltSegments();
             List<Rewind> rewinds = new ArrayList<>();
             long rewoundTo = -1L;
             long resetAt = Long.MAX_VALUE;
@@ -440,18 +439,6 @@ public class DeliveryChecker implements Checker {
                 }
             }
             return new Licences(List.copyOf(rewinds), rewoundTo, resetAt);
-        }
-
-        private static boolean rebuiltSegments(HistoryView history) {
-            for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
-                for (Operation change : history.operations(instruction)) {
-                    HistoryRecord completion = change.completion();
-                    if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
-                        return true;
-                    }
-                }
-            }
-            return false;
         }
 
         /**

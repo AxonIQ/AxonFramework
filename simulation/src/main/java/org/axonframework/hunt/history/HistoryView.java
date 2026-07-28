@@ -221,4 +221,31 @@ public final class HistoryView {
     public List<HistoryRecord> unpairedCompletions() {
         return unpairedCompletions;
     }
+
+    /**
+     * Indicates whether this run rebuilt its segment set, by carrying out a split or a merge.
+     * <p>
+     * <b>This lives here, once, because five separate oracles need it and a sixth will be written without it.</b> A
+     * segment-set rebuild is a property of the run, not of any one invariant, and every signal derived from operation
+     * records has to be told about it: a split deletes one token row and creates two, a merge deletes one of a pair and
+     * rewrites the other with the lower of their tokens, and the framework blocks local re-claim of a split segment for a
+     * hardcoded sixty seconds. So a segment identifier stops naming one unit of work, a stored token goes backwards by
+     * design, an ownership interval runs straight through the rebuild, and a read side that has stopped may simply be
+     * waiting. Each of those was learned separately and each cost a finding that was not real.
+     * <p>
+     * Re-deriving it per checker is how the sixth one silently decides something it cannot decide. Ask this instead.
+     *
+     * @return {@code true} when the framework carried out a split or a merge during the run
+     */
+    public boolean rebuiltSegments() {
+        for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
+            for (Operation change : operations(instruction)) {
+                HistoryRecord completion = change.completion();
+                if (completion != null && "true".equals(completion.stringValue(HistoryOps.CARRIED_OUT))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }
