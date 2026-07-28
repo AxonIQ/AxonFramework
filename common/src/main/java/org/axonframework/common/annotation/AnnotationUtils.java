@@ -375,6 +375,27 @@ public final class AnnotationUtils {
     }
 
     /**
+     * Indicates whether an annotation whose {@link Class#getSimpleName() simple name} matches the given
+     * {@code annotationName}, ignoring case, is present directly on the given {@code element}.
+     * <p>
+     * This is useful to detect annotations that exist in several variants across different libraries -- for
+     * example, {@code Nullable} annotations provided by jspecify, JSR-305, Jakarta, or JetBrains -- without requiring
+     * a hard dependency on any specific one.
+     *
+     * @param element        the element to inspect
+     * @param annotationName the simple name of the annotation to find, matched ignoring case
+     * @return {@code true} if an annotation with the given simple name is present directly on the {@code element}
+     */
+    public static boolean hasAnnotationNamed(AnnotatedElement element, String annotationName) {
+        for (Annotation annotation : element.getAnnotations()) {
+            if (annotation.annotationType().getSimpleName().equalsIgnoreCase(annotationName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Creates a {@link Predicate} that checks whether the given {@link Member} is annotated with the given
      * {@code annotationType}.
      *

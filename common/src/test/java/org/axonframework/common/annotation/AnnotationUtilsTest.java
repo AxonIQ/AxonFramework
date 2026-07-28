@@ -25,6 +25,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -402,6 +403,77 @@ class AnnotationUtilsTest {
         }
 
         private static class UnannotatedClass {
+
+        }
+    }
+
+    @Nested
+    class HasAnnotationNamedTest {
+
+        @Test
+        void returnsTrueWhenAnnotationSimpleNameMatchesExactly() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod("annotatedMethod");
+            assertThat(hasAnnotationNamed(method, "CustomMarker")).isTrue();
+        }
+
+        @Test
+        void returnsTrueWhenAnnotationSimpleNameMatchesIgnoringCase() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod("annotatedMethod");
+            assertThat(hasAnnotationNamed(method, "custommarker")).isTrue();
+            assertThat(hasAnnotationNamed(method, "CUSTOMMARKER")).isTrue();
+        }
+
+        @Test
+        void returnsFalseWhenAnnotationNotPresent() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod("unannotatedMethod");
+            assertThat(hasAnnotationNamed(method, "CustomMarker")).isFalse();
+        }
+
+        @Test
+        void returnsFalseForDifferentSimpleName() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod("annotatedMethod");
+            assertThat(hasAnnotationNamed(method, "OtherMarker")).isFalse();
+        }
+
+        @Test
+        void detectsTypeUseAnnotationOnParameterType() throws NoSuchMethodException {
+            Method method =
+                    HasAnnotationNamedTest.class.getDeclaredMethod("methodWithTypeUseAnnotatedParameter", String.class);
+            Parameter parameter = method.getParameters()[0];
+
+            assertThat(hasAnnotationNamed(parameter.getAnnotatedType(), "Nullable")).isTrue();
+        }
+
+        @Test
+        void doesNotDetectTypeUseAnnotationOnPlainParameter() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod("methodWithPlainParameter", String.class);
+            Parameter parameter = method.getParameters()[0];
+
+            assertThat(hasAnnotationNamed(parameter.getAnnotatedType(), "Nullable")).isFalse();
+        }
+
+        @CustomMarker
+        void annotatedMethod() {
+        }
+
+        void unannotatedMethod() {
+        }
+
+        void methodWithTypeUseAnnotatedParameter(@Nullable String value) {
+        }
+
+        void methodWithPlainParameter(String value) {
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @interface CustomMarker {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.TYPE_USE)
+        @interface Nullable {
 
         }
     }
