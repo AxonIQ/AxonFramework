@@ -1,0 +1,12 @@
+axon:
+  # Multi-tenancy is a feature of Axon Server: tenants are Axon Server contexts, so the multi-tenancy
+  # autoconfiguration only activates while Axon Server is enabled. This demo therefore runs against
+  # Axon Server. The runnable application expects one on its default localhost address (see the README
+  # for a docker-compose that starts a multi-context Enterprise Edition server); the smoke test starts
+  # one in a container.
+  axonserver:
+    enabled: true
+
+logging:
+  level:
+    org.axonframework.examples.demo.multitenancy: info

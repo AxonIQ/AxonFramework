@@ -38,7 +38,7 @@
         the framework version and not covered by the axoniq-framework BOM. Its version therefore has
         to be stated here explicitly, managed centrally so example modules declare it version-free.
         -->
-        <axoniq-platform-framework-client.version>5.1.1</axoniq-platform-framework-client.version>
+        <axoniq-platform-framework-client.version>5.2.0</axoniq-platform-framework-client.version>
     </properties>
 
     <dependencyManagement>
@@ -67,6 +67,7 @@
         <module>university-java-springboot-4</module>
         <module>university-demo-kotlin</module>
         <module>university-message-transformation</module>
+        <module>university-multi-tenancy-examples</module>
     </modules>
 
     <build>

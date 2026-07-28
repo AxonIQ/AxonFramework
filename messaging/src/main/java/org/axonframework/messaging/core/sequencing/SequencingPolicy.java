@@ -56,6 +56,21 @@ import java.util.Optional;
 public interface SequencingPolicy<M extends Message> {
 
     /**
+     * Well-known sentinel sequence identifier signaling that a message should be handled by <b>every</b> handler
+     * eligible for it, rather than being routed to a single one based on its sequence identifier.
+     * <p>
+     * When the sequence identifier resolved for a message equals {@code BROADCAST}, that message is
+     * delivered to every eligible handler instead of only the one its identifier would otherwise select. Such messages
+     * remain sequenced relative to one another wherever sequencing applies.
+     * <p>
+     * Note: This uses a String constant to provide consistent {@link Object#hashCode()} and
+     * {@link Object#equals(Object)} behaviour across JVM restarts.
+     *
+     * @since 5.3.0
+     */
+    Object BROADCAST = "BROADCAST";
+
+    /**
      * Returns the sequence identifier for the given {@code message}. When two messages have the same identifier (as
      * defined by their equals method), they will be executed sequentially. A {@code Optional#empty()} value indicates
      * that there are no sequencing requirements for the handling of this message.

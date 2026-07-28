@@ -37,10 +37,70 @@ class UnitOfWorkConfigurationTest {
         assertThat(defaultConfig.allowAsyncProcessing()).isTrue();
         assertThat(defaultConfig.workScheduler()).isInstanceOf(DirectExecutor.class);
         assertThat(defaultConfig.processingLifecycleEnhancers()).isEmpty();
+        assertThat(defaultConfig.lifecycleInterceptor()).isNull();
 
         // check list immutability:
         assertThatThrownBy(() -> defaultConfig.processingLifecycleEnhancers().clear())
             .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void lifecycleInterceptorReplacesAndDoesNotModifyPreviousConfig() {
+        ProcessingLifecycleInterceptor interceptor =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+
+        UnitOfWorkConfiguration newConfig = defaultConfig.lifecycleInterceptor(interceptor);
+
+        // previous config keeps the (absent) default:
+        assertThat(defaultConfig.lifecycleInterceptor()).isNull();
+        // new config installs the interceptor as-is (replacement):
+        assertThat(newConfig.lifecycleInterceptor()).isSameAs(interceptor);
+        // unrelated values are preserved:
+        assertThat(newConfig.workScheduler()).isEqualTo(defaultConfig.workScheduler());
+        assertThat(newConfig.allowAsyncProcessing()).isEqualTo(defaultConfig.allowAsyncProcessing());
+    }
+
+    @Test
+    void lifecycleInterceptorReplacesAnAlreadyRegisteredInterceptor() {
+        ProcessingLifecycleInterceptor first =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+        ProcessingLifecycleInterceptor second =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+
+        UnitOfWorkConfiguration config = defaultConfig.lifecycleInterceptor(first)
+                                                      .lifecycleInterceptor(second);
+
+        // the second interceptor replaces the first outright:
+        assertThat(config.lifecycleInterceptor()).isSameAs(second);
+    }
+
+    @Test
+    void addLifecycleInterceptorChainsWithAnAlreadyRegisteredInterceptor() {
+        ProcessingLifecycleInterceptor first =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+        ProcessingLifecycleInterceptor second =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+
+        // on a default config the first added interceptor is installed directly:
+        UnitOfWorkConfiguration afterFirst = defaultConfig.addLifecycleInterceptor(first);
+        assertThat(afterFirst.lifecycleInterceptor()).isSameAs(first);
+
+        // the second is chained after the first, so it is a distinct composed interceptor:
+        UnitOfWorkConfiguration afterSecond = afterFirst.addLifecycleInterceptor(second);
+        assertThat(afterSecond.lifecycleInterceptor()).isNotSameAs(first);
+        assertThat(afterSecond.lifecycleInterceptor()).isNotSameAs(second);
+    }
+
+    @Test
+    void forcedSameThreadInvocationPreservesActionInterceptor() {
+        ProcessingLifecycleInterceptor interceptor =
+                ProcessingLifecycleInterceptor.intercept((context, action) -> action.get());
+        UnitOfWorkConfiguration config = defaultConfig.lifecycleInterceptor(interceptor);
+
+        UnitOfWorkConfiguration forced = config.forcedSameThreadInvocation();
+
+        assertThat(forced.allowAsyncProcessing()).isFalse();
+        assertThat(forced.lifecycleInterceptor()).isSameAs(config.lifecycleInterceptor());
     }
 
     @Test

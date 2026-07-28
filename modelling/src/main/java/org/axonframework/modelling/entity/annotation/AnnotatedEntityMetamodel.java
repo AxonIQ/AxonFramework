@@ -44,6 +44,7 @@ import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.PolymorphicEntityMetamodel;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
+import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,12 +84,19 @@ import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspec
  * annotated methods and fields, but the AnnotatedEntityModel dropped aggregate versioning (conflict resolution), no
  * longer required an id in the entity, and creates a declarative metamodel instead of relying on reflection at
  * runtime.
+ * <p>
+ * This class is marked {@link Internal} because it is an annotation-scanning implementation detail: it is built by the
+ * framework from the entity class and exposes reflection-specific behavior (such as
+ * {@link #getExpectedRepresentation(QualifiedName)}) that is not part of the {@link EntityMetamodel} contract. Users
+ * should interact with entities through the {@code EntityMetamodel} interface, which can be freely decorated or
+ * replaced, rather than depending on this concrete type.
  *
  * @param <E> The type of entity this metamodel describes.
  * @author Mitchell Herrijgers
  * @author Allard Buijze
  * @since 3.1.0
  */
+@Internal
 public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, DescribableComponent {
 
     private static final Logger logger = LoggerFactory.getLogger(AnnotatedEntityMetamodel.class);

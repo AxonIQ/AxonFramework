@@ -20,9 +20,11 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolver;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.annotation.TargetEntityId;
+import org.axonframework.modelling.entity.EntityMetamodel;
 
 /**
  * {@link EntityIdResolverDefinition} that converts the payload of incoming messages based on the
@@ -32,16 +34,30 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
+ * @deprecated Performing the payload conversion inside the resolver ties it to the {@link AnnotatedEntityMetamodel},
+ * which prevents the {@code EntityMetamodel} component from being decorated or replaced. Payload conversion is now
+ * applied independently of the metamodel component, so annotation-based id resolution only needs the plain
+ * {@link AnnotationBasedEntityIdResolverDefinition}. This definition remains functional for existing configurations
+ * but requires the resolved {@code EntityMetamodel} to be an {@link AnnotatedEntityMetamodel}.
  */
+@Deprecated(since = "5.3.0")
 public class AnnotatedEntityIdResolverDefinition implements EntityIdResolverDefinition {
 
     @Override
     public <E, ID> EntityIdResolver<ID> createIdResolver(Class<E> entityType,
                                                          Class<ID> idType,
-                                                         AnnotatedEntityMetamodel<E> entityMetamodel,
+                                                         EntityMetamodel<E> entityMetamodel,
                                                          Configuration configuration) {
+        if (!(entityMetamodel instanceof AnnotatedEntityMetamodel<E> annotatedEntityMetamodel)) {
+            throw new IllegalArgumentException(
+                    "The deprecated AnnotatedEntityIdResolverDefinition requires an AnnotatedEntityMetamodel, "
+                            + "but received [" + entityMetamodel.getClass().getName() + "]. Use the "
+                            + "AnnotationBasedEntityIdResolverDefinition instead, which does not depend on the "
+                            + "metamodel implementation."
+            );
+        }
         return new AnnotatedEntityIdResolver<>(
-                entityMetamodel,
+                annotatedEntityMetamodel,
                 idType,
                 configuration.getComponent(MessageConverter.class),
                 new AnnotationBasedEntityIdResolver<>()

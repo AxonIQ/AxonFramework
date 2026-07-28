@@ -34,6 +34,8 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -51,7 +53,6 @@ import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
@@ -98,6 +99,7 @@ class SnapshottingEntityLifecycleHandlerTest {
     private final SnapshottingEntityLifecycleHandler<String, Account> handler = new SnapshottingEntityLifecycleHandler<>(
         eventStore,
         (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+        new AnnotationBasedTagResolver(),
         new InitializingEntityEvolver<>(
             (id, msg, ctx) -> {
                 AccountCreated ac = (AccountCreated) msg.payload();
@@ -302,24 +304,39 @@ class SnapshottingEntityLifecycleHandlerTest {
         void liveEventUpdatesEntityState() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-            UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+            ProcessingContext pc = new StubProcessingContext();
+            Account initial = handler.source(ACCOUNT_ID, pc).join();
+            AtomicReference<Account> stateRef = new AtomicReference<>(initial);
 
-            uow.executeWithResult(pc -> {
-                Account initial = handler.source(ACCOUNT_ID, pc).join();
-                AtomicReference<Account> stateRef = new AtomicReference<>(initial);
+            handler.subscribe(managedEntity(stateRef), pc);
+            eventStore.transaction(pc).appendEvent(
+                new GenericEventMessage(
+                    new MessageType(FundsDeposited.class),
+                    new FundsDeposited(ACCOUNT_ID, 50)
+                )
+            );
 
-                handler.subscribe(managedEntity(stateRef), pc);
-                eventStore.transaction(pc).appendEvent(
-                    new GenericEventMessage(
-                        new MessageType(FundsDeposited.class),
-                        new FundsDeposited(ACCOUNT_ID, 50)
-                    )
-                );
+            assertThat(stateRef.get().balance()).isEqualTo(150);
+        }
 
-                assertThat(stateRef.get().balance()).isEqualTo(150);
+        @Test
+        void liveEventForAnotherEntityIsNotApplied() {
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
 
-                return CompletableFuture.completedFuture(null);
-            }).join();
+            ProcessingContext pc = new StubProcessingContext();
+            Account initial = handler.source(ACCOUNT_ID, pc).join();
+            AtomicReference<Account> stateRef = new AtomicReference<>(initial);
+
+            handler.subscribe(managedEntity(stateRef), pc);
+            // A deposit tagged for a different account must not evolve this account.
+            eventStore.transaction(pc).appendEvent(
+                new GenericEventMessage(
+                    new MessageType(FundsDeposited.class),
+                    new FundsDeposited("account-2", 50)
+                )
+            );
+
+            assertThat(stateRef.get().balance()).isEqualTo(100);
         }
     }
 
@@ -359,6 +376,7 @@ class SnapshottingEntityLifecycleHandlerTest {
         return new SnapshottingEntityLifecycleHandler<>(
             eventStore,
             (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+            new AnnotationBasedTagResolver(),
             new InitializingEntityEvolver<>(
                 (id, msg, ctx) -> {
                     AccountCreated ac = (AccountCreated) msg.payload();

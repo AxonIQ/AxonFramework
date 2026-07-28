@@ -190,6 +190,20 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
     }
 
     /**
+     * Completes every currently open stream as if this source terminated them, without reporting an error and without
+     * clearing the published events.
+     * <p>
+     * A completed stream reports {@link MessageStream#isCompleted()} as {@code true}, an empty
+     * {@link MessageStream#error()}, and never returns another event. This mirrors a source that ends an otherwise
+     * infinite stream, which {@link MessageStream#close()} cannot emulate here, as closing may clear the published
+     * events. Each completed stream's availability callback is invoked, matching the {@code MessageStream} contract
+     * that the callback fires on completion.
+     */
+    public void completeOpenStreams() {
+        openStreams.forEach(AsyncMessageStream::complete);
+    }
+
+    /**
      * Set a handler to be called whenever a stream is opened.
      *
      * @param onOpen the handler to call
@@ -246,9 +260,11 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                 // Start from the beginning
                 this.currentPosition = new AtomicLong(0);
             } else {
-                // Start from the position after the given token
+                // Events are published with a token one higher than their storage index, so a token's position is the
+                // index of the first event that has not been consumed yet. Matching the InMemoryEventStorageEngine,
+                // which opens a stream at condition.position() directly.
                 long tokenPosition = startToken.position().orElse(-1);
-                this.currentPosition = new AtomicLong(tokenPosition + 1);
+                this.currentPosition = new AtomicLong(Math.max(0, tokenPosition));
             }
         }
 
@@ -389,6 +405,17 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                 if (currentCallback != null) {
                     currentCallback.run();
                 }
+            }
+        }
+
+        private void complete() {
+            if (closed) {
+                return;
+            }
+            Runnable currentCallback = callback.get();
+            closed = true;
+            if (currentCallback != null) {
+                currentCallback.run();
             }
         }
     }

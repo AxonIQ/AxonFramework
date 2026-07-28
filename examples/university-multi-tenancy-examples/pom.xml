@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.axonframework.examples</groupId>
+        <artifactId>axon-framework-examples</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>university-multi-tenancy-examples</artifactId>
+    <name>Axon Example - Multi-Tenancy</name>
+    <packaging>pom</packaging>
+    <description>
+        Multi-tenancy demos: a shared university model driven two ways, through the declarative
+        Configuration API and through Spring Boot auto-configuration, showing the same behavior with
+        only the wiring different.
+    </description>
+
+    <properties>
+        <!--
+        Tenant-aware components (TenantComponentProvider) ship in the 5.3.0 line, which is not released
+        yet, so these demos resolve against 5.3.0-SNAPSHOT rather than the released BOM the examples
+        parent manages. Managed here once, so all three modules stay on the same line.
+        -->
+        <axoniq-framework.version>5.3.0-SNAPSHOT</axoniq-framework.version>
+
+        <!-- Runtime libraries -->
+        <awaitility.version>4.3.0</awaitility.version>
+        <!-- Log4j2 as the single logging solution, matching the other plain-Java examples. -->
+        <log4j.version>2.26.1</log4j.version>
+
+        <!-- Spring Boot, for the Spring Boot demo. Kept in step with the version the framework builds
+             against (build/parent), which is not inherited here because the flattened parent pom drops
+             its properties. -->
+        <spring.boot.version>3.5.16</spring.boot.version>
+        <!-- Jackson 3, which the framework serializes with. Pinned ahead of Spring Boot's Jackson 2 in
+             the Spring Boot demo so jackson-annotations carries the classes the framework needs. -->
+        <jackson.version>3.2.1</jackson.version>
+
+        <!-- Test libraries -->
+        <assertj.version>3.27.7</assertj.version>
+        <junit.version>6.1.2</junit.version>
+        <!-- Testcontainers, for the Spring Boot demo's Axon Server integration test. -->
+        <testcontainers.version>2.0.5</testcontainers.version>
+
+        <!-- Build plugins -->
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
+    </properties>
+
+    <modules>
+        <module>university-multi-tenancy-core</module>
+        <module>university-multi-tenancy-declarative</module>
+        <module>university-multi-tenancy-springboot</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Align every Axon module on ${axoniq-framework.version}, overriding the older line the
+                 examples parent manages. -->
+            <dependency>
+                <groupId>io.axoniq.framework</groupId>
+                <artifactId>axoniq-framework-bom</artifactId>
+                <version>${axoniq-framework.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

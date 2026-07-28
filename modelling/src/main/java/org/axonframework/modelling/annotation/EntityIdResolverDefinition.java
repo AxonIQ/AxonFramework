@@ -18,7 +18,7 @@ package org.axonframework.modelling.annotation;
 
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.modelling.EntityIdResolver;
-import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.EntityMetamodel;
 
 /**
  * Definition describing how to create an {@link EntityIdResolver} for a given entity type and identifier type.
@@ -34,18 +34,18 @@ public interface EntityIdResolverDefinition {
     /**
      * Creates an {@link EntityIdResolver} for the given entity type and identifier type.
      *
-     * @param entityType      The type of the entity for which the resolver is created.
-     * @param idType          The type of the identifier for which the resolver is created.
-     * @param entityMetamodel The metamodel of the entity.
-     * @param configuration   The configuration of the application, providing access to the components available.
-     * @param <E>             The type of the entity for which the resolver is created.
-     * @param <ID>            The type of the identifier for which the resolver is created.
-     * @return The {@link EntityIdResolver} for the given entity type and identifier type.
+     * @param entityType      the type of the entity for which the resolver is created
+     * @param idType          the type of the identifier for which the resolver is created
+     * @param entityMetamodel the metamodel of the entity
+     * @param configuration   the configuration of the application, providing access to the components available
+     * @param <E>             the type of the entity for which the resolver is created
+     * @param <ID>            the type of the identifier for which the resolver is created
+     * @return the {@link EntityIdResolver} for the given entity type and identifier type
      */
     <E, ID> EntityIdResolver<ID> createIdResolver(
             Class<E> entityType,
             Class<ID> idType,
-            AnnotatedEntityMetamodel<E> entityMetamodel,
+            EntityMetamodel<E> entityMetamodel,
             Configuration configuration
     );
 }

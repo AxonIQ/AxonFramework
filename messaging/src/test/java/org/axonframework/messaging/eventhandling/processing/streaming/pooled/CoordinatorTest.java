@@ -29,7 +29,9 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,6 +45,7 @@ import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.QueueMessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
@@ -79,6 +82,7 @@ class CoordinatorTest {
     private final ScheduledThreadPoolExecutor executorService = mock(ScheduledThreadPoolExecutor.class);
     private final StreamableEventSource messageSource = mock(StreamableEventSource.class);
     private final WorkPackage workPackage = mock(WorkPackage.class);
+    private final ScheduledExecutorService delegateExecutor = Executors.newSingleThreadScheduledExecutor();
     private Coordinator testSubject;
 
     private static Context trackingTokenContext(TrackingToken token) {
@@ -95,6 +99,11 @@ class CoordinatorTest {
         when(messageSource.latestToken(null)).thenReturn(FutureUtils.emptyCompletedFuture());
         when(messageSource.firstToken(null)).thenReturn(FutureUtils.emptyCompletedFuture());
         testSubject = buildCoordinator();
+    }
+
+    @AfterEach
+    void tearDown() {
+        delegateExecutor.shutdownNow();
     }
 
     private Coordinator buildCoordinator() {
@@ -281,7 +290,7 @@ class CoordinatorTest {
             doReturn(false).when(workPackage).isAbortTriggered();
             doReturn(true).when(workPackage).hasRemainingCapacity();
             doReturn(false).when(workPackage).isDone();
-            doReturn(MessageStream.fromIterable(Collections.emptyList()))
+            doAnswer(invocation -> openStreamWithoutEvents())
                     .when(messageSource).open(any(StreamingCondition.class), isNull());
 
             // when
@@ -344,6 +353,27 @@ class CoordinatorTest {
 
     private Answer<Future<Void>> runTaskAsync() {
         return invocationOnMock -> CompletableFuture.runAsync(invocationOnMock.getArgument(0));
+    }
+
+    /**
+     * Hands scheduled tasks to a real {@link ScheduledExecutorService}, so the coordinator keeps rescheduling itself as
+     * it would in production. Running them on the invoking thread instead would recurse without bound.
+     */
+    private Answer<?> scheduleTask() {
+        return invocationOnMock -> delegateExecutor.schedule(
+                (Runnable) invocationOnMock.getArgument(0),
+                invocationOnMock.getArgument(1),
+                invocationOnMock.getArgument(2)
+        );
+    }
+
+    /**
+     * Returns an open stream that has no events available, mimicking a {@link StreamableEventSource} that has nothing
+     * to hand out yet. Deliberately not a completed stream, as an event source hands out infinite streams that never
+     * complete on their own.
+     */
+    private static MessageStream<EventMessage> openStreamWithoutEvents() {
+        return new QueueMessageStream<>();
     }
 
     /**
@@ -482,11 +512,36 @@ class CoordinatorTest {
     }
 
     /**
-     * Tests for the {@code createWorkPackage} method, specifically the error-handling path
-     * in which the {@link SegmentChangeListener#onSegmentClaimed} callback throws.
+     * Tests for the {@code createWorkPackage} method error-handling paths: when the
+     * {@link SegmentChangeListener#onSegmentClaimed} callback throws, and when a self-checkpointing
+     * participant rejects the claim via {@link WorkPackage#onSegmentClaimed()}.
      */
     @Nested
     class CreateWorkPackage {
+
+        @Test
+        void releasesTokenClaim_whenWorkPackageOnSegmentClaimedThrows() {
+            // given - work package whose onSegmentClaimed throws, simulating a participant that rejects the claim
+            GlobalSequenceTrackingToken token = new GlobalSequenceTrackingToken(0);
+            RuntimeException participantException = new RuntimeException("participant threw");
+            doThrow(participantException).when(workPackage).onSegmentClaimed();
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(completedFuture(participantException)).when(workPackage).abort(any());
+            doReturn(emptyCompletedFuture()).when(workPackage).onSegmentReleased(any());
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                             .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(token)).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+
+            // when
+            awaitStart(testSubject);
+
+            // then - the token claim is released so it is not leaked, and the work package is not scheduled
+            verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+            verify(workPackage, never()).scheduleWorker();
+        }
 
         @Test
         void stillRegistersWorkPackageWhenOnSegmentClaimedFails() {
@@ -515,7 +570,7 @@ class CoordinatorTest {
             doReturn(false).when(workPackage).isAbortTriggered();
             doReturn(true).when(workPackage).hasRemainingCapacity();
             doReturn(false).when(workPackage).isDone();
-            doReturn(MessageStream.fromIterable(Collections.emptyList()))
+            doAnswer(invocation -> openStreamWithoutEvents())
                     .when(messageSource).open(any(StreamingCondition.class), isNull());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
 
@@ -548,7 +603,7 @@ class CoordinatorTest {
             doReturn(false).when(workPackage).isAbortTriggered();
             doReturn(true).when(workPackage).hasRemainingCapacity();
             doReturn(false).when(workPackage).isDone();
-            doReturn(MessageStream.fromIterable(Collections.emptyList()))
+            doAnswer(invocation -> openStreamWithoutEvents())
                     .when(messageSource).open(any(StreamingCondition.class), isNull());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
 
@@ -559,6 +614,44 @@ class CoordinatorTest {
             //        and the stream is subsequently opened from that resolved token
             verify(messageSource).firstToken(null);
             verify(messageSource).open(streamingFrom(resolvedFirstToken), null);
+        }
+
+        @Test
+        void opensNewStreamFromLastConsumedTokenWhenStreamIsCompletedByItsSource() {
+            // given - the first stream hands out a single event and is then completed by its source
+            GlobalSequenceTrackingToken initialToken = new GlobalSequenceTrackingToken(0);
+            GlobalSequenceTrackingToken eventToken = new GlobalSequenceTrackingToken(1);
+            QueueMessageStream<EventMessage> completingStream = new QueueMessageStream<>();
+            completingStream.offer(EventTestUtils.asEventMessage("event"), trackingTokenContext(eventToken));
+            completingStream.seal();
+
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                            .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(initialToken)).when(tokenStore)
+                                                   .fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(false).when(workPackage).isAbortTriggered();
+            doReturn(true).when(workPackage).hasRemainingCapacity();
+            doReturn(false).when(workPackage).isDone();
+            doReturn(true).when(workPackage).scheduleEvent(any());
+            doReturn(completingStream).doAnswer(invocation -> openStreamWithoutEvents())
+                                      .when(messageSource).open(any(StreamingCondition.class), isNull());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(scheduleTask()).when(executorService)
+                                    .schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+            // short intervals keep the coordination runs frequent, so the assertion does not rely on the availability
+            // callback winning the race with the run that is already in progress
+            Coordinator coordinator = buildCoordinatorWith(
+                    builder -> builder.claimExtensionThreshold(50).tokenClaimInterval(50)
+            );
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the completed stream is replaced by one starting at the token of the last consumed event
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(messageSource).open(streamingFrom(eventToken), null));
         }
     }
 

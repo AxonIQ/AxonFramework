@@ -17,9 +17,10 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -34,6 +35,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -47,6 +49,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
@@ -372,6 +375,69 @@ class WorkPackageTest {
                             any(ProcessingContext.class));
         });
         assertEquals(expectedToken, tokenCaptor.getValue());
+    }
+
+    @Test
+    void idleUpkeepDoesNotInvokeProgressStrategyWhenNothingIsUnstored() {
+        // given
+        // A spy is justified here: the assertion is that the idle-beat gate PREVENTS calls to the strategy.
+        AtomicReference<SegmentProgressStrategy> strategySpy = new AtomicReference<>();
+        // The short threshold ensures the claim-extension beat is due on every idle cycle.
+        WorkPackage testSubjectWithShortThreshold =
+                testSubjectBuilder.claimExtensionThreshold(1)
+                                  .progressStrategyFactory(context -> {
+                                      strategySpy.set(spy(new TokenStoringProgressStrategy(context)));
+                                      return strategySpy.get();
+                                  })
+                                  .build();
+        // Handle one event, so the consumed position is stored and no unstored progress remains.
+        var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L));
+        testSubjectWithShortThreshold.scheduleEvent(testEvent);
+        await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                eq(new GlobalSequenceTrackingToken(1L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        ));
+        clearInvocations(strategySpy.get());
+
+        // when: idle worker cycles run past the claim-extension beat
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            // Consciously trigger the WorkPackage again, to force it through WorkPackage#processEvents.
+            // This should be done inside the await, as the WorkPackage does not re-trigger itself.
+            testSubjectWithShortThreshold.scheduleWorker();
+            verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any());
+        });
+
+        // then: the claim was extended without driving the strategy at an unchanged position
+        verify(strategySpy.get(), never()).onBatchCommit(any());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenThatDoesNotAdvanceBeyondTheStoredToken() {
+        // given: the stored token has advanced to position 5
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a token that does not advance beyond the stored token is persisted
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(3L));
+
+        // then: the non-advancing token is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(new GlobalSequenceTrackingToken(3L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+    }
+
+    private void persistProgressInUnitOfWork(TrackingToken candidate) {
+        FutureUtils.joinAndUnwrap(
+                UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                                  .executeWithResult(ctx -> testSubject.persistProgress(candidate, ctx))
+        );
+    }
+
+    private TrackingToken fetchStoredToken() {
+        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null));
     }
 
     @Test
