@@ -69,6 +69,11 @@ import java.util.function.Supplier;
  *                     guessed, because the guarantee genuinely differs between deployments
  * @param livenessHorizon how long a committed event may take to reach a consumer before that is a liveness failure;
  *                     defaults to the timescale's quiescence budget, which is how long the runner itself waits
+ * @param segments     how many segments the run's processors divide the stream into
+ * @param segmentsPerNode how many segments one node may hold at once, or {@code null} to share them out evenly; a
+ *                     scenario that splits segments needs headroom above an even share, because a split raises the
+ *                     segment count and a cluster whose capacity is exactly the old count leaves the new segment
+ *                     unowned for the rest of the run
  * @author Stefan Dragisic
  * @since 5.3.0
  */
@@ -86,7 +91,9 @@ public record Scenario(String id,
                        Map<Tier, TierBudget> budgets,
                        int nodes,
                        DeliveryMode deliveryMode,
-                       Duration livenessHorizon) {
+                       Duration livenessHorizon,
+                       int segments,
+                       @org.jspecify.annotations.Nullable Integer segmentsPerNode) {
 
     /**
      * Compact constructor rejecting missing parts and defensively copying every collection.
@@ -115,7 +122,21 @@ public record Scenario(String id,
             throw new IllegalArgumentException(
                     "The scenario [" + id + "] declares " + nodes + " nodes; it needs at least one.");
         }
+        if (segments < 1) {
+            throw new IllegalArgumentException(
+                    "The scenario [" + id + "] declares " + segments + " segments; it needs at least one.");
+        }
+        if (segmentsPerNode != null && segmentsPerNode < 1) {
+            throw new IllegalArgumentException(
+                    "The scenario [" + id + "] lets a node hold " + segmentsPerNode + " segments; it needs at least "
+                            + "one.");
+        }
     }
+
+    /**
+     * How many segments a scenario divides the stream into when it does not say.
+     */
+    public static final int DEFAULT_SEGMENTS = 4;
 
     /**
      * Starts a builder with everything a scenario can default already defaulted: the in-heap store, the compressed
@@ -142,7 +163,48 @@ public record Scenario(String id,
     public Scenario onBackend(String name) {
         return new Scenario(id, this.name, claims, workload, faults, Objects.requireNonNull(name, "The name cannot "
                 + "be null."), timescale, determinism, buggifyProbability, oracles, seed, budgets, nodes,
-                            deliveryMode, livenessHorizon);
+                            deliveryMode, livenessHorizon, segments, segmentsPerNode);
+    }
+
+    /**
+     * Returns this scenario shrunk to the given cluster shape.
+     * <p>
+     * Exists so that a precondition arm can reuse a scenario's whole declaration and change only the shape it needs --
+     * a single node over a single segment, for instance, which is the only shape in which a merge has nothing to merge
+     * with.
+     *
+     * @param nodeCount  how many framework instances share the run's store and token store
+     * @param segmentCount how many segments the processors divide the stream into
+     * @return the same scenario over the given shape
+     */
+    public Scenario withNodesAndSegments(int nodeCount, int segmentCount) {
+        return new Scenario(id, name, claims, workload, faults, backend, timescale, determinism, buggifyProbability,
+                            oracles, seed, budgets, nodeCount, deliveryMode, livenessHorizon, segmentCount, null);
+    }
+
+    /**
+     * Returns this scenario with a different fault schedule.
+     *
+     * @param schedule when to break what
+     * @return the same scenario under the given schedule
+     */
+    public Scenario withFaults(FaultSchedule schedule) {
+        return new Scenario(id, name, claims, workload, Objects.requireNonNull(schedule, "The schedule cannot be "
+                + "null."), backend, timescale, determinism, buggifyProbability, oracles, seed, budgets, nodes,
+                            deliveryMode, livenessHorizon, segments, segmentsPerNode);
+    }
+
+    /**
+     * Returns this scenario under a different identifier, so that a derived arm's history and reproduce command name
+     * the arm rather than the scenario it was derived from.
+     *
+     * @param newId the identifier the derived arm is known by
+     * @return the same scenario under the given identifier
+     */
+    public Scenario withIdentifier(String newId) {
+        return new Scenario(Objects.requireNonNull(newId, "The newId cannot be null."), name, claims, workload, faults,
+                            backend, timescale, determinism, buggifyProbability, oracles, seed, budgets, nodes,
+                            deliveryMode, livenessHorizon, segments, segmentsPerNode);
     }
 
     /**
@@ -201,6 +263,8 @@ public record Scenario(String id,
         private int nodes = 1;
         private DeliveryMode deliveryMode = DeliveryMode.AT_LEAST_ONCE_NO_LOSS;
         private @org.jspecify.annotations.Nullable Duration livenessHorizon;
+        private int segments = DEFAULT_SEGMENTS;
+        private @org.jspecify.annotations.Nullable Integer segmentsPerNode;
 
         private Builder(String id, String name) {
             this.id = Objects.requireNonNull(id, "The id cannot be null.");
@@ -356,6 +420,32 @@ public record Scenario(String id,
         }
 
         /**
+         * Declares how many segments the run's processors divide the stream into.
+         *
+         * @param count the segment count
+         * @return this builder
+         */
+        public Builder segments(int count) {
+            this.segments = count;
+            return this;
+        }
+
+        /**
+         * Declares how many segments one node may hold at once.
+         * <p>
+         * Left undeclared, the run shares the segments out evenly, which is what makes a multi-node run a multi-node
+         * run: without a cap the first node to reach the store takes everything. A scenario that splits segments must
+         * declare headroom above an even share, or the segment a split creates has nowhere to go.
+         *
+         * @param count the per-node cap
+         * @return this builder
+         */
+        public Builder segmentsPerNode(int count) {
+            this.segmentsPerNode = count;
+            return this;
+        }
+
+        /**
          * Builds the scenario.
          * <p>
          * An undeclared liveness horizon resolves to the chosen timescale's quiescence budget, which is how long the
@@ -367,7 +457,8 @@ public record Scenario(String id,
         public Scenario build() {
             return new Scenario(id, name, claims, workload, faults, backend, timescale, determinism,
                                 buggifyProbability, oracles, seed, budgets, nodes, deliveryMode,
-                                livenessHorizon == null ? timescale.quiescence() : livenessHorizon);
+                                livenessHorizon == null ? timescale.quiescence() : livenessHorizon,
+                                segments, segmentsPerNode);
         }
     }
 }

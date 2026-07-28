@@ -45,6 +45,7 @@ public final class NodePauseFault implements Fault {
 
     private final Duration stall;
     private final int nodeIndex;
+    private final boolean aimAtTheBusiest;
 
     /**
      * Creates the fault.
@@ -53,6 +54,10 @@ public final class NodePauseFault implements Fault {
      * @param nodeIndex which of the run's nodes to freeze, by position; taken modulo the node count
      */
     public NodePauseFault(Duration stall, int nodeIndex) {
+        this(stall, nodeIndex, false);
+    }
+
+    private NodePauseFault(Duration stall, int nodeIndex, boolean aimAtTheBusiest) {
         this.stall = Objects.requireNonNull(stall, "The stall cannot be null.");
         if (stall.isNegative() || stall.isZero()) {
             throw new IllegalArgumentException("The stall must be positive, but was " + stall + ".");
@@ -61,6 +66,21 @@ public final class NodePauseFault implements Fault {
             throw new IllegalArgumentException("The nodeIndex cannot be negative, but was " + nodeIndex + ".");
         }
         this.nodeIndex = nodeIndex;
+        this.aimAtTheBusiest = aimAtTheBusiest;
+    }
+
+    /**
+     * Creates the fault aimed at whichever node holds the most segments when the window opens.
+     * <p>
+     * A stall is taken at a checkpoint the node itself reaches, so a stall armed on a node that holds no segment is
+     * never reached at all and correctly records itself as never having fired. Aiming at the busiest node is what puts
+     * the freeze in front of a node that is really handling events.
+     *
+     * @param stall how long the node stays frozen
+     * @return the fault
+     */
+    public static NodePauseFault busiest(Duration stall) {
+        return new NodePauseFault(stall, 0, true);
     }
 
     @Override
@@ -71,7 +91,7 @@ public final class NodePauseFault implements Fault {
     @Override
     public Map<String, String> parameters() {
         return Map.of("stallMs", String.valueOf(stall.toMillis()),
-                      "nodeIndex", String.valueOf(nodeIndex));
+                      "nodeIndex", aimAtTheBusiest ? "busiest" : String.valueOf(nodeIndex));
     }
 
     @Override
@@ -80,7 +100,10 @@ public final class NodePauseFault implements Fault {
         if (nodes.isEmpty()) {
             return;
         }
-        String target = nodes.get(nodeIndex % nodes.size());
+        String target = aimAtTheBusiest ? site.busiestNode(nodeIndex) : nodes.get(nodeIndex % nodes.size());
+        if (target == null) {
+            return;
+        }
         site.pauses().pause(target, stall, stalled -> evidence.fired(target + "/" + stalled.toMillis() + "ms"));
     }
 

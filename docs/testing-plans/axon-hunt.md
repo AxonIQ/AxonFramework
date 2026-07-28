@@ -1126,9 +1126,9 @@ sharpened in section 11.2); S16-S20 proposed in section 11.3. TLA columns: `DA` 
 | C12 | s | | | | | | P | | | | | | | | | | | | | | |
 | C13 | | | | | | | P | | | | | | | | | | | | | | |
 | C14 | | | | | | | P | | | | | | | | | | | | | | |
-| C15 | | | s | s | P | s | | | | | | s | | | | s | | | | | |
-| C16 | | | | | P | P | | | | | | | | | | | | | | | |
-| C17 | | | | P | | P | | | | | s | | | | | | | | | | s |
+| C15 | | | s | P | P | s | | s | s | | | s | | | | s | | | | | |
+| C16 | | | | P | P | P | | | | | | | | | | | | | | | |
+| C17 | | | | P | | P | | | s | | s | | | | | | | | | | s |
 | C18 | | | | P | | | | | | | | | | P | | | s | | | | P |
 | C19 | | | | P | | | | | | | | | | s | | | | | | | P |
 | C20 | | | | P | | s | | | | | | | | | | | | | | | P |
@@ -1149,13 +1149,13 @@ sharpened in section 11.2); S16-S20 proposed in section 11.3. TLA columns: `DA` 
 | C35 | | s | | | s | | | | | | | P | | | | | | | | | |
 | C36 | | | | s | | | | | | | | | | P | | | | | | | |
 | C37 | | s | s | | | | | | | | s | | | | | | | | | | |
-| C38 | | | | s | s | | | s | s | | | | | | | P | | | | | |
+| C38 | | | | P | s | | | P | P | | | | | | | -- | | | | | |
 | C39 | | | | | | | | | | | | | | | | | | | | | |
 | C40 | | | | s | | | | | | | | | | | | | P | | | | |
 | M1 | | | | P | | s | | | | | | | | | | | | | | | s |
 | M2 | | | | | | | P | | | | | | | | | | | | | | |
 | M3 | | | | P | | | | | | | | | | | | | | | | | P |
-| M4 | | | | | s | P | | | | | | | | | | | | | | | |
+| M4 | | | | s | s | P | | | | | | | | | | | | | | | |
 | M5 | | P | | | | | | | | | | s | | | | | | | | | |
 | M6 | | | | | | | | | | | | | | | | | | | P | | |
 | M7' | | | | | | | | | s | P | | | | | | | | | | | |
@@ -1198,3 +1198,33 @@ reasons - they are cheap, so adoption is the recommendation.
 | S11 (M9) | **Sole path for M9 and expensive** (external artifacts, container, network faults). Justified only because M9 is otherwise entirely uncovered; if the artifacts are unavailable it degrades to `SKIPPED`, and M9 then becomes an accepted residual for that run |
 | S12 (C35, M18) | **Sole path for the durability claims and expensive.** Justified: C35 is a documentation gap and the only way to establish the real behaviour is to crash a real store |
 | S16-S20 | All cheap (smoke tier, no containers except S19). No redundancy concern |
+
+### C.3 What shipped, per scenario, as of the L2 layer
+
+The matrix above is the plan's intent. This section is what exists, because a matrix that records intent and is read as
+coverage is the same mistake as a green test that never ran.
+
+| Scenario | Shipped | Tier run | Verdict | Notes |
+|---|---|---|---|---|
+| S1 `dcb_append_rejected_after_marker_under_contention` (+ faulted and single-writer arms) | yes | SMOKE | PASS | |
+| S3 `uncommitted_never_visible_rolledback_never_delivered` (3 phase arms) | yes | SMOKE | PASS | after-commit arm produced F-8 |
+| S4 `at_most_one_segment_owner_with_skew` (3 skew arms) | yes | SMOKE | PASS / PASS / expected violation | the double-timeout arm quantifies F-10 |
+| S8 `replay_sees_full_prefix_and_flags_redelivery` (+ cross-node arm) | yes | SMOKE | INCONCLUSIVE (replay repeats reported) | precondition asserted; cross-node arm documents M15 and produced F-12 |
+| S9 `split_merge_no_loss_no_dup_under_load` (+ single-segment merge arm) | yes | SMOKE | INCONCLUSIVE (merge repeats reported) | produced F-11 and the F-5 correction |
+| S10 `sequencing_policy_order_preserved` (3 policy arms) | arms a, c, d | SMOKE | PASS / INCONCLUSIVE | arm b needs an aggregate-based backend; produced F-6 and F-7 |
+| S15 `concurrent_bootstrap_initializes_segments_exactly_once` (+ churn arm) | yes | SMOKE | PASS | produced F-9 |
+| S16 `partial_batch_never_visible` | yes | SMOKE | PASS | produced F-3 |
+| S17 `stored_token_never_regresses` | **as an invariant, not a scenario** | -- | -- | `StoredTokenNeverRegresses` and `StoredTokenCoversDeliveredEvents` ship in `StoredProgressChecker` and run against every history, so C38 is covered by every cluster arm rather than by a scenario of its own. A dedicated arm driving a deliberately regressing progress strategy is not built. |
+| S2, S5, S6, S7, S11, S12, S13, S18, S19, S20 | no | -- | NOT-RUN | S2, S5, S6, S7, S11, S12 need the real-infrastructure layer; S13's checkers already run everywhere; S18, S19, S20 remain cheap and unclaimed |
+
+Two claims changed their primary path because S17 became an invariant rather than a scenario, and one gained coverage the
+plan did not anticipate:
+
+- **C38** is now primary on S4, S8 and S9 rather than on S17, because the monotonicity of a stored token is checked on
+  every history the cluster arms produce -- including across a replay and across a merge, both of which rewind it
+  legitimately and neither of which a dedicated S17 arm would have exercised.
+- **C15** is now primary on S4 rather than secondary, through `ClaimHandoverRewindsAtMostOneBatch`: the one-transaction
+  guarantee's only externally visible consequence is how far a stored token has fallen behind when somebody reads it back,
+  and that is what the ownership arm measures.
+- **C16** gains a primary path on S4 for the same reason, on the at-least-once half of the conditional only. The
+  exactly-once half still has no deployment in this tree that can provide it.

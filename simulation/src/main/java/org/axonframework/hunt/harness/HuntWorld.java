@@ -27,7 +27,6 @@ import org.axonframework.hunt.history.HistoryRecorder;
 import org.axonframework.hunt.workload.Workload;
 import org.axonframework.hunt.workload.WorkloadContext;
 import org.axonframework.messaging.commandhandling.SimpleCommandBus;
-import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
@@ -70,10 +69,31 @@ import java.util.concurrent.TimeUnit;
  */
 public final class HuntWorld implements FaultSite, AutoCloseable {
 
+    /**
+     * How many events one batch of the run's projection may hold.
+     * <p>
+     * Public because it bounds what a claim handover may legitimately repeat: a batch's handler effects and its token
+     * progress are persisted in one transaction, so the events a segment redelivers after changing hands are the events
+     * of at most one batch. An oracle checking that needs the number, so the number travels in the history header.
+     */
+    public static final int PROJECTION_BATCH_SIZE = 64;
+
+    /**
+     * The components a processing context of this run can resolve.
+     * <p>
+     * Only one is ever asked for, and finding out which cost an afternoon: rewinding a processor's tokens converts the
+     * reset context through a {@code GeneralConverter} taken from the processing context, and it does so whether or not
+     * a reset context was given, so a reset with nothing to convert still needs one. A plain-Java processor wired over
+     * an application context that provides no components therefore cannot be reset at all -- the call fails with an
+     * {@code UnsupportedOperationException} out of the empty context rather than with anything about resets. Supplying
+     * the converter here is harness wiring, not a workaround for a defect, but the fact that a null reset context
+     * demands a converter is recorded as a finding.
+     */
+    private static final org.axonframework.messaging.core.ApplicationContext HARNESS_COMPONENTS =
+            new HarnessComponents();
+
     private static final String PROCESSOR_NAME = "hunt-projection";
-    private static final int REAL_THREAD_SEGMENTS = 4;
     private static final int REAL_THREAD_WORKERS = 4;
-    private static final int PROJECTION_BATCH_SIZE = 64;
     private static final Duration START_TIMEOUT = Duration.ofSeconds(30);
 
     private final HuntBackend backend;
@@ -89,12 +109,13 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
     private final WorkloadContext context;
     private final List<String> participants;
     private final DeterminismMode determinism;
+    private final @org.jspecify.annotations.Nullable String skewedNodeId;
 
     private HuntWorld(HuntBackend backend,
                       Workload workload,
                       long seed,
                       int commands,
-                      int nodeCount,
+                      Topology topology,
                       HistoryRecorder recorder,
                       Buggify buggify,
                       HuntTimescale timescale,
@@ -109,13 +130,14 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         this.engine = backend.createEngine();
         this.store = new ControllableEventStorageEngine(engine, recorder, buggify);
         this.eventStore = new StorageEngineBackedEventStore(store, new SimpleEventBus(), workload.tagResolver());
-        this.commandBus = new SimpleCommandBus(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE));
+        this.commandBus = new SimpleCommandBus(new SimpleUnitOfWorkFactory(HARNESS_COMPONENTS));
         this.context = new WorkloadContext(this, seed, commands, recorder, deadline);
 
         EventHandlingComponent projection = workload.install(context);
 
+        int nodeCount = topology.nodes();
         int workers = mode == DeterminismMode.SINGLE_THREADED ? 1 : REAL_THREAD_WORKERS;
-        int segments = mode == DeterminismMode.SINGLE_THREADED ? 1 : REAL_THREAD_SEGMENTS;
+        int segments = mode == DeterminismMode.SINGLE_THREADED ? 1 : topology.segments();
         this.tokenStores = backend.createTokenStores(seed + "-" + System.identityHashCode(this),
                                                      timescale.tokenStoreClaimTimeout());
 
@@ -124,25 +146,74 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         // on one node is a single-node run with extra threads, and no ownership question arises in it. Sharing the
         // segments out evenly is the configuration a real multi-instance deployment uses and the only one in which
         // ownership means anything.
-        int maxSegmentsPerNode = Math.max(1, segments / nodeCount);
+        int maxSegmentsPerNode = nodeCount == 1
+                ? segments
+                : topology.segmentsPerNode() == null
+                        ? Math.max(1, segments / nodeCount)
+                        : topology.segmentsPerNode();
+
+        // The skewed node is the last one, never the first: the first is the one that resolves the store's identifier
+        // before the boot barrier is released, and a node that considers every claim expired is the worst possible
+        // choice for that job.
+        String skewedNode = timescale.emulatedClockSkew().isZero() ? null : "node-" + (nodeCount - 1);
+        this.skewedNodeId = skewedNode;
 
         List<HuntNode> built = new ArrayList<>(nodeCount);
         for (int index = 0; index < nodeCount; index++) {
             String nodeId = "node-" + index;
+            Duration skew = nodeId.equals(skewedNode) ? timescale.emulatedClockSkew() : Duration.ZERO;
             built.add(new HuntNode(nodeId,
                                    PROCESSOR_NAME,
                                    projection,
-                                   tokenStores.forNode(nodeId),
+                                   tokenStores.forNode(nodeId, skew),
                                    pauses,
                                    recorder,
-                                   () -> configuration(segments, nodeCount == 1 ? segments : maxSegmentsPerNode),
+                                   () -> configuration(segments, maxSegmentsPerNode),
                                    workers));
         }
         this.nodes = List.copyOf(built);
     }
 
+    /**
+     * The shape of one run's cluster: how many framework instances, how many segments, and how many of those segments
+     * one instance may hold at once.
+     *
+     * @param nodes          how many framework instances share the run's store and token store
+     * @param segments       how many segments the processors divide the stream into
+     * @param segmentsPerNode how many segments one node may hold, or {@code null} to share them out evenly
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    public record Topology(int nodes, int segments, @org.jspecify.annotations.Nullable Integer segmentsPerNode) {
+
+        /**
+         * Compact constructor rejecting a cluster with nothing in it.
+         */
+        public Topology {
+            if (nodes < 1 || segments < 1) {
+                throw new IllegalArgumentException(
+                        "A topology needs at least one node and one segment, but was " + nodes + " node(s) over "
+                                + segments + " segment(s).");
+            }
+        }
+
+        /**
+         * Returns a single-node topology over the default segment count.
+         *
+         * @return the topology one node runs under
+         */
+        public static Topology single() {
+            return new Topology(1, 4, null);
+        }
+    }
+
     private PooledStreamingEventProcessorConfiguration configuration(int segments, int maxSegmentsPerNode) {
         return new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null))
+                // The processor opens its own units of work, and rewinding its tokens resolves a general-purpose
+                // converter out of one of them. The framework's default here is an application context that provides
+                // nothing, so without this a reset fails with an UnsupportedOperationException that says nothing about
+                // resets at all.
+                .unitOfWorkFactory(new SimpleUnitOfWorkFactory(HARNESS_COMPONENTS))
                 .eventSource(eventStore)
                 .initialSegmentCount(segments)
                 .maxClaimedSegments(maxSegmentsPerNode)
@@ -175,17 +246,18 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
                                   HuntTimescale timescale,
                                   DeterminismMode mode,
                                   Deadline deadline) {
-        return start(backend, workload, seed, commands, 1, recorder, buggify, timescale, mode, deadline);
+        return start(backend, workload, seed, commands, Topology.single(), recorder, buggify, timescale, mode,
+                     deadline);
     }
 
     /**
-     * Wires a world of {@code nodeCount} nodes and starts all of them at once.
+     * Wires a world of the given shape and starts every node at once.
      *
      * @param backend   the store the run is driven against
      * @param workload  the load to install; its command handlers and projection are registered here
      * @param seed      the seed fixing the workload's shape
      * @param commands  how many commands the run will issue
-     * @param nodeCount how many framework instances share the run's store and token store
+     * @param topology  how many nodes and segments the run has, and how many segments one node may hold
      * @param recorder  the recorder every operation is written to
      * @param buggify   the scheduling-bias points, inert unless a scenario arms them
      * @param timescale the timings the processors are configured with
@@ -197,23 +269,21 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
                                   Workload workload,
                                   long seed,
                                   int commands,
-                                  int nodeCount,
+                                  Topology topology,
                                   HistoryRecorder recorder,
                                   Buggify buggify,
                                   HuntTimescale timescale,
                                   DeterminismMode mode,
                                   Deadline deadline) {
         Objects.requireNonNull(backend, "The backend cannot be null.");
+        Objects.requireNonNull(topology, "The topology cannot be null.");
         Objects.requireNonNull(workload, "The workload cannot be null.");
         Objects.requireNonNull(recorder, "The recorder cannot be null.");
         Objects.requireNonNull(buggify, "The buggify cannot be null.");
         Objects.requireNonNull(timescale, "The timescale cannot be null.");
         Objects.requireNonNull(mode, "The mode cannot be null.");
         Objects.requireNonNull(deadline, "The deadline cannot be null.");
-        if (nodeCount < 1) {
-            throw new IllegalArgumentException("A world needs at least one node, but " + nodeCount + " was asked for.");
-        }
-        HuntWorld world = new HuntWorld(backend, workload, seed, commands, nodeCount, recorder, buggify, timescale,
+        HuntWorld world = new HuntWorld(backend, workload, seed, commands, topology, recorder, buggify, timescale,
                                         mode, deadline);
         world.bootTogether();
         return world;
@@ -389,9 +459,68 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         return nodes.stream().map(HuntNode::nodeId).toList();
     }
 
+    /**
+     * Returns the node whose store view treats a claim as expired early, emulating a clock that runs ahead.
+     *
+     * @return the skewed node's identity, or {@code null} when the run declared no skew
+     */
+    public @org.jspecify.annotations.Nullable String skewedNodeId() {
+        return skewedNodeId;
+    }
+
     @Override
     public void crashNode(String nodeId) {
         nodes.stream().filter(node -> node.nodeId().equals(nodeId)).forEach(HuntNode::crash);
+    }
+
+    @Override
+    public void stopNode(String nodeId) {
+        nodes.stream().filter(node -> node.nodeId().equals(nodeId)).forEach(HuntNode::close);
+    }
+
+    @Override
+    public void resetNode(String nodeId) {
+        nodes.stream()
+             .filter(node -> node.nodeId().equals(nodeId))
+             .forEach(node -> node.resetAndRestart()
+                                  .orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                                  .join());
+    }
+
+    @Override
+    public @org.jspecify.annotations.Nullable Throwable resetRunningNode(String nodeId) {
+        return nodes.stream()
+                    .filter(node -> node.nodeId().equals(nodeId))
+                    .findFirst()
+                    .map(HuntNode::attemptResetWhileRunning)
+                    .orElse(null);
+    }
+
+    @Override
+    public List<Integer> claimedSegments(String nodeId) {
+        return nodes.stream()
+                    .filter(node -> node.nodeId().equals(nodeId))
+                    .findFirst()
+                    .map(HuntNode::claimedSegments)
+                    .orElse(List.of());
+    }
+
+    @Override
+    public boolean splitSegment(String nodeId, int segmentId) {
+        return nodes.stream()
+                    .filter(node -> node.nodeId().equals(nodeId))
+                    .findFirst()
+                    .map(node -> node.splitSegment(segmentId))
+                    .orElse(false);
+    }
+
+    @Override
+    public boolean mergeSegment(String nodeId, int segmentId) {
+        return nodes.stream()
+                    .filter(node -> node.nodeId().equals(nodeId))
+                    .findFirst()
+                    .map(node -> node.mergeSegment(segmentId))
+                    .orElse(false);
     }
 
     @Override
@@ -420,5 +549,32 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
      */
     public Duration quiescenceBudget() {
         return timescale.quiescence();
+    }
+
+    /**
+     * The smallest application context a run can get away with: one general-purpose converter and nothing else.
+     * <p>
+     * A processing context resolves components through the application context the unit-of-work factory was built with.
+     * The framework's own empty context throws for every request, which is right for a test that resolves nothing and
+     * wrong for a run that rewinds a processor.
+     *
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    private static final class HarnessComponents implements org.axonframework.messaging.core.ApplicationContext {
+
+        private final org.axonframework.conversion.GeneralConverter converter =
+                new org.axonframework.conversion.DelegatingGeneralConverter(
+                        new org.axonframework.conversion.jackson.JacksonConverter());
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <C> C component(Class<C> type, @org.jspecify.annotations.Nullable String name) {
+            if (type.isInstance(converter)) {
+                return (C) converter;
+            }
+            throw new UnsupportedOperationException(
+                    "The hunt harness provides no component of type [" + type.getName() + "].");
+        }
     }
 }

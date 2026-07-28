@@ -20,6 +20,7 @@ import org.axonframework.hunt.history.HistoryOps;
 import org.axonframework.hunt.history.HistoryRecorder;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.jspecify.annotations.Nullable;
@@ -44,8 +45,15 @@ import java.util.concurrent.CompletableFuture;
  * them can be made deliberately conservative -- starting at the completion and expiring from the invocation -- and a
  * conservative interval never invents an overlap.
  * <p>
- * Only the ownership-bearing calls are recorded. Storing a token, deleting one and listing segments carry no claim
- * decision, so recording them would bulk out every history in the suite for nothing.
+ * Storing a token is recorded too, and for a different reason. A claim says who may work on a segment; a stored token
+ * says how far that work has got <em>durably</em>. Those are the two halves of the guarantee that a batch's handler
+ * effects and its progress are persisted together, and without the second half a suite cannot see a batch whose effects
+ * landed while its progress did not: the work package keeps its position in memory and carries on regardless, so the
+ * omission is invisible until somebody re-reads the stored token. That is exactly the defect the mutation campaign
+ * planted and the suite failed to catch before this record existed.
+ * <p>
+ * Deleting a token and listing segments carry neither decision, so recording them would bulk out every history in the
+ * suite for nothing.
  *
  * @author Stefan Dragisic
  * @since 5.3.0
@@ -134,7 +142,25 @@ public final class RecordingTokenStore implements TokenStore {
                                               String processorName,
                                               int segmentId,
                                               @Nullable ProcessingContext context) {
-        return delegate.storeToken(token, processorName, segmentId, context);
+        Map<String, Object> arguments = new LinkedHashMap<>(segmentValue(processorName, segmentId));
+        arguments.put(HistoryOps.POSITION, positionOf(token));
+        arguments.put(HistoryOps.REPLAY, token != null && ReplayToken.isReplay(token));
+        HistoryRecorder.Invocation invocation =
+                recorder.invoke(HistoryOps.STORE_TOKEN, key(processorName, segmentId), Map.copyOf(arguments));
+        return record(delegate.storeToken(token, processorName, segmentId, context), invocation, ignored -> Map.of());
+    }
+
+    /**
+     * Returns the position a token reports, or {@code -1} when it reports none.
+     * <p>
+     * A replay token is unwrapped first: what matters for durable progress is the position the segment has really
+     * reached, and a replay token's own position is the rewound one.
+     */
+    static long positionOf(@Nullable TrackingToken token) {
+        if (token == null) {
+            return -1L;
+        }
+        return token.position().orElse(-1L);
     }
 
     @Override

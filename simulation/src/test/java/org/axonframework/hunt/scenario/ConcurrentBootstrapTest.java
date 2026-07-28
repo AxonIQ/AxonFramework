@@ -82,28 +82,47 @@ class ConcurrentBootstrapTest {
 
         @Test
         void reallyRacedEachOtherToCreateThem() {
-            // given one seed of the bootstrap arm
+            // given the bootstrap arm's seeds
             Scenario scenario = HuntScenarios.concurrentBootstrap();
 
-            // when it is run
-            ScenarioResult result = ScenarioRunner.run(scenario, Tier.SMOKE, scenario.seed(),
-                                                       HuntHistories.directory("s15-race"));
-            HistoryView history = HistoryView.read(result.history());
-            List<Operation> attempts = history.operations(HistoryOps.INIT_SEGMENTS);
-            Set<String> attemptingNodes = new LinkedHashSet<>();
-            attempts.forEach(attempt -> attemptingNodes.add(String.valueOf(attempt.invocation().node())));
-            long succeeded = attempts.stream().filter(attempt -> attempt.outcome() == Outcome.OK).count();
-            int overlapping = overlappingPairs(attempts);
-            System.out.println("S15 bootstrap race: " + attempts.size() + " initialisation attempt(s) from "
-                                       + attemptingNodes + ", " + succeeded + " accepted, " + overlapping
-                                       + " overlapping pair(s) from distinct nodes");
+            // when they are run until one of them produces the race, or the tier runs out
+            //
+            // Whether four threads released from a barrier all reach the store before the first finishes is the
+            // operating system's decision, not the harness's. Under a loaded virtual machine the first node can create
+            // and claim all four segments before the others look, which was measured on this suite: in isolation the
+            // race appears on every run, and inside a full build it occasionally does not. Requiring it on one fixed
+            // seed makes the arm load-sensitive; requiring it somewhere in the tier keeps the evidence and drops the
+            // sensitivity.
+            int widestRace = 0;
+            Set<String> racers = new LinkedHashSet<>();
+            for (long seed : scenario.seeds(Tier.SMOKE)) {
+                ScenarioResult result =
+                        ScenarioRunner.run(scenario, Tier.SMOKE, seed, HuntHistories.directory("s15-race"));
+                HistoryView history = HistoryView.read(result.history());
+                List<Operation> attempts = history.operations(HistoryOps.INIT_SEGMENTS);
+                Set<String> attemptingNodes = new LinkedHashSet<>();
+                attempts.forEach(attempt -> attemptingNodes.add(String.valueOf(attempt.invocation().node())));
+                long succeeded = attempts.stream().filter(attempt -> attempt.outcome() == Outcome.OK).count();
+                int overlapping = overlappingPairs(attempts);
+                System.out.println("S15 bootstrap race seed " + seed + ": " + attempts.size()
+                                           + " initialisation attempt(s) from " + attemptingNodes + ", " + succeeded
+                                           + " accepted, " + overlapping + " overlapping pair(s) from distinct nodes");
 
-            // then more than one node must have been inside an initialisation while another one was, or the arm
-            // observed a cluster that booted in single file and proves nothing about a race
-            assertThat(attemptingNodes).hasSizeGreaterThan(1);
-            assertThat(overlapping).isPositive();
-            // and exactly one of the racing attempts may create the segments
-            assertThat(succeeded).isEqualTo(1L);
+                // then exactly one of the attempts may create the segments, on every seed
+                assertThat(succeeded).as("accepted initialisations for seed %d", seed).isEqualTo(1L);
+                if (overlapping > widestRace) {
+                    widestRace = overlapping;
+                    racers = attemptingNodes;
+                }
+                if (widestRace > 0 && attemptingNodes.size() > 1) {
+                    break;
+                }
+            }
+
+            // and somewhere in the tier, more than one node must have been inside an initialisation while another one
+            // was, or the arm only ever observed a cluster booting in single file and proves nothing about a race
+            assertThat(racers).as("nodes that attempted the initialisation on the racing seed").hasSizeGreaterThan(1);
+            assertThat(widestRace).as("overlapping initialisation pairs across the tier").isPositive();
         }
 
         @Test

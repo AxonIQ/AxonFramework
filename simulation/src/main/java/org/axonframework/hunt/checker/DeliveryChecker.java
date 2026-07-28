@@ -40,8 +40,8 @@ import java.util.TreeMap;
  *     <li>{@value #NO_COMMITTED_EVENT_GOES_UNDELIVERED}: <em>Every event a committed append made visible is delivered
  *     to a consumer at least once.</em> Loss is a hard failure under every delivery mode; nothing licenses it.</li>
  *     <li>{@value #DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW}: <em>An event is delivered more than once only
- *     while a recorded claim transition or node recovery window is open, and never at all when the run declares
- *     exactly-once delivery.</em></li>
+ *     while a recorded claim transition, segment-count change or node recovery window is open, or as part of a replay
+ *     the delivery itself reports, and never at all when the run declares exactly-once delivery.</em></li>
  * </ul>
  * <b>The mode is declared by the scenario and never inferred.</b> Exactly-once holds when the token store and the read
  * model are one transactional resource and does not hold when they are two; a checker that guessed would be inventing
@@ -54,6 +54,20 @@ import java.util.TreeMap;
  * segment's owner and at every recorded node crash or restart, and closes one claim timeout later, widened at both
  * ends by the run's declared clock-skew allowance. A repeat inside such a window is expected and is reported as a
  * distribution. A repeat outside every window is a failure: nothing was happening that licenses it.
+ * <p>
+ * <b>A segment-count change is a licence too, and measurement is why it is one.</b> Merging two segments gives the
+ * merged one the lower of their two tokens, so every event the further-ahead half had already handled arrives again --
+ * inherently, by the merge's own design, and with nothing in the framework's documentation saying so. A split is the
+ * mirror case: its children inherit a reconciled position, and the work package that was interrupted may have handled
+ * events past it. Both are recorded operations with a stated mechanism, exactly like a claim transition, so both open a
+ * window of one claim timeout. What the framework does not state is written up as a finding rather than reported as a
+ * violation.
+ * <p>
+ * <b>A replay is the other licence, and it is the framework's own word rather than a window.</b> After a reset the whole
+ * stream is redelivered on purpose, and the framework marks each such delivery through the token it hands the handler.
+ * The delivery record carries that mark, so a replayed repeat is recognised from the framework's own answer instead of
+ * from a period of time in which anything at all would have been forgiven. A run that resets and then repeats an event
+ * the framework did <em>not</em> call a replay is therefore still a failure.
  * <p>
  * <b>Permitted repeats still stop a run being a clean pass.</b> They are reported, not violated, and reporting them
  * downgrades the run to undecided, because a projection that applied a transfer twice is a fact somebody should look
@@ -91,8 +105,9 @@ public class DeliveryChecker implements Checker {
      * registry.
      */
     public static final String DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW_STATEMENT =
-            "An event is delivered more than once only while a recorded claim transition or node recovery window is "
-                    + "open, and never at all when the run declares exactly-once delivery.";
+            "An event is delivered more than once only while a recorded claim transition, segment-count change or node "
+                    + "recovery window is open, or as part of a replay the delivery itself reports, and never at all "
+                    + "when the run declares exactly-once delivery.";
 
     /**
      * The header field naming the delivery guarantee the run's deployment can provide.
@@ -174,7 +189,9 @@ public class DeliveryChecker implements Checker {
             }
             repeatDistribution.merge(records.size(), 1, Integer::sum);
             for (HistoryRecord repeat : records.subList(1, records.size())) {
-                boolean licensed = !exactlyOnce && windows.stream().anyMatch(window -> window.covers(repeat.logicalTs()));
+                boolean replayed = Boolean.parseBoolean(repeat.stringValue(HistoryOps.REPLAY));
+                boolean licensed = !exactlyOnce
+                        && (replayed || windows.stream().anyMatch(window -> window.covers(repeat.logicalTs())));
                 if (licensed) {
                     inside++;
                 } else {
@@ -186,7 +203,8 @@ public class DeliveryChecker implements Checker {
                                 "event " + entry.getKey() + " was delivered again "
                                         + (exactlyOnce
                                         ? "although the run declares exactly-once delivery"
-                                        : "while no claim transition or node recovery window was open"),
+                                        : "outside a replay and while no claim transition or node recovery window was "
+                                                + "open"),
                                 List.of(records.getFirst(), repeat),
                                 history.header()));
                     }
@@ -259,6 +277,15 @@ public class DeliveryChecker implements Checker {
             String action = node.stringValue(HistoryOps.ACTION);
             if ("crashed".equals(action) || "restarted".equals(action)) {
                 windows.add(new Window(node.logicalTs() - allowance, node.logicalTs() + claimTimeout + allowance));
+            }
+        }
+        for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
+            for (Operation change : history.operations(instruction)) {
+                HistoryRecord completion = change.completion();
+                if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
+                    windows.add(new Window(change.invocation().logicalTs() - allowance,
+                                           completion.logicalTs() + claimTimeout + allowance));
+                }
             }
         }
         return List.copyOf(windows);

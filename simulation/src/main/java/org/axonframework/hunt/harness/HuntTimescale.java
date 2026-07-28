@@ -41,7 +41,13 @@ import java.util.Objects;
  * may appear to hold one segment at once is decided by comparing timestamps one node wrote against another node's
  * reading of the clock, so an ownership oracle needs a stated tolerance. Making it a field of the timings, recorded
  * in the history header and read back by the checker, is what stops it becoming a silent fudge factor inside the
- * check. Nothing in this suite emulates skew yet, so both arms declare zero.
+ * check.
+ * <p>
+ * <b>The skew a run emulates is a second, separate number.</b> {@link #emulatedClockSkew()} makes one node's clock run
+ * ahead; {@link #ownershipSkewAllowance()} is what the oracle forgives. They are not the same knob on purpose: the
+ * framework states no tolerance for clock skew anywhere, so an arm that raised the tolerance to match its own
+ * perturbation could never report a broken claim, which is the only thing such an arm is for. Both shipped arms declare
+ * zero for both.
  *
  * @param name                    the arm's name, recorded in the history header
  * @param tokenClaimInterval      how often the coordinator tries to claim segments it does not hold
@@ -51,7 +57,9 @@ import java.util.Objects;
  * @param stall                   how long a pause fault stalls a participant; longer than every timeout above
  * @param quiescence              the longest a run waits for the system to go quiet before judging it
  * @param ownershipSkewAllowance  how far two nodes' clocks are allowed to disagree before an ownership overlap
- *                                stops being evidence; zero unless the run deliberately emulates skew
+ *                                stops being evidence; zero, because the framework states no tolerance at all
+ * @param emulatedClockSkew       how far ahead of the rest of the cluster one node's clock is made to run; zero
+ *                                unless the run is deliberately hunting for the protocol's skew tolerance
  * @author Stefan Dragisic
  * @since 5.3.0
  */
@@ -62,7 +70,8 @@ public record HuntTimescale(String name,
                             Duration gapTimeout,
                             Duration stall,
                             Duration quiescence,
-                            Duration ownershipSkewAllowance) {
+                            Duration ownershipSkewAllowance,
+                            Duration emulatedClockSkew) {
 
     /**
      * Compact constructor rejecting a missing name and any non-positive duration.
@@ -79,6 +88,11 @@ public record HuntTimescale(String name,
         if (ownershipSkewAllowance.isNegative()) {
             throw new IllegalArgumentException(
                     "The ownershipSkewAllowance cannot be negative, but was " + ownershipSkewAllowance + ".");
+        }
+        Objects.requireNonNull(emulatedClockSkew, "The emulatedClockSkew cannot be null.");
+        if (emulatedClockSkew.isNegative()) {
+            throw new IllegalArgumentException(
+                    "The emulatedClockSkew cannot be negative, but was " + emulatedClockSkew + ".");
         }
     }
 
@@ -97,7 +111,42 @@ public record HuntTimescale(String name,
      */
     public HuntTimescale withClaimTimings(Duration claimTimeout, Duration extensionThreshold) {
         return new HuntTimescale(name, tokenClaimInterval, extensionThreshold, claimTimeout, gapTimeout, stall,
-                                 quiescence, ownershipSkewAllowance);
+                                 quiescence, ownershipSkewAllowance, emulatedClockSkew);
+    }
+
+    /**
+     * Returns this arm with the given clock-skew allowance, which is what the ownership oracle forgives.
+     * <p>
+     * Zero everywhere the suite ships, because the framework states no tolerance for clock skew at all. Raising it is
+     * how a run declares that some overlap is expected; raising it to match a skew the same run is emulating would make
+     * the arm unable to report the very thing it perturbs.
+     *
+     * @param allowance how long two nodes may appear to hold one segment before that stops being evidence
+     * @return the arm, with the allowance replaced
+     */
+    public HuntTimescale withSkewAllowance(Duration allowance) {
+        return new HuntTimescale(name, tokenClaimInterval, claimExtensionThreshold, tokenStoreClaimTimeout, gapTimeout,
+                                 stall, quiescence, allowance, emulatedClockSkew);
+    }
+
+    /**
+     * Returns this arm with one node's clock emulated to run the given amount ahead of every other node's.
+     * <p>
+     * That node's view of the token store is given a claim timeout shortened by this much, which is the same inequality
+     * a clock running that far ahead evaluates, so it considers other nodes' claims expired early and steals them while
+     * they are still legitimately held. What it does and does not model is set out on
+     * {@link TokenStores#forNode(String, Duration)}.
+     * <p>
+     * The skew is deliberately <em>not</em> the ownership oracle's tolerance. The framework states no tolerance for
+     * clock skew at all, so an arm that raised the tolerance to match the perturbation could never report a broken
+     * claim, which is the one thing the arm is for.
+     *
+     * @param skew how far ahead one node's clock is made to run
+     * @return the arm, with the emulated skew replaced
+     */
+    public HuntTimescale withEmulatedClockSkew(Duration skew) {
+        return new HuntTimescale(name, tokenClaimInterval, claimExtensionThreshold, tokenStoreClaimTimeout, gapTimeout,
+                                 stall, quiescence, ownershipSkewAllowance, skew);
     }
 
     /**
@@ -117,6 +166,7 @@ public record HuntTimescale(String name,
                                  Duration.ofMillis(600),
                                  Duration.ofMillis(300),
                                  Duration.ofSeconds(30),
+                                 Duration.ZERO,
                                  Duration.ZERO);
     }
 
@@ -134,6 +184,7 @@ public record HuntTimescale(String name,
                                  Duration.ofSeconds(60),
                                  Duration.ofSeconds(30),
                                  Duration.ofMinutes(5),
+                                 Duration.ZERO,
                                  Duration.ZERO);
     }
 
@@ -169,6 +220,7 @@ public record HuntTimescale(String name,
         described.put("stallMs", String.valueOf(stall.toMillis()));
         described.put("quiescenceMs", String.valueOf(quiescence.toMillis()));
         described.put("ownershipSkewAllowanceMs", String.valueOf(ownershipSkewAllowance.toMillis()));
+        described.put("emulatedClockSkewMs", String.valueOf(emulatedClockSkew.toMillis()));
         return Map.copyOf(described);
     }
 

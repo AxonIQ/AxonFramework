@@ -36,8 +36,13 @@ import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
+import org.axonframework.messaging.eventhandling.replay.ResetHandler;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -127,13 +132,17 @@ public final class LedgerWorkload implements Workload {
 
     private final boolean forceHotKey;
     private final boolean sequencePerAccount;
+    private final boolean idempotentProjection;
+    private final Set<String> applied = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Map<Long, SwarmShape> shapes = new ConcurrentHashMap<>();
     private final Map<String, Long> balances = new ConcurrentHashMap<>();
+    private final Map<String, HistoryRecorder.ProcessRecorder> projectionRecorders = new ConcurrentHashMap<>();
     private final AtomicLong delivered = new AtomicLong();
 
-    private LedgerWorkload(boolean forceHotKey, boolean sequencePerAccount) {
+    private LedgerWorkload(boolean forceHotKey, boolean sequencePerAccount, boolean idempotentProjection) {
         this.forceHotKey = forceHotKey;
         this.sequencePerAccount = sequencePerAccount;
+        this.idempotentProjection = idempotentProjection;
     }
 
     /**
@@ -145,7 +154,7 @@ public final class LedgerWorkload implements Workload {
      * @return the workload
      */
     public static LedgerWorkload hotKey() {
-        return new LedgerWorkload(true, false);
+        return new LedgerWorkload(true, false, false);
     }
 
     /**
@@ -168,7 +177,29 @@ public final class LedgerWorkload implements Workload {
      * @return the workload
      */
     public static LedgerWorkload sequencedPerAccount() {
-        return new LedgerWorkload(true, true);
+        return new LedgerWorkload(true, true, false);
+    }
+
+    /**
+     * Creates a per-account sequenced ledger whose projection applies each event at most once.
+     * <p>
+     * <b>Which deployment a scenario is modelling decides whether this is the right ledger.</b> Where the token store
+     * and the read model are separate resources the framework's guarantee is at-least-once and its documentation says
+     * plainly that handlers must be idempotent; a projection that simply adds the amount again when a stolen claim
+     * causes a redelivery is a projection nobody would deploy, and the conservation law would report the framework's own
+     * documented behaviour as money appearing out of nowhere. Any arm that deliberately makes a claim change hands
+     * therefore needs this ledger.
+     * <p>
+     * <b>What it costs, stated rather than glossed over.</b> The sum of the balances no longer notices a repeated
+     * delivery, so this ledger is a weaker oracle than {@link #sequencedPerAccount()} by exactly that much. It still
+     * notices a lost event, a torn batch, a doubled <em>append</em> and a bypassed conflict check, and the repeated
+     * deliveries it absorbs are still counted and reported by the delivery oracle -- which is where a redelivery belongs,
+     * because that oracle knows whether the run was entitled to one. Arms with no handover keep the sharper ledger.
+     *
+     * @return the workload
+     */
+    public static LedgerWorkload sequencedPerAccountIdempotent() {
+        return new LedgerWorkload(true, true, true);
     }
 
     /**
@@ -177,7 +208,7 @@ public final class LedgerWorkload implements Workload {
      * @return the workload
      */
     public static LedgerWorkload seedShaped() {
-        return new LedgerWorkload(false, false);
+        return new LedgerWorkload(false, false, false);
     }
 
     @Override
@@ -201,6 +232,7 @@ public final class LedgerWorkload implements Workload {
         described.put("opMix", "transfer=" + TRANSFER_SHARE + "%,seize=" + (SEIZE_SHARE - TRANSFER_SHARE)
                 + "%,rebalance=" + (100 - SEIZE_SHARE) + "%");
         described.put("sequencingPolicy", sequencePerAccount ? "per-account" : "framework-default");
+        described.put("projectionIdempotent", String.valueOf(idempotentProjection));
         return Map.copyOf(described);
     }
 
@@ -237,15 +269,25 @@ public final class LedgerWorkload implements Workload {
                .subscribe(new QualifiedName(Rebalance.class),
                           (command, processingContext) -> handleRebalance(eventStore, command, processingContext));
 
-        HistoryRecorder.ProcessRecorder projectionRecorder = context.recorder().forProcess("projection", null);
         SimpleEventHandlingComponent component =
                 sequencePerAccount
                         ? SimpleEventHandlingComponent.create("ledger-projection", PER_ACCOUNT_POLICY)
                         : SimpleEventHandlingComponent.create("ledger-projection");
         return component.subscribe(new QualifiedName(MoneyWithdrawn.class),
-                                   (event, ctx) -> project(projectionRecorder, event))
+                                   (event, ctx) -> project(context, event, ctx))
                         .subscribe(new QualifiedName(MoneyDeposited.class),
-                                   (event, ctx) -> project(projectionRecorder, event));
+                                   (event, ctx) -> project(context, event, ctx))
+                        // A projection that is replayed must start from nothing, or the replay adds a second copy of
+                        // every transfer to the balances it already holds and the conservation law reports the replay
+                        // itself as money appearing out of nowhere. Clearing on reset is what a real projection does,
+                        // and it is what makes "the projection equals the fold of the full history" a statement about
+                        // the framework rather than about this workload's arithmetic.
+                        .subscribe((ResetHandler) (resetContext, ctx) -> {
+                            balances.clear();
+                            applied.clear();
+                            delivered.set(0L);
+                            return MessageStream.empty();
+                        });
     }
 
     /**
@@ -451,16 +493,54 @@ public final class LedgerWorkload implements Workload {
                           .thenApply(accumulated -> accumulated == null ? new HashMap<String, Long>() : accumulated);
     }
 
-    private MessageStream.Empty<org.axonframework.messaging.core.Message> project(
-            HistoryRecorder.ProcessRecorder recorder, EventMessage event) {
+    /**
+     * Applies one event to the balances and records everything an oracle needs to attribute it.
+     * <p>
+     * The record carries four things the framework itself decided and the harness only reads back: the node that
+     * handled the event, the segment it was handled under, the position of the event in the stream, and whether the
+     * framework considered this delivery part of a replay. Without them a delivery is an anonymous fact -- it cannot be
+     * attributed to a segment owner, it cannot be compared against the progress durably stored for that segment, and a
+     * legitimate replay cannot be told apart from a duplicate. All four come off the processing context the processor
+     * built, so none of them is the harness's opinion.
+     */
+    private MessageStream.Empty<org.axonframework.messaging.core.Message> project(WorkloadContext context,
+                                                                                 EventMessage event,
+                                                                                 ProcessingContext processingContext) {
         if (event.payload() instanceof LedgerEvent ledgerEvent) {
-            balances.merge(ledgerEvent.account(), ledgerEvent.delta(), Long::sum);
-            delivered.incrementAndGet();
-            recorder.invoke(HistoryOps.DELIVER, ledgerEvent.account(),
-                            Map.of("eventId", event.identifier(), "delta", ledgerEvent.delta()))
+            boolean first = !idempotentProjection || applied.add(event.identifier());
+            if (first) {
+                balances.merge(ledgerEvent.account(), ledgerEvent.delta(), Long::sum);
+                delivered.incrementAndGet();
+            }
+            String node = processingContext.getResource(org.axonframework.hunt.harness.HuntNode.NODE_KEY);
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("eventId", event.identifier());
+            value.put("delta", ledgerEvent.delta());
+            Segment.fromContext(processingContext)
+                   .ifPresent(segment -> value.put(HistoryOps.SEGMENT, segment.getSegmentId()));
+            TrackingToken.fromContext(processingContext).ifPresent(token -> {
+                value.put(HistoryOps.POSITION, token.position().orElse(-1L));
+                value.put(HistoryOps.REPLAY, ReplayToken.isReplay(token));
+            });
+            recorderFor(context, node)
+                    .invoke(HistoryOps.DELIVER, ledgerEvent.account(), Map.copyOf(value))
                     .ok(Map.of());
         }
         return MessageStream.empty();
+    }
+
+    /**
+     * Returns the recorder stamped with the handling node's identity, creating it once per node.
+     * <p>
+     * One projection is shared by every node, so a single recorder would leave every delivery unattributed. A
+     * single-node run has no node identity to stamp and falls back to the unstamped recorder, which is what a
+     * single-node history has always carried.
+     */
+    private HistoryRecorder.ProcessRecorder recorderFor(WorkloadContext context, @Nullable String node) {
+        return projectionRecorders.computeIfAbsent(node == null ? "" : node,
+                                                   key -> context.recorder()
+                                                                 .forProcess("projection",
+                                                                             key.isEmpty() ? null : key));
     }
 
     private static CommandResultMessage accepted() {

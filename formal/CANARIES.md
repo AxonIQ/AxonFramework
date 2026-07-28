@@ -194,7 +194,7 @@ git checkout -- messaging                             # revert, always
 | # | Mutation | Should be caught by | Caught? | Tier / seeds | Violations raised |
 |---|---|---|---|---|---|
 | C5 | Any node may claim a segment another node already holds | `AtMostOneSegmentOwner` | **yes** | SMOKE, fixed set | 72 `AtMostOneSegmentOwner`, 24 `LedgerConservesTotalBalance`, 24 `ProjectionMatchesFoldOfCommittedEvents`, 15 `AppendConformsToDcbModel`, 5 `LedgerBalanceNeverNegative` |
-| C6 | A batch's handler effects commit but this cycle's token progress does not | `DuplicateDeliveryOnlyInsideRecoveryWindow` | **no -- escaped** | SMOKE, fixed set | none; the suite went green |
+| C6 | A batch's handler effects commit but this cycle's token progress does not | `DuplicateDeliveryOnlyInsideRecoveryWindow` | **no -- escaped** (see the 2026-07-28 re-run below, which catches it) | SMOKE, fixed set | none; the suite went green |
 
 ### C5 -- any node may claim a segment another node already holds
 
@@ -296,15 +296,110 @@ The honest summary is that the duplicate oracle works -- it counted every repeat
 scenario corpus puts it in a position to judge one. Two of the three gaps above are the next phase's scenarios, which
 is where this belongs; the third is a checker refinement worth doing when the first arm needs it.
 
-## What is not yet canaried
-
-## What is not yet canaried
 
 Honest gaps, so that nobody reads the table above as covering more than it does.
 
 | Not canaried | Why | Owner |
 |---|---|---|
-| ~~The read side: a processor that skips, duplicates or reorders a delivery~~ | Attempted as C6 above, and it escaped. The arms it needs -- a claim handover landing mid-batch, and a stored-token coverage oracle -- are named in that entry. | P2b |
+| ~~The read side: a processor that skips, duplicates or reorders a delivery~~ | Attempted as C6, escaped, re-run after the ownership and durable-progress oracles landed, and **caught**. See the re-run above. | closed |
+| Attributing a store perturbation to the fault that caused it | Named in C6's original diagnosis and still unbuilt. The re-run shows it was not what blocked C6: the arms that catch the mutation install no store-perturbing fault, so nothing suppresses their judgement. Worth doing when an arm produces duplicates for a reason other than the fault it declared. | follow-up |
+| A mutation of the split or merge algebra | The membership scenarios ship, and no mutation of `SplitTask`, `MergeTask` or `Segment` has been run against them. The oracles they would exercise -- coverage across segment epochs, per-key order across a rebuild -- have never been shown to fail. | follow-up |
 | The sequencing policy path | `SequenceKeyOrderPreserved` is exercised only by the arms in `SequencingPolicyOrderTest`, and a mutation of `SequencingEventHandlingComponent`'s chaining has not been run against it | follow-up |
 | Anything backend-specific | One backend ships. A per-backend verdict vector needs at least two | the phase that adds a backend |
 | Every mutation at a tier above smoke | The campaign was run at the smoke tier with the fixed seed set. Nothing here says how many seeds a subtler mutation would need | the phase that runs the fuzz tier |
+
+---
+
+## Re-run of C6 after the L2 layer was completed (2026-07-28)
+
+C6 escaped once. The three things its own write-up said would catch it were a stored-token coverage oracle, a claim
+handover that lands mid-batch, and per-interference attribution of the store-perturbation downgrade. Two of those were
+built; the third turned out not to be needed. The mutation was applied again, unchanged, and measured against the same
+recipe.
+
+```diff
+-        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
++        // canary: the batch's handler effects commit, this cycle's progress does not
+```
+
+in `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/WorkPackage.java:387`.
+
+| # | Mutation | Should be caught by | Caught? | Tier / seeds | Violations raised |
+|---|---|---|---|---|---|
+| C6 (re-run) | A batch's handler effects commit but this cycle's token progress does not | `ClaimHandoverRewindsAtMostOneBatch`, `StoredTokenCoversDeliveredEvents` | **yes** | SMOKE, fixed set | 84 `ClaimHandoverRewindsAtMostOneBatch`, 94 `StoredTokenCoversDeliveredEvents` across the run |
+
+**Caught.** Test classes that went red:
+
+```
+org.axonframework.hunt.harness.ClaimCapableBackendTest$AScenarioWrittenBeforeItExisted
+org.axonframework.hunt.scenario.ConcurrentBootstrapTest$ANodeLeavingAndRejoiningMidStampede
+org.axonframework.hunt.scenario.ReplayAfterResetTest$RewindingAStoppedProcessor
+org.axonframework.hunt.scenario.ScenarioRunnerTest$ContendedAppendsHoldTheProtocol
+org.axonframework.hunt.scenario.SplitAndMergeUnderLoadTest$ASplitAndMergeStormWhileTheWorkloadWrites
+```
+
+A sample violation, verbatim:
+
+```
+[ClaimHandoverRewindsAtMostOneBatch] When a segment's token is claimed again, the events already delivered from that
+segment that the stored token does not cover are the events of at most one batch. | broken by: segment [0] was claimed
+by node-0 while the stored token reported position -1, leaving 403 event(s) already delivered from it uncovered, which
+is more than the run's batch of 64
+```
+
+and the distribution the same run reported, which is the shape of the defect in one line:
+
+```
+Claim handovers, by how many already-delivered events the stored token left uncovered: {0=35, 345=2, 400=2}
+```
+
+### What actually catches it, and what turned out not to matter
+
+**The rewind at a re-claim is the detector, and the quantity is not the redeliveries.** The original diagnosis expected
+the duplicate oracle to catch the doubled effects. It cannot, on its own: a duplicate inside a recovery window is licensed
+by the framework's own contract, so a mutation that produces licensed duplicates is reported and not violated. What is not
+licensed is *how far the stored token had fallen behind the effects already applied* when the token was read back. Under
+the guarantee that is one batch at most, because every batch that finished stored its progress as part of finishing.
+Under the mutation the stored token never moved at all -- `position -1` in the violation above -- so the rewind is
+everything the segment had ever done. Measured: up to 774 events against a batch of 64.
+
+**A stored-token position of -1 under sustained load was the surprise.** The mutation does not stop the token being
+stored altogether: `WorkPackage.upkeepIfThresholdIsMet` opens its own transaction on the claim-extension beat and lets the
+progress strategy catch up, so an *idle* segment still stores its position. That path is only reached when the work
+package finds nothing to handle, so under load it is never reached, and the stored token stays at its initial value for
+the whole busy period. That is why a coverage oracle measured only after quiescence would still have missed this: by then
+the segments have gone idle and caught up. Measuring at the instant a claim is granted is what makes it visible.
+
+**A mid-batch handover was necessary, and a crash is what produces one.** The stall seam cannot: a node frozen inside its
+handler keeps every claim it holds, because extending a claim is the coordinator's work on a separate thread that keeps
+running (finding F-13). Dropping the node's threads for longer than a claim survives is what leaves a segment owned by a
+process that has stopped refreshing it, and it is what the ownership scenario does.
+
+**Per-interference attribution of the store-perturbation downgrade was not needed.** The third item in the original
+diagnosis was a refinement to stop a vanish or a torn batch suppressing duplicate judgement. It remains unbuilt, and the
+re-run shows why it was not the blocker: the arms that catch C6 do not install a store-perturbing fault at all, so
+nothing suppresses their judgement. The refinement is still worth having and is still listed as not canaried.
+
+### What the campaign learned about its own oracles, from the same run
+
+Three of this phase's own oracles reported findings that were not real before they were corrected, and each correction is
+part of what makes the C6 result trustworthy rather than lucky.
+
+| Oracle | What it reported | Why it was wrong | What it does now |
+|---|---|---|---|
+| `StoredTokenNeverRegresses` | A 426-position regression on segment 4 | The write was one a node made after losing its claim, and the store had refused it on the owner clause of its own update statement | Judges the outcome, not the attempt |
+| `StoredTokenNeverRegresses` | A regression across a merge | A merge gives the merged segment the lower of two tokens, so the surviving identifier goes backwards by design | Licenses a rewind across a recorded split or merge, over the instruction's whole span rather than its issue instant |
+| `AtMostOneSegmentOwner`, `DeliveryAttributedToSegmentOwner` | Two nodes holding one segment for 1812ms, and deliveries from nodes holding no claim | A split deletes a token row and creates two; no interval derived from claim traffic can follow a segment across that | Ends every interval at a segment-set rebuild, and refuses to judge attribution at all on a run that rebuilt its segments |
+
+## What is not yet canaried
+
+Honest gaps, so that nobody reads the tables above as covering more than they do.
+
+| Not canaried | Why | Owner |
+|---|---|---|
+| ~~The read side: a processor that skips, duplicates or reorders a delivery~~ | Attempted as C6, escaped, re-run after the ownership and durable-progress oracles landed, and **caught**. See the re-run above. | closed |
+| Attributing a store perturbation to the fault that caused it | Named in C6's original diagnosis and still unbuilt. The re-run shows it was not what blocked C6: the arms that catch the mutation install no store-perturbing fault, so nothing suppresses their judgement. Worth doing when an arm produces duplicates for a reason other than the fault it declared. | follow-up |
+| A mutation of the split or merge algebra | The membership scenarios ship, and no mutation of `SplitTask`, `MergeTask` or `Segment` has been run against them. The oracles they would exercise -- coverage across segment epochs, per-key order across a rebuild -- have never been shown to fail. | follow-up |
+| The sequencing policy path | `SequenceKeyOrderPreserved` is exercised only by the arms in `SequencingPolicyOrderTest`, and a mutation of `SequencingEventHandlingComponent`'s chaining has not been run against it | follow-up |
+| Anything backend-specific | One event-store backend ships, and the second backend differs only in its token store. A per-backend verdict vector needs two stores that speak the same protocol | the phase that adds a backend |
+| Every mutation at a tier above smoke | Both campaigns were run at the smoke tier with the fixed seed set. Nothing here says how many seeds a subtler mutation would need | the phase that runs the fuzz tier |

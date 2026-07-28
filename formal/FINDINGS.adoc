@@ -85,6 +85,33 @@ easy workaround), *low* (a documentation or ergonomics gap).
   of re-reading the row that now exists, so all but one instance fails to start. Measured: 3 of 4.
 | High
 | *Reproduced by test.* Open.
+
+| *F-10* `ClaimProtocolToleratesNoStatedClockSkew`
+| The claim protocol compares a timestamp one node wrote against another node's clock and states no tolerance for the
+  two disagreeing. Measured: a node whose clock reads ahead takes a live claim up to that far early, so two nodes hold
+  one segment for up to the skew, capped by one claim timeout. Nothing warns, and nothing in the protocol notices.
+| Medium
+| *Reproduced by test*, and quantified. Open.
+
+| *F-11* `MergeRewindsToTheLowerOfTwoTokens`
+| Merging two segments gives the merged one the lower of the two halves' tokens, so every event the further-ahead half
+  had already handled is delivered again. The behaviour is deliberate and the documentation does not mention it.
+| Medium
+| *Reproduced by test.* Open.
+
+| *F-12* `ResetDemandsAConverterItNeverUses`
+| Rewinding a processor's tokens resolves a `GeneralConverter` out of the processing context in order to convert the
+  reset context -- and does so even when there is no reset context. A processor wired over an application context that
+  provides no components therefore cannot be reset at all, and fails with an error that says nothing about resets.
+| Low
+| *Reproduced by test.* Open.
+
+| *F-13* `AStalledHandlerKeepsItsClaims`
+| A node frozen inside its event handler does not lose its segments: extending a claim is the coordinator's work, on a
+  separate thread that keeps running. The classic stalled-owner failure therefore needs the whole process to stall, not
+  just its handling, which is worth knowing before anybody writes a test for it.
+| Low (not a defect)
+| Measured. Recorded as a harness constraint.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -380,6 +407,18 @@ scale with any of the processor's other timing settings.
 
 The guard is also stored in a per-coordinator map, so it constrains only the splitting node; nothing
 stops another node claiming the segment mid-split.
+
+=== Correction, found by reading the same file more carefully while budgeting the split scenario
+
+The sixty seconds is a ceiling, not the duration. `SplitTask.splitAndRelease` removes the segment from
+`releasesDeadlines` in a `whenComplete` block, so a split that completes clears its own guard
+(`messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:141-143`),
+and `MergeTask` does the same for both halves (`MergeTask.java:177-178`). The block therefore lasts as long as the
+instruction takes, and the minute only applies to a split that never finishes. The operational impact is far smaller
+than this entry originally claimed, and the measured consequence for a time-compressed suite is a delay of hundreds of
+milliseconds rather than a minute: the split-and-merge storm ran seven splits and seven merges per seed inside a
+four-second window with no segment left unclaimable. What remains true is that the duration is a literal, that it does
+not scale with any other setting, and that the guard is per-coordinator.
 
 === Why it matters
 
@@ -724,3 +763,228 @@ because without it the segment-creation race is unreachable -- every multi-node 
 defect instead of testing what it was written for. The second is what a supervised deployment does with a process
 that died on startup. Both are stated here so that nobody reads a green cluster run as evidence that F-9 is closed:
 the only thing that closes it is the expected-gap test above going red.
+
+== F-10 -- The claim protocol states no tolerance for clock skew, and tolerates none
+
+*Severity:* Medium +
+*Status:* Open. *Reproduced by test*, and quantified. +
+*Claims:* C19, C20, C22, M3 +
+*Backend verdict vector:* `hsqldb-tokens:AFFECTED`, `in-memory:N/A (the in-heap token store has no expiry to compare)`
+
+=== What is wrong
+
+Whether a claim may be stolen is the inequality `timestamp + claimTimeout < now`. The timestamp is written by whichever
+node last touched the row; `now` is read by whichever node is asking. The two are different machines in every deployment
+the token store exists for, and nothing in the framework states how far apart their clocks may be. Searching `skew`,
+`clockSkew` and `clock skew` across the token-store packages and the streaming-processor reference page returns nothing.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jdbc/JdbcTokenEntry.java:202-207` -- `mayClaim` and `expired`, the whole of the arbitration
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java:159-161` -- the same comparison on the JPA store
+* `docs/reference-guide/modules/events/pages/event-processors/streaming.adoc` -- documents the ten-second claim timeout and says nothing about the clocks it is measured with
+
+=== What the reproduction measured
+
+The scenario `at_most_one_segment_owner_with_skew_none` and its two skewed siblings run four nodes over sixteen segments
+against the claim-capable store, with one node's view of that store configured to treat a claim as expired earlier than
+the run's claim timeout says. That is not an approximation: a node whose clock reads `delta` ahead evaluates
+`timestamp + claimTimeout < now + delta`, which is the same inequality as `timestamp + (claimTimeout - delta) < now`, so
+shortening one node's claim timeout reproduces its decisions exactly. What it does not model is the timestamp that node
+*writes*, which a real skewed clock would also shift; that is unreachable, because the framework stamps a claim from a
+process-global clock every node in one virtual machine shares (finding F-4).
+
+Measured against a two-second claim timeout and a four-hundred-millisecond extension threshold:
+
+[source]
+----
+skew 0ms     widest overlap  none          9 claim handovers across 3 seeds, all orderly
+skew 1000ms  widest overlap  964 - 992ms   inside the declared tolerance of 1000ms
+skew 4000ms  widest overlap  478 - 1692ms  16 to 32 AtMostOneSegmentOwner violations
+----
+
+Three things follow, and the third is the one worth acting on.
+
+*The overlap is bounded by the skew.* A node reading `delta` ahead can take a claim at most `delta` before it would have
+lapsed anyway, so the overlap can never exceed `delta` -- which the middle arm asserts and the oracle judges.
+
+*It is also bounded by one claim timeout.* At four seconds of skew against a two-second timeout the overlap saturates:
+the measured worst case is 1692ms, not 4000ms. The loser's own claim still lapses one timeout after its last refresh
+however far ahead the thief's clock reads, because only the comparison is skewed and not the timestamp.
+
+*A skew smaller than the margin between the claim timeout and the owner's refresh rate is invisible.* An owner refreshes
+its row with every batch it stores and, when idle, on every extension threshold. With a two-second timeout and a
+four-hundred-millisecond threshold, a row is rarely more than four hundred milliseconds old, so a clock a second ahead
+usually finds nothing to take -- and occasionally does, which is why the middle arm's measured overlap sits just under
+its bound rather than at zero. The tolerated skew is therefore not zero and not the claim timeout: it is
+`claimTimeout - refreshInterval`, a quantity no configuration names and no document states.
+
+=== Why it matters
+
+Two nodes holding one segment for up to a claim timeout means two nodes processing the same events for that long. The
+framework's own answer to a stolen claim is that the loser's token write fails and its batch rolls back, so effects
+already applied are repeated -- which is the documented at-least-once behaviour and is fine for an idempotent handler and
+not fine for anything else. What is missing is any statement of how much clock disagreement it takes to get there.
+
+=== Candidate fix
+
+Document the bound. The claim protocol tolerates skew up to the margin between the claim timeout and the rate at which an
+owner refreshes its claim, and produces overlapping ownership of up to one claim timeout beyond it; an operator sizing
+`claimTimeout` and `claimExtensionThreshold` needs that sentence to size them safely. Separately, the expiry comparison
+could carry an explicit tolerance so that the bound is a setting rather than an emergent property of two other settings.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=SegmentOwnershipUnderSkewTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The double-timeout arm asserts that ownership *is* broken, because the suite records the framework's current behaviour
+and never patches it. It flips red the day the claim protocol gains a stated tolerance wide enough to cover it, and that
+flip is the signal to revisit this entry.
+
+== F-11 -- A merge rewinds to the lower of the two tokens, and nothing says so
+
+*Severity:* Medium +
+*Status:* Open. *Reproduced by test.* +
+*Claims:* C24, C25, C38, M10
+
+=== What is wrong
+
+`MergeTask` merges two segments by giving the surviving one the lower of the two halves' tracking tokens. Every event the
+further-ahead half had already handled therefore sits above the merged segment's position and is delivered again. The
+behaviour is deliberate -- taking the higher token would skip events the lower half had not reached -- and it is the right
+choice. What is missing is any statement of it: `Segment`'s Javadoc describes the mask algebra, `MergeTask`'s describes
+when a merge succeeds, and neither mentions that a merge redelivers.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/MergeTask.java:126-133` -- both tokens fetched, then merged lower-first
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/segmenting/Segment.java:141-142` -- the documented merge precondition, which is about masks and not about positions
+
+=== What the reproduction observed
+
+`split_merge_no_loss_no_dup_under_load` splits and merges a segment repeatedly while the workload writes, seven times per
+seed inside a four-second window. Before the delivery oracle was taught about it, the arm reported repeated deliveries
+outside every claim-transition and node-recovery window -- events like `writer-7-327-w` arriving twice with nothing in the
+history that licensed it. The mechanism is the merge, and the events repeated are exactly the ones between the two halves'
+tokens.
+
+Nothing is lost: the union of deliveries across every segment epoch still covers every committed event, and the ledger's
+conservation law holds once the projection is idempotent -- which the framework's own documentation requires of a handler
+in a split-resource deployment.
+
+=== Why it matters
+
+A projection that is not idempotent double-applies on every merge. The framework already tells users to make handlers
+idempotent for the split-resource deployment, so the requirement is not new; what is new is that a merge triggers it
+even on a cluster that never lost a claim and never crashed. An operator who split segments to add throughput and then
+merged them back has redelivered part of the stream, and nothing warned them.
+
+=== Candidate fix
+
+Documentation. State on `StreamingEventProcessor.mergeSegment` and on the reference page that a merge resumes from the
+lower of the two segments' positions, so events already handled by the further-ahead half are handled again, and that
+handlers must therefore be idempotent across a merge regardless of the token store's deployment.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=SplitAndMergeUnderLoadTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+`DeliveryChecker` now opens a licence window at every recorded split and merge, so the arm passes and reports the
+repeats as a distribution rather than as a violation. Removing that licence turns the finding back into a red run, which
+is how it was found.
+
+== F-12 -- Resetting tokens demands a converter even when there is nothing to convert
+
+*Severity:* Low +
+*Status:* Open. *Reproduced by test.* +
+*Claims:* C26, C28
+
+=== What is wrong
+
+`PooledStreamingEventProcessor.resetTokens` converts the reset context to a byte array through a `GeneralConverter` it
+resolves from the processing context, and it does so unconditionally -- including for `resetTokens()`, whose reset
+context is `null`. A processor built without a configuration gets the framework's own default unit-of-work factory, whose
+application context provides no components at all, so the resolution throws before the reset does anything.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/PooledStreamingEventProcessor.java:346-352` -- `convertedResetContext(resetContext, processingContext.component(GeneralConverter.class))`, called for every segment
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/configuration/EventProcessorConfiguration.java:65` -- the default factory, built over `EmptyApplicationContext`
+* `messaging/src/main/java/org/axonframework/messaging/core/EmptyApplicationContext.java:44-49` -- which throws `UnsupportedOperationException` for every request
+
+=== Why it matters
+
+The failure names neither resets nor converters: it is an `UnsupportedOperationException` reading "EmptyApplicationContext
+does not provide any components", raised from inside the reset's unit of work. A plain-Java application that assembles a
+processor by hand -- which the framework supports and this suite does -- can start it, run it, split it and merge it, and
+then discover that it cannot be reset, for a reason that has nothing to do with what it asked for.
+
+=== Candidate fix
+
+Skip the conversion when there is nothing to convert: a `null` reset context needs no converter, and
+`convertedResetContext` already returns an empty array for it. One guard removes the requirement for every caller of the
+no-argument reset. Separately, resolving the converter once before the per-segment loop rather than once per segment
+would make the failure, when it is genuine, arrive once.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=ReplayAfterResetTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The harness supplies a converter through the processor's unit-of-work factory, so the arm exercises the reset rather than
+this defect. Removing that one line reproduces it, and the history records the failure verbatim under the `reset`
+operation.
+
+== F-13 -- A node stalled in event handling keeps every claim it holds
+
+*Severity:* Low, and not a defect +
+*Status:* Measured. Recorded as a harness constraint. +
+*Claims:* C20, C21, M1
+
+=== What was expected, and what happens
+
+The classic lease failure is a process that stalls -- a garbage-collection pause, a frozen virtual machine -- long enough
+for its claims to expire, and then wakes up mid-batch into a cluster that has reassigned its work. A suite that only
+kills processes never visits it, which is why this one has a stall seam.
+
+The stall this suite can reach is inside the event handler, and it does not produce that state. Extending a claim is the
+coordinator's work, on a thread of its own, and the coordinator keeps running while the handler is frozen: it calls
+`WorkPackage.extendClaimIfThresholdIsMet()` for every package it holds on every coordination cycle. The frozen node's
+rows therefore stay fresh for as long as the freeze lasts, and nothing expires.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/Coordinator.java:814` -- the coordinator extending its packages' claims
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/WorkPackage.java:470-479` -- the extension, in its own unit of work, independent of any batch
+
+=== Consequences
+
+For the framework this is correct and arguably better than the alternative: the process is alive, so its claims are
+alive. It is worth documenting, because the reference page's account of claim stealing reads as though a slow owner loses
+its segments, and a slow *handler* does not.
+
+For this suite it is a constraint on what the pause seam can test. Reaching the stalled-owner state needs the whole
+process stalled -- which, in one virtual machine, means stalling the node's access to the token store as well as its
+handling. The ownership scenario therefore uses a node crash to lapse a claim, and carries no stall window: a fault that
+cannot take a segment away, and that lands only while the node is still handling events, is noise rather than evidence.
+
+=== Reproduce
+
+By inspection:
+
+[source,bash]
+----
+grep -n 'extendClaimIfThresholdIsMet' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/Coordinator.java
+----
+

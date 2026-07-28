@@ -29,6 +29,7 @@ import org.axonframework.messaging.eventhandling.configuration.EventProcessorCon
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.List;
@@ -67,6 +68,16 @@ import java.util.function.Supplier;
  * @since 5.3.0
  */
 public final class HuntNode implements AutoCloseable {
+
+    /**
+     * The key under which the handling node's identity travels in a {@link ProcessingContext}.
+     * <p>
+     * Every node wraps the one shared projection, so a delivery record would otherwise carry no node at all and no
+     * oracle could attribute an effect to the node that produced it. The identity is overlaid on the per-event context
+     * rather than written into it, so it is scoped to the handling of that event and cannot leak into another node's.
+     */
+    public static final org.axonframework.messaging.core.Context.ResourceKey<String> NODE_KEY =
+            org.axonframework.messaging.core.Context.ResourceKey.withLabel("huntNode");
 
     private final String nodeId;
     private final String processorName;
@@ -247,6 +258,143 @@ public final class HuntNode implements AutoCloseable {
     }
 
     /**
+     * Asks this node's processor to rewind every segment it knows to the start of the stream, without stopping it
+     * first.
+     * <p>
+     * The framework requires a processor to be shut down before a reset, and refuses one that is not. Calling it
+     * anyway is how the run gets evidence of that refusal rather than an assumption about it, so the failure is
+     * returned instead of thrown.
+     *
+     * @return the failure the framework raised, or {@code null} if it allowed the reset
+     */
+    public @Nullable Throwable attemptResetWhileRunning() {
+        Running current = running.get();
+        if (current == null) {
+            return new IllegalStateException("The node is not running, so a reset cannot be refused for that reason.");
+        }
+        Map<String, Object> arguments = Map.of(HistoryOps.ACTION, "reset-while-running");
+        HistoryRecorder.Invocation invocation = recorder.invoke(HistoryOps.RESET, nodeId, arguments);
+        try {
+            current.processor().resetTokens().orTimeout(30, TimeUnit.SECONDS).join();
+            invocation.ok(Map.of("refused", false));
+            return null;
+        } catch (RuntimeException e) {
+            Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
+            invocation.fail(cause.getClass().getName(), Map.of("refused", true,
+                                                               "message", String.valueOf(cause.getMessage())));
+            return cause;
+        }
+    }
+
+    /**
+     * Stops this node's processor, rewinds every segment it knows to the start of the stream, and starts it again.
+     * <p>
+     * This is the legal reset: the framework's precondition is that the processor is not running, and an orderly
+     * shutdown also gives the node's claims back so the reset can take them itself. The position each segment was at
+     * when the reset happened is recorded, because that position is the boundary the framework's own replay flag is
+     * expected to be true at or below and false above.
+     *
+     * @return a future completing once the node is processing again
+     */
+    public CompletableFuture<Void> resetAndRestart() {
+        HistoryRecorder.Invocation invocation =
+                recorder.invoke(HistoryOps.RESET, nodeId, Map.of(HistoryOps.ACTION, "reset"));
+        close();
+        long tokenAtReset = highestStoredPosition();
+        Running fresh = launch("restarted");
+        return fresh.processor()
+                    .resetTokens()
+                    .handle((ignored, failure) -> {
+                        if (failure == null) {
+                            invocation.ok(Map.of(HistoryOps.TOKEN_AT_RESET, tokenAtReset));
+                        } else {
+                            Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                                    ? failure.getCause()
+                                    : failure;
+                            invocation.fail(cause.getClass().getName(),
+                                            Map.of("message", String.valueOf(cause.getMessage())));
+                        }
+                        return null;
+                    })
+                    .thenCompose(ignored -> fresh.processor().start())
+                    .thenRun(() -> running.set(fresh));
+    }
+
+    private long highestStoredPosition() {
+        try {
+            List<org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment> known =
+                    tokenStore.fetchSegments(processorName, null).orTimeout(30, TimeUnit.SECONDS).join();
+            long highest = -1L;
+            for (var segment : known) {
+                highest = Math.max(highest, RecordingTokenStore.positionOf(
+                        tokenStore.fetchToken(processorName, segment.getSegmentId(), null)
+                                  .orTimeout(30, TimeUnit.SECONDS)
+                                  .join()));
+            }
+            return highest;
+        } catch (RuntimeException e) {
+            return -1L;
+        }
+    }
+
+    /**
+     * Asks this node's processor to split the given segment in two.
+     *
+     * @param segmentId the segment to split
+     * @return {@code true} when the framework carried the split out
+     */
+    public boolean splitSegment(int segmentId) {
+        return instruct(HistoryOps.SPLIT, segmentId, processor -> processor.splitSegment(segmentId));
+    }
+
+    /**
+     * Asks this node's processor to merge the given segment with its sibling.
+     *
+     * @param segmentId the segment to merge
+     * @return {@code true} when the framework carried the merge out; {@code false} is a legitimate answer, and the one
+     *     a processor with a single segment must give
+     */
+    public boolean mergeSegment(int segmentId) {
+        return instruct(HistoryOps.MERGE, segmentId, processor -> processor.mergeSegment(segmentId));
+    }
+
+    private boolean instruct(String op,
+                             int segmentId,
+                             java.util.function.Function<PooledStreamingEventProcessor,
+                                     CompletableFuture<Boolean>> instruction) {
+        Running current = running.get();
+        if (current == null) {
+            return false;
+        }
+        HistoryRecorder.Invocation invocation =
+                recorder.invoke(op, processorName + "/" + segmentId, Map.of(HistoryOps.SEGMENT, segmentId));
+        try {
+            boolean carriedOut = instruction.apply(current.processor())
+                                            .orTimeout(30, TimeUnit.SECONDS)
+                                            .join();
+            invocation.ok(Map.of("carriedOut", carriedOut));
+            return carriedOut;
+        } catch (RuntimeException e) {
+            Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
+            invocation.fail(cause.getClass().getName(), Map.of("message", String.valueOf(cause.getMessage())));
+            return false;
+        }
+    }
+
+    /**
+     * Returns the segments this node's processor currently holds a claim on.
+     *
+     * @return the claimed segment identifiers, ascending; empty when the node is not running
+     */
+    public List<Integer> claimedSegments() {
+        Running current = running.get();
+        if (current == null) {
+            return List.of();
+        }
+        return current.processor().processingStatus().keySet().stream().sorted().toList();
+    }
+
+    /**
      * Stops the node the way an orderly shutdown does, releasing what it holds.
      * <p>
      * A crashed node is left alone: asking a processor whose threads are gone to shut down cleanly waits for workers
@@ -269,6 +417,12 @@ public final class HuntNode implements AutoCloseable {
     }
 
     private CompletableFuture<Void> startInternal(String action) {
+        Running fresh = launch(action);
+        running.set(fresh);
+        return fresh.processor().start();
+    }
+
+    private Running launch(String action) {
         ScheduledThreadPoolExecutor coordinatorExecutor =
                 new ScheduledThreadPoolExecutor(1, named(nodeId + "-coordinator"));
         ScheduledThreadPoolExecutor workerExecutor =
@@ -279,9 +433,8 @@ public final class HuntNode implements AutoCloseable {
                                                                 .tokenStore(tokenStore)
                                                                 .coordinatorExecutor(coordinatorExecutor)
                                                                 .workerExecutor(workerExecutor));
-        running.set(new Running(processor, coordinatorExecutor, workerExecutor));
         recorder.info(HistoryOps.NODE, nodeId, Map.of(HistoryOps.ACTION, action));
-        return processor.start();
+        return new Running(processor, coordinatorExecutor, workerExecutor);
     }
 
     private static void shutdown(ScheduledExecutorService executor) {
@@ -336,7 +489,7 @@ public final class HuntNode implements AutoCloseable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            return super.handle(event, context);
+            return super.handle(event, context.withResource(NODE_KEY, node));
         }
     }
 }

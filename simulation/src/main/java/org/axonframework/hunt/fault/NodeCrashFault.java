@@ -37,6 +37,7 @@ import java.util.Map;
 public final class NodeCrashFault implements Fault {
 
     private final int nodeIndex;
+    private final boolean aimAtTheBusiest;
     private volatile String crashed = "";
 
     /**
@@ -45,10 +46,28 @@ public final class NodeCrashFault implements Fault {
      * @param nodeIndex which of the run's nodes to drop, by position; taken modulo the node count
      */
     public NodeCrashFault(int nodeIndex) {
+        this(nodeIndex, false);
+    }
+
+    private NodeCrashFault(int nodeIndex, boolean aimAtTheBusiest) {
         if (nodeIndex < 0) {
             throw new IllegalArgumentException("The nodeIndex cannot be negative, but was " + nodeIndex + ".");
         }
         this.nodeIndex = nodeIndex;
+        this.aimAtTheBusiest = aimAtTheBusiest;
+    }
+
+    /**
+     * Creates the fault aimed at whichever node holds the most segments when the window opens.
+     * <p>
+     * A crash aimed by position lands on a node holding nothing whenever the cluster has any headroom, and a crash that
+     * takes down an idle node produces no claim handover at all. Aiming at the busiest node is what makes the fault
+     * reach the thing it is for.
+     *
+     * @return the fault
+     */
+    public static NodeCrashFault busiest() {
+        return new NodeCrashFault(0, true);
     }
 
     @Override
@@ -58,7 +77,7 @@ public final class NodeCrashFault implements Fault {
 
     @Override
     public Map<String, String> parameters() {
-        return Map.of("nodeIndex", String.valueOf(nodeIndex));
+        return Map.of("nodeIndex", aimAtTheBusiest ? "busiest" : String.valueOf(nodeIndex));
     }
 
     @Override
@@ -67,7 +86,10 @@ public final class NodeCrashFault implements Fault {
         if (nodes.isEmpty()) {
             return;
         }
-        String target = nodes.get(nodeIndex % nodes.size());
+        String target = aimAtTheBusiest ? site.busiestNode(nodeIndex) : nodes.get(nodeIndex % nodes.size());
+        if (target == null) {
+            return;
+        }
         crashed = target;
         site.crashNode(target);
         evidence.fired(target);

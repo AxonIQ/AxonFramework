@@ -168,6 +168,29 @@ public final class HistoryOps {
     public static final String ACTION = "action";
 
     /**
+     * A token durably written for a segment. Its value carries the segment and the {@link #POSITION} the written token
+     * reports, which is what makes durable progress observable at all: ownership decisions are visible through claims,
+     * but how far a node has told the store it has got is only visible here.
+     */
+    public static final String STORE_TOKEN = "store-token";
+
+    /**
+     * The value key a position is recorded under: the position a stored token reports, or the position of the event a
+     * delivery handled. Absent when the token or the event carries no resolvable position.
+     */
+    public static final String POSITION = "position";
+
+    /**
+     * The value key saying whether a delivery was part of a replay, as the framework's own token reports it.
+     */
+    public static final String REPLAY = "replay";
+
+    /**
+     * The value key naming the position a reset rewound from, taken from the token the reset replaced.
+     */
+    public static final String TOKEN_AT_RESET = "tokenAtReset";
+
+    /**
      * The value key naming the segment a token operation addressed.
      */
     public static final String SEGMENT = "segment";

@@ -171,6 +171,36 @@ final class SyntheticHistory {
     }
 
     /**
+     * Records a token the given node durably stored for a segment.
+     */
+    void tokenStored(String nodeId, int segment, long position) {
+        node(nodeId).invoke(HistoryOps.STORE_TOKEN, "p/" + segment,
+                            Map.of(HistoryOps.SEGMENT, segment, HistoryOps.POSITION, position,
+                                   HistoryOps.REPLAY, false))
+                    .ok(Map.of());
+    }
+
+    /**
+     * Records a token write the store refused because the caller no longer owned the segment.
+     */
+    void tokenStoreRefused(String nodeId, int segment, long position) {
+        node(nodeId).invoke(HistoryOps.STORE_TOKEN, "p/" + segment,
+                            Map.of(HistoryOps.SEGMENT, segment, HistoryOps.POSITION, position,
+                                   HistoryOps.REPLAY, false))
+                    .fail("UnableToClaimTokenException", Map.of());
+    }
+
+    /**
+     * Records the delivery of an event from a segment at a position, by a named node.
+     */
+    void deliverFromSegment(String nodeId, int segment, String eventId, long position) {
+        node(nodeId).invoke(HistoryOps.DELIVER, null,
+                            Map.of(DcbHistoryCodec.EVENT_ID, eventId, HistoryOps.SEGMENT, segment,
+                                   HistoryOps.POSITION, position, HistoryOps.REPLAY, false))
+                    .ok(Map.of());
+    }
+
+    /**
      * Records an authoritative scan of the store after the run has quiesced.
      */
     void scan(String... eventIds) {

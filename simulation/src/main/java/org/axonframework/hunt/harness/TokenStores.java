@@ -42,6 +42,37 @@ public interface TokenStores extends AutoCloseable {
     TokenStore forNode(String nodeId);
 
     /**
+     * Returns the named node's view of the shared store, configured to treat a claim as expired
+     * {@code clockSkew} earlier than the run's claim timeout says it should.
+     * <p>
+     * <b>This is how the suite emulates a node whose clock runs ahead, and it is exact rather than approximate.</b>
+     * Whether a claim has expired is decided by {@code timestamp + claimTimeout < now}. A node whose clock is
+     * {@code delta} ahead reads {@code now + delta}, so it considers a claim expired exactly when
+     * {@code timestamp + (claimTimeout - delta) < now} -- which is what a store view configured with a claim timeout
+     * shortened by {@code delta} decides. The two are the same inequality, so no decorator and no clock substitution is
+     * needed; the store's own per-instance setting carries it.
+     * <p>
+     * <b>What this does not model.</b> It skews only the comparison the node <em>performs</em>, not the timestamps the
+     * node <em>writes</em>: a real clock that runs ahead also stamps its own claims into the future, which would make
+     * other nodes steal from it later rather than sooner. Writing a skewed timestamp is unreachable, because the
+     * framework stamps a claim from a process-global clock that every node in one virtual machine shares (finding F-4).
+     * The emulation therefore reproduces one direction of skew -- a node that steals other nodes' claims early -- and
+     * not the other. Every scenario using it says so, and the ownership oracle's tolerance is the same {@code delta},
+     * so the arithmetic the oracle applies and the arithmetic the store applies come from one declared number.
+     * <p>
+     * The default ignores the skew, which is correct for a store with no notion of expiry: there is no comparison to
+     * skew.
+     *
+     * @param nodeId    the node's identity, which is the owner a claim is recorded under
+     * @param clockSkew how far ahead of the rest of the cluster this node's clock is emulated to run;
+     *                  {@link java.time.Duration#ZERO} for a node in step with everybody else
+     * @return the node's view of the run's token store
+     */
+    default TokenStore forNode(String nodeId, java.time.Duration clockSkew) {
+        return forNode(nodeId);
+    }
+
+    /**
      * Releases whatever the run's token store held. The default does nothing, which is right for a store that lives
      * only in the heap.
      */

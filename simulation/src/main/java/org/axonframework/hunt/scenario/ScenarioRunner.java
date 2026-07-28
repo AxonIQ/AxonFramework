@@ -125,7 +125,9 @@ public final class ScenarioRunner {
             if (scenario.buggifyProbability() > 0.0) {
                 buggify.activate();
             }
-            try (HuntWorld world = HuntWorld.start(backend, workload, seed, budget.commands(), scenario.nodes(),
+            try (HuntWorld world = HuntWorld.start(backend, workload, seed, budget.commands(),
+                                                   new HuntWorld.Topology(scenario.nodes(), scenario.segments(),
+                                                                          scenario.segmentsPerNode()),
                                                    recorder, buggify, scenario.timescale(), scenario.determinism(),
                                                    deadline)) {
                 drive(scenario, workload, world, harness, recorder, deadline, notes, faultFires);
@@ -378,8 +380,13 @@ public final class ScenarioRunner {
         shape.put("claims", String.join(",", new java.util.TreeSet<>(scenario.claims())));
         shape.put("requiredOracles", String.join(",", new java.util.TreeSet<>(scenario.oracles())));
         shape.put("nodes", String.valueOf(scenario.nodes()));
+        shape.put("segments", String.valueOf(scenario.segments()));
         shape.put("deliveryMode", scenario.deliveryMode().name());
         shape.put("livenessHorizonMs", String.valueOf(scenario.livenessHorizon().toMillis()));
+        // What a claim handover may legitimately repeat is bounded by one batch, because a batch's effects and its
+        // token progress are persisted in one transaction. An oracle checking that bound needs the batch size, and
+        // taking it from the header rather than from a constant is what keeps the two from drifting apart.
+        shape.put("projectionBatchSize", String.valueOf(HuntWorld.PROJECTION_BATCH_SIZE));
         // Without this an ownership oracle cannot tell a store that granted every claim correctly from one that has
         // no notion of a claim to grant, and would report the second as verified.
         shape.put("tokenStoreArbitratesClaims", String.valueOf(backend.arbitratesTokenClaims()));

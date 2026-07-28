@@ -24,6 +24,7 @@ import org.axonframework.hunt.checker.LivenessChecker;
 import org.axonframework.hunt.checker.ModelConformanceChecker;
 import org.axonframework.hunt.checker.OrderChecker;
 import org.axonframework.hunt.checker.OwnershipChecker;
+import org.axonframework.hunt.checker.StoredProgressChecker;
 import org.axonframework.hunt.checker.VisibilityChecker;
 import org.axonframework.hunt.fault.AfterCommitFailureFault;
 import org.axonframework.hunt.fault.AppendRejectionFault;
@@ -34,6 +35,8 @@ import org.axonframework.hunt.fault.FaultWindow;
 import org.axonframework.hunt.fault.InjectedLatencyFault;
 import org.axonframework.hunt.fault.NodeCrashFault;
 import org.axonframework.hunt.fault.PrepareCommitFailureFault;
+import org.axonframework.hunt.fault.ProcessorResetFault;
+import org.axonframework.hunt.fault.SegmentSplitMergeFault;
 import org.axonframework.hunt.harness.DeterminismMode;
 import org.axonframework.hunt.harness.HsqldbTokenStoreBackend;
 import org.axonframework.hunt.harness.HuntTimescale;
@@ -138,6 +141,53 @@ public final class HuntScenarios {
      */
     public static final int BOOTSTRAP_NODES = 4;
 
+    /**
+     * How long a claim survives without a refresh in every cluster arm.
+     * <p>
+     * The compressed arm's hundred milliseconds is fine against a store answering in nanoseconds and hopeless against
+     * one reached over a JDBC round trip: claims lapse while their owner waits for the extension it already issued, and
+     * the run turns into nodes stealing from each other for no reason. Two seconds keeps the ratio to the extension
+     * threshold that the compression exists to preserve, and it is the unit the skew arms are expressed in.
+     */
+    public static final Duration CLUSTER_CLAIM_TIMEOUT = Duration.ofSeconds(2);
+
+    /**
+     * The identifier of the arm contending for segments with every node's clock in step.
+     */
+    public static final String SEGMENT_OWNER_NO_SKEW = "at_most_one_segment_owner_with_skew_none";
+
+    /**
+     * The identifier of the arm contending for segments with one node's clock half a claim timeout ahead.
+     */
+    public static final String SEGMENT_OWNER_HALF_TIMEOUT_SKEW = "at_most_one_segment_owner_with_skew_half_timeout";
+
+    /**
+     * The identifier of the arm contending for segments with one node's clock twice a claim timeout ahead, which is
+     * expected to break ownership rather than hold it.
+     */
+    public static final String SEGMENT_OWNER_DOUBLE_TIMEOUT_SKEW = "at_most_one_segment_owner_with_skew_double_timeout";
+
+    /**
+     * The identifier of the arm rewinding a processor to the start of the stream while the workload writes.
+     */
+    public static final String REPLAY_SEES_FULL_PREFIX = "replay_sees_full_prefix_and_flags_redelivery";
+
+    /**
+     * The identifier of the same rewind issued on one node while the rest of the cluster keeps processing.
+     */
+    public static final String REPLAY_SEES_FULL_PREFIX_CROSS_NODE =
+            "replay_sees_full_prefix_and_flags_redelivery_cross_node";
+
+    /**
+     * The identifier of the arm splitting and merging segments while the workload writes.
+     */
+    public static final String SPLIT_MERGE_UNDER_LOAD = "split_merge_no_loss_no_dup_under_load";
+
+    /**
+     * The identifier of the arm asking a single-segment processor to merge, which the framework must refuse.
+     */
+    public static final String MERGE_ONLY_SINGLE_SEGMENT = "split_merge_no_loss_no_dup_under_load_single_segment";
+
     private HuntScenarios() {
         // Utility class.
     }
@@ -159,7 +209,14 @@ public final class HuntScenarios {
                        sequencingPolicyOrderPerAggregate(),
                        partialBatchVisibility(),
                        concurrentBootstrap(),
-                       concurrentBootstrapWithNodeChurn());
+                       concurrentBootstrapWithNodeChurn(),
+                       segmentOwnerWithoutSkew(),
+                       segmentOwnerWithHalfTimeoutSkew(),
+                       segmentOwnerWithDoubleTimeoutSkew(),
+                       replaySeesFullPrefix(),
+                       replaySeesFullPrefixAcrossNodes(),
+                       splitMergeUnderLoad(),
+                       mergeOnlyOnASingleSegment());
     }
 
     /**
@@ -507,6 +564,312 @@ public final class HuntScenarios {
                             schedule);
     }
 
+    /**
+     * Nodes contending for the same segments with every clock in step, which is the control arm.
+     * <p>
+     * With no skew declared, two nodes holding one segment at the same moment for any measurable time is a defect and is
+     * asserted as one. What the arm still contains is a mid-batch claim handover: one node is frozen inside its handler
+     * for longer than a claim survives, so its claim lapses while it is part-way through a batch and another node takes
+     * the segment over. That interleaving is the only one in which the stored token is read back during a run, and it is
+     * therefore the only one in which a batch whose effects were committed without its progress becomes visible at all.
+     *
+     * @return the scenario
+     */
+    public static Scenario segmentOwnerWithoutSkew() {
+        return segmentOwnerArm(SEGMENT_OWNER_NO_SKEW,
+                               "Four nodes contending for eight segments with a mid-batch claim handover",
+                               Duration.ZERO, Duration.ZERO, 4, 8);
+    }
+
+    /**
+     * The same contention with one node's clock emulated half a claim timeout ahead.
+     * <p>
+     * That node considers every other node's claim expired half a timeout early, so it can take a claim that is still
+     * legitimately held -- but never more than half a timeout before it would have lapsed anyway. The arm declares that
+     * bound as its tolerance and lets the oracle judge it, which is the prediction the emulation makes rather than a
+     * fudge factor: a node reading a delta ahead steals at most a delta early, so the overlap can never exceed the delta.
+     * <p>
+     * Whether it steals anything at all is a matter of how recently the owner last refreshed. An owner refreshes every
+     * batch and, when idle, every extension threshold, so a skew smaller than the margin between the claim timeout and
+     * that refresh rate often finds nothing to take. The arm reports what it measured rather than assuming either way.
+     *
+     * @return the scenario
+     */
+    public static Scenario segmentOwnerWithHalfTimeoutSkew() {
+        return segmentOwnerArm(SEGMENT_OWNER_HALF_TIMEOUT_SKEW,
+                               "Four nodes contending with one clock half a claim timeout ahead",
+                               CLUSTER_CLAIM_TIMEOUT.dividedBy(2), CLUSTER_CLAIM_TIMEOUT.dividedBy(2), 4, 16);
+    }
+
+    /**
+     * The same contention with one node's clock emulated twice a claim timeout ahead, which is expected to violate.
+     * <p>
+     * At twice the timeout the skewed node's own view of expiry is already in the past for every row it reads, so it
+     * considers every claim in the store stealable at every moment and takes them regardless of who holds them. This arm
+     * declares a tolerance of zero, because the framework states none, so ownership cannot hold -- and the arm does not
+     * pretend otherwise: its job is to measure how wide the overlap gets, because a scenario that can only pass is
+     * measuring nothing. The number it reports is the answer to a question the framework does not document, which is how
+     * much clock skew the claim protocol tolerates.
+     *
+     * @return the scenario
+     */
+    public static Scenario segmentOwnerWithDoubleTimeoutSkew() {
+        return segmentOwnerArm(SEGMENT_OWNER_DOUBLE_TIMEOUT_SKEW,
+                               "Four nodes contending with one clock twice a claim timeout ahead",
+                               CLUSTER_CLAIM_TIMEOUT.multipliedBy(2), Duration.ZERO, 4, 16);
+    }
+
+    private static Scenario segmentOwnerArm(String id,
+                                            String name,
+                                            Duration skew,
+                                            Duration allowance,
+                                            int nodes,
+                                            int segments) {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                              .warmup(Duration.ofMillis(250))
+                                              // There is deliberately no stall window here, and the reason is a
+                                              // measurement. Freezing a node inside its handler does not cost it a
+                                              // claim: extending a claim is the coordinator's job and the coordinator
+                                              // is a separate thread that keeps running, so the frozen node's rows stay
+                                              // fresh throughout. The stall also only lands while the node is still
+                                              // handling events, and this workload issues its whole budget in a few
+                                              // hundred milliseconds, so on most seeds the checkpoint was never
+                                              // reached and the run reported a declared fault with a fire count of
+                                              // zero. A fault that provably cannot take a segment away and lands on
+                                              // one seed in three is noise, not evidence; the finding it produced is
+                                              // written up instead.
+                                              // Dropping the node's threads is what really lapses a claim, because
+                                              // nothing is left to extend it. The window outlives the claim timeout on
+                                              // purpose: a shorter one lets the node come back and re-take its own
+                                              // rows before anybody else could, which is a restart rather than a
+                                              // handover. Its last batch never stored its progress, so whoever takes
+                                              // the segment over resumes from a token that is behind the effects the
+                                              // dead node had already applied -- the interleaving the whole arm exists
+                                              // for.
+                                              .window(FaultWindow.immediately(
+                                                      "node-dropped-until-its-claims-lapse",
+                                                      CLUSTER_CLAIM_TIMEOUT.plusSeconds(1),
+                                                      NodeCrashFault.busiest()))
+                                              .heal(Duration.ofMillis(500))
+                                              .settle(Duration.ofSeconds(25))
+                                              .build();
+        return clusterArm(id, name)
+                .claims("C15", "C17", "C18", "C19", "C20", "C21", "C22", "C38", "M1", "M3")
+                // A claim really changing hands means a redelivery, which the framework says the handler must absorb.
+                // A projection that added the amount twice would report the framework's own documented at-least-once
+                // behaviour as broken arithmetic.
+                .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                .nodes(nodes)
+                .segments(segments)
+                // Two different shapes, because the two questions need different ones.
+                //
+                // Without skew: a little more than an even share, so the cluster's capacity exceeds the segment count
+                // and a lapsed claim is contested rather than left lying there, while every node still has work. An
+                // even share settles and nobody ever wants a segment somebody else holds.
+                //
+                // With skew: no cap at all, which is the framework's shipped default. Every node then wants every
+                // segment, so the skewed node is hungry whatever the boot order gave it and steals deterministically.
+                // A capped cluster makes the arm a coin flip -- measured on this harness, the skewed node happened to
+                // be one of the nodes that filled its cap and stole nothing at all in one run out of three, which is
+                // exactly the kind of arm that reports a clean pass for the wrong reason.
+                .segmentsPerNode(skew.isZero() ? Math.max(1, (segments / nodes) + 1) : segments)
+                // The emulated skew and the tolerance the oracle applies are two separate numbers. An arm declaring
+                // the two equal is testing the prediction the emulation makes -- a node reading delta ahead can take a
+                // claim at most delta before it lapses, so the overlap can never exceed delta -- and the oracle judges
+                // it. An arm declaring a tolerance of zero is measuring instead: it reports how wide the overlap gets
+                // and is expected to break ownership.
+                .timescale(clusterTimescale().withEmulatedClockSkew(skew).withSkewAllowance(allowance))
+                .faults(schedule)
+                .oracles(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER,
+                         OwnershipChecker.DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER,
+                         StoredProgressChecker.STORED_TOKEN_NEVER_REGRESSES,
+                         StoredProgressChecker.STORED_TOKEN_COVERS_DELIVERED_EVENTS,
+                         StoredProgressChecker.CLAIM_HANDOVER_REWINDS_AT_MOST_ONE_BATCH,
+                         DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                         DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                         FaultLandingChecker.DECLARED_FAULTS_LAND,
+                         ConservationChecker.LEDGER_CONSERVES_TOTAL_BALANCE)
+                .budget(Tier.SMOKE, new TierBudget(2_000, 3, Duration.ofSeconds(150)))
+                .budget(Tier.RELEASE, new TierBudget(20_000, 100, Duration.ofMinutes(15)))
+                .build();
+    }
+
+    /**
+     * A processor rewound to the start of the stream while the workload is still writing.
+     * <p>
+     * Two things are being falsified at once. The framework refuses a reset on a running processor, and the arm asks a
+     * running one to reset so the refusal is recorded rather than assumed. Then it shuts every node down, resets, and
+     * lets the replay run: after it settles the projection must equal the fold of the whole committed history, and every
+     * redelivered event must be one the framework itself flagged as a replay.
+     * <p>
+     * The projection clears itself on reset, which is what a real projection does and what makes the conservation law a
+     * statement about the framework. A projection that kept its balances would add a second copy of every transfer and
+     * the arithmetic would report the replay as money appearing out of nowhere.
+     *
+     * @return the scenario
+     */
+    public static Scenario replaySeesFullPrefix() {
+        return replayArm(REPLAY_SEES_FULL_PREFIX,
+                         "A processor rewound to the start of the stream with the cluster stopped first",
+                         true);
+    }
+
+    /**
+     * The same rewind issued on one node while every other node keeps processing.
+     * <p>
+     * The framework's precondition is that the processor is not running, and it checks that on the local virtual machine
+     * only: nothing stops another instance of the same processor from working through the stream while the reset rewrites
+     * every token. This arm does exactly that and <b>records what happens without asserting that it is safe</b>, because
+     * the framework makes no promise either way. If it corrupts something, that is a finding; if it does not, that is
+     * worth knowing too.
+     *
+     * @return the scenario
+     */
+    public static Scenario replaySeesFullPrefixAcrossNodes() {
+        return replayArm(REPLAY_SEES_FULL_PREFIX_CROSS_NODE,
+                         "A processor rewound on one node while the rest of the cluster keeps processing",
+                         false);
+    }
+
+    private static Scenario replayArm(String id, String name, boolean stopEveryNodeFirst) {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                              // Long enough that the read side has really caught up with part of the
+                                              // stream before the rewind, or the replay has nothing to redeliver and
+                                              // the arm proves nothing about redelivery.
+                                              .warmup(Duration.ofMillis(1_500))
+                                              .window(FaultWindow.immediately(
+                                                      "rewind",
+                                                      Duration.ofMillis(1_500),
+                                                      new ProcessorResetFault(0, stopEveryNodeFirst)))
+                                              .heal(Duration.ofMillis(500))
+                                              .settle(Duration.ofSeconds(30))
+                                              .build();
+        return clusterArm(id, name)
+                .claims("C26", "C27", "C28", "M15")
+                .nodes(2)
+                .segments(4)
+                // The rewind is a redelivery of the whole stream, and a run that also loses a claim redelivers part of
+                // it a third time; a projection that added the amount again on each would report the framework's own
+                // documented behaviour as broken arithmetic.
+                .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                // The arm deliberately stops the cluster for the length of the rewind, so an event committed just before
+                // it waits the whole window plus the coordinator's own idle re-poll before anybody looks at it again. No
+                // honest horizon can sit below that sum, and this one is roughly three times it.
+                .livenessHorizon(Duration.ofSeconds(15))
+                .faults(schedule)
+                .oracles(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                         DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                         StoredProgressChecker.STORED_TOKEN_NEVER_REGRESSES,
+                         FaultLandingChecker.DECLARED_FAULTS_LAND,
+                         ConservationChecker.LEDGER_CONSERVES_TOTAL_BALANCE,
+                         ConservationChecker.PROJECTION_MATCHES_FOLD_OF_COMMITTED_EVENTS)
+                .budget(Tier.SMOKE, new TierBudget(400, 3, Duration.ofSeconds(120)))
+                .budget(Tier.RELEASE, new TierBudget(10_000, 50, Duration.ofMinutes(15)))
+                .build();
+    }
+
+    /**
+     * Segments split and merged over and over while the workload writes and a claim changes hands.
+     * <p>
+     * A split hands one segment's work to two and a merge hands two segments' work to one, both while events keep
+     * arriving. What must survive it is that the union of every segment's deliveries covers every committed event, that
+     * nothing is delivered twice outside a recorded handover, and that a key's events stay in order even though the
+     * segment carrying them changed underneath.
+     * <p>
+     * <b>The per-node segment cap has headroom on purpose.</b> A split raises the segment count, and a cluster whose
+     * total capacity equals the old count would leave the new segment unclaimable for the rest of the run -- a liveness
+     * failure the harness caused. Two nodes may hold three segments each, so the four-segment run can absorb two
+     * outstanding splits.
+     *
+     * @return the scenario
+     */
+    /**
+     * The same cluster asked only to merge, so the framework's refusal on a single-segment processor is observable.
+     * <p>
+     * A storm that split first would have handed the processor a second segment to merge with before the question was
+     * asked, and the refusal would never have been reached.
+     *
+     * @return the scenario
+     */
+    public static Scenario mergeOnlyOnASingleSegment() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                              .warmup(Duration.ofMillis(400))
+                                              .window(FaultWindow.immediately(
+                                                      "merge-storm",
+                                                      Duration.ofSeconds(3),
+                                                      SegmentSplitMergeFault.mergesOnly(0, Duration.ofMillis(500))))
+                                              .heal(Duration.ofMillis(500))
+                                              .settle(Duration.ofSeconds(20))
+                                              .build();
+        return splitMergeUnderLoad().withIdentifier(MERGE_ONLY_SINGLE_SEGMENT)
+                                    .withNodesAndSegments(1, 1)
+                                    .withFaults(schedule);
+    }
+
+    public static Scenario splitMergeUnderLoad() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                              // Short, because the split has to land while the read side is still
+                                              // behind the write side. A segment's children inherit its stored token, so
+                                              // a split over a stream the projection has already caught up with creates
+                                              // two segments with nothing left to hand them: the instruction succeeds and
+                                              // the arm observes nothing. This workload issues its whole budget in a few
+                                              // hundred milliseconds, so the window that matters is early and narrow.
+                                              .warmup(Duration.ofMillis(150))
+                                              .window(FaultWindow.immediately(
+                                                      "split-and-merge-storm",
+                                                      Duration.ofSeconds(4),
+                                                      new SegmentSplitMergeFault(0, Duration.ofMillis(300))))
+                                              .heal(Duration.ofSeconds(1))
+                                              .settle(Duration.ofSeconds(30))
+                                              .build();
+        return clusterArm(SPLIT_MERGE_UNDER_LOAD,
+                          "Segments split and merged repeatedly while the workload writes")
+                .claims("C23", "C24", "C25", "C38", "M10")
+                .nodes(2)
+                .segments(4)
+                .segmentsPerNode(3)
+                // A merge hands the merged segment the lower of the two halves' tokens, so events the further-ahead half
+                // had already handled arrive again. That is the merge's own design, and a projection that added the
+                // amount twice would report it as broken arithmetic.
+                .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                // A split blocks re-claim of the segment it is splitting until it completes, under a ceiling of a
+                // hardcoded minute that no configuration compresses, and the segment's work stops until a node picks the
+                // children up on its own claim beat. An event committed into a segment that is mid-split therefore waits
+                // for the instruction plus a claim interval plus the coordinator's idle re-poll before anybody looks at
+                // it. Measured on this arm, the slowest such wait is a little over four seconds, so the horizon is set
+                // well clear of it rather than just above it.
+                .livenessHorizon(Duration.ofSeconds(15))
+                .faults(schedule)
+                .oracles(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                         DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                         OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER,
+                         StoredProgressChecker.STORED_TOKEN_NEVER_REGRESSES,
+                         FaultLandingChecker.DECLARED_FAULTS_LAND,
+                         ConservationChecker.LEDGER_CONSERVES_TOTAL_BALANCE)
+                .budget(Tier.SMOKE, new TierBudget(4_000, 3, Duration.ofSeconds(150)))
+                .budget(Tier.RELEASE, new TierBudget(20_000, 50, Duration.ofMinutes(20)))
+                .build();
+    }
+
+    /**
+     * The settings every cluster arm shares: the claim-capable store, the widened claim timings, and the horizon the
+     * coordinator's own idle re-poll sets the floor for.
+     */
+    private static Scenario.Builder clusterArm(String id, String name) {
+        return Scenario.builder(id, name)
+                       .workload(LedgerWorkload::sequencedPerAccount)
+                       .backend(HsqldbTokenStoreBackend.NAME)
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       .livenessHorizon(Duration.ofSeconds(4))
+                       .timescale(clusterTimescale())
+                       .seed(1L);
+    }
+
+    private static HuntTimescale clusterTimescale() {
+        return HuntTimescale.compressed()
+                            .withClaimTimings(CLUSTER_CLAIM_TIMEOUT, Duration.ofMillis(400));
+    }
+
     private static Scenario bootstrapArm(String id, String name, FaultSchedule schedule) {
         return Scenario.builder(id, name)
                        .claims("C18", "C19", "C20", "C36", "M16")
@@ -519,8 +882,7 @@ public final class HuntScenarios {
                        // nanoseconds and hopeless against one reached over JDBC: claims lapse while their owner waits
                        // for the extension it already issued, and the run turns into nodes stealing from each other.
                        // Widened together so the ratio the compression exists to preserve survives.
-                       .timescale(HuntTimescale.compressed()
-                                               .withClaimTimings(Duration.ofSeconds(2), Duration.ofMillis(400)))
+                       .timescale(clusterTimescale())
                        .faults(schedule)
                        .oracles(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER,
                                 DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,

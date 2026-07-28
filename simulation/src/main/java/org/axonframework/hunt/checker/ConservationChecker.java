@@ -119,6 +119,17 @@ public class ConservationChecker implements Checker {
         List<String> notes = new ArrayList<>();
         boolean decidable = true;
 
+        // A projection that has not finished catching up is missing money it was never given, which is a statement
+        // about the run's budget and not about the framework. Every other oracle already refuses to decide on such a
+        // run; conservation has to as well, or a slow read side is reported as lost events with an arithmetic proof
+        // attached.
+        Boolean quiesced = quiesced(history);
+        if (Boolean.FALSE.equals(quiesced)) {
+            notes.add("The read side had not caught up when the run ended, so any money the projection is short of is "
+                              + "money it has not been handed yet.");
+            decidable = false;
+        }
+
         int perturbed = history.notes(HistoryOps.STORE_PERTURBED).size();
         if (perturbed > 0) {
             notes.add("A fault made the store hold something other than what was offered, on " + perturbed
@@ -185,6 +196,16 @@ public class ConservationChecker implements Checker {
     private static boolean committed(Operation transfer) {
         HistoryRecord completion = transfer.completion();
         return completion == null || !Boolean.FALSE.equals(completion.value().get(COMMITTED));
+    }
+
+    private static @org.jspecify.annotations.Nullable Boolean quiesced(HistoryView history) {
+        for (HistoryRecord phase : history.notes(HistoryOps.PHASE)) {
+            String recorded = phase.stringValue(HistoryOps.QUIESCED);
+            if (recorded != null) {
+                return Boolean.parseBoolean(recorded);
+            }
+        }
+        return null;
     }
 
     private static Map<String, Long> balancesOf(HistoryRecord projection) {

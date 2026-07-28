@@ -62,7 +62,9 @@ class HuntReproduceTest {
                                          declared.budgets(),
                                          declared.nodes(),
                                          declared.deliveryMode(),
-                                         declared.livenessHorizon());
+                                         declared.livenessHorizon(),
+                                         declared.segments(),
+                                         declared.segmentsPerNode());
 
         // when it is replayed
         ScenarioResult result = ScenarioRunner.run(scenario, tier, seed, HuntHistories.directory("reproduce"));

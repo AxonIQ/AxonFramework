@@ -7,3 +7,4 @@ org.axonframework.hunt.checker.OrderChecker
 org.axonframework.hunt.checker.OwnershipChecker
 org.axonframework.hunt.checker.DeliveryChecker
 org.axonframework.hunt.checker.LivenessChecker
+org.axonframework.hunt.checker.StoredProgressChecker

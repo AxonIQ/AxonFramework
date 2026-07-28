@@ -933,3 +933,286 @@ and S9, and because two of the rows came back short.
 The last two rows cap what may honestly be claimed for S15 at the smoke tier. They are not defects in the arm; they
 are the difference between a smoke budget and a hardening one, and quoting a hardening verdict off this run would be
 the exact overclaim the audit exists to prevent.
+
+---
+
+# Phase P2b -- completing L2
+
+## 1. Determinism seams (continued)
+
+### 1.11 Per-node clock skew is reachable after all, without any decorator
+
+F-4 says token-claim expiry reads a process-global clock, so two nodes in one virtual machine cannot disagree about the
+time. That is true and it is not the end of the story. Expiry is the inequality `timestamp + claimTimeout < now`, and the
+claim timeout is a **per-store-instance** setting (`JdbcTokenStoreConfiguration.claimTimeout`). A node whose clock reads
+`delta` ahead evaluates `timestamp + claimTimeout < now + delta`, which is the same inequality as
+`timestamp + (claimTimeout - delta) < now`. Giving one node's store view a claim timeout shortened by `delta` therefore
+reproduces that node's decisions **exactly**, not approximately, and needs no decorator, no clock substitution and no
+framework change. `TokenStores.forNode(nodeId, clockSkew)` is the whole mechanism.
+
+What it does not model, and every scenario using it says so: the timestamps that node *writes*. A real clock running ahead
+also stamps its own claims into the future, which would make other nodes steal from it later rather than sooner. That half
+is unreachable, because `JdbcTokenEntry` stamps from `ClockUtils`.
+
+Two consequences a later agent will otherwise get wrong:
+
+- **A negative claim timeout is legal and useful.** `JdbcTokenStoreConfiguration.claimTimeout` validates only for null, and
+  `Instant.plus(negative)` is in the past, so a skew beyond the claim timeout leaves a node considering every row in the
+  store expired. That is the arm that breaks ownership.
+- **The emulated skew and the oracle's tolerance must be two numbers.** They were one for an afternoon, and the result was
+  an arm that could not fail: the tolerance grew with the perturbation while the overlap saturated at one claim timeout.
+  `HuntTimescale` now carries `emulatedClockSkew` and `ownershipSkewAllowance` separately, and the shipped arms declare
+  zero for both.
+
+### 1.12 What a skew arm actually needs to be non-vacuous, measured twice over
+
+Two shapes were tried before one worked, and both failures looked like passes.
+
+- **A capped cluster makes the arm a coin flip.** The coordinator claims greedily up to `maxSegmentProvider`, so with four
+  nodes over sixteen segments at a cap of eight, two nodes take everything and two hold nothing. If the skewed node
+  happens to be one of the takers it is at its cap, wants nothing, and steals nothing -- measured: one run in three with
+  no overlap at all. The skew arms therefore run **uncapped**, which is the framework's shipped default: every node wants
+  every segment, so the skewed node is hungry whatever the boot order gave it.
+- **A skew smaller than the owner's refresh margin is invisible.** An owner refreshes its row with every batch it stores
+  and, when idle, on every extension threshold, so the row is rarely older than the threshold. A skew of half the claim
+  timeout against a five-to-one timeout-to-threshold ratio therefore finds a stealable row only occasionally. Measured
+  overlap at a one-second skew: 964-992ms, just under its bound, and zero on some runs. The tolerated skew is
+  `claimTimeout - refreshInterval`; recorded as F-10.
+
+### 1.13 A fault aimed by position lands on an idle node
+
+`NodeCrashFault(0)` and `NodePauseFault(stall, 0)` pick a node by index. In any cluster with headroom the first nodes to
+reach the store take every segment, so index 0 frequently holds nothing -- measured: four nodes over eight segments left
+two with no segment at all, and a crash aimed at node 0 produced **no claim handover whatsoever** while recording itself
+as a fault that fired. `FaultSite.busiestNode(fallbackIndex)` and the `NodeCrashFault.busiest()` /
+`NodePauseFault.busiest(stall)` factories exist for this. Aim any node-level fault at the busiest node unless the
+scenario's claim is specifically about a particular index.
+
+### 1.14 A crash window shorter than the claim timeout is a restart, not a handover
+
+A node brought back inside the claim timeout re-takes its own rows immediately, because `mayClaim` is true for the same
+owner whether or not the claim expired. Nothing changes hands and no stored token is read by anybody else. The bootstrap
+churn arm's four-hundred-millisecond crash against a two-second timeout is exactly that, which is why P2a measured zero
+repeats from it. A handover needs the window to outlive the claim timeout; the ownership arm uses `claimTimeout + 1s`.
+
+## 2. API traps (continued)
+
+### 2.27 The per-event token, the segment and the replay flag are all on the processing context
+
+`WorkPackage` puts the segment under `Segment.RESOURCE_KEY` and the batch-end token under
+`TrackingToken.BATCH_END_RESOURCE_KEY` on the batch's context, and `ProcessorEventHandlingComponents` overlays each
+entry's own resources -- including the per-event `TrackingToken.RESOURCE_KEY` -- on top for the duration of that event's
+handling. So a handler can read, for free and from the framework's own answer rather than the harness's opinion:
+
+```java
+Segment.fromContext(context)                       // which segment handled it
+TrackingToken.fromContext(context)                 // the per-event token
+ReplayToken.isReplay(token)                        // whether the framework calls this a replay
+token.position().orElse(-1L)                       // where in the stream it sits
+```
+
+Every one of those turned out to be load-bearing for an oracle. Without the segment a delivery cannot be attributed;
+without the position it cannot be compared against durable progress; without the replay flag a legitimate replay is
+indistinguishable from a duplicate.
+
+### 2.28 Overlay the node's identity, do not write it
+
+One projection instance is shared by every node, so a delivery record carries no node unless the node puts one there.
+`ProcessingContext.withResource(key, value)` returns a derived context and is what `HuntNode`'s wrapper uses:
+`super.handle(event, context.withResource(NODE_KEY, node))`. Do not reach for `putResource` -- the batch context is shared
+by every event of the batch, and writing into it would leak one node's identity into whatever else reads that context.
+
+### 2.29 `storeToken` refreshes the claim's timestamp, so it is a claim refresh
+
+`JdbcTokenStore.storeUpdate` writes `SET token = ?, tokenType = ?, timestamp = ? WHERE owner = ? AND ...`. Two things
+follow. A successful token write is a claim refresh and an ownership oracle that ignores it derives intervals that lapse
+while the store's own row is fresh. And a *failed* token write is the claim protocol refusing a node that has lost its
+claim -- which is exactly what the store is meant to do, and which reported a 426-position "regression" until the
+monotonicity check started judging the outcome rather than the attempt.
+
+### 2.30 `resetTokens` needs a `GeneralConverter` even with no reset context
+
+Recorded as F-12. For the harness: give the processor a unit-of-work factory over an application context that provides
+one. `new SimpleUnitOfWorkFactory(context)` where `context.component(GeneralConverter.class)` returns a
+`DelegatingGeneralConverter` over a `JacksonConverter` is enough, and `HuntWorld.HarnessComponents` is that context. The
+command bus needs the same, because the framework's own default is `EmptyApplicationContext`, which throws for every
+request.
+
+### 2.31 `SimpleEventHandlingComponent.subscribe` is ambiguous for a lambda
+
+`subscribe(ResetHandler)` and `subscribe(ReplayStatusChangedHandler)` have the same shape, so a bare lambda does not
+compile. Cast it: `.subscribe((ResetHandler) (resetContext, ctx) -> ...)`.
+
+### 2.32 A merge is asked for by one identifier and survives under another
+
+`MergeTask` merges the named segment with `thisSegment.mergeableSegmentId()`, and the surviving segment is the sibling
+with the lower identifier -- which the instruction does not carry and the history therefore cannot record. Any oracle that
+wants to attribute a merge's effect to a segment has to widen its licence to "any merge in the window", because the
+identifier whose stored token goes backwards is frequently not the one that was asked to merge.
+
+### 2.33 The widest splittable mask is `Integer.MAX_VALUE`
+
+`Segment.split()` throws when `(mask << 1) < 0`, so the precondition arm needs `new Segment(0, Integer.MAX_VALUE)`.
+Anything else -- `Integer.MAX_VALUE / 2 + 1`, for instance -- fails the constructor's own "must end on a consecutive
+series of 1s" check first, and the test then asserts the wrong exception.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The three new scenario families, individually. Each runs its own tier.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=SegmentOwnershipUnderSkewTest
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ReplayAfterResetTest
+./mvnw -q -Phunt -pl simulation -o test -Dtest=SplitAndMergeUnderLoadTest
+
+# The durable-progress oracle's own canaries, which run in milliseconds.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=StoredProgressCheckerTest
+```
+
+**Reading a cluster history is how every one of this phase's corrections was found.** The recipe, which is worth keeping:
+
+```bash
+python3 - simulation/target/hunt-histories/<dir>/<scenario>-<seed>.jsonl <<'EOF'
+import json,sys,collections
+lines=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+recs=lines[1:]
+print(collections.Counter((r['op'],r['type']) for r in recs))
+for r in recs:
+    if r['op'] in ('claim','store-token','split','merge','reset','node','phase'):
+        print(r['idx'], r['logicalTs']//1000000, r['node'], r['op'], r['type'], r.get('key'),
+              {k:v for k,v in r['value'].items() if k in ('position','segment','action','carriedOut','quiesced')},
+              r.get('error'))
+EOF
+```
+
+Every false finding this phase produced was diagnosed in one pass of that script. None of them was diagnosed by reading
+the assertion message.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.34 The rewind at a re-claim, not the redeliveries, is what catches a stale token
+
+The escaped canary C6 was expected to be caught by the duplicate oracle. It cannot be: a duplicate inside a recovery
+window is licensed by the framework's own contract, so a mutation whose duplicates all land inside one is reported and not
+violated. The quantity that is not licensed is **how far the stored token had fallen behind the effects already applied at
+the moment somebody read it back**. Under the one-transaction guarantee that is one batch at most; under the mutation it
+is everything the segment ever did.
+
+Measuring the rewind rather than the redeliveries also removes a timing dependency. Whether the new holder gets round to
+redelivering before the run ends is a race; how far behind the stored token was is a fact about the transaction boundary
+and is true the instant the claim is granted.
+
+### 4.35 A re-claim by the same node counts as a handover
+
+`StoredProgressChecker.handovers` treats **any** successful claim on a segment that had been claimed before as a handover,
+including one by the node that already held it. What matters is that the stored token was read back, and it is read back
+on every claim. Restricting it to a change of owner missed the crash-and-restart case entirely, which is where the
+redeliveries actually happen: a node coming back re-takes its own rows and resumes from whatever the store holds.
+
+### 4.36 An idempotent projection is a second workload, not a fix to the first
+
+`LedgerWorkload.sequencedPerAccountIdempotent()` applies each event at most once. Every arm that deliberately makes a
+claim change hands needs it, because the framework's guarantee in a split-resource deployment is at-least-once and its
+documentation says plainly that handlers must be idempotent; a projection that added the amount again would report the
+framework's own documented behaviour as money appearing out of nowhere.
+
+**It is a weaker oracle and the registry says so.** The sum of the balances no longer notices a repeated delivery. It still
+notices a lost event, a torn batch, a doubled *append* and a bypassed conflict check, and the repeats it absorbs are still
+counted by the delivery oracle -- which knows whether the run was entitled to one. Arms with no handover keep the sharper
+non-idempotent ledger, which is what catches a claim-algebra mutation through arithmetic alone (canary C5).
+
+### 4.37 A membership change is a licence, and finding that out cost four false findings
+
+A split deletes one token row and creates two; a merge deletes one of a pair and rewrites the other with the lower of
+their tokens. Four oracles reported findings that were not real until each was taught about it:
+
+| Oracle | What a segment-set rebuild does to it |
+|---|---|
+| `AtMostOneSegmentOwner` | An interval derived from claim traffic runs straight through the rebuild, and the next node to claim the recreated row looks like a second simultaneous owner. Every open interval now ends at a rebuild. |
+| `DeliveryAttributedToSegmentOwner` | A segment identifier does not name the same unit of work either side of a rebuild, so the check refuses to judge a run that rebuilt its segments at all. |
+| `StoredTokenNeverRegresses` | The merged segment inherits the lower token, so its stored position goes backwards by design. A rebuild now licenses a rewind -- matched over the instruction's whole span, because a merge issued before the earlier of two writes still takes effect between them. |
+| `DuplicateDeliveryOnlyInsideRecoveryWindow` | Every event the further-ahead half had handled arrives again. A carried-out split or merge now opens a window, and the undocumented behaviour is recorded as F-11. |
+
+The pattern to carry forward: **when a scenario perturbs the system's membership, every oracle that derives state from
+operation records has to be told, and the honest default is to stop deciding rather than to widen a tolerance.**
+
+### 4.38 A note on every run costs the three-valued verdict its meaning
+
+The handover distribution was reported unconditionally at first, and every cluster arm became permanently
+`INCONCLUSIVE`. It is now reported only when a handover actually rewound or repeated something. A clean run is a clean
+`PASS`; a run where something happened is undecided and says what. The rule generalises: a measurement worth printing is
+not automatically a note worth downgrading a verdict for.
+
+### 4.39 A fault lands when the instruction reaches the framework, not when the framework agrees
+
+`SegmentSplitMergeFault` records evidence for a refused merge as well as an accepted one. The single-segment arm exists
+entirely to observe a refusal, and a fault that only counted acceptances reported it as a fault that never fired -- which
+would have made the one arm built around a refusal permanently inconclusive.
+
+### 4.40 A fault that undoes itself belongs in the fault, not in the scenario's budget
+
+A split storm whose window closed straight after a split left the cluster one segment wider than its capacity was sized
+for, and the segment nobody was allowed to claim then never caught up -- reported, correctly, as a read side that had not
+caught up, and caused entirely by the fault. `SegmentSplitMergeFault.deactivate` now merges back whatever it left split.
+The heal phase exists for exactly this and a fault should use it.
+
+### 4.41 Conservation cannot decide on a run that never quiesced
+
+`ConservationChecker` decided against a projection that was still catching up and reported the missing money as a
+violation, with arithmetic attached. Every other oracle already refused to decide on such a run; conservation now does
+too. The general rule, third time it has come up in this suite: **a run whose read side had not caught up has not lost
+anything, and any oracle that compares a final state has to know that.**
+
+### 4.42 The split arm's horizon, and where its basis comes from
+
+Fifteen seconds, against a measured worst case of a little over four. A split blocks re-claim of the segment it is
+splitting until the instruction completes, the segment's work stops until a node picks the children up on its own claim
+beat, and the coordinator's idle re-poll is a hardcoded five hundred milliseconds that does not compress. An event
+committed into a segment that is mid-split waits for all three. The replay arm's horizon is the same number for a
+different reason: it stops the cluster for the length of the rewind window on purpose.
+
+### 4.43 The plan expected the wrong thing from the skew arms, and the measurement is more interesting
+
+The sharpened plan expected `skew = claimTimeout / 2` to be a hardening arm that holds and `skew = 2 x claimTimeout` to
+violate. What actually happens is that the overlap is bounded by `min(skew, claimTimeout)` and invisible below
+`claimTimeout - refreshInterval`, so:
+
+- at half a claim timeout the overlap is at most half a claim timeout, which the arm declares as its tolerance and the
+  oracle judges -- a real falsifiable prediction rather than a fudge factor;
+- at twice the claim timeout the overlap saturates at one claim timeout, so an arm whose tolerance had grown with the
+  skew could never have failed. It declares a tolerance of zero instead, and reports how wide the overlap got.
+
+The answer to M3 falls out of that and is recorded as F-10.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| A stalled *process*, as opposed to a stalled handler | A node frozen in its handler keeps its claims, because the coordinator extends them from another thread (F-13). Reaching the stalled-owner state in one virtual machine needs the node's token-store access frozen as well, which is a checkpoint in `RecordingTokenStore` rather than in the projection. Worth building when an arm needs a live node that has lost its segments; the crash covers the dead-node case already. | when an arm needs it |
+| Hardening and release tiers for S4, S8 and S9 | All three declare budgets for SMOKE and RELEASE and only SMOKE was run. The skew arms in particular run one seed each, which under the suite's own weak-oracle rules caps them at a partial verdict however clean they are. | the phase that runs the fuzz tier |
+| Deriving ownership from the token table's own columns | The ownership oracle derives intervals from recorded calls, conservatively (note 4.29). Sampling `owner` and `timestamp` from `TokenEntry` directly would give the store's own answer, at the cost of a poller whose sampling interval bounds the resolution. Not obviously better; recorded because the sharpened plan asked for it. | if a claim finding is ever disputed |
+| Per-interference attribution of the store-perturbation downgrade | Still unbuilt, and the C6 re-run shows it was not what blocked C6. See `CANARIES.md`. | follow-up |
+| A canary against the split and merge algebra | The membership scenarios now exist to catch one, and none has been run. | follow-up |
+| The cross-node reset question | Measured, not asserted: a reset issued on one node while another still processes **fails**, because the reset claims every segment it finds and the claim protocol refuses it (`UnableToClaimTokenException: Unable to claim token 'hunt-projection[Segment[2/3]]'. It is owned by 'node-1'`). So the local-only precondition is backstopped by the claim protocol, and M15's risk is smaller than it reads. What is not established is whether a reset that gets *part* way through before being refused leaves the tokens consistent -- the arm records the outcome and asserts nothing about it. | the phase that can stop a cluster deterministically |
+
+### 4.44 The green-but-broken audit for S4, S8 and S9, and what it found
+
+Run before claiming any verdict. Two rows came back short and three came back wrong the first time, which is the whole
+argument for running it.
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| The workload really ran | 2000 commands per seed in the ownership arms and 4000 in the membership arm, 700-1500 committed, 1400-3000 deliveries recorded per seed | ok |
+| The oracle really ran | The C6 re-run turned five test classes red with 84 `ClaimHandoverRewindsAtMostOneBatch` and 94 `StoredTokenCoversDeliveredEvents` violations. That is the only proof of an oracle worth having, and it is the reason this phase exists. | ok |
+| Faults really landed | `node-crash=1` in every ownership seed with `crashed` and `restarted` both in the history; `segment-split-merge=13` in every storm seed and `=3` in the refusal arm; `processor-reset=2` in every replay seed, one of which is the recorded refusal | ok |
+| Faults did not no-op | The crash is only recorded when it took down a node that was running, and it is aimed at the busiest node precisely because an earlier version aimed by position and landed on a node holding nothing. The split fault records refusals as well as acceptances, so an arm built around a refusal is not reported as a fault that never fired. | ok, after two corrections |
+| No clock-skew masking | Every interval, latency and window is a difference of two `logicalTs` values from one monotonic source. `wallTs` is never read by any oracle. | ok |
+| No silent error suppression | The ownership runs log `UnableToClaimTokenException` where a node lost a claim and `SQLIntegrityConstraintViolationException` where it lost the segment-initialisation race, and both reach the oracles as failed operations. The cross-node reset's failure is recorded verbatim with its message. | ok |
+| Recovery completed | Every crashed node restarted, every split was merged back, and every run recorded `quiesced=true` | ok |
+| Baseline is fair | Re-baselined because the harness changed: 181 tests before, 197 after, with the same 181 still green | ok |
+| One pass is not a pass | 3 seeds for the no-skew ownership arm, the replay arm and the storm arm | ok |
+| **One seed for the two skew arms** | `..._half_timeout` and `..._double_timeout` run a single seed each. Under the suite's own weak-oracle rules a single seed is one interleaving, so neither arm's verdict may be quoted above a partial one however clean it is. | **short** |
+| **One topology per arm** | Four nodes over sixteen segments for the skew arms, four over eight for the no-skew arm, two over four for the membership and replay arms. No arm varies its own topology, so a defect needing a different shape would not surface. | **short** |
+| The measurement is not zero | The half-timeout arm's overlap is 964-992ms against a bound of 1000ms, the double-timeout arm's is 478-1692ms against a claim timeout of 2000ms, and the storm delivers from split-created segments 4 and 7. Each arm produced a number rather than an absence. | ok |
+
+The two short rows cap what may honestly be claimed. They are not defects in the arms; they are the difference between a
+smoke budget and a hardening one.

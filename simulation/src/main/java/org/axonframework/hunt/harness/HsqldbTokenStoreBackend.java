@@ -58,6 +58,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * own node identity against the same table. The database is shut down when the run releases it, because an HSQLDB
  * in-memory catalogue outlives the last connection to it and a suite that leaves one behind per run leaks for the
  * length of the build.
+ * <p>
+ * <b>A node's view can be given a shortened claim timeout, and that is the whole of the clock-skew emulation.</b>
+ * Expiry is the inequality {@code timestamp + claimTimeout < now}; a node whose clock runs {@code delta} ahead
+ * evaluates it as {@code timestamp + (claimTimeout - delta) < now}, so shortening the timeout by {@code delta} on one
+ * node's view reproduces that node's decisions exactly. See {@link TokenStores#forNode(String, Duration)} for what the
+ * emulation deliberately does not model.
  *
  * @author Stefan Dragisic
  * @since 5.3.0
@@ -115,10 +121,19 @@ public final class HsqldbTokenStoreBackend implements HuntBackend {
 
         @Override
         public TokenStore forNode(String nodeId) {
+            return forNode(nodeId, Duration.ZERO);
+        }
+
+        @Override
+        public TokenStore forNode(String nodeId, Duration clockSkew) {
+            // A claim timeout shortened by the skew is the same inequality a clock running that far ahead evaluates,
+            // so the store's own setting carries the emulation. A skew at or beyond the timeout leaves a non-positive
+            // timeout, under which every claim looks expired to this node and nothing else -- which is what a badly
+            // skewed clock does, and is exactly the arm that is expected to produce overlapping ownership.
             JdbcTokenStore store = new JdbcTokenStore(new ContextIgnoringExecutorProvider(dataSource),
                                                       new JacksonConverter(),
                                                       JdbcTokenStoreConfiguration.DEFAULT
-                                                              .claimTimeout(claimTimeout)
+                                                              .claimTimeout(claimTimeout.minus(clockSkew))
                                                               .nodeId(nodeId));
             if (schemaCreated.compareAndSet(false, true)) {
                 store.createSchema(GenericTokenTableFactory.INSTANCE);

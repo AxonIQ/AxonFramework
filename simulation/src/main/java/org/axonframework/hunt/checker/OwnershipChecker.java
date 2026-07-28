@@ -30,18 +30,23 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Checks that no two nodes hold one segment's token claim at the same time.
+ * Checks who owned each segment, and that every effect came from a node entitled to produce it.
  * <p>
- * The invariant is {@value #AT_MOST_ONE_SEGMENT_OWNER}: <em>For every segment, the intervals during which distinct
- * nodes hold its token claim never overlap by more than the run's declared clock-skew allowance.</em>
- * <p>
+ * Two invariants, because holding a claim and acting on one are separate facts.
+ * <ul>
+ *     <li>{@value #AT_MOST_ONE_SEGMENT_OWNER}: <em>For every segment, the intervals during which distinct nodes hold
+ *     its token claim never overlap by more than the run's declared clock-skew allowance.</em></li>
+ *     <li>{@value #DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER}: <em>Every event a node delivers from a segment is delivered
+ *     while that node holds the segment's claim, or within one claim timeout of losing it.</em></li>
+ * </ul>
  * <b>Where the intervals come from.</b> Ownership is not directly observable: the owner and the timestamp live in a
  * row nobody queries. What a run can record is which node asked for a claim and whether the store granted it, and the
- * intervals are derived from exactly that. A granted claim opens an interval; a granted extension refreshes it; a
- * release closes it; and, failing all three, it closes when the store's own rule says the claim expired, one claim
- * timeout after the last time its owner refreshed it. The same owner may always re-take its own claim, expired or
- * not, so a grant to a node whose previous interval had already lapsed opens a fresh interval rather than extending
- * the stale one -- treating it as one long interval would manufacture an overlap out of an ordinary re-claim.
+ * intervals are derived from exactly that. A granted claim opens an interval; a granted extension or token write
+ * refreshes it, because the store refreshes the row's timestamp in the same statement that writes the token; a release
+ * closes it; and, failing all four, it closes when the store's own rule says the claim expired, one claim timeout after
+ * the last time its owner refreshed it. The same owner may always re-take its own claim, expired or not, so a grant to
+ * a node whose previous interval had already lapsed opens a fresh interval rather than extending the stale one --
+ * treating it as one long interval would manufacture an overlap out of an ordinary re-claim.
  * <p>
  * <b>Every interval is deliberately the smallest one the records can justify.</b> It starts when the store answered,
  * not when the node asked, and it expires from when the node asked, not from when the store answered. The claim was
@@ -69,6 +74,18 @@ public class OwnershipChecker implements Checker {
      * The stable name of the invariant requiring one owner per segment.
      */
     public static final String AT_MOST_ONE_SEGMENT_OWNER = "AtMostOneSegmentOwner";
+
+    /**
+     * The stable name of the invariant tying a delivery to the node entitled to make it.
+     */
+    public static final String DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER = "DeliveryAttributedToSegmentOwner";
+
+    /**
+     * The statement of {@value #DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER}, character-identical to the invariant registry.
+     */
+    public static final String DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER_STATEMENT =
+            "Every event a node delivers from a segment is delivered while that node holds the segment's claim, or "
+                    + "within one claim timeout of losing it.";
 
     /**
      * The statement of {@value #AT_MOST_ONE_SEGMENT_OWNER}, character-identical to the invariant registry.
@@ -102,7 +119,7 @@ public class OwnershipChecker implements Checker {
 
     @Override
     public Set<String> machineNames() {
-        return Set.of(AT_MOST_ONE_SEGMENT_OWNER);
+        return Set.of(AT_MOST_ONE_SEGMENT_OWNER, DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER);
     }
 
     @Override
@@ -143,6 +160,7 @@ public class OwnershipChecker implements Checker {
         for (Operation operation : claims) {
             apply(perSegment, operation, claimTimeoutNanos);
         }
+        closeAtSegmentSetRebuilds(perSegment, segmentSetRebuilds(history));
 
         List<Violation> violations = new ArrayList<>();
         perSegment.forEach((segment, intervals) -> {
@@ -169,7 +187,158 @@ public class OwnershipChecker implements Checker {
                 }
             }
         });
-        return new CheckResult(name(), List.copyOf(violations), List.of());
+        List<String> notes = new ArrayList<>();
+        checkAttribution(history, perSegment, claimTimeoutNanos, skewNanos, violations, notes);
+        return new CheckResult(name(), List.copyOf(violations), List.copyOf(notes));
+    }
+
+    /**
+     * Checks that every delivery came from a node entitled to make it.
+     * <p>
+     * The framework says a node that loses a claim fails its next token write and rolls the batch back, and it says
+     * nothing at all about how long the de-claimed node may keep executing before it discovers the loss. So a delivery
+     * from a node that no longer holds the segment is permitted within one claim timeout of losing it -- the window in
+     * which it may still be draining the batch it was interrupted in -- and is a violation outside that window, where
+     * nothing licenses it. The window is widened by the run's declared clock-skew allowance at both ends, for the same
+     * reason the overlap check tolerates it.
+     * <p>
+     * A delivery that names no segment or no node is skipped rather than guessed at: the segment and the node are the
+     * framework's own, read back off the processing context it built, and a checker that invented either would be
+     * judging itself.
+     */
+    private static void checkAttribution(HistoryView history,
+                                         Map<String, List<Interval>> perSegment,
+                                         long claimTimeoutNanos,
+                                         long skewNanos,
+                                         List<Violation> violations,
+                                         List<String> notes) {
+        if (!segmentSetRebuilds(history).isEmpty()) {
+            // A split deletes one token row and creates two; a merge deletes one of a pair and rewrites the other. The
+            // segment a delivery names therefore does not identify the same unit of work before and after, and no
+            // ownership interval derived from claim traffic can follow it across the change. Reporting that is the only
+            // honest answer; guessing which side of a rebuild a delivery belongs to would make the verdict a property of
+            // the guess.
+            notes.add("The run rebuilt its segment set, so " + DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER
+                              + " cannot be judged: a segment identifier does not name the same unit of work either "
+                              + "side of a split or a merge.");
+            return;
+        }
+        int outside = 0;
+        int judged = 0;
+        for (Operation delivery : history.operations(HistoryOps.DELIVER)) {
+            HistoryRecord record = delivery.invocation();
+            Object rawSegment = record.value().get(HistoryOps.SEGMENT);
+            if (record.node() == null || !(rawSegment instanceof Number number)) {
+                continue;
+            }
+            List<Interval> intervals = perSegment.get(segmentKey(perSegment, number.intValue()));
+            if (intervals == null) {
+                continue;
+            }
+            judged++;
+            boolean entitled = intervals.stream()
+                                        .filter(interval -> interval.node().equals(record.node()))
+                                        .anyMatch(interval -> record.logicalTs() >= interval.start() - skewNanos
+                                                && record.logicalTs()
+                                                <= interval.end(claimTimeoutNanos) + claimTimeoutNanos + skewNanos);
+            if (!entitled) {
+                outside++;
+                violations.add(Violation.of(
+                        DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER,
+                        DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER_STATEMENT,
+                        "node " + record.node() + " delivered an event from segment " + number.intValue()
+                                + " while holding no claim on it, and outside every window in which it could still "
+                                + "have been draining an interrupted batch",
+                        List.of(record),
+                        history.header()));
+            }
+        }
+        if (judged == 0) {
+            notes.add("No delivery recorded both the node that made it and the segment it came from, so "
+                              + DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER + " judged nothing.");
+        } else if (outside > 0) {
+            notes.add(outside + " of " + judged + " attributable deliveries came from a node holding no claim.");
+        }
+    }
+
+    private static String segmentKey(Map<String, List<Interval>> perSegment, int segmentId) {
+        String suffix = "/" + segmentId;
+        for (String key : perSegment.keySet()) {
+            if (key.endsWith(suffix)) {
+                return key;
+            }
+        }
+        return suffix;
+    }
+
+    /**
+     * Returns the longest any two distinct nodes appeared to hold one segment at the same time, in milliseconds.
+     * <p>
+     * Exposed so that an arm which is expected to break ownership can report how badly rather than merely that it did.
+     * A number is the only useful answer to "how much clock skew does the claim protocol tolerate", which the framework
+     * does not state. Returns {@code -1} when the history holds no two nodes' claims on one segment to compare.
+     *
+     * @param history the history to measure
+     * @return the widest overlap in milliseconds, or {@code -1} when there is nothing to measure
+     */
+    public static long widestOverlapMillis(HistoryView history) {
+        Long claimTimeoutNanos = millisField(history.header().workloadShape(), CLAIM_TIMEOUT_MS);
+        if (claimTimeoutNanos == null) {
+            return -1L;
+        }
+        Map<String, List<Interval>> perSegment = new LinkedHashMap<>();
+        for (Operation operation : ownershipOperations(history)) {
+            apply(perSegment, operation, claimTimeoutNanos);
+        }
+        long widest = -1L;
+        for (List<Interval> intervals : perSegment.values()) {
+            for (int first = 0; first < intervals.size(); first++) {
+                for (int second = first + 1; second < intervals.size(); second++) {
+                    Interval left = intervals.get(first);
+                    Interval right = intervals.get(second);
+                    if (left.node().equals(right.node())) {
+                        continue;
+                    }
+                    widest = Math.max(widest,
+                                      Math.min(left.end(claimTimeoutNanos), right.end(claimTimeoutNanos))
+                                              - Math.max(left.start(), right.start()));
+                }
+            }
+        }
+        return widest < 0 ? widest : widest / NANOS_PER_MILLI;
+    }
+
+    /**
+     * Returns the instants at which the run rebuilt its segment set, from the recorder's own monotonic clock.
+     * <p>
+     * A split deletes a token row and creates two, and a merge deletes one of a pair and rewrites the other. Neither
+     * appears as a claim or a release, so an interval derived from claim traffic alone runs straight through a segment
+     * that no longer exists in the form it was claimed in -- and the next node to claim the rebuilt row looks like a
+     * second simultaneous owner. Ending every open interval at a rebuild is what stops that reading a membership change
+     * as a broken claim.
+     */
+    private static List<Long> segmentSetRebuilds(HistoryView history) {
+        List<Long> instants = new ArrayList<>();
+        for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
+            for (Operation change : history.operations(instruction)) {
+                HistoryRecord completion = change.completion();
+                if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
+                    instants.add(change.invocation().logicalTs());
+                }
+            }
+        }
+        java.util.Collections.sort(instants);
+        return instants;
+    }
+
+    private static void closeAtSegmentSetRebuilds(Map<String, List<Interval>> perSegment, List<Long> rebuilds) {
+        if (rebuilds.isEmpty()) {
+            return;
+        }
+        perSegment.values().forEach(intervals -> intervals.forEach(interval -> rebuilds.stream()
+                                                                                      .filter(at -> at > interval.start())
+                                                                                      .findFirst()
+                                                                                      .ifPresent(interval::closeNoLaterThan)));
     }
 
     private static void apply(Map<String, List<Interval>> perSegment, Operation operation, long claimTimeoutNanos) {
@@ -204,8 +373,13 @@ public class OwnershipChecker implements Checker {
     private static List<Operation> ownershipOperations(HistoryView history) {
         List<Operation> operations = new ArrayList<>();
         for (Operation operation : history.operations()) {
+            // Storing a token refreshes the claim's timestamp in the same statement that writes the token, under a
+            // WHERE clause on the owner, so a successful store is a claim refresh and an interval derived without it
+            // lapses while the store's own row is fresh. Leaving it out would manufacture overlaps out of nothing more
+            // than a busy work package, which extends rarely precisely because every store already refreshed it.
             if ((operation.op().equals(HistoryOps.CLAIM)
                     || operation.op().equals(HistoryOps.EXTEND)
+                    || operation.op().equals(HistoryOps.STORE_TOKEN)
                     || operation.op().equals(HistoryOps.RELEASE))
                     && operation.invocation().node() != null) {
                 operations.add(operation);
@@ -266,6 +440,10 @@ public class OwnershipChecker implements Checker {
 
         private void close(long at) {
             closedAt = at;
+        }
+
+        private void closeNoLaterThan(long at) {
+            closedAt = closedAt < 0 ? at : Math.min(closedAt, at);
         }
 
         private long lapsesAt(long claimTimeoutNanos) {
