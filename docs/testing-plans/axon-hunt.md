@@ -1,5 +1,9 @@
 # Axon Hunt -- Project-Wide Bug-Hunting Test Suite for Axon Framework 5
 
+**New here? Read `HUNT.md` at the repository root first.** It is the onboarding guide: what the
+suite is, the vocabulary, where everything lives, and what to run. This document is the plan,
+and it is a lookup rather than a read-through.
+
 Plan slug: `axon-hunt`. Mode: **project-wide** (holistic, claims-driven).
 Destination when implementation starts: `docs/testing-plans/axon-hunt.md` on branch
 `feature/dst-testing-suite` in a dedicated worktree.
