@@ -28,9 +28,11 @@ import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -67,11 +69,11 @@ class EnrollStudentCommandHandler {
      */
     @CommandHandler
     void handle(EnrollStudent command,
-                @InjectEntity(idProperty = UniversityTags.COURSE_ID) State state,
+                @InjectEntity(idProperty = UniversityTags.COURSE_ID) Optional<State> state,
                 EventAppender eventAppender,
                 @TenantScoped CourseStatisticsStore courseStatisticsStore,
                 @TenantScoped AuditLog auditLog) {
-        List<StudentEnrolledInCourse> events = decide(command, state);
+        List<StudentEnrolledInCourse> events = decide(command, state.orElse(null));
         eventAppender.append(events);
         if (!events.isEmpty()) {
             courseStatisticsStore.recordEnrollment(command.courseId());
@@ -79,8 +81,8 @@ class EnrollStudentCommandHandler {
         }
     }
 
-    private List<StudentEnrolledInCourse> decide(EnrollStudent command, State state) {
-        if (!state.open) {
+    private List<StudentEnrolledInCourse> decide(EnrollStudent command, @Nullable State state) {
+        if (state == null || !state.open) {
             throw new CourseNotOpenException(command.courseId());
         }
         if (state.isEnrolled(command.studentId())) {
