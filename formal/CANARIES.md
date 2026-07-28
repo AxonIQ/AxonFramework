@@ -43,6 +43,15 @@ Every mutation below was applied to
 `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/inmemory/InMemoryEventStorageEngine.java`,
 measured at the smoke tier with the fixed seed set, and reverted.
 
+NOTE ON READING THE COUNTS: for `AppendConformsToDcbModel` the number is NOT a measure of how
+strongly a mutation was detected. The model replay diverges from the store after its first
+mismatch, so every later comparison in the same run is downstream of that divergence; only the
+FIRST violation of that invariant is evidence. Read the counts below as "caught / not caught",
+never as sensitivity. The invariants that fold state rather than replay it
+(`LedgerConservesTotalBalance`, `ProjectionMatchesFoldOfCommittedEvents`,
+`AtMostOneSegmentOwner`, `RolledBackEventsNeverObservable`) do not have this limitation. See the
+divergence entry in `FINDINGS.adoc` and the note in `HUNT-NOTES.md`.
+
 | # | Mutation | Should be caught by | Caught? | Tier / seeds | Violations raised |
 |---|---|---|---|---|---|
 | C1 | The conflict check never finds a conflict | `AppendConformsToDcbModel` | **yes** | SMOKE, fixed set | 3567 `AppendConformsToDcbModel`, 5 `LedgerBalanceNeverNegative` |
