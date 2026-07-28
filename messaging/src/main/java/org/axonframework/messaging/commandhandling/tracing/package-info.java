@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-
 /**
- * Part of the Axon Messaging module. Contains classes related to command tracing.
+ * Tracing decorators for command handling components.
  */
 @NullMarked
 package org.axonframework.messaging.commandhandling.tracing;

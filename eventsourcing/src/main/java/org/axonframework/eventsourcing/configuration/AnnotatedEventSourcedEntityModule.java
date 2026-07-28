@@ -194,7 +194,8 @@ class AnnotatedEventSourcedEntityModule<I, E>
         if (policy == null) {
             throw new AxonConfigurationException(
                     "@Snapshotting on [" + entityType.getName() + "] has no active trigger: afterEvents is 0 and "
-                            + "afterSourcingTime is not configured. Remove the annotation or configure at least one trigger."
+                            + "afterSourcingTime is not configured. Remove the annotation or configure at least one "
+                            + "trigger."
             );
         }
 
@@ -205,8 +206,9 @@ class AnnotatedEventSourcedEntityModule<I, E>
      * Collects the types from {@link EventSourcedEntity#concreteTypes()} and subtypes of sealed superType, if
      * the given {@link #entityType} is sealed.
      *
-     * @param attributes the annotation properties derived from {@link EventSourcedEntity}.
-     * @return set of classes that are either explicitly configured via <code>concreteTypes</code> or derived from sealed superType.
+     * @param attributes the annotation properties derived from {@link EventSourcedEntity}
+     * @return set of classes that are either explicitly configured via <code>concreteTypes</code> or derived from the
+     *         sealed supertype
      */
     private Set<Class<? extends E>> getConcreteEntityTypes(Map<String, Object> attributes) {
         @SuppressWarnings("unchecked")
@@ -216,11 +218,12 @@ class AnnotatedEventSourcedEntityModule<I, E>
 
         return Stream.concat(
                 Arrays.stream(concreteTypes)
-                      .peek(concreteType -> Assert.isTrue(entityType.isAssignableFrom(concreteType),
-                                                          () -> ("The declared concrete type [%s] is not assignable to the entity type [%s]. "
-                                                                  + "Please ensure the concrete type is a subclass of the entity type.").formatted(
-                                                                  concreteType.getName(),
-                                                                  entityType.getName())
+                      .peek(concreteType -> Assert.isTrue(
+                              entityType.isAssignableFrom(concreteType),
+                              () -> ("The declared concrete type [%s] is not assignable to the entity type [%s]. "
+                                      + "Please ensure the concrete type is a subclass of the entity type.").formatted(
+                                      concreteType.getName(),
+                                      entityType.getName())
                       )),
                 sealedSubtypes.stream()
         ).collect(Collectors.toSet());

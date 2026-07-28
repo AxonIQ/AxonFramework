@@ -144,7 +144,8 @@ public class AxonAutoConfiguration {
     SpringParameterResolverFactoryBean parameterResolverFactory(
             List<ParameterResolverFactory> parameterResolverFactories
     ) {
-        SpringParameterResolverFactoryBean springParameterResolverFactoryBean = new SpringParameterResolverFactoryBean();
+        SpringParameterResolverFactoryBean springParameterResolverFactoryBean =
+                new SpringParameterResolverFactoryBean();
         springParameterResolverFactoryBean.setAdditionalFactories(parameterResolverFactories);
         return springParameterResolverFactoryBean;
     }
