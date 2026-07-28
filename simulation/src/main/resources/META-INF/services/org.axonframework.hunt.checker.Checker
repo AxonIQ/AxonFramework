@@ -3,3 +3,4 @@ org.axonframework.hunt.checker.VisibilityChecker
 org.axonframework.hunt.checker.ConservationChecker
 org.axonframework.hunt.checker.AppendOutcomeChecker
 org.axonframework.hunt.checker.FaultLandingChecker
+org.axonframework.hunt.checker.OrderChecker

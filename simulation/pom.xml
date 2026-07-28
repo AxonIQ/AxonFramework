@@ -83,6 +83,7 @@
                         <hunt.backend>${hunt.backend}</hunt.backend>
                         <hunt.timescale>${hunt.timescale}</hunt.timescale>
                         <hunt.tier>${hunt.tier}</hunt.tier>
+                        <hunt.history>${hunt.history}</hunt.history>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

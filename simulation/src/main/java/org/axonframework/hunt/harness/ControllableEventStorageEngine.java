@@ -259,6 +259,7 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
         private final AppendAttempt attempt;
         private final HistoryRecorder.Invocation invocation;
         private final String participant;
+        private volatile boolean published;
 
         @SuppressWarnings("unchecked")
         private InterferingTransaction(AppendTransaction<?> delegateTransaction,
@@ -292,17 +293,37 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
             };
         }
 
+        /**
+         * Records what this rollback actually discarded, which is nothing once the batch has been published.
+         * <p>
+         * The framework registers one error handler per transaction and calls {@code rollback()} from it whatever
+         * phase the error arrived in, so a failure strictly after the commit produces a rollback of a transaction the
+         * store has already published. Recording the batch as discarded in that case would make every such run report
+         * events of a rolled-back transaction as observable, which is a false finding: they are observable because
+         * they were committed. The offered identifiers stay on the record under {@code offeredEventIds}, and
+         * {@code afterCommit} says which of the two situations this was.
+         */
         @Override
         public void rollback() {
             delegateTransaction.rollback();
-            recorderFor(participant).invoke(HistoryOps.ROLLBACK,
-                                            null,
-                                            Map.of(DcbHistoryCodec.EVENT_IDS, attempt.eventIds()))
-                                    .ok(Map.of());
+            boolean alreadyPublished = published;
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put(DcbHistoryCodec.EVENT_IDS, alreadyPublished ? List.of() : attempt.eventIds());
+            value.put("offeredEventIds", attempt.eventIds());
+            value.put("afterCommit", alreadyPublished);
+            recorderFor(participant).invoke(HistoryOps.ROLLBACK, null, Map.copyOf(value)).ok(Map.of());
         }
 
         @Override
         public CompletableFuture<ConsistencyMarker> afterCommit(@Nullable Object commitResult) {
+            for (StoreHook hook : hooks) {
+                if (hook.failsAfterCommit(attempt)) {
+                    return CompletableFuture.failedFuture(new InjectedStoreFailureException(
+                            "The marker calculation of [" + attempt.describe()
+                                    + "] was failed by an injected fault after its commit had already published the "
+                                    + "batch."));
+                }
+            }
             if (commitResult == null) {
                 return CompletableFuture.completedFuture(ConsistencyMarker.ORIGIN);
             }
@@ -318,6 +339,7 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
                     throw new java.util.concurrent.CompletionException(failure);
                 }
                 storedEvents.addAndGet(attempt.batchSize());
+                published = true;
                 commit.ok(Map.of());
                 invocation.ok(Map.of(DcbHistoryCodec.EVENT_IDS, attempt.eventIds()));
                 buggify.fire(Buggify.AFTER_COMMIT);
@@ -358,6 +380,7 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
             List<String> keptIds = AxonModelCodec.toModelEvents(kept).stream().map(ModelEvent::id).toList();
             HistoryRecorder.Invocation commit = beginCommit(keptIds);
             return reAppend(kept).thenApply(ignored -> {
+                published = !kept.isEmpty();
                 commit.ok(Map.of());
                 invocation.ok(Map.of(DcbHistoryCodec.EVENT_IDS, attempt.eventIds()));
                 note("prefix", attempt.eventIds(), keptIds);
@@ -369,6 +392,7 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
             delegateTransaction.rollback();
             HistoryRecorder.Invocation commit = beginCommit(attempt.eventIds());
             return reAppend(events).thenApply(ignored -> {
+                published = true;
                 commit.ok(Map.of());
                 invocation.ok(Map.of(DcbHistoryCodec.EVENT_IDS, attempt.eventIds()));
                 return (Object) null;

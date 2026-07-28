@@ -54,6 +54,16 @@ public record HistoryHeader(
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
     /**
+     * The workload-shape key recording how much of a run's scheduling was pinned down.
+     */
+    private static final String DETERMINISM = "determinism";
+
+    /**
+     * The determinism mode under which a seed fixes the workload's shape and nothing about the thread schedule.
+     */
+    private static final String RE_SAMPLING_DETERMINISM = "REAL_THREADS";
+
+    /**
      * Compact constructor defaulting the workload shape and rejecting missing identity fields.
      */
     public HistoryHeader {
@@ -82,18 +92,28 @@ public record HistoryHeader(
     }
 
     /**
-     * Returns the command that replays exactly this run.
+     * Returns the command that runs this scenario at this seed again, and says plainly what that buys.
      * <p>
-     * Every violation carries this string so that a report is actionable without the reader knowing the harness.
+     * Every violation carries this string so that a report is actionable without the reader knowing the harness. What
+     * the string must not do is overclaim. A run whose scheduling was left to real threads is not reproduced by its
+     * seed: the seed fixes which operations are attempted and nothing about which of them win their races, so
+     * re-running it draws a fresh sample of the same shape and may well come back clean. For those runs the command
+     * is annotated as a re-sample, and the reader is pointed at the recorded history, which is the only exact record
+     * of the run that broke and can be re-judged with {@code -Dhunt.history=<the file>}.
      *
-     * @return a copy-pasteable Maven command reproducing the run
+     * @return a copy-pasteable Maven command, annotated when re-running it re-samples rather than replays
      */
     @JsonIgnore
     public String reproduceCommand() {
-        return "./mvnw -Phunt -pl simulation -am test -Dtest=HuntReproduceTest"
+        String command = "./mvnw -Phunt -pl simulation -am test -Dtest=HuntReproduceTest"
                 + " -Dhunt.scenario=" + scenarioId
                 + " -Dhunt.seed=" + seed
                 + " -Dhunt.backend=" + backend
                 + " -Dhunt.timescale=" + timescale;
+        if (RE_SAMPLING_DETERMINISM.equals(workloadShape.get(DETERMINISM))) {
+            return command + " (re-samples the schedule; it does NOT replay this run -- to re-judge this exact run "
+                    + "offline, run -Dtest=HistoryReplayTest -Dhunt.history=<the history file this violation names>)";
+        }
+        return command;
     }
 }

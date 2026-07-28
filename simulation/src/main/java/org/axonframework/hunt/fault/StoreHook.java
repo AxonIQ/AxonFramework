@@ -52,4 +52,19 @@ public interface StoreHook {
     default CommitAction onCommit(AppendAttempt attempt) {
         return CommitAction.proceed();
     }
+
+    /**
+     * Called after the commit has succeeded, when the framework asks the transaction for its consistency marker.
+     * <p>
+     * This is the one phase in which a failure cannot un-append anything: the store has already published the batch.
+     * A fault answering {@code true} therefore models an infrastructure failure strictly after the point of no
+     * return, which is exactly the window in which the framework's own error handling calls
+     * {@code AppendTransaction.rollback()} on a transaction that has already committed.
+     *
+     * @param attempt what has just been committed
+     * @return {@code true} to make the marker calculation fail; {@code false} by default
+     */
+    default boolean failsAfterCommit(AppendAttempt attempt) {
+        return false;
+    }
 }

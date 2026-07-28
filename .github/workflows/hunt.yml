@@ -1,0 +1,90 @@
+name: Axon Hunt
+
+# The bug-hunting suite. Only the smoke tier runs here: a small workload, a fixed set of seeds, and at most one
+# injected fault at a time, so that a red build points at one cause rather than at four candidates. The long seed
+# sweeps and the fault storms belong to the scheduled jobs stubbed at the bottom of this file.
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hunt-smoke:
+    name: Hunt smoke on JDK ${{ matrix.java-version }}
+    runs-on: ubuntu-latest
+    # The smoke tier is budgeted to finish in well under ten minutes. The cap is a guard against a wedged run, not a
+    # target: a run that needs more than this has stopped being a per-change gate.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ 21, 25 ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: 'zulu'
+          java-version: ${{ matrix.java-version }}
+          cache: "maven"
+
+      # Every test in the module is judged by an oracle over a recorded history, and a rerun hides exactly the
+      # intermittent break the suite exists to surface. The module pins the count to zero in its own POM; this step
+      # asserts that rather than trusting it, because a pin nobody checks is a pin that silently disappears.
+      - name: Assert reruns are pinned off
+        run: |
+          grep -q '<surefire.rerunFailingTestsCount>0</surefire.rerunFailingTestsCount>' simulation/pom.xml \
+            || { echo "The hunt module no longer pins surefire.rerunFailingTestsCount to 0."; exit 1; }
+          ! grep -rn 'rerunFailingTestsCount' .github/workflows/hunt.yml | grep -v 'simulation/pom.xml' \
+            | grep -q -- '-D' \
+            || { echo "This workflow must never pass a rerun count on the command line."; exit 1; }
+
+      # The upstream modules are built without their tests: the regular pull-request build already runs those, and
+      # running them twice would push this job past the budget that makes it a per-change gate.
+      - name: Build the framework the suite drives
+        run: |
+          ./mvnw -B -U -ntp -Dstyle.color=always -Djacoco.skip=true -pl eventsourcing -am clean install -DskipTests
+
+      - name: Hunt smoke tier
+        run: |
+          ./mvnw -B -ntp -Dstyle.color=always -Djacoco.skip=true -Phunt -pl simulation test
+
+      # A failure whose history is gone is a failure nobody can act on. Under real threads a seed does not reproduce
+      # the run that broke, so the recorded history is the only exact record of it and has to survive the runner.
+      - name: Archive recorded histories
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: hunt-histories-jdk${{ matrix.java-version }}
+          path: '**/target/hunt-histories/**'
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Create test summary
+        uses: test-summary/action@v2
+        with:
+          paths: "simulation/target/surefire-reports/TEST-*.xml"
+          show: "fail, skip"
+        if: always() # This allows the build step to fail -- due to failing tests -- but still produce a test summary.
+
+# ---------------------------------------------------------------------------------------------------------------
+# Placeholders. Both are deliberately absent rather than stubbed-and-disabled, because a scheduled job that exists
+# and does nothing reads as coverage.
+#
+#   hunt-fuzz    (nightly cron)  -- the seed sweep: `-Dhunt.excludedGroups= -Dtest=HuntFuzzTest -Dhunt.seeds=<n>
+#                                   -Dhunt.startSeed=<n> -Dsurefire.failIfNoSpecifiedTests=false`, chunked so no
+#                                   single JVM outlives the runner, with the same history archiving as above.
+#   hunt-chaos   (weekly cron)   -- the hardening and release tiers: several faults at once, the backends that need
+#                                   containers, and the long soaks. Needs the backend layer that does not exist yet.
+#
+# Both are owned by the phase that adds the backends they are worth running against.
+# ---------------------------------------------------------------------------------------------------------------

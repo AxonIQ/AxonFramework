@@ -150,6 +150,59 @@ public final class ScenarioRunner {
     }
 
     /**
+     * Judges a history that was recorded earlier, with no simulation at all.
+     * <p>
+     * Every checker is a pure function of the history it reads, so a recorded run can be re-judged exactly, for ever,
+     * by anyone holding the file. That matters because the mode every contended scenario runs in reproduces nothing:
+     * re-running a seed re-samples the thread schedule and may well come back clean. The file is the only exact record
+     * of the run that broke, which makes replaying it the only honest regression asset a concurrent finding has.
+     * <p>
+     * The verdict is folded exactly as a live run's is, minus the two things a file cannot carry: no fault-fire counts
+     * are reported here beyond what the history itself recorded, and no wall time is claimed for a run that is not
+     * being run.
+     * <p>
+     * Example usage:
+     * <pre>{@code
+     * ScenarioResult replayed = ScenarioRunner.replay(Path.of("target/hunt-histories/regression/run.jsonl"));
+     * assertThat(replayed.violations()).isEmpty();
+     * }</pre>
+     *
+     * @param historyFile the recorded history to judge
+     * @return the verdict, with every violation and note the checkers produced
+     */
+    public static ScenarioResult replay(Path historyFile) {
+        Objects.requireNonNull(historyFile, "The historyFile cannot be null.");
+        long startedAt = System.nanoTime();
+        HistoryView history = HistoryView.read(historyFile);
+        List<CheckResult> results = CheckerRegistry.runAll(history);
+        List<Violation> violations = results.stream().flatMap(result -> result.violations().stream()).toList();
+        List<String> notes = new ArrayList<>();
+        results.forEach(result -> notes.addAll(result.notes()));
+        Verdict verdict = violations.isEmpty() ? (notes.isEmpty() ? Verdict.PASS : Verdict.INCONCLUSIVE)
+                : Verdict.FAIL;
+        return new ScenarioResult(history.header().scenarioId(),
+                                  history.header().seed(),
+                                  tierOf(history),
+                                  verdict,
+                                  violations,
+                                  List.copyOf(notes),
+                                  Map.of(),
+                                  results,
+                                  historyFile,
+                                  Duration.ofNanos(System.nanoTime() - startedAt),
+                                  history.header().reproduceCommand());
+    }
+
+    private static Tier tierOf(HistoryView history) {
+        String recorded = history.header().workloadShape().get("tier");
+        try {
+            return recorded == null ? Tier.SMOKE : Tier.valueOf(recorded);
+        } catch (IllegalArgumentException e) {
+            return Tier.SMOKE;
+        }
+    }
+
+    /**
      * Runs every seed a tier declares and returns one result per seed.
      *
      * @param scenario         the scenario to run

@@ -528,3 +528,202 @@ turns into a suite that passes because it stopped looking.
 | The CI workflow | The tags and properties it needs are in place: `-Dhunt.excludedGroups=`, `-Dhunt.seeds`, `-Dhunt.startSeed`, `-Dhunt.scenario`, `-Dhunt.seed`, `-Dhunt.tier`, and `surefire.rerunFailingTestsCount` is pinned to 0 in the module's POM. | P1b |
 | A realistic-timescale arm that is actually run | `HuntTimescale.realistic()` exists and is selectable; no scenario declares it, because at L1 nothing depends on a real timeout. It becomes meaningful when a claim-capable token store lands. | P2 |
 | Per-tier fault schedules | A scenario carries one schedule. The faulted arm of a scenario is a second record with its own identifier, which also keeps a reproduce command unambiguous. Revisit only if the duplication becomes real. | when it hurts |
+
+---
+
+# Phase P1b -- completing L1
+
+## 1. Determinism seams (continued)
+
+### 1.6 The standing policy change: pin histories, not seeds
+
+P1a measured that `REAL_THREADS` reproduces nothing. That invalidates "pin the failing seed" as a
+regression strategy, so from P1b the suite pins two different things and never confuses them. The
+full statement is `formal/INVARIANTS.md` section 2.5. The parts a future agent will otherwise get
+wrong:
+
+- `RegressionSeedsTest` pins seeds **only** for `SINGLE_THREADED` arms, and one of its cases asserts
+  that the arm it pins really is single-threaded. Adding a pinned seed for a contended arm claims a
+  reproducibility that has been measured not to exist.
+- The contended arms' regression asset is a **history file** under
+  `simulation/src/test/resources/hunt-histories/`, replayed by `ScenarioRunner.replay(Path)`.
+- **A pinned history guards the oracles, not the engine.** Its verdict does not move when the engine
+  changes, because it is a record of a run that already happened. The engine is guarded only by the
+  live arms. Say this out loud whenever the pinning strategy is described, or it reads as far
+  stronger than it is.
+- `HistoryHeader.reproduceCommand()` now annotates the command it renders for a `REAL_THREADS` run
+  as a re-sample rather than a replay. Do not remove the annotation to tidy the output.
+
+### 1.7 A single writer still produces both append verdicts
+
+`dcb_append_rejected_after_marker_single_writer` exists because a pinned seed needs a deterministic
+arm. It was not obvious in advance that one writer would still exercise the rejection path, and it
+does: the ledger's `seize` command anchors at ORIGIN, so it conflicts with anything already stored
+under that account whether or not anybody else is writing.
+
+## 2. API traps (continued)
+
+### 2.14 `SimpleEventHandlingComponent` throws on a policy that resolves nothing
+
+`SimpleEventHandlingComponent.sequenceIdentifierFor` calls `.get()` on the policy's `Optional`
+(`:176` and `:184`). `NoOpSequencingPolicy` and a bare `SequentialPerAggregatePolicy` on a DCB store
+both return empty, so every event throws `NoSuchElementException` and the processor delivers
+nothing. Recorded as finding F-7. Two consequences for the harness:
+
+- Any scenario choosing one of those policies is `INCONCLUSIVE` by construction, because the read
+  side never catches up. Give it a short settle budget; the coordinator retries in a tight loop
+  (2204 attempts in eight seconds was measured) and every second of settle is wasted.
+- If you need to observe what identifier the framework resolved, wrap the component in a
+  `DelegatingEventHandlingComponent` and override `sequenceIdentifierFor`. The processor asks the
+  **outermost** component, so a wrapper sees the real call. Recomputing the policy from the workload
+  answers a different question.
+
+### 2.15 One sequence identifier means one segment, not just one thread
+
+Segment assignment hashes the sequence identifier
+(`SegmentMatcher.java:65`, reached from `ProcessorEventHandlingComponents.java:193-198`). Under the
+wired default on a DCB store every event resolves to the same identifier, so every event lands in
+the same segment and the other segments get nothing. Configuring more segments changes nothing at
+all. This sharpens F-6 and is only visible by measuring, not by reading the policy.
+
+### 2.16 `Optional.orElse` is eager, and the framework relies on it not being
+
+`SimpleEventHandlingComponent.java:184` reads
+`...findFirst().map(component -> component.sequenceIdentifierFor(...)).orElse(policy...get())`. The
+`orElse` argument is evaluated first, so the fallback `get()` runs even when the sub-component would
+have answered. Part of F-7.
+
+### 2.17 A rollback can arrive after a successful commit
+
+`DefaultEventStoreTransaction` registers one `onError` handler per transaction and calls
+`rollback()` from it whatever phase failed, so a failure in `AFTER_COMMIT` rolls back an already
+published batch. `ControllableEventStorageEngine` records such a rollback as having discarded
+nothing (`eventIds` empty, `offeredEventIds` full, `afterCommit=true`). Do not "fix" that recording:
+without it, `RolledBackEventsNeverObservable` reports every committed event of the transaction as
+observable-after-rollback, which is a false finding. Recorded as F-8.
+
+### 2.18 `InMemoryEventStorageEngine.source(...)` snapshots its end position
+
+`source(...)` sets the stream's end to `eventStorage.lastKey()` at the moment it is opened, and
+`next()` reads the map with no lock. A stream opened while a batch is being committed therefore ends
+mid-batch, which is the mechanism behind F-3 and what makes it observable at all.
+
+### 2.19 `ConflictCheckBypassFault` cannot land with a single writer
+
+The in-memory engine detects a conflict twice: early, in `appendEvents`, and again under the lock in
+`commit()`. The bypass fault acts at commit time, so it can only bypass a conflict that appeared
+*between* the two checks -- which needs a second writer. Under `SINGLE_THREADED` the fault fires
+(the hook is consulted) but nothing conflicting ever reaches the commit check, and the run is clean.
+Costs an hour if you try to build a small deterministic canary history with it.
+
+## 3. Commands that worked (continued)
+
+```bash
+# Re-judge a recorded history offline. No simulation; same verdict every time.
+./mvnw -Phunt -pl simulation -am test -Dtest=HistoryReplayTest \
+    -Dhunt.history=simulation/target/hunt-histories/<dir>/<scenario>-<seed>.jsonl \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# Run the canary campaign. The hunt module resolves axon-eventsourcing from the local repository
+# when built alone, so a framework mutation has to be installed before it is visible.
+./mvnw -q -o -pl eventsourcing -am install -DskipTests   # after mutating
+./mvnw -q -Phunt -pl simulation -o test                   # measure
+git checkout -- eventsourcing                             # revert, always
+./mvnw -q -o -pl eventsourcing -am install -DskipTests   # restore
+
+# The revert gate. Must print nothing.
+git diff --stat main -- messaging eventsourcing modelling common conversion extensions test integrationtests
+```
+
+`-Dtest=A+B` is not a thing; surefire wants `-Dtest=A,B`.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.20 S3 does not drive the ledger
+
+The three transaction-phase arms use `BatchWorkload`, not `LedgerWorkload`, and the reason is not
+convenience. A failure injected after the commit leaves events durably stored while the command that
+produced them reports failure; `ConservationChecker` folds only successful commands, so it would
+report the difference as lost money and produce a false violation on every run of that arm. A
+workload with no conservation law simply gets no verdict from that checker.
+
+### 4.21 Zero warmup, because this workload is too fast for one
+
+`BatchWorkload` issues its whole budget in tens of milliseconds. With a twenty-millisecond warmup the
+arms were bimodal: sometimes 65 fires, sometimes zero, depending on how warm the JVM was. Zero fires
+is correctly reported as undecided, but an arm that is undecided half the time verifies nothing half
+the time. The arms now open their window immediately and hold it open far longer than the workload
+can take. This is the P0 warmup trap (note 4.16) meeting a workload two orders of magnitude faster
+than the ledger.
+
+### 4.22 `OrderChecker` judges only deliveries that carry an identifier
+
+The sequence identifier is the framework's, so the checker uses the one the run recorded and ignores
+deliveries that carry none. That makes it silent for every workload that does not track sequencing,
+which is all of them except `SequencedWorkload`. The alternative -- guessing an identifier -- would
+make the verdict a property of the checker rather than of the run. The cost is honest and is written
+into the registry, and it is thinner than it first looks: of the three sequencing arms only the
+wired-default one delivers anything at all, so exactly one run in the whole suite produces keyed
+deliveries for this oracle to judge. Widening it means either a workload that records a sequence
+identifier alongside the ledger, or an arm on a policy that resolves per key -- both worth doing,
+neither done here.
+
+### 4.23 S16 asserts the gap, and asserts the neighbouring guarantee too
+
+`PartialBatchVisibilityTest` asserts that a torn observation **is** found, because the suite records
+current behaviour and never patches the engine. Alongside it, the arm asserts that nothing was
+delivered before its commit and that the authoritative scan holds every batch whole, so the finding
+cannot be read as "the store loses part of a batch". It will flip red when batch visibility becomes
+atomic; that flip is the signal to re-evaluate F-3, not a test to repair.
+
+### 4.24 Lincheck did not land, and here is exactly why
+
+Attempted, and abandoned deliberately rather than fought. What was tried and what happened:
+
+| Attempt | Result |
+|---|---|
+| `org.jetbrains.lincheck:lincheck:3.1` | Does not resolve: its transitive `org.jetbrains.kotlin:kotlin-stdlib-common:2.1.21` has no jar on Maven Central. Fixable by excluding `kotlin-stdlib-common`. |
+| `org.jetbrains.kotlinx:lincheck:2.39` | Resolves, but the artifact is a Kotlin multiplatform **metadata** jar containing three files and no classes. The JVM artifact is `lincheck-jvm`. |
+| `org.jetbrains.kotlinx:lincheck-jvm:2.39`, JDK 23 | Compiles. Fails at run time. |
+| `org.jetbrains.lincheck:lincheck:3.1` with the exclusion, JDK 23 | Compiles. Fails at run time, identically. |
+| The same, JDK 22 | Fails identically. |
+
+The run-time failure, verbatim:
+
+```
+java.lang.InternalError: class redefinition failed: invalid class
+	at java.instrument/sun.instrument.InstrumentationImpl.retransformClasses0(Native Method)
+	at java.instrument/sun.instrument.InstrumentationImpl.retransformClasses(InstrumentationImpl.java:225)
+	at org.jetbrains.kotlinx.lincheck.transformation.LincheckJavaAgent.install(LincheckJavaAgent.kt:157)
+	at org.jetbrains.kotlinx.lincheck.LinChecker.checkImpl$lincheck(LinChecker.kt:384)
+```
+
+Lincheck's agent could not retransform classes on either JDK 22 or JDK 23. No JDK 21 was available
+on the machine, so whether Lincheck works there was **not** established -- do not record it as
+"works on 21", because nobody ran it there. The dependency and the probe test were removed rather
+than left in a state that cannot be exercised: a test that only runs on a JDK the author could not
+try is a quarantine with extra steps.
+
+If a later phase wants Lincheck, the two things to get right first are the `lincheck-jvm` artifact
+identifier (or the `kotlin-stdlib-common` exclusion on 3.x) and a JDK the agent supports. The target
+that was being aimed at is worth keeping: `InMemoryTokenStore.initializeTokenSegments` is a
+non-atomic `fetchSegments`-then-`put`, which is a real linearizability question and is exactly what
+scenario S15 is about.
+
+### 4.25 The canary campaign is the exit gate, and it is cheap to re-run
+
+`formal/CANARIES.md` holds the recipe, the four mutations, and what each one caught. Two things to
+carry forward: a mutation that makes the store keep less than it was offered stretches the suite from
+one minute to eleven (the read side can never catch up, so every scenario burns its settle budget),
+and the pinned single-writer seeds cannot catch a contention-only mutation -- the contended arms and
+the differential are what catch those.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| S10 arm (b): the wired default on the aggregate-based JPA backend | This is the other half of the differential that exposes F-6: the same configuration behaves differently where `AGGREGATE_IDENTIFIER_KEY` *is* populated. It needs an aggregate-based JPA `HuntBackend`, which does not exist. Arms (a), (c) and (d) all ship. | P3 |
+| Lincheck | See 4.24. Needs a JDK its agent supports. | when a JDK is available |
+| A canary against the read side | Every mutation so far is in the storage engine. Mutating `messaging` needs the arms that would catch it -- claim handover, split, merge, replay -- and those need a claim-capable token store. | the phase that adds one |
+| `hunt-fuzz` and `hunt-chaos` CI jobs | Stubbed as comments in `.github/workflows/hunt.yml` rather than as disabled jobs, because a scheduled job that exists and does nothing reads as coverage. | P3 |
+| A per-backend verdict vector | One backend ships; a vector needs two. | P3 |

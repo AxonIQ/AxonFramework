@@ -43,7 +43,7 @@ easy workaround), *low* (a documentation or ergonomics gap).
 | A multi-event batch is not made visible atomically. A concurrent reader can observe a strict prefix
   of a batch that is still committing.
 | Medium
-| Confirmed by reading. Open, not yet reproduced by a test.
+| *Reproduced by test.* Open.
 
 | *F-4* `ClaimExpiryReadsGlobalClock`
 | Token-claim expiry is evaluated against a JVM-global clock, not a per-node injected one, so
@@ -62,7 +62,22 @@ easy workaround), *low* (a documentation or ergonomics gap).
   on every DCB backend the default silently degrades to fully sequential single-key processing. The
   Javadoc names a different default.
 | Medium
-| Confirmed by reading. Open.
+| *Reproduced by test*, and sharper than first written: every event lands in one segment, so the
+  configured segment count buys nothing either. Open.
+
+| *F-7* `EmptySequenceIdentifierThrows`
+| `SimpleEventHandlingComponent` unwraps the sequencing policy's `Optional` with `get()`. Choosing
+  `NoOpSequencingPolicy`, or `SequentialPerAggregatePolicy` on a DCB store, therefore throws
+  `NoSuchElementException` on every event and the processor delivers nothing at all.
+| High
+| Reproduced by test. Open.
+
+| *F-8* `RollbackAfterCommitIsUnspecified`
+| The framework calls `AppendTransaction.rollback()` from a single per-transaction error handler
+  whatever phase the error arrived in, so an error after a successful commit rolls back an already
+  published batch. The contract does not say what that means.
+| Low
+| Reproduced by test. Open.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -194,7 +209,7 @@ grep -n 'releaseClaim\|fetchAvailableSegments\|fetchToken' messaging/src/main/ja
 == F-3 -- A committing batch is observable in part
 
 *Severity:* Medium +
-*Status:* Open. Confirmed by reading; not yet reproduced by a test. +
+*Status:* Open. *Reproduced by test.* +
 *Claims:* C9, C4, M17
 
 === What is wrong
@@ -236,12 +251,61 @@ readers see a position boundary rather than individual map entries, or state exp
 `EventStorageEngine`'s contract that a batch is not atomically visible and that consumers must not
 assume it is.
 
+=== What the reproduction observed
+
+The scenario `partial_batch_never_visible_to_concurrent_reader` puts one writer committing
+hundred-event batches next to one reader reading the whole store as fast as it can, and counts, per
+single read, how many of each batch were visible in that read. A count strictly between one and a
+hundred is a batch caught half-written.
+
+Five consecutive runs of the arm, on the same machine, one after another:
+
+[source]
+----
+run 1  polls=8707  torn observations=12
+run 2  polls=6410  torn observations=32
+run 3  polls=4904  torn observations=15
+run 4  polls=7261  torn observations=19
+run 5  polls=7343  torn observations=20
+----
+
+Sample observations from one run, as recorded in the history under the `poll` operation:
+
+[source]
+----
+{observed={b0=1},  batchSize=100}
+{observed={b1=1},  batchSize=100}
+{observed={b1=41}, batchSize=100}
+----
+
+Inside a full run of the suite, where the JVM is warm and the writer is faster, the rate holds but
+the absolute count is lower -- 9 torn observations out of 5310 reads across the arm's three seeds.
+The arm runs three seeds rather than one for exactly that reason: roughly one read in four hundred
+catches a batch half-written, so a single run is too thin a sample to depend on.
+
+A reader that could see event `b1-e0` through `b1-e40` and nothing beyond, while the writer was
+still inserting `b1-e41` onwards, is precisely the strict prefix the finding predicted. The
+mechanism is confirmed by the code path as well: `source(...)` snapshots the stream's end position
+from `eventStorage.lastKey()` at the moment the stream is opened, so a stream opened mid-commit ends
+at whatever position the writer had reached.
+
+Two neighbouring facts were asserted alongside, so the finding is not read as stronger than it is.
+Nothing is delivered before its commit -- `NoVisibilityBeforeCommit` held on every run -- and the
+tear is transient: the authoritative scan taken after the run had quiesced held every batch whole,
+one hundred events each, with none missing. The gap is in the atomicity of a batch's *arrival*, not
+in what the store ends up holding.
+
 === Reproduce
 
-Not yet reproducible. Planned as scenario S16: a single writer committing 100-event batches while a
-reader polls at maximum rate, asserting that every observed batch member implies every lower-
-positioned member of the same batch is observable in the same poll. Until that lands, the finding
-rests on reading alone.
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=PartialBatchVisibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The test asserts that a torn observation *is* found, because the suite records the framework's
+current behaviour and never patches it. It is documented to flip red the day batch visibility
+becomes atomic, and that flip is the signal to re-evaluate this entry and turn the assertion around.
 
 == F-4 -- Token-claim expiry reads a JVM-global clock
 
@@ -337,7 +401,7 @@ grep -n 'plusSeconds(60)' messaging/src/main/java/org/axonframework/messaging/ev
 == F-6 -- The wired default sequencing policy does not match the documented one, and degrades on DCB stores
 
 *Severity:* Medium +
-*Status:* Open. Confirmed by reading. +
+*Status:* Open. *Reproduced by test.* +
 *Claims:* C32, M14
 
 === What is wrong
@@ -376,7 +440,37 @@ aggregate-identifier resource. The larger question, whether DCB-native stores sh
 equivalent resource so that per-key parallelism is available by default, is a design decision for
 the framework's owners.
 
+=== What the reproduction observed, and the part that was missed by reading
+
+The scenario `sequencing_policy_order_preserved_wired_default` writes one hundred and eighty events
+across six independent streams, with four segments and four workers configured, and records the
+sequence identifier the framework resolved for every delivery. The run's read-model state:
+
+[source]
+----
+{"unresolvedSequenceKeys": 0, "deliveredEvents": 180, "arm": "wired-default", "distinctSequenceKeys": 1}
+----
+
+One distinct identifier for one hundred and eighty events over six streams. The ordering oracle
+`SequenceKeyOrderPreserved` held, which it must: with one identifier, per-key order is global order.
+
+The consequence found by testing rather than by reading is worse than the entry originally said. A
+segment is chosen by hashing the sequence identifier
+(`MSG/.../segmenting/SegmentMatcher.java:65`, reached from
+`MSG/eventhandling/processing/ProcessorEventHandlingComponents.java:193-198`), so one identifier
+means one hash, which means **one segment**. Configuring four segments and four workers on a
+DCB-native store does not merely fail to parallelise within a segment; three of the four segments
+receive nothing at all. The throughput cliff is a factor of the segment count, not a factor of one.
+
 === Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=SequencingPolicyOrderTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+By inspection:
 
 [source,bash]
 ----
@@ -384,3 +478,146 @@ grep -n 'Default event processing policy' messaging/src/main/java/org/axonframew
 sed -n '55,70p' messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java
 grep -n 'AGGREGATE_IDENTIFIER_KEY' messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequentialPerAggregatePolicy.java
 ----
+
+== F-7 -- An unresolvable sequence identifier throws, and stops the read side dead
+
+*Severity:* High +
+*Status:* Open. Reproduced by test. +
+*Claims:* C32, C33, C34, M14
+
+=== What is wrong
+
+`SequencingPolicy.sequenceIdentifierFor` returns an `Optional`, and its own Javadoc says an empty
+result means the policy cannot determine an identifier and that "it is up to the component using
+this policy to provide a default behavior, use another policy, throw an exception or react in any
+other way -- as appropriate".
+
+`SimpleEventHandlingComponent` unwraps it with `get()`. Two policies the framework ships return an
+empty `Optional` in ordinary use, and both therefore make every single event throw
+`NoSuchElementException` before it can be handled:
+
+* `NoOpSequencingPolicy`, whose entire purpose is to impose no sequencing, and whose Javadoc says
+  infrastructure "may decide upon this sequencing policy being present bypassing sequencing
+  infrastructure at all";
+* `SequentialPerAggregatePolicy` used on its own against any store that does not populate
+  `LegacyResources.AGGREGATE_IDENTIFIER_KEY`, which is every DCB-native store (finding F-6).
+
+The framework contains the graceful handling of the same situation a few classes away.
+`SegmentMatcher.sequenceIdentifier` resolves the identical `Optional` with
+`.orElseGet(event::identifier)`. Two components, one situation, opposite answers.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java:169-185` -- `@SuppressWarnings("OptionalGetWithoutIsPresent")` over two `get()` calls
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java:176` -- `return sequencingPolicy.sequenceIdentifierFor(event, context).get();`
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/SimpleEventHandlingComponent.java:184` -- `.orElse(sequencingPolicy.sequenceIdentifierFor(event, context).get())`
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/NoOpSequencingPolicy.java:47-50` -- returns `Optional.empty()`
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequentialPerAggregatePolicy.java:47` -- returns `Optional.ofNullable(context.getResource(LegacyResources.AGGREGATE_IDENTIFIER_KEY))`
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequencingPolicy.java:76-81` -- the contract the `get()` breaks
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/segmenting/SegmentMatcher.java:78` -- the same resolution, handled gracefully
+
+Line 184 carries a second, independent defect. `Optional.orElse` evaluates its argument eagerly, so
+the fallback `get()` runs even when a sub-component did resolve an identifier. A component whose
+handlers include another `EventHandlingComponent` therefore throws anyway, although the value it
+would have returned was available.
+
+=== Why it matters
+
+It is silent and total. There is no configuration error, no startup failure and no rejected
+registration: the processor starts, claims its segments, and then throws on every event for ever.
+One measured run threw two thousand two hundred and four times in eight seconds and delivered
+nothing, because the coordinator retries a work package that failed.
+
+`NoOpSequencingPolicy` is the more serious of the two, because choosing it is a deliberate,
+documented act. A user who reads its Javadoc and selects it gets a projection that never advances.
+
+=== How it was found
+
+By testing. The scenario arms were written from the plan's expectation that these policies would
+yield "empty sequence identifiers" and that the run would exhibit unsequenced handling. What the
+arms actually observed was no handling at all.
+
+=== Candidate fix
+
+Resolve the `Optional` rather than unwrap it. `SegmentMatcher` already shows the shape:
+`.orElseGet(event::identifier)` gives every event its own identifier, which is the natural reading
+of "no sequencing requirements for the handling of this message". Whatever default is chosen, both
+call sites need it, and the eager `orElse` on the second one must become `orElseGet` so the fallback
+is not evaluated when a sub-component answered.
+
+A test asserting that every shipped `SequencingPolicy` can be handed to
+`SimpleEventHandlingComponent.create` and produce a working processor would catch the whole class.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=SequencingPolicyOrderTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The `no-op` and `per-aggregate` arms both record `deliveredEvents: 0` and a `sequence` note carrying
+`java.util.NoSuchElementException`, and both runs report `INCONCLUSIVE`: nothing was found broken,
+and a read side that never ran cannot be reported as a pass.
+
+== F-8 -- Rollback after a successful commit is unspecified, and is requested anyway
+
+*Severity:* Low +
+*Status:* Open. Reproduced by test. +
+*Claims:* C29
+
+=== What is wrong
+
+`AppendTransaction.rollback()` is documented as rolling "back any events that have been appended,
+permanently making them unavailable for consumers". Nothing says what it means once `commit()` has
+succeeded, and no implementation can honour that wording at that point: the batch is published.
+
+`DefaultEventStoreTransaction` registers exactly one error handler per transaction and calls
+`rollback()` from it regardless of which phase the error arrived in. An error in the
+`AFTER_COMMIT` phase -- which is where the transaction is asked for its consistency marker, strictly
+after the commit -- therefore produces a rollback of a batch the store has already made visible.
+
+=== Evidence
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/EventStorageEngine.java:204` -- the wording
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/EventStorageEngine.java:209-215` -- `afterCommit` is documented as called only after a successful commit
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/DefaultEventStoreTransaction.java:210-214` -- one `onError` handler, registered alongside the commit step, calling `tx.rollback()`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/inmemory/InMemoryEventStorageEngine.java:157-160` -- the in-memory engine's `rollback()` only marks the transaction finished, so a post-commit rollback is a silent no-op
+
+=== Why it matters
+
+Mostly for whoever writes the next storage engine. The in-memory engine does the right thing by
+accident: its `rollback()` cannot un-publish, so it does nothing. An engine that took the wording
+literally and tried to delete the batch would destroy committed, already-delivered events because a
+marker calculation failed.
+
+It matters for this suite too, and that is how it was found. An oracle reading the rollback record
+naively reports every committed event of such a transaction as observable-after-rollback, which is
+a false finding with a very convincing message attached.
+
+=== How it was found
+
+By testing, while building the third arm of
+`uncommitted_never_visible_rolledback_never_delivered`. The arm injects a failure in the
+`AFTER_COMMIT` phase, and the first run reported a rolled-back transaction whose events were both
+delivered and present in the store.
+
+=== Candidate fix
+
+Documentation first: state on `AppendTransaction.rollback()` that it is only meaningful before
+`commit()` has completed, and that after a successful commit it must be a no-op. Then, optionally,
+stop asking: `DefaultEventStoreTransaction` knows whether the commit completed, so its error handler
+can skip the rollback once it has.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=TransactionPhaseFailureTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The after-commit arm asserts that a rollback was requested and carried `afterCommit=true`, and that
+the committed events stayed in the store. The harness records such a rollback as having discarded
+nothing, keeping the offered identifiers under `offeredEventIds`, which is what keeps
+`RolledBackEventsNeverObservable` a real oracle instead of a source of false alarms.

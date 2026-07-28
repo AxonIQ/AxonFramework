@@ -14,6 +14,7 @@ Companion documents:
 |---|---|
 | `formal/FINDINGS.adoc` | The living findings log: F-numbers, severity, evidence, candidate fix, reproduce command. |
 | `formal/HUNT-NOTES.md` | Append-only working notes: determinism seams, API traps, commands that worked. |
+| `formal/CANARIES.md` | The mutation campaign: which planted defect each oracle caught, and which escaped. |
 | `docs/testing-plans/axon-hunt.md` | The plan: claims C1-C40, missing claims M1-M18, scenarios, coverage matrix. |
 
 ---
@@ -173,7 +174,44 @@ contract:
 **Deliberately out of the model's reach:** `DcbStoreModel` is sequential. It defines what the store
 contains once an operation has taken effect, and says nothing about what a concurrent reader may
 observe while a batch is being committed. That is a separate property, checked against the real
-engine and tracked as finding F-3.
+engine and tracked as finding F-3, and it is now reproduced by
+`partial_batch_never_visible_to_concurrent_reader` rather than resting on reading alone.
+
+### 2.5 What gets pinned, given all of the above
+
+The measurement in 2.1 invalidates the obvious regression strategy. Pinning the seed of a failing
+run only works where the seed decides the run, and under real threads it does not, so the suite pins
+two different things and says which is which.
+
+| Asset | Pinned for | Where | What it guarantees |
+|---|---|---|---|
+| A **seed** | `SINGLE_THREADED` arms only | `RegressionSeedsTest`, against `dcb_append_rejected_after_marker_single_writer` | The same append verdicts and the same store contents, every run. The arm asserts its own determinism mode, so the pin cannot be quietly moved onto a contended arm. |
+| A **history file** | `REAL_THREADS` runs | `simulation/src/test/resources/hunt-histories/`, replayed by `RegressionSeedsTest` and `HistoryReplayTest` | The same verdict from the same file, for ever and on any machine, because every checker is a pure function of the history. |
+
+Offline replay is what makes the second row possible. `ScenarioRunner.replay(Path)` runs the whole
+registered checker set over an existing history with no simulation at all, and folds the same
+three-valued verdict a live run folds:
+
+```bash
+./mvnw -Phunt -pl simulation -am test -Dtest=HistoryReplayTest \
+    -Dhunt.history=simulation/target/hunt-histories/<dir>/<scenario>-<seed>.jsonl \
+    -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+The wording follows the same rule. `HistoryHeader.reproduceCommand()` annotates the command it
+renders for a `REAL_THREADS` run as a re-sample rather than a replay, and points at the history file
+instead. Two histories ship with the suite as permanent proof that the mechanism works in both
+directions: one contended run in which nothing was found broken, and the same scenario at the same
+seed recorded while the store's conflict check was deliberately bypassed, which replays to a `FAIL`
+on `AppendConformsToDcbModel`.
+
+**What a pinned history does not do, stated before anyone assumes otherwise.** A history is a fixed
+record of a run that already happened, so replaying it can never notice a *new* defect in the
+framework: change the engine however you like and the file's verdict does not move. A pinned history
+guards the **oracles** -- it goes red if a checker is weakened, deleted or unregistered, which is
+exactly how a suite silently stops looking. The **engine** is guarded by the live arms that run on
+every change, and by nothing else. The mutation campaign in `formal/CANARIES.md` is the measurement
+of which live arms catch what.
 
 ---
 
@@ -185,11 +223,12 @@ modelling the same property.
 
 | MachineName | Statement | Claims | Checker class | Scenarios | TLA+ operator |
 |---|---|---|---|---|---|
-| `AppendConformsToDcbModel` | Every append recorded as successful is accepted by the DCB reference model at its point in the history, and every append recorded as rejected is rejected by it. | C1, C2, C3, C5, C6, C7, C8, C10 | `ModelConformanceChecker` | (P1: S1) | (P4: `DcbAppend.tla`) |
-| `NoVisibilityBeforeCommit` | No event is delivered to a consumer before the commit of the transaction that appended it. | C4, C29 | `VisibilityChecker` | (P1: S3) | -- |
-| `RolledBackEventsNeverObservable` | No event of a rolled-back transaction is ever delivered to a consumer or present in a post-run scan of the store. | C29 | `VisibilityChecker` | (P1b: S3) | -- |
-| `UnconditionalAppendNeverRejected` | An append made without a consistency condition is never rejected as conflicting. | C2 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention` | (P4: `DcbAppend.tla`) |
-| `RejectedAppendLeavesNoEvents` | No event offered by an append recorded as rejected is present in the authoritative scan taken after the run has quiesced. | C9, C10 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention` | -- |
+| `AppendConformsToDcbModel` | Every append recorded as successful is accepted by the DCB reference model at its point in the history, and every append recorded as rejected is rejected by it. | C1, C2, C3, C5, C6, C7, C8, C10 | `ModelConformanceChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer` | (P4: `DcbAppend.tla`) |
+| `NoVisibilityBeforeCommit` | No event is delivered to a consumer before the commit of the transaction that appended it. | C4, C29 | `VisibilityChecker` | `uncommitted_never_visible_rolledback_never_delivered_prepare_commit`, `..._commit`, `..._after_commit`, `partial_batch_never_visible_to_concurrent_reader` | -- |
+| `RolledBackEventsNeverObservable` | No event of a rolled-back transaction is ever delivered to a consumer or present in a post-run scan of the store. | C29 | `VisibilityChecker` | `uncommitted_never_visible_rolledback_never_delivered_prepare_commit`, `..._commit`, `..._after_commit` | -- |
+| `UnconditionalAppendNeverRejected` | An append made without a consistency condition is never rejected as conflicting. | C2 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer` | (P4: `DcbAppend.tla`) |
+| `RejectedAppendLeavesNoEvents` | No event offered by an append recorded as rejected is present in the authoritative scan taken after the run has quiesced. | C9, C10 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer`, `partial_batch_never_visible_to_concurrent_reader` | -- |
+| `SequenceKeyOrderPreserved` | For every sequence identifier, the order in which its events are delivered to a consumer equals the order in which those events were appended. | C32, C33, C34 | `OrderChecker` | `sequencing_policy_order_preserved_wired_default` only. The other two arms of that scenario deliver nothing at all (finding F-7), so they contribute no ordering evidence, and no other workload records a sequence identifier. | -- |
 | `LedgerConservesTotalBalance` | The balances the projection reports sum to the ledger's opening total. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `LedgerBalanceNeverNegative` | No account balance is negative at any point in the sequence of committed transfers. | C1, C5, C8 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `ProjectionMatchesFoldOfCommittedEvents` | The balance projection at the end of the run equals the fold of the transfers the run committed. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
@@ -214,6 +253,10 @@ producing a violation, and every checker that can meet them handles them explici
 | An operation's outcome is unknown | The replayed state is no longer known to be the store's. |
 | A fault made the store hold something other than what was offered | The missing or doubled data is the harness's doing; blaming the framework for it is a false finding. `Fault.perturbsStoreContents()` declares which faults can do this. |
 | An append failed for a reason other than the store's own consistency check | An injected infrastructure failure carries no protocol verdict for the model to be held to. |
+| A delivery carries no sequence identifier | The identifier is the framework's, and a checker that guesses one makes the verdict a property of the checker. `OrderChecker` judges only deliveries whose identifier the run recorded. |
+| A delivered event is absent from the authoritative scan | Its place in the append order is unknown, so an ordering oracle has nothing to compare against. |
+
+**One thing a rollback record deliberately does not say.** The framework registers one error handler per append transaction and calls `AppendTransaction.rollback()` from it whatever phase the error arrived in, so an error strictly after a successful commit produces a rollback of a batch the store has already published. `ControllableEventStorageEngine` records that rollback as having discarded nothing, keeping the offered identifiers under `offeredEventIds` and flagging the situation with `afterCommit`. Recording it any other way would make every such run report committed, legitimately visible events as observable-after-rollback, which is a false finding. What the framework's contract does not say about a rollback after a commit is a real gap, and it is recorded as finding F-8 rather than as a violation.
 
 ### 3.1 Reference-model rules
 

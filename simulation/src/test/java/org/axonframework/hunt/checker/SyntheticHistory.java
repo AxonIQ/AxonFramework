@@ -105,6 +105,15 @@ final class SyntheticHistory {
     }
 
     /**
+     * Records the delivery of an event under the sequence identifier the framework resolved for it.
+     */
+    void deliverUnderKey(String eventId, String sequenceKey) {
+        writer.invoke(HistoryOps.DELIVER, null,
+                      Map.of(DcbHistoryCodec.EVENT_ID, eventId, HistoryOps.SEQUENCE_KEY, sequenceKey))
+              .ok(Map.of());
+    }
+
+    /**
      * Records an authoritative scan of the store after the run has quiesced.
      */
     void scan(String... eventIds) {

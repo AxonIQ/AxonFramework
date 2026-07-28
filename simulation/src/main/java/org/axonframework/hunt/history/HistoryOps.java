@@ -133,6 +133,27 @@ public final class HistoryOps {
      */
     public static final String TRANSFER = "transfer";
 
+    /**
+     * One complete read of the store by a concurrent reader, recorded as a standalone {@link RecordType#INFO} record.
+     * Its value carries, per batch the reader saw anything of, how many of that batch's events were observable in
+     * that single read and how many the batch holds. It is what makes a partially-visible batch a fact rather than a
+     * suspicion.
+     */
+    public static final String POLL = "poll";
+
+    /**
+     * The sequence identifier the framework resolved for one delivered event, recorded on the
+     * {@link #DELIVER deliver} record under {@link #SEQUENCE_KEY} and, when the resolution failed, as a standalone
+     * {@link RecordType#INFO} record under this name carrying the error.
+     */
+    public static final String SEQUENCE = "sequence";
+
+    /**
+     * The value key a delivery's sequence identifier is recorded under. A delivery without it is one whose workload
+     * does not track sequencing, and every ordering oracle ignores it rather than guessing.
+     */
+    public static final String SEQUENCE_KEY = "sequenceKey";
+
     private HistoryOps() {
         // Utility class.
     }
