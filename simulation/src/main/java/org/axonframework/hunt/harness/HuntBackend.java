@@ -17,6 +17,8 @@
 package org.axonframework.hunt.harness;
 
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Comparator;
 import java.util.List;
@@ -80,6 +82,44 @@ public interface HuntBackend {
     default TokenStores createTokenStores(String runId, java.time.Duration claimTimeout) {
         return TokenStores.shared(
                 new org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore());
+    }
+
+    /**
+     * Indicates whether this store implements the Dynamic Consistency Boundary protocol the suite's reference model
+     * describes.
+     * <p>
+     * Not every store does. The aggregate-based engine accepts at most one tag per event and reads it as an aggregate
+     * identifier, and its conflict check is the database's unique constraint on an aggregate's sequence number rather
+     * than a scan over a consistency marker. Replaying such a history against the reference model would report the
+     * difference in protocol as a defect on every append, so the model oracle names itself inexpressible instead --
+     * which is a recorded "not applicable" in the backend vector rather than a quiet pass.
+     *
+     * @return {@code true} when the store's append condition is a boundary over tags and a marker
+     */
+    default boolean speaksDynamicConsistencyBoundaries() {
+        return true;
+    }
+
+    /**
+     * Returns the transaction manager every unit of work of the run must be wrapped in, or {@code null} when the store
+     * needs none.
+     * <p>
+     * <b>This is not an optimisation, and a persistent store cannot opt out of it.</b> A storage engine that speaks to
+     * a database asks the processing context for the transactional executor to use, so without one attached the very
+     * first append fails. Attaching it also decides <em>when</em> an append becomes durable: with the run's transaction
+     * on the context, the append commits in the framework's commit phase, which is where the framework's own
+     * visibility guarantee says it commits. The alternative -- giving each store call its own transaction -- makes an
+     * append durable the moment the engine is handed the events, before the framework has decided whether to commit at
+     * all, and every visibility oracle then reports the harness's wiring as a framework defect.
+     * <p>
+     * The default returns {@code null}, which is right for a store that lives in the heap and has no transaction to
+     * join.
+     *
+     * @param engine the engine this backend created, in case the manager has to share its resources
+     * @return the transaction manager to wrap every unit of work in, or {@code null} for a store with no transactions
+     */
+    default @Nullable TransactionManager transactionManager(EventStorageEngine engine) {
+        return null;
     }
 
     /**

@@ -86,8 +86,24 @@ public class ModelConformanceChecker implements Checker {
         return Set.of(APPEND_CONFORMS_TO_DCB_MODEL);
     }
 
+    /**
+     * The header field saying whether the run's store speaks the Dynamic Consistency Boundary protocol at all.
+     */
+    public static final String SPEAKS_DCB = "backendSpeaksDcb";
+
     @Override
     public CheckResult check(HistoryView history) {
+        if ("false".equals(history.header().workloadShape().get(SPEAKS_DCB))) {
+            // The reference model is a model of one protocol, and this store implements a different one: at most one tag
+            // per event, read as an aggregate identifier, with the database's own unique constraint standing in for a
+            // conflict scan over a marker. Replaying an aggregate-based history against it would report the protocol
+            // difference as a framework defect on every append. Naming the invariant as inexpressible here is the honest
+            // reading, and it is what keeps a backend vector from claiming coverage this store cannot give.
+            return CheckResult.notApplicable(name(),
+                                             List.of(APPEND_CONFORMS_TO_DCB_MODEL + " is not expressible on this run: "
+                                                             + "its store does not implement the Dynamic Consistency "
+                                                             + "Boundary protocol the reference model describes."));
+        }
         List<Operation> appends = history.operations(HistoryOps.APPEND);
         List<Violation> violations = new ArrayList<>();
         List<String> notes = new ArrayList<>();

@@ -90,8 +90,33 @@ class DeliveryCheckerTest {
         }
 
         @Test
-        void permitsARepeatInsideAClaimHandover(@TempDir Path directory) {
-            // given a segment changing hands, and the repeat landing inside the window that opens
+        void accountsForARepeatTheRecordedRewindExplains(@TempDir Path directory) {
+            // given a segment whose new holder was told to resume from a position behind what the segment had already
+            // delivered, and the rewound event arriving again
+            SyntheticHistory history =
+                    new SyntheticHistory(directory, "repeat_after_rewind", shape("AT_LEAST_ONCE_NO_LOSS"));
+            history.commit("e1");
+            history.claimGranted("node-a", 0, -1L);
+            history.deliverFromSegment("node-a", 0, "e1", 7L);
+            history.claimGranted("node-b", 0, 4L);
+            history.deliverFromSegment("node-b", 0, "e1", 7L);
+            history.scan("e1");
+            history.settled(true);
+
+            // when the delivery oracle judges it
+            CheckResult result = new DeliveryChecker().check(history.view());
+
+            // then the history accounts for the repeat, so the verdict stands and the repeat is a measurement: an arm
+            // whose every repeat is explained must be able to reach a pass, or it can never signal a regression either
+            assertThat(result.violations()).isEmpty();
+            assertThat(result.notes()).isEmpty();
+            assertThat(result.measurements()).hasSize(1);
+            assertThat(result.measurements().getFirst()).contains("1 accounted for by 1 recorded rewind(s)");
+        }
+
+        @Test
+        void reportsARepeatInsideAWindowThatNoRewindExplains(@TempDir Path directory) {
+            // given a claim changing hands with no recorded resume position, so nothing bounds what it rewound
             SyntheticHistory history =
                     new SyntheticHistory(directory, "repeat_after_handover", shape("AT_LEAST_ONCE_NO_LOSS"));
             history.commit("e1");
@@ -105,15 +130,17 @@ class DeliveryCheckerTest {
             // when the delivery oracle judges it
             CheckResult result = new DeliveryChecker().check(history.view());
 
-            // then it is permitted, and counted rather than passed over in silence
+            // then it is not blamed on the framework, because a recovery window was open, and it is not passed over
+            // either: no recorded rewind explains it, so the run is undecided about it
             assertThat(result.violations()).isEmpty();
+            assertThat(result.measurements()).isEmpty();
             assertThat(result.notes()).hasSize(1);
-            assertThat(result.notes().getFirst()).contains("1 repeat(s) inside a recovery window");
+            assertThat(result.notes().getFirst()).contains("1 inside a recovery window that no rewind explains");
         }
 
         @Test
-        void permitsARepeatInsideANodeRecovery(@TempDir Path directory) {
-            // given a node dropped and brought back, and the repeat landing inside the window that opens
+        void reportsARepeatInsideANodeRecoveryThatNoRewindExplains(@TempDir Path directory) {
+            // given a node dropped, and the repeat landing inside the window that opens, with no rewind recorded
             SyntheticHistory history =
                     new SyntheticHistory(directory, "repeat_after_crash", shape("AT_LEAST_ONCE_NO_LOSS"));
             history.commit("e1");
@@ -126,9 +153,54 @@ class DeliveryCheckerTest {
             // when the delivery oracle judges it
             CheckResult result = new DeliveryChecker().check(history.view());
 
-            // then it is permitted
+            // then the crash keeps it from being a violation, and the absence of a rewind keeps it from being a pass
             assertThat(result.violations()).isEmpty();
-            assertThat(result.notes().getFirst()).contains("1 repeat(s) inside a recovery window");
+            assertThat(result.notes().getFirst()).contains("1 inside a recovery window that no rewind explains");
+        }
+
+        @Test
+        void accountsForAReplayedRepeatAtOrBelowThePositionTheResetRewoundTo(@TempDir Path directory) {
+            // given a reset that rewound to position 9, and a replayed redelivery of an event below it
+            SyntheticHistory history =
+                    new SyntheticHistory(directory, "replayed_repeat", shape("AT_LEAST_ONCE_NO_LOSS"));
+            history.commit("e1");
+            history.claimGranted("node-a", 0, 7L);
+            history.deliverFromSegment("node-a", 0, "e1", 3L);
+            history.claimGrantedForReplay("node-a", 0, -1L, 9L);
+            history.deliverReplayFromSegment("node-a", 0, "e1", 3L);
+            history.scan("e1");
+            history.settled(true);
+
+            // when the delivery oracle judges it
+            CheckResult result = new DeliveryChecker().check(history.view());
+
+            // then the framework's own replay flag and the position it rewound from account for it together
+            assertThat(result.violations()).isEmpty();
+            assertThat(result.notes()).isEmpty();
+            assertThat(result.measurements()).hasSize(1);
+        }
+
+        @Test
+        void reportsAReplayedRepeatAboveThePositionTheResetRewoundTo(@TempDir Path directory) {
+            // given a reset that rewound to position 4, and a delivery flagged as a replay well above it
+            SyntheticHistory history =
+                    new SyntheticHistory(directory, "replay_beyond_reset", shape("AT_LEAST_ONCE_NO_LOSS"));
+            history.commit("e1");
+            history.claimGrantedForReplay("node-a", 0, -1L, 4L);
+            history.deliverFromSegment("node-a", 0, "e1", 11L);
+            history.pause(260);
+            history.deliverReplayFromSegment("node-a", 0, "e1", 11L);
+            history.scan("e1");
+            history.settled(true);
+
+            // when the delivery oracle judges it
+            CheckResult result = new DeliveryChecker().check(history.view());
+
+            // then the replay flag alone does not license it: a replay redelivers the prefix it rewound to and no more,
+            // so a repeat above that position is a failure however the framework labelled it
+            assertThat(result.violations()).hasSize(1);
+            assertThat(result.violations().getFirst().machineName())
+                    .isEqualTo(DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW);
         }
 
         @Test

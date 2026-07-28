@@ -183,6 +183,45 @@ public record Scenario(String id,
     }
 
     /**
+     * Returns this scenario run at different timings.
+     * <p>
+     * The timescale is an arm of a run rather than a property of the experiment: the same claim is being falsified
+     * whether the timeouts are compressed to milliseconds or left at the values a deployment ships with. It is a
+     * separate setter for the same reason {@link #onBackend(String)} is -- a backend differential has to be able to give
+     * every arm timings a real store can actually meet without editing the scenario, and a claim timeout of a hundred
+     * milliseconds is meaningless across a database round trip.
+     *
+     * @param arm the timings to run at
+     * @return the same scenario at the given timings
+     */
+    public Scenario withTimescale(HuntTimescale arm) {
+        return new Scenario(id, name, claims, workload, faults, backend,
+                            Objects.requireNonNull(arm, "The arm cannot be null."), determinism, buggifyProbability,
+                            oracles, seed, budgets, nodes, deliveryMode, livenessHorizon, segments, segmentsPerNode);
+    }
+
+    /**
+     * Returns this scenario with a different budget for one tier.
+     * <p>
+     * A budget is a property of the arm, not of the claim. A store reached over a socket is orders of magnitude slower
+     * than a map in the heap, so a command count and a settle window sized for the heap leave a container-backed arm
+     * permanently behind its own read side -- which reports as undecided for ever, and an arm that can never decide
+     * cannot signal a regression. Restating the budget is how a differential keeps the experiment identical and the
+     * expectations achievable.
+     *
+     * @param tier   the tier whose budget is being restated
+     * @param budget what the scenario may cost at that tier
+     * @return the same scenario under the given budget
+     */
+    public Scenario withBudget(Tier tier, TierBudget budget) {
+        Map<Tier, TierBudget> restated = new EnumMap<>(budgets);
+        restated.put(Objects.requireNonNull(tier, "The tier cannot be null."),
+                     Objects.requireNonNull(budget, "The budget cannot be null."));
+        return new Scenario(id, name, claims, workload, faults, backend, timescale, determinism, buggifyProbability,
+                            oracles, seed, restated, nodes, deliveryMode, livenessHorizon, segments, segmentsPerNode);
+    }
+
+    /**
      * Returns this scenario with a different fault schedule.
      *
      * @param schedule when to break what

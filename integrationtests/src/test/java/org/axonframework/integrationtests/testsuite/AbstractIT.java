@@ -20,6 +20,7 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructure;
+import org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructures;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.junit.jupiter.api.AfterEach;
 
@@ -28,12 +29,14 @@ import java.util.UUID;
 /**
  * Infrastructure-agnostic base class for all integration tests in this suite.
  * <p>
- * The specific backend (AxonServer, InMemory, Postgres, …) is supplied by leaf test classes through
- * {@link #testInfrastructure()}.
+ * The store the suite is driven against is a <b>run-time selection</b>, resolved once by
+ * {@link org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructures#selected()} from the
+ * {@code hunt.backend} system property and defaulting to the in-memory components, so the same test classes produce a
+ * per-backend verdict by being run once per backend rather than by being duplicated per backend. A test that genuinely
+ * needs one particular store may still override {@link #testInfrastructure()}.
  * <p>
  * Subclasses must implement:
  * <ul>
- *     <li>{@link #testInfrastructure()} — return the infrastructure strategy to use</li>
  *     <li>{@link #applicationConfigurer()} — return the domain-specific {@link ApplicationConfigurer}</li>
  * </ul>
  * and must call {@link #startApp()} (typically from a {@code @BeforeEach} method) to start the Axon configuration.
@@ -48,21 +51,21 @@ public abstract class AbstractIT {
     protected AxonConfiguration startedConfiguration;
 
     /**
-     * Returns the {@link TestInfrastructure} for this test. Leaf classes typically return a
-     * {@code private static final} instance so the infrastructure wrapper (and any heavy resources it guards, such as a
-     * shared Testcontainer) is created once per leaf class:
-     * <pre>{@code
-     * private static final TestInfrastructure INFRASTRUCTURE = new AxonServerTestInfrastructure();
+     * Returns the {@link TestInfrastructure} this test is driven against, which the run selects rather than the class.
+     * <p>
+     * <b>Why this is not abstract any more.</b> A leaf class per suite per backend means a new file for every suite each
+     * time a store is added, and the suite's extensibility charter forbids exactly that: adding a backend must inherit
+     * every existing test with no new per-test code. Resolving the store from {@code hunt.backend} gives the same test
+     * classes a verdict per store when they are run once per store, and gives them the in-memory components -- and no
+     * container -- when the property is not set.
+     * <p>
+     * Override it only for a test that is about one particular store and cannot mean anything on another.
      *
-     * @Override
-     * protected TestInfrastructure testInfrastructure() {
-     *     return INFRASTRUCTURE;
-     * }
-     * }</pre>
-     *
-     * @return the infrastructure strategy to use for this test
+     * @return the infrastructure strategy for this run
      */
-    protected abstract TestInfrastructure testInfrastructure();
+    protected TestInfrastructure testInfrastructure() {
+        return TestInfrastructures.selected();
+    }
 
     /**
      * Returns the domain-specific {@link ApplicationConfigurer} for this test. Called from {@link #startApp()} each

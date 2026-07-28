@@ -299,9 +299,8 @@ public final class LedgerWorkload implements Workload {
      * event and the read side stops dead without saying so.
      */
     private static final SequencingPolicy<EventMessage> PER_ACCOUNT_POLICY =
-            (event, context) -> Optional.of(event.payload() instanceof LedgerEvent ledgerEvent
-                                                    ? ledgerEvent.account()
-                                                    : event.identifier());
+            (event, context) -> Optional.of(ledgerEventOf(event).map(LedgerEvent::account)
+                                                           .orElseGet(event::identifier));
 
     @Override
     public void run(WorkloadContext context) throws InterruptedException {
@@ -485,9 +484,9 @@ public final class LedgerWorkload implements Workload {
                                                              EventCriteria criteria) {
         return transaction.source(SourcingCondition.conditionFor(criteria))
                           .reduce(new HashMap<String, Long>(), (accumulated, entry) -> {
-                              if (entry.message().payload() instanceof LedgerEvent ledgerEvent) {
-                                  accumulated.merge(ledgerEvent.account(), ledgerEvent.delta(), Long::sum);
-                              }
+                              ledgerEventOf(entry.message()).ifPresent(
+                                      ledgerEvent -> accumulated.merge(ledgerEvent.account(), ledgerEvent.delta(),
+                                                                       Long::sum));
                               return accumulated;
                           })
                           .thenApply(accumulated -> accumulated == null ? new HashMap<String, Long>() : accumulated);
@@ -506,7 +505,9 @@ public final class LedgerWorkload implements Workload {
     private MessageStream.Empty<org.axonframework.messaging.core.Message> project(WorkloadContext context,
                                                                                  EventMessage event,
                                                                                  ProcessingContext processingContext) {
-        if (event.payload() instanceof LedgerEvent ledgerEvent) {
+        Optional<LedgerEvent> carried = ledgerEventOf(event);
+        if (carried.isPresent()) {
+            LedgerEvent ledgerEvent = carried.get();
             boolean first = !idempotentProjection || applied.add(event.identifier());
             if (first) {
                 balances.merge(ledgerEvent.account(), ledgerEvent.delta(), Long::sum);
@@ -550,6 +551,36 @@ public final class LedgerWorkload implements Workload {
     private static EventMessage event(String identifier, LedgerEvent payload) {
         return new GenericEventMessage(identifier, new MessageType(payload.getClass()), payload, Map.of(),
                                        java.time.Instant.EPOCH);
+    }
+
+    private static final Map<String, Class<? extends LedgerEvent>> LEDGER_EVENT_TYPES = Map.of(
+            new MessageType(MoneyWithdrawn.class).name(), MoneyWithdrawn.class,
+            new MessageType(MoneyDeposited.class).name(), MoneyDeposited.class);
+
+    /**
+     * Returns the ledger event a message carries, whatever representation the store kept it in.
+     * <p>
+     * <b>Reading {@code payload()} is not backend-agnostic, and this is where that bites.</b> The in-heap engine stores
+     * the {@code EventMessage} itself, so its payload comes back as the object that was appended. A store that persists
+     * events keeps a converted representation -- bytes, for the aggregate-based engine -- and hands back a message whose
+     * payload is that representation with a converter attached. A handler subscribed programmatically receives the
+     * message as it is; only the annotated handler path converts for you. So a workload that pattern-matches on
+     * {@code payload()} works on one backend and silently projects nothing on the other, which is a backend difference
+     * in the harness rather than in the framework and would otherwise be attributed to the framework.
+     * <p>
+     * Asking for the type the message declares, and converting to it when the payload is not already it, is correct on
+     * both: the conversion short-circuits when the payload is already of the requested type, so the in-heap path needs
+     * no converter and takes none.
+     *
+     * @param message the message to read
+     * @return the ledger event, or empty when the message carries something else entirely
+     */
+    private static Optional<LedgerEvent> ledgerEventOf(org.axonframework.messaging.core.Message message) {
+        if (message.payload() instanceof LedgerEvent ledgerEvent) {
+            return Optional.of(ledgerEvent);
+        }
+        Class<? extends LedgerEvent> type = LEDGER_EVENT_TYPES.get(message.type().name());
+        return type == null ? Optional.empty() : Optional.of(message.payloadAs(type));
     }
 
     private static String accountName(int index) {

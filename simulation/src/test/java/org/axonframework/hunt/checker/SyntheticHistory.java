@@ -70,6 +70,25 @@ final class SyntheticHistory {
     }
 
     /**
+     * Records a claim the store granted to the given node, together with the position it told the node to resume from.
+     * <p>
+     * That position is what licenses a redelivery and bounds it, so a history exercising the licence has to carry it.
+     */
+    void claimGranted(String nodeId, int segment, long resumedFrom) {
+        node(nodeId).invoke(HistoryOps.CLAIM, "p/" + segment, Map.of(HistoryOps.SEGMENT, segment))
+                    .ok(Map.of(HistoryOps.POSITION, resumedFrom, HistoryOps.REPLAY, false));
+    }
+
+    /**
+     * Records a claim the store granted whose token the framework calls a replay, and the position it rewound from.
+     */
+    void claimGrantedForReplay(String nodeId, int segment, long resumedFrom, long tokenAtReset) {
+        node(nodeId).invoke(HistoryOps.CLAIM, "p/" + segment, Map.of(HistoryOps.SEGMENT, segment))
+                    .ok(Map.of(HistoryOps.POSITION, resumedFrom, HistoryOps.REPLAY, true,
+                               HistoryOps.TOKEN_AT_RESET, tokenAtReset));
+    }
+
+    /**
      * Records a claim extension the store granted to the given node.
      */
     void claimExtended(String nodeId, int segment) {
@@ -197,6 +216,16 @@ final class SyntheticHistory {
         node(nodeId).invoke(HistoryOps.DELIVER, null,
                             Map.of(DcbHistoryCodec.EVENT_ID, eventId, HistoryOps.SEGMENT, segment,
                                    HistoryOps.POSITION, position, HistoryOps.REPLAY, false))
+                    .ok(Map.of());
+    }
+
+    /**
+     * Records a delivery the framework itself flagged as part of a replay.
+     */
+    void deliverReplayFromSegment(String nodeId, int segment, String eventId, long position) {
+        node(nodeId).invoke(HistoryOps.DELIVER, null,
+                            Map.of(DcbHistoryCodec.EVENT_ID, eventId, HistoryOps.SEGMENT, segment,
+                                   HistoryOps.POSITION, position, HistoryOps.REPLAY, true))
                     .ok(Map.of());
     }
 

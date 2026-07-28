@@ -48,30 +48,43 @@ import java.util.TreeMap;
  * the guarantee it exists to verify. The mode travels in the history header, so a recorded run is re-judged under the
  * mode it actually ran in.
  * <p>
- * <b>A repeat is permitted only where the framework says it may happen.</b> A stolen claim makes the previous owner's
- * token update fail and its batch roll back, so effects already applied are applied again; a node coming back
- * re-processes whatever its token had not yet advanced past. A window therefore opens at every recorded change of a
- * segment's owner and at every recorded node crash or restart, and closes one claim timeout later, widened at both
- * ends by the run's declared clock-skew allowance. A repeat inside such a window is expected and is reported as a
- * distribution. A repeat outside every window is a failure: nothing was happening that licenses it.
+ * <b>A repeat is licensed by a rewind the history recorded, and bounded by the position that rewind went back to.</b>
+ * Every redelivery the framework can legitimately produce has the same single cause: a node was told to resume from a
+ * position behind the work its segment had already done. A stolen claim leaves the interrupted batch's progress
+ * unstored; a node coming back re-reads whatever its token last held; a merge hands the surviving segment the lower of
+ * the two halves' tokens; a split hands its children a reconciled position; a reset rewinds every segment to the
+ * beginning. Four instructions, one mechanism -- and the mechanism is observable, because the store answers every claim
+ * with the token the node is to resume from.
  * <p>
- * <b>A segment-count change is a licence too, and measurement is why it is one.</b> Merging two segments gives the
- * merged one the lower of their two tokens, so every event the further-ahead half had already handled arrives again --
- * inherently, by the merge's own design, and with nothing in the framework's documentation saying so. A split is the
- * mirror case: its children inherit a reconciled position, and the work package that was interrupted may have handled
- * events past it. Both are recorded operations with a stated mechanism, exactly like a claim transition, so both open a
- * window of one claim timeout. What the framework does not state is written up as a finding rather than reported as a
- * violation.
+ * A granted claim therefore opens a licence when, and only when, the position it hands back is behind an event that
+ * segment had already delivered. The licence is bounded twice over: in <b>position</b>, to the events above the
+ * position resumed from, which are exactly the events the rewind un-did; and in <b>time</b>, to one claim timeout,
+ * which is the longest the losing node can still be draining the batch it was interrupted in. Both bounds are widened
+ * by the run's declared clock-skew allowance. Deriving the licence from elapsed time alone -- which an earlier version
+ * of this checker did -- forgives every repeat that happens to fall inside a window, including ones the rewind cannot
+ * explain.
  * <p>
- * <b>A replay is the other licence, and it is the framework's own word rather than a window.</b> After a reset the whole
- * stream is redelivered on purpose, and the framework marks each such delivery through the token it hands the handler.
- * The delivery record carries that mark, so a replayed repeat is recognised from the framework's own answer instead of
- * from a period of time in which anything at all would have been forgiven. A run that resets and then repeats an event
- * the framework did <em>not</em> call a replay is therefore still a failure.
+ * <b>A replay is the same mechanism with no time bound, because the framework says so on the token.</b> After a reset
+ * the whole stream is redelivered on purpose and for as long as it takes, so a window would be meaningless; instead the
+ * framework marks each such delivery through the token it hands the handler, and it records the position the reset
+ * rewound from. A replayed repeat is accounted for when the framework called it a replay <em>and</em> it sits at or
+ * below that position. A run that resets and then repeats an event above it, or one the framework did not call a
+ * replay, is still a failure.
  * <p>
- * <b>Permitted repeats still stop a run being a clean pass.</b> They are reported, not violated, and reporting them
- * downgrades the run to undecided, because a projection that applied a transfer twice is a fact somebody should look
- * at even when the deployment permits it. A checker that stayed silent about them would be the reason nobody ever did.
+ * <b>A rebuild widens the licence's segment scope and nothing else.</b> A split deletes one token row and creates two;
+ * a merge deletes one of a pair and rewrites the other with the lower of their tokens. The segment that had already
+ * delivered an event may therefore no longer exist by the time the rewind is granted, so on a run that rebuilt its
+ * segments a rewind licenses positions above it whatever segment the repeat arrives from. Measured on this suite:
+ * segment 7 delivered an event at position 2962, segments 7 and 3 merged into 3, and the claim on segment 3 came back
+ * at position 2952 -- one claim carrying the whole rewind, for a segment that had delivered nothing above it. The
+ * position bound is what does the work here, and it is untouched.
+ * <p>
+ * <b>An accounted repeat is a measurement, not a note.</b> It is printed with its distribution and the verdict stands:
+ * the history explains every one of them, so there is nothing undecided. A repeat that falls inside a recovery window
+ * but that no recorded rewind explains -- which is what a delivery carrying no segment or no position leaves behind --
+ * is reported as a note and does downgrade the run, because that one really is unexplained. An earlier version reported
+ * every repeat as a note, which left the replay and membership arms permanently undecided: an arm that can never reach
+ * a pass can never signal a regression either.
  * <p>
  * Three situations make this checker report rather than decide, and each one exists because deciding would be wrong:
  * a run whose read side had not caught up when the run ended has not lost anything, it was interrupted; a run in
@@ -121,6 +134,12 @@ public class DeliveryChecker implements Checker {
 
     private static final long NANOS_PER_MILLI = 1_000_000L;
 
+    /**
+     * The segment a rewind licence matches when the run rebuilt its segment set and a segment identifier therefore
+     * stops naming one unit of work. The position bound still applies; only the segment scope widens.
+     */
+    private static final int ANY_SEGMENT = Integer.MIN_VALUE;
+
     @Override
     public String name() {
         return "DeliveryChecker";
@@ -162,6 +181,7 @@ public class DeliveryChecker implements Checker {
 
         List<Violation> violations = new ArrayList<>();
         List<String> notes = new ArrayList<>();
+        List<String> measurements = new ArrayList<>();
 
         Set<String> lost = new LinkedHashSet<>(committed);
         lost.removeAll(perEvent.keySet());
@@ -177,10 +197,12 @@ public class DeliveryChecker implements Checker {
             }
         }
 
+        Licences licences = Licences.of(history);
         List<Window> windows = recoveryWindows(history);
         boolean exactlyOnce = EXACTLY_ONCE.equals(history.header().workloadShape().get(DELIVERY_MODE));
         Map<Integer, Integer> repeatDistribution = new TreeMap<>();
-        int inside = 0;
+        int accounted = 0;
+        int unexplained = 0;
         int outside = 0;
         for (Map.Entry<String, List<HistoryRecord>> entry : perEvent.entrySet()) {
             List<HistoryRecord> records = entry.getValue();
@@ -189,35 +211,49 @@ public class DeliveryChecker implements Checker {
             }
             repeatDistribution.merge(records.size(), 1, Integer::sum);
             for (HistoryRecord repeat : records.subList(1, records.size())) {
-                boolean replayed = Boolean.parseBoolean(repeat.stringValue(HistoryOps.REPLAY));
-                boolean licensed = !exactlyOnce
-                        && (replayed || windows.stream().anyMatch(window -> window.covers(repeat.logicalTs())));
-                if (licensed) {
-                    inside++;
-                } else {
-                    outside++;
-                    if (decide) {
-                        violations.add(Violation.of(
-                                DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
-                                DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW_STATEMENT,
-                                "event " + entry.getKey() + " was delivered again "
-                                        + (exactlyOnce
-                                        ? "although the run declares exactly-once delivery"
-                                        : "outside a replay and while no claim transition or node recovery window was "
-                                                + "open"),
-                                List.of(records.getFirst(), repeat),
-                                history.header()));
-                    }
+                if (!exactlyOnce && licences.account(repeat)) {
+                    accounted++;
+                    continue;
+                }
+                // No recorded rewind explains this one. It is still not a violation if a recovery window was open,
+                // because a delivery that carries no segment or no position cannot be held to a position bound; the
+                // run is undecided about it rather than broken by it.
+                if (!exactlyOnce && windows.stream().anyMatch(window -> window.covers(repeat.logicalTs()))) {
+                    unexplained++;
+                    continue;
+                }
+                outside++;
+                if (decide) {
+                    violations.add(Violation.of(
+                            DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                            DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW_STATEMENT,
+                            "event " + entry.getKey() + " was delivered again "
+                                    + (exactlyOnce
+                                    ? "although the run declares exactly-once delivery"
+                                    : "with no recorded rewind licensing it and no recovery window open"),
+                            List.of(records.getFirst(), repeat),
+                            history.header()));
                 }
             }
         }
         if (!repeatDistribution.isEmpty()) {
-            notes.add("Repeated deliveries, by how many times an event arrived: " + repeatDistribution + "; " + inside
-                              + " repeat(s) inside a recovery window and " + outside + " outside one, across "
-                              + windows.size() + " recorded window(s)."
-                              + (decide ? "" : " Not judged because " + String.join(" and ", reasonsToReport) + "."));
+            String distribution = "Repeated deliveries, by how many times an event arrived: " + repeatDistribution
+                    + "; " + accounted + " accounted for by " + licences.size() + " recorded rewind(s), " + unexplained
+                    + " inside a recovery window that no rewind explains, and " + outside + " with neither.";
+            if (!decide) {
+                notes.add(distribution + " Not judged because " + String.join(" and ", reasonsToReport) + ".");
+            } else if (unexplained > 0) {
+                notes.add(distribution);
+            } else if (outside == 0) {
+                measurements.add(distribution);
+            } else {
+                // Every one of them is already a violation, so the distribution is context for a verdict that is
+                // decided rather than a fact about a verdict that stands.
+                notes.add(distribution);
+            }
         }
-        return new CheckResult(name(), List.copyOf(violations), List.copyOf(notes));
+        return new CheckResult(name(), List.copyOf(violations), List.copyOf(notes), List.copyOf(measurements),
+                               List.of());
     }
 
     /**
@@ -308,5 +344,145 @@ public class DeliveryChecker implements Checker {
         private boolean covers(long at) {
             return at >= from && at <= to;
         }
+    }
+
+    /**
+     * Every rewind the run recorded, and what each one licenses.
+     * <p>
+     * Derived entirely from what the store answered: a claim's completion carries the position the node was told to
+     * resume from, so a rewind is visible as the store's own answer rather than inferred from anything the harness
+     * decided. A claim opens a rewind licence only when that position is behind an event the segment had already
+     * delivered -- a first claim of an empty segment rewinds nothing and licenses nothing, which is what keeps a
+     * bootstrap from forgiving a genuine duplicate.
+     *
+     * @param rewinds      one per granted claim that resumed behind work already done
+     * @param rewoundTo    the furthest position any recorded reset rewound the processor to, or {@code -1} when none did
+     * @param resetAt      when the earliest recorded reset was granted, on the recorder's logical clock
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    private record Licences(List<Rewind> rewinds, long rewoundTo, long resetAt) {
+
+        private static Licences of(HistoryView history) {
+            Map<String, String> shape = history.header().workloadShape();
+            Long claimTimeout = millisField(shape, OwnershipChecker.CLAIM_TIMEOUT_MS);
+            if (claimTimeout == null) {
+                return new Licences(List.of(), -1L, Long.MAX_VALUE);
+            }
+            Long skew = millisField(shape, OwnershipChecker.SKEW_ALLOWANCE_MS);
+            long allowance = skew == null ? 0L : skew;
+            List<Delivered> delivered = delivered(history);
+            // A rebuild renames the unit of work, so a rewind cannot be scoped to the segment that was claimed.
+            // Measured on this suite: segment 7 delivered the event at position 2962, segments 3 and 7 then merged into
+            // 3, and the claim on 3 came back at position 2952 -- so the rewind is visible, exactly one claim carries
+            // it, and the segment that had delivered the event no longer exists. Matching per segment misses it
+            // entirely; matching any segment keeps the position bound, which is the part that does the work.
+            boolean rebuilt = rebuiltSegments(history);
+            List<Rewind> rewinds = new ArrayList<>();
+            long rewoundTo = -1L;
+            long resetAt = Long.MAX_VALUE;
+            for (Operation reset : history.operations(HistoryOps.RESET)) {
+                HistoryRecord completion = reset.completion();
+                if (reset.outcome() == Outcome.OK && completion != null) {
+                    rewoundTo = Math.max(rewoundTo, completion.longValue(HistoryOps.TOKEN_AT_RESET, -1L));
+                    resetAt = Math.min(resetAt, reset.invocation().logicalTs() - allowance);
+                }
+            }
+            for (Operation claim : history.operations(HistoryOps.CLAIM)) {
+                HistoryRecord completion = claim.completion();
+                Integer segment = segmentOf(claim.invocation());
+                if (claim.outcome() != Outcome.OK || completion == null || segment == null) {
+                    continue;
+                }
+                long resumedFrom = completion.longValue(HistoryOps.POSITION, Long.MIN_VALUE);
+                if (resumedFrom == Long.MIN_VALUE) {
+                    // A history recorded before a claim carried the position it granted. Nothing can be bounded by a
+                    // number that is not there, so no licence is derived and the repeat falls through to the window.
+                    continue;
+                }
+                long grantedAt = completion.logicalTs();
+                if (Boolean.parseBoolean(completion.stringValue(HistoryOps.REPLAY))) {
+                    rewoundTo = Math.max(rewoundTo, completion.longValue(HistoryOps.TOKEN_AT_RESET, -1L));
+                    resetAt = Math.min(resetAt, grantedAt - allowance);
+                }
+                long furthest = Long.MIN_VALUE;
+                for (Delivered earlier : delivered) {
+                    if ((rebuilt || earlier.segment() == segment) && earlier.at() < grantedAt && !earlier.replay()) {
+                        furthest = Math.max(furthest, earlier.position());
+                    }
+                }
+                if (furthest > resumedFrom) {
+                    rewinds.add(new Rewind(rebuilt ? ANY_SEGMENT : segment, resumedFrom, grantedAt - allowance,
+                                           grantedAt + claimTimeout + allowance));
+                }
+            }
+            return new Licences(List.copyOf(rewinds), rewoundTo, resetAt);
+        }
+
+        private static boolean rebuiltSegments(HistoryView history) {
+            for (String instruction : List.of(HistoryOps.SPLIT, HistoryOps.MERGE)) {
+                for (Operation change : history.operations(instruction)) {
+                    HistoryRecord completion = change.completion();
+                    if (completion != null && "true".equals(completion.stringValue("carriedOut"))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Indicates whether a recorded rewind explains this repeat.
+         */
+        private boolean account(HistoryRecord repeat) {
+            Integer segment = segmentOf(repeat);
+            long position = repeat.longValue(HistoryOps.POSITION, -1L);
+            if (segment == null || position < 0) {
+                return false;
+            }
+            if (Boolean.parseBoolean(repeat.stringValue(HistoryOps.REPLAY))) {
+                // A reset is a processor-wide instruction over one stream of positions, so the bound is the position it
+                // rewound to and not a per-segment one. It carries no time bound either: a replay redelivers for as
+                // long as the replay lasts, and the framework's own flag says when that is.
+                return repeat.logicalTs() >= resetAt && position <= rewoundTo;
+            }
+            return rewinds.stream().anyMatch(rewind -> (rewind.segment() == ANY_SEGMENT
+                    || rewind.segment() == segment)
+                    && position > rewind.resumedFrom()
+                    && repeat.logicalTs() >= rewind.from()
+                    && repeat.logicalTs() <= rewind.to());
+        }
+
+        private int size() {
+            return rewinds.size() + (rewoundTo >= 0 ? 1 : 0);
+        }
+
+        private static List<Delivered> delivered(HistoryView history) {
+            List<Delivered> deliveries = new ArrayList<>();
+            for (Operation delivery : history.operations(HistoryOps.DELIVER)) {
+                HistoryRecord record = delivery.invocation();
+                Integer segment = segmentOf(record);
+                if (segment != null) {
+                    deliveries.add(new Delivered(segment,
+                                                 record.longValue(HistoryOps.POSITION, -1L),
+                                                 Boolean.parseBoolean(record.stringValue(HistoryOps.REPLAY)),
+                                                 record.logicalTs()));
+                }
+            }
+            return List.copyOf(deliveries);
+        }
+
+        private static @org.jspecify.annotations.Nullable Integer segmentOf(HistoryRecord record) {
+            Object raw = record.value().get(HistoryOps.SEGMENT);
+            return raw instanceof Number number ? number.intValue() : null;
+        }
+    }
+
+    private record Rewind(int segment, long resumedFrom, long from, long to) {
+
+    }
+
+    private record Delivered(int segment, long position, boolean replay, long at) {
+
     }
 }

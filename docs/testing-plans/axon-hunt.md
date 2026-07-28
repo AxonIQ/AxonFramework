@@ -1110,6 +1110,40 @@ Appendix C: claim x scenario coverage matrix.
 sharpened in section 11.2); S16-S20 proposed in section 11.3. TLA columns: `DA` =
 `DcbAppend.tla`, `TC` = `TokenClaim.tla`.
 
+### C.0 Backend coverage, added in P3a
+
+A claim is only covered where a backend can express it. The matrix above says which scenario falsifies a claim; this one
+says which store the claim can be falsified on, and it is the reason a verdict vector records "not applicable" instead of
+passing quietly.
+
+`Y` = the store can express the claim; `n/a` = it cannot, and the suite says so; `F` = the claim was falsified there.
+
+| ID | Claim, in short | in-memory | hsqldb-tokens | postgres-jpa | postgres-jpa-split-tokens |
+|---|---|---|---|---|---|
+| C1 | append rejected after marker | Y | Y | n/a (no boundary; a unique constraint instead) | n/a |
+| C2 | `AppendCondition.none()` disables conflict detection | Y | Y | **F** (finding F-14) | **F** (finding F-14) |
+| C3 | ORIGIN makes every matching event a conflict | Y | Y | n/a (ORIGIN and INFINITY share a branch) | n/a |
+| C4 | append in prepare-commit, visible only after commit | Y | Y | Y | Y |
+| C5, C6, C7 | marker derivation from sourcing | Y | Y | **F** (finding F-15, `lowerBound` unimplemented) | **F** |
+| C8 | deferred conflict check | Y | Y | n/a (the check is the database's) | n/a |
+| C9, C10 | rejected append leaves nothing; batch atomicity | Y | Y | Y | Y |
+| C13, C14 | gap-aware token, gap timeout | n/a (no gaps in an in-heap map) | n/a | **Y, and the only store that can** | Y |
+| C15, C16 | batch and token in one transaction | n/a (nothing transactional) | partial (token only) | **Y** | Y, as two resources |
+| C17 | a steal may cause a duplicate | n/a (no ownership) | Y | Y | Y |
+| C18-C22 | single-owner claim, steal semantics | n/a (no ownership) | Y | Y | Y |
+| C23-C25 | split and merge preconditions | n/a (no ownership) | Y | Y | Y |
+| C26-C28 | reset, replay token | n/a (no ownership) | Y | Y | Y |
+| C29 | rollback discards | Y | Y | Y | Y |
+| C32-C34 | sequencing policies | Y | Y | **Y, and the differential arm F-6 needs** (this store populates the legacy aggregate-identifier resource the wired default reads) | Y |
+| C38 | stored token never regresses | n/a (no recorded writes) | Y | Y | Y |
+
+Two rows are worth reading twice. **C13 and C14 have no other home**: gap awareness exists because this engine's global
+index comes from a sequence taken before the transaction commits, and an in-heap map has no such thing, so the
+highest-expected-yield scenario in the plan (S7) could not have been written before this backend existed. And **C32-C34**
+close the differential the plan asked for in section 11.2: the wired default sequencing policy resolves from a legacy
+aggregate-identifier resource that DCB stores never set (finding F-6) and that this store does set, so arm (b) of S10 is
+now buildable.
+
 | ID | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 | S9 | S10 | S11 | S12 | S13 | S15 | S16 | S17 | S18 | S19 | S20 | DA | TC |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | C1 | P | s | | | | | | | | | | | | | | | | | | P | |

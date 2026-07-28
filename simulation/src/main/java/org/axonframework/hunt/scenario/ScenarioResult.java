@@ -37,6 +37,8 @@ import java.util.Objects;
  * @param verdict          what it concluded
  * @param violations       every invariant found broken, across every checker
  * @param notes            everything that stopped the run being decisive
+ * @param measurements     facts the run produced that the history accounts for; they do not move the verdict
+ * @param notApplicable    the invariants this run cannot express, named so that a gap is never read as a pass
  * @param faultFires       how often each declared fault actually fired
  * @param results          the per-checker verdicts, for a full report
  * @param history          the history file the run wrote
@@ -51,6 +53,8 @@ public record ScenarioResult(String scenarioId,
                              Verdict verdict,
                              List<Violation> violations,
                              List<String> notes,
+                             List<String> measurements,
+                             List<String> notApplicable,
                              Map<String, Long> faultFires,
                              List<CheckResult> results,
                              Path history,
@@ -71,6 +75,8 @@ public record ScenarioResult(String scenarioId,
         Objects.requireNonNull(reproduceCommand, "The reproduceCommand cannot be null.");
         violations = List.copyOf(Objects.requireNonNull(violations, "The violations cannot be null."));
         notes = List.copyOf(Objects.requireNonNull(notes, "The notes cannot be null."));
+        measurements = List.copyOf(Objects.requireNonNull(measurements, "The measurements cannot be null."));
+        notApplicable = List.copyOf(Objects.requireNonNull(notApplicable, "The notApplicable cannot be null."));
         faultFires = Map.copyOf(Objects.requireNonNull(faultFires, "The faultFires cannot be null."));
         results = List.copyOf(Objects.requireNonNull(results, "The results cannot be null."));
     }
@@ -100,6 +106,8 @@ public record ScenarioResult(String scenarioId,
                 .append(", wall=").append(wallTime.toMillis()).append("ms]");
         render(rendering, newLine, "violation", violations.stream().map(Object::toString).toList());
         render(rendering, newLine, "note", notes);
+        render(rendering, newLine, "measured", measurements);
+        render(rendering, newLine, "n/a", notApplicable);
         rendering.append(newLine).append("  faults: ").append(faultFires.isEmpty() ? "none declared" : faultFires);
         rendering.append(newLine).append("  history: ").append(history);
         rendering.append(newLine).append("  reproduce: ").append(reproduceCommand);

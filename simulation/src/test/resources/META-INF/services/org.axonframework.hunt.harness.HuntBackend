@@ -1,0 +1,2 @@
+org.axonframework.hunt.harness.PostgresJpaHuntBackend
+org.axonframework.hunt.harness.PostgresJpaHuntBackend$SplitTokenStore

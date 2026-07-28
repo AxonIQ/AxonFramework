@@ -129,6 +129,17 @@ against one database is the thing being measured; running it on one thread would
 The consequence for regression assets is the one already stated in 2.5 and it applies with more force here: a cluster
 finding is pinned by its **history file**, never by its seed.
 
+### 2.1c What a real store does to it -- not measured, and not claimed
+
+`DeterminismProbe` has never been run against a container-backed backend, so this document says nothing about whether a
+PostgreSQL arm reproduces anything from its seed. Two things make it safe to assume it reproduces less than the in-heap
+arms rather than more: the store is reached over a socket, so every latency the schedule depends on is now a network
+latency; and the aggregate-based engine's durable order comes from a sequence taken before the transaction commits, so
+even the order events end up in is not a function of the order they were offered in.
+
+The consequence is the one already stated in 2.5 and it applies here too: a finding on a real store is pinned by its
+**history file**, never by its seed.
+
 ### 2.2 What that means, stated plainly
 
 **`REAL_THREADS` -- the default mode, and the one every scenario in the corpus runs in -- is not
@@ -260,7 +271,7 @@ modelling the same property.
 
 | MachineName | Statement | Claims | Checker class | Scenarios | TLA+ operator |
 |---|---|---|---|---|---|
-| `AppendConformsToDcbModel` | Every append recorded as successful is accepted by the DCB reference model at its point in the history, and every append recorded as rejected is rejected by it. | C1, C2, C3, C5, C6, C7, C8, C10 | `ModelConformanceChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer` | (P4: `DcbAppend.tla`) |
+| `AppendConformsToDcbModel` | Every append recorded as successful is accepted by the DCB reference model at its point in the history, and every append recorded as rejected is rejected by it. | C1, C2, C3, C5, C6, C7, C8, C10 | `ModelConformanceChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer`. Reports itself **not applicable** on any backend that does not implement the protocol the model describes, which is every aggregate-based store: its condition is a map from aggregate identifier to sequence number rather than a boundary over tags and a marker, so replaying such a history against the model would report the difference in protocol as a defect on every append. | (P4: `DcbAppend.tla`) |
 | `NoVisibilityBeforeCommit` | No event is delivered to a consumer before the commit of the transaction that appended it. | C4, C29 | `VisibilityChecker` | `uncommitted_never_visible_rolledback_never_delivered_prepare_commit`, `..._commit`, `..._after_commit`, `partial_batch_never_visible_to_concurrent_reader` | -- |
 | `RolledBackEventsNeverObservable` | No event of a rolled-back transaction is ever delivered to a consumer or present in a post-run scan of the store. | C29 | `VisibilityChecker` | `uncommitted_never_visible_rolledback_never_delivered_prepare_commit`, `..._commit`, `..._after_commit` | -- |
 | `UnconditionalAppendNeverRejected` | An append made without a consistency condition is never rejected as conflicting. | C2 | `AppendOutcomeChecker` | `dcb_append_rejected_after_marker_under_contention`, `dcb_append_rejected_after_marker_single_writer` | (P4: `DcbAppend.tla`) |
@@ -270,10 +281,10 @@ modelling the same property.
 | `LedgerBalanceNeverNegative` | No account balance is negative at any point in the sequence of committed transfers. | C1, C5, C8 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `ProjectionMatchesFoldOfCommittedEvents` | The balance projection at the end of the run equals the fold of the transfers the run committed. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `DeclaredFaultsLand` | Every fault a run declares fires at least once, and the run records how often and against what. | -- (suite constitution, rule 4) | `FaultLandingChecker` | every scenario declaring a fault | -- |
-| `AtMostOneSegmentOwner` | For every segment, the intervals during which distinct nodes hold its token claim never overlap by more than the run's declared clock-skew allowance. | C18, C19, C20, C22, M3 | `OwnershipChecker` | `concurrent_bootstrap_initializes_segments_exactly_once`, `..._with_node_churn`, `at_most_one_segment_owner_with_skew_none`, `..._half_timeout`, `..._double_timeout` (expected to break, and measured), `split_merge_no_loss_no_dup_under_load`. Holds vacuously, and says so, on any backend whose token store implements no ownership; silent for a single-node run. | (P4: `TokenClaim.tla`) |
-| `DeliveryAttributedToSegmentOwner` | Every event a node delivers from a segment is delivered while that node holds the segment's claim, or within one claim timeout of losing it. | C18, C19, C21, M1 | `OwnershipChecker` | `at_most_one_segment_owner_with_skew_none`, `..._half_timeout`, `..._double_timeout`. Refuses to decide on a run that split or merged a segment: a segment identifier does not name the same unit of work either side of a rebuild, so no interval derived from claim traffic can follow it across one. | -- |
+| `AtMostOneSegmentOwner` | For every segment, the intervals during which distinct nodes hold its token claim never overlap by more than the run's declared clock-skew allowance. | C18, C19, C20, C22, M3 | `OwnershipChecker` | `concurrent_bootstrap_initializes_segments_exactly_once`, `..._with_node_churn`, `at_most_one_segment_owner_with_skew_none`, `..._half_timeout`, `..._double_timeout` (expected to break, and measured), `split_merge_no_loss_no_dup_under_load`. Reports itself **not applicable** on any backend whose token store implements no ownership -- the store has no owner to arbitrate, so there is nothing here for the invariant to be true or false about -- and is silent for a single-node run. | (P4: `TokenClaim.tla`) |
+| `DeliveryAttributedToSegmentOwner` | Every event a node delivers from a segment is delivered while that node holds the segment's claim, or within one claim timeout of losing it. | C18, C19, C21, M1 | `OwnershipChecker` | `at_most_one_segment_owner_with_skew_none`, `..._half_timeout`, `..._double_timeout`. Reports itself **not applicable** on a run that split or merged a segment: a segment identifier does not name the same unit of work either side of a rebuild, so no interval derived from claim traffic can follow it across one. It is a scoping statement rather than undecidedness, which is what lets a membership scenario reach a verdict at all. | -- |
 | `NoCommittedEventGoesUndelivered` | Every event a committed append made visible is delivered to a consumer at least once. | C15, C16, C17, M4 | `DeliveryChecker` | every scenario whose run recorded that its read side caught up | -- |
-| `DuplicateDeliveryOnlyInsideRecoveryWindow` | An event is delivered more than once only while a recorded claim transition, segment-count change or node recovery window is open, or as part of a replay the delivery itself reports, and never at all when the run declares exactly-once delivery. | C16, C17, C27 | `DeliveryChecker` | every scenario whose run recorded that its read side caught up. No shipped scenario declares exactly-once, because no shipped deployment shares a transactional resource between the token store and the read model; that half of the invariant is exercised by its canaries only, and the registry says so rather than implying coverage it does not have. | -- |
+| `DuplicateDeliveryOnlyInsideRecoveryWindow` | An event is delivered more than once only while a recorded claim transition, segment-count change or node recovery window is open, or as part of a replay the delivery itself reports, and never at all when the run declares exactly-once delivery. | C16, C17, C27 | `DeliveryChecker` | every scenario whose run recorded that its read side caught up. A repeat is licensed by a **rewind the history recorded** -- the position the store told a node to resume from, when that position is behind an event the segment had already delivered -- and is bounded by that position as well as by one claim timeout; a replay is bounded by the position the reset rewound to instead of by time. A repeat the history accounts for is a measurement and does not move the verdict; one inside a window that no rewind explains is a note and does; one with neither is a violation. No shipped scenario declares exactly-once, because no shipped deployment has a transactional read model; that half of the invariant is exercised by its canaries only, and the registry says so rather than implying coverage it does not have. | -- |
 | `CommittedEventDeliveredWithinHorizon` | Every committed event that reaches a consumer reaches it within the run's declared liveness horizon. | C13, C14, C15 | `LivenessChecker` | every scenario whose run recorded that its read side caught up | -- |
 | `AcceptedCommandCompletes` | Every command the run dispatched reaches a recorded outcome. | C4, C29 | `LivenessChecker` | every scenario | -- |
 | `StoredTokenNeverRegresses` | For every segment, each token stored for it reports a position at or beyond the position of the token stored for it before, unless the framework itself flagged that store as part of a replay or the segment had been merged since. | C38 | `StoredProgressChecker` | every scenario whose token store recorded a write, which is every cluster arm; silent on the in-heap token store, whose writes carry no claim decision and are not recorded. |
@@ -307,6 +318,46 @@ producing a violation, and every checker that can meet them handles them explici
 | A node that never came up | The framework promises nothing about how many instances survive a start. `LivenessChecker` reports it, so a run that exercised a smaller cluster than it declared cannot be a clean pass. |
 
 **One thing a rollback record deliberately does not say.** The framework registers one error handler per append transaction and calls `AppendTransaction.rollback()` from it whatever phase the error arrived in, so an error strictly after a successful commit produces a rollback of a batch the store has already published. `ControllableEventStorageEngine` records that rollback as having discarded nothing, keeping the offered identifiers under `offeredEventIds` and flagging the situation with `afterCommit`. Recording it any other way would make every such run report committed, legitimately visible events as observable-after-rollback, which is a false finding. What the framework's contract does not say about a rollback after a commit is a real gap, and it is recorded as finding F-8 rather than as a violation.
+
+### 3.2 What a checker reports, and which of it moves a verdict
+
+A checker has four things to say, and only two of them are verdicts. Collapsing the other two into undecidedness is how
+an arm becomes permanently inconclusive and stops being able to signal anything; dropping them is how a gap starts
+reading as coverage.
+
+| Channel | Moves the verdict? | What it means |
+|---|---|---|
+| **violation** | yes, to `FAIL` | An invariant was found broken. |
+| **note** | yes, to `INCONCLUSIVE` | Something stopped the checker deciding: an unknown outcome, a read side that had not caught up, a fault that rewrote the store, a fact the history does not account for. |
+| **measurement** | no | A fact the run produced which the history fully accounts for. The framework's behaviour explains it and the checker checked it, so the verdict stands and the number is printed. A redelivery a recorded rewind licenses, bounded by the position that rewind went back to, is the standing example. |
+| **not applicable** | no | An invariant this run cannot express at all, named. A claim assertion against a store with no owner; an attribution assertion across a segment-set rebuild; the reference model against a store implementing a different protocol. Reporting it as a note says the run tried and failed; reporting nothing says it passed. Neither is true. |
+
+The two verdict-neutral channels were added in P3a, and the reason is a measurement rather than a preference: before
+them, the replay arm and the split-and-merge arm reported `INCONCLUSIVE` on every seed of every run -- the replay arm
+because every one of its 314-364 licensed redeliveries produced a note, the membership arm because the attribution
+oracle can never be judged on a run that rebuilds its segments. **An arm that can never reach a pass can never signal a
+regression either**, which makes it as inert as one that always passes.
+
+### 3.3 The backend verdict vector
+
+Every result carries what each store concluded, because a framework is a library and the thing under test is really the
+library crossed with a store protocol. The vector is written as `backend:VERDICT` pairs, with the count of invariants
+that store could not express in brackets:
+
+```
+VECTOR dcb_append_rejected_after_marker_under_contention in-memory:PASS hsqldb-tokens:PASS postgres-jpa:FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)
+```
+
+How to read it, which is the whole point of recording it:
+
+| Shape | Attribution |
+|---|---|
+| broken on every backend | core framework logic |
+| broken on one backend | that adapter, or that store's own semantics |
+| `n/a` on one backend | the invariant is inexpressible there; the vector claims no coverage for it |
+
+Every finding in `formal/FINDINGS.adoc` that a backend differential produced carries its vector. A finding with no
+vector was found on one store and says so.
 
 ### 3.1 Reference-model rules
 
@@ -521,6 +572,8 @@ Four methods, of which two have defaults that are right for an in-heap store:
 | `createEngine()` | A fresh, empty event storage engine per run. |
 | `createTokenStores(runId, claimTimeout)` | One shared token store per run, handed out one view per node so each node claims under its own identity. The default gives every node the framework's in-heap store, which has no owner at all. |
 | `arbitratesTokenClaims()` | Whether that store decides who owns a segment. Defaults to `false`, which makes `AtMostOneSegmentOwner` report itself unverifiable rather than passing vacuously. Getting this wrong in the optimistic direction is how a suite reports coverage it does not have. |
+| `speaksDynamicConsistencyBoundaries()` | Whether an append condition on this store is a boundary over tags and a marker. Defaults to `true`. Answer `false` for an aggregate-based store, or the reference model will replay its history against a model of a protocol it does not implement and report the difference as a defect on every append. |
+| `transactionManager(engine)` | The transaction manager every unit of work of the run is wrapped in, or `null` for an in-heap store. A persistent store cannot opt out: its engine asks the processing context for the executor to append through, and having the run's transaction there is also what makes an append become durable in the framework's commit phase rather than the moment the engine is handed the events. Without it every visibility oracle reports the harness's wiring as a framework defect. |
 
 The claim timeout is passed in rather than read from a configuration, because it is a **store** setting: it does not
 travel through the processor configuration the way the run's other compressed timings do, and the ownership oracle

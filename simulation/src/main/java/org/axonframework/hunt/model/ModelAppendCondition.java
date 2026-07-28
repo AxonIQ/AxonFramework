@@ -42,6 +42,16 @@ public record ModelAppendCondition(long marker, Set<ModelCriterion> criteria) {
     }
 
     /**
+     * The marker recorded for an append whose store does not anchor at a position in one stream.
+     * <p>
+     * The aggregate-based engine's marker is a map from aggregate identifier to sequence number, which has no
+     * single-position reading, and a history has to be able to record such an append rather than fail on it. No oracle
+     * judges a condition carrying this value: the reference model names itself inexpressible on any store whose
+     * protocol it does not describe.
+     */
+    public static final long UNKNOWN_MARKER = Long.MIN_VALUE;
+
+    /**
      * The condition that claims no boundary at all: appended events take part in nobody's consistency boundary, so no
      * event can conflict with them.
      * <p>

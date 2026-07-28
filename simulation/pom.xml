@@ -46,7 +46,12 @@
           build; a nightly job clears it with -Dhunt.excludedGroups= . It must be a property rather than a literal in
           the surefire configuration, or the command-line override cannot reach it.
         -->
-        <hunt.excludedGroups>fuzz</hunt.excludedGroups>
+        <!--
+          Defaults to "fuzz,container" so neither the long seed sweep nor anything needing Docker runs on a normal
+          build: the default build of this module starts no container and needs no daemon. A nightly job clears it
+          with -Dhunt.excludedGroups= ; the backend matrix alone runs with -Dhunt.excludedGroups=fuzz .
+        -->
+        <hunt.excludedGroups>fuzz,container</hunt.excludedGroups>
     </properties>
 
     <dependencies>
@@ -77,6 +82,29 @@
         <dependency>
             <groupId>org.hsqldb</groupId>
             <artifactId>hsqldb</artifactId>
+        </dependency>
+
+        <!--
+          The real-backend arm. Test scope on purpose: the container-backed backend lives in src/test/java with its own
+          service-registration file, so the default build of this module compiles and runs without Docker, Hibernate or
+          a PostgreSQL driver anywhere on its path. ServiceLoader reads every registration file on the classpath, so the
+          in-heap and HSQLDB backends stay discoverable alongside it.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The only aggregate-based storage engine in this tree is the JPA one, so a real event store means Hibernate. -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

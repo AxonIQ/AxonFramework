@@ -150,8 +150,23 @@ public final class ScenarioRunner {
         Verdict verdict = violations.isEmpty() ? (notes.isEmpty() ? Verdict.PASS : Verdict.INCONCLUSIVE)
                 : Verdict.FAIL;
         return new ScenarioResult(scenario.id(), seed, tier, verdict, violations, List.copyOf(notes),
+                                  measurementsOf(results), notApplicableOf(results),
                                   Map.copyOf(faultFires), results, historyFile,
                                   Duration.ofNanos(System.nanoTime() - startedAt), header.reproduceCommand());
+    }
+
+    private static List<String> measurementsOf(List<CheckResult> results) {
+        return results.stream().flatMap(result -> result.measurements().stream()).toList();
+    }
+
+    /**
+     * Returns every invariant the run could not express, which is the coverage half of a verdict.
+     * <p>
+     * A backend-differential vector is only worth having if a store that cannot express an invariant says so instead of
+     * passing quietly. This is where that answer comes from.
+     */
+    private static List<String> notApplicableOf(List<CheckResult> results) {
+        return results.stream().flatMap(result -> result.notApplicable().stream()).toList();
     }
 
     /**
@@ -191,6 +206,8 @@ public final class ScenarioRunner {
                                   verdict,
                                   violations,
                                   List.copyOf(notes),
+                                  measurementsOf(results),
+                                  notApplicableOf(results),
                                   Map.of(),
                                   results,
                                   historyFile,
@@ -390,6 +407,10 @@ public final class ScenarioRunner {
         // Without this an ownership oracle cannot tell a store that granted every claim correctly from one that has
         // no notion of a claim to grant, and would report the second as verified.
         shape.put("tokenStoreArbitratesClaims", String.valueOf(backend.arbitratesTokenClaims()));
+        // Without this the reference-model oracle would replay an aggregate-based history against a model of a protocol
+        // that store does not implement, and report the difference as a defect on every append.
+        shape.put(org.axonframework.hunt.checker.ModelConformanceChecker.SPEAKS_DCB,
+                  String.valueOf(backend.speaksDynamicConsistencyBoundaries()));
         return Map.copyOf(shape);
     }
 

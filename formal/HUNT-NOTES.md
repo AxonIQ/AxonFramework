@@ -1216,3 +1216,305 @@ argument for running it.
 
 The two short rows cap what may honestly be claimed. They are not defects in the arms; they are the difference between a
 smoke budget and a hardening one.
+
+---
+
+# Phase P3a -- the first real backend
+
+## 1. Determinism seams (continued)
+
+### 1.15 A hundred-millisecond claim timeout is hopeless against PostgreSQL, and the symptom does not look like a timeout
+
+P2a recorded that `HuntTimescale.compressed()`'s hundred-millisecond claim timeout does not survive an in-process HSQLDB
+(note 1.10). Against a container it is far worse, and the failure wears a completely different face. Measured on the
+PostgreSQL arm at the compressed default, on a **single-node** run:
+
+```
+43 claims and 43 releases on one node, 1417 repeated deliveries (up to 11 copies of one event),
+131 StoredTokenNeverRegresses violations, and a conservation violation
+```
+
+None of that is a framework defect and none of it says "timeout" anywhere. The owner's extension is still in flight when
+its own claim lapses, the coordinator releases the segment and re-claims it, the new work package resumes from whatever
+the store last committed, and the segment replays. Widening the claim timings to the same two seconds the cluster arms use
+removed **every one of those violations** and left exactly one behind, which is the real finding (F-14).
+
+The lesson generalises past this backend: **any arm against a store reached over a network needs the widened claim
+timings, and a run that shows mass redelivery on one node should have its claim timeout checked before anything else.**
+`BackendDifferentialTest.MATRIX_TIMINGS` is where the matrix declares them, and `Scenario.withTimescale(...)` is how an
+arm gets them without editing the scenario.
+
+### 1.16 The timescale is an arm, not a scenario property, and now has a setter to prove it
+
+`Scenario.withTimescale(HuntTimescale)` exists for the same reason `onBackend(String)` does: a differential has to give
+every arm timings a real store can meet without editing the experiment. Every arm of the matrix gets the **same** timings,
+or the divergence stops being attributable to the store.
+
+## 2. API traps (continued)
+
+### 2.34 `payload()` returns what the store kept, and a programmatic handler gets no conversion
+
+The in-heap engine stores the `EventMessage` itself, so `event.payload()` gives back the object that was appended. The
+aggregate-based engine stores a converted representation and hands back a message whose payload is a `byte[]` with a
+converter attached. Only the **annotated** handler path converts for you; a handler subscribed programmatically -- which
+is what every workload in this suite does -- receives the message as it is.
+
+So `event.payload() instanceof MyEvent` is true on one backend and false on the other, and a projection built that way
+silently projects nothing against a persistent store. `event.payloadAs(MyEvent.class)` is correct on both: the conversion
+short-circuits when the payload is already of the requested type, so the in-heap path needs no converter and takes none.
+`LedgerWorkload.ledgerEventOf` is the shape to copy -- resolve the class from `message.type().name()`, then ask for it.
+
+Three places needed it, and the one that is easy to miss is the **sequencing policy**: it runs on the read side, so a
+policy that pattern-matches on `payload()` falls through to its fallback on a converting store and quietly stops keying by
+anything meaningful.
+
+### 2.35 `GlobalIndexConsistencyMarker.position(...)` throws for an aggregate-based marker, and it was in the recorder
+
+The aggregate-based marker is a map from aggregate identifier to sequence number and has no single-position reading, so
+the framework's global-index accessor throws `IllegalArgumentException` for it. The harness called it while **recording**
+an append, so the recorder threw, the command failed, and the arm reported the harness's own limitation as framework
+failures: measured, 628 of 1000 commands on the first PostgreSQL run. `AxonModelCodec` now records
+`ModelAppendCondition.UNKNOWN_MARKER` instead.
+
+Worth stating as a rule: **anything in the recording path must degrade rather than throw.** A recorder that fails takes
+the operation with it, and the resulting history describes a system that was never exercised.
+
+### 2.36 `AggregateBasedConsistencyMarker.doLowerBound` throws, and the framework calls it
+
+Recorded as finding F-15. For anybody wiring this engine: a processing context that sources twice fails with
+`UnsupportedOperationException: Not implemented yet`. It is 23 of the 65 integration-test cases on this backend, so a
+suite that runs green in memory will not be a useful signal here until it is fixed.
+
+### 2.37 An unconditional append works exactly once per aggregate on this engine
+
+Recorded as finding F-14. `AppendCondition.none()` carries an `INFINITY` marker, the engine reads that as "no position for
+any aggregate", the sequencer starts at zero, and the unique constraint refuses it. Any workload with an append-without-
+sourcing path will see it.
+
+### 2.38 Hibernate's built-in connection pool holds twenty and refuses rather than waits
+
+`org.hibernate.HibernateException: The internal connection pool has reached its maximum size and no connection is
+currently available`, thrown from inside the polling event coordinator and from the coordinator's stream. A run has a
+writer thread per participant, a coordinator, several workers, and one entity manager per engine read that happens
+outside the run's transaction. Set `hibernate.connection.pool_size` (this suite uses 64) and raise the container's own
+ceiling (`-c max_connections=400`), or the arm reports a read side that never caught up.
+
+### 2.38b `withReuse(true)` does nothing unless the developer opted in, and killing a run costs the next one two minutes
+
+Container reuse is a developer setting (`testcontainers.reuse.enable=true` in `~/.testcontainers.properties`), not a
+property of the code. Without it every virtual machine starts its own container, which is why the suite's real isolation
+mechanism is **one container per virtual machine plus one schema per run** rather than reuse.
+
+And if a container-backed run is killed mid-flight, the next one waits for Ryuk to reap the old container before its own
+starts: measured, about two minutes of a build that looks wedged and is not. Let a container run finish.
+
+### 2.38c `DROP SCHEMA` waits for ever, and a build that stops with no output is why
+
+PostgreSQL has no default lock timeout, and a workload's writer threads are daemons the runner stops waiting for once its
+budget expires. One of them holding a transaction that took the store's global-index sequence is enough to make a run's
+cleanup block on a relation lock indefinitely -- with **no output at all**, because surefire buffers a test's output until
+the method ends. Measured, from `pg_stat_activity`:
+
+```
+ pid |        state        | wait_event_type | wait_event |              query
+  86 | active              | Lock            | relation   | DROP SCHEMA hunt_1_pe839nh7m5 CASCADE
+  71 | idle in transaction | Client          | ClientRead | select nextval('hunt_1_pe839nh7m5."aggregate-event-global-index"')
+```
+
+`SET lock_timeout = '2s'` before the drop, and ignore the failure: the schema is named after the run, nothing else will
+address it, and the container dies with the virtual machine. **`pg_stat_activity` is the first place to look when a
+container-backed run produces nothing** -- `docker exec <container> psql -U test -d test -c "SELECT pid, state,
+wait_event_type, wait_event, left(query,60) FROM pg_stat_activity"` diagnosed this in one command after twenty minutes of
+staring at a silent log.
+
+### 2.38d The engine's polling coordinator outlives the run unless the engine is closed
+
+`AggregateBasedJpaEventStorageEngine.close()` terminates the `EventCoordinator` handle, and nothing calls it for you. A
+backend whose `release` forgets it leaves one thread per run polling a closed factory every fifty milliseconds: measured,
+four megabytes of `IllegalStateException: EntityManagerFactory is closed` stack traces in one build, and a run that took
+minutes instead of seconds because it was writing them. Close the engine **before** releasing its factory.
+
+### 2.39 `PersistenceConfiguration` builds an entity-manager factory with no `persistence.xml`
+
+Jakarta Persistence 3.2 has it, and it is the whole of what a container-backed arm needs -- no XML, no Spring:
+
+```java
+new PersistenceConfiguration("unit-name")
+        .provider("org.hibernate.jpa.HibernatePersistenceProvider")
+        .transactionType(PersistenceUnitTransactionType.RESOURCE_LOCAL)
+        .property("jakarta.persistence.jdbc.url", url)
+        .property("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect")
+        .property("hibernate.default_schema", schema)
+        .property("hibernate.hbm2ddl.auto", "update")
+        .managedClass(AggregateEventEntry.class)
+        .managedClass(TokenEntry.class)
+        .createEntityManagerFactory();
+```
+
+`hibernate.default_schema` plus one `CREATE SCHEMA` per run is how a shared container gives per-run isolation, and it is
+far cheaper than a container per run.
+
+### 2.40 A persistent engine cannot use a context-ignoring executor provider
+
+`AggregateBasedJpaEventStorageEngine.appendEvents` asks the **processing context** for its executor, and the framework's
+provider throws when the context carries none. The tempting fix is the one the HSQLDB token store uses -- ignore the
+context and give each call its own transaction (note 2.20) -- and for the event store it is wrong: the append then commits
+the moment the engine is handed the events, before the framework has decided whether to commit at all, and every
+visibility oracle reports the harness's wiring as a framework defect. Attach a real transaction manager instead
+(`EntityManagerTransactionManager` over a thread-bound `EntityManagerProvider`), which is what `HuntBackend.transactionManager`
+exists for. The context-ignoring provider is correct only for the token store of a **split-resource** arm, where separate
+transactions are the point.
+
+### 2.41 `ServiceLoader` reads every registration file on the classpath
+
+A container-requiring backend lives in `simulation/src/test/java` with its own
+`src/test/resources/META-INF/services/org.axonframework.hunt.harness.HuntBackend`, and the main-scope registrations stay
+discoverable alongside it -- `ServiceLoader` uses `getResources`, so the files merge rather than shadow. That is what
+keeps Hibernate, Testcontainers and a PostgreSQL driver off the default build's compile path. The one rule it imposes: a
+backend's **constructor must not start anything**, because every build instantiates every registered provider.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The backend matrix. Needs Docker; excluded from the default build by the "container" tag.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=BackendDifferentialTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The whole integration-test suite against the in-memory components. No Docker.
+./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
+    -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false
+
+# The same classes against PostgreSQL. One property, no new test classes.
+./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
+    -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.backend=postgres-jpa
+```
+
+Three things about those commands cost time to work out:
+
+- **`-DskipTests` skips failsafe too**, so an integration-test run needs surefire silenced some other way.
+  `-Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false` runs no unit test and every integration test.
+- **`-o` fails the integration-test profile**: `jacoco-maven-plugin` is not in the local repository, so the profile cannot
+  resolve offline. Add `-Djacoco.skip=true` and drop `-o`.
+- **A Maven `-D` property does reach the forked JVM**, so `-Dhunt.backend=...` selects the backend without any surefire
+  or failsafe configuration.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.45 A backend is a run-time selection, not a class per backend
+
+The first attempt at multiplying the integration tests wrote one `*PostgresIT` leaf per abstract suite -- nineteen files,
+and nineteen more for every store added after. That is precisely what the extensibility charter forbids, so it was
+deleted. `AbstractIT.testInfrastructure()` is no longer abstract: it resolves the store from `hunt.backend` through
+`TestInfrastructures.selected()` and defaults to the in-memory components. The nineteen leaves became nineteen
+backend-neutral runners (`*SuiteIT`) holding nothing but a name, and a per-backend verdict comes from running the same
+classes once per backend.
+
+Two properties this preserves and the class-per-backend shape did not: **adding a store adds one file in total**, and the
+default build starts no container because the default property value says so -- which is stronger than a tag, because
+there is nothing to forget to tag.
+
+### 4.46 A verdict-neutral channel was necessary, and the measurement is why
+
+Before P3a, the replay arm and the split-and-merge arm reported `INCONCLUSIVE` on every seed of every run. Their causes
+were different and both were structural:
+
+| Arm | Why it could never pass |
+|---|---|
+| `replay_sees_full_prefix_and_flags_redelivery` | Every one of its 314-364 redeliveries was **licensed** (`0 outside one`), and the delivery oracle still reported the distribution as a note. A reset redelivers by definition, so the note was unconditional. |
+| `split_merge_no_loss_no_dup_under_load` | `DeliveryAttributedToSegmentOwner` cannot be judged on a run that rebuilds its segments, and said so as a note. A membership scenario rebuilds its segments by definition. |
+
+An arm that can never reach a pass can never signal a regression either. `CheckResult` therefore has two channels that do
+not move a verdict -- a **measurement** for a fact the history accounts for, and a **not-applicable** statement for an
+invariant the run cannot express -- and the wording of each is in `INVARIANTS.md` section 3.2.
+
+### 4.47 The redelivery licence is a position, not a period, and the merge case proves it
+
+The old licence forgave any repeat inside a time window opened by a claim change, a node crash, or a carried-out split or
+merge. The new one is derived from the position the store hands back on a claim: a claim opens a licence only when that
+position is behind an event the segment had already delivered, and it licenses exactly the events above it. Strictly
+stronger, and it needed one widening to work at all.
+
+**A rebuild renames the unit of work, so the licence cannot be scoped to the segment that was claimed.** Measured, from
+one history:
+
+```
+event writer-7-475-d delivered at ts 639 from segment 7 at position 2962
+merge of segment 3 issued at ts 641, carried out at ts 674
+claim on segment 3 granted at ts 687, returning position 2952
+same event delivered again at ts 689 from segment 3 at position 2962
+```
+
+Segment 3 had never delivered anything above 2952, so a per-segment rewind finds nothing; the rewind belongs to segment 7,
+which no longer exists. On a run that rebuilt its segments the licence therefore matches any segment, and the **position**
+bound is what does the work. Recording the position a claim returns is a two-line change in `RecordingTokenStore` and is
+what makes any of this derivable.
+
+### 4.48 A replay's licence is bounded by the position it rewound to
+
+A replay-flagged repeat used to be licensed unconditionally, on the grounds that the framework's own flag said so. It is
+now licensed only when it also sits at or below the position the reset rewound from, which the claim's own replay token
+carries. `DeliveryCheckerTest.reportsAReplayedRepeatAboveThePositionTheResetRewoundTo` is the proof that the bound is real:
+a repeat above it fails even with the framework's flag on it.
+
+### 4.49 The differential's first run was three quarters harness
+
+Worth stating plainly, because the same thing will happen to the next backend. The first PostgreSQL run reported 227
+`UnconditionalAppendNeverRejected` violations, 1417 duplicate deliveries, 131 token regressions and two conservation
+violations. After two harness corrections -- a recorder that no longer throws on a marker it cannot encode (note 2.35) and
+claim timings a database can meet (note 1.15) -- what remained was 231 violations of one invariant, which is finding F-14.
+
+**Do not write up a divergence from a first run.** Fix the harness until the divergence stops shrinking, and only then
+attribute it.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| A transactional read model, and with it a real exactly-once arm | The shared-resource PostgreSQL arm is the deployment that can provide exactly-once, and it still declares at-least-once, because the read model is a map in the heap and no transaction can cover it. There is a second reason to be careful: `DeliveryChecker`'s exactly-once branch forbids any repeated **delivery**, while the framework's guarantee is about committed **effects** -- a batch whose transaction rolls back is redelivered even where the resources are shared. The right oracle is the plan's sharpened S5, an applied-count per event identifier written in the same transaction, and that is a scenario plus an invariant rather than a backend. | the phase that writes S5 |
+| Axon Server and Toxiproxy | P3b's, deliberately untouched here. The connector module is absent from this tree and only `axon-server-connector:5.1.0` is in the local repository against a `5.3.0-SNAPSHOT` reactor, so the arm carries a real version-compatibility risk that is worth its own phase. | P3b |
+| The gap-timeout scenario (S7) | The highest-yield scenario in the plan, and it now has a backend that can express it: this engine is gap-aware and its global index comes from a pre-commit sequence. It needs a workload that holds a transaction open past the gap timeout while another writer streams past it, which is a workload rather than a backend. | the phase that writes S7 |
+| The commercial DCB PostgreSQL engine | Not in this tree and not reachable without credentials. The `speaksDynamicConsistencyBoundaries()` hook exists so that it can be added as a backend whose model oracle is judged rather than skipped. | when the artifact is reachable |
+| Per-backend fuzz and hardening tiers | The matrix runs one seed of two scenarios at the smoke tier. Nothing here says how many seeds a subtler adapter defect would need. | the phase that runs the fuzz tier |
+
+### 4.49b A budget sized for the heap makes a container-backed arm permanently undecided
+
+Measured twice before it was believed. The shipped smoke budget for the contended-append scenario is a thousand commands
+with a thirty-second settle, and against PostgreSQL the read side never finished inside it: every run reported "the read
+side had not caught up with the store within the settle budget", so every run was `INCONCLUSIVE` whatever else it found.
+Three hundred commands and a minute of settle finish comfortably on all four stores.
+
+`Scenario.withBudget(Tier, TierBudget)` exists for that, alongside `withTimescale` and `onBackend`. **A budget is a
+property of the arm, not of the claim**, and a differential that gives every arm the same budget and the same timings is
+still comparing the same experiment. What it must not do is quote a heap budget at a container and then report the
+shortfall as a finding -- which is what the first two attempts did.
+
+The consequence for the assertion that would have caught the backend canary is worth spelling out, because the budget was
+not the whole story. "The read side caught up" is only an oracle where a clean run satisfies it, and on PostgreSQL a clean
+run does not -- at either budget. `ControllableEventStorageEngine` counts an append as stored when the engine's
+`commit()` returns, and on a two-phase store that is before the transaction commits, so the number the read side is chased
+against is not a number of readable events. The assertion was written, shown to turn the canary red, and then removed:
+shipping it would have been a permanently red test, which is the same inertness this phase removed from the replay and
+membership arms. `formal/CANARIES.md` records the escape and the two small changes that would close it.
+
+### 4.50 The green-but-broken audit for the first real backend, and what it found
+
+Run before claiming any verdict. Four rows came back short and three came back wrong the first time, which is the entire
+argument for running it.
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| The workload really ran | 1000 commands per arm, 521 committed on the PostgreSQL arm against 993 recorded appends; 2459 deliveries | ok |
+| **The oracle really ran** | Canary C7 **escaped**. An assertion that would have caught it was written and shown to turn it red, then removed because it is red on a clean engine too. So no oracle in this phase has been shown to catch a defect only a real store can produce. | **short** |
+| The divergence is the store's, not the harness's | Two harness defects were found and fixed first: a recorder that threw on a marker it could not encode (628 of 1000 commands), and a claim timeout a database cannot meet (1417 redeliveries, 131 token regressions). What survived both is one invariant on two arms. | ok, after two corrections |
+| The differential really compares | The same scenario object, the same workload supplier, the same registered checker set and the same timings on all four arms; only `onBackend` differs | ok |
+| A "not applicable" is not a pass | `AppendConformsToDcbModel` is reported inexpressible on both PostgreSQL arms and the test asserts that it says so; the in-heap arm asserts the opposite | ok |
+| No silent error suppression | The PostgreSQL runs log `AppendEventsTransactionRejectedException` (938 on one arm), `PessimisticLockException` and `HibernateException`, and every one of them reaches an oracle as a failed operation | ok |
+| The integration-test arm is a fair comparison | The same 65 cases, the same classes, one property apart: 65 green in memory, 50 green and 15 broken on PostgreSQL | ok |
+| Deliveries add up | On the widened timings the PostgreSQL arm reports no loss, no unlicensed repeat and a conservation law that holds | ok |
+| **One seed per arm** | The matrix runs one seed of two scenarios per backend. Under the suite's own weak-oracle rules a single seed is one interleaving, so no arm's verdict may be quoted above a partial one however clean it is. | **short** |
+| **Two scenarios, not the corpus** | Sixteen scenario identifiers ship and two of them are in the matrix. Nothing here says what the other fourteen do on a real store. | **short** |
+| **No fault landed on a PostgreSQL arm** | Both matrix scenarios are fault-free by declaration. Every fault injector in the suite has only ever fired against an in-heap store, so nothing is known about how one behaves across a database round trip. | **short** |
+| **The exactly-once arm is a deployment, not a measurement** | The shared-resource arm shares the token store's transaction with the batch, and still declares at-least-once, because its read model is in the heap. The half of `DuplicateDeliveryOnlyInsideRecoveryWindow` that forbids any repeat has still never run against a real deployment. | **short** |
+
+The four short rows cap what may honestly be claimed for this phase: a first real backend, two scenarios, one seed, no
+faults, and no transactional read model.

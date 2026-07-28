@@ -403,3 +403,87 @@ Honest gaps, so that nobody reads the tables above as covering more than they do
 | The sequencing policy path | `SequenceKeyOrderPreserved` is exercised only by the arms in `SequencingPolicyOrderTest`, and a mutation of `SequencingEventHandlingComponent`'s chaining has not been run against it | follow-up |
 | Anything backend-specific | One event-store backend ships, and the second backend differs only in its token store. A per-backend verdict vector needs two stores that speak the same protocol | the phase that adds a backend |
 | Every mutation at a tier above smoke | Both campaigns were run at the smoke tier with the fixed seed set. Nothing here says how many seeds a subtler mutation would need | the phase that runs the fuzz tier |
+
+---
+
+## Campaign of 2026-07-28 (P3a, the real backend)
+
+One mutation, in the aggregate-based JPA engine's gap handling. It was chosen because **the in-heap store cannot express
+it at all**: an in-heap `TreeMap` has no durable index taken from a sequence before a transaction commits, so it has no
+gaps, so there is nothing to mutate. The mutation is only reachable, and only detectable, on a real store -- which is what
+a backend canary has to be if it is measuring anything the phase added.
+
+```bash
+# after mutating
+./mvnw -q -o -pl eventsourcing -am install -DskipTests
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=BackendDifferentialTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+git checkout -- eventsourcing                            # revert, always
+./mvnw -q -o -pl eventsourcing -am install -DskipTests   # restore
+```
+
+| # | Mutation | Should be caught by | Caught? | Tier / seeds | What the run showed |
+|---|---|---|---|---|---|
+| C7 | The gap-aware token records no gap, so an index skipped at read time is never re-read | `NoCommittedEventGoesUndelivered` | **no -- escaped** | SMOKE, fixed seed, `postgres-jpa` and `postgres-jpa-split-tokens` | The run took seven times as long and the read side never caught up; no loss violation was raised, and no test went red because of the mutation |
+
+### C7 -- the gap-aware token records no gap
+
+```diff
+     private GapAwareTrackingToken calculateToken(...) {
+-        boolean allowGaps = timestamp.isAfter(gapTimeoutThreshold);
++        boolean allowGaps = false;
+```
+
+in `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngine.java`.
+This engine's `globalIndex` comes from a database sequence taken before the transaction commits, so a reader routinely
+sees index `n+1` while `n` is still uncommitted. Recording `n` as a gap is what makes the reader come back for it. Remove
+that and every event whose neighbour committed first is skipped for ever.
+
+**It escaped, and the reason matters more than the mutation.** The arm's verdict changed -- from a clean
+seven-second run to one that exhausted its settle budget and overran its wall budget -- and the checker that exists to
+catch loss said nothing at all:
+
+```
+postgres-jpa note: The read side had not caught up with the store within the settle budget.
+postgres-jpa note: The run outlived its wall-clock budget of scenario dcb_append_rejected_after_marker_under_contention seed 1.
+postgres-jpa note: 0 NoCommittedEventGoesUndelivered violations
+```
+
+`DeliveryChecker` refuses to call an event lost on a run whose read side had not caught up, and it is right to: an
+interrupted run has not lost anything. **But a store that loses an event permanently produces exactly the same
+observation** -- the read side can never catch up, because what it is waiting for will never arrive -- so the guard that
+stops false findings also swallows the real one. This is the same shape as the C6 escape, in a new place: a downgrade
+meant to protect against a harness artefact suppressed the oracle that would have caught a framework defect.
+
+### What was tried to close it, why it turned the mutation red, and why it was still removed
+
+An assertion was added that each arm's read side **caught up** and that the run did not overrun its budget. It did turn the
+mutation red on `postgres-jpa` and left the in-heap and HSQLDB arms green, which is exactly the attribution a backend
+canary is for. It was then **removed**, because it is red on a clean engine too.
+
+Measured, on an unmutated engine: the PostgreSQL arms do not reach quiescence with this workload at any budget tried --
+a thousand commands with a thirty-second settle and three hundred with a sixty-second settle behave identically. The
+reason is in the harness, not in the mutation: `ControllableEventStorageEngine` counts an append as stored when the
+engine's `commit()` call returns, and on this engine that call returns while the database transaction is still open, so
+the number the read side is chased against is not a number of readable events. Shipping the assertion anyway would have
+shipped a permanently red test -- the same inertness, in the opposite direction, that this phase removed from the replay
+and membership arms.
+
+So the mutation escapes, and it escapes for a reason worth writing down in full.
+
+| What would catch it | Why | Status |
+|---|---|---|
+| A store-count the read side can actually reach: count an append as readable when its **transaction** commits, not when the engine's commit call returns | Quiescence then means what it says on a two-phase store, and "the read side caught up" becomes an assertion a clean run satisfies and a lossy one does not | Not built. It is a change to `ControllableEventStorageEngine`'s accounting and needs an after-commit hook the wrapper already receives. |
+| A loss oracle that distinguishes permanent loss from lateness | `DeliveryChecker` declines to call an event lost on a run whose read side had not caught up, and a store that loses an event permanently produces exactly that observation. Comparing the delivered set's growth across the settle phase would decide it: a set that stopped growing while events are still missing has lost them. | Not built. Same shape as the gap C6 left, in a new place. |
+
+Neither is exotic and both are small. What they are not is free, and claiming the canary was caught on the strength of an
+assertion that is red either way would have been the overclaim this file exists to prevent.
+
+### What this campaign did not do
+
+| Not canaried | Why | Owner |
+|---|---|---|
+| A mutation of the aggregate sequencer or the marker algebra | Two real findings already live there (F-14 and F-15), so the arms are red on those stores for reasons that are not planted, and a mutation's effect could not be told apart from them until they are fixed | after F-14 and F-15 |
+| Anything on Axon Server | P3b's, and the connector is absent from this tree | P3b |
+| The gap mutation at a tier above smoke | One seed of one scenario on two stores. Nothing here says how many seeds a subtler gap defect would need | the phase that runs the fuzz tier |
+| A loss oracle that can tell permanent loss from lateness | The gap above is closed by asserting on the run rather than on the invariant. A checker that compared the delivered set's growth across the settle phase could decide it properly, and would close the C6-shaped hole for good | follow-up |

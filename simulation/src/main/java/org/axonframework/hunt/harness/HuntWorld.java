@@ -101,6 +101,7 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
     private final ControllableEventStorageEngine store;
     private final EventStore eventStore;
     private final SimpleCommandBus commandBus;
+    private final org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory unitOfWorkFactory;
     private final PausePoint pauses = new PausePoint();
     private final Buggify buggify;
     private final HuntTimescale timescale;
@@ -130,7 +131,8 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         this.engine = backend.createEngine();
         this.store = new ControllableEventStorageEngine(engine, recorder, buggify);
         this.eventStore = new StorageEngineBackedEventStore(store, new SimpleEventBus(), workload.tagResolver());
-        this.commandBus = new SimpleCommandBus(new SimpleUnitOfWorkFactory(HARNESS_COMPONENTS));
+        this.unitOfWorkFactory = unitOfWorkFactory(backend, engine);
+        this.commandBus = new SimpleCommandBus(unitOfWorkFactory);
         this.context = new WorkloadContext(this, seed, commands, recorder, deadline);
 
         EventHandlingComponent projection = workload.install(context);
@@ -207,13 +209,32 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         }
     }
 
+    /**
+     * Returns the factory every unit of work of the run is opened by.
+     * <p>
+     * A backend that speaks to a database supplies a transaction manager, and wrapping the factory in it is what puts
+     * that transaction on the processing context -- which is where a persistent storage engine and a persistent token
+     * store both look for the executor to use, and which is what makes an append commit in the framework's commit phase
+     * rather than the moment the engine is handed the events. An in-heap backend supplies none and gets the plain
+     * factory.
+     */
+    private static org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory unitOfWorkFactory(
+            HuntBackend backend, EventStorageEngine engine) {
+        SimpleUnitOfWorkFactory plain = new SimpleUnitOfWorkFactory(HARNESS_COMPONENTS);
+        var transactionManager = backend.transactionManager(engine);
+        return transactionManager == null
+                ? plain
+                : new org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory(transactionManager,
+                                                                                                plain);
+    }
+
     private PooledStreamingEventProcessorConfiguration configuration(int segments, int maxSegmentsPerNode) {
         return new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null))
                 // The processor opens its own units of work, and rewinding its tokens resolves a general-purpose
                 // converter out of one of them. The framework's default here is an application context that provides
                 // nothing, so without this a reset fails with an UnsupportedOperationException that says nothing about
                 // resets at all.
-                .unitOfWorkFactory(new SimpleUnitOfWorkFactory(HARNESS_COMPONENTS))
+                .unitOfWorkFactory(unitOfWorkFactory)
                 .eventSource(eventStore)
                 .initialSegmentCount(segments)
                 .maxClaimedSegments(maxSegmentsPerNode)

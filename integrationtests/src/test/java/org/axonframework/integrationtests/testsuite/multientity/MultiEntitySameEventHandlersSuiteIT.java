@@ -16,18 +16,17 @@
 
 package org.axonframework.integrationtests.testsuite.multientity;
 
-import org.axonframework.integrationtests.testsuite.infrastructure.InMemoryTestInfrastructure;
-import org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructure;
-
 /**
- * Runs {@link MultiEntitySameEventHandlersIT} against the in-memory framework defaults.
+ * Runs {@link MultiEntitySameEventHandlersIT} against the store this run selected.
+ * <p>
+ * The class carries no infrastructure of its own. The store comes from
+ * {@link org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructures#selected()}, which reads the
+ * {@code hunt.backend} system property and defaults to the in-memory components, so this one class produces a verdict
+ * for every backend by being run once per backend instead of being copied per backend.
+ *
+ * @author Stefan Dragisic
+ * @since 5.3.0
  */
-public class MultiEntitySameEventHandlersInMemoryIT extends MultiEntitySameEventHandlersIT {
+public class MultiEntitySameEventHandlersSuiteIT extends MultiEntitySameEventHandlersIT {
 
-    private static final TestInfrastructure INFRASTRUCTURE = new InMemoryTestInfrastructure();
-
-    @Override
-    protected TestInfrastructure testInfrastructure() {
-        return INFRASTRUCTURE;
-    }
 }

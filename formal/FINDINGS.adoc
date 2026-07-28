@@ -106,6 +106,21 @@ easy workaround), *low* (a documentation or ergonomics gap).
 | Low
 | *Reproduced by test.* Open.
 
+| *F-15* `AggregateMarkerLowerBoundUnimplemented`
+| Sourcing twice in one processing context on the aggregate-based JPA event store throws
+  `UnsupportedOperationException: Not implemented yet`. The framework combines the two consistency markers with
+  `lowerBound`, and the aggregate-based marker does not implement it. Ordinary event-sourced command handling reaches it.
+| High
+| *Reproduced by test*, on PostgreSQL, with a per-backend verdict vector. Open.
+
+| *F-14* `UnconditionalAppendRejectedOnAggregateStore`
+| An append made with no consistency condition is rejected as conflicting on the aggregate-based JPA event store
+  whenever the tagged aggregate already holds events. The framework documents such an append as having conflict
+  detection disabled entirely; on this engine it succeeds exactly once per aggregate and is refused for ever after, with
+  an exception that tells the caller to retry.
+| High
+| *Reproduced by test*, on PostgreSQL, with a per-backend verdict vector. Open.
+
 | *F-13* `AStalledHandlerKeepsItsClaims`
 | A node frozen inside its event handler does not lose its segments: extending a claim is the coordinator's work, on a
   separate thread that keeps running. The classic stalled-owner failure therefore needs the whole process to stall, not
@@ -988,3 +1003,140 @@ By inspection:
 grep -n 'extendClaimIfThresholdIsMet' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/Coordinator.java
 ----
 
+== F-14 -- An unconditional append is rejected as conflicting on the aggregate-based store
+
+*Severity:* High +
+*Status:* Open. *Reproduced by test.* +
+*Claims:* C2, C10 +
+*Backend vector:* `in-memory:PASS hsqldb-tokens:PASS postgres-jpa:FAIL postgres-jpa-split-tokens:FAIL`
+
+=== What is wrong
+
+`AppendCondition.none()` is the framework's way of appending without a consistency condition, and the documentation is
+explicit about what it means: conflict detection is disabled entirely, its marker is `INFINITY`, and the conflict check
+short-circuits. On the aggregate-based JPA event store it does not mean that. The engine derives each event's aggregate
+sequence number from the append condition's marker, and an `INFINITY` marker carries no position for any aggregate, so
+the sequencer starts that aggregate at sequence `0`. For an aggregate that already holds events, inserting sequence `0`
+again violates the unique constraint the engine relies on as its conflict check, and the failure is translated into
+`AppendEventsTransactionRejectedException` -- the framework's own "you conflicted, source again and retry" answer, for an
+append that asked for no consistency at all. The retry then fails identically, for ever.
+
+The same line treats `ORIGIN` and `INFINITY` as the same thing, so "append with no condition" and "append only if this
+aggregate is empty" are indistinguishable on this engine.
+
+=== Evidence
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/AggregateBasedConsistencyMarker.java:72-74` --
+  `else if (consistencyMarker == ORIGIN || consistencyMarker == INFINITY) { return new
+  AggregateBasedConsistencyMarker(Map.of()); }`, an empty map of aggregate positions for both sentinels
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngine.java:248-256`
+  -- the entry's sequence number comes from `sequencer.incrementAndGetSequenceOf(aggregateIdentifier)`, which for an
+  empty marker starts at `0`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/AggregateBasedEventStorageEngineUtils.java:104-124`
+  -- the duplicate-key violation is translated into `AppendEventsTransactionRejectedException`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/NoAppendCondition.java:42-44` -- the
+  documented `INFINITY` marker of `AppendCondition.none()`
+
+=== What the reproduction observed
+
+The ledger workload's `rebalance` command appends without sourcing, which is exactly how the framework produces an
+unconditional append. Run unchanged against both PostgreSQL arms, `AppendOutcomeChecker` raised 231 and 259
+`UnconditionalAppendNeverRejected` violations respectively, all of the form "an append anchored at the end of the stream
+was rejected as conflicting". The same scenario, the same workload and the same oracle raise nothing on either store that
+speaks the Dynamic Consistency Boundary protocol, which is what makes the vector an attribution rather than an argument.
+
+=== Why it matters
+
+An unconditional append is the documented way to write an event that takes part in nobody's consistency boundary, and
+users reach for it precisely where they do not want a conflict check. On this engine it works for the first event of an
+aggregate and never again, and the error it raises is the one that tells the caller the write is safe to retry after
+re-sourcing. A projection-driven or reference-data write path built on `AppendCondition.none()` therefore appears to
+work on an in-memory or Dynamic Consistency Boundary store and stops working on the JPA engine, with an exception that
+names a conflict that does not exist.
+
+=== Candidate fix
+
+An `INFINITY` marker must mean "append at the end", not "append at sequence zero". Resolve each tagged aggregate's
+current highest sequence number before assigning, for an unconditional append only, and let the append take the next
+sequence for each. `ORIGIN` must keep its current behaviour -- starting at zero is precisely what "the aggregate must be
+empty" means -- so the two sentinels have to stop sharing a branch. Alternatively, if an aggregate store genuinely cannot
+honour an unconditional append, the engine should reject it with an exception that says so rather than with a conflict
+its caller will retry.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dhunt.excludedGroups=fuzz -Dtest=BackendDifferentialTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The run prints one `VECTOR` line per scenario. The finding is the `postgres-jpa:FAIL` entries against `in-memory:PASS`.
+
+== F-15 -- Sourcing twice in one processing context throws on the aggregate-based store
+
+*Severity:* High +
+*Status:* Open. *Reproduced by test.* +
+*Claims:* C5, C6, C7 +
+*Backend vector:* `in-memory:PASS postgres-jpa:FAIL`
+
+=== What is wrong
+
+`DefaultEventStoreTransaction` combines consistency markers when a processing context sources more than once: the first
+sourcing's marker is kept as the append position, and every later one is folded in with `lowerBound`, because the lower of
+the two is the safe anchor. `AggregateBasedConsistencyMarker.doLowerBound` throws
+`UnsupportedOperationException("Not implemented yet")`, so on the aggregate-based JPA event store the second sourcing in a
+processing context fails outright.
+
+This is not an exotic path. A command handler that loads two entities, or one that loads the same entity twice, or a
+multi-entity handling component, sources twice by construction, and none of that is unusual or discouraged.
+
+=== Evidence
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/AggregateBasedConsistencyMarker.java:79-82` --
+  `public AggregateBasedConsistencyMarker doLowerBound(AggregateBasedConsistencyMarker other) { throw new
+  UnsupportedOperationException("Not implemented yet"); }`
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/DefaultEventStoreTransaction.java:144-153` --
+  `updateAppendPosition`, which calls `current.lowerBound(marker)` for every sourcing after the first
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/DefaultEventStoreTransaction.java:129` -- the
+  `onComplete` that calls it
+* the same class's `doUpperBound` at `:84-92` is implemented, so the missing half is not a design decision about
+  aggregate markers in general
+
+=== What the reproduction observed
+
+The existing integration-test suite, unchanged, run against PostgreSQL through the run-time backend selection. Of the 65
+cases in the suite, three failed with this exception and no other cause:
+
+* `MultiEntityCommandHandlingComponentSuiteIT.canCombineModelsInAnnotatedCommandHandlerViaStateManagerParameter`
+* `MultiEntityCommandHandlingComponentSuiteIT.canCombineStatesInLambdaCommandHandlerViaStateManagerParameter`
+* `CommandSequencingSuiteIT.concurrentEnrollmentsToSameCourseDoNotCauseOptimisticLockingFailures`, which reports it as
+  `Expected no exceptions during concurrent enrollments, but got: java.lang.UnsupportedOperationException`
+
+All three combine two entities in one command, which is what makes them source twice, and all three pass on the in-memory
+store, whose marker implements `lowerBound`. The two multi-entity cases are the plainest statement of the blast radius:
+combining two models in one handler is a documented, first-class thing to do, and it cannot be done on this store.
+
+=== Why it matters
+
+The exception names neither markers nor sourcing to the person who hits it, and it arrives from inside a command that did
+nothing unusual. An application built and tested against the in-memory store will hit it the first time it runs against
+the JPA engine, on any handler that sources twice -- which is most non-trivial ones.
+
+=== Candidate fix
+
+Implement it as the mirror of `doUpperBound`: take the lower sequence number per aggregate identifier, and the union of
+the identifiers, so that an aggregate known to only one of the two markers keeps its position. If there is a reason the
+lower bound of two aggregate markers is genuinely undefined, the throw should say that instead of "Not implemented yet",
+and `DefaultEventStoreTransaction` should not reach it.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
+    -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.backend=postgres-jpa
+----
+
+The same command without `-Dhunt.backend` runs the identical classes against the in-memory store and is green, which is
+the vector.

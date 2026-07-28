@@ -63,8 +63,30 @@ public final class AxonModelCodec {
      */
     public static ModelAppendCondition toModelCondition(AppendCondition condition) {
         Objects.requireNonNull(condition, "The condition cannot be null.");
-        return new ModelAppendCondition(GlobalIndexConsistencyMarker.position(condition.consistencyMarker()),
-                                        toModelCriteria(condition.criteria().flatten()));
+        return new ModelAppendCondition(markerPosition(condition), toModelCriteria(condition.criteria().flatten()));
+    }
+
+    /**
+     * Returns the marker's position as a global index, or the unknown sentinel for a marker that is not one.
+     * <p>
+     * <b>Not every store's marker is a position in one stream, and asking for one used to throw.</b> The aggregate-based
+     * engine's marker is a map from aggregate identifier to sequence number, and the framework's global-index accessor
+     * rejects it outright -- so recording an append against that store failed inside the recorder, the command that made
+     * it reported an {@code IllegalArgumentException}, and a whole backend arm reported the harness's own limitation as
+     * hundreds of framework failures. Measured, before this: 628 of 1000 commands on the PostgreSQL arm.
+     * <p>
+     * Recording the sentinel instead keeps the history readable and costs nothing, because the reference model that
+     * consumes this field only judges a store whose protocol it describes and names itself inexpressible on any other.
+     *
+     * @param condition the condition to read
+     * @return the marker's global index, or {@link ModelAppendCondition#UNKNOWN_MARKER} when the marker is not one
+     */
+    private static long markerPosition(AppendCondition condition) {
+        try {
+            return GlobalIndexConsistencyMarker.position(condition.consistencyMarker());
+        } catch (RuntimeException e) {
+            return ModelAppendCondition.UNKNOWN_MARKER;
+        }
     }
 
     /**

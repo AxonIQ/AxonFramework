@@ -17,8 +17,6 @@
 package org.axonframework.integrationtests.testsuite.student;
 
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.infrastructure.InMemoryTestInfrastructure;
-import org.axonframework.integrationtests.testsuite.infrastructure.TestInfrastructure;
 import org.axonframework.integrationtests.testsuite.student.events.StudentEnrolledEvent;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
@@ -56,17 +54,12 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
  *
  * @author Mateusz Nowak
  */
-class InjectedCommandDispatcherBatchCausationInMemoryIT extends AbstractStudentIT {
+class InjectedCommandDispatcherBatchCausationSuiteIT extends AbstractStudentIT {
 
-    private static final TestInfrastructure INFRASTRUCTURE = new InMemoryTestInfrastructure();
     private static final String PROCESSOR_NAME = "when-student-enrolled-then-notify";
 
     private final List<DispatchedCommand> dispatchedCommands = new CopyOnWriteArrayList<>();
 
-    @Override
-    protected TestInfrastructure testInfrastructure() {
-        return INFRASTRUCTURE;
-    }
 
     @Test
     void bothEventsInOneBatchDispatchCommandsCarryingTheirOwnCausationId() {

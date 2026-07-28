@@ -141,11 +141,16 @@ public class OwnershipChecker implements Checker {
             return CheckResult.holding(name());
         }
         if (!Boolean.parseBoolean(arbitrates)) {
-            return new CheckResult(name(), List.of(),
-                                   List.of("The run's token store implements no ownership, so " + nodes.size()
-                                                   + " nodes each hold every segment they ask for and "
-                                                   + AT_MOST_ONE_SEGMENT_OWNER
-                                                   + " cannot be verified against it."));
+            // Not undecidedness: this store has no owner to arbitrate, so the invariant has nothing to be true or
+            // false about here. Reporting it as a note would say the run tried and could not tell; reporting nothing
+            // would say it passed. Naming it is the only reading that is neither.
+            return CheckResult.notApplicable(name(),
+                                             List.of(AT_MOST_ONE_SEGMENT_OWNER + " and "
+                                                             + DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER
+                                                             + " are not expressible on this run: its token store "
+                                                             + "implements no ownership, so each of the "
+                                                             + nodes.size()
+                                                             + " nodes holds every segment it asks for."));
         }
         Long claimTimeoutNanos = millisField(shape, CLAIM_TIMEOUT_MS);
         Long skewNanos = millisField(shape, SKEW_ALLOWANCE_MS);
@@ -188,8 +193,10 @@ public class OwnershipChecker implements Checker {
             }
         });
         List<String> notes = new ArrayList<>();
-        checkAttribution(history, perSegment, claimTimeoutNanos, skewNanos, violations, notes);
-        return new CheckResult(name(), List.copyOf(violations), List.copyOf(notes));
+        List<String> notApplicable = new ArrayList<>();
+        checkAttribution(history, perSegment, claimTimeoutNanos, skewNanos, violations, notes, notApplicable);
+        return new CheckResult(name(), List.copyOf(violations), List.copyOf(notes), List.of(),
+                               List.copyOf(notApplicable));
     }
 
     /**
@@ -211,16 +218,21 @@ public class OwnershipChecker implements Checker {
                                          long claimTimeoutNanos,
                                          long skewNanos,
                                          List<Violation> violations,
-                                         List<String> notes) {
+                                         List<String> notes,
+                                         List<String> notApplicable) {
         if (!segmentSetRebuilds(history).isEmpty()) {
             // A split deletes one token row and creates two; a merge deletes one of a pair and rewrites the other. The
             // segment a delivery names therefore does not identify the same unit of work before and after, and no
             // ownership interval derived from claim traffic can follow it across the change. Reporting that is the only
             // honest answer; guessing which side of a rebuild a delivery belongs to would make the verdict a property of
             // the guess.
-            notes.add("The run rebuilt its segment set, so " + DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER
-                              + " cannot be judged: a segment identifier does not name the same unit of work either "
-                              + "side of a split or a merge.");
+            //
+            // It is a scoping statement rather than undecidedness, and the difference is what makes a membership arm
+            // usable at all: this run can never express the invariant, so a note would leave every such arm permanently
+            // undecided and unable to signal a regression, while silence would let the gap read as coverage.
+            notApplicable.add(DELIVERY_ATTRIBUTED_TO_SEGMENT_OWNER + " is not expressible on this run: it rebuilt its "
+                                      + "segment set, and a segment identifier does not name the same unit of work "
+                                      + "either side of a split or a merge.");
             return;
         }
         int outside = 0;

@@ -94,7 +94,8 @@ public final class RecordingTokenStore implements TokenStore {
                                                        int segmentId,
                                                        @Nullable ProcessingContext context) {
         HistoryRecorder.Invocation invocation = claimInvocation(processorName, segmentId);
-        return record(delegate.fetchToken(processorName, segmentId, context), invocation, token -> Map.of());
+        return record(delegate.fetchToken(processorName, segmentId, context), invocation,
+                      RecordingTokenStore::resumedAt);
     }
 
     @Override
@@ -102,7 +103,35 @@ public final class RecordingTokenStore implements TokenStore {
                                                        Segment segment,
                                                        @Nullable ProcessingContext context) {
         HistoryRecorder.Invocation invocation = claimInvocation(processorName, segment.getSegmentId());
-        return record(delegate.fetchToken(processorName, segment, context), invocation, token -> Map.of());
+        return record(delegate.fetchToken(processorName, segment, context), invocation,
+                      RecordingTokenStore::resumedAt);
+    }
+
+    /**
+     * Returns the position a granted claim tells the node to resume from, as the store's own answer rather than the
+     * harness's opinion.
+     * <p>
+     * This is the number a redelivery licence is derived from, and it is the reason the completion of a claim carries
+     * anything at all. A node taking a segment over resumes from exactly the token the store hands it, so every event
+     * that segment had already delivered above that position may legitimately arrive again -- after a claim was
+     * stolen, after a crashed node came back, after a merge gave the surviving segment the lower of two tokens, and
+     * after a reset rewound every segment to the beginning. All four are the same fact, and all four are visible here.
+     * A licence derived from elapsed time instead would forgive any repeat at all during a window; one derived from
+     * this position forgives exactly the repeats the rewind explains.
+     *
+     * @param token the token the store granted, or {@code null} when the segment has no progress yet
+     * @return the resume position, whether the framework calls the token a replay, and the position a replay rewound
+     *     from
+     */
+    private static Map<String, Object> resumedAt(@Nullable TrackingToken token) {
+        Map<String, Object> granted = new LinkedHashMap<>();
+        granted.put(HistoryOps.POSITION, positionOf(token));
+        boolean replay = token != null && ReplayToken.isReplay(token);
+        granted.put(HistoryOps.REPLAY, replay);
+        if (replay) {
+            granted.put(HistoryOps.TOKEN_AT_RESET, ReplayToken.getTokenAtReset(token).orElse(-1L));
+        }
+        return Map.copyOf(granted);
     }
 
     @Override

@@ -163,10 +163,13 @@ class OwnershipCheckerTest {
             // when the ownership oracle judges it
             CheckResult result = new OwnershipChecker().check(history.view());
 
-            // then it reports that it cannot verify anything rather than passing or failing
+            // then it names the invariant as one this run cannot express, rather than passing, failing, or reporting
+            // undecidedness: the store has no owner, so there is nothing here for the invariant to be true or false
+            // about, and a run against it must still be able to reach a verdict on everything else
             assertThat(result.violations()).isEmpty();
-            assertThat(result.notes()).hasSize(1);
-            assertThat(result.notes().getFirst()).contains("implements no ownership");
+            assertThat(result.notes()).isEmpty();
+            assertThat(result.notApplicable()).hasSize(1);
+            assertThat(result.notApplicable().getFirst()).contains("implements no ownership");
         }
 
         @Test
