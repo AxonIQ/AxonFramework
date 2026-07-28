@@ -2392,3 +2392,93 @@ no reason to doubt it.
 
 The same shape applies to any invariant whose statement is widened or narrowed: the registry entry
 is the definition, but the numbers quoted elsewhere are what people actually read.
+
+---
+
+## 6. Hunting a newly merged feature, rather than a subsystem
+
+Three features merged for 5.3.0 were hunted as a unit: event handler checkpointing (the
+`progress` package plus the `WorkPackage`/`Coordinator` rewrite), the broadcast sequence
+identifier, and optional pooled source and token store. Findings F-21, F-22 and F-23 came out of
+it. What the pass taught, in the order it cost time:
+
+**A new seam is worth more than a new code path.** The checkpointing change is about 1986 lines and
+almost all of them are behaviour the existing oracles already cover -- which is why the gate stayed
+green on it (210 tests, `EXIT=0`, no new violation). The defect was not in the new code path; it was
+in the *contract the new seam publishes*. `SegmentProgressStrategy` invites an out-of-module
+implementation and promises to defend against a misbehaving one, and that promise is what turned out
+to be false. When a feature adds an extension point, read what it undertakes to do for its
+implementers before reading what it does for itself.
+
+**Read the guard against the field it compares, not against its own Javadoc.** F-21 is one missing
+initialiser. `WorkPackage.lastStoredToken` is declared at `:107` with no initialiser and assigned
+only at `:530` after a successful store, while the constructor seeds its two siblings
+(`lastDeliveredToken`, `lastConsumedToken`) from the claimed token. The guard at `:514` is
+`lastStoredToken != null && !covers(...)`, so it is off exactly once per claim. Nothing in the
+Javadoc hints at it, and `TrackingTokenUtilsTest` tests the comparison helper in isolation, where it
+is correct. The reading that finds this class of defect is: for every `x != null &&` guard, ask when
+`x` is null and whether that window is reachable.
+
+**A one-line cosmetic commit can widen a collision surface.** F-22's sentinel used to be
+`"BROADCAST_SEQUENCE_IDENTIFIER"`. Commit `9ab376f451` shortened the *value* to `"BROADCAST"` so
+"the name and value agree". The name change is harmless; the value change made a reserved word into
+a plausible tenant, topic or entity identifier. `git log -S` on a constant's value, and reading the
+commit that last touched it, is a cheap pass and it is what turned a theoretical collision into a
+dated one.
+
+**Checking `FINDINGS.adoc` first saved a duplicate.** The pass rediscovered the swapped
+`gapTimeout`/`maxGapOffset` `@DefaultValue`s independently and convincingly. They are F-1, already
+filed. The rule is worth the thirty seconds every time: a new-looking configuration defect in this
+tree is usually one of the two already recorded.
+
+**Not every finding wants a scenario, and saying so is not a shortfall.** Both new confirmed defects
+are deterministic properties of framework code: an initialisation order, and a string comparison.
+They are pinned by two focused probes that use no part of the hunt harness -- no recorder, no fault
+schedule, no seed, no backend selection -- and they print the numbers they measured:
+
+----
+DURABLE PROGRESS before=500 after=0 persists=1
+DURABLE PROGRESS settled=400 after 3 descending candidates from 400 downwards, against a store holding 500
+BROADCAST COLLISION segments=4 handled[orders]=1 handled[BROADCAST]=4
+BROADCAST COLLISION deliberate=4 accidental=4
+----
+
+Building a seeded scenario for either would have added a weaker, slower and flakier demonstration of
+something already decided by measurement. The second `DURABLE PROGRESS` line is the one that made
+the finding precise rather than merely true: a *descending* series of candidates measures how many
+of them the guard judged, and the answer -- exactly one gets through -- is the finding's actual
+shape. An arm that only offered one bad token would have proved a rewind without bounding it.
+
+**What the harness could not express, and what it would cost.** A scenario cannot declare a progress
+strategy: `Scenario` has no field for one and `HuntWorld.configuration(...)` builds the processor
+configuration privately, so a new *processor-configuration dimension* is not addable as scenario
+data. That is outside the extensibility charter as written (it promises invariants, faults,
+workloads, backends and scenarios cost no surgery, and a configuration knob is none of those), so it
+is not a charter violation -- but it is the first thing a future progress-strategy arm will need. The
+cost is small and worth paying when something needs it: one nullable field plus one builder method on
+`Scenario`, and one line in `HuntWorld.configuration(...)` applying
+`progressStrategyFactoryBuilder(...)`. Worth doing together with the arm that justifies it, not
+speculatively.
+
+**A pipe still lies about the exit code, and it caught me.** `./mvnw -q ... 2>&1 | tail -30; echo "EXIT=$?"` printed
+`EXIT=0` under a compilation failure whose `[ERROR]` lines were right above it. `running.md` warns
+about exactly this and it was still the first thing that went wrong. Redirect to a file, echo the
+status, then grep the file.
+
+**The no-framework-change gate was itself broken, and it failed loudly in the right direction.**
+`running.md`, `recipes.md` and `extending.md` all specified
+`git diff --stat main -- messaging eventsourcing ...` and required it to print nothing. On this
+worktree it printed **172 files and 13537 insertions**. None of it was local: the local `main` ref
+sits at `7011c44a0b`, this branch merged `origin/main` at `4383cccfc8`, and the 72 commits that came
+with the merge include a large unrelated tracing feature. The gate was comparing against a branch
+ref, not against a merge base, so every upstream commit merged in since the ref was last moved reads
+as a framework change made by the hunt.
+
+Two things worth keeping from it. First, the gate is now
+`git status --porcelain -- <framework paths>` plus `git diff --stat HEAD -- <framework paths>`, and
+after the commit `git show --stat --format= HEAD -- <framework paths>`. Those ask the question the
+gate actually means -- has *this work* changed framework code -- and they are correct wherever the
+`main` ref happens to be. All three copies were corrected. Second, the failure mode is the
+instructive one: a gate that goes red for the wrong reason trains the next person to wave it
+through, and this one goes red on every worktree whose upstream has moved. A gate nobody can pass
+honestly is the same problem as a gate nobody can fail.

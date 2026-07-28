@@ -192,6 +192,6 @@ All six, or the extension is not finished:
 5. A green-but-broken audit with its short rows written down.
 6. The residual list updated, with owners, and `HUNT-NOTES.md` appended.
 
-And the gates: `git diff --stat main -- messaging eventsourcing modelling common conversion
+And the gates: `git status --porcelain -- messaging eventsourcing modelling common conversion
 extensions test integrationtests` prints nothing, the module is green with its test count taken
 after removing the whole `target` directory, and the ASCII check prints nothing.

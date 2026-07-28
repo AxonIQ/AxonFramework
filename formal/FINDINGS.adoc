@@ -1857,3 +1857,288 @@ removes the only evidence a caller could have used.
 
 Then count the classifications in the history the run wrote under
 `simulation/target/hunt-histories/axonserver-partition/`, with the reader in `formal/HUNT-NOTES.md` section 3.
+
+== F-21 -- The anti-rewind guard on durable progress is inactive for the first store of every claim
+
+*Severity:* High +
+*Status:* Open. Confirmed by measurement; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/DurableProgressMonotonicityTest.java`. +
+*Claims:* C38 (**REFUTED** -- the claim is documented and is false as stated), M19 +
+*Backend verdict vector:* `in-memory:AFFECTED`. Mechanism-attributed rather than store-attributed:
+the guard is an in-heap field comparison in `WorkPackage` that runs *before* any store is called, so
+no store can express it differently and no store can prevent it. The vector claims one arm and says
+why the rest are not informative.
+
+=== What is wrong
+
+The progress-persistence seam added in 5.3.0 lets a processor supply its own
+`SegmentProgressStrategy`, which decides which `TrackingToken` is safe and hands it to
+`SegmentProgressContext.persistProgress(...)`. The framework undertakes to filter what it is handed:
+
+* `SegmentProgressContext.java:76-78` -- "keeping the stored `TrackingToken` monotonic. A `null`,
+  already-stored, or non-advancing token is ignored"
+* `WorkPackage.java:507-508` -- "is ignored with a warning rather than persisted, so a misbehaving
+  component can never rewind progress on any source."
+
+The guard that enforces it is
+
+[source,java]
+----
+if (lastStoredToken != null && !TrackingTokenUtils.coversWhenUnwrapped(safe, lastStoredToken)) {
+----
+
+`lastStoredToken` is declared without an initialiser and is assigned only after a store succeeds.
+The constructor seeds `lastDeliveredToken` and `lastConsumedToken` from the claimed token and leaves
+`lastStoredToken` null. A `WorkPackage` is built fresh on every claim of a segment. So on the first
+`persistProgress` of every claim cycle the guard is skipped entirely, and any candidate at all is
+written -- including one behind the position the store was already holding.
+
+=== Evidence
+
+Code:
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/WorkPackage.java:107` -- `private @Nullable TrackingToken lastStoredToken;` (no initialiser)
+* `.../pooled/WorkPackage.java:128-147` -- the constructor sets `lastDeliveredToken` (`:136`) and `lastConsumedToken` (`:141`) from `builder.initialToken`; `lastStoredToken` is not set
+* `.../pooled/WorkPackage.java:514` -- the guard, conditional on `lastStoredToken != null`
+* `.../pooled/WorkPackage.java:530` -- `lastStoredToken = token;`, the only assignment, after a successful store
+* `.../pooled/PooledStreamingEventProcessor.java:428-450` -- `spawnWorker` builds a new `WorkPackage` per claim, passing `initialToken` but nothing for `lastStoredToken`
+
+Measured, on the in-heap token store, single node, no faults, no containers:
+
+----
+DURABLE PROGRESS before=500 after=0 persists=1 (TrackingToken.FIRST reports position 0)
+DURABLE PROGRESS settled=400 after 3 descending candidates from 400 downwards, against a store holding 500
+----
+
+The first line: a segment whose durable position was 500 had it rewound to the start of the stream by
+the *first* persist of a fresh claim. The processor stayed running, reported no error state, and
+raised nothing. The second line: with a strictly descending series of candidates, only the first
+(400) was written and every later one was refused -- which measures the window exactly. **One
+unguarded write per claim cycle, per segment.**
+
+The candidate offered in the first case is not an arbitrary bad token. It is what the framework's own
+`TrackingTokenUtils.lowerBound(...)` -- added by the same feature -- returns for a set of
+participants that have not reported a position yet, which is the
+"reconciling several participants to a single safe position" use `SegmentProgressStrategy.java:33-35`
+documents the seam for. `TrackingTokenUtils.java:49` -- `.orElse(TrackingToken.FIRST)`.
+
+=== Why it matters
+
+The stored token is where a segment resumes. Rewinding it to the start of the stream means the whole
+segment is redelivered on the next claim: at-least-once handlers see every event again, a
+non-idempotent projection double-counts everything, and the read side spends the replay time
+unavailable. The rewind is durable, silent, and leaves the processor healthy -- the only trace is a
+`logger.warn` that in this case is not even reached, because the guard did not fire.
+
+Reachability: `progressStrategyFactoryBuilder(...)` is a **public** setter on
+`PooledStreamingEventProcessorConfiguration` (`:511`), so any application or downstream module can
+install a strategy. The shipped `TokenStoringProgressStrategy` cannot trip the hole, because it only
+ever offers `lastConsumedToken`, which starts at the claimed token and only advances -- so no
+default-configured application is affected today. What is broken is the guarantee the framework
+publishes to the strategies it invites, and that guarantee is what a strategy author will rely on
+instead of re-implementing the check.
+
+=== How it was found
+
+By claims-mining the new `progress` package and then reading the guard against the field it compares.
+The corpus already carried the promise as C38, anchored and marked `documented`, which is what made
+the reading a refutation rather than an observation. No test in the repository exercises
+`persistProgress` with a non-advancing candidate on a freshly claimed segment;
+`TrackingTokenUtilsTest` tests the comparison helper in isolation, where it behaves correctly.
+
+=== Candidate fix
+
+One line, in the `WorkPackage` constructor:
+
+[source,java]
+----
+this.lastStoredToken = builder.initialToken;
+----
+
+The claimed token is by definition what the store last accepted for that segment, so it is exactly
+the right reference. It is also safe for the replay case the guard was carefully written for: the
+comparison is on unwrapped upper-bound positions (`TrackingTokenUtils.coversWhenUnwrapped`), so a
+concluding replay still reads as an advance.
+
+Worth more than the fix: the guard's reference should not be a field the class happens to fill in
+later. Deriving it from the claim would make the invariant hold by construction rather than by
+initialisation order.
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation -o test -Dtest=DurableProgressMonotonicityTest \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Both cases pass while the gap is open and turn red when the constructor seeds the field. Neither
+needs Docker, a fault schedule or a seed: the defect is a deterministic property of initialisation
+order.
+
+== F-22 -- The broadcast sentinel is a plain string that user data can equal
+
+*Severity:* Medium-High +
+*Status:* Open. Confirmed by measurement; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/BroadcastSentinelCollisionTest.java`. +
+*Claims:* C41, C42, M20 +
+*Backend verdict vector:* `in-memory:AFFECTED`. Store-independent by construction: the decision is
+two string comparisons on the read side, above every storage engine.
+
+=== What is wrong
+
+The broadcast feature added a well-known sentinel sequence identifier:
+
+* `messaging/src/main/java/org/axonframework/messaging/core/sequencing/SequencingPolicy.java:71` -- `Object BROADCAST = "BROADCAST";`
+
+It is acted on by value, in two places:
+
+* `.../pooled/DefaultWorkPackageEventFilter.java:111` -- `if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST)) {`
+* `.../processing/ProcessorEventHandlingComponents.java:194` -- `if (SequencingPolicy.BROADCAST.equals(sequenceIdentifier)) {`
+
+Every value-extracting policy the framework ships returns a `String` taken from the event or its
+metadata: `MetadataSequencingPolicy` returns a metadata value, `PropertySequencingPolicy` and
+`ExtractionSequencingPolicy` return an extracted field, and `SequentialPerAggregatePolicy` returns a
+bare entity identifier. Any of them can return the exact string `BROADCAST` without anybody asking
+for a broadcast, and the framework then delivers that event once per segment instead of once.
+
+The collision surface was widened on purpose, for cosmetic reasons. Commit `9ab376f451`
+("Use the short constant name BROADCAST with a matching \"BROADCAST\" value, so the name and value
+agree") changed the value from `"BROADCAST_SEQUENCE_IDENTIFIER"` -- which no payload plausibly
+carries -- to `"BROADCAST"`, which a tenant, topic, channel or entity identifier plausibly does.
+
+Note the contrast with the framework's own convention for the analogous sentinel one file away:
+`SequentialPolicy.java:46` keeps the long screaming value `"FULL_SEQUENTIAL_POLICY"` and marks it
+`@Internal`. `BROADCAST` is public API with neither guard.
+
+=== Evidence
+
+Measured, four segments, no store, no timing, fully deterministic:
+
+----
+BROADCAST COLLISION segments=4 handled[orders]=1 handled[BROADCAST]=4
+BROADCAST COLLISION deliberate=4 accidental=4
+----
+
+The first line: driving the same component over all four segments, an ordinary sequence key was
+handled once in total and a key whose *data value* is `BROADCAST` was handled four times -- once per
+segment. The second line: a component deliberately returning `SequencingPolicy.BROADCAST` and a
+component merely carrying that value as data are treated identically, so nothing downstream can
+distinguish intent from data.
+
+=== Why it matters
+
+The amplification factor is the live segment count, which defaults to 16
+(`docs/reference-guide/modules/events/pages/event-processors/streaming.adoc:563`). A non-idempotent
+projection therefore applies one such event sixteen times. Because the factor is the *live* segment
+count, it also changes silently on every split and merge, so the same event is amplified differently
+at different times in one deployment's life.
+
+It is silent in both directions: nothing warns the author of a policy that one of its values is
+reserved, and nothing tells an operator that an event was broadcast rather than routed.
+
+=== Also wrong, and cheaper to fix: the class contract now contradicts itself
+
+`ProcessorEventHandlingComponents.java:116` still states, in the Javadoc of the public `handle`
+method, "ensuring each event is handled exactly once per component across all segments". With a
+broadcast identifier that component is invoked once per segment. The feature updated the private
+`canHandleInSegment` Javadoc (`:176-178`) and left the public contract asserting the opposite, so a
+reader of the class-level contract will correctly conclude that broadcast is a bug.
+
+=== How it was found
+
+By mining the feature's claims and asking what the sentinel is made of. The commit history is what
+turned it from a theoretical collision into a live one: the value used to be collision-implausible
+and was shortened deliberately.
+
+=== Candidate fix
+
+Make the sentinel not a value user data can equal. Cheapest form that keeps the current shape:
+
+[source,java]
+----
+Object BROADCAST = new Object() {
+    @Override public String toString() { return "BROADCAST"; }
+};
+----
+
+compared by identity. That keeps `hashCode`/`equals` stability irrelevant, because the sentinel is
+never hashed into a segment -- both call sites short-circuit before `SegmentMatcher` sees it. If the
+`String` form must be kept for cross-JVM stability of a *serialised* policy result, namespace it
+(`"org.axonframework.BROADCAST"`) and say in the Javadoc that a policy must not return it as data.
+Better still, make it a type -- a `BroadcastSequenceIdentifier` singleton -- so a policy returning
+data can never name it by accident.
+
+Separately, correct `ProcessorEventHandlingComponents.java:116` to state the per-segment case.
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation -o test -Dtest=BroadcastSentinelCollisionTest \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+== F-23 -- The Spring Boot token-store default makes the new optional-token-store path unreachable
+
+*Severity:* Medium +
+*Status:* Open. Confirmed by reading; no test exists yet. +
+*Claims:* C43, M21 +
+*Backend verdict vector:* `postgres-jpa:AFFECTED (Spring Boot path only)`, `in-memory:N/A`,
+`axonserver:N/A`. Same shape and same configuration path as F-1.
+
+=== What is wrong
+
+Commit `bc68fc2da7` ("Make pooled processor source and token-store optional when unset") made the
+Spring customization treat a null-or-empty `source` and `tokenStore` setting as unset, resolving the
+component by type instead and requiring it only when a *name* was given:
+
+* `extensions/spring/spring/src/main/java/org/axonframework/extension/spring/config/SpringCustomizations.java:171` -- `String tokenStoreName = StringUtils.nonEmptyOrNull(settings.tokenStore()) ? settings.tokenStore() : null;`
+* `.../SpringCustomizations.java:173-175` -- `require(tokenStore != null, "Could not find a mandatory TokenStore with name '" + settings.tokenStore() + "' ...")`
+
+The settings object Spring Boot actually supplies defaults that field to a non-empty literal:
+
+* `extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/EventProcessorProperties.java:156` -- `private String tokenStore = "tokenStore";`
+
+So `nonEmptyOrNull` is always true, `tokenStoreName` is never null, and the "unset" branch is never
+taken through Spring Boot properties. The feature's own headline behaviour is dead on the path most
+applications use.
+
+The asymmetry is the tell: `source` defaults to `null` on the same properties class
+(`EventProcessorProperties.java:114`), so the optional path *is* reachable for the source and never
+for the token store, from one commit that presents both as one uniform rule.
+
+=== Why it matters
+
+An application with no bean named exactly `tokenStore` now fails at startup with
+"Could not find a mandatory TokenStore with name 'tokenStore'", where the core configurer would have
+substituted an `InMemoryTokenStore`
+(`.../pooled/PooledStreamingEventProcessorsConfigurer.java:93` -- `registerIfNotPresent(TokenStore.class, cfg -> new InMemoryTokenStore())`).
+The JPA and JDBC autoconfigurations happen to name theirs `tokenStore`, which is why this is not
+visible in the common cases and why it will be found by whoever first wires a custom one.
+
+The corroboration is in the feature's own tests: the new unit tests drive
+`customizePooled(configuration, null, null)` and `("", "")` through a hand-rolled test settings
+record rather than through `ProcessorSettings`, and the new integration test contexts each declare a
+bean named exactly `tokenStore` to make the context boot at all. The gap between the settings object
+under test and the settings object shipped is exactly where the defect lives.
+
+=== Candidate fix
+
+Default `EventProcessorProperties.ProcessorSettings.tokenStore` to `null`, matching `source`. Then
+both halves of "optional when unset" mean what the commit says. `setTokenStore` currently forbids
+null (`EventProcessorProperties.java:334`), which should become "forbids null only when explicitly
+set" or simply allow it.
+
+The durable guard is the same one F-1 asks for: a test that builds a processor through both
+configuration paths and asserts every effective setting is pairwise equal or on an explicit
+allow-list of deliberate differences. Two findings in this file are now instances of that one class.
+
+=== Reproduce
+
+No automated reproduction yet. By inspection:
+
+----
+grep -n 'private String tokenStore' \\
+  extensions/spring/spring-boot-autoconfigure/src/main/java/org/axonframework/extension/springboot/EventProcessorProperties.java
+sed -n '171,180p' \\
+  extensions/spring/spring/src/main/java/org/axonframework/extension/spring/config/SpringCustomizations.java
+----

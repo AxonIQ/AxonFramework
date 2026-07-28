@@ -263,8 +263,9 @@ The mutation campaign is what makes the oracles trustworthy rather than decorati
 neither negotiable:
 
 1. **A canary diff is never committed.** Applied, measured, reverted. The gate is
-   `git diff --stat main -- messaging eventsourcing modelling common conversion extensions test integrationtests`,
-   which must print nothing.
+   `git status --porcelain -- messaging eventsourcing modelling common conversion extensions test integrationtests`,
+   which must print nothing. Not `git diff main --`: the local `main` ref is not the merge base once
+   upstream has moved, and that form reports the whole merged-in delta as if it were yours.
 2. **A mutation that escapes is a real gap in the suite**, not a curiosity. It is written up
    plainly and either closed in the same piece of work or filed as follow-up with the oracle it
    needs.

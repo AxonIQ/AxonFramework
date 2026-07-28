@@ -702,3 +702,49 @@ Recorded because both were silent, both looked like framework findings, and both
 | Anything at a tier above smoke | Unchanged. Every campaign so far is smoke with a fixed seed set. | the phase that runs the fuzz tier |
 | The reference-model oracle on any store the suite does not implement in Java | Structural, established by C8: the oracle records an append's condition through the same accessor the store's client builds its wire condition from, so no framework mutation of the condition's derivation can be caught by it. Catching one would need a mutation of the store's own decision, which for Axon Server is a container. | needs a mutable store, or an injected wire-level fault |
 | Anything on the Axon Server arm that a *decided* verdict would catch | C8 pushed the arm into undecidedness instead of failure, so no oracle on it has yet been shown to go red on a planted defect. The arm's oracles have been shown to go red on a **real** defect (F-19, F-20), which is worth more, but it is not the same thing as a planted one. | the phase that adds the empty-scan guard |
+
+---
+
+## Validating the two 5.3.0 feature probes without a mutation
+
+Findings F-21 and F-22 are pinned by probes that assert the *broken* behaviour, so the usual
+question -- can this oracle fail? -- has to be answered before either is worth anything. Neither was
+answered with a mutation campaign, and the reason is worth recording.
+
+**F-21, validated by an in-test control rather than a planted bug.** The candidate fix is one line in
+`WorkPackage`'s constructor (`this.lastStoredToken = builder.initialToken;`), which is exactly the
+kind of thing a canary would apply, measure and revert. Instead the fixed state is reached from
+*outside* the engine: a strategy whose first `persistProgress` offers an advancing token sets the
+same field the constructor would have seeded, and every cycle after it is the fixed engine's
+behaviour. The measurement, from one run of one class:
+
+----
+DURABLE PROGRESS before=500 after=0 persists=1                    <- field unset: rewind lands
+DURABLE PROGRESS guarded=600 after 3 cycles, all but the first offering TrackingToken.FIRST
+                                                                   <- field set: same candidate refused
+----
+
+Same strategy shape, same rewinding candidate, opposite outcomes, differing only in whether the
+compared field had been written. That isolates the mechanism to the unset field and nothing else, and
+it demonstrates the candidate fix closes the gap.
+
+Two reasons this is better than the mutation it replaces, and one reason it is worse. Better: it is
+**permanent and committed**, where a canary's evidence survives only as a row in this file; and it is
+green on a clean engine *and* green on a fixed one, so it is the one case in the class that never has
+to be revisited. Worse: it validates the guard's logic rather than the constructor, so a fix that
+seeded the field with the wrong value would satisfy it. The two cases that assert the gap are what
+cover that, and they turn red on any correct fix.
+
+**F-22 carries its own control.** The collision probe measures an ordinary sequence key alongside the
+colliding one in the same run -- `handled[orders]=1 handled[BROADCAST]=4` -- so the amplification is
+measured against a negative case from the same components, the same segments and the same code path.
+A probe that only measured the colliding key could not tell a broadcast from a processor that
+delivers everything everywhere.
+
+**Not canaried, and owned.**
+
+| Not covered | Why, and who picks it up |
+|---|---|
+| The engine-side mutation for F-21 | The one-line fix was not applied and measured: the constitution forbids patching the engine outside a canary loop, and this environment's tool policy blocked the framework edit outright. The in-test control above answers the same question; a future canary phase that has the permission should still run it, because it is the only form that exercises the constructor itself. |
+| Every strategy seam except `onBatchCommit` | `contributeBatchResources`, `onSegmentClaimed`, `onSegmentReleased`, `onAbort` and `hasPendingWork` are invoked by no probe and by no scenario. Several carry reported-but-unconfirmed defects (a swallowed final-progress failure on the release path, a synchronous throw from `hasPendingWork` that never reaches the completion handler, a claim that is never extended on the pending-work branch). Owned by the phase that adds a progress-strategy dimension to `Scenario`. |
+| The broadcast path through a real segmented processor | The collision probe drives `ProcessorEventHandlingComponents` directly, which is where the decision is made, but not `DefaultWorkPackageEventFilter` -- package-private, so unreachable from the simulation module. The filter's own short-circuit is therefore established by reading only. |

@@ -418,8 +418,19 @@ its settle budget. Budget for it; nothing is wedged.
 ## The gates that must hold before anything is committed
 
 ```bash
-# No framework code was touched. Must print nothing.
-git diff --stat main -- messaging eventsourcing modelling common conversion extensions test integrationtests
+# No framework code was touched. Both must print nothing.
+#
+# Do NOT diff against `main`. The local `main` ref is not the merge base: this branch merges
+# `origin/main` periodically, so once upstream has moved, `git diff main -- messaging ...` reports
+# every framework commit the merge brought in and reads as a catastrophic gate failure. Measured:
+# 172 files and 13537 insertions of an unrelated upstream tracing feature, none of it local.
+# Ask the question the gate actually means -- has *this work* changed framework code -- which is a
+# question about the working tree and the commit, not about a branch ref.
+git status --porcelain -- messaging eventsourcing modelling common conversion extensions test integrationtests
+git diff --stat HEAD -- messaging eventsourcing modelling common conversion extensions test integrationtests
+
+# After committing, the same question about the commit itself. Must print nothing.
+git show --stat --format= HEAD -- messaging eventsourcing modelling common conversion extensions test integrationtests
 
 # ASCII only, across everything the suite adds. Must print nothing.
 LC_ALL=C grep -rn '[^ -~\t]' simulation formal .claude/skills/axon-hunt
