@@ -17,6 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
@@ -29,6 +30,8 @@ import org.axonframework.modelling.repository.ManagedEntity;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 import static org.axonframework.common.ConstructorUtils.getConstructorFunctionWithZeroArguments;
@@ -37,8 +40,9 @@ import static org.axonframework.common.ConstructorUtils.getConstructorFunctionWi
  * {@link ParameterResolverFactory} implementation that provides {@link ParameterResolver ParameterResolvers} for
  * parameters annotated with {@link InjectEntity}.
  * <p>
- * The parameter can either be a {@link ManagedEntity} or the entity itself. The order of resolving the identity id is
- * as specified on the {@link InjectEntity} annotation.
+ * The parameter can either be a {@link ManagedEntity} or the entity itself, optionally wrapped in an
+ * {@link Optional} (for example {@code Optional<MyEntity>} or {@code Optional<ManagedEntity<ID, MyEntity>>}). The
+ * order of resolving the identity id is as specified on the {@link InjectEntity} annotation.
  *
  * @author Mitchell Herrijgers
  * @see InjectEntity
@@ -74,24 +78,65 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
         }
 
         InjectEntity annotation = parameter.getAnnotation(InjectEntity.class);
-        EntityIdResolver<?> entityIdResolver = getEntityIdResolver(annotation);
-
-        // If the parameter is a ManagedEntity, we need to extract the actual entity type
-        Class<?> entityClass = parameter.getType();
-        boolean isManagedEntity = ManagedEntity.class.isAssignableFrom(entityClass);
-        if (isManagedEntity) {
-            ParameterizedType parameterizedType = (ParameterizedType) parameter.getParameterizedType();
-            entityClass = (Class<?>) parameterizedType.getActualTypeArguments()[1];
-        }
-
+        boolean isOptional = Optional.class.equals(parameter.getType());
         boolean isNullable = AnnotationUtils.hasAnnotationNamed(parameter.getAnnotatedType(), "nullable");
+
+        EntityTypeInfo entityTypeInfo = getEntityTypeInfo(isOptional, parameter, executable);
+        EntityIdResolver<?> entityIdResolver = getEntityIdResolver(annotation);
+        InjectEntityParameterResolver.MissingEntityStrategy missingEntityStrategy = isOptional
+                ? InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_OPTIONAL
+                : isNullable
+                        ? InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_NULL
+                        : InjectEntityParameterResolver.MissingEntityStrategy.FAIL;
+
         return new InjectEntityParameterResolver(
                 configuration,
-                entityClass,
+                entityTypeInfo.entityClass(),
                 entityIdResolver,
-                isManagedEntity,
-                isNullable
+                entityTypeInfo.managedEntity(),
+                missingEntityStrategy
         );
+    }
+
+    private static EntityTypeInfo getEntityTypeInfo(boolean isOptional, Parameter parameter, Executable executable) {
+        Type entityType = getEntityType(isOptional, parameter, executable);
+        if (entityType instanceof ParameterizedType parameterizedType
+                && parameterizedType.getRawType() instanceof Class<?> rawType
+                && ManagedEntity.class.isAssignableFrom(rawType)) {
+            return new EntityTypeInfo((Class<?>) parameterizedType.getActualTypeArguments()[1], true);
+        }
+        if (entityType instanceof Class<?> entityClass) {
+            if (ManagedEntity.class.isAssignableFrom(entityClass)) {
+                throw new IllegalArgumentException(
+                        ("Cannot inject entity for parameter [%s] of [%s]: a raw ManagedEntity does not specify its "
+                                + "entity type. Use ManagedEntity<ID, MyEntity> instead.")
+                                .formatted(parameter.getName(), executable)
+                );
+            }
+            return new EntityTypeInfo(entityClass, false);
+        }
+        throw new IllegalArgumentException(
+                "Cannot inject entity for parameter [%s] of [%s]: unsupported parameter type [%s]."
+                        .formatted(parameter.getName(), executable, entityType)
+        );
+    }
+
+    private static Type getEntityType(boolean isOptional, Parameter parameter, Executable executable) {
+        Type type;
+        if (isOptional) {
+            Type parameterizedType = parameter.getParameterizedType();
+            if (!(parameterizedType instanceof ParameterizedType)) {
+                throw new IllegalArgumentException(
+                        ("Cannot inject entity for parameter [%s] of [%s]: a raw Optional does not specify the "
+                                + "entity type. Use Optional<MyEntity> or Optional<ManagedEntity<ID, MyEntity>> "
+                                + "instead.").formatted(parameter.getName(), executable)
+                );
+            }
+            type = ReflectionUtils.unwrapIfType(parameterizedType, Optional.class);
+        } else {
+            type = parameter.getParameterizedType();
+        }
+        return type;
     }
 
     private static EntityIdResolver<?> getEntityIdResolver(InjectEntity annotation) {
@@ -104,5 +149,16 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
             throw new IllegalStateException("Failed to instantiate id resolver: " + annotation.idResolver().getName(),
                                             e);
         }
+    }
+
+    /**
+     * The resolved entity type of an {@link InjectEntity} annotated parameter, and whether it should be loaded as a
+     * {@link ManagedEntity}.
+     *
+     * @param entityClass   the type of the entity to load
+     * @param managedEntity whether the entity should be loaded as a {@link ManagedEntity}
+     */
+    private record EntityTypeInfo(Class<?> entityClass, boolean managedEntity) {
+
     }
 }

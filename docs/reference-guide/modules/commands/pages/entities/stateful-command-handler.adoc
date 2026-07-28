@@ -81,6 +81,22 @@ public void handle(IssueCard command, @InjectEntity @Nullable GiftCard card, Eve
 }
 ----
 
+Declaring the parameter as `Optional<GiftCard>` achieves the same outcome without needing a `@Nullable` annotation:
+
+[source,java]
+----
+@CommandHandler
+public void handle(IssueCard command, @InjectEntity Optional<GiftCard> card, EventAppender appender) {
+    if (card.isEmpty()) {
+        appender.append(new CardIssued(command.cardId(), command.amount()));
+    } else {
+        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+    }
+}
+----
+
+The same works for a `ManagedEntity` parameter: declare it as `Optional<ManagedEntity<ID, GiftCard>>` to get an empty `Optional` when the entity does not exist yet, or a present `ManagedEntity` otherwise, giving access to `applyStateChange(...)` regardless.
+
 This existence check applies regardless of how the entity's `@EntityCreator` constructs it.
 Even a no-arg or identifier-based creator, which does not need a preceding event to produce an instance, only does so once that instance actually exists; before that, both a no-arg-created and an identifier-created entity behave the same as one that requires an event to construct.
 

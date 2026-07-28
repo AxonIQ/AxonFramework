@@ -30,7 +30,9 @@ import java.lang.annotation.Target;
  * loaded from the {@link org.axonframework.modelling.StateManager}.
  * <p>
  * The parameter should be of the type of the entity to inject, or of a
- * {@link org.axonframework.modelling.repository.ManagedEntity} with the generic of the entity to inject.
+ * {@link org.axonframework.modelling.repository.ManagedEntity} with the generic of the entity to inject. Either can
+ * also be wrapped in an {@link java.util.Optional}, for example {@code Optional<MyEntity>} or
+ * {@code Optional<ManagedEntity<ID, MyEntity>>}.
  * <p>
  * The {@code idProperty} attribute can be used to specify the property of the message payload that contains the
  * identifier of the entity to inject. If not specified, the {@code idResolver} is used to resolve the identifier of the
@@ -47,11 +49,13 @@ import java.lang.annotation.Target;
  *     <li>From the {@link TargetEntityId} annotation on the message payload.</li>
  * </ol>
  * <p>
- * When no entity can be found for the resolved identifier, the annotated parameter's nullability determines the
- * outcome. A non-nullable parameter (the default) results in an
- * {@link org.axonframework.modelling.repository.EntityNotFoundException} being propagated, failing the message being
- * handled. A parameter annotated with an annotation resembling {@code "nullable"} will instead resolve to {@code null},
- * allowing the handler to deal with a missing entity itself, for example to support create-or-update semantics.
+ * When no entity can be found for the resolved identifier, the parameter's type and nullability determine the
+ * outcome. By default, an {@link org.axonframework.modelling.repository.EntityNotFoundException} is propagated,
+ * failing the message being handled. A parameter annotated with an annotation resembling {@code "nullable"} will
+ * instead resolve to {@code null}, allowing the handler to deal with a missing entity itself, for example to support
+ * create-or-update semantics. Declaring the parameter as {@code Optional<MyEntity>} (or
+ * {@code Optional<ManagedEntity<ID, MyEntity>>}) achieves the same outcome without needing a {@code "nullable"}
+ * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
