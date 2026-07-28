@@ -84,7 +84,7 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
      * The given {@code engine} is returned as is when it is the given {@code snapshotStore} itself. Such an engine
      * resolves the snapshot within its own {@link #source(SourcingCondition, ProcessingContext) source} call, serving
      * the snapshot and the events following it in a single round trip. Decorating it would resolve the snapshot
-     * separately and pass an {@link SourcingStrategy.Absolute absolute strategy} inward, costing that optimization.
+     * separately and pass an {@link SourcingStrategy.Absolute absolute strategy} inward, disabling that optimization.
      * <p>
      * An {@code engine} that is already decorated is returned as is too, so composing twice is harmless. It keeps
      * resolving snapshots from the store it was decorated with, and the given {@code snapshotStore} is ignored for it.

@@ -253,9 +253,10 @@ This new snapshot replaces the previous one according to the current storage beh
 
 === Snapshot sourcing composition
 
-An `EventStorageEngine` reads snapshots in one of two ways.
-An engine that supports the snapshot sourcing strategy natively serves the snapshot and the events following it in a single call.
-Any other engine is decorated with a `SnapshotCapableEventStorageEngine`, which loads the snapshot from the configured `SnapshotStore` first and then sources the events that follow it.
+An `EventStorageEngine` reads snapshots in one of two ways:
+
+* An engine that supports the snapshot sourcing strategy natively serves the snapshot and the events following it in a single call.
+* Any other engine is decorated with a `SnapshotCapableEventStorageEngine`, which loads the snapshot from the configured `SnapshotStore` first and then sources the events that follow it.
 
 That decoration is applied by the `SnapshotSourcingConfigurationEnhancer`, which the event sourcing defaults register for you.
 The engine is left as is when no `SnapshotStore` is configured, and when the engine is the configured `SnapshotStore` itself.
