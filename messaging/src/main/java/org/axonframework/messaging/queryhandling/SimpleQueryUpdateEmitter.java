@@ -105,8 +105,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Emitting an update to queries matching type [{}] and a given filter.", queryType);
         }
-        queryBus.emitUpdate(queryTypeFilter(queryType, filter), () -> asUpdateMessage(updateSupplier.get()), context)
-                .join();
+        FutureUtils.joinAndUnwrap(queryBus.emitUpdate(queryTypeFilter(queryType, filter),
+                                                      () -> asUpdateMessage(updateSupplier.get()),
+                                                      context));
     }
 
     @SuppressWarnings("DataFlowIssue")
@@ -134,8 +135,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Emitting an update to queries matching name [{}] and a given filter.", queryName);
         }
-        queryBus.emitUpdate(queryNameFilter(queryName, filter), () -> asUpdateMessage(updateSupplier.get()), context)
-                .join();
+        FutureUtils.joinAndUnwrap(queryBus.emitUpdate(queryNameFilter(queryName, filter),
+                                                      () -> asUpdateMessage(updateSupplier.get()),
+                                                      context));
     }
 
     @SuppressWarnings("DataFlowIssue")
@@ -170,8 +172,7 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries of type [{}].", queryType);
         }
-        queryBus.completeSubscriptions(queryTypeFilter(queryType, filter), context)
-                .join();
+        FutureUtils.joinAndUnwrap(queryBus.completeSubscriptions(queryTypeFilter(queryType, filter), context));
     }
 
     @SuppressWarnings("DataFlowIssue")
@@ -190,8 +191,7 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries with name [{}].", queryName);
         }
-        queryBus.completeSubscriptions(queryNameFilter(queryName, filter), context)
-                .join();
+        FutureUtils.joinAndUnwrap(queryBus.completeSubscriptions(queryNameFilter(queryName, filter), context));
     }
 
     @SuppressWarnings("DataFlowIssue")
@@ -212,8 +212,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries of type [{}] exceptionally.", queryType, cause);
         }
-        queryBus.completeSubscriptionsExceptionally(queryTypeFilter(queryType, filter), cause, context)
-                .join();
+        FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsExceptionally(queryTypeFilter(queryType, filter), cause, context)
+        );
     }
 
     @SuppressWarnings("DataFlowIssue")
@@ -237,8 +238,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries with name [{}] exceptionally.", queryName, cause);
         }
-        queryBus.completeSubscriptionsExceptionally(queryNameFilter(queryName, filter), cause, context)
-                .join();
+        FutureUtils.joinAndUnwrap(
+                queryBus.completeSubscriptionsExceptionally(queryNameFilter(queryName, filter), cause, context)
+        );
     }
 
     @SuppressWarnings("DataFlowIssue")
