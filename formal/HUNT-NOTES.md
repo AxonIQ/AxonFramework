@@ -1518,3 +1518,288 @@ argument for running it.
 
 The four short rows cap what may honestly be claimed for this phase: a first real backend, two scenarios, one seed, no
 faults, and no transactional read model.
+
+---
+
+# Phase P3b -- chaos on real stores
+
+## 1. Determinism seams (continued)
+
+### 1.17 Quiescence must be asked of the store, and that is the single most important line in this phase
+
+P3a left four short audit rows and three of them had one root cause. `ControllableEventStorageEngine` counted an append as
+stored when the engine's `commit()` call returned, and every workload's quiescence test was `delivered >= that count`. On a
+store that commits in two phases the count runs ahead of anything a reader can see and never comes back down, so:
+
+- no PostgreSQL arm ever reached quiescence, at any budget (a thousand commands with thirty seconds and three hundred with
+  sixty behaved identically);
+- every oracle that declines to decide on a run whose read side had not caught up therefore declined on every
+  PostgreSQL arm;
+- and a store that loses an event **permanently** produces exactly that same observation, so the guard that stops false
+  findings swallowed the real one. That is why canary C7 escaped.
+
+The fix is one idea in three places. `ControllableEventStorageEngine.readableEventIds()` scans the store; the drain decides
+quiescence by asking whether every readable identifier has been delivered; and **the scan that decides quiescence is the
+scan the oracles are judged against**. The last part is not tidiness: taking a second, later scan lets a batch that landed
+between the two turn up as a committed event nobody delivered, which is a false loss.
+
+Three consequences a later agent will otherwise get wrong.
+
+- **Compare sets, not counts.** Counting was tried first and produced a balance mismatch on both PostgreSQL arms with
+  nothing lost at all. A store whose index comes from a sequence taken before a commit separates one batch's rows with
+  another writer's, so a count can reach the store's count while half a transfer is still undelivered, and the projection
+  folded mid-transfer. `Workload.deliveredEventIds` exists for that; `Workload.deliveredEvents` stays as the *progress*
+  signal, because a set does not grow on a repeat and a stalled read side has to be distinguishable from a busy one.
+- **A scan that always fails is indistinguishable from a store holding nothing.** The first version swallowed the
+  exception and kept the previous answer, which was the empty list, and `containsAll(empty)` is true -- so a run whose
+  store could not be read at all reported itself quiesced with zero readable events and every oracle held vacuously. The
+  drain now tracks whether it ever got an answer, and carries the refusal's message into a note. The bug that hid behind
+  it was a wrong column name in one SQL statement.
+- **The stall window must be strictly shorter than the settle budget.** Derived from the liveness horizon alone it came out
+  at exactly the settle budget for the contended-append arm, so it could never elapse and the check could never fire.
+  Capped at half the drain.
+
+### 1.18 A durability question must not be answered through the run's own connection pool
+
+`HuntBackend.readableEventIds(engine)` exists so that a backend can answer "what do you hold" without going through the
+engine. After the store has been killed, the run's entity-manager factory holds a pool of handles to a process that no
+longer exists, and whether Hibernate notices is beside the point: the one question that must not be routed through the
+harness's plumbing is the one about whether the store kept what it said it kept. The PostgreSQL backend answers it with a
+fresh JDBC connection and `SELECT identifier FROM <schema>.aggregateevententry ORDER BY globalindex`.
+
+Doing that also **changed the answer**, and the difference is worth knowing: the engine's own
+`source(SourcingCondition.conditionFor(havingAnyTag()), null)` reports fewer events than the table holds. Every "the read
+side caught up" measurement taken through the engine is therefore weaker than it looks. Set
+`hibernate.connection.pool_validation_interval` to 1 as well, or a killed store leaves the pool full of dead handles and
+every later call fails on a connection rather than on anything real.
+
+## 2. API traps (continued)
+
+### 2.42 `AppendTransaction.commit()` is not the durability point on a transaction-managed store, and it does not even
+### precede it
+
+Recorded as finding F-17, and it invalidated a whole afternoon's work. `TransactionManager.attachToProcessingLifecycle`
+registers the database transaction's commit with `runOnCommit` during `PRE_INVOCATION`;
+`DefaultEventStoreTransaction.attachAppendEventsStep` registers the append transaction's `commit()` with `onCommit` during
+`PREPARE_COMMIT`. Both are `DefaultPhases.COMMIT`, and `ProcessingLifecycle`'s own Javadoc says same-order actions "may be
+executed in parallel" -- `UnitOfWork` combines them with `CompletableFuture::allOf`.
+
+Measured: an event was delivered at 615ms and the `commit()` of the append that produced it was entered at 2492ms.
+
+So a fault that delays `StoreHook.onCommit` on such a store delays nothing that matters: the rows are flushed inside
+`appendEvents` (the aggregate-based engine calls `em.flush()` there on purpose, so a constraint violation arrives there),
+and the transaction may already have committed. `StoreHook.afterAppend` was added for this and is the only point in the
+wrapper at which a real transaction is open with its positions already taken.
+
+### 2.43 Toxiproxy needs no dependency, and its own reported state is the landing evidence
+
+The container is `ghcr.io/shopify/toxiproxy:2.12.0` and its API is four lines of `java.net.http.HttpClient`. Verified
+against the running container rather than from memory:
+
+```
+POST /proxies          {"name":"store","listen":"0.0.0.0:8666","upstream":"hunt-store:5432","enabled":true}
+POST /proxies/store    {"enabled":false}   -> refuses every connection immediately
+GET  /proxies/store                        -> {"...","enabled":false,...}
+```
+
+Two things make it work as a partition rather than as a crash. The application's JDBC URL must address the **proxy**, and
+the proxy must address the store by network alias on a private network -- then cutting the proxy takes the network away
+while the store keeps its state, its clock and its open transactions, which is the only way an acknowledgement becomes
+genuinely ambiguous. And because the port the application connects to belongs to the proxy, which is never killed, a
+kill-and-restart of the store is transparent to the run's wiring: `docker start` on a stopped container keeps its port
+bindings, but the usual reason a naive kill-and-restart fails is that nothing else does.
+
+### 2.44 The container primitives, and what each one proves, verified before any of them was used
+
+```bash
+docker kill -s KILL <id>; docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}}' <id>   # exited exit=137
+docker start <id>; docker logs --tail 40 <id> | grep 'ready to accept connections'              # with its timestamp
+docker pause <id>;   docker inspect -f '{{.State.Paused}}' <id>                                 # true
+docker unpause <id>
+```
+
+`137` is the signalled kill, and the recovery line carries the store's own timestamp so a reader can place it inside the
+fault window instead of taking the harness's word for it. All four go through the Docker command line rather than the API
+client, on purpose: what is wanted is exactly what an operator would type and exactly what they would read back.
+
+### 2.45 `AggregateEventEntry`'s identifier column is `identifier`, not `eventidentifier`
+
+Costly because the failure is silent: the scan threw, the drain kept its previous (empty) answer, quiescence was trivially
+satisfied, and 89 acknowledged appends were reported as data the store had lost. Nothing in the output said "SQL".
+
+### 2.46 `-Dtest=A+B` still does not work, and with nested classes it fails silently
+
+Surefire wants `-Dtest=A,B`. With `$Nested` selectors a wrong separator runs **no tests at all** and the build reports
+`BUILD SUCCESS` in three seconds. Check the `Tests run:` line, not the exit code.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The infrastructure-fault arms. Needs Docker. Each nested class is one arm and they are minutes apart in cost.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='StoreInfrastructureFailureTest$KillingTheStoreWhileTheWorkloadAppendsToIt' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# Two arms at once. Comma, never plus.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='StoreInfrastructureFailureTest$CuttingTheNetworkWhileLeavingTheStoreRunning,StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# Reading a chaos history: what the drain concluded, and what the fault proved.
+python3 - <<'EOF' simulation/target/hunt-histories/gap-core-defaults/*.jsonl
+import json,sys
+lines=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+for r in lines[1:]:
+    if r['op'] in ('phase','fault') :
+        print(r['idx'], r['logicalTs']//1000000, r['op'], r['value'])
+EOF
+```
+
+**Never recompile while a container arm is running.** Surefire is reading the same `target/test-classes` the compiler
+writes to.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.51 A fault that reaches outside the virtual machine goes through one seam, and the seam is on the backend
+
+`StoreInfrastructure` has three primitives -- cut the network, kill the process, freeze the process -- and the backend
+supplies it. An in-heap store returns `StoreInfrastructure.none()`, whose `available()` is false and whose primitives
+report no landing, so the same scenario run there is reported as a fault that never fired rather than as a pass. That is
+the extensibility charter's backend clause applied to faults: a store that can be broken advertises it, and adding one
+adds no scenario.
+
+The three are not three settings of one. A kill takes the state; a cut takes the network and leaves the state; a freeze
+takes neither and stops the clock from the process's point of view. Only the third holds every lock and every open
+transaction while every deadline in the system expires and then continues as if nothing happened, which is the long
+garbage collection, and a kill can never produce it.
+
+### 4.52 The breakable store is a second deployment, and it has to be
+
+The shared PostgreSQL container serves every read-only arm at the cost of a schema per run. A fault that kills the process
+cannot be aimed at a container the rest of the matrix is connected to, so the arms that break their store get a container
+of their own plus a proxy, started only when a scenario asks for it. `postgres-jpa-chaos` and its
+`postgres-jpa-chaos-spring-defaults` sibling are that deployment; the sibling differs in the two gap settings, which is
+finding F-1 expressed as a backend rather than as a comment.
+
+### 4.53 A rejected append and a failed append are not the same thing, and no run could tell before this phase
+
+`RejectedAppendLeavesNoEvents` judged every append whose outcome was `FAIL`. Before infrastructure faults existed, every
+failure was either the store's own rejection or the harness's injected refusal, so the distinction cost nothing. A
+partition produces a third kind: a driver exception that says nothing about whether the commit was applied. Holding the
+store to it reports a commit that really did land as a rejected append that leaked. The checker now judges only appends
+the store, or a fault standing in for it, actually decided against, and `DurabilityChecker` treats everything else as
+ambiguous and decides nothing about it.
+
+### 4.54 An oracle derived from a store call's return value cannot be judged on a run whose store connection broke
+
+`RecordingTokenStore` records a token write as successful when the call's future completes, and on a shared-resource arm
+that write joins the transaction that commits the batch. So a write recorded at position 209 whose transaction then died
+with the connection never landed, the next claim reads back position 9, and `StoredTokenNeverRegresses` reports a
+426-position regression that never happened. Measured: nine such violations on the first partition run.
+
+All three of `StoredProgressChecker`'s invariants are now reported **not applicable** on a run declaring a
+connection-breaking fault. That is the fourth time in this suite that the honest answer to a new fault class was to stop
+deciding rather than to widen a tolerance, and it is the pattern: when a scenario perturbs something new, every oracle
+that derives state from recorded calls has to be told.
+
+### 4.55 A run with no ambiguous append has not tested durability under a partition
+
+`DurabilityChecker` publishes the client's verdict set on every run and, when the run declared a fault whose purpose is to
+make an acknowledgement ambiguous, gives up its verdict if it produced none. That is the plan's rule -- zero unknowns
+under an active partition is inconclusive, never a pass -- implemented in the oracle rather than in the scenario, so it
+cannot be forgotten by the next arm that installs the same fault.
+
+### 4.56 What the gap arm needed, and why the first version proved nothing
+
+Written first as a delay at `StoreHook.onCommit`, on the assumption that the transaction commits after it. It does not
+(finding F-17). The arm produced 154 `NoVisibilityBeforeCommit` violations -- the harness's own delay, measured -- and no
+skip at all. Moved to `StoreHook.afterAppend`, it produces the skip on both configuration arms and no visibility
+violations, because the delay is now strictly before the transaction rather than strictly after it.
+
+The lesson generalises past this fault: **before building an arm around a delay, measure where the delay actually sits
+relative to the commit you think it precedes.** One `python3` pass over the history comparing a delivery's timestamp
+against its commit record's answered it in a minute, after an afternoon of not asking.
+
+### 4.57 The assertion the gap arm ships is about decidability, not about a count
+
+A skip is a race, so asserting how many events an arm skipped would be asserting on a coin. What is not a race is that
+**a read side which stopped moving with events still in the store is judged rather than excused** -- and that is exactly
+the property whose absence let C7 escape. The arm asserts that, prints the counts, and the finding carries the numbers.
+
+The assertion that *would* pin C7 is `caughtUp` on the PostgreSQL arms, and it was measured before it was rejected: green
+on the shared-resource arm's two seeds of a clean engine, red under the mutation -- and red on the split-resource arm's
+two seeds of a clean engine as well, because that arm loses events without any fault at all. Green-on-clean has to mean
+*always* green on clean, not usually. `formal/CANARIES.md` carries all four numbers so the next agent does not have to
+re-measure to see why it is not there.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| An Axon Server arm | Blocked with measured evidence, recorded as finding F-18: every reachable connector artefact implements `EventStorageEngine.source(SourcingCondition)` and this reactor requires `source(SourcingCondition, ProcessingContext)`, so loading one raises `AbstractMethodError` at run time. `javac` does not catch it. Needs `io.axoniq.framework:axon-server-connector:5.3.0-SNAPSHOT`, which is a commercial artefact and is not in the local repository. | when the artefact is reachable |
+| The mechanism behind the skip on the **default** gap timeout | The compressed arms' skip is explained mechanically (F-16): a hold of twice the gap timeout guarantees the ageing the comparison turns on. The arms that install no fault lose events too -- `postgres-jpa-split-tokens` on both its seeds of a clean engine, `postgres-jpa` intermittently -- at the framework's own sixty-second timeout, where that explanation does not obviously apply to an event committed 2.6 seconds into a run. The observation is reproducible and the mechanism is open; settling it needs the reader's token instrumented rather than inferred. | the phase that instruments the reader's token |
+| A freeze arm | `StoreFreezeFault` and the `pause` primitive are built and verified against the container by hand, and no scenario declares one. The design commitment it serves (a pause longer than the claim timeout, which a kill can never produce) is worth an arm of its own, and it belongs with a cluster rather than with a single node. | the phase that pauses a cluster |
+| Gap **cleaning** as a mechanism distinct from gap suppression | Only the `allowGaps` half of the gap machinery is driven. The cleaning half needs more than `gapCleaningThreshold` gaps open at once with committed events interleaved between them, which means either 250-odd concurrent open transactions or an arm that lowers the threshold. Neither is built. | the phase that writes it |
+| A transactional read model, and with it a real exactly-once arm | Unchanged from P3a. The applied-count oracle the plan's sharpened S5 describes is a scenario plus an invariant, not a backend. | the phase that writes S5 |
+
+### 4.58 The green-but-broken audit for the infrastructure arms, and what it found
+
+Run before claiming any verdict. **Four rows came back wrong the first time and four came back short**, which is the entire
+argument for running it -- three of the four wrong ones would have been written up as framework findings.
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| The workload really ran | 120-400 commands per arm; the kill arm recorded 296 appends of which 138 acknowledged, the partition arm 117 of which 50, the gap arms 120 of which 44 and 43 | ok |
+| **A fault really landed on a real store** | For the first time in this suite. The kill arm: `store-crash=2`, evidenced by `container 3685d9136cfe status exited exit code 137` and two distinct `database system is ready to accept connections` lines with their own timestamps. The partition arm: `store-partition=8`, evidenced by the proxy's own `{"enabled":false}` and `{"enabled":true}` either side of each cut. The gap arms: `late-commit=44` and `43`. Every one of those is the infrastructure's answer, not the harness's. | ok |
+| **An oracle caught a defect only a real store can produce** | Finding F-16: three committed events per gap arm never delivered, decided rather than excused. The mutation of the same comparison (canary C7) moves the shared-resource arm from `undelivered=0` on both seeds to `undelivered=3` and `6`. P3a's short row is closed. | ok |
+| The divergence is the store's, not the harness's | **Four harness defects were found and fixed first**, and each would have been a false finding: a scan using the wrong column name (89 apparently lost acknowledged appends); count-based quiescence folding a projection mid-transfer (a balance mismatch on both PostgreSQL arms with nothing lost); a delay installed after the transaction rather than before it (154 `NoVisibilityBeforeCommit` violations and no skip at all); and a token-write outcome read as a transaction outcome (nine `StoredTokenNeverRegresses` violations, one of 426 positions). | ok, after four corrections |
+| A "not applicable" is not a pass | Three new ones, each with a stated mechanism: the reference model on an aggregate-based store; all three durable-progress invariants on a run whose store connection was broken; and durability on a run in which the harness itself rewrote the store. | ok |
+| No silent error suppression | The kill arm logs 268 `TransactionException`, 58 `PSQLException`, 35 `EOFException` and 21 `JDBCConnectionException`, and every one reaches an oracle as a failed operation. The scan's own refusal is now carried into a note with its message, which is what turned the wrong column name from an afternoon into a minute. | ok, after one correction |
+| Recovery completed | Every kill was followed by a `docker start` and a recovery line inside the fault window; every cut was healed before `activate` returned, so the heal phase starts on a whole network | ok |
+| Faults did not no-op | Each primitive verifies its own effect from the infrastructure before counting a fire: the proxy must report itself disabled, the container must report `exited`, the pause must report `paused=true`. A primitive that could not confirm its effect returns `Evidence.missed` and the run is inconclusive. | ok |
+| Baseline is fair | Re-baselined because the harness changed: 200 tests before, 208 after. Two of the original 200 changed their expectation rather than breaking, and the change is the point: the two arms whose sequencing policy resolves nothing (finding F-7) used to be undecided, because a read side that has not caught up was excused. That read side is not behind, it has stopped dead, and every event the run committed is gone -- so both arms now report 180 committed events never delivered and fail. The stall signal strengthened two existing arms from undecided to a decided total loss without either being touched. | ok |
+| Deliveries add up where they can | The partition arm reached quiescence: `readableEvents=100 deliveredEvents=100 quiesced=true`, with 96 repeats all accounted for by four recorded rewinds | ok |
+| **The read side does not recover from its store being killed, and this run cannot say whose fault that is** | The kill arm ends `readableEvents=276 deliveredEvents=149 stalled=true`. The durability oracle is unaffected -- it asks the store directly -- but whether the processor's failure to catch up is the framework's or Hibernate's built-in connection pool's cannot be told apart without a pool that is meant for production. Reported as a measurement, not as a finding. | **short** |
+| **One seed per infrastructure arm** | Each of the three declares two seeds at the smoke tier and the test runs one. Under the suite's own weak-oracle rules that caps every one of them at a partial verdict however clean it is. | **short** |
+| **One topology per infrastructure arm** | Single node throughout. A kill, a cut or a freeze against a store shared by a cluster is a different failure -- the one where nodes disagree about whether the store is there -- and no arm has it. | **short** |
+| **The freeze primitive has never been in a scenario** | `StoreFreezeFault` and `pause` are built and verified against the container by hand. Design commitment D4 is about a pause longer than the claim timeout, and nothing declares one. So the whole class of failure a kill cannot produce remains unexercised. | **short** |
+
+The four short rows cap what may honestly be claimed: three infrastructure faults that land with the infrastructure's own
+evidence, one seed and one node each, no freeze arm, and one measurement whose attribution is open.
+
+### 4.59 The widened matrix, and the two assertions it made that had to be weakened
+
+Five scenarios, four stores, two seeds each -- forty runs, sixteen minutes -- against P3a's one scenario at one seed.
+The table, verbatim, with one verdict per seed:
+
+```
+VECTOR concurrent_bootstrap_initializes_segments_exactly_once     in-memory:FAIL(2 n/a)/FAIL(2 n/a) hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a)
+VECTOR dcb_append_rejected_after_marker_under_contention          in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a)
+VECTOR dcb_append_rejected_after_marker_single_writer             in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a)
+VECTOR partial_batch_never_visible_to_concurrent_reader           in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a)
+VECTOR uncommitted_never_visible_rolledback_never_delivered_commit in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a)
+FIRES uncommitted_never_visible_rolledback_never_delivered_commit seed 1 {append-rejection=26} ... seed 2 {append-rejection=33}
+```
+
+Reading it: the two `n/a` on the in-heap bootstrap arm are ownership and durable progress, both inexpressible on a store
+that grants every claim to four nodes at once; the one on each PostgreSQL arm is the reference model against a store that
+does not implement the protocol. `hsqldb-tokens` is the only store that decides ownership *and* has no aggregate-based
+event store, which is why it is the only clean column on the bootstrap row.
+
+**The `FIRES` line is the point of running a faulted scenario across stores.** A fault that works in the heap and
+silently does nothing across a database round trip would turn one column into a fault-free control that reads as
+coverage, so the matrix asserts that a run whose declared fault never fired may not pass, and prints the counts either
+way. The rejection fault fires 26-34 times per seed on every store.
+
+**Two inherited assertions had to be weakened, and both for the same reason: they asserted the absence of findings.**
+
+- `allSatisfy(violation -> machineName == UnconditionalAppendNeverRejected)` on the PostgreSQL arm asserted that F-14 was
+  the *only* thing wrong there. It stopped being true the moment loss became decidable on that store, and the extra
+  violation was finding F-16 rather than a broken expectation. Now `anySatisfy`: the pinned divergence must be present,
+  not alone.
+- `assertThat(inMemoryResult.notApplicable()).isEmpty()` asserted that the in-heap arm found every invariant expressible.
+  It stopped being true when the durable-progress invariants learned to say they cannot be judged on a store with no
+  owner. Now it asserts only what it meant: a boundary store must be able to judge the protocol.
+
+The rule worth carrying: **an assertion that a suite finds nothing else is an assertion that the suite must stop
+working.** Pin the finding you mean, not the shape of the whole result.

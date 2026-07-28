@@ -1123,11 +1123,12 @@ passing quietly.
 | C1 | append rejected after marker | Y | Y | n/a (no boundary; a unique constraint instead) | n/a |
 | C2 | `AppendCondition.none()` disables conflict detection | Y | Y | **F** (finding F-14) | **F** (finding F-14) |
 | C3 | ORIGIN makes every matching event a conflict | Y | Y | n/a (ORIGIN and INFINITY share a branch) | n/a |
-| C4 | append in prepare-commit, visible only after commit | Y | Y | Y | Y |
+| C4 | append in prepare-commit, visible only after commit | Y | Y | **F** (finding F-17: the database transaction's commit and `AppendTransaction.commit()` are unordered) | **F** |
+| C29, C35 | an acknowledged append is durable | n/a (nothing to kill) | n/a | **Y** -- held across 8 network cuts and 2 kill-and-restart cycles | Y |
 | C5, C6, C7 | marker derivation from sourcing | Y | Y | **F** (finding F-15, `lowerBound` unimplemented) | **F** |
 | C8 | deferred conflict check | Y | Y | n/a (the check is the database's) | n/a |
 | C9, C10 | rejected append leaves nothing; batch atomicity | Y | Y | Y | Y |
-| C13, C14 | gap-aware token, gap timeout | n/a (no gaps in an in-heap map) | n/a | **Y, and the only store that can** | Y |
+| C13, C14 | gap-aware token, gap timeout | n/a (no gaps in an in-heap map) | n/a | **F** (finding F-16, on both configuration paths) | **F** |
 | C15, C16 | batch and token in one transaction | n/a (nothing transactional) | partial (token only) | **Y** | Y, as two resources |
 | C17 | a steal may cause a duplicate | n/a (no ownership) | Y | Y | Y |
 | C18-C22 | single-owner claim, steal semantics | n/a (no ownership) | Y | Y | Y |
@@ -1249,7 +1250,11 @@ coverage is the same mistake as a green test that never ran.
 | S15 `concurrent_bootstrap_initializes_segments_exactly_once` (+ churn arm) | yes | SMOKE | PASS | produced F-9 |
 | S16 `partial_batch_never_visible` | yes | SMOKE | PASS | produced F-3 |
 | S17 `stored_token_never_regresses` | **as an invariant, not a scenario** | -- | -- | `StoredTokenNeverRegresses` and `StoredTokenCoversDeliveredEvents` ship in `StoredProgressChecker` and run against every history, so C38 is covered by every cluster arm rather than by a scenario of its own. A dedicated arm driving a deliberately regressing progress strategy is not built. |
-| S2, S5, S6, S7, S11, S12, S13, S18, S19, S20 | no | -- | NOT-RUN | S2, S5, S6, S7, S11, S12 need the real-infrastructure layer; S13's checkers already run everywhere; S18, S19, S20 remain cheap and unclaimed |
+| S2 `commit_ack_matches_durability_under_partition` | yes | SMOKE | FAIL (F-14 only; durability held) | 8 network cuts landed with the proxy's own reported state as evidence; 12 events left ambiguous, 0 of them stored; `AcknowledgedAppendIsDurable` clean. Produced the `RejectedAppendLeavesNoEvents` correction and the `StoredProgressChecker` not-applicable rule. |
+| S7 `no_event_skipped_by_gap_timeout` (+ Spring-defaults arm) | yes | SMOKE | FAIL (real skip) | 3 committed events never delivered on each arm, decided rather than excused. Produced findings F-16 and F-17. |
+| S12 `crash_recovery_no_acked_loss_postgres` | yes | SMOKE | FAIL (F-14 only; durability held) | 2 kill-and-restart cycles landed with exit code 137 and the store's own recovery lines; 138 acknowledged appends all present exactly once in a fresh-connection scan. |
+| S11 `axonserver_stream_resume_no_loss_no_silent_dup` | no | -- | BLOCKED | Finding F-18: no reachable connector artefact links against this reactor. Recorded with the linkage error rather than skipped silently. |
+| S5, S6, S13, S18, S19, S20 | no | -- | NOT-RUN | S5 needs a transactional read model and an applied-count oracle; S6 needs a split-store cluster arm; S13's checkers already run everywhere; S18, S19, S20 remain cheap and unclaimed |
 
 Two claims changed their primary path because S17 became an invariant rather than a scenario, and one gained coverage the
 plan did not anticipate:

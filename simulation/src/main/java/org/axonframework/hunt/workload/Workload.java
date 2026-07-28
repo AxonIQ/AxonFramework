@@ -90,15 +90,40 @@ public interface Workload {
     void run(WorkloadContext context) throws InterruptedException;
 
     /**
-     * Indicates whether the projection has caught up with everything the run committed.
+     * Returns how many events this workload's projection has been handed so far.
      * <p>
-     * The runner waits for this before letting any oracle look at the history, because judging a system that is still
-     * catching up manufactures violations at the run boundary.
+     * The runner compares this against what the store says it holds, and waits for the two to meet before letting any
+     * oracle look at the history, because judging a system that is still catching up manufactures violations at the run
+     * boundary. It also watches this number for growth: a read side that has stopped moving while events are still
+     * missing has lost them, and one that is still moving has not.
+     * <p>
+     * A workload reports what it was handed rather than deciding quiescence itself, because the other half of the
+     * comparison is the store's own answer and no workload can give it. Deriving it from what the harness offered was
+     * measured to make quiescence unreachable on a store that commits in two phases.
      *
      * @param context everything the workload may reach
-     * @return {@code true} when the read side has caught up with the write side
+     * @return the number of deliveries the projection has accepted, counting repeats
      */
-    boolean quiesced(WorkloadContext context);
+    long deliveredEvents(WorkloadContext context);
+
+    /**
+     * Returns the identifiers of every event this workload's projection has been handed.
+     * <p>
+     * <b>Quiescence is a set question and counting it was measured to be wrong.</b> The store hands events out in its own
+     * global order, and on a store whose index comes from a sequence taken before a transaction commits, one batch's rows
+     * are routinely separated by another writer's. So a count can reach the store's count while an event is still
+     * undelivered, and a run that stopped there folded a projection that was holding half a transfer -- measured, as a
+     * balance mismatch on both PostgreSQL arms with no event lost at all. Asking which identifiers arrived cannot be
+     * satisfied early.
+     * <p>
+     * {@link #deliveredEvents(WorkloadContext)} stays the progress signal and this one is the completeness signal: a set
+     * that stops growing says nothing about repeats, and a count that keeps growing is what proves the read side is still
+     * moving.
+     *
+     * @param context everything the workload may reach
+     * @return the delivered identifiers; a live view is acceptable, so callers must not modify it
+     */
+    java.util.Set<String> deliveredEventIds(WorkloadContext context);
 
     /**
      * Writes the workload's final read-model state into the history, so a checker can compare it against its own fold

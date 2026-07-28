@@ -42,6 +42,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -165,8 +166,62 @@ public class PostgresJpaHuntBackend implements HuntBackend {
     }
 
     private static Connection connect(PostgreSQLContainer container, String database) throws SQLException {
-        String url = container.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + database + "$1");
-        return java.sql.DriverManager.getConnection(url, container.getUsername(), container.getPassword());
+        return connect(Deployment.of(container, database));
+    }
+
+    private static Connection connect(Deployment deployment) throws SQLException {
+        return java.sql.DriverManager.getConnection(deployment.jdbcUrl(),
+                                                    deployment.username(),
+                                                    deployment.password());
+    }
+
+    /**
+     * Where one arm's PostgreSQL actually lives, so that an arm can point somewhere other than the shared container.
+     * <p>
+     * Introduced because the chaos arm has to reach its store through a proxy it can cut and a container it can kill,
+     * neither of which the shared container may be: killing a container every other arm is using would break the whole
+     * matrix. Every arm resolves its store through this record, so pointing one somewhere else changes no wiring at all.
+     *
+     * @param jdbcUrl  the URL the run connects on, which for a proxied arm is the proxy's address and not the store's
+     * @param username the user to connect as
+     * @param password the password to connect with
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    record Deployment(String jdbcUrl, String username, String password) {
+
+        private static Deployment of(PostgreSQLContainer container, String database) {
+            return new Deployment(container.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + database + "$1"),
+                                  container.getUsername(),
+                                  container.getPassword());
+        }
+    }
+
+    /**
+     * Returns where this arm's PostgreSQL lives.
+     * <p>
+     * The default is the shared container every read-only arm uses. An arm that breaks its store overrides this with a
+     * deployment of its own, because a container the rest of the matrix is connected to cannot be killed.
+     *
+     * @return this arm's deployment
+     */
+    Deployment deployment() {
+        return Deployment.of(Container.INSTANCE, Container.INSTANCE.getDatabaseName());
+    }
+
+    /**
+     * Returns the storage-engine settings this arm runs with, given the ones every arm needs.
+     * <p>
+     * The default changes nothing, which is the framework's own configuration record with a conflict resolver and a
+     * polling coordinator attached. An arm whose claim is about a specific setting -- the gap timeout, say, whose core
+     * default and Spring Boot default differ -- overrides this and states which setting it is moving and why.
+     *
+     * @param base the settings every arm of this store needs
+     * @return the settings this arm runs with
+     */
+    org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration tune(
+            org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration base) {
+        return base;
     }
 
     @Override
@@ -176,11 +231,11 @@ public class PostgresJpaHuntBackend implements HuntBackend {
 
     @Override
     public EventStorageEngine createEngine() {
-        Run run = Run.create();
+        Run run = Run.create(deployment());
         AggregateBasedJpaEventStorageEngine engine = new AggregateBasedJpaEventStorageEngine(
                 new JpaTransactionalExecutorProvider(run.eventStoreFactory()),
                 new DelegatingEventConverter(new JacksonConverter()),
-                config -> config
+                config -> tune(config
                         // Without a resolver the engine cannot tell a conflict from any other failure, and a rejected
                         // append then arrives as a bare constraint violation instead of the framework's own rejection.
                         // On this engine the unique constraint on (aggregateIdentifier, sequenceNumber) *is* the
@@ -192,7 +247,7 @@ public class PostgresJpaHuntBackend implements HuntBackend {
                         // liveness horizon mean the same thing on both.
                         .eventCoordinator(new JpaPollingEventCoordinator(
                                 new FactoryBasedEntityManagerProvider(run.eventStoreFactory()),
-                                Duration.ofMillis(50))));
+                                Duration.ofMillis(50)))));
         LIVE.put(engine, run);
         return engine;
     }
@@ -216,6 +271,11 @@ public class PostgresJpaHuntBackend implements HuntBackend {
     @Override
     public @Nullable TransactionManager transactionManager(EventStorageEngine engine) {
         return new EntityManagerTransactionManager(wiring().eventStoreEntityManagers());
+    }
+
+    @Override
+    public @Nullable List<String> readableEventIds(EventStorageEngine engine) {
+        return scanIdentifiers(engine);
     }
 
     @Override
@@ -281,25 +341,30 @@ public class PostgresJpaHuntBackend implements HuntBackend {
      */
     static final class Run implements AutoCloseable {
 
+        private final Deployment deployment;
         private final String schema;
         private final EntityManagerFactory eventStore;
         private final ThreadBoundEntityManagers eventStoreManagers;
 
-        private Run(String schema, EntityManagerFactory eventStore) {
+        private Run(Deployment deployment, String schema, EntityManagerFactory eventStore) {
+            this.deployment = deployment;
             this.schema = schema;
             this.eventStore = eventStore;
             this.eventStoreManagers = new ThreadBoundEntityManagers(eventStore);
         }
 
-        private static Run create() {
-            PostgreSQLContainer container = Container.INSTANCE;
+        private static Run create(Deployment deployment) {
             String schema = "hunt_" + RUNS.incrementAndGet() + "_" + Long.toString(System.nanoTime(), 36);
-            execute(container, container.getDatabaseName(), "CREATE SCHEMA " + schema);
-            Run run = new Run(schema, factory(container, container.getDatabaseName(), schema,
-                                              AggregateEventEntry.class,
-                                              org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry.class));
+            execute(deployment, "CREATE SCHEMA " + schema);
+            Run run = new Run(deployment, schema, factory(deployment, schema,
+                                                          AggregateEventEntry.class,
+                                                          org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry.class));
             WIRING.set(run);
             return run;
+        }
+
+        Deployment deployment() {
+            return deployment;
         }
 
         EntityManagerFactory eventStoreFactory() {
@@ -334,7 +399,7 @@ public class PostgresJpaHuntBackend implements HuntBackend {
             if (eventStore.isOpen()) {
                 eventStore.close();
             }
-            try (Connection connection = connect(Container.INSTANCE, Container.INSTANCE.getDatabaseName());
+            try (Connection connection = connect(deployment);
                  Statement statement = connection.createStatement()) {
                 statement.execute("SET lock_timeout = '2s'");
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
@@ -344,24 +409,30 @@ public class PostgresJpaHuntBackend implements HuntBackend {
         }
     }
 
-    private static EntityManagerFactory factory(PostgreSQLContainer container,
-                                                String database,
+    private static EntityManagerFactory factory(Deployment deployment,
                                                 @Nullable String schema,
                                                 Class<?>... managed) {
         PersistenceConfiguration configuration =
-                new PersistenceConfiguration("hunt-" + database + (schema == null ? "" : "-" + schema))
+                new PersistenceConfiguration("hunt-" + Integer.toHexString(deployment.jdbcUrl().hashCode())
+                                                     + (schema == null ? "" : "-" + schema))
                         .provider("org.hibernate.jpa.HibernatePersistenceProvider")
                         .transactionType(jakarta.persistence.PersistenceUnitTransactionType.RESOURCE_LOCAL)
-                        .property("jakarta.persistence.jdbc.driver", container.getDriverClassName())
-                        .property("jakarta.persistence.jdbc.url", urlFor(container, database))
-                        .property("jakarta.persistence.jdbc.user", container.getUsername())
-                        .property("jakarta.persistence.jdbc.password", container.getPassword())
+                        .property("jakarta.persistence.jdbc.driver", "org.postgresql.Driver")
+                        .property("jakarta.persistence.jdbc.url", deployment.jdbcUrl())
+                        .property("jakarta.persistence.jdbc.user", deployment.username())
+                        .property("jakarta.persistence.jdbc.password", deployment.password())
                         .property("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect")
                         .property("hibernate.hbm2ddl.auto", "update")
                         // Hibernate's built-in pool holds twenty connections and refuses rather than waits, so a
                         // contended run exhausts it and every store call fails with a pool error. Measured on this
                         // suite before it was raised: the read side never caught up on any PostgreSQL arm.
                         .property("hibernate.connection.pool_size", "64")
+                        // Hibernate's built-in pool hands a connection back without asking whether it still works, so a
+                        // store that was killed leaves the pool full of handles to a process that no longer exists and
+                        // every call after the restart fails on a connection rather than on anything real. A validation
+                        // interval evicts them; one second is short enough that a crash-recovery arm gets a usable pool
+                        // back within its heal phase.
+                        .property("hibernate.connection.pool_validation_interval", "1")
                         .property("hibernate.show_sql", "false");
         if (schema != null) {
             configuration.property("hibernate.default_schema", schema);
@@ -372,12 +443,12 @@ public class PostgresJpaHuntBackend implements HuntBackend {
         return configuration.createEntityManagerFactory();
     }
 
-    private static String urlFor(PostgreSQLContainer container, String database) {
-        return container.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + database + "$1");
+    private static void execute(PostgreSQLContainer container, String database, String sql) {
+        execute(Deployment.of(container, database), sql);
     }
 
-    private static void execute(PostgreSQLContainer container, String database, String sql) {
-        try (Connection connection = connect(container, database); Statement statement = connection.createStatement()) {
+    private static void execute(Deployment deployment, String sql) {
+        try (Connection connection = connect(deployment); Statement statement = connection.createStatement()) {
             statement.execute(sql);
         } catch (SQLException e) {
             throw new IllegalStateException("Unable to run [" + sql + "].", e);
@@ -439,7 +510,7 @@ public class PostgresJpaHuntBackend implements HuntBackend {
         private static final class TokenFactory {
 
             private static final EntityManagerFactory INSTANCE =
-                    factory(Container.INSTANCE, TOKEN_DATABASE, null,
+                    factory(Deployment.of(Container.INSTANCE, TOKEN_DATABASE), null,
                             org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry.class);
 
             private TokenFactory() {
@@ -506,7 +577,139 @@ public class PostgresJpaHuntBackend implements HuntBackend {
         if (run == null) {
             return;
         }
-        execute(Container.INSTANCE, Container.INSTANCE.getDatabaseName(),
+        execute(run.deployment(),
                 "TRUNCATE TABLE " + run.schema() + ".aggregateevententry, " + run.schema() + ".tokenentry");
+    }
+
+    /**
+     * Returns every readable event identifier the given run's schema holds, read on a connection of its own.
+     * <p>
+     * <b>This exists because an oracle about durability must not be answered through the run's own plumbing.</b> After the
+     * store has been killed, the entity-manager factory the run was using holds a pool of connections to a process that
+     * no longer exists, and whether Hibernate notices is beside the point: the question "did the store keep what it said
+     * it kept" has to be put to the store, on a fresh connection, in plain SQL. Anything less measures the harness's
+     * recovery rather than the store's.
+     *
+     * @param engine the engine whose run is to be scanned
+     * @return the identifiers the store holds, in global index order
+     */
+    public static List<String> scanIdentifiers(EventStorageEngine engine) {
+        Run run = LIVE.get(Objects.requireNonNull(engine, "The engine cannot be null."));
+        if (run == null) {
+            return List.of();
+        }
+        List<String> identifiers = new java.util.ArrayList<>();
+        try (Connection connection = connect(run.deployment());
+             Statement statement = connection.createStatement();
+             java.sql.ResultSet results = statement.executeQuery(
+                     "SELECT identifier FROM " + run.schema() + ".aggregateevententry ORDER BY globalindex")) {
+            while (results.next()) {
+                identifiers.add(results.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to scan the run's events.", e);
+        }
+        return List.copyOf(identifiers);
+    }
+
+    /**
+     * The same PostgreSQL, in a container of its own behind a proxy, so that a run may cut it, kill it and freeze it.
+     * <p>
+     * The only differences from {@link PostgresJpaHuntBackend} are where the store lives and that it can be broken. A
+     * divergence between this arm and the shared one is therefore attributable to what was done to the infrastructure and
+     * to nothing else.
+     * <p>
+     * <b>The gap settings are compressed, and that is a declaration rather than a convenience.</b> The shipped gap timeout
+     * is a minute, which would make any scenario about a timed-out gap cost a minute per cycle; this arm runs the same
+     * mechanism at {@value #CHAOS_GAP_TIMEOUT_MS}ms. Nothing about the code path changes -- the reader still decides
+     * whether to record a gap by comparing an event's own timestamp against now minus the timeout -- so a scenario that
+     * drives it here drives exactly what a deployment on the default would take sixty times as long to reach.
+     *
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    public static class Chaos extends PostgresJpaHuntBackend {
+
+        /**
+         * The name the breakable arm is selected by in a scenario record and reported under in a verdict vector.
+         */
+        public static final String NAME = "postgres-jpa-chaos";
+
+        /**
+         * How long a gap survives before the reader stops recording one for an event older than it.
+         * <p>
+         * The shipped default is 60000. Compressed here for the same reason every other timing in this suite is: the
+         * mechanism is a comparison against a threshold, and the comparison behaves identically whichever side of it a
+         * second lands on.
+         */
+        public static final int CHAOS_GAP_TIMEOUT_MS = 1000;
+
+        @Override
+        public String name() {
+            return NAME;
+        }
+
+        @Override
+        Deployment deployment() {
+            BreakablePostgres breakable = BreakablePostgres.Holder.INSTANCE;
+            return new Deployment(breakable.jdbcUrl(), breakable.username(), breakable.password());
+        }
+
+        @Override
+        org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration tune(
+                org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration base) {
+            return base.gapTimeout(CHAOS_GAP_TIMEOUT_MS);
+        }
+
+        @Override
+        public StoreInfrastructure infrastructure(EventStorageEngine engine) {
+            return BreakablePostgres.Holder.INSTANCE;
+        }
+    }
+
+    /**
+     * The breakable PostgreSQL configured the way Spring Boot's auto-configuration configures it.
+     * <p>
+     * <b>The two configuration paths do not agree, and this arm is the second half of the differential that shows it.</b>
+     * The framework's own configuration record defaults the gap timeout to 60000ms and the maximum gap offset to 10000;
+     * Spring Boot's auto-configuration defaults them the other way round, to 10000ms and 60000. A deployment therefore
+     * gets different gap behaviour depending on how it was assembled, and a scenario about a timed-out gap that ran only
+     * one of the two would report a guarantee it had verified on one configuration as verified on both.
+     * <p>
+     * Both arms compress the timeout by the same factor -- {@link Chaos#CHAOS_GAP_TIMEOUT_MS} against the core default of
+     * 60000, {@value #SPRING_GAP_TIMEOUT_MS} against Spring Boot's 10000 -- so the ratio between the two configurations
+     * is preserved and the comparison is the one the deployments actually differ by.
+     *
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    public static final class SpringConfigured extends Chaos {
+
+        /**
+         * The name the Spring-Boot-configured arm is selected by in a scenario record.
+         */
+        public static final String NAME = "postgres-jpa-chaos-spring-defaults";
+
+        /**
+         * The gap timeout, compressed from Spring Boot's 10000ms default by the same factor the core default is
+         * compressed by.
+         */
+        public static final int SPRING_GAP_TIMEOUT_MS = 167;
+
+        /**
+         * The maximum gap offset Spring Boot's auto-configuration defaults to, which is six times the core default.
+         */
+        public static final int SPRING_MAX_GAP_OFFSET = 60000;
+
+        @Override
+        public String name() {
+            return NAME;
+        }
+
+        @Override
+        org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration tune(
+                org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngineConfiguration base) {
+            return base.gapTimeout(SPRING_GAP_TIMEOUT_MS).maxGapOffset(SPRING_MAX_GAP_OFFSET);
+        }
     }
 }

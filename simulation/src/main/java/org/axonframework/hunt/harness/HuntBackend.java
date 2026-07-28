@@ -123,6 +123,40 @@ public interface HuntBackend {
     }
 
     /**
+     * Returns every readable event identifier this store holds, in store order, or {@code null} to let the run ask the
+     * engine.
+     * <p>
+     * <b>A store that was killed cannot be asked through the connections the run was using.</b> The pool holds handles to
+     * a process that no longer exists, and whether the pool notices is beside the point: the question "did the store keep
+     * what it said it kept" is the one question that must not be answered through the harness's own plumbing, or the
+     * answer measures the harness's recovery instead of the store's. A backend that can answer it another way -- a fresh
+     * connection and plain SQL -- overrides this and does.
+     * <p>
+     * The default returns {@code null}, meaning the run reads the store through the engine, which is right for a store
+     * that cannot fail independently of the process it lives in.
+     *
+     * @param engine the engine whose store is to be scanned
+     * @return the readable identifiers in store order, or {@code null} to let the run ask the engine
+     */
+    default @Nullable List<String> readableEventIds(EventStorageEngine engine) {
+        return null;
+    }
+
+    /**
+     * Returns the machinery this store runs on, so a run can break it the way an operator's day breaks it.
+     * <p>
+     * The default reports {@link StoreInfrastructure#none()}, which is honest for a store that lives in the heap: there
+     * is no process to kill, no socket to cut and nothing to freeze. A fault aimed at it records no landing, so the same
+     * scenario run here reports a fault that never fired rather than a pass it did not earn.
+     *
+     * @param engine the engine this backend created, whose run's infrastructure is wanted
+     * @return the infrastructure controls, never {@code null}
+     */
+    default StoreInfrastructure infrastructure(EventStorageEngine engine) {
+        return StoreInfrastructure.none();
+    }
+
+    /**
      * Indicates whether this backend's token store decides who owns a segment.
      * <p>
      * Recorded in the history header so that an ownership oracle can hold vacuously, and say so, on a store that

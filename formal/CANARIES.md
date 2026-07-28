@@ -487,3 +487,118 @@ assertion that is red either way would have been the overclaim this file exists 
 | Anything on Axon Server | P3b's, and the connector is absent from this tree | P3b |
 | The gap mutation at a tier above smoke | One seed of one scenario on two stores. Nothing here says how many seeds a subtler gap defect would need | the phase that runs the fuzz tier |
 | A loss oracle that can tell permanent loss from lateness | The gap above is closed by asserting on the run rather than on the invariant. A checker that compared the delivered set's growth across the settle phase could decide it properly, and would close the C6-shaped hole for good | follow-up |
+
+---
+
+## Campaign of 2026-07-28 (P3b, the C7 re-run)
+
+C7 escaped in P3a, and its write-up named exactly two things that would close it: a store-count the read side can actually
+reach, and a loss oracle that can tell permanent loss from lateness. Both were built in this phase, and the mutation was
+applied again, unchanged:
+
+```diff
+     private GapAwareTrackingToken calculateToken(...) {
+-        boolean allowGaps = timestamp.isAfter(gapTimeoutThreshold);
++        boolean allowGaps = false;
+```
+
+in `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngine.java:427`.
+
+The recipe is P3a's, with the arms this phase added:
+
+```bash
+./mvnw -q -o -pl eventsourcing -am install -DskipTests            # after mutating
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout,BackendDifferentialTest$WhatEachStoreDeliveredOfWhatItCommitted' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+git checkout -- eventsourcing                                     # revert, always
+./mvnw -q -o -pl eventsourcing -am install -DskipTests            # restore
+```
+
+### The two changes that closed the hole, and the measurement that proves each one
+
+**The store is now asked what it holds.** `ControllableEventStorageEngine.readableEventIds()` scans the store, the drain
+decides quiescence by asking whether every readable identifier was delivered, and the scan that decides quiescence is the
+one the oracles are judged against. Measured, on a clean engine, before and after:
+
+```
+before: postgres-jpa note: The read side had not caught up with the store within the settle budget.   (every run, every budget)
+after:  MEASURED postgres-jpa read side caught up: true
+```
+
+That is the change P3a said was needed and could not make, and it is what turns "the read side caught up" from a wish into
+an observation.
+
+**Loss is decided on a read side that has stopped, not only on one that caught up.** `DeliveryChecker` declined to call an
+event lost on a run whose read side had not caught up -- correctly, because an interrupted run has lost nothing -- and a
+store that skips an index for ever produces exactly that observation. The drain now reports whether the delivery count
+stopped moving for longer than the run's stall window, and loss is decided on a stalled read side exactly as on a quiesced
+one. `DeliveryCheckerTest.callsItLossWhenTheReadSideHadStoppedMovingAltogether` pins it.
+
+### What the re-run showed, and the honest reading of it
+
+| # | Mutation | Should be caught by | Caught? | Tier / seeds | What the run showed |
+|---|---|---|---|---|---|
+| C7 (re-run) | The gap-aware token records no gap, so an index skipped at read time is never re-read | `NoCommittedEventGoesUndelivered` | **yes** | SMOKE, seeds 1 and 2, `postgres-jpa`, `postgres-jpa-split-tokens`, `postgres-jpa-chaos`, `postgres-jpa-chaos-spring-defaults` | On the shared-resource PostgreSQL arm the clean engine delivers everything it commits and the mutated engine loses events, with the loss **decided** rather than excused. Both halves are new: the loss is what the mutation causes, and the decision is what P3a could not make. |
+
+**The measurement, side by side.** Same arm, same seeds, same budget, one line of the engine apart:
+
+```
+clean    MEASURED postgres-jpa seed 1 undelivered=0 decided=false caughtUp=true
+clean    MEASURED postgres-jpa seed 2 undelivered=0 decided=false caughtUp=true
+mutated  MEASURED postgres-jpa seed 1 undelivered=3 decided=true  caughtUp=false
+mutated  MEASURED postgres-jpa seed 2 undelivered=6 decided=true  caughtUp=false
+```
+
+`decided=true` is the whole of what changed in the suite. In P3a the mutated run produced the identical
+`caughtUp=false` observation and the oracle reported `0 NoCommittedEventGoesUndelivered violations`, because a read side
+that has not caught up was excused. It now reports the loss and names the events.
+
+### What was shipped, and what was deliberately not
+
+The assertion that ships is the **decidability** property:
+
+> where the read side stopped moving with events still in the store, loss is decided and not excused.
+
+Measured green on a clean engine and green under the mutation -- it asserts that a skip is called a skip, not that no skip
+happened -- and it goes red the moment the guard regresses.
+`DeliveryCheckerTest.callsItLossWhenTheReadSideHadStoppedMovingAltogether` is the unit-level red-on-mutation proof: it
+plants an undelivered committed event with `stalled=true` and fails if the checker reports a note instead of a violation.
+
+**What was not shipped is `assertThat(caughtUp).isTrue()` on the PostgreSQL arms, and the reason is measured rather than
+cautious.** It is the assertion that would turn C7 red, and it is green on the shared-resource arm's two seeds above --
+but the split-resource arm loses events on a *clean* engine on both its seeds:
+
+```
+clean    MEASURED postgres-jpa-split-tokens seed 1 undelivered=2 decided=true caughtUp=false
+clean    MEASURED postgres-jpa-split-tokens seed 2 undelivered=4 decided=true caughtUp=false
+```
+
+and the shared-resource arm did so too on an earlier clean run of the same arm at a different stall window. So the
+assertion is red on a clean engine some of the time, which is a flaky test rather than an oracle -- the exact thing P3a
+refused to ship and for the same reason. The loss itself is written up as finding F-16 instead, where an intermittent
+result can be reported as intermittent.
+
+The consequence for the campaign, stated plainly: **C7 is caught and discriminating as a measurement, and is not pinned by
+an assertion.** Re-running it is two commands and the numbers above are what to compare against.
+
+### Two harness defects this campaign found before the mutation was applied at all
+
+Recorded because both were silent, both looked like framework findings, and both would have been written up as such.
+
+| What was reported | What it really was |
+|---|---|
+| 89 `AcknowledgedAppendIsDurable` violations on the kill arm -- every acknowledged append apparently lost | The authoritative scan used the column name `eventidentifier`; the column is `identifier`. The scan threw, the drain kept its previous answer (the empty list), `containsAll(empty)` declared quiescence, and every oracle held vacuously against a store believed to hold nothing. |
+| A balance mismatch on both PostgreSQL arms with nothing lost | Quiescence was decided by comparing counts. A store whose index comes from a sequence taken before a commit separates one batch's rows with another writer's, so the count can be reached while half a transfer is undelivered, and the projection was folded mid-transfer. Quiescence now compares sets. |
+| 154 `NoVisibilityBeforeCommit` violations on the gap arm | The fault delayed `AppendTransaction.commit()`, which on a transaction-managed store does no work and races the database transaction rather than preceding it (finding F-17). The harness's own delay was being measured. |
+| 9 `StoredTokenNeverRegresses` violations on the partition arm, one a 426-position regression | A token write is recorded as successful when its call returns, and on a shared-resource arm that write joins the transaction that commits the batch. A write whose transaction then died with the connection never landed, so the next claim reads back the older token. All three of that checker's invariants are now not applicable on a run declaring a connection-breaking fault. |
+
+## What is not yet canaried
+
+| Not canaried | Why | Owner |
+|---|---|---|
+| A mutation of the gap machinery that the framework does not already exhibit | C7 is subsumed by finding F-16. A discriminating gap canary now needs a mutation whose effect F-16 does not already produce -- of `withGapsCleaned`, or of `GapAwareTrackingToken.advanceTo`'s offset arithmetic. | after F-16 is fixed |
+| Anything against the infrastructure faults themselves | The three primitives are verified against the container by hand and every arm asserts its own landing evidence, but no mutation has been planted that a landing-evidence check would catch. A fault that silently stopped firing would be caught by `DeclaredFaultsLand`; one that fired against the wrong thing would not. | follow-up |
+| The `store-freeze` primitive | Built and verified against the container, and no scenario declares it. Nothing here says what the suite would do with a store that stops answering and then continues. | the phase that pauses a cluster |
+| A mutation of the split or merge algebra | Unchanged from P2b. | follow-up |
+| Anything at a tier above smoke | Unchanged. Every campaign so far is smoke with a fixed seed set. | the phase that runs the fuzz tier |

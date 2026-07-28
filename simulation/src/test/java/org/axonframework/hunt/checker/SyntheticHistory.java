@@ -117,6 +117,41 @@ final class SyntheticHistory {
     }
 
     /**
+     * Records the settle phase, saying both whether the read side caught up and whether it had stopped moving.
+     * <p>
+     * The two are not the same question and conflating them is what let a permanent loss hide behind an interrupted run:
+     * a read side that is still moving may yet arrive, and one that has stopped will not.
+     */
+    void settled(boolean quiesced, boolean stalled) {
+        writer.info(HistoryOps.PHASE, null, Map.of("phase", "settle", HistoryOps.QUIESCED, quiesced,
+                                                   HistoryOps.STALLED, stalled));
+    }
+
+    /**
+     * Records an append that succeeded, given its event identifiers rather than model events.
+     */
+    void appendOkWith(String... eventIds) {
+        writer.invoke(HistoryOps.APPEND, null,
+                      DcbHistoryCodec.encodeAppend(ModelAppendCondition.none(),
+                                                   List.of(eventIds).stream()
+                                                        .map(id -> new ModelEvent(id, "T", java.util.Set.of()))
+                                                        .toList()))
+              .ok(Map.of());
+    }
+
+    /**
+     * Records an append that failed for a reason that is not a decision: a lost conversation rather than an answer.
+     */
+    void appendLostConversation(String... eventIds) {
+        writer.invoke(HistoryOps.APPEND, null,
+                      DcbHistoryCodec.encodeAppend(ModelAppendCondition.none(),
+                                                   List.of(eventIds).stream()
+                                                        .map(id -> new ModelEvent(id, "T", java.util.Set.of()))
+                                                        .toList()))
+              .fail("PSQLException", Map.of());
+    }
+
+    /**
      * Waits long enough that the next record's logical timestamp is measurably later than the last one's.
      */
     void pause(long millis) {

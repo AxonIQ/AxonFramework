@@ -275,6 +275,31 @@ class DeliveryCheckerTest {
         }
 
         @Test
+        void callsItLossWhenTheReadSideHadStoppedMovingAltogether(@TempDir Path directory) {
+            // given the same undelivered event, in a run whose drain reported that the read side had not merely fallen
+            // behind but had stopped accepting deliveries entirely
+            SyntheticHistory history =
+                    new SyntheticHistory(directory, "stalled_not_late", shape("AT_LEAST_ONCE_NO_LOSS"));
+            history.commit("e1", "e2");
+            history.deliver("e1");
+            history.scan("e1", "e2");
+            history.settled(false, true);
+
+            // when the delivery oracle judges it
+            CheckResult result = new DeliveryChecker().check(history.view());
+
+            // then it decides. This is the difference between an interrupted run and a lossy store, and it is the whole
+            // reason a store that skips an index for ever used to escape: both produce a read side that never catches up,
+            // and only one of them produces a read side that has stopped. Nothing is in flight, so nothing is excused.
+            assertThat(result.violations()).hasSize(1);
+            assertThat(result.violations().getFirst().machineName())
+                    .isEqualTo(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED);
+            assertThat(result.violations().getFirst().detail())
+                    .contains("e2", "the read side had stopped accepting deliveries altogether");
+            assertThat(result.notes()).noneMatch(note -> note.contains("not judged as loss"));
+        }
+
+        @Test
         void reportsRatherThanBlamesWhenAFaultRewroteTheStore(@TempDir Path directory) {
             // given an undelivered event in a run where a fault made the store keep something else
             SyntheticHistory history =

@@ -476,6 +476,24 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
     }
 
     @Override
+    public StoreInfrastructure infrastructure() {
+        return backend.infrastructure(engine);
+    }
+
+    /**
+     * Returns every readable event identifier the run's store holds, from the most authoritative source it has.
+     * <p>
+     * A backend that can answer the question without going through the run's own connections does so, which is what makes
+     * a durability oracle sound on a store that was killed. Everything else reads the store through the engine.
+     *
+     * @return the readable identifiers, in store order
+     */
+    public List<String> readableEventIds() {
+        List<String> answered = backend.readableEventIds(engine);
+        return answered == null ? store.readableEventIds() : answered;
+    }
+
+    @Override
     public List<String> nodeNames() {
         return nodes.stream().map(HuntNode::nodeId).toList();
     }

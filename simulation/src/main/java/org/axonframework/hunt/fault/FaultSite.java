@@ -64,6 +64,19 @@ public interface FaultSite {
     java.util.List<String> participants();
 
     /**
+     * Returns the machinery the run's store runs on, so a fault can break the infrastructure rather than a wrapper.
+     * <p>
+     * This is the only seam through which a fault reaches something outside the virtual machine. The default is the
+     * inert one, which is what a site over an in-heap store has: a fault aimed at it records no landing and the run is
+     * inconclusive rather than a pass.
+     *
+     * @return the store's infrastructure controls, never {@code null}
+     */
+    default org.axonframework.hunt.harness.StoreInfrastructure infrastructure() {
+        return org.axonframework.hunt.harness.StoreInfrastructure.none();
+    }
+
+    /**
      * Returns the framework nodes the run has, so a fault can pick one to break.
      * <p>
      * A node is a different kind of target from a workload participant: a participant writes, a node reads and holds

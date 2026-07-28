@@ -138,6 +138,14 @@ public final class LedgerWorkload implements Workload {
     private final Map<String, Long> balances = new ConcurrentHashMap<>();
     private final Map<String, HistoryRecorder.ProcessRecorder> projectionRecorders = new ConcurrentHashMap<>();
     private final AtomicLong delivered = new AtomicLong();
+    /**
+     * Every identifier the projection has been handed, which is what quiescence is decided on.
+     * <p>
+     * Separate from the counter beside it on purpose: the counter answers whether the read side is still moving, which a
+     * set cannot because a repeated delivery does not grow it, and the set answers whether the read side is complete,
+     * which a count cannot because one batch's events are not adjacent in a store whose index comes from a sequence.
+     */
+    private final java.util.Set<String> deliveredIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private LedgerWorkload(boolean forceHotKey, boolean sequencePerAccount, boolean idempotentProjection) {
         this.forceHotKey = forceHotKey;
@@ -286,6 +294,7 @@ public final class LedgerWorkload implements Workload {
                             balances.clear();
                             applied.clear();
                             delivered.set(0L);
+                            deliveredIds.clear();
                             return MessageStream.empty();
                         });
     }
@@ -321,8 +330,13 @@ public final class LedgerWorkload implements Workload {
     }
 
     @Override
-    public boolean quiesced(WorkloadContext context) {
-        return delivered.get() >= context.world().store().storedEvents();
+    public long deliveredEvents(WorkloadContext context) {
+        return delivered.get();
+    }
+
+    @Override
+    public java.util.Set<String> deliveredEventIds(WorkloadContext context) {
+        return deliveredIds;
     }
 
     @Override
@@ -512,6 +526,7 @@ public final class LedgerWorkload implements Workload {
             if (first) {
                 balances.merge(ledgerEvent.account(), ledgerEvent.delta(), Long::sum);
                 delivered.incrementAndGet();
+                deliveredIds.add(event.identifier());
             }
             String node = processingContext.getResource(org.axonframework.hunt.harness.HuntNode.NODE_KEY);
             Map<String, Object> value = new LinkedHashMap<>();

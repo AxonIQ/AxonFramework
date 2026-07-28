@@ -68,6 +68,12 @@ public class AppendOutcomeChecker implements Checker {
             "No event offered by an append recorded as rejected is present in the authoritative scan taken after the "
                     + "run has quiesced.";
 
+    /**
+     * The error an append refused by an injected fault is recorded under, which is an answer the store is bound by even
+     * though the store did not give it.
+     */
+    private static final String INJECTED_REFUSAL = "InjectedStoreFailureException";
+
     @Override
     public String name() {
         return "AppendOutcomeChecker";
@@ -101,6 +107,11 @@ public class AppendOutcomeChecker implements Checker {
                     append.invocation().longValue(DcbHistoryCodec.MARKER, DcbStoreModel.ORIGIN) == DcbStoreModel.INFINITY;
             boolean rejected = append.outcome() == Outcome.FAIL
                     && ModelConformanceChecker.CONSISTENCY_REJECTION.equals(errorOf(append));
+            // An append the store, or a fault standing in for it, decided against. Wider than a protocol rejection,
+            // because an injected refusal is also an answer the store is bound by; narrower than "failed", because a
+            // lost conversation is not an answer at all.
+            boolean decidedAgainst = rejected
+                    || (append.outcome() == Outcome.FAIL && INJECTED_REFUSAL.equals(errorOf(append)));
 
             if (unconditional && rejected) {
                 violations.add(Violation.of(UNCONDITIONAL_APPEND_NEVER_REJECTED,
@@ -109,7 +120,12 @@ public class AppendOutcomeChecker implements Checker {
                                             append.records(),
                                             history.header()));
             }
-            if (scanned && append.outcome() == Outcome.FAIL) {
+            // Only an append the store decided against, not every append that failed. A failure that is a lost
+            // conversation rather than an answer -- a dropped connection, a store that stopped replying -- says nothing
+            // about whether the commit landed, and holding the store to it reports a commit that really was applied as
+            // a rejected append that leaked. Before the infrastructure faults existed no run could produce such a
+            // failure, so the distinction cost nothing and was not made.
+            if (scanned && decidedAgainst) {
                 List<String> leaked = DcbHistoryCodec.decodeEvents(append.invocation().value())
                                                      .stream()
                                                      .map(org.axonframework.hunt.model.ModelEvent::id)

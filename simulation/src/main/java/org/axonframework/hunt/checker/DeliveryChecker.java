@@ -87,9 +87,17 @@ import java.util.TreeMap;
  * a pass can never signal a regression either.
  * <p>
  * Three situations make this checker report rather than decide, and each one exists because deciding would be wrong:
- * a run whose read side had not caught up when the run ended has not lost anything, it was interrupted; a run in
+ * a run whose read side was still moving when the run ended has not lost anything, it was interrupted; a run in
  * which a fault made the store hold something other than what was offered lost data the harness destroyed; and a
  * history from before the run recorded whether it caught up cannot be judged either way, so it is left alone.
+ * <p>
+ * <b>Still moving is the operative phrase, and it is what makes the first of those a guard rather than a blindfold.</b>
+ * A store that loses an event permanently leaves the read side behind for ever, which is the same observation an
+ * interrupted run produces, so a checker that declined on "did not catch up" alone declined on the very defect it
+ * exists to find -- measured, on a mutation of the gap-aware token that skips an index and never comes back. The run
+ * therefore reports whether the read side had <em>stopped</em>: a drain that ends with the delivery count unchanged for
+ * longer than the run's stall window has nothing in flight, and loss is decided on it exactly as it would be on a run
+ * that caught up.
  *
  * @author Stefan Dragisic
  * @since 5.3.0
@@ -163,7 +171,8 @@ public class DeliveryChecker implements Checker {
         }
 
         List<String> reasonsToReport = new ArrayList<>();
-        if (!quiesced) {
+        boolean stalled = Boolean.TRUE.equals(flag(history, HistoryOps.STALLED));
+        if (!quiesced && !stalled) {
             reasonsToReport.add("the read side had not caught up when the run ended");
         }
         if (!history.notes(HistoryOps.STORE_PERTURBED).isEmpty()) {
@@ -187,7 +196,10 @@ public class DeliveryChecker implements Checker {
         lost.removeAll(perEvent.keySet());
         if (!lost.isEmpty()) {
             String detail = lost.size() + " committed event(s) never reached a consumer, for example "
-                    + lost.stream().limit(5).toList();
+                    + lost.stream().limit(5).toList()
+                    + (stalled && !quiesced
+                    ? "; the read side had stopped accepting deliveries altogether, so nothing was in flight"
+                    : "");
             if (decide) {
                 violations.add(Violation.of(NO_COMMITTED_EVENT_GOES_UNDELIVERED,
                                             NO_COMMITTED_EVENT_GOES_UNDELIVERED_STATEMENT,
@@ -277,8 +289,12 @@ public class DeliveryChecker implements Checker {
     }
 
     private static @org.jspecify.annotations.Nullable Boolean quiesced(HistoryView history) {
+        return flag(history, HistoryOps.QUIESCED);
+    }
+
+    private static @org.jspecify.annotations.Nullable Boolean flag(HistoryView history, String field) {
         for (HistoryRecord phase : history.notes(HistoryOps.PHASE)) {
-            String recorded = phase.stringValue(HistoryOps.QUIESCED);
+            String recorded = phase.stringValue(field);
             if (recorded != null) {
                 return Boolean.parseBoolean(recorded);
             }

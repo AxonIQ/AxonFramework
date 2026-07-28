@@ -16,8 +16,6 @@
 
 package org.axonframework.hunt.scenario;
 
-import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
-import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.hunt.checker.CheckResult;
 import org.axonframework.hunt.checker.Checker;
 import org.axonframework.hunt.checker.CheckerRegistry;
@@ -36,9 +34,6 @@ import org.axonframework.hunt.history.HistoryView;
 import org.axonframework.hunt.model.DcbHistoryCodec;
 import org.axonframework.hunt.workload.Workload;
 import org.axonframework.hunt.workload.WorkloadContext;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -76,7 +71,21 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class ScenarioRunner {
 
-    private static final Duration POLL_INTERVAL = Duration.ofMillis(25);
+    /**
+     * How often the drain asks the store what it holds.
+     * <p>
+     * Coarser than the twenty-five milliseconds an in-heap comparison could afford, because every poll is now a real
+     * scan of a real store. A quarter of a second costs a run at most that much extra latency and keeps a
+     * container-backed arm from spending its settle budget re-reading the same rows.
+     */
+    private static final Duration SETTLE_POLL_INTERVAL = Duration.ofMillis(250);
+
+    /**
+     * The shortest stall window any scenario may derive, so that a scenario with very compressed timings cannot call a
+     * read side stalled before the coordinator's hardcoded five-hundred-millisecond idle re-poll has come round twice.
+     */
+    private static final Duration MINIMUM_STALL_WINDOW = Duration.ofSeconds(2);
+
     private static final String HARNESS = "harness";
     private static final String PHASE = "phase";
 
@@ -131,7 +140,6 @@ public final class ScenarioRunner {
                                                    recorder, buggify, scenario.timescale(), scenario.determinism(),
                                                    deadline)) {
                 drive(scenario, workload, world, harness, recorder, deadline, notes, faultFires);
-                harness.info(HistoryOps.SCAN, null, Map.of(DcbHistoryCodec.EVENT_IDS, scan(world)));
                 harness.info(HistoryOps.INIT_SEGMENTS, "final",
                              Map.of(HistoryOps.SEGMENT, world.knownSegments()));
                 harness.info(HistoryOps.PHASE, null, Map.of(PHASE, "verdict"));
@@ -284,13 +292,19 @@ public final class ScenarioRunner {
         // Recorded after the wait rather than before it, because whether the read side caught up is the thing a
         // delivery or liveness oracle has to know: judging an event as lost while the projection was still catching
         // up is a finding about the run's budget, not about the framework.
-        boolean quiesced = settle(workload, context, scenario.faults().settle(), deadline);
+        Settled settled = settle(workload, world, context, scenario, deadline);
+        harness.info(HistoryOps.SCAN, null, Map.of(DcbHistoryCodec.EVENT_IDS, settled.readable()));
         harness.info(HistoryOps.PHASE, null, Map.of(PHASE, "settle",
                                                     "settleMs", scenario.faults().settle().toMillis(),
-                                                    HistoryOps.QUIESCED, quiesced));
-        if (!quiesced) {
+                                                    HistoryOps.QUIESCED, settled.quiesced(),
+                                                    HistoryOps.STALLED, settled.stalled(),
+                                                    "stallWindowMs", stallWindow(scenario).toMillis(),
+                                                    "readableEvents", settled.readable().size(),
+                                                    "deliveredEvents", settled.delivered()));
+        if (!settled.quiesced()) {
             notes.add("The read side had not caught up with the store within the settle budget.");
         }
+        notes.addAll(unansweredStore(settled));
 
         evidence.forEach(recorded -> {
             faultFires.put(recorded.kind(), recorded.fires());
@@ -344,30 +358,126 @@ public final class ScenarioRunner {
         return evidence;
     }
 
-    private static boolean settle(Workload workload, WorkloadContext context, Duration budget, Deadline deadline) {
+    /**
+     * What draining the run concluded: whether the read side caught up, whether it had stopped moving, and the scan
+     * that decided it.
+     *
+     * @param quiesced  whether every readable event had reached the projection
+     * @param stalled   whether the projection stopped accepting deliveries for longer than the stall window while
+     *                  readable events were still missing
+     * @param readable  the store's own answer to what it holds, taken by the scan that decided the verdict
+     * @param delivered how many deliveries the projection had accepted when the drain ended
+     * @param refusal   why the store could not be read, or empty when it answered
+     * @author Stefan Dragisic
+     * @since 5.3.0
+     */
+    private record Settled(boolean quiesced,
+                           boolean stalled,
+                           List<String> readable,
+                           long delivered,
+                           String refusal) {
+
+    }
+
+    /**
+     * Drains the run and decides quiescence against the store's own answer rather than the harness's bookkeeping.
+     * <p>
+     * Three things about this method are load-bearing and were each paid for by a wrong verdict.
+     * <p>
+     * <b>The store is asked what it holds.</b> Chasing the read side against a count the harness kept made quiescence
+     * unreachable on a store whose engine returns from its commit call before the database transaction commits, so every
+     * container-backed arm reported itself undecided whatever else it found -- and a store that loses an event for ever
+     * produces exactly that same observation, which is how a real defect stayed invisible.
+     * <p>
+     * <b>The scan that decides quiescence is the scan the oracles are judged against.</b> Taking a second, later scan
+     * would let a batch that landed between the two turn up as a committed event nobody delivered, which is a false
+     * loss. Deciding and recording from one scan makes that impossible by construction.
+     * <p>
+     * <b>A read side that has stopped moving has lost something; one that is still moving has not.</b> That distinction
+     * is the whole difference between an interrupted run and a lossy store, and it is measured rather than assumed: the
+     * delivery count is watched, and a drain that ends with it unchanged for longer than the stall window reports itself
+     * as stalled so that a loss oracle may decide instead of declining.
+     */
+    private static Settled settle(Workload workload,
+                                  HuntWorld world,
+                                  WorkloadContext context,
+                                  Scenario scenario,
+                                  Deadline deadline) {
+        Duration budget = scenario.faults().settle();
         Deadline settleDeadline = Deadline.in("settle", min(budget, deadline.remaining()));
-        try {
-            return settleDeadline.awaitUntil(() -> workload.quiesced(context), POLL_INTERVAL);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
+        Duration stallWindow = stallWindow(scenario);
+        List<String> readable = List.of();
+        boolean answered = false;
+        String refusal = "";
+        long delivered = workload.deliveredEvents(context);
+        long lastProgressAt = System.nanoTime();
+        while (true) {
+            // A store that has just been killed cannot answer, and that is a state of the world rather than an error in
+            // the drain: the last answer it gave still stands, and the loop keeps asking until the store is back or the
+            // budget runs out. What it must never do is treat "no answer" as "nothing to deliver", which is why the
+            // no-answer case is tracked separately -- an empty list satisfies every containment test there is.
+            try {
+                readable = world.readableEventIds();
+                answered = true;
+            } catch (RuntimeException e) {
+                // Keep the previous answer, and stay unanswered if there has never been one. The reason is kept because a
+                // scan that always fails is indistinguishable from a store holding nothing, and the first time that
+                // happened it cost an afternoon: the column name was wrong and every oracle held vacuously.
+                refusal = e.getClass().getSimpleName() + ": " + e.getMessage();
+            }
+            long seen = workload.deliveredEvents(context);
+            if (seen > delivered) {
+                delivered = seen;
+                lastProgressAt = System.nanoTime();
+            }
+            if (answered && workload.deliveredEventIds(context).containsAll(readable)) {
+                return new Settled(true, false, readable, delivered, "");
+            }
+            if (settleDeadline.expired()) {
+                boolean stalled = answered && System.nanoTime() - lastProgressAt >= stallWindow.toNanos();
+                return new Settled(false, stalled, readable, delivered, answered ? "" : refusal);
+            }
+            try {
+                Thread.sleep(Math.max(1L, Math.min(SETTLE_POLL_INTERVAL.toMillis(),
+                                                   settleDeadline.remaining().toMillis())));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return new Settled(false, false, readable, delivered, answered ? "" : refusal);
+            }
         }
     }
 
-    private static List<String> scan(HuntWorld world) {
-        List<String> stored = new ArrayList<>();
-        MessageStream<EventMessage> stream =
-                world.store().source(SourcingCondition.conditionFor(EventCriteria.havingAnyTag()), null);
-        try {
-            for (var entry = stream.next(); entry.isPresent(); entry = stream.next()) {
-                if (entry.get().getResource(ConsistencyMarker.RESOURCE_KEY) == null) {
-                    stored.add(entry.get().message().identifier());
-                }
-            }
-        } finally {
-            stream.close();
-        }
-        return List.copyOf(stored);
+    /**
+     * Returns the note a drain that never got an answer out of the store must carry.
+     * <p>
+     * Without it, a run whose store could not be read at all would record an empty scan, and every oracle comparing the
+     * delivered set against it would find nothing missing and hold vacuously -- which is the shape of a suite that passes
+     * because it stopped looking.
+     */
+    private static List<String> unansweredStore(Settled settled) {
+        return settled.readable().isEmpty() && !settled.quiesced()
+                ? List.of("The store gave no answer about what it holds, so nothing was compared against it"
+                                  + (settled.refusal().isEmpty() ? "." : ": " + settled.refusal()))
+                : List.of();
+    }
+
+    /**
+     * Returns how long the read side may go without accepting a delivery before the drain calls it stalled.
+     * <p>
+     * The basis is stated rather than tuned. After the last fault has healed, the longest a delivery can legitimately be
+     * delayed is the greater of the horizon the scenario declares and one token-claim timeout, because a segment cannot
+     * be picked up again before its claim lapses. Doubling that leaves room for the coordinator's idle re-poll, which is
+     * a hardcoded five hundred milliseconds and does not compress. Anything longer than that with events still missing
+     * is not lateness.
+     */
+    private static Duration stallWindow(Scenario scenario) {
+        Duration basis = max(scenario.livenessHorizon(), scenario.timescale().tokenStoreClaimTimeout());
+        // Capped at half the settle budget, and that cap is not a detail. Derived from the horizon alone, a scenario
+        // whose horizon happens to be half its settle window gets a stall window exactly as long as the drain, which can
+        // never elapse -- measured: a stall window of 60000ms against a settle budget of 60000ms reported a read side
+        // that had delivered nothing for the entire drain as still moving, and the loss it was sitting on went
+        // undecided. A window the drain cannot reach is a check that cannot fire.
+        return max(min(basis.multipliedBy(2), scenario.faults().settle().dividedBy(2)), MINIMUM_STALL_WINDOW);
     }
 
     private static List<String> missingOracles(Scenario scenario) {
@@ -436,6 +546,10 @@ public final class ScenarioRunner {
 
     private static Duration min(Duration first, Duration second) {
         return first.compareTo(second) <= 0 ? first : second;
+    }
+
+    private static Duration max(Duration first, Duration second) {
+        return first.compareTo(second) >= 0 ? first : second;
     }
 
     /**

@@ -137,16 +137,34 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
     }
 
     /**
-     * Returns how many events actually reached the wrapped store.
+     * Returns the identifiers of every event the wrapped store will hand a reader, in the store's own order.
      * <p>
-     * This is what the read side has to catch up with, and it is deliberately not the number of events the workload
-     * offered: a vanished commit offered events that nothing will ever deliver, and a duplicated one delivered more
-     * than were offered.
+     * <b>This is the authoritative answer and the only one worth deciding anything on.</b> A store is asked what it
+     * holds rather than told what it was given, so the count means the same thing on a map in the heap and on a
+     * database that commits in two phases. Deriving it from what the harness offered was measured to be the reason a
+     * PostgreSQL arm could never reach quiescence, and therefore the reason a store that loses an event permanently
+     * produced exactly the same observation as a run that was merely interrupted.
+     * <p>
+     * The scan opens no processing context, so a persistent store answers it in a transaction of its own and returns
+     * committed rows only.
      *
-     * @return the number of events written to the wrapped engine
+     * @return the readable event identifiers, in store order
      */
-    public long storedEvents() {
-        return storedEvents.get();
+    public List<String> readableEventIds() {
+        List<String> readable = new java.util.ArrayList<>();
+        MessageStream<EventMessage> stream =
+                source(SourcingCondition.conditionFor(
+                        org.axonframework.messaging.eventstreaming.EventCriteria.havingAnyTag()), null);
+        try {
+            for (var entry = stream.next(); entry.isPresent(); entry = stream.next()) {
+                if (entry.get().getResource(ConsistencyMarker.RESOURCE_KEY) == null) {
+                    readable.add(entry.get().message().identifier());
+                }
+            }
+        } finally {
+            stream.close();
+        }
+        return List.copyOf(readable);
     }
 
     @Override
@@ -179,6 +197,12 @@ public final class ControllableEventStorageEngine implements EventStorageEngine 
                            if (failure != null) {
                                invocation.fail(rootCauseName(failure), Map.of("phase", "append"));
                                throw new java.util.concurrent.CompletionException(failure);
+                           }
+                           // Still inside the framework's prepare-commit phase, so a hook delaying here holds a real
+                           // transaction open: the store has taken its positions and written its rows, and nothing has
+                           // committed. It is the only point in this wrapper where that is true.
+                           for (StoreHook hook : hooks) {
+                               hook.afterAppend(attempt);
                            }
                            return (AppendTransaction<?>) new InterferingTransaction(transaction,
                                                                                     condition,

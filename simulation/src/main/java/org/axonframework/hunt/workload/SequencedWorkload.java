@@ -93,6 +93,14 @@ public final class SequencedWorkload implements Workload {
     private final Map<String, String> resolvedKeys = new ConcurrentHashMap<>();
     private final Set<String> distinctKeys = ConcurrentHashMap.newKeySet();
     private final AtomicLong delivered = new AtomicLong();
+    /**
+     * Every identifier the projection has been handed, which is what quiescence is decided on.
+     * <p>
+     * Separate from the counter beside it on purpose: the counter answers whether the read side is still moving, which a
+     * set cannot because a repeated delivery does not grow it, and the set answers whether the read side is complete,
+     * which a count cannot because one batch's events are not adjacent in a store whose index comes from a sequence.
+     */
+    private final java.util.Set<String> deliveredIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final AtomicLong unresolved = new AtomicLong();
 
     private SequencedWorkload(String arm, SequencingPolicy<? super EventMessage> policy) {
@@ -163,8 +171,13 @@ public final class SequencedWorkload implements Workload {
     }
 
     @Override
-    public boolean quiesced(WorkloadContext context) {
-        return delivered.get() >= context.world().store().storedEvents();
+    public long deliveredEvents(WorkloadContext context) {
+        return delivered.get();
+    }
+
+    @Override
+    public java.util.Set<String> deliveredEventIds(WorkloadContext context) {
+        return deliveredIds;
     }
 
     @Override
@@ -243,6 +256,7 @@ public final class SequencedWorkload implements Workload {
     private MessageStream.Empty<Message> project(HistoryRecorder.ProcessRecorder recorder, EventMessage event) {
         if (event.payload() instanceof Ticked ticked) {
             delivered.incrementAndGet();
+            deliveredIds.add(event.identifier());
             Map<String, Object> value = new LinkedHashMap<>();
             value.put("eventId", event.identifier());
             value.put("index", ticked.index());

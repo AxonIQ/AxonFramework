@@ -126,6 +126,15 @@ public class StoredProgressChecker implements Checker {
      */
     public static final String BATCH_SIZE = "projectionBatchSize";
 
+    /**
+     * The fault kinds that can make a store call return normally without its transaction ever committing.
+     * <p>
+     * Any of them makes every invariant this checker derives from a recorded token write inexpressible, because the
+     * recorded write is the call's outcome and not the transaction's.
+     */
+    private static final Set<String> CONNECTION_BREAKING_FAULTS =
+            Set.of("store-partition", "store-crash", "store-freeze");
+
     @Override
     public String name() {
         return "StoredProgressChecker";
@@ -138,11 +147,61 @@ public class StoredProgressChecker implements Checker {
                       CLAIM_HANDOVER_REWINDS_AT_MOST_ONE_BATCH);
     }
 
+    /**
+     * Indicates whether more than one node shared a token store with no notion of an owner.
+     */
+    private static boolean severalNodesShareAStoreThatArbitratesNothing(HistoryView history) {
+        Map<String, String> shape = history.header().workloadShape();
+        String arbitrates = shape.get(OwnershipChecker.ARBITRATES_CLAIMS);
+        if (arbitrates == null || Boolean.parseBoolean(arbitrates)) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(shape.getOrDefault("nodes", "1")) > 1;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Indicates whether the run declared a fault that can make a store call return without its transaction committing.
+     */
+    private static boolean storeConnectionWasBroken(HistoryView history) {
+        String declared = history.header().workloadShape().getOrDefault("declaredFaults", "");
+        return CONNECTION_BREAKING_FAULTS.stream().anyMatch(declared::contains);
+    }
+
     @Override
     public CheckResult check(HistoryView history) {
         List<Operation> writes = storedTokens(history);
         if (writes.isEmpty()) {
             return CheckResult.holding(name());
+        }
+        if (severalNodesShareAStoreThatArbitratesNothing(history)) {
+            // Several nodes over a store that grants every claim have no shared notion of a segment's progress at all:
+            // each believes it owns every segment, each writes its own position over the others', and the stored token
+            // walks backwards and forwards by construction -- measured, as 24 regressions on a four-node run over the
+            // framework's in-heap token store. That is the store's absence of ownership, not the framework mishandling
+            // progress. A single node over the same store is a different matter and is judged: there is exactly one
+            // writer of progress, so monotonicity means what it says even with nobody to arbitrate.
+            return CheckResult.notApplicable(name(), List.of(
+                    STORED_TOKEN_NEVER_REGRESSES + ", " + STORED_TOKEN_COVERS_DELIVERED_EVENTS + " and "
+                            + CLAIM_HANDOVER_REWINDS_AT_MOST_ONE_BATCH + " are not expressible on this run: its token "
+                            + "store grants every claim and several nodes share it, so no node's progress is the "
+                            + "segment's progress."));
+        }
+        if (storeConnectionWasBroken(history)) {
+            // Not undecidedness: on this run there is no observation of a stored token to judge. Every one of these three
+            // invariants is derived from what a token write returned, and a token write joins the transaction that
+            // commits the batch, so a call that returned normally moments before the connection died may never have
+            // committed at all. The history then shows a token stored at a high position that the store never took, and
+            // the next claim reads back the older one -- which looks exactly like a regression and is not one. Deciding
+            // it needs the token table sampled directly, which no arm does.
+            return CheckResult.notApplicable(name(), List.of(
+                    STORED_TOKEN_NEVER_REGRESSES + ", " + STORED_TOKEN_COVERS_DELIVERED_EVENTS + " and "
+                            + CLAIM_HANDOVER_REWINDS_AT_MOST_ONE_BATCH + " are not expressible on this run: a fault "
+                            + "broke the store's connection, and a token write's recorded outcome is the outcome of the "
+                            + "call rather than of the transaction that would have committed it."));
         }
         List<Violation> violations = new ArrayList<>();
         List<String> notes = new ArrayList<>();

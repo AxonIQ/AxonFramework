@@ -8,6 +8,11 @@ on:
   pull_request:
     paths-ignore:
       - 'docs/**'
+  # The seed sweep every night and the container tiers once a week. Both jobs gate themselves on the event being a
+  # schedule or a dispatch rather than a pull request, so a per-change build never pays for them.
+  schedule:
+    - cron: '0 2 * * *'
+    - cron: '0 4 * * 0'
   workflow_dispatch:
 
 concurrency:
@@ -76,15 +81,152 @@ jobs:
           show: "fail, skip"
         if: always() # This allows the build step to fail -- due to failing tests -- but still produce a test summary.
 
+  # The seed sweep. Nightly rather than per-change because it is measured in seeds and not in minutes: the smoke tier
+  # runs a fixed handful so that a red build points at one cause, and this one runs enough of them to find the
+  # interleaving nobody thought of. Chunked across a matrix so that no single virtual machine outlives the runner, and
+  # each chunk starts where the previous one stopped, so the sweep covers a contiguous range rather than the same seeds
+  # from four directions.
+  hunt-fuzz:
+    name: Hunt fuzz seeds ${{ matrix.start-seed }}
+    # Nightly, or on demand. Never on a pull request: the sweep is measured in seeds and would stop being a gate.
+    if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        start-seed: [ 10000, 11000, 12000, 13000 ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: 'zulu'
+          java-version: 21
+          cache: "maven"
+
+      - name: Assert reruns are pinned off
+        run: |
+          grep -q '<surefire.rerunFailingTestsCount>0</surefire.rerunFailingTestsCount>' simulation/pom.xml \
+            || { echo "The hunt module no longer pins surefire.rerunFailingTestsCount to 0."; exit 1; }
+
+      - name: Build the framework the suite drives
+        run: |
+          ./mvnw -B -U -ntp -Dstyle.color=always -Djacoco.skip=true -pl eventsourcing -am clean install -DskipTests
+
+      # The fuzz tag is excluded from every normal build, so the sweep has to clear the exclusion explicitly. Nothing
+      # here passes a rerun count: a seed that fails once has found something, and running it again until it passes is
+      # how a suite is taught to hide its own findings.
+      - name: Hunt fuzz tier
+        run: |
+          ./mvnw -B -ntp -Dstyle.color=always -Djacoco.skip=true -Phunt -pl simulation test \
+            -Dhunt.excludedGroups= -Dtest=HuntFuzzTest -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dhunt.seeds=250 -Dhunt.startSeed=${{ matrix.start-seed }}
+
+      # Always, not only on failure. A sweep's histories are the only exact record of the runs it made -- under real
+      # threads a seed does not reproduce the run that broke -- and a clean sweep's histories are what the next
+      # regression is compared against.
+      - name: Archive recorded histories
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hunt-histories-fuzz-${{ matrix.start-seed }}
+          path: '**/target/hunt-histories/**'
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Create test summary
+        uses: test-summary/action@v2
+        with:
+          paths: "simulation/target/surefire-reports/TEST-*.xml"
+          show: "fail, skip"
+        if: always()
+
+  # The container tiers: the backend differential and the arms that break a real store's machinery. Weekly rather than
+  # nightly because every arm of it starts containers and kills them, which is minutes of wall clock per arm and cannot
+  # be made cheap. Split into two jobs rather than one, because a differential that compares stores and a nemesis that
+  # destroys one are different failures to read: a red differential names a store, a red chaos arm names a fault.
+  hunt-chaos:
+    name: Hunt containers -- ${{ matrix.arm }}
+    # Weekly, or on demand. Every arm starts containers and kills them, which is minutes of wall clock each.
+    if: github.event.schedule == '0 4 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The same scenarios against every store the suite can reach, so that a failure names the store rather than
+          # starting an argument about whose defect it is.
+          - arm: backend-differential
+            test: BackendDifferentialTest
+          # Faults that act on the infrastructure rather than on a wrapper: the network cut with the store left running,
+          # the process killed outright, and the commits held open past the store's own gap timeout.
+          - arm: store-infrastructure-failures
+            test: StoreInfrastructureFailureTest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: 'zulu'
+          java-version: 21
+          cache: "maven"
+
+      - name: Assert reruns are pinned off
+        run: |
+          grep -q '<surefire.rerunFailingTestsCount>0</surefire.rerunFailingTestsCount>' simulation/pom.xml \
+            || { echo "The hunt module no longer pins surefire.rerunFailingTestsCount to 0."; exit 1; }
+
+      # The images every container arm needs, pulled up front so that a pull failure is reported as a pull failure
+      # rather than as a scenario whose nemesis mysteriously never landed.
+      - name: Pull the images the container arms need
+        run: |
+          docker pull postgres:16-alpine
+          docker pull ghcr.io/shopify/toxiproxy:2.12.0
+
+      - name: Build the framework the suite drives
+        run: |
+          ./mvnw -B -U -ntp -Dstyle.color=always -Djacoco.skip=true -pl eventsourcing -am clean install -DskipTests
+
+      # Only the fuzz tag stays excluded: the container tag is what this job exists to clear. No rerun count, for the
+      # same reason as everywhere else in this file.
+      - name: Hunt container tier -- ${{ matrix.arm }}
+        run: |
+          ./mvnw -B -ntp -Dstyle.color=always -Djacoco.skip=true -Phunt -pl simulation test \
+            -Dhunt.excludedGroups=fuzz -Dtest=${{ matrix.test }} -Dsurefire.failIfNoSpecifiedTests=false
+
+      # Always. A chaos arm's history carries the landing evidence for its nemesis -- the exit code, the recovery line,
+      # the proxy's reported state -- and a run without that evidence is inconclusive rather than a pass, so the
+      # evidence has to survive the runner whichever way the run went.
+      - name: Archive recorded histories
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hunt-histories-${{ matrix.arm }}
+          path: '**/target/hunt-histories/**'
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Create test summary
+        uses: test-summary/action@v2
+        with:
+          paths: "simulation/target/surefire-reports/TEST-*.xml"
+          show: "fail, skip"
+        if: always()
+
 # ---------------------------------------------------------------------------------------------------------------
-# Placeholders. Both are deliberately absent rather than stubbed-and-disabled, because a scheduled job that exists
-# and does nothing reads as coverage.
+# Still absent, and deliberately absent rather than stubbed-and-disabled, because a scheduled job that exists and does
+# nothing reads as coverage:
 #
-#   hunt-fuzz    (nightly cron)  -- the seed sweep: `-Dhunt.excludedGroups= -Dtest=HuntFuzzTest -Dhunt.seeds=<n>
-#                                   -Dhunt.startSeed=<n> -Dsurefire.failIfNoSpecifiedTests=false`, chunked so no
-#                                   single JVM outlives the runner, with the same history archiving as above.
-#   hunt-chaos   (weekly cron)   -- the hardening and release tiers: several faults at once, the backends that need
-#                                   containers, and the long soaks. Needs the backend layer that does not exist yet.
-#
-# Both are owned by the phase that adds the backends they are worth running against.
+#   an Axon Server arm -- blocked, with evidence. The only reachable connector artefacts implement
+#   EventStorageEngine.source(SourcingCondition) and the interface in this tree requires
+#   source(SourcingCondition, ProcessingContext); loading one against this reactor raises AbstractMethodError at run
+#   time and javac does not catch it. See FINDINGS.adoc.
 # ---------------------------------------------------------------------------------------------------------------

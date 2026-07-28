@@ -16,6 +16,7 @@
 
 package org.axonframework.hunt.scenario;
 
+import org.axonframework.hunt.checker.DeliveryChecker;
 import org.axonframework.hunt.checker.OrderChecker;
 import org.axonframework.hunt.history.HistoryOps;
 import org.axonframework.hunt.history.HistoryRecord;
@@ -120,10 +121,17 @@ class SequencingPolicyOrderTest {
                     .isNotEmpty();
             assertThat(history.notes(HistoryOps.SEQUENCE).getFirst().stringValue("error"))
                     .isEqualTo(java.util.NoSuchElementException.class.getName());
-            // Nothing was found broken by any oracle: an unreachable read side is not an ordering violation, and the
-            // run says so by being undecided rather than by passing.
-            assertThat(result.violations()).as("violations: %s", result).isEmpty();
-            assertThat(result.verdict()).isEqualTo(Verdict.INCONCLUSIVE);
+            // And the loss is now reported as loss. This arm used to be undecided, on the grounds that an unreachable
+            // read side has not lost anything -- but this read side is not behind, it has stopped dead, and every event
+            // the run committed is gone for good. The drain reports a read side that stopped moving, so the loss oracle
+            // decides instead of excusing it, and the arm states the real cost of the policy resolution throwing:
+            // everything.
+            assertThat(result.violations())
+                    .as("total loss must be reported as loss: %s", result)
+                    .isNotEmpty()
+                    .allSatisfy(violation -> assertThat(violation.machineName())
+                            .isEqualTo(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED));
+            assertThat(result.verdict()).isEqualTo(Verdict.FAIL);
         }
     }
 
@@ -143,8 +151,12 @@ class SequencingPolicyOrderTest {
             assertThat(projectionOf(history).longValue("deliveredEvents", -1L)).isZero();
             assertThat(history.notes(HistoryOps.SEQUENCE).getFirst().stringValue("error"))
                     .isEqualTo(java.util.NoSuchElementException.class.getName());
-            assertThat(result.violations()).as("violations: %s", result).isEmpty();
-            assertThat(result.verdict()).isEqualTo(Verdict.INCONCLUSIVE);
+            assertThat(result.violations())
+                    .as("total loss must be reported as loss: %s", result)
+                    .isNotEmpty()
+                    .allSatisfy(violation -> assertThat(violation.machineName())
+                            .isEqualTo(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED));
+            assertThat(result.verdict()).isEqualTo(Verdict.FAIL);
         }
     }
 

@@ -127,6 +127,31 @@ easy workaround), *low* (a documentation or ergonomics gap).
   just its handling, which is worth knowing before anybody writes a test for it.
 | Low (not a defect)
 | Measured. Recorded as a harness constraint.
+
+| *F-16* `EventSkippedWhenItsTimestampAgesPastTheGapTimeout`
+| An event whose transaction commits later than `gapTimeout` after the event's own message timestamp can be skipped by a
+  streaming reader for ever. The reader decides whether to record a gap by comparing the event it can see against the
+  wall clock, so a neighbour that has aged past the threshold suppresses the gap for the hole below it, and nothing ever
+  asks for that index again.
+| High
+| *Reproduced by test*, on PostgreSQL, on both configuration paths. Open.
+
+| *F-17* `DatabaseTransactionCommitRacesAppendTransactionCommit`
+| On a store whose transaction lives on the processing context, the database transaction's commit and
+  `EventStorageEngine.AppendTransaction.commit()` are two actions registered in the same lifecycle phase, and the
+  framework runs same-phase actions with no ordering between them. An append's events were measured readable 1877ms
+  before the `commit()` of the append that produced them was entered. Nothing in the interface says that `commit()` is
+  not the durability point.
+| Medium
+| *Measured.* Open.
+
+| *F-18* `ConnectorArtefactsCannotLinkAgainstThisReactor`
+| No reachable Axon Server connector artefact can be loaded against this tree: the newest ones implement
+  `EventStorageEngine.source(SourcingCondition)` and this reactor's interface requires
+  `source(SourcingCondition, ProcessingContext)`. Loading one raises `AbstractMethodError` at run time, and `javac` does
+  not catch it.
+| Blocking (for coverage, not a defect)
+| *Measured.* The Axon Server arm is blocked on it.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -1140,3 +1165,305 @@ and `DefaultEventStoreTransaction` should not reach it.
 
 The same command without `-Dhunt.backend` runs the identical classes against the in-memory store and is green, which is
 the vector.
+
+== F-16 -- An event skipped for ever because its own timestamp aged past the gap timeout
+
+*Severity:* High +
+*Status:* Open. Reproduced by test, on PostgreSQL, on both configuration paths. +
+*Backend vector:* `in-memory: n/a` (no gaps to record -- an in-heap map has no index taken before a commit),
+`hsqldb-tokens: n/a` (same event store), `postgres-jpa-chaos: FAIL`, `postgres-jpa-chaos-spring-defaults: FAIL`,
+`postgres-jpa: intermittent`, `postgres-jpa-split-tokens: FAIL`.
+
+The two `-chaos` arms hold a transaction open on purpose, so they reproduce it deliberately. The two arms that install no
+fault at all reproduce it by accident, which is the more alarming half: `postgres-jpa-split-tokens` lost 2 and 4 committed
+events on its two seeds of a clean engine, and `postgres-jpa` lost 0 on both seeds of one run and 2 on a seed of another.
+Nothing forces the interval on those arms -- ordinary contention over a database is enough.
+
+=== What is wrong
+
+`AggregateBasedJpaEventStorageEngine` takes its `globalIndex` from a database sequence *before* the transaction commits,
+so a reader routinely sees index `n+1` while `n` is a hole that will later fill. Recording that hole as a gap is what
+makes the reader come back for it. Whether it records one is decided here:
+
+[source,java]
+----
+// eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/jpa/AggregateBasedJpaEventStorageEngine.java:427
+boolean allowGaps = timestamp.isAfter(gapTimeoutThreshold);
+return token == null
+        ? GapAwareTrackingToken.newInstance(globalIndex, calculateGaps(globalIndex, allowGaps))
+        : token.advanceTo(globalIndex, allowGaps ? maxGapOffset : 0);
+----
+
+`timestamp` is the **message's own** timestamp and `gapTimeoutThreshold` is `now - gapTimeout`
+(`GapAwareTrackingTokenOperations.gapTimeoutThreshold()`). So an event that has aged past the threshold by the time a
+reader first sees it advances the token to its index with a gap allowance of **zero**, and every lower index still
+uncommitted at that instant is never recorded as a gap at all. When those transactions commit, the reader's token is
+already past them and holds nothing that would bring it back.
+
+The decisive point is that the ageing is not the *reader's* lateness. It is the interval between the event being created
+in the handler and its transaction committing, and any of the ordinary reasons for that interval to be long -- a slow
+store, a contended lock, a large transaction, a paused process -- is enough.
+
+=== Evidence
+
+Measured on the breakable PostgreSQL arm, with every commit held open between the rows being written and the transaction
+committing, for twice the arm's gap timeout. The hold is what makes it reliable, not what makes it possible:
+
+----
+gap-core   readableEvents=88  deliveredEvents=85  stalled=true
+  [NoCommittedEventGoesUndelivered] 3 committed event(s) never reached a consumer, for example
+  [writer-3-4-w, writer-6-5-w, writer-6-10-w]; the read side had stopped accepting deliveries altogether,
+  so nothing was in flight
+gap-spring readableEvents=86  deliveredEvents=83  stalled=true
+  [NoCommittedEventGoesUndelivered] 3 committed event(s) never reached a consumer, for example
+  [writer-5-0-w, writer-5-0-d, writer-6-7-w]; the read side had stopped accepting deliveries altogether,
+  so nothing was in flight
+----
+
+The events are in the store: the count they are missing from is a direct SQL scan of `aggregateevententry`, taken on a
+connection of its own. The read side had stopped moving entirely for longer than the run's stall window, so nothing was
+in flight, which is what makes this loss rather than lateness.
+
+And on the arms that install no fault, at the framework's own 60-second gap timeout, on a clean engine:
+
+----
+MEASURED postgres-jpa-split-tokens seed 1 undelivered=2 decided=true caughtUp=false
+MEASURED postgres-jpa-split-tokens seed 2 undelivered=4 decided=true caughtUp=false
+MEASURED postgres-jpa              seed 1 undelivered=0 decided=false caughtUp=true
+MEASURED postgres-jpa              seed 2 undelivered=0 decided=false caughtUp=true
+----
+
+Two things follow that the deliberate arms cannot establish on their own. The loss does not need a fault, and the events it
+takes sit near the *start* of the store rather than the end -- in one history at store positions 47 and 50, committed at
+2620ms, with the reader having delivered up to position 592 by 5592ms and then nothing for the following sixty seconds. It
+is not a tail that ran out of time.
+
+**What is not established is the mechanism at the default timeout.** The `allowGaps` comparison explains the compressed
+arms exactly: a hold of twice the gap timeout guarantees the ageing. At sixty seconds it does not obviously apply to an
+event committed 2.6 seconds into a run, and no attempt was made here to instrument the reader's token to find out which of
+the gap machinery's several paths took it. The observation is reproducible and the mechanism at that timeout is open.
+
+=== Both configuration paths, because they disagree
+
+The two arms differ only in the gap settings, and the settings differ because the two configuration paths default them to
+each other's values (finding F-1): the framework's own configuration record defaults `gapTimeout` to 60000ms and
+`maxGapOffset` to 10000, and Spring Boot's autoconfigure defaults them to 10000ms and 60000. Both arms skip. So this is
+not a consequence of one path's numbers; it is the mechanism, and the numbers only decide how long a transaction has to
+be open before it bites -- ten seconds on a Spring Boot deployment and a minute on a plain one.
+
+=== Why it matters
+
+The loss is silent in every direction. The append succeeded and the caller was told so. The store holds the event and any
+scan finds it. No error is logged, no token is refused, no exception reaches anybody. The only observable is that a
+projection is permanently short of an event, discovered whenever somebody reconciles a read model against the store --
+which for an event-sourced system is the one comparison that is supposed to be redundant.
+
+=== How it was found
+
+By holding a transaction open between the rows being written and the transaction committing, which is the only interval in
+which the hole exists. Canary C7 -- forcing `allowGaps = false` in that same comparison -- turns the shared-resource arm
+from `undelivered=0` on both seeds to `undelivered=3` and `undelivered=6`, which is the mutation reproducing a stronger
+form of the same defect and is why C7 has stopped being useful as a *planted* defect. It took two attempts: the first delayed
+`EventStorageEngine.AppendTransaction.commit()` and changed nothing at all, because on this engine that call does no work
+and races the database transaction rather than preceding it (finding F-17).
+
+It also needed the loss oracle to be able to decide. `DeliveryChecker` declined to call an event lost on a run whose read
+side had not caught up -- correctly, because an interrupted run has lost nothing -- and a store that skips an index for
+ever produces exactly that observation. The run now reports whether the read side had *stopped*, and loss is decided on a
+stalled read side exactly as it is on one that caught up. That is the same guard that made canary C7 escape, closed.
+
+=== Candidate fix
+
+The comparison is between an event's own timestamp and the reader's clock, and those two are not commensurable: one is set
+when the event is created and the other is read when the event is first seen, with an unbounded interval between them
+that the framework does not control. Two candidates, neither free:
+
+* compare against something the store assigns at commit time rather than against the message timestamp, so that the
+  threshold measures how long the *index* has been outstanding rather than how old the payload is;
+* or treat a hole below an aged event as a gap regardless, and rely on `gapCleaningThreshold` and `maxGapOffset` to bound
+  the cost, accepting the read amplification the current comparison exists to avoid.
+
+Whichever is chosen, the reference documentation for `gapTimeout` describes it as a performance setting for cleaning old
+gaps and does not say that exceeding it can drop an event. That sentence is a fix in itself.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Needs Docker. The arm prints its own verdict vector and the count of events the store held that never reached a consumer.
+
+== F-17 -- The database transaction's commit races the append transaction's commit
+
+*Severity:* Medium +
+*Status:* Open. Measured. +
+*Backend vector:* `in-memory: n/a` (no database transaction -- the engine's own `commit()` is the commit),
+`postgres-jpa: measured`, `postgres-jpa-chaos: measured`.
+
+=== What is wrong
+
+On a store whose transaction lives on the processing context, two separate actions land in the framework's `COMMIT`
+phase, and the framework states plainly that it will not order them:
+
+* the transaction manager registers its commit during `PRE_INVOCATION` --
+  `TransactionManager.attachToProcessingLifecycle` does `processingLifecycle.runOnPreInvocation(pc -> { Transaction t =
+  startTransaction(); pc.runOnCommit(p -> t.commit()); ... })`;
+* the event store registers the append transaction's commit during `PREPARE_COMMIT` --
+  `DefaultEventStoreTransaction.attachAppendEventsStep()` does `processingContext.onCommit(c -> tx.commit()...)` from
+  inside its own prepare-commit action.
+
+Both are `DefaultPhases.COMMIT`, and `ProcessingLifecycle`'s own Javadoc says that "actions registered in a `Phase` with
+the same order may be executed in parallel"; `UnitOfWork` combines them with `CompletableFuture::allOf`.
+
+So on such a store the events become durable and readable at a moment that has no defined relationship to
+`AppendTransaction.commit()`. It may be before, during or after.
+
+=== Evidence
+
+From one run's history, for the first event delivered on the breakable PostgreSQL arm, with a two-second delay installed
+after the rows were written:
+
+----
+event writer-3-0-w delivered at ms 615
+  commit INVOKE ms 2492
+  append OK   ms 2492
+----
+
+The event was handed to a consumer 1877ms before the append transaction's `commit()` was even entered. The engine's own
+`commit()` is a documented no-op on this store -- "Transaction is in control of the entity manager executor, so do no
+work here" -- so nothing was waiting for it.
+
+=== Why it matters
+
+Three consequences, and the third is the one that bites.
+
+`AppendTransaction.commit()` cannot fail an append on such a store. By the time it runs, the events may already be
+readable, so a failure there is a failure after the point of no return rather than a refusal.
+
+`AppendTransaction.rollback()` cannot undo one either. The framework registers it through `onError` for any phase, and it
+is already documented that a failure after the commit rolls back a batch that has been published (finding F-8) -- what is
+new here is that the same is true for a failure *during* the commit phase, because the transaction may have gone first.
+
+And the interface says none of this. `EventStorageEngine.AppendTransaction` reads as a two-phase protocol in which
+`commit()` is the moment of durability, and for the in-heap engine it is; for a transaction-managed engine it is not, and
+an implementer has no way to know which contract they are writing to. Every harness or interceptor that treats
+`commit()` as the visibility point is wrong on half the stores -- which is exactly the bug this suite had, and is how
+this was found.
+
+=== How it was found
+
+A fault was written to hold a transaction open by delaying `AppendTransaction.commit()`, on the reasonable assumption
+that the transaction commits after it. The arm produced 154 `NoVisibilityBeforeCommit` violations and no skip at all,
+which is the opposite of what it was built to find. Reading the delivery and commit timestamps out of the history showed
+the delay was entirely after durability.
+
+=== Candidate fix
+
+Either give the two actions an order -- the storage engine's commit registered in a phase strictly before the transaction
+manager's, so that `commit()` really is the last thing that can refuse an append -- or say in
+`EventStorageEngine.AppendTransaction`'s Javadoc that on a store whose transaction is external, `commit()` is not the
+durability point and must not be treated as one. The second is a documentation change and closes the trap for
+implementers; the first closes it for callers as well.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Then read any history under `simulation/target/hunt-histories/gap-core-defaults/` and compare a `deliver` record's
+`logicalTs` against the `commit` record carrying the same event identifier. The fault now delays
+`StoreHook.afterAppend`, which is strictly before the transaction, so a current run shows the correct order; reverting
+`LateCommitFault` to delay `onCommit` reproduces the measurement above.
+
+== F-18 -- No reachable Axon Server connector links against this reactor
+
+*Severity:* Blocking for coverage; not a framework defect. +
+*Status:* Open. Measured. The Axon Server arm of the suite is blocked on it. +
+*Backend vector:* `axonserver: BLOCKED`.
+
+=== What is wrong
+
+There is no Axon Server connector artefact that can be loaded against this tree.
+
+* The in-tree `axon-server-connector/` directory does not exist, and the root POM's `<modules>` does not name it.
+* `org.axonframework:axon-server-connector:5.1.0` has **no jar** in the local repository -- only `.lastUpdated` failure
+  markers. The newest resolvable open-source artefact is `5.1.0-RC2`.
+* The open-source connector was discontinued and moved to the commercial coordinates
+  `io.axoniq.framework:axon-server-connector`, whose newest local version is `5.2.0`. The repository's own examples
+  confirm the move: `examples/university-demo/pom.xml:83` declares `<groupId>io.axoniq.framework</groupId>`.
+
+Loading the newest available connector with a complete classpath fails at run time:
+
+----
+java.lang.AbstractMethodError: Receiver class
+  org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine
+does not define or inherit an implementation of the resolved method
+  'abstract org.axonframework.messaging.core.MessageStream source(
+     org.axonframework.eventsourcing.eventstore.SourcingCondition,
+     org.axonframework.messaging.core.unitofwork.ProcessingContext)'
+of interface org.axonframework.eventsourcing.eventstore.EventStorageEngine.
+----
+
+A full reflective scan of the commercial 5.2.0 connector against this reactor's installed jars resolves all 90 classes
+and finds exactly four unimplemented abstract methods, all from one commit:
+
+----
+AggregateBasedAxonServerEventStorageEngine -> EventStorageEngine.source[SourcingCondition, ProcessingContext]
+AxonServerEventStorageEngine              -> EventStorageEngine.source[SourcingCondition, ProcessingContext]
+AxonServerSnapshotStore                   -> SnapshotStore.load[QualifiedName, Object, ProcessingContext]
+AxonServerSnapshotStore                   -> SnapshotStore.store[QualifiedName, Object, Snapshot, ProcessingContext]
+
+d3dc55f338bc9eb3d6e5b32b6c4ef315f952185d  Tue Jul 14 10:15:05 2026 +0200
+[#3594] feature(eventsourcing): EventStorageEngine#source and SnapshotStore methods
+        - add ProcessingContext parameter
+----
+
+`git describe --tags --contains d3dc55f338` reports `fatal: cannot describe`, so the change is after 5.2.0 and exists
+only on `main`.
+
+The package reorganisation is *not* the blocker: 26 of the 28 `org.axonframework` packages the connector references
+still exist here. The two that do not --
+`org.axonframework.messaging.commandhandling.distributed` and `org.axonframework.messaging.queryhandling.distributed` --
+were never in `axon-messaging` and now live in the commercial `axoniq-distributed-messaging` under
+`io.axoniq.framework.messaging.*`, so they break only the open-source jar.
+
+=== Why it matters
+
+Scenario S11 in the plan (`axonserver_stream_resume_no_loss_no_silent_dup`) cannot be built, and neither can any
+Axon Server row in the backend verdict vector. The plan already anticipated this and requires that such a scenario record
+`axonserver: SKIPPED` and be reported inconclusive rather than passed; this finding is the evidence behind that entry.
+
+Note that `javac` does **not** catch it: compiling a subclass of `AxonServerEventStorageEngine` against this reactor
+exits 0, because the compiler trusts the binary supertype. Only loading it fails. Anybody wiring the connector by hand
+will therefore get a clean build and a run-time error.
+
+=== What would unblock it
+
+`io.axoniq.framework:axon-server-connector:5.3.0-SNAPSHOT` built against the post-#3594 interfaces, together with
+`axoniq-framework-bom:5.3.0-SNAPSHOT` and `axoniq-distributed-messaging:5.3.0-SNAPSHOT`. None of those exists in the
+local repository; they are commercial artefacts from the Axoniq private repository. Whether such a build exists upstream
+was not determined -- only the local inventory was checked.
+
+The one self-contained alternative is to write a thin `EventStorageEngine` in the hunt module directly against
+`io.axoniq:axonserver-connector-java:2026.0.0`, whose `DcbEventChannel`, `dcb.proto` and matching
+`axonserver:2026.0.0` image are all present locally. That is writing a connector rather than consuming one, and it would
+measure the harness's connector rather than the framework's.
+
+=== Reproduce
+
+[source,bash]
+----
+ls ~/.m2/repository/io/axoniq/framework/axon-server-connector/    # newest is 5.2.0; no 5.3.0
+javap -classpath <reactor jars> org.axonframework.eventsourcing.eventstore.EventStorageEngine | grep source
+----
+
+The interface shows `public abstract ... source(SourcingCondition, ProcessingContext)` with the one-argument form now
+`default`; the connector implements only the one-argument override.

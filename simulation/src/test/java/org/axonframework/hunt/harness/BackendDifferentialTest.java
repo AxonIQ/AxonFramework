@@ -18,13 +18,16 @@ package org.axonframework.hunt.harness;
 
 import org.axonframework.hunt.checker.AppendOutcomeChecker;
 import org.axonframework.hunt.checker.DeliveryChecker;
-import org.axonframework.hunt.fault.FaultSchedule;
+import org.axonframework.hunt.checker.OwnershipChecker;
+import org.axonframework.hunt.history.HistoryOps;
+import org.axonframework.hunt.history.HistoryView;
 import org.axonframework.hunt.scenario.HuntScenarios;
 import org.axonframework.hunt.scenario.Scenario;
 import org.axonframework.hunt.scenario.ScenarioResult;
 import org.axonframework.hunt.scenario.ScenarioRunner;
 import org.axonframework.hunt.scenario.Tier;
 import org.axonframework.hunt.scenario.TierBudget;
+import org.axonframework.hunt.scenario.Verdict;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -50,6 +53,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * pointed somewhere else with {@link Scenario#onBackend(String)}. That substitution is the extensibility charter's
  * backend clause, and this is the test that turns it from a claim into a property: a store added tomorrow inherits the
  * whole corpus by registering itself, with no scenario edited.
+ * <p>
+ * <b>Several scenarios and several seeds, because one of each is one interleaving.</b> A matrix of one scenario at one
+ * seed says what that scenario did once on each store and nothing more; a scenario that would only diverge on a different
+ * shape of history, or on a different race, could not surface in it. Every arm therefore runs every seed its tier
+ * declares, and the matrix carries a scenario from each family the corpus has: contended conditioned appends, a
+ * deterministic single-writer arm, a reader racing a committing batch, a transaction failed at the moment of commit, and
+ * a cluster booting into an empty token store.
+ * <p>
+ * <b>A store that cannot express an invariant says so, and that is recorded rather than passed.</b> The framework's
+ * in-heap token store has no owner, no timestamp and no expiry, so every claim assertion made against it holds vacuously
+ * -- which reads as coverage and is worse than nothing. The bootstrap arm is in the matrix precisely to demonstrate that
+ * the vector reports it as not expressible on the stores that arbitrate no claims, and as decided on the two that do.
  * <p>
  * <b>What a divergence between the in-heap store and PostgreSQL means here.</b> The aggregate-based JPA engine is not a
  * Dynamic Consistency Boundary store, and the differences are documented rather than discovered: at most one tag per
@@ -88,50 +103,122 @@ class BackendDifferentialTest {
             HuntTimescale.compressed().withClaimTimings(Duration.ofSeconds(2), Duration.ofMillis(400));
 
     /**
-     * How long an arm waits for its read side, and how much load it applies.
+     * How long an arm waits for its read side, how much load it applies, and how many seeds it runs.
      * <p>
      * A container is two orders of magnitude slower than a map in the heap, and a budget sized for the heap leaves a
      * PostgreSQL arm permanently behind its own read side -- measured: a thousand commands and a thirty-second settle
      * left it undecided on every run, which makes the arm unable to signal anything. Three hundred commands and a
      * minute of settle are enough for every store in the matrix to finish, which is what makes "the read side caught up"
      * an assertion rather than a wish.
+     * <p>
+     * Two seeds rather than one, because a single seed is a single interleaving and the suite's own weak-oracle rules cap
+     * a one-seed arm at a partial verdict however clean it is.
      */
-    private static final TierBudget MATRIX_BUDGET = new TierBudget(300, 1, Duration.ofMinutes(4));
+    private static final TierBudget MATRIX_BUDGET = new TierBudget(300, 2, Duration.ofMinutes(4));
 
     private static final Duration MATRIX_SETTLE = Duration.ofSeconds(60);
 
-    private static Map<String, ScenarioResult> across(Scenario scenario) {
-        Map<String, ScenarioResult> perBackend = new LinkedHashMap<>();
-        for (String backend : BACKENDS) {
-            Scenario arm = scenario.onBackend(backend)
-                                   .withTimescale(MATRIX_TIMINGS)
-                                   .withBudget(Tier.SMOKE, MATRIX_BUDGET)
-                                   .withFaults(FaultSchedule.none(MATRIX_SETTLE));
-            perBackend.put(backend, ScenarioRunner.run(arm, Tier.SMOKE, arm.seed(),
-                                                       ScenarioRunner.historyDirectory(
-                                                               Path.of("target", "hunt-histories",
-                                                                       "differential-" + backend))));
-        }
-        System.out.println(vector(scenario.id(), perBackend));
-        perBackend.forEach((backend, result) -> {
-            result.violations().forEach(violation -> System.out.println("  " + backend + " violation: " + violation));
-            result.notes().forEach(note -> System.out.println("  " + backend + " note: " + note));
-            result.measurements().forEach(m -> System.out.println("  " + backend + " measured: " + m));
-            result.notApplicable().forEach(n -> System.out.println("  " + backend + " n/a: " + n));
+    /**
+     * The whole matrix, run once for the class rather than once per assertion.
+     * <p>
+     * Every arm is a container-backed run of tens of seconds, and the assertions below read different facts off the same
+     * runs. Running the matrix per test would double its cost and, worse, would compare assertions made about two
+     * different sets of runs.
+     */
+    private static final Map<String, Map<String, List<ScenarioResult>>> MATRIX = new LinkedHashMap<>();
+
+    /**
+     * The scenarios the matrix runs, one from each family the corpus has.
+     * <p>
+     * Named rather than taken wholesale from the catalogue: the corpus includes arms whose whole purpose is to observe a
+     * refusal or a documented gap, and folding those into a cross-store differential would compare the shapes of two
+     * expected failures rather than the stores.
+     */
+    private static List<Scenario> scenarios() {
+        return List.of(HuntScenarios.appendRejectedAfterMarker(),
+                       HuntScenarios.appendRejectedAfterMarkerSingleWriter(),
+                       HuntScenarios.partialBatchVisibility(),
+                       HuntScenarios.uncommittedNeverVisibleAtCommit(),
+                       HuntScenarios.concurrentBootstrap());
+    }
+
+    private static Map<String, List<ScenarioResult>> across(Scenario scenario) {
+        return MATRIX.computeIfAbsent(scenario.id(), id -> {
+            Map<String, List<ScenarioResult>> perBackend = new LinkedHashMap<>();
+            for (String backend : BACKENDS) {
+                Scenario arm = scenario.onBackend(backend)
+                                       .withTimescale(MATRIX_TIMINGS)
+                                       .withBudget(Tier.SMOKE, MATRIX_BUDGET);
+                // A scenario that declares its own faults keeps them: the matrix compares stores, and taking a
+                // scenario's fault away would compare a different experiment. Only a fault-free scenario has its settle
+                // window restated, which is what a container needs.
+                if (arm.faults().declaredFaults().isEmpty()) {
+                    arm = arm.withFaults(org.axonframework.hunt.fault.FaultSchedule.none(MATRIX_SETTLE));
+                }
+                List<ScenarioResult> perSeed = new ArrayList<>();
+                for (long seed : arm.seeds(Tier.SMOKE)) {
+                    perSeed.add(ScenarioRunner.run(arm, Tier.SMOKE, seed,
+                                                   ScenarioRunner.historyDirectory(
+                                                           Path.of("target", "hunt-histories",
+                                                                   "differential-" + backend))));
+                }
+                perBackend.put(backend, List.copyOf(perSeed));
+            }
+            System.out.println(vector(id, perBackend));
+            perBackend.forEach((backend, results) -> results.forEach(result -> {
+                result.violations().forEach(violation -> System.out.println("  " + backend + " violation: "
+                                                                                    + violation));
+                result.notes().forEach(note -> System.out.println("  " + backend + " note: " + note));
+                result.measurements().forEach(m -> System.out.println("  " + backend + " measured: " + m));
+                result.notApplicable().forEach(n -> System.out.println("  " + backend + " n/a: " + n));
+            }));
+            return perBackend;
         });
-        return perBackend;
     }
 
     /**
-     * Renders the per-backend verdict vector, which is what a finding carries so that nobody has to re-derive it.
+     * Renders the per-backend verdict vector, one entry per seed, which is what a finding carries so that nobody has to
+     * re-derive it.
      */
-    private static String vector(String scenarioId, Map<String, ScenarioResult> perBackend) {
+    private static String vector(String scenarioId, Map<String, List<ScenarioResult>> perBackend) {
         List<String> parts = new ArrayList<>();
-        perBackend.forEach((backend, result) -> parts.add(backend + ":" + result.verdict()
-                                                                 + (result.notApplicable().isEmpty()
-                                                                 ? ""
-                                                                 : "(" + result.notApplicable().size() + " n/a)")));
+        perBackend.forEach((backend, results) -> parts.add(
+                backend + ":" + results.stream().map(result -> result.verdict()
+                        + (result.notApplicable().isEmpty() ? "" : "(" + result.notApplicable().size() + " n/a)"))
+                                       .map(String::valueOf)
+                                       .reduce((first, second) -> first + "/" + second)
+                                       .orElse("none")));
         return "VECTOR " + scenarioId + " " + String.join(" ", parts);
+    }
+
+    private static List<ScenarioResult> allResults(Map<String, List<ScenarioResult>> perBackend) {
+        return perBackend.values().stream().flatMap(List::stream).toList();
+    }
+
+    @Nested
+    class EveryScenarioOfTheMatrixOnEveryStore {
+
+        @Test
+        void producesAVerdictPerSeedPerBackendWithNoArmLeftUnrun() {
+            // given a scenario from each family the corpus has, edited in no way at all
+            List<Scenario> scenarios = scenarios();
+
+            // when every one of them is run against every registered store, at every seed its tier declares
+            Map<String, Map<String, List<ScenarioResult>>> matrix = new LinkedHashMap<>();
+            scenarios.forEach(scenario -> matrix.put(scenario.id(), across(scenario)));
+
+            // then the vector is complete rather than partial: every store answered for every seed of every scenario,
+            // because an arm that silently did not run is indistinguishable from one that passed
+            assertThat(matrix).hasSize(scenarios.size());
+            matrix.forEach((id, perBackend) -> {
+                assertThat(perBackend).as("stores that answered for %s", id).hasSize(BACKENDS.size());
+                perBackend.forEach((backend, results) -> {
+                    assertThat(results).as("seeds run for %s on %s", id, backend)
+                                       .hasSize(MATRIX_BUDGET.seeds());
+                    assertThat(results).allSatisfy(result -> assertThat(result.verdict()).isNotNull());
+                });
+            });
+        }
     }
 
     @Nested
@@ -143,33 +230,39 @@ class BackendDifferentialTest {
             Scenario scenario = HuntScenarios.appendRejectedAfterMarker();
 
             // when it is run against every registered store
-            Map<String, ScenarioResult> perBackend = across(scenario);
+            Map<String, List<ScenarioResult>> perBackend = across(scenario);
 
-            // then every store produced a verdict, so the vector is complete rather than partial
-            assertThat(perBackend).hasSize(BACKENDS.size());
-            assertThat(perBackend.values()).allSatisfy(result -> assertThat(result.verdict()).isNotNull());
-
-            // and the two Dynamic Consistency Boundary stores judged the protocol, while the aggregate-based store said
+            // then the two Dynamic Consistency Boundary stores judged the protocol, while the aggregate-based store said
             // it cannot: a store whose append condition is not a boundary over tags and a marker has nothing for the
             // reference model to be compared against, and reporting that is what stops the vector claiming coverage
-            assertThat(perBackend.get(InMemoryHuntBackend.NAME).notApplicable()).isEmpty();
-            assertThat(perBackend.get(PostgresJpaHuntBackend.NAME).notApplicable())
-                    .anySatisfy(statement -> assertThat(statement).contains("AppendConformsToDcbModel",
-                                                                            "not expressible"));
+            assertThat(perBackend.get(InMemoryHuntBackend.NAME))
+                    .allSatisfy(result -> assertThat(result.notApplicable())
+                            .as("a boundary store must be able to judge the protocol")
+                            .noneMatch(statement -> statement.contains("AppendConformsToDcbModel")));
+            assertThat(perBackend.get(PostgresJpaHuntBackend.NAME))
+                    .allSatisfy(result -> assertThat(result.notApplicable())
+                            .anySatisfy(statement -> assertThat(statement).contains("AppendConformsToDcbModel",
+                                                                                    "not expressible")));
 
             // and the divergence this matrix found is pinned where it is, so that closing it is what breaks this
             // assertion. An append made with no consistency condition is rejected as conflicting on the aggregate-based
             // store whenever the aggregate already holds events, because an INFINITY marker carries no position and the
             // sequencer restarts at zero. That is finding F-14, recorded rather than repaired: the suite observes the
             // framework and does not fix it, so the expectation flips red on the day it stops happening.
-            assertThat(perBackend.get(InMemoryHuntBackend.NAME).violations())
+            assertThat(perBackend.get(InMemoryHuntBackend.NAME))
                     .as("the boundary store holds the guarantee")
-                    .isEmpty();
-            assertThat(perBackend.get(PostgresJpaHuntBackend.NAME).violations())
+                    .allSatisfy(result -> assertThat(result.violations()).isEmpty());
+            // The pinned expectation is that the divergence is *present*, not that it is the only thing present. It was
+            // written as the latter when the aggregate-based arm produced nothing else, and that stopped being true the
+            // moment the loss oracle became decidable on this store: the arm now also reports events the store held and
+            // the read side never delivered, intermittently, which is finding F-16 rather than a broken expectation. An
+            // assertion about the absence of other findings is an assertion that the suite must stop finding things.
+            assertThat(perBackend.get(PostgresJpaHuntBackend.NAME))
                     .as("finding F-14 on %s", PostgresJpaHuntBackend.NAME)
-                    .isNotEmpty()
-                    .allSatisfy(violation -> assertThat(violation.machineName())
-                            .isEqualTo(AppendOutcomeChecker.UNCONDITIONAL_APPEND_NEVER_REJECTED));
+                    .allSatisfy(result -> assertThat(result.violations())
+                            .isNotEmpty()
+                            .anySatisfy(violation -> assertThat(violation.machineName())
+                                    .isEqualTo(AppendOutcomeChecker.UNCONDITIONAL_APPEND_NEVER_REJECTED)));
         }
     }
 
@@ -177,39 +270,138 @@ class BackendDifferentialTest {
     class WhatEachStoreDeliveredOfWhatItCommitted {
 
         @Test
-        void isMeasuredPerBackendAndDecidedOnlyWhereTheStoreCanBeDecidedAbout() {
+        void isDecidedRatherThanExcusedOnEveryStoreNowThatQuiescenceIsAskedOfTheStoreItself() {
             // given the shipped contended-append scenario, whose read side is a real streaming processor over whichever
             // store the arm names
             Scenario scenario = HuntScenarios.appendRejectedAfterMarker();
 
             // when it is run against every registered store
-            Map<String, ScenarioResult> perBackend = across(scenario);
+            Map<String, List<ScenarioResult>> perBackend = across(scenario);
 
-            // then no arm anywhere may report a committed event as never delivered
-            perBackend.forEach((backend, result) -> assertThat(result.violations())
-                    .as("delivery violations on %s", backend)
-                    .noneMatch(violation -> DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED
-                            .equals(violation.machineName())));
-
-            // and the two stores whose read side does catch up must say so, because that is the only place where "no
-            // loss" is a decided answer rather than an undecided one
+            // then the two in-heap-event-store arms deliver everything they commit, which is what a store with no index
+            // taken before a commit should do: it has no holes for a reader to have to come back for.
             List.of(InMemoryHuntBackend.NAME, HsqldbTokenStoreBackend.NAME).forEach(backend -> assertThat(
-                            perBackend.get(backend).notes())
-                    .as("read side on %s: %s", backend, perBackend.get(backend))
-                    .noneMatch(note -> note.contains("read side had not caught up")));
+                            perBackend.get(backend))
+                    .as("delivery on %s", backend)
+                    .allSatisfy(result -> {
+                        assertThat(result.violations())
+                                .noneMatch(violation -> DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED
+                                        .equals(violation.machineName()));
+                        assertThat(result.notes()).noneMatch(note -> note.contains("read side had not caught up"));
+                    }));
 
-            // and the PostgreSQL arms are measured rather than asserted, deliberately. Their read side does not catch up
-            // with this workload, and the reason is not a budget: three hundred commands with a minute of settle behave
-            // exactly as a thousand with thirty seconds did. The harness counts an append as stored when the engine's
-            // commit call returns, and on this engine that call returns before the database transaction commits, so the
-            // count the read side is chased against is not a count of what is readable. Until that is fixed the arms
-            // cannot be held to quiescence, and pretending otherwise would ship a permanently red assertion -- which is
-            // the exact shape of inertness this suite exists to avoid.
+            // and on the stores that do take an index before committing, whatever the read side did is DECIDED rather
+            // than excused. That is the part that could not be asserted before, and the change behind it is not a
+            // tolerance: quiescence used to be measured against a count the harness kept, and on a store whose engine
+            // returns from its commit call before the database transaction commits, that count is not a count of
+            // readable events. So the arm could never reach quiescence at any budget, and a store that loses an event
+            // for ever produced exactly the same observation as a run that was merely interrupted -- which is why a
+            // planted gap defect escaped this suite once. Quiescence is now asked of the store, and a read side that has
+            // stopped moving with events still missing is judged instead of forgiven.
             List.of(PostgresJpaHuntBackend.NAME, PostgresJpaHuntBackend.SplitTokenStore.NAME).forEach(
-                    backend -> System.out.println("MEASURED " + backend + " read side caught up: "
-                                                          + perBackend.get(backend).notes().stream()
-                                                                      .noneMatch(note -> note.contains(
-                                                                              "read side had not caught up"))));
+                    backend -> perBackend.get(backend).forEach(result -> {
+                        System.out.println("MEASURED " + backend + " seed " + result.seed()
+                                                   + " undelivered=" + undelivered(result)
+                                                   + " decided=" + lossDecided(result)
+                                                   + " caughtUp=" + result.notes().stream()
+                                                                          .noneMatch(note -> note.contains(
+                                                                                  "read side had not caught up")));
+                        if (undelivered(result) > 0 && stalled(result)) {
+                            assertThat(lossDecided(result))
+                                    .as("a read side that stopped with events still in the store must be judged, not "
+                                                + "excused: %s", result)
+                                    .isTrue();
+                        }
+                    }));
+        }
+
+        private static boolean lossDecided(ScenarioResult result) {
+            return result.violations().stream()
+                         .anyMatch(violation -> DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED
+                                 .equals(violation.machineName()));
+        }
+
+        private static boolean stalled(ScenarioResult result) {
+            return Boolean.parseBoolean(String.valueOf(drainOf(result).get(HistoryOps.STALLED)));
+        }
+
+        private static long undelivered(ScenarioResult result) {
+            Map<String, Object> drain = drainOf(result);
+            long readable = Long.parseLong(String.valueOf(drain.getOrDefault("readableEvents", "0")));
+            long delivered = Long.parseLong(String.valueOf(drain.getOrDefault("deliveredEvents", "0")));
+            return Math.max(0L, readable - delivered);
+        }
+
+        private static Map<String, Object> drainOf(ScenarioResult result) {
+            return HistoryView.read(result.history()).notes(HistoryOps.PHASE).stream()
+                              .filter(phase -> phase.stringValue(HistoryOps.QUIESCED) != null)
+                              .map(org.axonframework.hunt.history.HistoryRecord::value)
+                              .findFirst()
+                              .orElse(Map.of());
+        }
+    }
+
+    @Nested
+    class AClusterScenarioOnAStoreThatArbitratesNoClaims {
+
+        @Test
+        void reportsTheOwnershipInvariantAsNotApplicableRatherThanPassingItQuietly() {
+            // given the shipped bootstrap scenario, whose claim is entirely about who owns a segment
+            Scenario scenario = HuntScenarios.concurrentBootstrap();
+
+            // when it is run against every registered store, two of which arbitrate claims and two of which do not
+            Map<String, List<ScenarioResult>> perBackend = across(scenario);
+
+            // then the stores with no notion of an owner say the invariant is not expressible on them. That matters more
+            // than it looks: the framework's in-heap token store grants every claim, so an ownership assertion made
+            // against it holds vacuously, and a vector that recorded that as a pass would be claiming coverage it does
+            // not have.
+            assertThat(perBackend.get(InMemoryHuntBackend.NAME))
+                    .as("a store that arbitrates no claims must say so")
+                    .allSatisfy(result -> assertThat(result.notApplicable())
+                            .anySatisfy(statement -> assertThat(statement)
+                                    .contains(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER, "not expressible")));
+
+            // and the stores that do arbitrate claims decided it instead of declining
+            List.of(HsqldbTokenStoreBackend.NAME, PostgresJpaHuntBackend.NAME).forEach(backend -> assertThat(
+                            perBackend.get(backend))
+                    .as("a store that arbitrates claims must decide ownership: %s", backend)
+                    .allSatisfy(result -> assertThat(result.notApplicable())
+                            .noneMatch(statement -> statement.contains(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER))));
+        }
+    }
+
+    @Nested
+    class TheWholeMatrixAsOneTable {
+
+        @Test
+        void printsAVerdictVectorPerScenarioAndPerSeedForEveryFindingToQuote() {
+            // given every scenario of the matrix
+            List<Scenario> scenarios = scenarios();
+
+            // when each is run against every store
+            scenarios.forEach(BackendDifferentialTest::across);
+
+            // then the table is printed in one place, so a finding can quote its vector without re-deriving it
+            System.out.println("=== BACKEND DIFFERENTIAL MATRIX ===");
+            MATRIX.forEach((id, perBackend) -> System.out.println(vector(id, perBackend)));
+
+            // and no arm anywhere reached a pass it was not entitled to. A scenario that declares a fault and reports it
+            // as never having fired has verified nothing, whatever else its oracles said, so the only verdict such a run
+            // may carry is an undecided one. This is the landing-evidence rule applied across every store: a fault that
+            // works in the heap and silently does nothing across a database round trip would otherwise turn one arm of
+            // the matrix into a fault-free control that reads as coverage.
+            MATRIX.forEach((id, perBackend) -> allResults(perBackend).forEach(result -> {
+                if (!result.faultFires().isEmpty()) {
+                    System.out.println("FIRES " + id + " seed " + result.seed() + " " + result.faultFires());
+                }
+                boolean aFaultDidNotFire = result.faultFires().values().stream().anyMatch(fires -> fires == 0L);
+                if (aFaultDidNotFire) {
+                    assertThat(result.verdict())
+                            .as("a run whose declared fault never fired may not pass: %s", result)
+                            .isNotEqualTo(Verdict.PASS);
+                }
+            }));
         }
     }
 }

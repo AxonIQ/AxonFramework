@@ -44,7 +44,36 @@ public interface StoreHook {
     }
 
     /**
+     * Called once the store has taken the append but before the framework has committed anything.
+     * <p>
+     * <b>This is the only point at which a fault can hold a real transaction open, and where it sits matters.</b> On a
+     * store reached through a transaction on the processing context, the engine takes its positions and writes its rows
+     * while it is being <em>asked</em> to append -- the aggregate-based engine flushes inside {@code appendEvents}
+     * precisely so that a constraint violation arrives there -- and the transaction that makes them readable commits
+     * later, in the framework's commit phase. Delaying here therefore leaves a row written, a position consumed, and
+     * nothing visible: which is exactly the hole a concurrent reader has to come back for.
+     * <p>
+     * Delaying at {@link #onCommit(AppendAttempt)} does not do this, and measuring that cost an afternoon. The
+     * framework's commit phase runs its registered actions with no ordering between them, so the database transaction's
+     * commit and the append transaction's own {@code commit()} are concurrent: an event was measured readable 1877ms
+     * before the {@code commit()} of the append that produced it was even entered. A delay there is a delay after
+     * durability, not before it.
+     * <p>
+     * The default does nothing.
+     *
+     * @param attempt what the store has just taken
+     */
+    default void afterAppend(AppendAttempt attempt) {
+        // No interference by default.
+    }
+
+    /**
      * Called when the append transaction is about to commit.
+     * <p>
+     * On a store whose {@code commit()} does the work -- the in-heap engine -- this is the point of no return. On a store
+     * whose transaction is on the processing context it is not: that store's {@code commit()} does nothing, and the
+     * transaction commits concurrently with it. Use {@link #afterAppend(AppendAttempt)} for anything that has to happen
+     * while the append is still undone.
      *
      * @param attempt what is about to be committed
      * @return what the wrapper should do with the batch; {@link CommitAction#proceed()} by default

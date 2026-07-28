@@ -212,6 +212,18 @@ public final class HistoryOps {
      */
     public static final String QUIESCED = "quiesced";
 
+    /**
+     * The value key a settle {@link #PHASE phase} record reports under, saying whether the read side had stopped
+     * accepting deliveries altogether while events the store holds were still missing.
+     * <p>
+     * This is what separates an interrupted run from a lossy store, and the two are otherwise indistinguishable: a
+     * store that loses an event for ever leaves the read side permanently behind, which is exactly what a run cut
+     * short by its budget also looks like. A drain that ends with the delivery count unchanged for longer than the
+     * run's stall window has not been interrupted -- nothing is in flight -- so a loss oracle may decide rather than
+     * decline. Absent in histories written before the field existed, which is read as "not stated".
+     */
+    public static final String STALLED = "stalled";
+
     private HistoryOps() {
         // Utility class.
     }

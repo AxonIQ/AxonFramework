@@ -19,6 +19,7 @@ package org.axonframework.hunt.scenario;
 import org.axonframework.hunt.checker.AppendOutcomeChecker;
 import org.axonframework.hunt.checker.ConservationChecker;
 import org.axonframework.hunt.checker.DeliveryChecker;
+import org.axonframework.hunt.checker.DurabilityChecker;
 import org.axonframework.hunt.checker.FaultLandingChecker;
 import org.axonframework.hunt.checker.LivenessChecker;
 import org.axonframework.hunt.checker.ModelConformanceChecker;
@@ -33,10 +34,13 @@ import org.axonframework.hunt.fault.Fault;
 import org.axonframework.hunt.fault.FaultSchedule;
 import org.axonframework.hunt.fault.FaultWindow;
 import org.axonframework.hunt.fault.InjectedLatencyFault;
+import org.axonframework.hunt.fault.LateCommitFault;
 import org.axonframework.hunt.fault.NodeCrashFault;
 import org.axonframework.hunt.fault.PrepareCommitFailureFault;
 import org.axonframework.hunt.fault.ProcessorResetFault;
 import org.axonframework.hunt.fault.SegmentSplitMergeFault;
+import org.axonframework.hunt.fault.StoreCrashFault;
+import org.axonframework.hunt.fault.StorePartitionFault;
 import org.axonframework.hunt.harness.DeterminismMode;
 import org.axonframework.hunt.harness.HsqldbTokenStoreBackend;
 import org.axonframework.hunt.harness.HuntTimescale;
@@ -188,6 +192,41 @@ public final class HuntScenarios {
      */
     public static final String MERGE_ONLY_SINGLE_SEGMENT = "split_merge_no_loss_no_dup_under_load_single_segment";
 
+    /**
+     * The identifier of the arm holding commits open past the store's gap timeout, configured from the framework's own
+     * defaults.
+     */
+    public static final String NO_EVENT_SKIPPED_BY_GAP_TIMEOUT = "no_event_skipped_by_gap_timeout";
+
+    /**
+     * The identifier of the same arm against the store configured the way Spring Boot's auto-configuration configures it,
+     * whose gap timeout and maximum gap offset are the framework defaults exchanged for each other.
+     */
+    public static final String NO_EVENT_SKIPPED_BY_GAP_TIMEOUT_SPRING_DEFAULTS =
+            "no_event_skipped_by_gap_timeout_spring_defaults";
+
+    /**
+     * The gap timeout the arm configured from the framework's own defaults runs at, compressed from the shipped 60000ms.
+     */
+    public static final int GAP_TIMEOUT_CORE_DEFAULTS_MS = 1_000;
+
+    /**
+     * The gap timeout the Spring-Boot-configured arm runs at, compressed from that path's 10000ms default by the same
+     * factor.
+     */
+    public static final int GAP_TIMEOUT_SPRING_DEFAULTS_MS = 167;
+
+    /**
+     * The identifier of the arm killing the store outright while a workload appends to it.
+     */
+    public static final String CRASH_RECOVERY_NO_ACKED_LOSS = "crash_recovery_no_acked_loss_postgres";
+
+    /**
+     * The identifier of the arm cutting the network between the application and its store, repeatedly.
+     */
+    public static final String COMMIT_ACK_MATCHES_DURABILITY_UNDER_PARTITION =
+            "commit_ack_matches_durability_under_partition";
+
     private HuntScenarios() {
         // Utility class.
     }
@@ -216,7 +255,11 @@ public final class HuntScenarios {
                        replaySeesFullPrefix(),
                        replaySeesFullPrefixAcrossNodes(),
                        splitMergeUnderLoad(),
-                       mergeOnlyOnASingleSegment());
+                       mergeOnlyOnASingleSegment(),
+                       noEventSkippedByGapTimeout(),
+                       noEventSkippedByGapTimeoutSpringDefaults(),
+                       crashRecoveryNoAckedLoss(),
+                       commitAckMatchesDurabilityUnderPartition());
     }
 
     /**
@@ -849,6 +892,204 @@ public final class HuntScenarios {
                 .budget(Tier.SMOKE, new TierBudget(4_000, 3, Duration.ofSeconds(150)))
                 .budget(Tier.RELEASE, new TierBudget(20_000, 50, Duration.ofMinutes(20)))
                 .build();
+    }
+
+    /**
+     * Concurrent writers over a real store whose commits are held open past its gap timeout.
+     * <p>
+     * <b>This is the scenario the plan expects most from, and the mechanism is a comparison against the wall clock.</b> The
+     * aggregate-based engine's global index comes from a database sequence taken before its transaction commits, so a
+     * reader routinely sees index n+1 while index n is a hole that will later fill. Recording that hole as a gap is what
+     * makes the reader come back for it, and whether it records one is decided by
+     * {@code allowGaps = timestamp.isAfter(now - gapTimeout)}: an event whose own message timestamp has aged past the
+     * threshold is read as one whose neighbours are never coming, and the hole below it is never recorded at all. When the
+     * held transaction commits, nobody is looking for it.
+     * <p>
+     * Holding a commit open for longer than the gap timeout drives both halves at once -- the hole outlives the timeout,
+     * and the event visible above it has aged past the threshold before it is first read -- so a single delay reaches a
+     * skip that would otherwise need a coincidence.
+     * <p>
+     * <b>The oracle is loss and nothing else.</b> Every event of every acknowledged append must reach the projection.
+     * A skipped index is not late: the reader's token has already advanced past it and holds no gap for it, so nothing
+     * will ever ask for it again, and the run's drain reports the read side as having stopped rather than as being behind.
+     * That distinction is what lets loss be decided here instead of declined.
+     * <p>
+     * <b>Two configuration arms, because the two configuration paths disagree.</b> The framework's own configuration record
+     * and Spring Boot's auto-configuration default the gap timeout and the maximum gap offset to each other's values, so
+     * a deployment's gap behaviour depends on how it was assembled. Running one arm and reporting the guarantee would be
+     * reporting a result from a configuration half the deployments do not have.
+     *
+     * @return the scenario, on the arm configured from the framework's own defaults
+     */
+    public static Scenario noEventSkippedByGapTimeout() {
+        return gapTimeoutArm(NO_EVENT_SKIPPED_BY_GAP_TIMEOUT,
+                             "postgres-jpa-chaos",
+                             GAP_TIMEOUT_CORE_DEFAULTS_MS);
+    }
+
+    /**
+     * The same hunt against the store configured the way Spring Boot's auto-configuration configures it.
+     * <p>
+     * Finding F-1 is that the two configuration paths default the gap timeout and the maximum gap offset to each other's
+     * values. This arm is the half of the differential that says what that costs.
+     *
+     * @return the scenario
+     */
+    public static Scenario noEventSkippedByGapTimeoutSpringDefaults() {
+        return gapTimeoutArm(NO_EVENT_SKIPPED_BY_GAP_TIMEOUT_SPRING_DEFAULTS,
+                             "postgres-jpa-chaos-spring-defaults",
+                             GAP_TIMEOUT_SPRING_DEFAULTS_MS);
+    }
+
+    /**
+     * The settings both gap arms share, with only the store's gap timeout differing between them.
+     * <p>
+     * The hold is twice the arm's gap timeout, because a hold shorter than the timeout opens a hole that is correctly
+     * filled and proves nothing, and a hold equal to it lands on the comparison's own boundary. Every commit is held
+     * rather than a sample of them: the skip needs two temporally adjacent indexes both to have aged, and sampling turns
+     * a reliable arm into one that reaches its own mechanism a fraction of the time.
+     */
+    private static Scenario gapTimeoutArm(String id, String backend, int gapTimeoutMs) {
+        Duration hold = Duration.ofMillis(2L * gapTimeoutMs);
+        FaultSchedule schedule = FaultSchedule.builder()
+                                             // No warmup. The hold has to be in place for the writers' very first
+                                             // commits, because a hole opened before it is installed is filled correctly
+                                             // and the arm has to wait for the next one.
+                                             .window(FaultWindow.immediately("held-commits",
+                                                                             Duration.ofSeconds(60),
+                                                                             new LateCommitFault(hold, 1.0, 1L)))
+                                             .heal(hold)
+                                             .settle(Duration.ofSeconds(45))
+                                             .build();
+        return Scenario.builder(id, "Events committed later than the gap timeout must still all be delivered")
+                       .claims("C13", "C14", "M2")
+                       .backend(backend)
+                       .workload(LedgerWorkload::sequencedPerAccount)
+                       .timescale(clusterTimescale())
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       // Every commit is held for twice the gap timeout, so an event's own journey from append to
+                       // readable is at least that long before the read side has looked at anything. The horizon is that
+                       // hold plus a claim timeout plus the coordinator's hardcoded idle re-poll, rounded up.
+                       .livenessHorizon(hold.plus(CLUSTER_CLAIM_TIMEOUT).plusSeconds(1))
+                       .faults(schedule)
+                       .oracles(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                                DurabilityChecker.ACKNOWLEDGED_APPEND_IS_DURABLE,
+                                FaultLandingChecker.DECLARED_FAULTS_LAND)
+                       .seed(1L)
+                       // Small on purpose. Every commit waits twice the gap timeout, so the budget buys wall-clock time
+                       // rather than commands, and one skip is as much a finding as a hundred.
+                       .budget(Tier.SMOKE, new TierBudget(120, 2, Duration.ofMinutes(5)))
+                       .budget(Tier.RELEASE, new TierBudget(600, 20, Duration.ofMinutes(30)))
+                       .build();
+    }
+
+    /**
+     * A store killed outright while a workload is appending to it, and then brought back.
+     * <p>
+     * <b>The question is not whether the framework handles an error; it is whether the store kept what the framework said
+     * it had kept.</b> An append the client saw succeed has been acknowledged all the way up, and the caller has acted on
+     * that. If the process is killed a moment later and the row is not there when it comes back, the acknowledgement was
+     * a lie, and no amount of correct error handling above it makes any difference.
+     * <p>
+     * The oracle is therefore put to the store directly, on a connection of its own, in plain SQL: every event of every
+     * acknowledged append must be there exactly once. Asking through the run's own entity manager would be asking a pool
+     * of connections to a process that was killed, which measures the harness's recovery rather than the store's.
+     * <p>
+     * <b>Appends that failed are not held to anything, and that is not a loophole.</b> A kill in the middle of a commit
+     * leaves the client with an exception that says nothing about whether the transaction was applied -- the request may
+     * have landed, the reply may have been lost -- so either answer from the store is correct. What is not correct is an
+     * acknowledgement that turns out to be false, and that is what is being looked for. The run publishes how many
+     * appends ended ambiguously, and a run with none of them says so and gives up its pass, because a kill that landed
+     * outside every commit window tested nothing.
+     *
+     * @return the scenario
+     */
+    public static Scenario crashRecoveryNoAckedLoss() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                             // Long enough for the writers to be well into their budget, so the kill
+                                             // lands in the middle of an append storm rather than before it or after it.
+                                             .warmup(Duration.ofSeconds(3))
+                                             .window(FaultWindow.immediately(
+                                                     "store-killed",
+                                                     Duration.ofSeconds(40),
+                                                     new StoreCrashFault(Duration.ofSeconds(2), 2,
+                                                                         Duration.ofSeconds(4))))
+                                             // Long enough for the connection pool to notice, evict and replace the
+                                             // handles it holds to the process that was killed: the pool validates every
+                                             // second, and the writers have to be able to finish.
+                                             .heal(Duration.ofSeconds(10))
+                                             .settle(Duration.ofSeconds(60))
+                                             .build();
+        return Scenario.builder(CRASH_RECOVERY_NO_ACKED_LOSS,
+                                "An append the client saw succeed survives the store being killed")
+                       .claims("C35", "C4")
+                       .backend("postgres-jpa-chaos")
+                       .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                       .timescale(clusterTimescale())
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       // The store is unreachable for two seconds at a time and twice over, and the read side cannot
+                       // move while it is. The horizon is both outages, both recoveries and a claim timeout.
+                       .livenessHorizon(Duration.ofSeconds(30))
+                       .faults(schedule)
+                       .oracles(DurabilityChecker.ACKNOWLEDGED_APPEND_IS_DURABLE,
+                                FaultLandingChecker.DECLARED_FAULTS_LAND)
+                       .seed(1L)
+                       .budget(Tier.SMOKE, new TierBudget(400, 2, Duration.ofMinutes(5)))
+                       .budget(Tier.RELEASE, new TierBudget(4_000, 10, Duration.ofMinutes(30)))
+                       .build();
+    }
+
+    /**
+     * The network between the application and its store cut and healed repeatedly, with the store left running.
+     * <p>
+     * <b>This is the arm that produces an acknowledgement nobody can interpret, and no other fault in the suite can.</b>
+     * An injected refusal tells the caller clearly that the append did not happen. A torn socket tells it nothing at all:
+     * the store is still there, still holding the transaction, and it will decide on its own after the caller has stopped
+     * listening. So the client's verdict set has three values rather than two, and the store must agree with the two that
+     * are decidable while being free to answer either way on the third.
+     * <p>
+     * The verdicts are frozen from the history the run recorded as it happened, which is before anything is healed; the
+     * store is asked afterwards. An append the client saw succeed must be present exactly once, one the store decided
+     * against must be absent, and one whose conversation was lost may be either.
+     * <p>
+     * <b>A run with no ambiguous append is not a pass.</b> The whole claim is about the window between a commit being sent
+     * and its reply arriving, and a partition that missed every one of those windows measured a system nothing happened
+     * to. The oracle reports it and the run gives up its verdict, which is the honest answer.
+     *
+     * @return the scenario
+     */
+    public static Scenario commitAckMatchesDurabilityUnderPartition() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                             .warmup(Duration.ofSeconds(2))
+                                             // Short cuts, many of them. A commit window is milliseconds wide, so what
+                                             // decides whether the fault lands in one is how often the network is cut
+                                             // rather than how long each cut lasts.
+                                             .window(FaultWindow.immediately(
+                                                     "network-cut",
+                                                     Duration.ofSeconds(40),
+                                                     new StorePartitionFault(Duration.ofMillis(600), 8,
+                                                                             Duration.ofSeconds(2))))
+                                             .heal(Duration.ofSeconds(10))
+                                             .settle(Duration.ofSeconds(60))
+                                             .build();
+        return Scenario.builder(COMMIT_ACK_MATCHES_DURABILITY_UNDER_PARTITION,
+                                "A commit acknowledgement means the store kept it, even across a broken connection")
+                       .claims("C4", "C29", "M5")
+                       .backend("postgres-jpa-chaos")
+                       .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                       .timescale(clusterTimescale())
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       // Eight cuts of six hundred milliseconds each with two seconds between them, and the read side
+                       // stops for every one of them. The horizon covers the whole fault phase and a claim timeout.
+                       .livenessHorizon(Duration.ofSeconds(30))
+                       .faults(schedule)
+                       .oracles(DurabilityChecker.ACKNOWLEDGED_APPEND_IS_DURABLE,
+                                AppendOutcomeChecker.REJECTED_APPEND_LEAVES_NO_EVENTS,
+                                FaultLandingChecker.DECLARED_FAULTS_LAND)
+                       .seed(1L)
+                       .budget(Tier.SMOKE, new TierBudget(400, 2, Duration.ofMinutes(5)))
+                       .budget(Tier.RELEASE, new TierBudget(4_000, 20, Duration.ofMinutes(30)))
+                       .build();
     }
 
     /**
