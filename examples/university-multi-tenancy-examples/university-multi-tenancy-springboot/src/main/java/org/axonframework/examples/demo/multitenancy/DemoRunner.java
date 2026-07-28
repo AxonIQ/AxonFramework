@@ -18,12 +18,12 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
-import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
-import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuardrail;
-import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
-import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
+import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;

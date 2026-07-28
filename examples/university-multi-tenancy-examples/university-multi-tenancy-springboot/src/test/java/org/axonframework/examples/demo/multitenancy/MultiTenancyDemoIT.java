@@ -23,13 +23,14 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.testcontainer.AxonServerContainer;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.examples.demo.multitenancy.shared.AxonServerTenantContextManager;
-import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
-import org.axonframework.examples.demo.multitenancy.shared.DemoOutcome;
-import org.axonframework.examples.demo.multitenancy.shared.ProviderAmbiguityGuardrail;
-import org.axonframework.examples.demo.multitenancy.shared.TenantProvisioning;
-import org.axonframework.examples.demo.multitenancy.university.component.AuditLog;
-import org.axonframework.examples.demo.multitenancy.university.component.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.AxonServerTenantContextManager;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
+import org.axonframework.examples.demo.multitenancy.shared.run.EventStorageOutcome;
+import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,14 @@ class MultiTenancyDemoIT {
             assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
             // and shutting down closed every remaining tenant's instances
             assertThat(outcome.allClosedOnShutdown()).isTrue();
+
+            // and per-tenant event storage kept the same course identifier isolated across tenants:
+            // Springfield's course filled up and rejected a further enrollment as full, while the same
+            // course identifier still accepted one in Shelbyville, sourced from its own event store
+            EventStorageOutcome eventStorage = outcome.eventStorage();
+            assertThat(eventStorage.demonstrated()).isTrue();
+            assertThat(eventStorage.springfieldRejectedWhenFull()).isTrue();
+            assertThat(eventStorage.shelbyvilleAcceptedSameCourseId()).isTrue();
 
             // and registering two providers for one component type is rejected at configuration time
             assertThat(ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType()).isTrue();

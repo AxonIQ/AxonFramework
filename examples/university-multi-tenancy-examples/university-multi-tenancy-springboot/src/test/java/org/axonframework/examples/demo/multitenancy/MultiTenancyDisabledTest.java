@@ -16,8 +16,8 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
-import org.axonframework.examples.demo.multitenancy.shared.DemoLifecycle;
-import org.axonframework.examples.demo.multitenancy.shared.Enrollments;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.Enrollments;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;

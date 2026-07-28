@@ -19,10 +19,12 @@ org.axonframework.examples.demo.multitenancy
 +- DemoProperties            reads the demo.axon-server.enabled toggle
 ```
 
-`UniversityConfiguration` is the entire configuration a developer writes: it registers one
-`TenantComponentProvider` per tenant-scoped component type and registers the command and query handlers
-as ordinary handling components. `MultiTenancyApplication` builds a `MessagingConfigurer` from it,
-starts it, and hands the gateways and providers to the `DemoLifecycle`.
+`UniversityConfiguration` is the entire configuration a developer writes: it registers the event-sourced
+course write side, one `TenantComponentProvider` per tenant-scoped component type, and the statistics
+query handler. `MultiTenancyApplication` builds an `EventSourcingConfigurer` from it, in memory by default
+or against Axon Server with the toggle, starts it, and hands the gateways and providers to the
+`DemoLifecycle`. In memory the event store is a single shared store; against Axon Server each tenant has
+its own.
 
 ## Running
 
@@ -65,8 +67,13 @@ The tenants are then discovered, not declared: the auto-discovering `AxonServerT
 Axon Server's contexts and registers each as a tenant, injecting that context's per-tenant components
 into the handlers. Its connect predicate filters out the `_admin` context, so the run logs that
 `_admin` exists on the server but is not among the tenants. The dashboard at <http://localhost:8024>
-shows the tenant contexts appear and disappear as the run adds and removes them. Isolation, replay, the
-guardrails, and cleanup all behave exactly as in the in-memory run.
+shows the tenant contexts appear and disappear as the run adds and removes them. Component isolation,
+replay, the guardrails, and cleanup all behave exactly as in the in-memory run.
+
+The Axon Server run additionally shows per-tenant event storage, which the in-memory run cannot because
+it has one shared event store. The two known tenants open a course under the same identifier: one fills
+it and rejects a further enrollment as full, while the same identifier still accepts one in the other
+tenant, because each tenant's events are sourced from its own store.
 
 ## The same demo, wired by Spring Boot
 

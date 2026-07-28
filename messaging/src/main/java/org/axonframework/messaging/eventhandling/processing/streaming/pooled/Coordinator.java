@@ -754,7 +754,7 @@ class Coordinator {
         private final AtomicBoolean processingGate = new AtomicBoolean();
         private final AtomicBoolean scheduledGate = new AtomicBoolean();
         private final AtomicBoolean interruptibleScheduledGate = new AtomicBoolean();
-        private MessageStream<? extends EventMessage> eventStream;
+        private @Nullable MessageStream<? extends EventMessage> eventStream;
         private TrackingToken lastScheduledToken = NoToken.INSTANCE;
         private boolean availabilityCallbackSupported;
         private long unclaimedSegmentValidationThreshold;
@@ -862,7 +862,9 @@ class Coordinator {
             }
 
             CompletableFuture<Void> claimAndStreamFuture;
-            if (eventStream == null || unclaimedSegmentValidationThreshold <= clock.instant().toEpochMilli()) {
+            if (eventStream == null
+                    || eventStream.isCompleted()
+                    || unclaimedSegmentValidationThreshold <= clock.instant().toEpochMilli()) {
                 // Claim new segments, construct work packages per new segment, and open stream based on lowest segment
                 unclaimedSegmentValidationThreshold = clock.instant().toEpochMilli() + tokenClaimInterval;
                 TrackingToken streamStartPosition = lastScheduledToken;
@@ -1189,11 +1191,19 @@ class Coordinator {
         }
 
         private CompletableFuture<Void> ensureOpenStream(@Nullable TrackingToken trackingToken) {
-            // We already had a stream and the token differs the last scheduled token, thus we started new WorkPackages.
-            // Close old stream to start at the new position, if we have Work Packages left.
-            if (eventStream != null && !Objects.equals(trackingToken, lastScheduledToken)) {
-                logger.debug("Processor [{}] (Coordination Task [{}]) will close the current stream.",
-                             name, generation);
+            // Close the old stream when it can no longer be read from. Either it is completed, or the token differs from
+            // the last scheduled token, thus we started new WorkPackages and need to start at the new position.
+            if (eventStream != null
+                    && (eventStream.isCompleted() || !Objects.equals(trackingToken, lastScheduledToken))) {
+                if (eventStream.isCompleted()) {
+                    // The trailing argument is only logged when the source completed the stream with an error.
+                    logger.info("Processor [{}] (Coordination Task [{}]) will replace the stream its source completed "
+                                        + "by one starting at token [{}].",
+                                name, generation, trackingToken, eventStream.error().orElse(null));
+                } else {
+                    logger.debug("Processor [{}] (Coordination Task [{}]) will close the current stream.",
+                                 name, generation);
+                }
                 closeStreamQuietly();
                 eventStream = null;
                 lastScheduledToken = NoToken.INSTANCE;
