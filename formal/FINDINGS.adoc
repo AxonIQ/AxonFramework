@@ -90,8 +90,10 @@ easy workaround), *low* (a documentation or ergonomics gap).
 | The claim protocol compares a timestamp one node wrote against another node's clock and states no tolerance for the
   two disagreeing. Measured: a node whose clock reads ahead takes a live claim up to that far early, so two nodes hold
   one segment for up to the skew, capped by one claim timeout. Nothing warns, and nothing in the protocol notices.
+  Model-checked, and the model overturned the third measured bound: the margin between the claim timeout and the
+  refresh rate is not a tolerated skew, only the skew a punctual owner happens to hide.
 | Medium
-| *Reproduced by test*, and quantified. Open.
+| *Reproduced by test*, quantified, and *model-checked*. Open.
 
 | *F-11* `MergeRewindsToTheLowerOfTwoTokens`
 | Merging two segments gives the merged one the lower of the two halves' tokens, so every event the further-ahead half
@@ -117,9 +119,11 @@ easy workaround), *low* (a documentation or ergonomics gap).
 | An append made with no consistency condition is rejected as conflicting on the aggregate-based JPA event store
   whenever the tagged aggregate already holds events. The framework documents such an append as having conflict
   detection disabled entirely; on this engine it succeeds exactly once per aggregate and is refused for ever after, with
-  an exception that tells the caller to retry.
+  an exception that tells the caller to retry. Model-checked as a violated/fixed pair, which also settles that the
+  divergence is over-rejection only: at the model's bounds the collapsed marker never accepts an append the protocol
+  forbids.
 | High
-| *Reproduced by test*, on PostgreSQL, with a per-backend verdict vector. Open.
+| *Reproduced by test*, on PostgreSQL, with a per-backend verdict vector, and *model-checked*. Open.
 
 | *F-13* `AStalledHandlerKeepsItsClaims`
 | A node frozen inside its event handler does not lose its segments: extending a claim is the coordinator's work, on a
@@ -807,7 +811,8 @@ the only thing that closes it is the expected-gap test above going red.
 == F-10 -- The claim protocol states no tolerance for clock skew, and tolerates none
 
 *Severity:* Medium +
-*Status:* Open. *Reproduced by test*, and quantified. +
+*Status:* Open. *Reproduced by test*, quantified, and *model-checked* -- the model overturned one of the three measured
+bounds, and the candidate fix below is the corrected one. +
 *Claims:* C19, C20, C22, M3 +
 *Backend verdict vector:* `hsqldb-tokens:AFFECTED`, `in-memory:N/A (the in-heap token store has no expiry to compare)`
 
@@ -852,12 +857,36 @@ lapsed anyway, so the overlap can never exceed `delta` -- which the middle arm a
 the measured worst case is 1692ms, not 4000ms. The loser's own claim still lapses one timeout after its last refresh
 however far ahead the thief's clock reads, because only the comparison is skewed and not the timestamp.
 
-*A skew smaller than the margin between the claim timeout and the owner's refresh rate is invisible.* An owner refreshes
-its row with every batch it stores and, when idle, on every extension threshold. With a two-second timeout and a
-four-hundred-millisecond threshold, a row is rarely more than four hundred milliseconds old, so a clock a second ahead
-usually finds nothing to take -- and occasionally does, which is why the middle arm's measured overlap sits just under
-its bound rather than at zero. The tolerated skew is therefore not zero and not the claim timeout: it is
-`claimTimeout - refreshInterval`, a quantity no configuration names and no document states.
+*A skew smaller than the margin between the claim timeout and the owner's refresh rate is usually invisible, and that is
+not the same as tolerated.* An owner refreshes its row with every batch it stores and, when idle, on every extension
+threshold. With a two-second timeout and a four-hundred-millisecond threshold, a row is rarely more than four hundred
+milliseconds old, so a clock a second ahead usually finds nothing to take -- and occasionally does, which is why the
+middle arm's measured overlap sits just under its bound rather than at zero. So the margin between the claim timeout and
+the refresh rate looks like a tolerated skew, and it is not one; see the model check below.
+
+=== What the model check settled, and what it overturned
+
+A design model of the same inequality, `formal/tla/TokenClaim.tla`, was checked with TLC over two nodes and one segment
+at a claim timeout of five ticks against a refresh interval of one -- the same 5:1 ratio as the arms above. It confirms
+two of the three statements and overturns the third.
+
+The two bounds hold. With the forgiven overlap set equal to the skew, `MCClaim_skew_bounded_by_skew.cfg` holds across
+1506 states, so the overlap really cannot exceed the skew. At twice the claim timeout,
+`MCClaim_skew_double.cfg` holds with the forgiven overlap set to one claim timeout (4838 states) while
+`MCClaim_skew_double_tight.cfg` is violated with it set one tick lower, so the overlap really does reach exactly one
+claim timeout and never more.
+
+*The third statement is false as an unconditional claim.* `MCClaim_skew_below_margin.cfg` runs a skew of two ticks
+against a margin of four -- comfortably inside the supposedly invisible region -- and TLC finds a violation in twelve
+steps: the owner claims the row at tick 0, four ticks pass without it refreshing, and the skewed node then reads tick 6,
+finds `0 + 5 < 6`, and takes the row while the owner's own interval still runs to tick 5. Its sibling
+`MCClaim_skew_below_margin_fixed.cfg`, which forbids the clock to advance past the point at which a running owner owes a
+refresh, holds across 308 states.
+
+So `claimTimeout - refreshInterval` is a bound on a *punctual* owner, not on the protocol. Nothing makes an owner
+punctual: refreshing is work a scheduled thread does when it is scheduled, and one missed window is enough. The
+measurement's own hint -- overlaps of 964 to 992 ms at a skew of 1000 ms against a margin of 1600 ms -- is exactly this
+mechanism, and until the model check it was written off as the arm occasionally getting lucky.
 
 === Why it matters
 
@@ -868,10 +897,17 @@ not fine for anything else. What is missing is any statement of how much clock d
 
 === Candidate fix
 
-Document the bound. The claim protocol tolerates skew up to the margin between the claim timeout and the rate at which an
-owner refreshes its claim, and produces overlapping ownership of up to one claim timeout beyond it; an operator sizing
-`claimTimeout` and `claimExtensionThreshold` needs that sentence to size them safely. Separately, the expiry comparison
-could carry an explicit tolerance so that the bound is a setting rather than an emergent property of two other settings.
+Document the bound that is actually a bound. *The claim protocol tolerates no clock skew at all*: any skew can produce
+overlapping ownership, and the overlap is at most the lesser of the skew and one claim timeout. An operator sizing
+`claimTimeout` and `claimExtensionThreshold` needs that sentence to size them safely.
+
+What must *not* be documented is the margin between the claim timeout and the refresh rate. It was the obvious candidate
+before the model check -- a skew below it is usually invisible -- and the model check shows it holds only while the owner
+refreshes on schedule, which nothing guarantees. Publishing it would publish a tolerance the framework does not enforce,
+which is worse than publishing none.
+
+Separately, the expiry comparison could carry an explicit tolerance, so that the bound becomes a setting rather than an
+emergent property of two other settings and of how punctually a background thread gets scheduled.
 
 === Reproduce
 
@@ -884,6 +920,17 @@ could carry an explicit tolerance so that the bound is a setting rather than an 
 The double-timeout arm asserts that ownership *is* broken, because the suite records the framework's current behaviour
 and never patches it. It flips red the day the claim protocol gains a stated tolerance wide enough to cover it, and that
 flip is the signal to revisit this entry.
+
+The model check, which needs no cluster and takes about a second per configuration:
+
+[source,bash]
+----
+java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC \
+    -workers auto -metadir formal/tla/states \
+    -config formal/tla/MCClaim_skew_below_margin.cfg formal/tla/TokenClaim.tla
+----
+
+`formal/tla/README.md` has the jar fetch and the other five configurations.
 
 == F-11 -- A merge rewinds to the lower of the two tokens, and nothing says so
 
@@ -1031,7 +1078,7 @@ grep -n 'extendClaimIfThresholdIsMet' messaging/src/main/java/org/axonframework/
 == F-14 -- An unconditional append is rejected as conflicting on the aggregate-based store
 
 *Severity:* High +
-*Status:* Open. *Reproduced by test.* +
+*Status:* Open. *Reproduced by test*, and *model-checked* (violated/fixed pair). +
 *Claims:* C2, C10 +
 *Backend vector:* `in-memory:PASS hsqldb-tokens:PASS postgres-jpa:FAIL postgres-jpa-split-tokens:FAIL`
 
@@ -1097,6 +1144,29 @@ its caller will retry.
 ----
 
 The run prints one `VECTOR` line per scenario. The finding is the `postgres-jpa:FAIL` entries against `in-memory:PASS`.
+
+=== The same defect at the design level
+
+`formal/tla/DcbAppend.tla` models the append protocol with one flag, `INFINITY_IS_ORIGIN`, that turns the collapse above
+on and off. Turning it on reproduces the finding as a TLC counterexample five states long: a writer appends one event
+under a boundary, a second writer takes `AppendCondition.none()`, offers its own batch, and is rejected -- because the
+collapsed marker made the engine scan a store that has an event in it. `MCAppend_unconditional.cfg` reports
+`Invariant UnconditionalAppendNeverRejected is violated`; `MCAppend_unconditional_fixed.cfg`, the same run with the
+collapse off, holds across its whole 2784-state space. `MCAppend_conformance.cfg` shows the same divergence through the
+primary oracle's invariant, `AppendConformsToDcbModel`.
+
+The model also settles something no suite run can. `MCAppend_illegalcommit.cfg` runs the divergent engine and checks
+`AppendIsLegalIffNoMatchInScanRange` and `CommitMarkerNeverRegresses`, and both hold across all 5532 states: *the
+collapse is over-rejection only*. It never accepts an append the protocol forbids and never lets a reported marker go
+backwards. A run can only report the divergences it happened to produce; the model checks for the dangerous direction and
+does not find it, at those bounds.
+
+[source,bash]
+----
+java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC \
+    -workers auto -metadir formal/tla/states \
+    -config formal/tla/MCAppend_unconditional.cfg formal/tla/DcbAppend.tla
+----
 
 == F-15 -- Sourcing twice in one processing context throws on the aggregate-based store
 

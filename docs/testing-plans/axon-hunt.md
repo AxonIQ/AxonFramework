@@ -168,12 +168,23 @@ reset/split/merge. Checkers run post-hoc over the history:
   treated as "may or may not have happened" by checkers -- never silently dropped.
 
 **Formal layer** (technique: `formal-methods-tla.md`). Two small TLA+ models with the
-MachineName bridge:
-- `DcbAppend.tla` -- writers, tags, markers, deferred conflict check; invariants
-  `AppendRejectedAfterMarker`, `NoConflictingCommits`, `MarkerMonotonic`.
-- `TokenClaim.tla` -- claims, steals, clock skew bound, crash; invariants
-  `AtMostOneSegmentOwner` (parameterized by skew), `ClaimEventuallyAvailable`.
-Violated/fixed cfg pairs where a gap is found (copy tla_dst's fix-detector pattern).
+MachineName bridge, in `formal/tla/`, with violated/fixed cfg pairs where a real
+finding exists:
+- `DcbAppend.tla` -- writers, tags, markers, deferred conflict check. Invariants
+  `AppendConformsToDcbModel` and `UnconditionalAppendNeverRejected` (both registry
+  MachineNames, statements verbatim) plus three reference-model rules. The
+  violated/fixed pair is finding F-14.
+- `TokenClaim.tla` -- claims, steals, clock skew bound, crash. `AtMostOneSegmentOwner`
+  (registry MachineName, parameterized by the declared skew allowance) and
+  `ClaimEventuallyAvailable` (liveness, model-only -- no registry entry, no checker).
+  The violated/fixed pair refined finding F-10.
+
+Three names this section originally listed are not registry MachineNames and were not
+modelled under those names: `AppendRejectedAfterMarker` names two scenarios rather than
+an invariant, `NoConflictingCommits` was the `DcbConflictChecker` that design commitment
+D1 replaced with the reference-model oracle, and `MarkerMonotonic` is modelled as
+`CommitMarkerNeverRegresses`. `formal/tla/README.md` maps each one and names every
+registry invariant that has no model, with the reason.
 
 ## 3b. Design commitments -- 14 expert-hardening decisions (binding)
 
@@ -191,8 +202,14 @@ drift we didn't enumerate (AWS S3 ShardStore "lightweight formal methods", Tiger
 VOPR state checking). It is also the differential base for D2.
 HOW: `simulation` main scope: `DcbStoreModel` (pure, deterministic, no framework deps) +
 `ModelConformanceChecker` consuming the history JSONL. Built in P0 alongside the
-recorder. TLA+ `DcbAppend.tla` (P4) and `DcbStoreModel` must encode the same rules --
-cross-check by generating traces from the model and TLC-validating a sample.
+recorder. TLA+ `DcbAppend.tla` and `DcbStoreModel` must encode the same rules --
+cross-checked in the TLC-to-Java direction rather than the other way round, because a
+TLA+ module can enumerate a whole finite domain and hand it over as integers far more
+cheaply than a Java enumeration can be handed to TLC: `formal/tla/DcbCrossCheck.tla`
+emits the specification's decision for every case and `formal/tla/crosscheck/CrossCheck.java`
+replays each one through `DcbStoreModel`. It is the whole domain, not a sample -- 960 of
+960 agreed -- and it was verified to be capable of failing before the clean result was
+believed.
 
 **D2. Backend-differential is the attribution strategy.**
 WHAT: identical workload + identical history schema + identical checkers run across ALL

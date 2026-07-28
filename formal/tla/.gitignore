@@ -1,0 +1,12 @@
+# TLC run artefacts
+states/
+*.toolbox/
+*_TTrace_*.tla
+*_TTrace_*.cfg
+trace.tla
+*.out
+*.dot
+*.st
+
+# Downloaded model checker; re-fetch per README.md
+tools/*.jar

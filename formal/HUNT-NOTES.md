@@ -1848,3 +1848,160 @@ changed: **when a scenario rebuilds the system's membership, every derived signa
 to stop deciding rather than to widen a tolerance.** The signal is new here, so it had not been told.
 
 Verified afterwards by running the whole module three times: 208 tests, green each time.
+
+## 2. API traps (continued)
+
+### 2.30 In TLA+, `x' = a /\ b` is not an assignment. It is an assignment plus a guard.
+
+`/\` and `\/` bind **looser** than `=`, so
+
+```
+latch' = latch \/ someCondition        parses as   (latch' = latch) \/ someCondition
+latch' = latch /\ someCondition        parses as   (latch' = latch) /\ someCondition
+```
+
+The second form silently *disables* the transition whenever `someCondition` is false. Every watched latch in the append
+model is exactly that shape -- `conforms' = conforms /\ (engineVerdict = modelVerdict)` -- so with the divergence flag on,
+the one transition the model exists to catch became unreachable and TLC reported `Error: Deadlock reached` in a state that
+plainly had somewhere to go.
+
+It cost an hour, and the hour was spent because the symptom points nowhere near the cause: not a parse error, not a failed
+invariant, and the state TLC prints looks perfectly able to move on. Two things would have found it in a minute. First,
+the reachable-state counts were **identical** with the flag on and off (2784 both ways) while the transition counts
+differed -- a flag that changes nothing about which states exist is not being applied. Second, `INVARIANT
+ENABLED(SomeAction)` on a suitably guarded state predicate names the disabled action directly, which is what finally did
+find it.
+
+Rule: **parenthesise the whole right-hand side of every primed assignment whose value is a conjunction or a
+disjunction.** And when a model's state count does not move after a flag flip, do not read on -- the flag is not landing.
+
+### 2.31 A TLA+ module that EXTENDS a module with VARIABLES inherits those variables, and must initialise them
+
+`DcbCrossCheck` originally extended the harness module that carried the append state machine, purely to reuse its
+decision operators. TLC then required every one of the state machine's ten variables to be initialised and reported
+`store = null`, `pc = null`, and so on, with no case lines emitted at all.
+
+The fix generalises: **put pure operators in a module with no VARIABLES.** `DcbRules.tla` holds the decision rules and the
+finite pools; `DcbAppend.tla` adds the state machine; `DcbCrossCheck.tla` adds the probe. Both downstream modules bind to
+the same operators over the same pools, which is the property that makes the cross-check mean anything -- if the
+cross-check restated a rule it would be comparing a third model against the other two.
+
+The finite pools live in `DcbRules.tla` rather than in a separate harness because a `.cfg` cannot express a record or a
+set of records. Only scalars and the flag stay in the `.cfg`; the pools arrive by `Events <- MCEvents` substitution.
+
+## 3. Commands that worked (continued)
+
+### 3.31 The TLA+ layer, end to end
+
+```bash
+# Fetch the checker once (git-ignored)
+mkdir -p formal/tla/tools
+curl -fsSL -o formal/tla/tools/tla2tools.jar \
+  https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+
+# One configuration
+java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC \
+  -workers auto -metadir formal/tla/states \
+  -config formal/tla/MCAppend_unconditional.cfg formal/tla/DcbAppend.tla
+
+# The whole sweep, with just the lines that matter
+for c in safe unconditional unconditional_fixed conformance conformance_fixed illegalcommit; do
+  java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC -workers auto \
+    -metadir formal/tla/states -config formal/tla/MCAppend_$c.cfg formal/tla/DcbAppend.tla 2>&1 \
+    | grep -E "^Error: (Invariant|Deadlock|Temporal)|^Model checking completed|states generated"
+done
+
+# Model-to-model cross-check (needs simulation/target/classes to exist)
+java -cp formal/tla/tools/tla2tools.jar tlc2.TLC -workers 1 -metadir formal/tla/states \
+    -config formal/tla/MCAppend_crosscheck.cfg formal/tla/DcbCrossCheck.tla 2>/dev/null \
+  | java -cp simulation/target/classes formal/tla/crosscheck/CrossCheck.java
+```
+
+Two things that bite:
+
+- **`timeout` does not exist on macOS.** `timeout 600 java ...` fails with exit 127 and produces no output at all, which
+  in a loop reads as every configuration silently doing nothing. There is no wrapper worth adding: every run here
+  finishes in under two seconds.
+- **Run TLC from the worktree root with a path-qualified spec.** TLC resolves `EXTENDS`ed modules from the spec file's
+  own directory, so `formal/tla/DcbAppend.tla` finds `formal/tla/DcbRules.tla` without any `cd`.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.61 A formal model earns its place by contradicting a measurement, not by agreeing with one
+
+The claim model was written to check the skew bound three simulated arms had measured. Two of the three statements it
+confirmed -- the overlap is bounded by the skew, and it saturates at one claim timeout -- and confirmation is worth
+having but it is not worth much: the arms had already measured both, and a model that only reproduces a measurement has
+told nobody anything.
+
+The third statement it overturned, and that is the whole return on the layer. The measurement said a skew below the
+margin between the claim timeout and the owner's refresh rate is invisible. TLC finds a violation at a skew of two ticks
+against a margin of four, in twelve steps, and the sibling configuration that *forces* the owner to refresh on schedule
+holds. So the margin bounds a punctual owner and not the protocol, and the fix F-10 was about to recommend -- document
+`claimTimeout - refreshInterval` as the tolerated skew -- would have published a tolerance the framework does not
+enforce.
+
+The measurement had the evidence all along: overlaps of 964 to 992 ms at a skew of 1000 ms inside a 1600 ms margin. It
+was written off as the arm occasionally getting lucky, because there was nothing to compare it against. **A model is
+worth building where a measurement produced a number somebody rounded off.**
+
+### 4.62 The flag pattern is what makes a violated/fixed pair a demonstration rather than an assertion
+
+Both models carry exactly one BOOLEAN flag, and both flags name a specific line of engine behaviour:
+
+- `INFINITY_IS_ORIGIN` -- `AggregateBasedConsistencyMarker.java:72-74` resolves ORIGIN and INFINITY to the same empty map
+  of aggregate positions. On, the model reproduces F-14; off, it holds.
+- `GUARANTEED_REFRESH` -- whether an owner is held to its refresh interval. Off is the framework's behaviour, on is the
+  modelled fix.
+
+One flag per finding, and the flag switches a *mechanism* rather than an outcome. A flag that switched the outcome
+directly ("allow the invariant to break") would prove nothing at all; a flag that switches the mechanism means the pair
+demonstrates that this mechanism, and not something incidental to the model, is what breaks the invariant.
+
+### 4.63 A model that only over-rejects is a result worth stating, and only a model can state it
+
+`MCAppend_illegalcommit.cfg` runs the divergent engine and asks the opposite question from the finding: does the
+collapsed marker ever *accept* an append the protocol forbids? Across all 5532 states it does not, and no reported marker
+ever goes backwards.
+
+A suite run cannot establish that. It reports the divergences it happened to produce, and absence of an over-acceptance
+across some seeds is not absence of over-acceptance. Exhaustive checking at small bounds is the one thing the formal
+layer can do that the other two layers cannot, and pointing it at the *dangerous direction of a known finding* is a
+better use of it than adding another property that already holds.
+
+### 4.64 Where a plan promises an invariant name, check the registry before modelling it
+
+The plan named five invariants for these two models. One was a registry MachineName. Of the other four: one named two
+scenarios rather than an invariant, one named a checker that design commitment D1 had replaced, one was an informal name
+for a rule that does exist, and one had no counterpart anywhere.
+
+Inventing four registry entries to match the plan would have produced exactly the decoration this layer is supposed to
+avoid -- TLA+ operators with no Java twin, in a registry column implying a bridge that is not there. The registry is the
+authority and the plan was the older document; `formal/tla/README.md` maps every promised name to what exists, and the
+plan was corrected rather than left to mislead the next reader.
+
+Same discipline in the other direction. The README names all seventeen registry invariants with **no** model and the
+reason for each, in four groups. An absent row is not an oversight to be quietly left blank.
+
+### 4.65 A cross-check that has not been made to fail has not been run
+
+960 cases, 960 agreed, first try. That is either a correct pair of models or a broken comparison, and the two look
+identical from the outside.
+
+So the Java pool's boundaries 2 and 3 were swapped and the pipeline re-run: `cases=960 agreed=874 disagreed=86`, with the
+disagreeing cases printed. Then reverted and reconfirmed. The mutation costs two minutes and is the difference between a
+cross-check and a claim about one -- the same rule the suite already applies to its canaries, applied to the layer that
+checks the checker.
+
+What the cross-check still does not cover is written down rather than left implied: only the accept-or-reject decision,
+not the position assignment, not the reported marker, not the sourcing side.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| A third model for the read side | Neither of these two models has a consumer, so seven registry invariants -- visibility, ordering, delivery, redelivery windows, horizon, attribution -- have no formal twin and cannot get one by extension. Delivery, tokens as positions, and segment membership are a model of their own, and it would answer different questions from either of these. | the phase that models delivery |
+| Token positions in the claim model | `StoredTokenNeverRegresses`, `StoredTokenCoversDeliveredEvents` and `ClaimHandoverRewindsAtMostOneBatch` need a position per segment, which roughly doubles the claim model's state and answers a question about progress rather than about ownership. The claim model deliberately stops at who holds the row. | whoever needs the progress question answered formally |
+| The check-then-commit window in the append model | Modelled as one atomic step, matching `DcbStoreModel`, which is sequential by construction. Splitting it would give the harness's conflict-check-bypass canary a design-level twin, at the cost of a pending-batch and pending-verdict variable pair that multiplies the state space by well over a hundred. Worth it only if a real engine is found to check outside its transaction. | the phase that finds such an engine |
+| Cross-checking positions and markers, not just the decision | The generator prints one boolean per case. Printing the position vector and the reported marker as well would extend the comparison to two more reference-model rules, at the cost of a variable-width output format the parser currently does not need. | whoever extends the pools |
+| A model for F-11 and F-16 | Both were candidates for a violated/fixed pair and neither got one. F-11 (a merge rewinds to the lower token) needs segment membership and token positions, which is the read-side model above. F-16 (an event skipped because its own timestamp aged past the gap timeout) needs a store that assigns an index before it commits, plus a reader with a token and a gap set -- also the read-side model, and the more valuable half of it, because F-16 is the one finding in the set whose mechanism on a clean engine is still open. | the phase that models delivery |
