@@ -77,6 +77,36 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
         this.snapshotStore = Objects.requireNonNull(snapshotStore, "The snapshotStore parameter cannot be null.");
     }
 
+    /**
+     * Returns an {@link EventStorageEngine} that supports the {@link SourcingStrategy.Snapshot} sourcing strategy,
+     * given the {@code engine} to source events from and the {@code snapshotStore} holding its snapshots.
+     * <p>
+     * The given {@code engine} is returned as is when it is the given {@code snapshotStore} itself. Such an engine
+     * resolves the snapshot within its own {@link #source(SourcingCondition, ProcessingContext) source} call, serving
+     * the snapshot and the events following it in a single round trip. Decorating it would resolve the snapshot
+     * separately and pass an {@link SourcingStrategy.Absolute absolute strategy} inward, costing that optimization.
+     * <p>
+     * An {@code engine} that is already decorated is returned as is too, so composing twice is harmless. It keeps
+     * resolving snapshots from the store it was decorated with, and the given {@code snapshotStore} is ignored for it.
+     * Decorating again would put the given store in front of that one instead of adding anything.
+     * <p>
+     * Any other {@code engine} is decorated, resolving the snapshot from the {@code snapshotStore} before sourcing the
+     * events that follow it.
+     *
+     * @param engine        the engine to source events from
+     * @param snapshotStore the store holding the snapshots of the given {@code engine}
+     * @return an event storage engine supporting the snapshot sourcing strategy
+     * @throws NullPointerException if the given {@code engine} or {@code snapshotStore} is {@code null}
+     * @since 5.3.0
+     */
+    public static EventStorageEngine decorate(EventStorageEngine engine, SnapshotStore snapshotStore) {
+        Objects.requireNonNull(engine, "The engine parameter cannot be null.");
+        Objects.requireNonNull(snapshotStore, "The snapshotStore parameter cannot be null.");
+        return engine == snapshotStore || engine instanceof SnapshotCapableEventStorageEngine
+                ? engine
+                : new SnapshotCapableEventStorageEngine(engine, snapshotStore);
+    }
+
     @Override
     public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (condition.strategy() instanceof SourcingStrategy.Snapshot s) {

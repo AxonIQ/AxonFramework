@@ -250,3 +250,31 @@ Only the events that occurred after that position are applied to bring the entit
 
 If a snapshot cannot be used, the full event stream is replayed and a new snapshot may be created after sourcing completes, depending on the configured `SnapshotPolicy`.
 This new snapshot replaces the previous one according to the current storage behavior.
+
+=== Snapshot sourcing composition
+
+An `EventStorageEngine` reads snapshots in one of two ways.
+An engine that supports the snapshot sourcing strategy natively serves the snapshot and the events following it in a single call.
+Any other engine is decorated with a `SnapshotCapableEventStorageEngine`, which loads the snapshot from the configured `SnapshotStore` first and then sources the events that follow it.
+
+That decoration is applied by the `SnapshotSourcingConfigurationEnhancer`, which the event sourcing defaults register for you.
+The engine is left as is when no `SnapshotStore` is configured, and when the engine is the configured `SnapshotStore` itself.
+
+A storage topology that composes snapshot sourcing itself disables that enhancer and takes over the responsibility:
+
+[source,java]
+----
+configurer.componentRegistry(
+        registry -> registry.disableEnhancer(SnapshotSourcingConfigurationEnhancer.class)
+);
+----
+
+An engine routing sourcing to one engine per shard, tenant, or region is the case this exists for.
+The target is only known once a message is inspected, so decorating the routing engine would read snapshots before then, and the engines it routes to would never receive the snapshot sourcing strategy.
+Such a topology composes each of its engines with that engine's own snapshot store instead, using `SnapshotCapableEventStorageEngine.decorate(engine, snapshotStore)`.
+
+[NOTE]
+====
+Disabling the enhancer without composing snapshot sourcing elsewhere leaves snapshots being written while never being read.
+Sourcing then replays an entity's full event history, which is correct but forfeits the optimization.
+====
