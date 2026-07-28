@@ -29,6 +29,7 @@ import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.lang.reflect.Type;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
@@ -75,11 +76,11 @@ class SimpleQueryUpdateEmitterTest {
         when(queryBus.completeSubscriptionsExceptionally(any(), any(), eq(context)))
                 .thenReturn(FutureUtils.emptyCompletedFuture());
         when(queryBus.emitUpdateAndCount(any(), any(), eq(context)))
-                .thenReturn(CompletableFuture.completedFuture(1));
+                .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(1)));
         when(queryBus.completeSubscriptionsAndCount(any(), eq(context)))
-                .thenReturn(CompletableFuture.completedFuture(1));
+                .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(1)));
         when(queryBus.completeSubscriptionsExceptionallyAndCount(any(), any(), eq(context)))
-                .thenReturn(CompletableFuture.completedFuture(1));
+                .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(1)));
         filterCaptor = ArgumentCaptor.captor();
         updateCaptor = ArgumentCaptor.captor();
     }
@@ -305,11 +306,12 @@ class SimpleQueryUpdateEmitterTest {
             when(messageTypeResolver.resolveOrThrow(String.class)).thenReturn(QUERY_PAYLOAD_TYPE);
             when(messageTypeResolver.resolveOrThrow(testUpdatePayload)).thenReturn(UPDATE_PAYLOAD_TYPE);
             when(queryBus.emitUpdateAndCount(any(), any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(3));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(3)));
             // when...
-            int matchCount = testSubject.emitAndCount(String.class, query -> true, () -> testUpdatePayload);
+            OptionalInt matchCount = testSubject.emitAndCount(String.class, query -> true, () -> testUpdatePayload);
             // then...
-            assertThat(matchCount).isEqualTo(3);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(3);
             verify(queryBus).emitUpdateAndCount(filterCaptor.capture(), updateCaptor.capture(), eq(context));
             assertThat(filterCaptor.getValue().test(testQuery)).isTrue();
         }
@@ -321,13 +323,14 @@ class SimpleQueryUpdateEmitterTest {
             Update testUpdatePayload = new Update("some-update");
             when(messageTypeResolver.resolveOrThrow(testUpdatePayload)).thenReturn(UPDATE_PAYLOAD_TYPE);
             when(queryBus.emitUpdateAndCount(any(), any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(2));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(2)));
             // when...
-            int matchCount = testSubject.emitAndCount(QUERY_PAYLOAD_TYPE.qualifiedName(),
-                                                            query -> true,
-                                                      () -> testUpdatePayload);
+            OptionalInt matchCount = testSubject.emitAndCount(
+                    QUERY_PAYLOAD_TYPE.qualifiedName(), query -> true, () -> testUpdatePayload
+            );
             // then...
-            assertThat(matchCount).isEqualTo(2);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(2);
             verify(queryBus).emitUpdateAndCount(filterCaptor.capture(), updateCaptor.capture(), eq(context));
             assertThat(filterCaptor.getValue().test(testQuery)).isTrue();
         }
@@ -455,11 +458,12 @@ class SimpleQueryUpdateEmitterTest {
             QueryMessage testQuery = new GenericQueryMessage(QUERY_PAYLOAD_TYPE, "some-query");
             when(messageTypeResolver.resolveOrThrow(String.class)).thenReturn(QUERY_PAYLOAD_TYPE);
             when(queryBus.completeSubscriptionsAndCount(any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(3));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(3)));
             // when...
-            int matchCount = testSubject.completeAndCount(String.class, query -> true);
+            OptionalInt matchCount = testSubject.completeAndCount(String.class, query -> true);
             // then...
-            assertThat(matchCount).isEqualTo(3);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(3);
             verify(queryBus).completeSubscriptionsAndCount(filterCaptor.capture(), eq(context));
             assertThat(filterCaptor.getValue().test(testQuery)).isTrue();
         }
@@ -469,11 +473,12 @@ class SimpleQueryUpdateEmitterTest {
             // given...
             QueryMessage testQuery = new GenericQueryMessage(QUERY_PAYLOAD_TYPE, "some-query");
             when(queryBus.completeSubscriptionsAndCount(any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(2));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(2)));
             // when...
-            int matchCount = testSubject.completeAndCount(QUERY_PAYLOAD_TYPE.qualifiedName(), query -> true);
+            OptionalInt matchCount = testSubject.completeAndCount(QUERY_PAYLOAD_TYPE.qualifiedName(), query -> true);
             // then...
-            assertThat(matchCount).isEqualTo(2);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(2);
             verify(queryBus).completeSubscriptionsAndCount(filterCaptor.capture(), eq(context));
             assertThat(filterCaptor.getValue().test(testQuery)).isTrue();
         }
@@ -593,11 +598,12 @@ class SimpleQueryUpdateEmitterTest {
             QueryMessage testQuery = new GenericQueryMessage(QUERY_PAYLOAD_TYPE, "some-query");
             when(messageTypeResolver.resolveOrThrow(String.class)).thenReturn(QUERY_PAYLOAD_TYPE);
             when(queryBus.completeSubscriptionsExceptionallyAndCount(any(), any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(3));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(3)));
             // when...
-            int matchCount = testSubject.completeExceptionallyAndCount(String.class, query -> true, CAUSE);
+            OptionalInt matchCount = testSubject.completeExceptionallyAndCount(String.class, query -> true, CAUSE);
             // then...
-            assertThat(matchCount).isEqualTo(3);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(3);
             verify(queryBus).completeSubscriptionsExceptionallyAndCount(filterCaptor.capture(),
                                                                         eq(CAUSE),
                                                                         eq(context));
@@ -609,13 +615,14 @@ class SimpleQueryUpdateEmitterTest {
             // given...
             QueryMessage testQuery = new GenericQueryMessage(QUERY_PAYLOAD_TYPE, "some-query");
             when(queryBus.completeSubscriptionsExceptionallyAndCount(any(), any(), eq(context)))
-                    .thenReturn(CompletableFuture.completedFuture(2));
+                    .thenReturn(CompletableFuture.completedFuture(OptionalInt.of(2)));
             // when...
-            int matchCount = testSubject.completeExceptionallyAndCount(QUERY_PAYLOAD_TYPE.qualifiedName(),
-                                                                             query -> true,
-                                                                       CAUSE);
+            OptionalInt matchCount = testSubject.completeExceptionallyAndCount(
+                    QUERY_PAYLOAD_TYPE.qualifiedName(), query -> true, CAUSE
+            );
             // then...
-            assertThat(matchCount).isEqualTo(2);
+            assertThat(matchCount).isPresent();
+            assertThat(matchCount).hasValue(2);
             verify(queryBus).completeSubscriptionsExceptionallyAndCount(filterCaptor.capture(),
                                                                         eq(CAUSE),
                                                                         eq(context));

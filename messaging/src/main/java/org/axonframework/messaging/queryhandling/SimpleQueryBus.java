@@ -15,7 +15,6 @@
  */
 package org.axonframework.messaging.queryhandling;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Context;
@@ -26,6 +25,7 @@ import org.axonframework.messaging.core.QueueMessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,15 +44,13 @@ import java.util.stream.Collectors;
 
 /**
  * Implementation of the {@code QueryBus} that dispatches queries (through
- * {@link #query(QueryMessage, ProcessingContext)} or
- * {@link #subscriptionQuery(QueryMessage, ProcessingContext, int)}) to the
- * {@link QueryHandler QueryHandlers} subscribed to that specific query's {@link QualifiedName name} and
+ * {@link #query(QueryMessage, ProcessingContext)} or {@link #subscriptionQuery(QueryMessage, ProcessingContext, int)})
+ * to the {@link QueryHandler QueryHandlers} subscribed to that specific query's {@link QualifiedName name} and
  * {@link QualifiedName response type} combination.
  * <p>
  * Allows fine-grained control over
  * {@link #subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} through
- * {@link #subscribeToUpdates(QueryMessage, int)},
- * {@link #emitUpdate(Predicate, Supplier, ProcessingContext)},
+ * {@link #subscribeToUpdates(QueryMessage, int)}, {@link #emitUpdate(Predicate, Supplier, ProcessingContext)},
  * {@link #completeSubscriptions(Predicate, ProcessingContext)}, and
  * {@link #completeSubscriptionsExceptionally(Predicate, Throwable, ProcessingContext)}.
  * <p>
@@ -78,9 +77,8 @@ public class SimpleQueryBus implements QueryBus {
     /**
      * Construct a {@code SimpleQueryBus} with the given {@code unitOfWorkFactory} and {@code queryUpdateEmitter}.
      *
-     * @param unitOfWorkFactory The factory constructing
-     *                          {@link UnitOfWork units of work} to dispatch and
-     *                          handle queries in.
+     * @param unitOfWorkFactory The factory constructing {@link UnitOfWork units of work} to dispatch and handle queries
+     *                          in.
      */
     public SimpleQueryBus(UnitOfWorkFactory unitOfWorkFactory) {
         this.unitOfWorkFactory = Objects.requireNonNull(unitOfWorkFactory, "The UnitOfWorkFactory must be provided.");
@@ -182,7 +180,7 @@ public class SimpleQueryBus implements QueryBus {
         return updateHandlers.keySet().stream().anyMatch(m -> m.identifier().equals(queryId));
     }
 
-        private QueryHandler handlerFor(QueryMessage query) {
+    private QueryHandler handlerFor(QueryMessage query) {
         QualifiedName handlerName = query.type().qualifiedName();
         if (!subscriptions.containsKey(handlerName)) {
             throw NoHandlerForQueryException.forBus(query);
@@ -198,9 +196,9 @@ public class SimpleQueryBus implements QueryBus {
     }
 
     @Override
-    public CompletableFuture<Integer> emitUpdateAndCount(Predicate<QueryMessage> filter,
-                                                         Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
-                                                         @Nullable ProcessingContext context) {
+    public CompletableFuture<OptionalInt> emitUpdateAndCount(Predicate<QueryMessage> filter,
+                                                             Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+                                                             @Nullable ProcessingContext context) {
         return runAfterCommitOrImmediately(context, filter, () -> emitUpdate(filter, updateSupplier));
     }
 
@@ -240,8 +238,8 @@ public class SimpleQueryBus implements QueryBus {
     }
 
     @Override
-    public CompletableFuture<Integer> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
-                                                                    @Nullable ProcessingContext context) {
+    public CompletableFuture<OptionalInt> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
+                                                                        @Nullable ProcessingContext context) {
         return runAfterCommitOrImmediately(context, filter, () -> completeSubscriptions(filter));
     }
 
@@ -270,7 +268,7 @@ public class SimpleQueryBus implements QueryBus {
     }
 
     @Override
-    public CompletableFuture<Integer> completeSubscriptionsExceptionallyAndCount(
+    public CompletableFuture<OptionalInt> completeSubscriptionsExceptionallyAndCount(
             Predicate<QueryMessage> filter,
             Throwable cause,
             @Nullable ProcessingContext context
@@ -289,17 +287,17 @@ public class SimpleQueryBus implements QueryBus {
      * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits, matching
      * {@code updateTask}'s matching subscriptions to the given {@code filter}.
      * <p>
-     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not for
-     * an already-errored {@code context}, since the update is silently dropped in that case and the {@code filter}
-     * must not observe any side effects.
+     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not for an
+     * already-errored {@code context}, since the update is silently dropped in that case and the {@code filter} must
+     * not observe any side effects.
      */
-    private CompletableFuture<Integer> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
-                                                                   Predicate<QueryMessage> filter,
-                                                                   Runnable updateTask) {
+    private CompletableFuture<OptionalInt> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
+                                                                       Predicate<QueryMessage> filter,
+                                                                       Runnable updateTask) {
         if (context == null || context.isCommitted()) {
             int matchCount = matchCount(filter);
             updateTask.run();
-            return CompletableFuture.completedFuture(matchCount);
+            return CompletableFuture.completedFuture(OptionalInt.of(matchCount));
         } else if (!context.isCompleted()) {
             int matchCount = matchCount(filter);
             context.computeResourceIfAbsent(
@@ -311,10 +309,10 @@ public class SimpleQueryBus implements QueryBus {
                            }
                    )
                    .add(updateTask);
-            return CompletableFuture.completedFuture(matchCount);
+            return CompletableFuture.completedFuture(OptionalInt.of(matchCount));
         }
         // else: context completed with error - drop the update
-        return CompletableFuture.completedFuture(0);
+        return CompletableFuture.completedFuture(OptionalInt.empty());
     }
 
     private int matchCount(Predicate<QueryMessage> filter) {

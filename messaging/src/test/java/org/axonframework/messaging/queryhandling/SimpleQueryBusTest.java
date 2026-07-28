@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -668,7 +669,10 @@ class SimpleQueryBusTest {
             testSubject.subscriptionQuery(testQueryTwo, null, Queues.SMALL_BUFFER_SIZE);
             testSubject.subscriptionQuery(testQueryThree, null, Queues.SMALL_BUFFER_SIZE);
             // when...
-            Integer matchCount = testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, null).join();
+            Integer matchCount = testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, null)
+                                            .orTimeout(1, TimeUnit.SECONDS)
+                                            .join()
+                                            .orElseThrow();
             // then...
             assertThat(matchCount).isEqualTo(2);
         }
@@ -682,7 +686,10 @@ class SimpleQueryBusTest {
             testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
             // when...
             Integer matchCount =
-                    testSubject.emitUpdateAndCount(query -> false, () -> updateMessage, null).join();
+                    testSubject.emitUpdateAndCount(query -> false, () -> updateMessage, null)
+                               .orTimeout(1, TimeUnit.SECONDS)
+                               .join()
+                               .orElseThrow();
             // then...
             assertThat(matchCount).isZero();
         }
@@ -700,10 +707,10 @@ class SimpleQueryBusTest {
             AtomicReference<Integer> matchCountRef = new AtomicReference<>();
             // when emitting on invocation, before the ProcessingContext has committed...
             uow.onInvocation(context -> {
-                CompletableFuture<Integer> matchCountFuture =
+                CompletableFuture<OptionalInt> matchCountFuture =
                         testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, context);
                 // then the match count is already available, without waiting for the after-commit phase...
-                matchCountRef.set(matchCountFuture.join());
+                matchCountRef.set(matchCountFuture.orTimeout(1, TimeUnit.SECONDS).join().orElseThrow());
                 return CompletableFuture.completedFuture(null);
             });
             uow.execute().join();
@@ -848,7 +855,10 @@ class SimpleQueryBusTest {
             testSubject.subscriptionQuery(testQueryTwo, null, Queues.SMALL_BUFFER_SIZE);
             testSubject.subscriptionQuery(testQueryThree, null, Queues.SMALL_BUFFER_SIZE);
             // when...
-            Integer matchCount = testSubject.completeSubscriptionsAndCount(queryFilter, null).join();
+            Integer matchCount = testSubject.completeSubscriptionsAndCount(queryFilter, null)
+                                            .orTimeout(1, TimeUnit.SECONDS)
+                                            .join()
+                                            .orElseThrow();
             // then...
             assertThat(matchCount).isEqualTo(2);
         }
@@ -859,7 +869,10 @@ class SimpleQueryBusTest {
             QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
             testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
             // when...
-            Integer matchCount = testSubject.completeSubscriptionsAndCount(query -> false, null).join();
+            Integer matchCount = testSubject.completeSubscriptionsAndCount(query -> false, null)
+                                            .orTimeout(1, TimeUnit.SECONDS)
+                                            .join()
+                                            .orElseThrow();
             // then...
             assertThat(matchCount).isZero();
         }
@@ -1015,7 +1028,9 @@ class SimpleQueryBusTest {
             // when...
             Integer matchCount =
                     testSubject.completeSubscriptionsExceptionallyAndCount(queryFilter, mockException, null)
-                               .join();
+                               .orTimeout(1, TimeUnit.SECONDS)
+                               .join()
+                               .orElseThrow();
             // then...
             assertThat(matchCount).isEqualTo(2);
         }
@@ -1029,7 +1044,9 @@ class SimpleQueryBusTest {
             // when...
             Integer matchCount =
                     testSubject.completeSubscriptionsExceptionallyAndCount(query -> false, mockException, null)
-                               .join();
+                               .orTimeout(1, TimeUnit.SECONDS)
+                               .join()
+                               .orElseThrow();
             // then...
             assertThat(matchCount).isZero();
         }

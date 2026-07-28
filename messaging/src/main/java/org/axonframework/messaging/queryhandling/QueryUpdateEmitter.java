@@ -27,10 +27,9 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandler;
 import org.jspecify.annotations.Nullable;
 
+import java.util.OptionalInt;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-
-import static org.axonframework.messaging.queryhandling.QueryBus.UNKNOWN_MATCH_COUNT;
 
 /**
  * Query-specific component that interacts with
@@ -129,19 +128,19 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
      *                       queries} matching the given {@code queryType} and {@code filter}
      * @param <Q>            the type of the {@link QueryMessage} to filter on
-     * @return the number of subscription queries the update was emitted to, or {@link QueryBus#UNKNOWN_MATCH_COUNT} if
-     * this implementation cannot determine that number
+     * @return the number of subscription queries the update was emitted to as an {@link OptionalInt}, which is empty
+     * when we couldn't match
      * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
      *                                         equivalent required to filter the {@link QueryMessage#payload()}
      * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
      *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
      *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
-    default <Q> int emitAndCount(Class<Q> queryType,
-                                 Predicate<? super Q> filter,
-                                 Supplier<Object> updateSupplier) {
+    default <Q> OptionalInt emitAndCount(Class<Q> queryType,
+                                         Predicate<? super Q> filter,
+                                         Supplier<Object> updateSupplier) {
         emit(queryType, filter, updateSupplier);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 
     /**
@@ -188,14 +187,14 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * @param updateSupplier the update supplier to emit for
      *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
      *                       queries} matching the given {@code queryName} and {@code filter}
-     * @return the number of subscription queries the update was emitted to, or {@link QueryBus#UNKNOWN_MATCH_COUNT} if
-     * this implementation cannot determine that number
+     * @return the number of subscription queries the update was emitted to as an {@link OptionalInt}, which is empty
+     * when we couldn't match
      */
-    default int emitAndCount(QualifiedName queryName,
-                             Predicate<Object> filter,
-                             Supplier<Object> updateSupplier) {
+    default OptionalInt emitAndCount(QualifiedName queryName,
+                                     Predicate<Object> filter,
+                                     Supplier<Object> updateSupplier) {
         emit(queryName, filter, updateSupplier);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 
     /**
@@ -223,17 +222,17 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
      *                  converted to the given {@code queryType}
      * @param <Q>       the type of the {@link QueryMessage} to filter on.
-     * @return the number of subscription queries that were completed, or {@link QueryBus#UNKNOWN_MATCH_COUNT} if this
-     * implementation cannot determine that number
+     * @return the number of subscription queries that were completed as an {@link OptionalInt}, which is empty when we
+     * couldn't match
      * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
      *                                         equivalent required to filter the {@link QueryMessage#payload()}
      * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
      *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
      *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
-    default <Q> int completeAndCount(Class<Q> queryType, Predicate<? super Q> filter) {
+    default <Q> OptionalInt completeAndCount(Class<Q> queryType, Predicate<? super Q> filter) {
         complete(queryType, filter);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 
     /**
@@ -252,12 +251,12 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      *
      * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
      * @param filter    a predicate testing the raw {@link QueryMessage#payload()} as is
-     * @return the number of subscription queries that were completed, or {@link QueryBus#UNKNOWN_MATCH_COUNT} if this
-     * implementation cannot determine that number
+     * @return the number of subscription queries that were completed as an {@link OptionalInt}, which is empty when we
+     * couldn't match
      */
-    default int completeAndCount(QualifiedName queryName, Predicate<Object> filter) {
+    default OptionalInt completeAndCount(QualifiedName queryName, Predicate<Object> filter) {
         complete(queryName, filter);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 
     /**
@@ -289,19 +288,19 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      *                  converted to the given {@code queryType}
      * @param cause     the cause of an error leading to exceptionally complete subscription queries
      * @param <Q>       the type of the {@link QueryMessage} to filter on
-     * @return the number of subscription queries that were completed exceptionally, or
-     * {@link QueryBus#UNKNOWN_MATCH_COUNT} if this implementation cannot determine that number
+     * @return the number of subscription queries that were completed exceptionally as an {@link OptionalInt}, which is
+     * empty when we couldn't match
      * @throws MessageTypeNotResolvedException if the given {@code queryType} has no known {@link MessageType}
      *                                         equivalent required to filter the {@link QueryMessage#payload()}
      * @throws ConversionException             if the {@link QueryMessage#payload()} could not be converted to the given
      *                                         {@code queryType} to perform the given {@code filter}. Will only occur if
      *                                         a {@link MessageType} could be found for the given {@code queryType}
      */
-    default <Q> int completeExceptionallyAndCount(Class<Q> queryType,
-                                                  Predicate<? super Q> filter,
-                                                  Throwable cause) {
+    default <Q> OptionalInt completeExceptionallyAndCount(Class<Q> queryType,
+                                                          Predicate<? super Q> filter,
+                                                          Throwable cause) {
         completeExceptionally(queryType, filter, cause);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 
     /**
@@ -326,13 +325,13 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * @param filter    a predicate to filter matching subscription queries based on the raw
      *                  {@link QueryMessage#payload()}
      * @param cause     the cause of an error leading to exceptionally complete subscription queries
-     * @return the number of subscription queries that were completed exceptionally, or
-     * {@link QueryBus#UNKNOWN_MATCH_COUNT} if this implementation cannot determine that number
+     * @return the number of subscription queries that were completed exceptionally as an {@link OptionalInt}, which is
+     * empty when we couldn't match
      */
-    default int completeExceptionallyAndCount(QualifiedName queryName,
-                                              Predicate<Object> filter,
-                                              Throwable cause) {
+    default OptionalInt completeExceptionallyAndCount(QualifiedName queryName,
+                                                      Predicate<Object> filter,
+                                                      Throwable cause) {
         completeExceptionally(queryName, filter, cause);
-        return UNKNOWN_MATCH_COUNT;
+        return OptionalInt.empty();
     }
 }

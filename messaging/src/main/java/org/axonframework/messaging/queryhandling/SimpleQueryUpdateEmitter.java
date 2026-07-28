@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
+import java.util.OptionalInt;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -110,9 +111,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public <Q> int emitAndCount(Class<Q> queryType,
-                                Predicate<? super Q> filter,
-                                Supplier<Object> updateSupplier) {
+    public <Q> OptionalInt emitAndCount(Class<Q> queryType,
+                                        Predicate<? super Q> filter,
+                                        Supplier<Object> updateSupplier) {
         if (logger.isDebugEnabled()) {
             logger.debug(
                     "Emitting an update to queries matching type [{}] and a given filter, returning the match count.",
@@ -139,9 +140,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public int emitAndCount(QualifiedName queryName,
-                            Predicate<Object> filter,
-                            Supplier<Object> updateSupplier) {
+    public OptionalInt emitAndCount(QualifiedName queryName,
+                                    Predicate<Object> filter,
+                                    Supplier<Object> updateSupplier) {
         if (logger.isDebugEnabled()) {
             logger.debug(
                     "Emitting an update to queries matching name [{}] and a given filter, returning the match count.",
@@ -175,7 +176,7 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public <Q> int completeAndCount(Class<Q> queryType, Predicate<? super Q> filter) {
+    public <Q> OptionalInt completeAndCount(Class<Q> queryType, Predicate<? super Q> filter) {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries of type [{}], returning the match count.", queryType);
         }
@@ -195,7 +196,7 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public int completeAndCount(QualifiedName queryName, Predicate<Object> filter) {
+    public OptionalInt completeAndCount(QualifiedName queryName, Predicate<Object> filter) {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries with name [{}], returning the match count.", queryName);
         }
@@ -217,9 +218,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public <Q> int completeExceptionallyAndCount(Class<Q> queryType,
-                                                 Predicate<? super Q> filter,
-                                                 Throwable cause) {
+    public <Q> OptionalInt completeExceptionallyAndCount(Class<Q> queryType,
+                                                         Predicate<? super Q> filter,
+                                                         Throwable cause) {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries of type [{}] exceptionally, returning the match count.",
                          queryType, cause);
@@ -242,9 +243,9 @@ public class SimpleQueryUpdateEmitter implements QueryUpdateEmitter {
 
     @SuppressWarnings("DataFlowIssue")
     @Override
-    public int completeExceptionallyAndCount(QualifiedName queryName,
-                                             Predicate<Object> filter,
-                                             Throwable cause) {
+    public OptionalInt completeExceptionallyAndCount(QualifiedName queryName,
+                                                     Predicate<Object> filter,
+                                                     Throwable cause) {
         if (logger.isDebugEnabled()) {
             logger.debug("Completing subscription queries with name [{}] exceptionally, returning the match count.",
                          queryName, cause);
