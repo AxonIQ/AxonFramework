@@ -391,6 +391,95 @@ part of what makes the C6 result trustworthy rather than lucky.
 | `StoredTokenNeverRegresses` | A regression across a merge | A merge gives the merged segment the lower of two tokens, so the surviving identifier goes backwards by design | Licenses a rewind across a recorded split or merge, over the instruction's whole span rather than its issue instant |
 | `AtMostOneSegmentOwner`, `DeliveryAttributedToSegmentOwner` | Two nodes holding one segment for 1812ms, and deliveries from nodes holding no claim | A split deletes a token row and creates two; no interval derived from claim traffic can follow a segment across that | Ends every interval at a segment-set rebuild, and refuses to judge attribution at all on a run that rebuilt its segments |
 
+## Campaign of 2026-07-28 (P6, the Axon Server backend)
+
+```bash
+# The mutation is in messaging, so that module and its dependents are what get reinstalled.
+./mvnw -q -o -pl messaging -am install -DskipTests
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=HuntReproduceTest \
+    -Dhunt.scenario=dcb_append_rejected_after_marker_single_writer -Dhunt.seed=1 \
+    -Dhunt.backend=<in-memory | axonserver> -Dsurefire.failIfNoSpecifiedTests=false
+git checkout -- messaging && ./mvnw -q -o -pl messaging -am install -DskipTests
+```
+
+### What this campaign had to establish, and the constraint it ran into first
+
+A canary on a new backend is only worth planting if its detection **depends on that backend's semantics**. A mutation
+every arm catches says nothing about the new one.
+
+The obvious target was recorded five phases ago as an untested hypothesis (`HUNT-NOTES` note 2.2): the in-heap engine
+decides a boundary through `EventCriteria.matches()`, the interpreted form, while a store that builds a query does it
+from `EventCriteria.flatten()`. Poison `flatten()` and every in-heap arm is untouched while a wire-query store sees the
+wrong thing. Exactly the shape wanted.
+
+**It cannot be pointed at the model oracle, and the reason is structural rather than fixable here.** `AxonModelCodec`
+records an append's condition by reading `condition.criteria().flatten()` -- the same accessor the connector builds its
+wire condition from. So a mutation of `flatten()` moves the reference model and the store **together**, they agree, and
+the comparison sees nothing. Generalised, and worth carrying: *the model-conformance oracle judges the condition the
+engine was handed, so no framework mutation of how that condition is derived can be caught by it.* Canarying that oracle
+on this arm would need a mutation of the **store's decision**, and the store is a container rather than framework code.
+
+So the canary targets the one `flatten()` path the recorder does not share: `EventCriteria.havingAnyTag()`, which the
+whole-store scan uses and which the recorder never reads.
+
+| Canary | Mutation | Expected to be caught by | Caught? | Tier | Numbers |
+|---|---|---|---|---|---|
+| C8 | The match-everything criteria flattens to a criterion nothing matches | `AcknowledgedAppendIsDurable` on the Axon Server arm; nothing on any in-heap arm | **no -- escaped**, and the escape is informative | SMOKE, seed 1, `in-memory` and `axonserver` | in-heap arm clean, as predicted. Axon Server arm reported **one note and nothing else**: "The run outlived its wall-clock budget". `INCONCLUSIVE`, not `FAIL`. |
+
+### C8 -- the match-everything criteria flattens to a criterion nothing matches
+
+`messaging/src/main/java/org/axonframework/messaging/eventstreaming/AnyEvent.java`:
+
+```java
+ public Set<EventCriterion> flatten() {
+-    // AnyEvent does not have a criterion, as it matches all.
+-    return Collections.emptySet();
++    // CANARY C8: a criterion no event can match, so a store that builds its query from flatten() sees nothing.
++    return EventCriteria.havingTags(Tag.of("hunt-canary", "no-such-tag")).flatten();
+ }
+```
+
+`AnyEvent.matches(...)` is left returning `true`, which is the whole point: the interpreted form still says "everything
+matches" and the flattened form now says "nothing does". A store that interprets is unaffected; a store that queries is
+blinded.
+
+**Half the prediction held.** The in-heap arm was untouched -- clean run, 268 of 400 appends acknowledged, no violation --
+which confirms note 2.2's five-phase-old hypothesis directly: the two forms really are independent, and a defect in one is
+invisible to a store that uses the other. That is worth having on its own.
+
+**The other half did not, and the reason is the interesting part.** The prediction was
+`AcknowledgedAppendIsDurable`: the authoritative scan asks the store through `havingAnyTag()`, so under the mutation it
+returns nothing, and every acknowledged append's events are then absent from it. What actually happened is that the arm
+**never got as far as being judged**. Its only note was that the run outlived its wall-clock budget, so the verdict was
+`INCONCLUSIVE` and no oracle decided anything.
+
+### Why it escaped, and what would close it
+
+Two distinct holes, and both are about the arm rather than about the oracle.
+
+1. **An undecided arm cannot signal.** This is the suite's own recorded lesson -- "an arm that can never reach a pass can
+   never signal a regression either" -- arriving from the other direction: a mutation that pushes an arm into
+   *undecidedness* is as invisible as one that leaves it green. The three-valued verdict protects against false findings
+   and it does not protect against this.
+2. **`HuntReproduceTest` asserts no verdict.** It is a re-sampler for a human to read, so even a `FAIL` there would not
+   have failed a build. The assertion belongs on the arm's own test class, which does assert, and the canary was run
+   through the reproducer because it is the only entry point that takes `-Dhunt.backend` for an arbitrary scenario.
+
+What would close it, in order of value:
+
+- **A scan that answers empty is not a store that holds nothing.** The drain already distinguishes "the store gave no
+  answer" from "the store answered" -- P3b added that after a wrong column name hid 89 apparently-lost appends -- but an
+  answer of *zero* on a run that recorded acknowledged appends is the same class of lie and is currently accepted. A guard
+  comparing the scan against the count of acknowledged appends would have turned this mutation red immediately, and it is
+  a few lines in the drain. **This is the highest-value follow-up from the whole campaign.**
+- A backend-parameterised arm in `AxonServerBackendTest` that asserts a verdict, so a canary run through it fails a build.
+
+### What this campaign did not do
+
+- It did not canary the reference-model oracle on this arm, and that is structural: see the constraint above. The arm's
+  audit carries it as a short row rather than as an omission.
+- It planted one mutation, not a set. Every other campaign in this document planted at least two.
+
 ## What is not yet canaried
 
 Honest gaps, so that nobody reads the tables above as covering more than they do.
@@ -602,3 +691,5 @@ Recorded because both were silent, both looked like framework findings, and both
 | The `store-freeze` primitive | Built and verified against the container, and no scenario declares it. Nothing here says what the suite would do with a store that stops answering and then continues. | the phase that pauses a cluster |
 | A mutation of the split or merge algebra | Unchanged from P2b. | follow-up |
 | Anything at a tier above smoke | Unchanged. Every campaign so far is smoke with a fixed seed set. | the phase that runs the fuzz tier |
+| The reference-model oracle on any store the suite does not implement in Java | Structural, established by C8: the oracle records an append's condition through the same accessor the store's client builds its wire condition from, so no framework mutation of the condition's derivation can be caught by it. Catching one would need a mutation of the store's own decision, which for Axon Server is a container. | needs a mutable store, or an injected wire-level fault |
+| Anything on the Axon Server arm that a *decided* verdict would catch | C8 pushed the arm into undecidedness instead of failure, so no oracle on it has yet been shown to go red on a planted defect. The arm's oracles have been shown to go red on a **real** defect (F-19, F-20), which is worth more, but it is not the same thing as a planted one. | the phase that adds the empty-scan guard |

@@ -200,6 +200,30 @@
             <artifactId>hibernate-core</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+          The Axon Server arm of the backend selection: the only persistent store reachable from this tree that speaks
+          the Dynamic Consistency Boundary protocol. Version pinned rather than managed, because no published connector
+          implements EventStorageEngine#source(SourcingCondition, ProcessingContext) and the suite supplies that one
+          method itself, so a silent version bump would silently change what is shimmed. Which versions are usable is
+          recorded in formal/CONNECTOR-COMPATIBILITY.md and checked by the hunt module's ConnectorCompatibilityTest.
+        -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+            <version>5.2.2</version>
+            <scope>test</scope>
+            <exclusions>
+                <!--
+                  The connector declares the framework artefacts it was built against. This reactor's versions must win,
+                  or the arm would exercise the framework the connector shipped with rather than the framework here.
+                -->
+                <exclusion>
+                    <groupId>org.axonframework</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>

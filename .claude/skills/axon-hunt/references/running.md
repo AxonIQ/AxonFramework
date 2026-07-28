@@ -243,6 +243,87 @@ repository, so the profile cannot resolve offline). Add `-Djacoco.skip=true` and
 A Maven `-D` property does reach the forked JVM, so `-Dhunt.backend=...` selects the store
 with no surefire or failsafe configuration.
 
+## Versions, and the gate that checks a combination
+
+A backend is not one thing. A store reached over a wire is this reactor crossed with a client library
+crossed with a server version, and any of the three moving changes what a run means. This is not
+theoretical: the Axon Server arm was recorded as blocked for a whole phase because an abstract method
+was added to a storage-engine interface that the released connector had not implemented -- which
+`javac` accepts and the JVM refuses at the first call.
+
+**Answer the compatibility question first. It costs a second and starts no container.**
+
+```bash
+# The combination this build ships on.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# Any other connector artefact. The jars are in the local repository already.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false \
+    -Dhunt.connectorJar=$HOME/.m2/repository/io/axoniq/framework/axon-server-connector/5.1.2/axon-server-connector-5.1.2.jar
+```
+
+Real output from the second command:
+
+```
+CONNECTOR COMPATIBILITY axon-server-connector-5.1.2.jar against framework 5.3.0-SNAPSHOT
+  classes=79 unresolvable=0 unimplemented=4
+  UNIMPLEMENTED AxonServerEventStorageEngine -> EventStorageEngine.source(SourcingCondition, ProcessingContext)
+  ...
+  verdict=shimmable
+```
+
+`unresolvable` is a missing **type** and no shim fixes it; `unimplemented` is a missing **method** and a
+shim may. The version table, the shimmed set, and the escalation order for a rejected combination live
+in **`formal/CONNECTOR-COMPATIBILITY.md`** -- read them there, never from a copy, because a stale
+version table is worse than none.
+
+The knobs, each the exact property or file:
+
+| Version | Where |
+|---|---|
+| Axon Server image | `AxonServerHuntBackend.IMAGE` (simulation) and `AxonServerTestInfrastructure.IMAGE` (integrationtests). The arm needs `AXONIQ_AXONSERVER_STANDALONE_DCB=true` for a boundary context, and both arms wait for the server's own `Creating DCB context: default` log line, not for the health endpoint. |
+| Connector | `<version>` of `io.axoniq.framework:axon-server-connector` in `simulation/pom.xml` and `integrationtests/pom.xml`. Both exclude `org.axonframework:*` so this reactor's artefacts win. Then run the gate. |
+| Framework | The reactor's `${revision}` in the root `pom.xml`. A repo-wide change, not a test knob -- and the one most likely to break a released connector silently, which is what the gate is for. |
+| PostgreSQL image | `PostgresJpaHuntBackend.IMAGE` and `PostgresTestInfrastructure.IMAGE`. |
+
+**Which combination a past run used is data, not memory.** Every history header carries it:
+
+```bash
+head -1 <history>.jsonl | python3 -c "import json,sys; print(json.load(sys.stdin)['versions'])"
+```
+
+On the Axon Server arm that prints the framework version, the connector coordinates and version, the
+image tag, and the method the harness shimmed. A verdict quoted without them is not quotable.
+
+## The Axon Server arm
+
+```bash
+# The arm itself: the linkage evidence, a real append and source, and one shipped scenario.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=AxonServerBackendTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# Its chaos arms: kill, network cut, and a severed read-side stream. Tens of minutes.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest=AxonServerInfrastructureFailureTest -Dsurefire.failIfNoSpecifiedTests=false
+
+# The existing integration tests against it. One property, no new test classes.
+./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
+    -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.backend=axonserver
+```
+
+Three things about this backend that will otherwise cost you time:
+
+- **Runs must not overlap.** Isolation is a purge of one shared context, because the standalone edition
+  refuses a context per run (`403 [AXONIQ-1700] Maximum number of replication groups reached`).
+- **A gRPC stream cannot be drained with a `next()` loop.** The generic scan stops at the first empty
+  answer and a gRPC stream is empty until its first message arrives, so it reports **zero** however much
+  the store holds -- which makes quiescence trivially true and every delivery oracle hold vacuously. The
+  backend overrides `readableEventIds` with `MessageStream.reduce`.
+- **A killed container does not keep its published port.** Measured: `55015` before `docker kill`,
+  `55016` after `docker start`. Testcontainers' `getMappedPort` still answers the old one.
+
 ## The formal layer
 
 Fetch the checker once (git-ignored):

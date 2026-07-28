@@ -2,3 +2,5 @@ org.axonframework.hunt.harness.PostgresJpaHuntBackend
 org.axonframework.hunt.harness.PostgresJpaHuntBackend$SplitTokenStore
 org.axonframework.hunt.harness.PostgresJpaHuntBackend$Chaos
 org.axonframework.hunt.harness.PostgresJpaHuntBackend$SpringConfigured
+org.axonframework.hunt.harness.AxonServerHuntBackend
+org.axonframework.hunt.harness.AxonServerHuntBackend$Chaos

@@ -120,7 +120,8 @@ public final class ScenarioRunner {
         HuntBackend backend = HuntBackend.byName(scenario.backend());
         HistoryHeader header = HistoryHeader.of(scenario.id(), seed, scenario.backend(),
                                                 scenario.timescale().name(),
-                                                shapeOf(scenario, workload, backend, tier, seed, budget));
+                                                shapeOf(scenario, workload, backend, tier, seed, budget),
+                                                versionsOf(backend));
         Path historyFile = historyDirectory.resolve(scenario.id() + "-" + seed + ".jsonl");
         Deadline deadline = Deadline.in("scenario " + scenario.id() + " seed " + seed, budget.wallBudget());
         Buggify buggify = new Buggify(seed, scenario.buggifyProbability());
@@ -526,6 +527,23 @@ public final class ScenarioRunner {
         shape.put(org.axonframework.hunt.checker.DurabilityChecker.COMMITS_OUTSIDE_APPEND_TRANSACTION,
                   String.valueOf(backend.commitsOutsideAppendTransaction()));
         return Map.copyOf(shape);
+    }
+
+    /**
+     * Returns the version combination the run's meaning depends on: this reactor's version, plus whatever the backend
+     * says about the client library and the store version it reaches, plus whatever the harness had to shim to make the
+     * combination link.
+     * <p>
+     * It goes into the history header because attribution needs it. A store reached over a wire is the framework crossed
+     * with a client library crossed with a server, and a divergence between two arms is only attributable to the store
+     * when the rest of the combination is known to be the same. Recorded as data, so a verdict vector and a finding both
+     * carry it without anybody having to remember to write it down.
+     */
+    private static Map<String, String> versionsOf(HuntBackend backend) {
+        Map<String, String> versions = new LinkedHashMap<>();
+        versions.put("framework", HuntBackend.frameworkVersion());
+        versions.putAll(backend.versions());
+        return Map.copyOf(versions);
     }
 
     private static void sleep(Duration duration, Deadline deadline) {

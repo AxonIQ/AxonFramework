@@ -86,7 +86,8 @@ class BackendDifferentialTest {
     private static final List<String> BACKENDS = List.of(InMemoryHuntBackend.NAME,
                                                          HsqldbTokenStoreBackend.NAME,
                                                          PostgresJpaHuntBackend.NAME,
-                                                         PostgresJpaHuntBackend.SplitTokenStore.NAME);
+                                                         PostgresJpaHuntBackend.SplitTokenStore.NAME,
+                                                         AxonServerHuntBackend.NAME);
 
     /**
      * The timings every arm of the matrix runs at, identical across backends so that a divergence is the store's and not
@@ -99,7 +100,7 @@ class BackendDifferentialTest {
      * and 1417 redelivered events. Two seconds against a four-hundred-millisecond extension threshold keeps the
      * five-to-one ratio that the compression exists to preserve.
      */
-    private static final HuntTimescale MATRIX_TIMINGS =
+    static final HuntTimescale MATRIX_TIMINGS =
             HuntTimescale.compressed().withClaimTimings(Duration.ofSeconds(2), Duration.ofMillis(400));
 
     /**
@@ -114,9 +115,9 @@ class BackendDifferentialTest {
      * Two seeds rather than one, because a single seed is a single interleaving and the suite's own weak-oracle rules cap
      * a one-seed arm at a partial verdict however clean it is.
      */
-    private static final TierBudget MATRIX_BUDGET = new TierBudget(300, 2, Duration.ofMinutes(4));
+    static final TierBudget MATRIX_BUDGET = new TierBudget(300, 2, Duration.ofMinutes(4));
 
-    private static final Duration MATRIX_SETTLE = Duration.ofSeconds(60);
+    static final Duration MATRIX_SETTLE = Duration.ofSeconds(60);
 
     /**
      * The whole matrix, run once for the class rather than once per assertion.
@@ -244,6 +245,17 @@ class BackendDifferentialTest {
                             .anySatisfy(statement -> assertThat(statement).contains("AppendConformsToDcbModel",
                                                                                     "not expressible")));
 
+            // and Axon Server is the column that changes what this matrix can claim. It is the only store here whose
+            // events outlive the process AND whose append condition is a boundary over tags and a marker, so it is the
+            // only one on which the reference model judges the protocol against real persistence rather than against a
+            // map in the heap. Its verdict carries the arm's version combination, because it links a released connector
+            // that predates this reactor and one method of its engine is the harness's.
+            System.out.println("AXONSERVER COLUMN " + AxonServerHuntBackend.label());
+            assertThat(perBackend.get(AxonServerHuntBackend.NAME))
+                    .as("a boundary-native persistent store must let the reference model judge the protocol")
+                    .allSatisfy(result -> assertThat(result.notApplicable())
+                            .noneMatch(statement -> statement.contains("AppendConformsToDcbModel")));
+
             // and the divergence this matrix found is pinned where it is, so that closing it is what breaks this
             // assertion. An append made with no consistency condition is rejected as conflicting on the aggregate-based
             // store whenever the aggregate already holds events, because an INFINITY marker carries no position and the
@@ -298,7 +310,13 @@ class BackendDifferentialTest {
             // for ever produced exactly the same observation as a run that was merely interrupted -- which is why a
             // planted gap defect escaped this suite once. Quiescence is now asked of the store, and a read side that has
             // stopped moving with events still missing is judged instead of forgiven.
-            List.of(PostgresJpaHuntBackend.NAME, PostgresJpaHuntBackend.SplitTokenStore.NAME).forEach(
+            // Axon Server is measured in the same group rather than held to the in-heap expectation. Its index is
+            // assigned at commit rather than from a sequence taken before one, so it has no gap for a reader to come
+            // back for -- but its read side is reached over gRPC, and nothing here has measured what that does to a
+            // drain. Quoting the in-heap expectation at it before measuring is the mistake the PostgreSQL arm's first
+            // run made in the other direction.
+            List.of(PostgresJpaHuntBackend.NAME, PostgresJpaHuntBackend.SplitTokenStore.NAME,
+                    AxonServerHuntBackend.NAME).forEach(
                     backend -> perBackend.get(backend).forEach(result -> {
                         System.out.println("MEASURED " + backend + " seed " + result.seed()
                                                    + " undelivered=" + undelivered(result)
@@ -356,11 +374,16 @@ class BackendDifferentialTest {
             // than it looks: the framework's in-heap token store grants every claim, so an ownership assertion made
             // against it holds vacuously, and a vector that recorded that as a pass would be claiming coverage it does
             // not have.
-            assertThat(perBackend.get(InMemoryHuntBackend.NAME))
-                    .as("a store that arbitrates no claims must say so")
+            // Axon Server is in this group and it is worth saying why: the connector carries no token store at all, so
+            // an Axon Server deployment's segment ownership is decided by whatever token store the application supplies,
+            // and here that is the framework's in-heap one. The event store is real; the claim side is not. A verdict
+            // from the Axon Server column is a verdict about the event store.
+            List.of(InMemoryHuntBackend.NAME, AxonServerHuntBackend.NAME).forEach(backend -> assertThat(
+                            perBackend.get(backend))
+                    .as("a store that arbitrates no claims must say so: %s", backend)
                     .allSatisfy(result -> assertThat(result.notApplicable())
                             .anySatisfy(statement -> assertThat(statement)
-                                    .contains(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER, "not expressible")));
+                                    .contains(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER, "not expressible"))));
 
             // and the stores that do arbitrate claims decided it instead of declining
             List.of(HsqldbTokenStoreBackend.NAME, PostgresJpaHuntBackend.NAME).forEach(backend -> assertThat(

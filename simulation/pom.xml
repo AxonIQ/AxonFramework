@@ -106,6 +106,32 @@
             <artifactId>hibernate-core</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+          The Axon Server arm: the published connector, which is the only Dynamic Consistency Boundary store in the
+          suite whose events outlive the process. Version pinned rather than managed, because the arm's verdict is only
+          readable next to the exact connector it was produced with: no published connector implements
+          EventStorageEngine#source(SourcingCondition, ProcessingContext), so the harness supplies that one method in
+          ContextCarryingAxonServerEngine and a silent version bump would silently change what the arm shims. Test
+          scope, alongside the container-backed backend it belongs to, so the default build of this module keeps gRPC,
+          protobuf and Testcontainers off its path.
+        -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+            <version>5.2.2</version>
+            <scope>test</scope>
+            <exclusions>
+                <!--
+                  The connector declares the framework artefacts it was built against. This reactor's own versions must
+                  win, or the arm would test the framework the connector shipped with rather than the framework here.
+                -->
+                <exclusion>
+                    <groupId>org.axonframework</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>
@@ -116,6 +142,15 @@
                 <configuration>
                     <excludedGroups>${hunt.excludedGroups}</excludedGroups>
                     <systemPropertyVariables>
+                        <!--
+                          The version of the framework a run drove, recorded in every history header. The manifest
+                          fallback in HuntBackend#frameworkVersion only answers when the module resolves the framework
+                          from the local repository; built with -am it resolves it from another module's target/classes,
+                          which carries no manifest.
+                        -->
+                        <hunt.frameworkVersion>${project.version}</hunt.frameworkVersion>
+                        <hunt.connectorVersion>${hunt.connectorVersion}</hunt.connectorVersion>
+                        <hunt.connectorJar>${hunt.connectorJar}</hunt.connectorJar>
                         <hunt.scenario>${hunt.scenario}</hunt.scenario>
                         <hunt.seed>${hunt.seed}</hunt.seed>
                         <hunt.seeds>${hunt.seeds}</hunt.seeds>

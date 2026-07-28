@@ -237,6 +237,23 @@ public class ModelConformanceChecker implements Checker {
         return operation.completion() == null ? null : operation.completion().error();
     }
 
+    /**
+     * Records one mismatch and reports that the replay has become ambiguous.
+     * <p>
+     * <b>Only the first mismatch in a run is sound, and this is what makes the checker say so.</b> The model applies
+     * every append the store accepted so that the replay can continue, but a batch the model <em>rejects</em> stores
+     * nothing -- while the real store stored it -- so from that point the model's positions run behind the store's by the
+     * size of that batch. A consistency marker is an absolute position, so every later comparison is made against a
+     * shifted store and can disagree for a reason that has nothing to do with the store's decision. Measured on the first
+     * Axon Server run: after four mismatches the model's head was 246 against a store holding 254 events, 242 of the 254
+     * positions no longer lined up, and two appends the store had rejected were reported as appends "the model accepts"
+     * -- both of which do conflict at the store's real positions. Reporting those as violations would have filed a
+     * finding the history disproves.
+     * <p>
+     * So the first mismatch is a violation and the rest are notes, exactly as after an append with an unknown outcome.
+     * The run still fails on the first, which is the one the evidence supports; the notes say how many more the run saw
+     * and why they cannot be counted.
+     */
     private boolean report(HistoryView history,
                            Operation operation,
                            boolean ambiguous,
@@ -250,7 +267,11 @@ public class ModelConformanceChecker implements Checker {
             return true;
         }
         violations.add(violation(history, operation, detail));
-        return false;
+        notes.add("The replayed store state is ambiguous from record #" + operation.invocation().idx()
+                          + " onwards: the store kept a batch the model rejected, so the model's positions now run "
+                          + "behind the store's and a marker is an absolute position. Later mismatches are reported as "
+                          + "notes rather than counted.");
+        return true;
     }
 
     private Violation violation(HistoryView history, Operation operation, String detail) {

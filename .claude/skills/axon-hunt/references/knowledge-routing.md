@@ -201,3 +201,23 @@ rather than reading the whole skill.
 And the rule that overrides all of it: **do not load a skill you do not have a question for.**
 Every one of them is long, and reading one speculatively is the most expensive way to avoid
 reading `formal/HUNT-NOTES.md`, which probably already has the answer.
+
+
+## Axon Server, and the coordinates that catch everybody
+
+Two facts that are not guessable and cost real time when guessed wrong.
+
+- **The connector lives under `io.axoniq.framework`, not `org.axonframework`.** The open-source
+  coordinates were discontinued; the artefact is `io.axoniq.framework:axon-server-connector` and it
+  publishes to Maven Central. Its own classes are under `io.axoniq.framework.axonserver.connector.*`
+  from 5.1.2 onwards, so `javap` on an `org.axonframework.axonserver.*` name reports `class not found`
+  and it is easy to conclude wrongly that the artefact is broken.
+- **A released connector can compile against this reactor and still fail at run time.** Adding an
+  abstract method to a storage-engine or snapshot-store interface is a binary-compatibility break that
+  `javac` does not see, because a call resolves against the interface. The JVM refuses it at the first
+  invocation with `AbstractMethodError`. Never conclude a connector is usable because the build is
+  green: run the compatibility gate (`references/running.md`) and read
+  `formal/CONNECTOR-COMPATIBILITY.md`.
+
+For the DCB semantics the Axon Server arm exercises, `references/dcb-semantics.md` is self-sufficient;
+`dcb-axoniq` adds the rationale for the boundary itself.

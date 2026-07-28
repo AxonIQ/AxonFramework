@@ -29,12 +29,23 @@ import java.util.Objects;
  * which timescale, with which seed and which workload shape, so a violation found weeks later can be replayed without
  * consulting any other artefact.
  *
+ * <b>A run's meaning depends on a version combination, so the combination is recorded as data.</b> A backend is not one
+ * thing: it is this reactor crossed with whatever client library reaches the store and whatever version of the store
+ * answers. The block that stopped this suite covering Axon Server for a whole phase was not a test problem at all -- it
+ * was an abstract method added to a storage-engine interface that the released connector had not implemented yet, which
+ * {@code javac} accepts and the JVM refuses. A verdict from such an arm is unreadable without knowing which combination
+ * produced it, and an argument about whether a divergence is the framework's or the skew's is unwinnable without it. The
+ * {@code versions} map therefore travels with every history, so attribution is mechanical rather than a discussion.
+ *
  * @param schemaVersion the history schema version this file was written against; see {@link #CURRENT_SCHEMA_VERSION}
  * @param scenarioId    the identifier of the scenario that produced the run
  * @param seed          the seed that fixes the workload shape and the fault schedule
  * @param backend       the store the run was driven against, for example {@code in-memory} or {@code postgres-jpa}
  * @param timescale     the timescale arm, for example {@code compressed} or {@code realistic}
  * @param workloadShape the workload's shape knobs, as a flat map of name to rendered value
+ * @param versions      the version combination the run's meaning depends on: the framework, the client library reaching
+ *                      the store when there is one, the store's own image tag when there is one, and the harness methods
+ *                      shimmed to make the combination link at all
  * @author Stefan Dragisic
  * @since 5.3.0
  */
@@ -45,7 +56,8 @@ public record HistoryHeader(
         long seed,
         String backend,
         String timescale,
-        Map<String, String> workloadShape
+        Map<String, String> workloadShape,
+        Map<String, String> versions
 ) {
 
     /**
@@ -64,17 +76,21 @@ public record HistoryHeader(
     private static final String RE_SAMPLING_DETERMINISM = "REAL_THREADS";
 
     /**
-     * Compact constructor defaulting the workload shape and rejecting missing identity fields.
+     * Compact constructor defaulting the maps and rejecting missing identity fields.
+     * <p>
+     * {@code versions} defaults to empty rather than being rejected, because a history written before the field existed
+     * has none and must stay readable: the schema's rule is that fields are added and never repurposed.
      */
     public HistoryHeader {
         Objects.requireNonNull(scenarioId, "The scenarioId cannot be null.");
         Objects.requireNonNull(backend, "The backend cannot be null.");
         Objects.requireNonNull(timescale, "The timescale cannot be null.");
         workloadShape = workloadShape == null ? Map.of() : Map.copyOf(workloadShape);
+        versions = versions == null ? Map.of() : Map.copyOf(versions);
     }
 
     /**
-     * Creates a header at the current schema version.
+     * Creates a header at the current schema version, recording no version combination.
      *
      * @param scenarioId    the identifier of the scenario producing the run
      * @param seed          the seed fixing workload shape and fault schedule
@@ -88,7 +104,28 @@ public record HistoryHeader(
                                    String backend,
                                    String timescale,
                                    Map<String, String> workloadShape) {
-        return new HistoryHeader(CURRENT_SCHEMA_VERSION, scenarioId, seed, backend, timescale, workloadShape);
+        return of(scenarioId, seed, backend, timescale, workloadShape, Map.of());
+    }
+
+    /**
+     * Creates a header at the current schema version, recording the version combination the run's meaning depends on.
+     *
+     * @param scenarioId    the identifier of the scenario producing the run
+     * @param seed          the seed fixing workload shape and fault schedule
+     * @param backend       the store the run is driven against
+     * @param timescale     the timescale arm
+     * @param workloadShape the workload's shape knobs
+     * @param versions      the framework, client-library, store-image and shimmed-method facts of the combination
+     * @return a header stamped with {@link #CURRENT_SCHEMA_VERSION}
+     */
+    public static HistoryHeader of(String scenarioId,
+                                   long seed,
+                                   String backend,
+                                   String timescale,
+                                   Map<String, String> workloadShape,
+                                   Map<String, String> versions) {
+        return new HistoryHeader(CURRENT_SCHEMA_VERSION, scenarioId, seed, backend, timescale, workloadShape,
+                                 versions);
     }
 
     /**

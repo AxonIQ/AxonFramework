@@ -456,6 +456,27 @@ stays readable.
 | `backend` | string | The store the run was driven against, for example `in-memory`, `postgres-jpa`, `axonserver`. |
 | `timescale` | string | The timescale arm, for example `compressed` or `realistic`. |
 | `workloadShape` | map<string,string> | The workload's shape knobs, rendered flat. |
+| `versions` | map<string,string> | The version combination the run's meaning depends on. Added in P6; absent from any history written before it, and defaulted to empty on read. |
+
+**Why the versions belong in the header.** A backend is not one thing: a store reached over a wire is
+this reactor crossed with a client library crossed with a store version, and any of the three moving
+changes what a run means. That is not theoretical here -- the Axon Server arm was recorded as blocked
+for a whole phase by an abstract method added to a storage-engine interface that the released connector
+had not implemented, which `javac` accepts and the JVM refuses. Recording the combination as data makes
+"is this divergence the framework's or the skew's" a lookup instead of an argument, and it means a
+verdict vector and a finding both carry it without anybody having to remember to write it down.
+
+The keys are open, like `op`. In use today:
+
+| Key | Meaning |
+|---|---|
+| `framework` | This reactor's version, from `hunt.frameworkVersion` (which the module's surefire configuration fills from `${project.version}`) or from the storage-engine jar's manifest. |
+| `connector` | The client library reaching the store, as `group:artifact:version`, read from the artefact's own manifest rather than from a constant, so a dependency bump nobody updated the constant for is visible. |
+| `image` | The store's container image tag. |
+| `<component>.shimmed` | A method the harness supplies because the client library does not, so that no verdict from the arm can be quoted without the adaptation. |
+
+A backend contributes its own keys through `HuntBackend.versions()`; the runner adds `framework`.
+`formal/CONNECTOR-COMPATIBILITY.md` records which combinations are usable and what each shim models.
 
 The header exists so that a history is reproducible from itself.
 `HistoryHeader.reproduceCommand()` renders the command that replays the run, and every violation
@@ -625,6 +646,8 @@ Four methods, of which two have defaults that are right for an in-heap store:
 | `createEngine()` | A fresh, empty event storage engine per run. |
 | `createTokenStores(runId, claimTimeout)` | One shared token store per run, handed out one view per node so each node claims under its own identity. The default gives every node the framework's in-heap store, which has no owner at all. |
 | `arbitratesTokenClaims()` | Whether that store decides who owns a segment. Defaults to `false`, which makes `AtMostOneSegmentOwner` report itself unverifiable rather than passing vacuously. Getting this wrong in the optimistic direction is how a suite reports coverage it does not have. |
+| `versions()` | The version facts the store's meaning depends on: the client library reaching it, the store's own version, and any method the harness had to supply for the combination to link at all. Defaults to empty, which is right for a store that is this reactor and nothing else. They go into the history header, so a finding carries the combination it was observed on. A key ending in `.shimmed` is the one that stops a verdict being quoted without its adaptation. |
+| `readableEventIds(engine)` | Every readable identifier the store holds, in store order, or `null` to let the run ask the engine. **A store reached asynchronously must override it.** The generic scan drains a sourcing stream with a `next()` loop that stops at the first empty answer, which is right for a store that materialises its answer in the heap and reports **zero** for a gRPC stream, because such a stream is empty until its first message arrives. Measured on the Axon Server arm: a store holding four events answered `4` through `MessageStream.reduce` and `0` through the loop. A scan that always answers nothing makes quiescence trivially true and every delivery oracle hold vacuously. |
 | `speaksDynamicConsistencyBoundaries()` | Whether an append condition on this store is a boundary over tags and a marker. Defaults to `true`. Answer `false` for an aggregate-based store, or the reference model will replay its history against a model of a protocol it does not implement and report the difference as a defect on every append. |
 | `transactionManager(engine)` | The transaction manager every unit of work of the run is wrapped in, or `null` for an in-heap store. A persistent store cannot opt out: its engine asks the processing context for the executor to append through, and having the run's transaction there is also what makes an append become durable in the framework's commit phase rather than the moment the engine is handed the events. Without it every visibility oracle reports the harness's wiring as a framework defect. |
 
@@ -636,6 +659,22 @@ assumes a compressed hundred milliseconds reports every legitimate handover as a
 Proving a new backend inherits the corpus costs one test: take a shipped scenario, call `Scenario.onBackend(name)`,
 run it, and assert the verdict. `ClaimCapableBackendTest` does exactly that, and it is what turns the extensibility
 charter from a claim into a property.
+
+**Before any of that, if the store is reached through a released client library rather than through this reactor's own
+code: check the combination links.** Adding an abstract method to an SPI is a binary-compatibility break that `javac`
+does not see, because a call resolves against the interface; the JVM refuses it at the first invocation with
+`AbstractMethodError`. `ConnectorCompatibilityTest` answers that in about a second, before any container starts, and
+fails the build when a method is neither shimmed nor recorded as undriven:
+
+```bash
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false          # add -Dhunt.connectorJar=<path> for another artefact
+```
+
+Whatever it reports goes in `formal/CONNECTOR-COMPATIBILITY.md`, and any method the harness supplies goes in the
+backend's `versions()` so it reaches every history the arm writes. Skipping this step buys a ten-minute container run
+that ends in a stack trace naming a method rather than a version, which is how one arm of this suite was written off as
+blocked for a whole phase.
 
 ### 6.5 A cluster
 

@@ -149,13 +149,31 @@ easy workaround), *low* (a documentation or ergonomics gap).
 | Medium
 | *Measured.* Open.
 
-| *F-18* `ConnectorArtefactsCannotLinkAgainstThisReactor`
-| No reachable Axon Server connector artefact can be loaded against this tree: the newest ones implement
-  `EventStorageEngine.source(SourcingCondition)` and this reactor's interface requires
-  `source(SourcingCondition, ProcessingContext)`. Loading one raises `AbstractMethodError` at run time, and `javac` does
-  not catch it.
-| Blocking (for coverage, not a defect)
-| *Measured.* The Axon Server arm is blocked on it.
+| *F-18* `ReleasedConnectorMissesAnAbstractStorageEngineMethod`
+| Every published Axon Server connector -- 5.1.2, 5.2.1 and 5.2.2 alike -- implements only
+  `EventStorageEngine.source(SourcingCondition)`, while this reactor made
+  `source(SourcingCondition, ProcessingContext)` abstract. `javac` accepts a call, the JVM refuses it with
+  `AbstractMethodError`. An undetected binary-compatibility break between the framework and its own released client
+  library, not a missing artefact.
+| Medium (a released client library cannot be loaded)
+| *Measured.* No longer blocking: the arm runs with that one method supplied by the harness, and a
+  compatibility gate now names the set in seconds.
+
+| *F-19* `AxonServerAcceptsAnAppendItsBoundaryForbids`
+| Under concurrent conditioned appends, Axon Server accepts an append although an event matching its consistency
+  boundary was committed at or after its consistency marker before the append's own commit. 17-24 of about 83 accepted
+  appends, over four hot tags with eight writers. The in-heap engine, on the identical scenario, does not.
+| High
+| *Reproduced by test, and reproduced again with no harness at all.* Mechanism open. Open.
+
+| *F-20* `ConnectorReportsEveryCommitFailureAsAConsistencyRejection`
+| The Axon Server connector wraps *every* throwable from an append commit in
+  `AppendEventsTransactionRejectedException` and drops the cause, so a dropped connection is indistinguishable from the
+  store deciding against the append. Measured: 191 of 191 failures under a network partition classified as definite
+  rejections, none ambiguous, 18 of them on appends that carry no consistency condition at all and therefore cannot
+  conflict.
+| High
+| *Confirmed in the connector's bytecode and reproduced by test.* Open.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -1453,28 +1471,48 @@ Then read any history under `simulation/target/hunt-histories/gap-core-defaults/
 `StoreHook.afterAppend`, which is strictly before the transaction, so a current run shows the correct order; reverting
 `LateCommitFault` to delay `onCommit` reproduces the measurement above.
 
-== F-18 -- No reachable Axon Server connector links against this reactor
+== F-18 -- The released connector misses an abstract storage-engine method
 
-*Severity:* Blocking for coverage; not a framework defect. +
-*Status:* Open. Measured. The Axon Server arm of the suite is blocked on it. +
-*Backend vector:* `axonserver: BLOCKED`.
+*Severity:* Medium -- a released client library cannot be loaded against this reactor. +
+*Status:* Open in the framework and its connector. **No longer blocking for coverage**: the Axon Server arm runs, with
+one method supplied by the harness. +
+*Claims:* M9 +
+*Backend vector:* `axonserver: RUNS (shimmed)`. See `formal/CONNECTOR-COMPATIBILITY.md` for the version table.
+
+=== What this entry used to say, and what was actually true
+
+This entry was originally recorded as *blocking*: "no reachable Axon Server connector artefact can be loaded against
+this tree", with the Axon Server arm skipped and the plan's S11 unbuildable. Three of the things it said were wrong, and
+correcting them is most of the value of this rewrite.
+
+* *"No reachable artefact" was wrong.* `io.axoniq.framework:axon-server-connector` publishes to Maven Central up to
+  `5.2.2`, and 5.2.2 resolves against this reactor with **all 90 of its classes loadable and nothing unresolvable**. The
+  artefact was always reachable; the earlier entry was written against a stale local repository whose newest version was
+  5.2.0.
+* *The package layout in the earlier entry is out of date.* It named
+  `org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine`. From 5.1.2 onwards the connector's own
+  classes live under `io.axoniq.framework.axonserver.connector.*`, and `javap` on the old name simply reports
+  `class not found` -- which is an easy way to conclude wrongly that the artefact is broken.
+* *"A missing artefact" was the wrong diagnosis entirely.* This is an **undetected binary-compatibility break between the
+  framework and its own released client library**. Commit `d3dc55f338bc9eb3d6e5b32b6c4ef315f952185d`
+  ("[#3594] feature(eventsourcing): EventStorageEngine#source and SnapshotStore methods - add ProcessingContext
+  parameter") added abstract methods to two SPIs. Nothing in either build catches that, because a caller resolving the
+  two-argument form against the *interface* compiles cleanly and only the JVM refuses it.
 
 === What is wrong
 
-There is no Axon Server connector artefact that can be loaded against this tree.
+`eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/EventStorageEngine.java:137` declares
 
-* The in-tree `axon-server-connector/` directory does not exist, and the root POM's `<modules>` does not name it.
-* `org.axonframework:axon-server-connector:5.1.0` has **no jar** in the local repository -- only `.lastUpdated` failure
-  markers. The newest resolvable open-source artefact is `5.1.0-RC2`.
-* The open-source connector was discontinued and moved to the commercial coordinates
-  `io.axoniq.framework:axon-server-connector`, whose newest local version is `5.2.0`. The repository's own examples
-  confirm the move: `examples/university-demo/pom.xml:83` declares `<groupId>io.axoniq.framework</groupId>`.
+----
+MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context);
+----
 
-Loading the newest available connector with a complete classpath fails at run time:
+as **abstract**, with the one-argument form at `:119` a `default` delegating to it. Every published connector implements
+only the one-argument form. Verified against a running server, on the unshimmed engine:
 
 ----
 java.lang.AbstractMethodError: Receiver class
-  org.axonframework.axonserver.connector.event.AxonServerEventStorageEngine
+  io.axoniq.framework.axonserver.connector.event.AxonServerEventStorageEngine
 does not define or inherit an implementation of the resolved method
   'abstract org.axonframework.messaging.core.MessageStream source(
      org.axonframework.eventsourcing.eventstore.SourcingCondition,
@@ -1482,58 +1520,340 @@ does not define or inherit an implementation of the resolved method
 of interface org.axonframework.eventsourcing.eventstore.EventStorageEngine.
 ----
 
-A full reflective scan of the commercial 5.2.0 connector against this reactor's installed jars resolves all 90 classes
-and finds exactly four unimplemented abstract methods, all from one commit:
+The full unimplemented set is **four methods, identical in 5.1.2, 5.2.1 and 5.2.2**, and all four come from that one
+commit:
 
 ----
-AggregateBasedAxonServerEventStorageEngine -> EventStorageEngine.source[SourcingCondition, ProcessingContext]
-AxonServerEventStorageEngine              -> EventStorageEngine.source[SourcingCondition, ProcessingContext]
-AxonServerSnapshotStore                   -> SnapshotStore.load[QualifiedName, Object, ProcessingContext]
-AxonServerSnapshotStore                   -> SnapshotStore.store[QualifiedName, Object, Snapshot, ProcessingContext]
-
-d3dc55f338bc9eb3d6e5b32b6c4ef315f952185d  Tue Jul 14 10:15:05 2026 +0200
-[#3594] feature(eventsourcing): EventStorageEngine#source and SnapshotStore methods
-        - add ProcessingContext parameter
+AxonServerEventStorageEngine              -> EventStorageEngine.source(SourcingCondition, ProcessingContext)
+AggregateBasedAxonServerEventStorageEngine -> EventStorageEngine.source(SourcingCondition, ProcessingContext)
+AxonServerSnapshotStore                   -> SnapshotStore.load(QualifiedName, Object, ProcessingContext)
+AxonServerSnapshotStore                   -> SnapshotStore.store(QualifiedName, Object, Snapshot, ProcessingContext)
 ----
 
-`git describe --tags --contains d3dc55f338` reports `fatal: cannot describe`, so the change is after 5.2.0 and exists
-only on `main`.
+=== What unblocked it
 
-The package reorganisation is *not* the blocker: 26 of the 28 `org.axonframework` packages the connector references
-still exist here. The two that do not --
-`org.axonframework.messaging.commandhandling.distributed` and `org.axonframework.messaging.queryhandling.distributed` --
-were never in `axon-messaging` and now live in the commercial `axoniq-distributed-messaging` under
-`io.axoniq.framework.messaging.*`, so they break only the open-source jar.
+Two things, and the second is the more durable of the two.
+
+*A test adapter for one method.* `ContextCarryingAxonServerEngine` subclasses the published engine and implements
+`source(SourcingCondition, ProcessingContext)` by dropping the context and calling the connector's own one-argument
+implementation. Nothing in the framework and nothing in the connector is modified; this is a harness subclass exactly
+like every other backend adapter in the suite. The two snapshot methods are deliberately **not** shimmed, because no
+scenario in the suite loads or stores a snapshot, and shimming a method nothing drives would model something nothing
+measures.
+
+*What "unimplemented" does and does not mean for the snapshot store.* `AxonServerSnapshotStore` is a real, fully
+implemented snapshot store, with working public bodies for `store(QualifiedName, Object, Snapshot)` and
+`load(QualifiedName, Object)`. What it lacks is the context-carrying overloads. The snapshot side is the **harder** half
+of this break, and the asymmetry matters for the fix: `EventStorageEngine` kept the one-argument `source` as a `default`,
+so the connector's method is still a valid override and a three-line shim works, whereas
+`eventsourcing/src/main/java/org/axonframework/eventsourcing/snapshot/store/SnapshotStore.java` declares *only* the
+context-carrying forms with no `default` -- so the connector's two methods override nothing at all and the class satisfies
+neither abstract method. A shim there is still possible, because the bodies exist; adding a `default` is not, because
+there is no older form on the interface to delegate from.
+
+*A static compatibility gate.* `ConnectorCompatibilityTest` computes the unimplemented set for a connector artefact
+against this reactor in about a second, before any container starts, and fails the build if a method is neither shimmed
+nor recorded as undriven. It runs in the default hunt build. Point it at any artefact:
+
+----
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dhunt.connectorJar=$HOME/.m2/repository/io/axoniq/framework/axon-server-connector/5.1.2/axon-server-connector-5.1.2.jar \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+That turns a ten-minute container run ending in `AbstractMethodError` into a two-second answer naming the methods, and it
+is what stops the next such break costing another phase. The version table it produces is
+`formal/CONNECTOR-COMPATIBILITY.md`.
+
+=== Residual risk the shim leaves
+
+Stated precisely, because every verdict from the Axon Server arm inherits it.
+
+* *The dropped `ProcessingContext` is not modelled.* The interface's Javadoc at `:127` says the two forms "behave
+  identically" and that the context is "passed to decorators (for example snapshot-loading and tracing decorators) that
+  need to correlate the sourcing operation with the surrounding unit of work", so a leaf engine that ignores it reads
+  events exactly as the connector reads them. What is **not** modelled is any behaviour a future connector might derive
+  from the context itself: correlating a sourcing with the unit of work that asked for it, joining a server-side
+  transaction, attaching sourcing telemetry. **A finding on this arm that could be explained by the absent context is not
+  a finding.** F-19's mechanism was checked against exactly this and does not touch the shimmed method at all.
+* *Snapshots are unreachable on this arm.* The connector's snapshot store is fully implemented against the pre-context
+  signatures, but neither of the interface's two abstract methods is satisfied and neither is shimmed, so any scenario
+  that loaded or stored a snapshot here would fail on a linkage error rather than on anything about the framework. The
+  gate records both as undriven so that failure would be self-explaining.
+* *The arm is a version combination, not a version.* Framework `5.3.0-SNAPSHOT` crossed with connector `5.2.2` crossed
+  with `docker.axoniq.io/axoniq/axonserver:2026.0.0`. Every history the arm writes records all three plus the shimmed
+  method in its header's `versions` map, so no verdict from it can be quoted without them.
 
 === Why it matters
 
-Scenario S11 in the plan (`axonserver_stream_resume_no_loss_no_silent_dup`) cannot be built, and neither can any
-Axon Server row in the backend verdict vector. The plan already anticipated this and requires that such a scenario record
-`axonserver: SKIPPED` and be reported inconclusive rather than passed; this finding is the evidence behind that entry.
+A framework whose own released client library cannot be loaded against its main branch has a broken contract with its
+users, and the failure mode is the worst kind: it compiles. Anyone building against `main` with a released connector gets
+a clean build and an `AbstractMethodError` at the first sourcing. That is separate from the coverage question this entry
+used to be about, and it is the part that is still open.
 
-Note that `javac` does **not** catch it: compiling a subclass of `AxonServerEventStorageEngine` against this reactor
-exits 0, because the compiler trusts the binary supertype. Only loading it fails. Anybody wiring the connector by hand
-will therefore get a clean build and a run-time error.
+=== Candidate fix
 
-=== What would unblock it
-
-`io.axoniq.framework:axon-server-connector:5.3.0-SNAPSHOT` built against the post-#3594 interfaces, together with
-`axoniq-framework-bom:5.3.0-SNAPSHOT` and `axoniq-distributed-messaging:5.3.0-SNAPSHOT`. None of those exists in the
-local repository; they are commercial artefacts from the Axoniq private repository. Whether such a build exists upstream
-was not determined -- only the local inventory was checked.
-
-The one self-contained alternative is to write a thin `EventStorageEngine` in the hunt module directly against
-`io.axoniq:axonserver-connector-java:2026.0.0`, whose `DcbEventChannel`, `dcb.proto` and matching
-`axonserver:2026.0.0` image are all present locally. That is writing a connector rather than consuming one, and it would
-measure the harness's connector rather than the framework's.
+Structural rather than local. Adding an abstract method to a published SPI is a binary-compatibility break, so either
+the new form arrives as a `default` (delegating to the existing one, which is exactly what the harness's shim does) or
+the connector is released in lockstep. Note that only `EventStorageEngine` is fixable the first way: `SnapshotStore`
+replaced its methods rather than adding to them, so it has no older form to default from and needs either a deprecated
+overload pair or the lockstep release. An API-compatibility plugin -- `japicmp` or `revapi` -- on the framework's own
+build would have caught this at the commit that introduced it, which is where it is cheapest to catch. The gate added
+here catches it downstream, which is second best.
 
 === Reproduce
 
-[source,bash]
 ----
-ls ~/.m2/repository/io/axoniq/framework/axon-server-connector/    # newest is 5.2.0; no 5.3.0
-javap -classpath <reactor jars> org.axonframework.eventsourcing.eventstore.EventStorageEngine | grep source
+# The compatibility question, in about a second and with no container.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The linkage error itself, against a running server.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='AxonServerBackendTest$TheVersionSkewThisArmWorksAround' \
+    -Dsurefire.failIfNoSpecifiedTests=false
 ----
 
-The interface shows `public abstract ... source(SourcingCondition, ProcessingContext)` with the one-argument form now
-`default`; the connector implements only the one-argument override.
+== F-19 -- Axon Server accepts an append its consistency boundary forbids
+
+*Severity:* High -- a documented consistency guarantee does not hold. +
+*Status:* Open. *Reproduced by test, and reproduced again with no harness at all.* Mechanism open. +
+*Claims:* C1, C5, C6, C7, C8, M9 +
+*Backend vector:* `axonserver:FAIL`, `in-memory:PASS`, `hsqldb-tokens:PASS`, `postgres-jpa:N/A (not a boundary store)`,
+`postgres-jpa-split-tokens:N/A (not a boundary store)` +
+*Observed on:* framework `5.3.0-SNAPSHOT`, connector `io.axoniq.framework:axon-server-connector:5.2.2`, server
+`docker.axoniq.io/axoniq/axonserver:2026.0.0`. The arm shims
+`EventStorageEngine.source(SourcingCondition, ProcessingContext)`; see the elimination section for why that is not the
+cause.
+
+=== What is wrong
+
+An append carrying a consistency marker `m` and a boundary `B` must be rejected when the store holds an event matching
+`B` at a position at or after `m`. Under concurrent conditioned appends, Axon Server accepts such an append.
+
+Measured with the harness removed entirely -- eight threads, forty rounds each, four hot tags, each round sourcing two
+tags, taking the lower of the two markers and appending a two-event batch under the OR of the two boundaries:
+
+----
+accepted=83 rejected=237 store=166
+  DCB VIOLATION w1-2  marker=6   boundary=[acct-1, acct-0] accepted at position 8
+                      although w5-2-w (acct-0) sits at position 6
+  DCB VIOLATION w1-16 marker=62  boundary=[acct-0, acct-3] accepted at position 66
+                      although w2-17-w (acct-0) sits at position 62
+  DCB VIOLATION w0-27 marker=110 boundary=[acct-0, acct-3] accepted at position 114
+                      although w4-27-w (acct-0) sits at position 112
+over-accepted appends: 17
+lowest conflicting position minus marker -> count: {0=15, 2=2}
+----
+
+Every over-accepted append landed **two or four positions above its own marker**, that is one or two batches later, and
+the conflicting event it missed sits inside that gap. The window is narrow and it is inside the append operation.
+
+=== Evidence
+
+The suite found it through the reference-model oracle on the shipped contended-append scenario:
+
+----
+VECTOR dcb_append_rejected_after_marker_under_contention axonserver:FAIL
+  violation: [AppendConformsToDcbModel] ... broken by: an append the model rejects as conflicting was
+  recorded as successful | records: [#27, #68]
+----
+
+and the history shows the whole picture without any interpretation. `writer-1-0`'s batch is at store positions 6 and 7
+and carries `acct-1`; `writer-5-0`'s batch is at positions 10 and 11, was conditioned on marker `0` with boundary
+`[acct-1, acct-2]`, and was accepted:
+
+----
+   6 writer-1-0-w  tags=[acct-1]  appendIdx=28 marker=0 criteria=[[acct-1],[acct-0]]  completeIdx=57
+  10 writer-5-0-w  tags=[acct-2]  appendIdx=27 marker=0 criteria=[[acct-1],[acct-2]]  completeIdx=68
+----
+
+The store's own order puts `acct-1` at position 6, before position 10, and `writer-5-0`'s completion after
+`writer-1-0`'s.
+
+=== Why it matters
+
+The consistency marker is the whole of Dynamic Consistency Boundary optimistic concurrency: an application reads a
+decision model, decides, and appends on the condition that nothing inside its boundary has changed. If that condition can
+pass while the boundary has changed, two concurrent commands can both act on state neither of them still has -- a course
+can be overbooked, a balance can go negative, an invariant expressed as a boundary is simply not enforced. It is the
+guarantee the whole model rests on, and it is the one users cannot compensate for in application code, because the point
+of the boundary is that they do not have to.
+
+The blast radius is exactly the shape production traffic has: concurrent commands touching overlapping boundaries. The
+sequential case is correct, so a functional test will not see it.
+
+=== Version-skew and harness elimination, mechanically
+
+The arm links a released connector against a reactor that connector predates and shims one method, so this had to be
+ruled out before anything was written up. Each of these was run.
+
+[cols="1,2"]
+|===
+| Ruled out | How
+
+| The shim
+| The shimmed method is `source(SourcingCondition, ProcessingContext)`. The reproduction does not call it: it uses
+  `appendEvents` and `commit` directly, both of which the connector implements. The append decision path never touches
+  the shim.
+
+| The connector's marker conversion
+| `javap -c` on `ConditionConverter.convertAppendCondition` shows
+  `GlobalIndexConsistencyMarker.position(...)` passed straight into `setConsistencyMarker(long)` with no arithmetic, and
+  the boundary built from `EventCriteria.flatten()` with both tags and names. A faithful pass-through, so the marker the
+  server evaluates is the marker the framework computed.
+
+| Marker semantics differing from the reference model
+| Measured directly against the server and all four rules agree with the model: a whole-store scan returns global-index
+  order; the marker a sourcing reports is the global head, independent of the boundary and of what matched, including
+  when the boundary matches nothing; an event exactly **at** the marker counts as a conflict; the marker an accepted
+  append reports is its last position plus one.
+
+| A sequential off-by-one
+| Six sequential experiments -- marker 0 twice, two criteria against a stored match, a two-tag batch, overlapping but
+  different boundary sets, a boundary whose own tag has no event but whose sibling does -- all reject correctly.
+
+| A check-then-commit window between opening the transaction and committing it
+| An append transaction was opened on an empty store at marker 0, a conflicting event was fully committed by another
+  writer, and the first transaction's `commit()` was then **rejected**. The condition is evaluated at commit, not at open.
+
+| A visibility lag behind the sourcing
+| Inserting 150 ms between the last sourcing and the append does not remove the over-acceptances (24 against 17). The
+  window is inside the append operation, not between the read and the write.
+
+| A lagging conflict check under plain concurrency
+| Eight writers racing at marker 0 on an empty store, with identical boundaries and again with overlapping-but-different
+  boundaries: exactly one accepted in both cases.
+
+| The suite's own oracle
+| The same scenario, the same framework, the same workload and the same registered checkers report `PASS` on the in-heap
+  boundary store. The divergence is one column of the matrix.
+|===
+
+=== One harness defect this finding exposed, fixed here
+
+The first run reported **six** violations, two of them in the opposite direction ("an append the model accepts was
+recorded as rejected"). Those two were the harness's, not the store's. `ModelConformanceChecker` applies every append the
+store accepted so the replay can continue, but a batch the model *rejects* stores nothing -- while the real store stored
+it -- so from the first divergence the model's positions run behind the store's by that batch's size, and a consistency
+marker is an absolute position. Measured: model head 246 against a store of 254 events, 242 of 254 positions no longer
+lined up, and both "the model accepts" appends do conflict at the store's real positions. The checker now reports the
+first mismatch as a violation and every later one as a note, exactly as it already did after an append with an unknown
+outcome. **The count of model violations from a run is therefore not a magnitude; only the first one is evidence.**
+
+=== What is still open
+
+The mechanism. Every construction that isolates one suspected cause behaves correctly, and the defect only appears under
+sustained concurrent conditioned appends. What the measurements bound it to: the missed conflict is always inside the one
+or two batches between the append's marker and its own assigned position, and it is not a lag behind the sourcing.
+Settling it needs Axon Server's own instrumentation rather than a client-side experiment, which is why this entry states
+the observation and refuses to state the mechanism.
+
+=== Candidate fix
+
+Not proposable from outside: the append path is inside Axon Server. What the evidence asks of it is that the boundary
+check and the assignment of the global sequence be one atomic step per append, so that an append cannot be sequenced
+after an event its check did not see.
+
+=== Reproduce
+
+----
+# Through the suite. Under real threads this re-samples rather than replays; the recorded history is the exact record.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='AxonServerBackendTest$TheShippedCorpusOnAxonServer' -Dsurefire.failIfNoSpecifiedTests=false
+
+# The whole matrix, which is where the vector comes from.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=BackendDifferentialTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+== F-20 -- The connector reports every commit failure as a consistency rejection
+
+*Severity:* High -- an ambiguous outcome is reported as a definite one, and the cause is discarded. +
+*Status:* Open. *Confirmed in the connector's bytecode and reproduced by test.* +
+*Claims:* M5, C29, C35, M9 +
+*Backend vector:* `axonserver-chaos:FAIL`, other backends `N/A` -- the mapping is the connector's and no other store has
+one. +
+*Observed on:* connector `io.axoniq.framework:axon-server-connector:5.2.2` against framework `5.3.0-SNAPSHOT`, server
+`docker.axoniq.io/axoniq/axonserver:2026.0.0`.
+
+=== What is wrong
+
+`AxonServerEventStorageEngine.AxonServerAppendTransaction.commit()` installs one error handler for the whole commit and
+maps anything it catches to a consistency rejection. From `javap -c` on the shipped 5.2.2 jar:
+
+----
+private static java.util.concurrent.CompletionStage lambda$commit$0(java.lang.Throwable);
+   0: getstatic     // logger
+   3: ldc           // String "Committing append transaction failed."
+   6: invokeinterface // Logger.warn(String, Throwable)
+  11: new           // class org/axonframework/eventsourcing/eventstore/AppendEventsTransactionRejectedException
+  15: aload_0
+  16: invokevirtual // Throwable.getMessage()
+  19: invokespecial // AppendEventsTransactionRejectedException.<init>(Ljava/lang/String;)V
+  22: invokestatic  // CompletableFuture.failedFuture
+----
+
+Two separate problems in six instructions. The exception type asserts that *the store decided against the append*, which
+is a definite outcome; and the constructor taken is the `String` one, so *the original throwable is not attached as a
+cause* and no caller can recover what actually happened. A gRPC `UNAVAILABLE` -- the connection is gone, the append may
+or may not have been applied -- arrives at the application as "your append conflicted".
+
+=== Evidence
+
+The partition arm cuts the network eight times, from the store boundary, aimed at the commit. Every cut is evidenced by
+the proxy's own reported state. What the run recorded:
+
+----
+as-partition fires={store-partition=8}
+append record types: {INVOKE=277, FAIL=191, OK=86}
+append failure classifications: {AppendEventsTransactionRejectedException=191}
+INFO (ambiguous) appends: 0
+failed appends whose marker was INFINITY: 18   (all 18 inside a fault window)
+----
+
+The eighteen are the proof that the classification is wrong rather than merely coarse. An append carrying an `INFINITY`
+marker declares *no* consistency condition, so no correct store can ever reject it as conflicting -- that is the whole
+content of the suite's `UnconditionalAppendNeverRejected` invariant, and it is exactly what those eighteen violations
+say. All eighteen happened while the network was cut.
+
+The same shape appears on the stream-resume arm: 400 appends, 8 cuts, and `0 event(s) left ambiguous by a failure that
+was not a decision`. A run under eight network partitions that produces no ambiguous outcome at all has had its ambiguity
+converted into false certainty.
+
+=== Why it matters
+
+This is the acknowledgement-versus-durability question (M5) made actively misleading. An application told "rejected as
+conflicting" will re-source its decision model and retry, or report a business conflict to its caller. An application
+told "the outcome is unknown" must instead find out whether its events landed. Getting the two the wrong way round means
+a command whose events *are* durably stored is reported as having conflicted, and the retry then applies its effects a
+second time -- with no conflict to stop it, because the marker has moved on.
+
+It also makes a whole class of defect undiagnosable from the client side, including by this suite's own oracles: a
+durability invariant cannot separate "the store said no" from "nobody knows", so it declines to decide. The suite reports
+that honestly, which is why the partition arm's durability verdict is undecided rather than green.
+
+=== Version-skew elimination
+
+The harness shims `EventStorageEngine.source(SourcingCondition, ProcessingContext)`. This finding is on the
+`appendEvents`/`commit` path, which the connector implements in full and which the shim does not touch. The primary
+evidence is the connector's own bytecode from the published artefact, independent of the harness entirely.
+
+=== Candidate fix
+
+Map the server's own consistency rejection to `AppendEventsTransactionRejectedException` and nothing else. Everything
+else -- a transport status, a timeout, a closed channel -- is an outcome nobody knows, and should surface as an exception
+that says so, distinct from a decision. In both cases pass the original throwable as the cause: the
+`AppendEventsTransactionRejectedException(String, Throwable)` form exists, and discarding a cause inside a mapping layer
+removes the only evidence a caller could have used.
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \\
+    -Dtest='AxonServerInfrastructureFailureTest$CuttingTheNetworkWhileLeavingTheServerRunning' \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Then count the classifications in the history the run wrote under
+`simulation/target/hunt-histories/axonserver-partition/`, with the reader in `formal/HUNT-NOTES.md` section 3.

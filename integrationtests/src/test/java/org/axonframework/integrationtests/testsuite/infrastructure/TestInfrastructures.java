@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * ./mvnw -Pintegration-test -pl integrationtests verify                                  # in-memory, no Docker
  * ./mvnw -Pintegration-test -pl integrationtests verify -Dhunt.backend=postgres-jpa      # real PostgreSQL
  * ./mvnw -Pintegration-test -pl integrationtests verify -Dhunt.backend=postgres-jpa-split-tokens
+ * ./mvnw -Pintegration-test -pl integrationtests verify -Dhunt.backend=axonserver         # real Axon Server
  * }</pre>
  * <b>The default is in-memory, so a build that says nothing starts no container.</b> That is not a convenience: a suite
  * whose default needs a Docker daemon stops being runnable on a machine that has none, and the container tier has to be
@@ -73,6 +74,16 @@ public final class TestInfrastructures {
      */
     public static final String POSTGRES_JPA_SPLIT_TOKENS = "postgres-jpa-split-tokens";
 
+    /**
+     * A real Axon Server, reached through the published connector: the only persistent store here that speaks the
+     * Dynamic Consistency Boundary protocol.
+     * <p>
+     * One method of its storage engine is supplied by the harness rather than by the connector, because no published
+     * connector implements it. See {@link AxonServerTestInfrastructure} for the arm's exact label and
+     * {@code formal/CONNECTOR-COMPATIBILITY.md} for which connector versions are usable.
+     */
+    public static final String AXON_SERVER = "axonserver";
+
     private static final Map<String, TestInfrastructure> PER_BACKEND = new ConcurrentHashMap<>();
 
     private TestInfrastructures() {
@@ -107,9 +118,10 @@ public final class TestInfrastructures {
             case IN_MEMORY -> new InMemoryTestInfrastructure();
             case POSTGRES_JPA -> PostgresTestInfrastructure.sharedTransactionalResource();
             case POSTGRES_JPA_SPLIT_TOKENS -> PostgresTestInfrastructure.separateTokenDatabase();
+            case AXON_SERVER -> new AxonServerTestInfrastructure();
             default -> throw new IllegalArgumentException(
                     "No test infrastructure named [" + name + "] exists; known names are "
-                            + List.of(IN_MEMORY, POSTGRES_JPA, POSTGRES_JPA_SPLIT_TOKENS) + ".");
+                            + List.of(IN_MEMORY, POSTGRES_JPA, POSTGRES_JPA_SPLIT_TOKENS, AXON_SERVER) + ".");
         };
     }
 
@@ -118,12 +130,13 @@ public final class TestInfrastructures {
      * <p>
      * A test whose assertions are about a consistency boundary spanning several tags is <b>not applicable</b> on a store
      * that has no such thing, and has to say so rather than pass quietly: the only aggregate-based engine in this tree
-     * accepts one tag per event and reads it as an aggregate identifier. Use it with
+     * accepts one tag per event and reads it as an aggregate identifier. Two stores here do speak it -- the in-heap
+     * engine and Axon Server -- and the second is the only one of the two whose events outlive the process. Use it with
      * {@code assumeTrue(TestInfrastructures.selectedSpeaksDcb(), "...")} so the skip carries the reason into the report.
      *
      * @return {@code true} when an append condition is a boundary over tags and a marker on the selected store
      */
     public static boolean selectedSpeaksDcb() {
-        return IN_MEMORY.equals(selectedName());
+        return IN_MEMORY.equals(selectedName()) || AXON_SERVER.equals(selectedName());
     }
 }

@@ -190,6 +190,57 @@ public interface HuntBackend {
     }
 
     /**
+     * Returns the version facts this backend contributes to a run's history header.
+     * <p>
+     * <b>A backend is not one thing, and a verdict from one is unreadable without knowing which combination produced
+     * it.</b> A store reached over a wire is this reactor crossed with a client library crossed with a server version,
+     * and any of the three moving changes what a run means. The block that kept Axon Server out of this suite for a whole
+     * phase was exactly that: an abstract method added to a storage-engine interface which the released client library
+     * had not implemented, accepted by {@code javac} and refused by the JVM. Recording the combination as data is what
+     * makes "is this divergence the framework's or the skew's" a lookup instead of an argument.
+     * <p>
+     * A backend that adapts a released artefact to this reactor must also name what it adapted, under a key ending in
+     * {@code .shimmed}, so that no verdict from it can be quoted without the adaptation.
+     * <p>
+     * The default is empty, which is right for a store that is this reactor and nothing else.
+     *
+     * @return the version facts, keyed by what they describe, for example {@code connector} and {@code image}
+     */
+    default java.util.Map<String, String> versions() {
+        return java.util.Map.of();
+    }
+
+    /**
+     * Returns the version of the framework the run is driving.
+     * <p>
+     * Read from the {@code hunt.frameworkVersion} property the module's surefire configuration fills from the reactor's
+     * own version, falling back to the manifest of the jar the storage-engine interface was loaded from -- which is
+     * present when the module resolves the framework from the local repository and absent when it resolves it from
+     * another module's {@code target/classes}.
+     *
+     * @return the framework version, or {@code unknown} when neither source has one
+     */
+    static String frameworkVersion() {
+        String declared = System.getProperty("hunt.frameworkVersion");
+        if (declared != null && !declared.isBlank() && !declared.startsWith("$")) {
+            return declared;
+        }
+        String fromManifest = EventStorageEngine.class.getPackage().getImplementationVersion();
+        return fromManifest == null || fromManifest.isBlank() ? "unknown" : fromManifest;
+    }
+
+    /**
+     * Returns the version of the jar the given class was loaded from, for a backend naming its client library.
+     *
+     * @param type a class of the artefact whose version is wanted
+     * @return the artefact's implementation version, or {@code unknown} when its manifest carries none
+     */
+    static String versionOf(Class<?> type) {
+        String version = type.getPackage().getImplementationVersion();
+        return version == null || version.isBlank() ? "unknown" : version;
+    }
+
+    /**
      * Returns every registered backend, ordered by name.
      *
      * @return the registered backends

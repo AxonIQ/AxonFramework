@@ -227,6 +227,12 @@ public final class HuntScenarios {
     public static final String COMMIT_ACK_MATCHES_DURABILITY_UNDER_PARTITION =
             "commit_ack_matches_durability_under_partition";
 
+    /**
+     * The identifier of the arm cutting the network under a streaming read side and asking what the stream resumed with.
+     */
+    public static final String STREAM_RESUME_NO_LOSS_NO_SILENT_DUP =
+            "axonserver_stream_resume_no_loss_no_silent_dup";
+
     private HuntScenarios() {
         // Utility class.
     }
@@ -259,7 +265,68 @@ public final class HuntScenarios {
                        noEventSkippedByGapTimeout(),
                        noEventSkippedByGapTimeoutSpringDefaults(),
                        crashRecoveryNoAckedLoss(),
-                       commitAckMatchesDurabilityUnderPartition());
+                       commitAckMatchesDurabilityUnderPartition(),
+                       streamResumeNoLossNoSilentDuplicate());
+    }
+
+    /**
+     * Cuts the network under a running streaming read side and asks what the stream resumed with.
+     * <p>
+     * <b>The question is about the read side, which is what makes it different from the two arms next to it.</b> The
+     * partition arm asks whether a commit acknowledgement survives a broken connection; the kill arm asks whether the
+     * store kept what it acknowledged. This one asks what happens to a consumer whose event stream is severed
+     * mid-flight: when the connection comes back and the stream resumes, no event the store holds may go undelivered, and
+     * no event may arrive twice unless the history itself accounts for it -- a position the store handed back that is
+     * behind something the segment had already delivered. That is the whole content of the "silent" in the identifier: a
+     * duplicate is acceptable if it is explained, and a duplicate nothing explains is a defect the deployment cannot
+     * compensate for because nothing told it to.
+     * <p>
+     * The cut is timed on a wall clock rather than aimed at a commit boundary, which is the opposite choice from the
+     * partition arm's and is deliberate: the target here is a long-running stream rather than a millisecond-wide commit
+     * window, so a cut placed by elapsed time lands inside one every time. Eight cuts spread over the fault window give
+     * the read side several severances and several resumptions rather than one of each.
+     * <p>
+     * Declared on the breakable Axon Server arm, because it is the only store in this tree whose read side is reached
+     * over a network that can be taken away while the store keeps running.
+     *
+     * @return the stream-resume scenario
+     */
+    public static Scenario streamResumeNoLossNoSilentDuplicate() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                             // Long enough for the read side to have claimed its segments and to be
+                                             // streaming, so a cut severs a stream rather than delaying its creation.
+                                             .warmup(Duration.ofSeconds(5))
+                                             .window(FaultWindow.immediately(
+                                                     "stream-cut",
+                                                     Duration.ofSeconds(40),
+                                                     new StorePartitionFault(Duration.ofSeconds(2), 8,
+                                                                             Duration.ofSeconds(2))))
+                                             // The connector reconnects on its own beat and the processor re-claims on
+                                             // its own; the heal has to outlive both or the drain measures the outage.
+                                             .heal(Duration.ofSeconds(15))
+                                             .settle(Duration.ofSeconds(90))
+                                             .build();
+        return Scenario.builder(STREAM_RESUME_NO_LOSS_NO_SILENT_DUP,
+                                "A severed event stream resumes without losing an event or repeating an unexplained one")
+                       .claims("M9", "C15", "C16", "C17")
+                       .backend("axonserver-chaos")
+                       // Idempotent, because a severed stream resuming from the last durable token is entitled to repeat
+                       // the batch it was in the middle of. A projection that added the amount again would report the
+                       // framework's own documented at-least-once behaviour as money appearing out of nowhere.
+                       .workload(LedgerWorkload::sequencedPerAccountIdempotent)
+                       .timescale(clusterTimescale())
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       // Eight two-second cuts with two seconds between them, and the read side stops for every one of
+                       // them. The horizon covers the whole fault phase, the heal, and a claim timeout.
+                       .livenessHorizon(Duration.ofSeconds(60))
+                       .faults(schedule)
+                       .oracles(DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                                DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                                FaultLandingChecker.DECLARED_FAULTS_LAND)
+                       .seed(1L)
+                       .budget(Tier.SMOKE, new TierBudget(400, 2, Duration.ofMinutes(6)))
+                       .budget(Tier.RELEASE, new TierBudget(4_000, 20, Duration.ofMinutes(40)))
+                       .build();
     }
 
     /**

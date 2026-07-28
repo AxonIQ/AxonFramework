@@ -161,6 +161,16 @@ that checker rather than noise.
 
 ## 4. Add a backend
 
+**Step 0, before any wiring: check the version combination.** If the store is reached through a released
+client library rather than through this reactor's own code, run the compatibility gate first --
+`./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest -Dsurefire.failIfNoSpecifiedTests=false`,
+about a second, no container, and add `-Dhunt.connectorJar=<path>` to ask about a specific artefact. It
+reports every abstract method this reactor declares that the artefact does not implement. Skipping it
+buys a ten-minute container run that ends in `AbstractMethodError` from a stack trace naming a method
+rather than a version, which is how one arm of this suite was written off as blocked for a whole phase.
+Whatever the gate reports, record it in `formal/CONNECTOR-COMPATIBILITY.md` and make the backend's
+`versions()` name the library, the store version, and any method the harness had to supply.
+
 One class implementing `HuntBackend`, plus one line in
 `simulation/src/main/resources/META-INF/services/org.axonframework.hunt.harness.HuntBackend`
 (or the test-scope copy, if it needs containers or drivers the default build must not compile

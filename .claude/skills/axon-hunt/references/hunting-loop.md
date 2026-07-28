@@ -55,6 +55,21 @@ Cheapest first:
 Do not patch framework code. Do not add a seam to framework code. The only substitution
 anywhere in the harness is a wrapper around a real storage engine.
 
+### 1b. Ask which combination it was seen on, before anything else
+
+A backend is the framework crossed with a client library crossed with a store version, and a failure is
+only attributable once the combination is fixed. It is recorded in the history header, so this is a
+lookup:
+
+```bash
+head -1 <history>.jsonl | python3 -c "import json,sys; print(json.load(sys.stdin)['versions'])"
+```
+
+On an arm that adapts a released artefact this also prints the methods the harness supplied -- the key
+ends in `.shimmed`. **A failure that could be explained by a shimmed method is not a finding.** Check it
+against the arm's own linkage evidence and against `formal/CONNECTOR-COMPATIBILITY.md`, which says what
+each shim models and what it does not.
+
 ### 2. Triage: is it known, and is it even the engine?
 
 In order, because each step is cheaper than the next:
@@ -214,3 +229,6 @@ investigation.
 | A checker reports a regression of hundreds of positions | An outcome read from the wrong thing: the outcome of a *call* is not the outcome of the *transaction* that would have committed it. |
 | A delay installed "before the commit" changes nothing | Measure where the delay actually sits. On a transaction-managed store the append transaction's commit and the database transaction's commit are registered in the same lifecycle phase with no ordering between them. |
 | A build stops with no output at all against a container | A relation lock, not a hang. Surefire buffers output until the method ends. Ask the database what it is waiting on. |
+| `AbstractMethodError`, or any "does not define or inherit an implementation of the resolved method" | **Version skew, never the framework's logic.** A released client library that predates an abstract method added to an SPI. Run the compatibility gate (`references/running.md`) -- it names the methods in a second -- and read `formal/CONNECTOR-COMPATIBILITY.md`. Do not debug the scenario. |
+| A scan or drain that reports zero readable events on a store that plainly holds some | The generic `next()`-loop scan against an asynchronous stream. It stops at the first empty answer, and a gRPC stream is empty until its first message arrives. The backend must override `readableEventIds` with the asynchronous drain. A scan that always answers nothing makes quiescence trivially true and every delivery oracle hold vacuously. |
+| Every failure under a partition classified as a definite rejection, and no ambiguous outcome at all | A mapping layer collapsing a transport failure into a decision exception. Count the classifications in the history before believing the oracle's verdict; this is finding F-20. |

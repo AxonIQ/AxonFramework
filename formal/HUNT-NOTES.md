@@ -2005,3 +2005,372 @@ not the position assignment, not the reported marker, not the sourcing side.
 | The check-then-commit window in the append model | Modelled as one atomic step, matching `DcbStoreModel`, which is sequential by construction. Splitting it would give the harness's conflict-check-bypass canary a design-level twin, at the cost of a pending-batch and pending-verdict variable pair that multiplies the state space by well over a hundred. Worth it only if a real engine is found to check outside its transaction. | the phase that finds such an engine |
 | Cross-checking positions and markers, not just the decision | The generator prints one boolean per case. Printing the position vector and the reported marker as well would extend the comparison to two more reference-model rules, at the cost of a variable-width output format the parser currently does not need. | whoever extends the pools |
 | A model for F-11 and F-16 | Both were candidates for a violated/fixed pair and neither got one. F-11 (a merge rewinds to the lower token) needs segment membership and token positions, which is the read-side model above. F-16 (an event skipped because its own timestamp aged past the gap timeout) needs a store that assigns an index before it commits, plus a reader with a token and a gap set -- also the read-side model, and the more valuable half of it, because F-16 is the one finding in the set whose mechanism on a clean engine is still open. | the phase that models delivery |
+
+---
+
+# Phase P6 -- the Axon Server backend
+
+## 1. Determinism seams (continued)
+
+### 1.19 The version combination is now part of a run's identity, and it is recorded rather than remembered
+
+A backend is not one thing. A store reached over a wire is this reactor crossed with a client library crossed with a
+store version, and any of the three moving changes what a run means. Every history header therefore carries a `versions`
+map: `framework`, `connector` (as `group:artifact:version`, read from the artefact's own manifest rather than from a
+constant), `image`, and `engine.shimmed` naming any method the harness had to supply. `HuntBackend.versions()` is the
+hook; `ScenarioRunner` adds `framework`.
+
+Read it off a past run rather than reconstructing it:
+
+```bash
+head -1 <history>.jsonl | python3 -c "import json,sys; print(json.load(sys.stdin)['versions'])"
+```
+
+The reason this is a determinism-boundary note and not merely bookkeeping: the arm's verdicts are only comparable across
+runs that used the same combination, and the combination is the one axis the seed says nothing about at all.
+
+### 1.20 The Axon Server arm reproduces even less than the PostgreSQL one, and its isolation forbids overlap
+
+Not measured with `DeterminismProbe`, and therefore not claimed -- same rule as 2.1c. Two things make it safe to assume
+it reproduces less rather than more: the store is reached over gRPC, so every latency the schedule depends on is a
+network latency, and the connector answers on its own `grpc-default-executor-*` threads, which is where the harness now
+records several of its append operations from (visible in the history's `process` field).
+
+One hard constraint that is not about determinism but lives in the same place because it constrains how runs may be
+scheduled: **two runs of this backend must not overlap.** Isolation is a purge of one shared context, so concurrent runs
+would purge each other. See 2.48.
+
+## 2. API traps (continued)
+
+### 2.48 A context per run is impossible on Axon Server, and the error says so
+
+The obvious analogue of a schema per run is a context per run. The standalone edition refuses it:
+
+```
+POST /v1/context -> 403 {"message":"[AXONIQ-1700] Maximum number of replication groups reached","success":false}
+```
+
+So isolation is `DELETE /v1/public/purge-events?context=default`, which was measured to reset the store's global index
+to zero (`firstToken=0 latestToken=0` immediately after, on a context that had held events). The cost is that runs must
+be sequential; every caller in this suite runs its arms in a loop, so nothing had to change for it.
+
+Context creation, when it is possible, is also not cheap: measured at **16.8 seconds** from the request to the context
+appearing in `/v1/public/mycontexts`. A per-run context would have dominated the arm's cost even without the licence
+limit.
+
+### 2.49 A gRPC sourcing stream cannot be drained with a `next()` loop, and the failure is silent and total
+
+`ControllableEventStorageEngine.readableEventIds()` drains with `for (var e = stream.next(); e.isPresent(); e = stream.next())`.
+That is correct for a store that materialises its answer in the heap. On Axon Server it returns **zero, always**,
+because a gRPC stream is empty until its first message arrives and the loop exits on the first empty `Optional`.
+
+Measured on a store holding four events:
+
+```
+WHOLE STORE (havingAnyTag) via MessageStream.reduce -> count=4
+WHOLE STORE (naive next() loop)                     -> count=0
+```
+
+`MessageStream.reduce(seed, fn)` returns a `CompletableFuture` that completes when the finite stream completes, and is
+the correct drain. `HuntBackend.readableEventIds(engine)` exists for exactly this and the Axon Server backend overrides
+it.
+
+**Why this is the most dangerous trap in the phase.** P3b's note 1.17 already recorded that a scan which always fails is
+indistinguishable from a store holding nothing, because `containsAll(empty)` is true -- so the run reports itself
+quiesced with zero readable events and every delivery oracle holds vacuously. A backend that had shipped without this
+override would have produced a green Axon Server column that verified nothing at all.
+
+### 2.50 A killed container does not keep its published port, and Testcontainers does not notice
+
+P3b's note 2.43 says a `docker start` on a stopped container keeps its port bindings. That is not what happens, and the
+PostgreSQL arm never noticed because its application traffic goes through a proxy whose own container is never killed.
+Measured directly:
+
+```
+before:           8024/tcp -> 0.0.0.0:55015
+after kill+start: 8024/tcp -> 0.0.0.0:55016
+```
+
+`GenericContainer.getMappedPort` answers from the binding Testcontainers cached at start-up, so it keeps returning the
+old port. The symptom is that the kill arm passes and then **every later arm** fails with `ConnectException` on its first
+call, from a port that was correct twenty seconds earlier.
+
+Two rules follow. Anything a run reaches directly -- here the administration API, used for the purge -- must resolve its
+port at call time: `docker port <id> 8024/tcp`. And anything that must survive a kill should go through the proxy, whose
+port is stable because the proxy is never the thing killed.
+
+### 2.51 Axon Server advertises its own address, so a connector must be told to keep using the one it dialled
+
+Axon Server hands a client the address it advertises for itself, which on a container is neither the mapped port the run
+dialled nor the proxy the chaos arm dialled. A client that reconnects to the advertised address comes back to somewhere
+the run cannot reach -- or, worse for a partition arm, comes back **around** the proxy the partition is being made with,
+so the cut stops working without anything failing.
+
+`AxonServerConnectionFactory.forClient(...).forceReconnectViaRoutingServers(true)` is the setting. It is not a tuning
+knob for this suite; it is what makes a reconnect observable at all.
+
+### 2.52 The readiness signal is the DCB context's own log line, not the health endpoint
+
+`/actuator/health` reports its sub-components `UP` about twenty seconds before the `default` replication group has
+elected a leader -- measured, with `raft` reporting `default.leader: None` and an overall `WARN` for that whole window.
+A substring match on `"status":"UP"` therefore returns a server that cannot serve.
+
+Both arms wait for `Creating DCB context: default`, which the server writes when the boundary store is created. That
+line is simultaneously the readiness signal and the evidence that the context is a Dynamic Consistency Boundary one --
+which matters, because `/v1/public/context` reports `"dcbContext": false` for a context created by the image's
+`AXONIQ_AXONSERVER_STANDALONE_DCB` bootstrap. **Do not test for DCB with that flag.** Test it by behaviour: append an
+event with two tags and source it back by one of them, which is what `AxonServerBackendTest` asserts.
+
+### 2.53 `stream(StreamingCondition.startingFrom(null))` throws inside the connector
+
+```
+java.lang.NullPointerException: Cannot invoke "TrackingToken.position()" because the return value of
+"StreamingCondition.position()" is null
+    at io.axoniq.framework.axonserver.connector.event.ConditionConverter.convertStreamingCondition(...:103)
+```
+
+The framework's own `StreamingCondition.startingFrom(null)` is legal and means "from the beginning"; the connector
+dereferences the token without checking. Not pursued as a finding because nothing in the harness calls it that way --
+the processor always passes a real token -- but it is a two-line defect and it is written down here so the next person
+does not spend an afternoon on it.
+
+### 2.54 The connector's own classes moved to `io.axoniq.framework.axonserver.connector`
+
+From 5.1.2 onwards. F-18 was originally written against `org.axonframework.axonserver.connector.*`, and `javap` on that
+name reports `class not found`, which reads as a broken artefact. The artefact coordinates are
+`io.axoniq.framework:axon-server-connector` and it publishes to Maven Central up to 5.2.2.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The compatibility question: about a second, no container, runs in the default build.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The same question about any other artefact.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConnectorCompatibilityTest \
+    -Dsurefire.failIfNoSpecifiedTests=false \
+    -Dhunt.connectorJar=$HOME/.m2/repository/io/axoniq/framework/axon-server-connector/5.1.2/axon-server-connector-5.1.2.jar
+
+# The arm: linkage evidence, a real append and source, one shipped scenario, the ownership n/a.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=AxonServerBackendTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The chaos arms. One nested class each; comma between them, never plus.
+./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
+    -Dtest='AxonServerInfrastructureFailureTest$KillingTheServerWhileTheWorkloadAppendsToIt' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+
+# The integration tests against it. One property, no new test classes.
+./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
+    -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.backend=axonserver
+
+# A standalone Axon Server for hand probing, and its readiness signal.
+docker run -d --name probe -p 18024:8024 -p 18124:8124 \
+    -e AXONIQ_AXONSERVER_STANDALONE_DCB=true -e AXONIQ_AXONSERVER_DEVMODE_ENABLED=true \
+    docker.axoniq.io/axoniq/axonserver:2026.0.0
+docker logs probe 2>&1 | grep -E 'Creating DCB context|context default created'
+curl -s -X DELETE 'http://localhost:18024/v1/public/purge-events?context=default'
+curl -s http://localhost:18024/v1/public/context
+```
+
+**Counting the classifications of a run's append failures** is the check that found F-20 and it is worth keeping:
+
+```bash
+python3 - simulation/target/hunt-histories/<dir>/*.jsonl <<'EOF'
+import json,sys,collections
+recs=[json.loads(l) for l in open(sys.argv[1]) if l.strip()][1:]
+print(collections.Counter(r.get('error') for r in recs if r['op']=='append' and r['type'] in ('FAIL','INFO')))
+print(collections.Counter(r['type'] for r in recs if r['op']=='append'))
+EOF
+```
+
+An arm under eight network partitions that reports `INFO` (ambiguous) zero times has had its ambiguity converted into
+false certainty by something, and the something is worth finding.
+
+**Comparing the model's positions against the store's** is what turned two false findings into a harness fix. The
+script prints the model's head against the scan's size and the first position that does not line up; a mismatch means
+every later marker comparison is being made against a store the model does not have.
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.66 The arm is a version combination, and its label goes everywhere a verdict does
+
+`AxonServerHuntBackend.label()` renders `framework=... connector=... image=... shimmed=[...]` and every test on the arm
+prints it. The same facts go into every history header. This is not ceremony: the arm links a released connector against
+a reactor that connector predates and supplies one of its methods, so a verdict that does not name the combination
+cannot be checked by anybody. Two of this phase's three findings had to be defended against exactly that question.
+
+### 4.67 One method is shimmed and three are deliberately not, and the gate enforces both halves
+
+`ContextCarryingAxonServerEngine` implements `source(SourcingCondition, ProcessingContext)` by dropping the context and
+calling the connector's one-argument form. The other three unimplemented methods -- the aggregate-based engine's
+`source`, and the snapshot store's `load` and `store` -- are left alone, because no scenario drives them and shimming a
+method nothing exercises would model something nothing measures.
+
+`ConnectorCompatibilityTest` asserts **both** directions: every unimplemented method must be either shimmed or on the
+recorded not-driven list, *and* every shimmed method must still be one the connector lacks. The second half is what
+stops the shim becoming dead code that quietly overrides a working implementation with the harness's approximation of
+it.
+
+One asymmetry worth knowing before planning a fix: the snapshot store is the harder half. `EventStorageEngine` kept the
+one-argument `source` as a `default`, so the connector's method is still a valid override and a shim is three lines.
+`SnapshotStore` declares **only** the context-carrying forms with no `default` at all, so the connector's two methods --
+which are fully implemented, with real bodies -- override nothing. A shim there is still possible; adding a `default`
+is not, because there is no older form to delegate from.
+
+### 4.68 The compatibility gate is a test, not a script, and it runs in the default build
+
+It could have been a shell script. Making it a JUnit test in the module that already depends on the connector means it
+runs on every `./mvnw -q -Phunt -pl simulation test`, needs no separate invocation to be remembered, and fails the build
+rather than printing something nobody reads. It starts no container and takes about a second, so it costs the default
+build nothing.
+
+The one piece of machinery it needs is a class loader that prefers the artefact under examination for the connector's
+own packages and this reactor for everything else. Parent-first would find the connector already on the test classpath
+and silently examine that one instead, which would make `-Dhunt.connectorJar` do nothing at all.
+
+### 4.69 The model-conformance checker was unsound after its first mismatch, and this phase's first run proved it
+
+The Axon Server arm's first run reported six `AppendConformsToDcbModel` violations, **two of them in the opposite
+direction** ("an append the model accepts was recorded as rejected"). Those two were the harness's.
+
+The mechanism: `ModelConformanceChecker` applies every append the store accepted so the replay can continue, but a batch
+the model *rejects* stores nothing -- while the real store stored it -- so from the first divergence the model's
+positions run behind the store's by that batch's size. A consistency marker is an absolute position, so every later
+comparison is made against a store the model does not have. Measured:
+
+```
+model head=246   scan size=254   position mismatches between scan and model: 242
+#2687 marker=234 wouldAccept=true   -- but the store holds matching events at positions 239 and 241
+#2836 marker=246 wouldAccept=true   -- but the store holds matching events at positions 246 and 247
+```
+
+Both "the model accepts" appends do conflict at the store's real positions, so both were false. The checker now reports
+the first mismatch as a violation and every later one as a note, exactly as it already did after an append with an
+unknown outcome.
+
+**The consequence for reading any result: the count of model violations from a run is not a magnitude. Only the first
+one is evidence.** This is the ninth harness defect in this suite's history that would have been written up as a
+framework finding, and the pattern has not changed -- the first run of a new arm is mostly harness.
+
+### 4.70 Eliminating the skew took nine experiments, and that is the price of a finding on a shimmed arm
+
+F-19 is a real divergence and the elimination is in its entry. The point worth carrying is the shape of the work: nine
+separate constructions, each isolating one candidate cause, and **eight of them came back clean**. The finding survived
+because the ninth reproduced it with the harness removed entirely -- eight threads against the connector's own
+`appendEvents`/`commit`, checking the DCB rule against the store's own order, no `ScenarioRunner`, no wrapper, and no
+shimmed method on the path.
+
+What the eight clean ones bought is not nothing: each is a sentence in the entry saying what the defect is *not*, and
+together they are the reason the entry can name a bound on the mechanism ("inside the append operation, one or two
+batches wide") while refusing to name the mechanism itself.
+
+A shimmed arm cannot file a finding cheaply. Budget for that before starting one.
+
+### 4.71 The chaos arms are two shipped scenarios pointed elsewhere plus one new one
+
+The kill and partition arms are `crashRecoveryNoAckedLoss()` and `commitAckMatchesDurabilityUnderPartition()` with
+`onBackend("axonserver-chaos")` and nothing else changed. A fault reaches the infrastructure only through
+`StoreInfrastructure`, so a store that advertises it can be broken inherits every infrastructure fault in the suite for
+free. That is the extensibility charter's backend clause paying off on a fault layer built two phases earlier, and it is
+the strongest evidence so far that the charter is real rather than aspirational.
+
+Only the stream-resume arm is new, because its question is new: it is about the consumer rather than the writer, and its
+cut is timed on a wall clock rather than aimed at a commit boundary -- the opposite choice from the partition arm's, and
+deliberate. A long-running stream is severed by a cut placed anywhere; a millisecond-wide commit window is not.
+
+### 4.72 Durability is decidable on this store, and that closes a short row from two phases ago
+
+`AcknowledgedAppendIsDurable` reports itself inexpressible on both PostgreSQL arms, because the aggregate-based engine's
+`AppendTransaction.commit()` does no work and races the database transaction (F-17), so an append the harness calls
+acknowledged is not one the client saw succeed. On Axon Server the commit call **is** the commit: it sends the
+transaction and returns the consistency marker the server assigned. `commitsOutsideAppendTransaction()` is therefore
+`false`, and the kill arm asserts that the oracle decides rather than declines.
+
+That is the first arm in the suite where a kill can be held against an acknowledgement rather than merely measured
+alongside one.
+
+### 4.73 The canary had to be one only this backend can catch, and P0 had already written down which
+
+`OrEventCriteria.flatten()` is the mutation, and the reason is note 2.2, written in the first phase: the in-heap engine
+detects conflicts through `EventCriteria.matches(...)`, the interpreted form, while a store that builds a wire query
+does it from `flatten()`. Narrowing `flatten()` therefore leaves every in-heap arm untouched and narrows the boundary
+Axon Server enforces. A canary whose detection depends on the backend's semantics rather than on the framework's is
+exactly what the phase needed, and the hypothesis had been sitting in the notes for five phases waiting for a backend
+that could test it.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| A framework-by-connector-by-image CI matrix | Three axes of container runs. The compatibility gate answers the linkage question for any combination in a second, which is most of the value; running the whole corpus on each is a phase of its own. | the phase that widens CI |
+| Resolving released artefacts inside the gate | It takes a path. Sweeping every published version, or resolving one from a repository, needs dependency resolution inside a test. | the same phase |
+| `japicmp` or `revapi` on the framework's own build | Either would catch an SPI break at the commit that introduced it, which is where it is cheapest. That is a build-level decision, not a harness one, and it is the right long-term answer to F-18. | whoever owns the build |
+| Classloader isolation for mixed-version nodes | The gate's loader compares one artefact against this reactor, which is enough for the linkage question. Running two connector versions in one virtual machine is a different problem. | if a scenario ever needs it |
+| A token store on the Axon Server arm | The connector carries none, so segment ownership on this arm is the framework's in-heap store and every claim invariant reports itself inexpressible. Pairing the Axon Server event store with the HSQLDB token store would make the cluster arms meaningful there, at the cost of a deployment no real Axon Server user has. | if a claim question ever needs this event store |
+| Server-side persistent streams | `PersistentStreamEventSource` keeps the position on the server rather than in a token store, which is a different delivery mechanism with different guarantees. No scenario declares one, so nothing is known about it. | the phase that models delivery |
+| Snapshots on this arm | Two of the four unimplemented methods, unshimmed by choice. A snapshot scenario would need the shim and a claim to justify it. | the phase that writes a snapshot scenario |
+| An Axon Server cluster | One node throughout. Several servers disagreeing with each other is the failure this arm cannot produce, and it is the one Axon Server exists to survive. | the phase that clusters the store |
+| F-19's mechanism | Bounded from the client side and not explained. Settling it needs Axon Server's own instrumentation. | whoever owns the server |
+| `StreamingCondition.startingFrom(null)` in the connector | A two-line null check (note 2.53). Not pursued because nothing in the harness calls it that way. | whoever owns the connector |
+
+### 4.74 The green-but-broken audit for the Axon Server arm, and what it found
+
+Run before claiming any verdict. **Three rows came back wrong the first time and five came back short**, and two of the
+three wrong ones would have been written up as framework or store findings.
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| The workload really ran | 300 commands per differential arm, 127 of 296 recorded appends acknowledged on the contended arm, 254 events in the store and 254 delivered; 400 commands per chaos arm, 169 acknowledged on the stream arm | ok |
+| A real store really served it | Container id printed with its gRPC and administration addresses, the administration API's own context listing, an append whose commit returned the server's `consistency_marker`, and two events sourced back **by one of their two tags** -- which is the boundary round trip, and is not expressible on the suite's other persistent store | ok |
+| **An oracle caught something only this backend can produce** | The reference model **decides** the append protocol here, on both seeds, with no `n/a`. That is the coverage this arm adds: every other persistent store in the tree is aggregate-based and reports the model inexpressible, so the protocol had never been judged anywhere the events outlive the process. It found F-19. | ok |
+| **The divergence is the store's, not the harness's or the skew's** | Nine separate experiments, eight of which came back clean. The shim is not on the append path; the connector's marker conversion is a verified pass-through; all four modelled DCB rules were measured directly against the server and agree; six sequential conflict cases reject correctly; a stale marker across a wide check-to-commit window is rejected; eight writers racing at one marker yield exactly one acceptance. The ninth reproduced the divergence with the harness removed entirely. | ok, after nine eliminations |
+| **A harness defect was found first, and it had produced two false findings** | `ModelConformanceChecker` was unsound after its first mismatch: the model's positions drift behind the store's by every batch the model rejected and the store kept, and a marker is an absolute position. Measured: model head 246 against 254 events, 242 of 254 positions unaligned, and both "the model accepts" appends do conflict at the store's real positions. Fixed; only the first mismatch is now a violation. | ok, after one correction |
+| Faults really landed on a real Axon Server | Kill: `store-crash=2`, evidenced by `container 1ae7f305e710 status exited exit code 137` twice and two distinct `Started AxonServer in 7.284 seconds` / `in 7.19 seconds` lines carrying the server's own timestamps. Partition: `store-partition=8`, evidenced by the proxy's own `"enabled":false` and `"enabled":true` either side of every cut. Stream severance: `store-partition=8` with `cut held for 2000ms` per cut. Every one is the infrastructure's answer, not the harness's. | ok |
+| **A second harness defect the kill arm exposed** | A killed container does not keep its published port -- measured, `55015` before and `55016` after -- and Testcontainers keeps answering the old one. The kill arm passed and then every later arm failed with `ConnectException` from a port that had been correct twenty seconds earlier. The administration address now resolves at call time. | ok, after one correction |
+| The stream-resume property itself | `readableEvents=338 deliveredEvents=338 quiesced=true stalled=false`, zero undelivered and **zero repeats of any kind**, after eight severances of a running event stream. The arm's own question is answered PASS; its overall FAIL is a different invariant. | ok |
+| Durability is decided, not excused | `AcknowledgedAppendIsDurable` is **not** reported inexpressible on this store, unlike on both PostgreSQL arms, because the append transaction's commit call is the commit and returns the server's marker. The kill arm asserts that. | ok |
+| A "not applicable" is not a pass | The ownership invariants report themselves inexpressible here, and the arm asserts it, because the connector carries no token store and the claim side is the framework's in-heap one. A vector recording that as a pass would claim coverage the arm does not have. | ok |
+| No silent error suppression | The chaos runs log `StatusRuntimeException: UNAVAILABLE`, `Network closed for unknown reason` and `ClosedChannelException`, and every append failure reaches an oracle. Counting how they were **classified** is what found F-20. | ok |
+| **A third harness assumption that was wrong, and would have made the arm vacuous** | The generic scan drains a sourcing stream with a `next()` loop and returns **zero** on a gRPC stream however much the store holds -- measured, `4` through `reduce` against `0` through the loop. A scan that always answers nothing makes quiescence trivially true and every delivery oracle hold vacuously, so an arm shipped that way would have produced a green column verifying nothing. The backend overrides the scan. | ok, after one correction |
+| Baseline is fair | Re-baselined because the harness changed: 208 tests before, **210** after, with the same 208 still green. The two additions are the compatibility gate's cases, which are the only new tests that run without Docker. Verified on a clean tree: `rm -rf simulation/target`, then `testcases=210`, `container-tagged reports=0`, `docker containers before=27 after=27` -- the last of those is the only direct proof that the default build starts nothing. | ok |
+| **The differential column is three scenarios of five, not five** | Two seeds each, which is what the deliverable asks of a column, and **not** the whole matrix: the run wedged after an `OutOfMemoryError` in a `HttpClient-1-SelectorManager` thread partway through the fourth scenario and was killed. The three that completed are recorded below. The bootstrap scenario's Axon Server behaviour is separately asserted and green in `AxonServerBackendTest`, so it is not unknown -- but it is not in the vector table either. | **short** |
+| **The arm's own tests and the three chaos arms run one seed each** | Under the suite's own weak-oracle rules a one-seed arm caps at a partial verdict however clean it is. | **short** |
+| **The partial-batch scenario is not runnable on this store at its shipped budget** | Its Axon Server column is `INCONCLUSIVE/FAIL`, and none of it is a finding: the scenario appends hundred-event batches, which time out over gRPC (`CompletionException: TimeoutException`), so the run reports `0 acknowledged, 300 event(s) left ambiguous`, the workload never finishes issuing its commands, and the violations that follow are all downstream of appends whose outcome was unknown. This is P3a's note 4.49b repeating on a third store: **a budget sized for one store is not a budget, and quoting the shortfall as a finding is the mistake to avoid.** The arm needs a batch size or a budget a wire store can meet. | **short** |
+| **One Axon Server, never a cluster of them** | Single-node throughout. Several servers disagreeing with each other is the failure this store exists to survive, and no arm has it. | **short** |
+| **The claim side is not real on this arm** | The connector carries no token store, so ownership, claim handover and durable progress are all either inexpressible or measured against the framework's in-heap store. A verdict from this column is a verdict about the **event store**. | **short** |
+| **Snapshots and distributed messaging are outside it** | The arm substitutes the event store and disables the connector's configuration enhancer, so commands and queries stay local; two of the connector's four unimplemented methods are its snapshot store's and are unshimmed by choice. Nothing here says anything about either surface. | **short** |
+| **The model oracle cannot be canaried on this arm** | Established while designing the canary, and it is structural rather than an omission: the model-conformance oracle records an append's condition through `EventCriteria.flatten()`, which is the same accessor the connector builds its wire condition from, so **any framework mutation of the condition's derivation moves the model and the store together and is invisible to the comparison**. Canarying that oracle here would need a mutation of the store's decision, and the store is a container rather than framework code. The canary therefore targets a different oracle, and the campaign says so. | **short** |
+
+The five short rows cap what may honestly be claimed: a real boundary-native persistent event store, two seeds, one
+node, no claim side, and one oracle on it that cannot be canaried from this side of the wire.
+
+### 4.75 The differential column, verbatim, and what the fourth scenario did to the run
+
+Three scenarios, five stores, two seeds each. The fourth wedged the run and is recorded above as a short row.
+
+```
+VECTOR dcb_append_rejected_after_marker_under_contention  in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a) axonserver:FAIL/FAIL
+VECTOR dcb_append_rejected_after_marker_single_writer     in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a) axonserver:PASS/PASS
+VECTOR partial_batch_never_visible_to_concurrent_reader   in-memory:PASS/PASS hsqldb-tokens:PASS/PASS postgres-jpa:FAIL(1 n/a)/FAIL(1 n/a) postgres-jpa-split-tokens:FAIL(1 n/a)/FAIL(1 n/a) axonserver:INCONCLUSIVE/FAIL
+```
+
+How to read the new column, which is the point of having it:
+
+- **`axonserver` carries no `n/a` where the PostgreSQL arms carry one.** That one is the reference model, inexpressible on
+  an aggregate-based store. Axon Server is a boundary store, so the model **decides** there -- which is the coverage this
+  phase adds and the reason F-19 could be found at all.
+- **The contended arm fails on both seeds and the single-writer arm passes on both.** That contrast is not incidental: it
+  is the first evidence that F-19 needs concurrency, and it is what gave the canary campaign a green baseline to work
+  against.
+- **The partial-batch arm's `INCONCLUSIVE/FAIL` is a budget shortfall, not a divergence.** See the short row above. A
+  reader who quotes it as a finding will be quoting a timeout.
+
+**The run does not survive the whole matrix with this column added.** After the third scenario it threw
+`java.lang.OutOfMemoryError` from a `HttpClient-1-SelectorManager` thread, kept the forked JVM alive in a degraded state,
+and stopped making progress -- no history was written for twenty-eight minutes and it was killed. Two things are worth
+knowing before the next attempt: the matrix holds every `ScenarioResult` of every arm for the life of the class so that
+several assertions can read one set of runs, and this column adds gRPC buffers plus a connection per run on top of that.
+Whoever widens it should give surefire an explicit heap and consider dropping the retained results to what the assertions
+actually read.
