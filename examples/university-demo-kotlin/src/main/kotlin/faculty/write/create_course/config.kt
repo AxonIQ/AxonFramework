@@ -16,25 +16,29 @@
 
 package org.axonframework.examples.university.faculty.write.create_course
 
+import jakarta.annotation.Nullable
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer
 import org.axonframework.examples.university.shared.ids.CourseId
+import org.axonframework.extension.kotlin.eventsourcing.EventSourcedEntityModuleExt.autodetected
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule
 import org.axonframework.messaging.eventhandling.gateway.EventAppender
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer
-import org.axonframework.extension.kotlin.eventsourcing.EventSourcedEntityModuleExt
-import org.axonframework.extension.kotlin.eventsourcing.EventSourcedEntityModuleExt.autodetected
 import org.axonframework.modelling.annotation.InjectEntity
+import java.util.Optional
 
 class CreateCourseCommandHandler {
 
     @CommandHandler
     internal fun handle(
         command: CreateCourse,
-        @InjectEntity(idProperty = CreateCourse.ID) state: CreateCourseState,
+        @InjectEntity(idProperty = CreateCourse.ID) state: Optional<CreateCourseState>,
         eventAppender: EventAppender
     ) {
-        eventAppender.append(state.decide(command))
+        if (state.isEmpty) {
+            eventAppender.append(CreateCourseState().decide(command))
+        } else {
+            eventAppender.append(state.get().decide(command))
+        }
     }
 
 }

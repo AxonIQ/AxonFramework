@@ -23,15 +23,20 @@ import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer
 import org.axonframework.examples.university.shared.ids.StudentId
 import org.axonframework.modelling.annotation.InjectEntity
+import java.util.Optional
 
 class EnrollStudentCommandHandler {
     @CommandHandler
     internal fun handle(
         command: EnrollStudent,
-        @InjectEntity(idProperty = EnrollStudent.ID_PROP) state: EnrollStudentState,
+        @InjectEntity(idProperty = EnrollStudent.ID_PROP) state: Optional<EnrollStudentState>,
         eventAppender: EventAppender
     ) {
-        eventAppender.append(state.decide(command))
+        if (state.isEmpty) {
+            eventAppender.append(EnrollStudentState().decide(command))
+        } else {
+            eventAppender.append(state.get().decide(command))
+        }
     }
 }
 
