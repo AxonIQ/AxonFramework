@@ -80,9 +80,13 @@ process, per operation, per record type), append verdicts, and the set of events
 Verbatim first difference in `SINGLE_THREADED`:
 
 ```
-record #9 differs: 9|writer-0|append|INVOKE|null|null
-             against 9|projection|deliver|INVOKE|acct-0|null
+record #27 differs: 27|writer-0|commit|INVOKE|null|null
+             against 27|projection|deliver|INVOKE|acct-0|null
 ```
+
+(The index moved from 9 to 27 when the token store began recording its claims: a run now opens with the node's claim
+traffic, which pushes the first interleaving between writer and projection further down the file. The property is
+unchanged.)
 
 Verbatim differences in `REAL_THREADS` (one run of many; the numbers move every time):
 
@@ -91,6 +95,39 @@ record count differs: 2172 against 2134
 append verdicts differ: {FAIL=157, OK=139, UNKNOWN=0} against {FAIL=160, OK=136, UNKNOWN=0}
 store contents differ: 102 event(s) only in the first run, 96 only in the second
 ```
+
+### 2.1b What a cluster does to all of that -- measured, on the arm that has one
+
+Scenario: `concurrent_bootstrap_initializes_segments_exactly_once`, four nodes over one in-heap event store and one
+in-process HSQLDB token store, six hundred ledger commands, seed 1. Same probe, same diff.
+
+| Property | four nodes, `REAL_THREADS` |
+|---|---|
+| Record sequence identical | **no** |
+| Operation shape identical | **no** |
+| Append verdicts identical | **no** |
+| Store contents identical | **no** |
+
+Verbatim, from one pair of runs:
+
+```
+record count differs: 4247 against 4499
+append verdicts differ: {FAIL=335, OK=265, UNKNOWN=0} against {FAIL=299, OK=301, UNKNOWN=0}
+store contents differ: 126 event(s) only in the first run, 198 only in the second
+```
+
+The operation-shape diff includes the new axis directly: `node-2/claim/FAIL=2 against 1` and
+`node-1/claim/INVOKE=2 against 3`. **Which node wins a segment is not a function of the seed, and neither is how many
+times a claim is refused.** A cluster adds a second race on top of the one between writers -- the race between
+coordinators for the same rows -- and that one decides which node processes which events and therefore how the
+projection's work is spread. Nothing about a multi-node run is reproducible from its seed, and the suite claims
+nothing about it beyond what this table says.
+
+There is no single-threaded arm for a cluster and there cannot be a useful one. Four coordinators and four workers
+against one database is the thing being measured; running it on one thread would measure something else.
+
+The consequence for regression assets is the one already stated in 2.5 and it applies with more force here: a cluster
+finding is pinned by its **history file**, never by its seed.
 
 ### 2.2 What that means, stated plainly
 
@@ -233,6 +270,11 @@ modelling the same property.
 | `LedgerBalanceNeverNegative` | No account balance is negative at any point in the sequence of committed transfers. | C1, C5, C8 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `ProjectionMatchesFoldOfCommittedEvents` | The balance projection at the end of the run equals the fold of the transfers the run committed. | C4, C15, C16 | `ConservationChecker` | every scenario driving the ledger | -- |
 | `DeclaredFaultsLand` | Every fault a run declares fires at least once, and the run records how often and against what. | -- (suite constitution, rule 4) | `FaultLandingChecker` | every scenario declaring a fault | -- |
+| `AtMostOneSegmentOwner` | For every segment, the intervals during which distinct nodes hold its token claim never overlap by more than the run's declared clock-skew allowance. | C18, C19, C20, C22, M3 | `OwnershipChecker` | `concurrent_bootstrap_initializes_segments_exactly_once`, `..._with_node_churn`. Holds vacuously, and says so, on any backend whose token store implements no ownership; silent for a single-node run. | (P4: `TokenClaim.tla`) |
+| `NoCommittedEventGoesUndelivered` | Every event a committed append made visible is delivered to a consumer at least once. | C15, C16, C17, M4 | `DeliveryChecker` | every scenario whose run recorded that its read side caught up | -- |
+| `DuplicateDeliveryOnlyInsideRecoveryWindow` | An event is delivered more than once only while a recorded claim transition or node recovery window is open, and never at all when the run declares exactly-once delivery. | C16, C17 | `DeliveryChecker` | every scenario whose run recorded that its read side caught up. No shipped scenario declares exactly-once, because no shipped deployment shares a transactional resource between the token store and the read model; that half of the invariant is exercised by its canaries only, and the registry says so rather than implying coverage it does not have. | -- |
+| `CommittedEventDeliveredWithinHorizon` | Every committed event that reaches a consumer reaches it within the run's declared liveness horizon. | C13, C14, C15 | `LivenessChecker` | every scenario whose run recorded that its read side caught up | -- |
+| `AcceptedCommandCompletes` | Every command the run dispatched reaches a recorded outcome. | C4, C29 | `LivenessChecker` | every scenario | -- |
 
 Scenario columns are filled in as the scenarios land; an invariant with no scenario is asserted by
 its unit-level canaries only, and the registry says so rather than implying coverage it does not
@@ -255,6 +297,10 @@ producing a violation, and every checker that can meet them handles them explici
 | An append failed for a reason other than the store's own consistency check | An injected infrastructure failure carries no protocol verdict for the model to be held to. |
 | A delivery carries no sequence identifier | The identifier is the framework's, and a checker that guesses one makes the verdict a property of the checker. `OrderChecker` judges only deliveries whose identifier the run recorded. |
 | A delivered event is absent from the authoritative scan | Its place in the append order is unknown, so an ordering oracle has nothing to compare against. |
+| The run's token store implements no ownership | Every claim is granted to everybody, so an ownership assertion made against it is true without checking anything. `OwnershipChecker` reports that rather than passing, whenever more than one node claimed against such a store. |
+| The read side had not caught up when the run ended | Nothing was lost; the run was interrupted. `DeliveryChecker` and `LivenessChecker` both refuse to decide, and the runner records the fact under `quiesced` on the settle phase record so that a checker can tell an interrupted run from a complete one. |
+| A repeated delivery the run's declared mode permits | The framework says a stolen claim may cause an event to be handled twice, so it is not a violation. It is still reported, with a distribution, and the report downgrades the run to undecided: a projection that applied a transfer twice is a fact somebody should look at even when the deployment permits it. |
+| A node that never came up | The framework promises nothing about how many instances survive a start. `LivenessChecker` reports it, so a run that exercised a smaller cluster than it declared cannot be a clean pass. |
 
 **One thing a rollback record deliberately does not say.** The framework registers one error handler per append transaction and calls `AppendTransaction.rollback()` from it whatever phase the error arrived in, so an error strictly after a successful commit produces a rollback of a batch the store has already published. `ControllableEventStorageEngine` records that rollback as having discarded nothing, keeping the offered identifiers under `offeredEventIds` and flagging the situation with `afterCommit`. Recording it any other way would make every such run report committed, legitimately visible events as observable-after-rollback, which is a false finding. What the framework's contract does not say about a rollback after a commit is a real gap, and it is recorded as finding F-8 rather than as a violation.
 
@@ -462,3 +508,44 @@ One class implementing `HuntBackend`, plus one line in
 `simulation/src/main/resources/META-INF/services/org.axonframework.hunt.harness.HuntBackend`. Every
 existing scenario then runs against it by name, and the per-backend verdict vector that attributes a
 finding to the framework or to one adapter becomes available for free.
+
+Four methods, of which two have defaults that are right for an in-heap store:
+
+| Method | What it must say |
+|---|---|
+| `name()` | The name a scenario selects it by, and the name in the history header. |
+| `createEngine()` | A fresh, empty event storage engine per run. |
+| `createTokenStores(runId, claimTimeout)` | One shared token store per run, handed out one view per node so each node claims under its own identity. The default gives every node the framework's in-heap store, which has no owner at all. |
+| `arbitratesTokenClaims()` | Whether that store decides who owns a segment. Defaults to `false`, which makes `AtMostOneSegmentOwner` report itself unverifiable rather than passing vacuously. Getting this wrong in the optimistic direction is how a suite reports coverage it does not have. |
+
+The claim timeout is passed in rather than read from a configuration, because it is a **store** setting: it does not
+travel through the processor configuration the way the run's other compressed timings do, and the ownership oracle
+derives a claim's expiry from exactly this number. A store configured with the shipped ten seconds while the checker
+assumes a compressed hundred milliseconds reports every legitimate handover as an overlap.
+
+Proving a new backend inherits the corpus costs one test: take a shipped scenario, call `Scenario.onBackend(name)`,
+run it, and assert the verdict. `ClaimCapableBackendTest` does exactly that, and it is what turns the extensibility
+charter from a claim into a property.
+
+### 6.5 A cluster
+
+A scenario declares `nodes(n)` and gets `n` framework instances sharing one event store, one token store and one read
+model. Three things about that are worth knowing before writing one.
+
+- **The nodes are released from a barrier, not started in a loop.** Calling `start()` on each in turn looks concurrent
+  and is not: the first node's coordinator has created and claimed every segment before the loop reaches the second.
+  Measured on this harness -- with a sequential loop, exactly one of four nodes ever attempted to create the segments.
+- **Segments are shared out evenly.** The shipped `maxSegmentProvider` is `Short.MAX_VALUE`, so without a cap the
+  first node to reach the store takes every segment and the rest of the cluster idles. `HuntWorld` caps a multi-node
+  run at `segments / nodes` each. A cluster whose segments all live on one node is a single-node run with extra
+  threads.
+- **The workload must sequence by a real key.** Segment assignment hashes the sequence identifier, and the framework's
+  wired default resolves to one identifier for everything on a store speaking the Dynamic Consistency Boundary
+  protocol (finding F-6), so every event lands in one segment however many are configured.
+  `LedgerWorkload.sequencedPerAccount()` exists for this. A policy that ever answers nothing throws once per event and
+  delivers nothing at all (finding F-7), so a key must always be resolvable.
+
+Node operations available to a fault: crash (drop the node without releasing its claims), restart (bring it back under
+the same identity), and pause (hold its handling thread past the claim timeout). Crashing deliberately does **not**
+shut the processor down, because an orderly shutdown gives the claims back and the state worth testing is the one
+where it does not.

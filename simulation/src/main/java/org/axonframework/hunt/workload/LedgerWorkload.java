@@ -30,6 +30,7 @@ import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -45,6 +46,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -124,12 +126,14 @@ public final class LedgerWorkload implements Workload {
     private static final int SEIZE_SHARE = 90;
 
     private final boolean forceHotKey;
+    private final boolean sequencePerAccount;
     private final Map<Long, SwarmShape> shapes = new ConcurrentHashMap<>();
     private final Map<String, Long> balances = new ConcurrentHashMap<>();
     private final AtomicLong delivered = new AtomicLong();
 
-    private LedgerWorkload(boolean forceHotKey) {
+    private LedgerWorkload(boolean forceHotKey, boolean sequencePerAccount) {
         this.forceHotKey = forceHotKey;
+        this.sequencePerAccount = sequencePerAccount;
     }
 
     /**
@@ -141,7 +145,30 @@ public final class LedgerWorkload implements Workload {
      * @return the workload
      */
     public static LedgerWorkload hotKey() {
-        return new LedgerWorkload(true);
+        return new LedgerWorkload(true, false);
+    }
+
+    /**
+     * Creates a hot-key ledger whose events are sequenced by the account they touch.
+     * <p>
+     * <b>Any multi-segment scenario needs this, and the reason is easy to miss.</b> The processor picks an event's
+     * segment by hashing the sequence identifier the handling component resolves, and the sequencing policy the
+     * framework wires by default resolves its key from a legacy aggregate-identifier resource that no store speaking
+     * the Dynamic Consistency Boundary protocol ever populates. Its fallback then gives every event in the run the
+     * same identifier, one identifier hashes to one segment, and a processor configured with sixteen segments has one
+     * segment doing all the work and fifteen doing none. Measured on this suite's own runs: one distinct sequence
+     * identifier for a hundred and eighty events across six independent streams. Keying on the account restores the
+     * spread that the whole point of several nodes depends on.
+     * <p>
+     * The policy always resolves something, deliberately. The component unwraps the policy's optional with
+     * {@code get()}, so a policy that ever answers nothing throws once per event and the read side silently delivers
+     * nothing at all; an event that is not a ledger event therefore falls back to its own identifier rather than to
+     * an empty answer.
+     *
+     * @return the workload
+     */
+    public static LedgerWorkload sequencedPerAccount() {
+        return new LedgerWorkload(true, true);
     }
 
     /**
@@ -150,7 +177,7 @@ public final class LedgerWorkload implements Workload {
      * @return the workload
      */
     public static LedgerWorkload seedShaped() {
-        return new LedgerWorkload(false);
+        return new LedgerWorkload(false, false);
     }
 
     @Override
@@ -173,6 +200,7 @@ public final class LedgerWorkload implements Workload {
         described.put("openingBalance", String.valueOf(OPENING_BALANCE));
         described.put("opMix", "transfer=" + TRANSFER_SHARE + "%,seize=" + (SEIZE_SHARE - TRANSFER_SHARE)
                 + "%,rebalance=" + (100 - SEIZE_SHARE) + "%");
+        described.put("sequencingPolicy", sequencePerAccount ? "per-account" : "framework-default");
         return Map.copyOf(described);
     }
 
@@ -210,12 +238,28 @@ public final class LedgerWorkload implements Workload {
                           (command, processingContext) -> handleRebalance(eventStore, command, processingContext));
 
         HistoryRecorder.ProcessRecorder projectionRecorder = context.recorder().forProcess("projection", null);
-        return SimpleEventHandlingComponent.create("ledger-projection")
-                                           .subscribe(new QualifiedName(MoneyWithdrawn.class),
-                                                      (event, ctx) -> project(projectionRecorder, event))
-                                           .subscribe(new QualifiedName(MoneyDeposited.class),
-                                                      (event, ctx) -> project(projectionRecorder, event));
+        SimpleEventHandlingComponent component =
+                sequencePerAccount
+                        ? SimpleEventHandlingComponent.create("ledger-projection", PER_ACCOUNT_POLICY)
+                        : SimpleEventHandlingComponent.create("ledger-projection");
+        return component.subscribe(new QualifiedName(MoneyWithdrawn.class),
+                                   (event, ctx) -> project(projectionRecorder, event))
+                        .subscribe(new QualifiedName(MoneyDeposited.class),
+                                   (event, ctx) -> project(projectionRecorder, event));
     }
+
+    /**
+     * Sequences by the account an event touches, and never answers nothing.
+     * <p>
+     * Two accounts are independent, so their events may be handled in parallel and may land in different segments,
+     * which is what makes several nodes worth having. The fallback to the event's own identifier is not defensive
+     * tidiness: the handling component unwraps this optional with {@code get()}, so an empty answer throws on every
+     * event and the read side stops dead without saying so.
+     */
+    private static final SequencingPolicy<EventMessage> PER_ACCOUNT_POLICY =
+            (event, context) -> Optional.of(event.payload() instanceof LedgerEvent ledgerEvent
+                                                    ? ledgerEvent.account()
+                                                    : event.identifier());
 
     @Override
     public void run(WorkloadContext context) throws InterruptedException {

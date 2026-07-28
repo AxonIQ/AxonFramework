@@ -121,6 +121,59 @@ class FaultsLandTest {
     }
 
     @Test
+    void aDroppedNodeLeavesItsClaimsBehindAndComesBack() {
+        // given a cluster on the store that really arbitrates a claim, with one node dropped mid-run
+        ScenarioResult result = runOnCluster("fault_node_crash", new NodeCrashFault(1), 1_500);
+
+        // then the crash landed, naming the node it took down, and the node came back when the window closed
+        assertThat(result.faultFires().get("node-crash")).isPositive();
+        var history = org.axonframework.hunt.history.HistoryView.read(result.history());
+        var actions = history.notes(org.axonframework.hunt.history.HistoryOps.NODE).stream()
+                             .map(note -> note.stringValue(org.axonframework.hunt.history.HistoryOps.ACTION))
+                             .toList();
+        assertThat(actions).contains("crashed", "restarted");
+    }
+
+    @Test
+    void aFrozenNodeIsHeldPastItsClaimTimeout() {
+        // given a stall longer than the claim timeout the cluster's store is configured with
+        ScenarioResult result = runOnCluster("fault_node_pause", new NodePauseFault(Duration.ofMillis(600), 1),
+                                             1_500);
+
+        // then the node was really held, and the evidence says which one and for how long; a stall nobody reached
+        // would leave a fire count of zero and make the run undecided instead
+        assertThat(result.faultFires().get("node-pause")).isPositive();
+    }
+
+    private static ScenarioResult runOnCluster(String id, Fault fault, int commands) {
+        Scenario scenario =
+                Scenario.builder(id, "One fault, one short cluster run, one fire count")
+                        .claims("C18", "C19", "C20")
+                        .workload(LedgerWorkload::sequencedPerAccount)
+                        .backend(org.axonframework.hunt.harness.HsqldbTokenStoreBackend.NAME)
+                        .nodes(4)
+                        .timescale(org.axonframework.hunt.harness.HuntTimescale.compressed()
+                                                                               .withClaimTimings(Duration.ofMillis(500),
+                                                                                                 Duration.ofMillis(150)))
+                        .livenessHorizon(Duration.ofSeconds(5))
+                        .faults(FaultSchedule.builder()
+                                             .warmup(Duration.ofMillis(20))
+                                             .window(FaultWindow.immediately("only", Duration.ofMillis(700), fault))
+                                             .heal(Duration.ofMillis(200))
+                                             .settle(Duration.ofSeconds(15))
+                                             .build())
+                        .oracles(FaultLandingChecker.DECLARED_FAULTS_LAND)
+                        .seed(9L)
+                        .budget(Tier.SMOKE, new TierBudget(commands, 1, Duration.ofSeconds(90)))
+                        .build();
+        ScenarioResult result = ScenarioRunner.run(scenario, Tier.SMOKE, scenario.seed(),
+                                                   ScenarioRunner.historyDirectory(
+                                                           Path.of("target", "hunt-histories", "faults")));
+        System.out.println(result);
+        return result;
+    }
+
+    @Test
     void aStoreThatSkipsItsConflictCheckIsCaughtByTheModel() {
         // given / when
         ScenarioResult result = runWith("fault_bypass", new ConflictCheckBypassFault(1), 3_000);

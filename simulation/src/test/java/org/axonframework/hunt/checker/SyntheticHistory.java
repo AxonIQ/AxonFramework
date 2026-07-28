@@ -41,14 +41,71 @@ final class SyntheticHistory {
     private final HistoryRecorder.ProcessRecorder writer;
 
     SyntheticHistory(Path directory, String scenarioId) {
+        this(directory, scenarioId, Map.of());
+    }
+
+    SyntheticHistory(Path directory, String scenarioId, Map<String, String> shape) {
         this.file = directory.resolve(scenarioId + ".jsonl");
         this.recorder = HistoryRecorder.writingTo(
-                file, HistoryHeader.of(scenarioId, 7L, "in-memory", "compressed", Map.of()));
+                file, HistoryHeader.of(scenarioId, 7L, "in-memory", "compressed", shape));
         this.writer = recorder.forProcess("p0", "node-a");
     }
 
     HistoryRecorder.ProcessRecorder writer() {
         return writer;
+    }
+
+    /**
+     * Returns a recorder stamped with the given node's identity.
+     */
+    HistoryRecorder.ProcessRecorder node(String nodeId) {
+        return recorder.forProcess(nodeId, nodeId);
+    }
+
+    /**
+     * Records a claim the store granted to the given node.
+     */
+    void claimGranted(String nodeId, int segment) {
+        node(nodeId).invoke(HistoryOps.CLAIM, "p/" + segment, Map.of(HistoryOps.SEGMENT, segment)).ok(Map.of());
+    }
+
+    /**
+     * Records a claim extension the store granted to the given node.
+     */
+    void claimExtended(String nodeId, int segment) {
+        node(nodeId).invoke(HistoryOps.EXTEND, "p/" + segment, Map.of(HistoryOps.SEGMENT, segment)).ok(Map.of());
+    }
+
+    /**
+     * Records the given node giving a claim back.
+     */
+    void claimReleased(String nodeId, int segment) {
+        node(nodeId).invoke(HistoryOps.RELEASE, "p/" + segment, Map.of(HistoryOps.SEGMENT, segment)).ok(Map.of());
+    }
+
+    /**
+     * Records a node lifecycle change.
+     */
+    void nodeAction(String nodeId, String action) {
+        node(nodeId).info(HistoryOps.NODE, nodeId, Map.of(HistoryOps.ACTION, action));
+    }
+
+    /**
+     * Records the settle phase, saying whether the read side had caught up before anything was judged.
+     */
+    void settled(boolean quiesced) {
+        writer.info(HistoryOps.PHASE, null, Map.of("phase", "settle", HistoryOps.QUIESCED, quiesced));
+    }
+
+    /**
+     * Waits long enough that the next record's logical timestamp is measurably later than the last one's.
+     */
+    void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

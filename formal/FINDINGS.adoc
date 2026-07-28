@@ -78,6 +78,13 @@ easy workaround), *low* (a documentation or ergonomics gap).
   published batch. The contract does not say what that means.
 | Low
 | Reproduced by test. Open.
+
+| *F-9* `ConcurrentStartupLosesInstances`
+| Several processors starting at the same instant against a shared JDBC token store race to create the store's
+  identifier row. One wins; the rest get a primary-key violation that the store turns into a startup failure instead
+  of re-reading the row that now exists, so all but one instance fails to start. Measured: 3 of 4.
+| High
+| *Reproduced by test.* Open.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -621,3 +628,99 @@ The after-commit arm asserts that a rollback was requested and carried `afterCom
 the committed events stayed in the store. The harness records such a rollback as having discarded
 nothing, keeping the offered identifiers under `offeredEventIds`, which is what keeps
 `RolledBackEventsNeverObservable` a real oracle instead of a source of false alarms.
+
+== F-9 -- Starting several processors at once against a shared JDBC token store loses all but one
+
+*Severity:* High +
+*Status:* Open. *Reproduced by test.* +
+*Claims:* C18, C36, M16 +
+*Backend verdict vector:* `hsqldb-tokens:FAIL`, `in-memory:N/A (the in-heap token store keeps no identifier row)`
+
+=== What is wrong
+
+Starting a `PooledStreamingEventProcessor` begins by asking its token store for a storage identifier. A
+`JdbcTokenStore` keeps that identifier in a row of the token table and creates it lazily, the first time anybody asks:
+it selects the row, and inserts one if the select found nothing.
+
+That read-then-write is not atomic and is not guarded. When several instances of an application start at the same
+instant against the same token table, several of them select nothing and several of them insert the same primary key.
+One insert wins. Every other gets a constraint violation, which `initializeConfigToken` wraps in an
+`UnableToRetrieveIdentifierException` and rethrows -- without re-reading the row that, by then, definitely exists.
+`PooledStreamingEventProcessor.start()` chains straight off that call, so the future it returns completes
+exceptionally and the processor never starts.
+
+The exception's own message is `"Exception while attempting to initialize the config token. It may have been
+concurrently initialized."` The race was anticipated at the point where it is thrown and is still allowed to reach the
+caller.
+
+=== Evidence
+
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jdbc/JdbcTokenStore.java:161-169` -- `retrieveStorageIdentifier` selects, then initialises when the select found nothing
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jdbc/JdbcTokenStore.java:183-195` -- `initializeConfigToken` catches the `SQLException` and rethrows it as `UnableToRetrieveIdentifierException`, with no re-read
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/PooledStreamingEventProcessor.java:189-195` -- `start()` is `unitOfWork.executeWithResult(tokenStore::retrieveStorageIdentifier).thenAccept(...).thenCompose(...)`, so the failure fails the start
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/JpaTokenStore.java` -- the JPA store keeps the same config-token design, so the same race is expected there; not measured
+
+=== Why it matters
+
+This is the first-deploy and rolling-restart case, and it is exactly the deployment shape the token store exists for.
+Bring four instances of an Axon application up together against a fresh database and three of them fail to start.
+There is no retry, no warning and no degraded mode: `start()` completes exceptionally, and what happens next is
+whatever the surrounding application does with a failed startup. A supervised deployment restarts the failed
+processes and recovers on the second attempt, which is why this can go unnoticed in production and show up only as
+"the first deploy always flaps".
+
+It also blocks anything downstream of it from being tested. Because it serialises the boot, the segment-creation race
+that follows never happens: one node comes up while the others are failing, and it has created every segment by the
+time they retry.
+
+=== How it was found
+
+By testing. The scenario `concurrent_bootstrap_initializes_segments_exactly_once` boots four nodes from a barrier
+against an empty store, and the first run of it did not reach its oracles at all -- three of the four processors
+threw out of `start()`. The stack ended in an HSQLDB `SQLIntegrityConstraintViolationException` on `TOKENENTRY`.
+
+=== Candidate fix
+
+Re-read on conflict. `initializeConfigToken` already knows the insert failed because somebody else got there first;
+selecting the row again and returning it is the whole fix, and it is three lines:
+
+[source,java]
+----
+private ConfigToken initializeConfigToken(Connection connection) {
+    try {
+        return (ConfigToken) insertTokenEntry(connection, new ConfigToken(...), CONFIG_TOKEN_ID, CONFIG_SEGMENT);
+    } catch (SQLException e) {
+        ConfigToken concurrent = retrieveConfigToken(connection);
+        if (concurrent != null) {
+            return concurrent;
+        }
+        throw new UnableToRetrieveIdentifierException("...", e);
+    }
+}
+----
+
+The same treatment belongs on the JPA store. A durable guard is worth more than either: a test that starts N
+processors simultaneously against one token store and asserts that all N come up.
+
+=== Reproduce
+
+[source,bash]
+----
+./mvnw -Phunt -pl simulation -am test -Dtest=ClaimCapableBackendTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Measured output: `F-9: 3 of 4 simultaneous storage-identifier resolutions failed`.
+
+The test asserts that at least one of the four fails, because the suite records the framework's current behaviour and
+never patches it. It flips red the day a simultaneous boot stops costing instances, and that flip is the signal to
+close this entry rather than a test to repair.
+
+=== What the harness does about it, and why that is not a fix
+
+`HuntWorld` resolves the storage identifier once, on one node, before releasing the others from the boot barrier, and
+`HuntNode` records a failed start and gives the node one more try. Neither touches framework code. The first is there
+because without it the segment-creation race is unreachable -- every multi-node scenario would stop at this one
+defect instead of testing what it was written for. The second is what a supervised deployment does with a process
+that died on startup. Both are stated here so that nobody reads a green cluster run as evidence that F-9 is closed:
+the only thing that closes it is the expected-gap test above going red.

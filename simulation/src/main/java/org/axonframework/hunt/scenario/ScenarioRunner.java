@@ -111,7 +111,7 @@ public final class ScenarioRunner {
         HuntBackend backend = HuntBackend.byName(scenario.backend());
         HistoryHeader header = HistoryHeader.of(scenario.id(), seed, scenario.backend(),
                                                 scenario.timescale().name(),
-                                                shapeOf(scenario, workload, tier, seed, budget));
+                                                shapeOf(scenario, workload, backend, tier, seed, budget));
         Path historyFile = historyDirectory.resolve(scenario.id() + "-" + seed + ".jsonl");
         Deadline deadline = Deadline.in("scenario " + scenario.id() + " seed " + seed, budget.wallBudget());
         Buggify buggify = new Buggify(seed, scenario.buggifyProbability());
@@ -125,10 +125,13 @@ public final class ScenarioRunner {
             if (scenario.buggifyProbability() > 0.0) {
                 buggify.activate();
             }
-            try (HuntWorld world = HuntWorld.start(backend, workload, seed, budget.commands(), recorder, buggify,
-                                                   scenario.timescale(), scenario.determinism(), deadline)) {
+            try (HuntWorld world = HuntWorld.start(backend, workload, seed, budget.commands(), scenario.nodes(),
+                                                   recorder, buggify, scenario.timescale(), scenario.determinism(),
+                                                   deadline)) {
                 drive(scenario, workload, world, harness, recorder, deadline, notes, faultFires);
                 harness.info(HistoryOps.SCAN, null, Map.of(DcbHistoryCodec.EVENT_IDS, scan(world)));
+                harness.info(HistoryOps.INIT_SEGMENTS, "final",
+                             Map.of(HistoryOps.SEGMENT, world.knownSegments()));
                 harness.info(HistoryOps.PHASE, null, Map.of(PHASE, "verdict"));
             }
             if (scenario.buggifyProbability() > 0.0) {
@@ -259,9 +262,14 @@ public final class ScenarioRunner {
             notes.add("The workload had not finished issuing its commands when the run's budget expired.");
         }
 
+        // Recorded after the wait rather than before it, because whether the read side caught up is the thing a
+        // delivery or liveness oracle has to know: judging an event as lost while the projection was still catching
+        // up is a finding about the run's budget, not about the framework.
+        boolean quiesced = settle(workload, context, scenario.faults().settle(), deadline);
         harness.info(HistoryOps.PHASE, null, Map.of(PHASE, "settle",
-                                                    "settleMs", scenario.faults().settle().toMillis()));
-        if (!settle(workload, context, scenario.faults().settle(), deadline)) {
+                                                    "settleMs", scenario.faults().settle().toMillis(),
+                                                    HistoryOps.QUIESCED, quiesced));
+        if (!quiesced) {
             notes.add("The read side had not caught up with the store within the settle budget.");
         }
 
@@ -357,6 +365,7 @@ public final class ScenarioRunner {
 
     private static Map<String, String> shapeOf(Scenario scenario,
                                                Workload workload,
+                                               HuntBackend backend,
                                                Tier tier,
                                                long seed,
                                                TierBudget budget) {
@@ -368,6 +377,12 @@ public final class ScenarioRunner {
         shape.put("buggifyProbability", String.valueOf(scenario.buggifyProbability()));
         shape.put("claims", String.join(",", new java.util.TreeSet<>(scenario.claims())));
         shape.put("requiredOracles", String.join(",", new java.util.TreeSet<>(scenario.oracles())));
+        shape.put("nodes", String.valueOf(scenario.nodes()));
+        shape.put("deliveryMode", scenario.deliveryMode().name());
+        shape.put("livenessHorizonMs", String.valueOf(scenario.livenessHorizon().toMillis()));
+        // Without this an ownership oracle cannot tell a store that granted every claim correctly from one that has
+        // no notion of a claim to grant, and would report the second as verified.
+        shape.put("tokenStoreArbitratesClaims", String.valueOf(backend.arbitratesTokenClaims()));
         return Map.copyOf(shape);
     }
 

@@ -32,18 +32,15 @@ import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * One wired, running Axon Framework, for the duration of one scenario run.
@@ -60,6 +57,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * offer is a per-run clock on the token-claim path, which reads a process-global static; nothing at this layer
  * depends on it, and no attempt is made here to pretend otherwise.
  * <p>
+ * <b>One world, one or many nodes.</b> A node is a framework instance with its own processor, its own threads and its
+ * own token-store identity; every node shares the one event store, the one token store and the one read model, which
+ * is what a cluster of one application over one database is. A single-node run is the same code with the loop running
+ * once, so nothing about the layer below has to know which it is. The nodes are started together rather than one
+ * after another, because a cluster booted in sequence never produces the race a first deployment produces.
+ * <p>
  * The world is also the {@link FaultSite}: it is the only way a fault reaches anything.
  *
  * @author Stefan Dragisic
@@ -71,6 +74,7 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
     private static final int REAL_THREAD_SEGMENTS = 4;
     private static final int REAL_THREAD_WORKERS = 4;
     private static final int PROJECTION_BATCH_SIZE = 64;
+    private static final Duration START_TIMEOUT = Duration.ofSeconds(30);
 
     private final HuntBackend backend;
     private final EventStorageEngine engine;
@@ -80,9 +84,8 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
     private final PausePoint pauses = new PausePoint();
     private final Buggify buggify;
     private final HuntTimescale timescale;
-    private final ScheduledExecutorService coordinatorExecutor;
-    private final ScheduledExecutorService workerExecutor;
-    private final PooledStreamingEventProcessor processor;
+    private final TokenStores tokenStores;
+    private final List<HuntNode> nodes;
     private final WorkloadContext context;
     private final List<String> participants;
     private final DeterminismMode determinism;
@@ -91,6 +94,7 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
                       Workload workload,
                       long seed,
                       int commands,
+                      int nodeCount,
                       HistoryRecorder recorder,
                       Buggify buggify,
                       HuntTimescale timescale,
@@ -112,26 +116,44 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
 
         int workers = mode == DeterminismMode.SINGLE_THREADED ? 1 : REAL_THREAD_WORKERS;
         int segments = mode == DeterminismMode.SINGLE_THREADED ? 1 : REAL_THREAD_SEGMENTS;
-        this.coordinatorExecutor = Executors.newScheduledThreadPool(1, named("hunt-coordinator"));
-        this.workerExecutor = Executors.newScheduledThreadPool(workers, named("hunt-worker"));
+        this.tokenStores = backend.createTokenStores(seed + "-" + System.identityHashCode(this),
+                                                     timescale.tokenStoreClaimTimeout());
 
-        PooledStreamingEventProcessorConfiguration processorConfiguration =
-                new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null))
-                        .eventSource(eventStore)
-                        .tokenStore(new InMemoryTokenStore())
-                        .coordinatorExecutor(coordinatorExecutor)
-                        .workerExecutor(workerExecutor)
-                        .initialSegmentCount(segments)
-                        .initialToken(source -> source.firstToken(null))
-                        .tokenClaimInterval(timescale.tokenClaimInterval().toMillis())
-                        .claimExtensionThreshold(timescale.claimExtensionThreshold().toMillis())
-                        .batchSize(PROJECTION_BATCH_SIZE);
-        this.processor = new PooledStreamingEventProcessor(PROCESSOR_NAME, List.of(projection),
-                                                           processorConfiguration);
+        // Without a cap the first node to reach the store claims every segment and the rest of the cluster sits idle:
+        // the shipped maximum is Short.MAX_VALUE, so nothing pushes work outwards. A cluster whose segments all live
+        // on one node is a single-node run with extra threads, and no ownership question arises in it. Sharing the
+        // segments out evenly is the configuration a real multi-instance deployment uses and the only one in which
+        // ownership means anything.
+        int maxSegmentsPerNode = Math.max(1, segments / nodeCount);
+
+        List<HuntNode> built = new ArrayList<>(nodeCount);
+        for (int index = 0; index < nodeCount; index++) {
+            String nodeId = "node-" + index;
+            built.add(new HuntNode(nodeId,
+                                   PROCESSOR_NAME,
+                                   projection,
+                                   tokenStores.forNode(nodeId),
+                                   pauses,
+                                   recorder,
+                                   () -> configuration(segments, nodeCount == 1 ? segments : maxSegmentsPerNode),
+                                   workers));
+        }
+        this.nodes = List.copyOf(built);
+    }
+
+    private PooledStreamingEventProcessorConfiguration configuration(int segments, int maxSegmentsPerNode) {
+        return new PooledStreamingEventProcessorConfiguration(new EventProcessorConfiguration(PROCESSOR_NAME, null))
+                .eventSource(eventStore)
+                .initialSegmentCount(segments)
+                .maxClaimedSegments(maxSegmentsPerNode)
+                .initialToken(source -> source.firstToken(null))
+                .tokenClaimInterval(timescale.tokenClaimInterval().toMillis())
+                .claimExtensionThreshold(timescale.claimExtensionThreshold().toMillis())
+                .batchSize(PROJECTION_BATCH_SIZE);
     }
 
     /**
-     * Wires and starts a world.
+     * Wires and starts a single-node world.
      *
      * @param backend  the store the run is driven against
      * @param workload the load to install; its command handlers and projection are registered here
@@ -153,6 +175,34 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
                                   HuntTimescale timescale,
                                   DeterminismMode mode,
                                   Deadline deadline) {
+        return start(backend, workload, seed, commands, 1, recorder, buggify, timescale, mode, deadline);
+    }
+
+    /**
+     * Wires a world of {@code nodeCount} nodes and starts all of them at once.
+     *
+     * @param backend   the store the run is driven against
+     * @param workload  the load to install; its command handlers and projection are registered here
+     * @param seed      the seed fixing the workload's shape
+     * @param commands  how many commands the run will issue
+     * @param nodeCount how many framework instances share the run's store and token store
+     * @param recorder  the recorder every operation is written to
+     * @param buggify   the scheduling-bias points, inert unless a scenario arms them
+     * @param timescale the timings the processors are configured with
+     * @param mode      how much of the run's scheduling to pin down
+     * @param deadline  the run's wall-clock stop
+     * @return a started world
+     */
+    public static HuntWorld start(HuntBackend backend,
+                                  Workload workload,
+                                  long seed,
+                                  int commands,
+                                  int nodeCount,
+                                  HistoryRecorder recorder,
+                                  Buggify buggify,
+                                  HuntTimescale timescale,
+                                  DeterminismMode mode,
+                                  Deadline deadline) {
         Objects.requireNonNull(backend, "The backend cannot be null.");
         Objects.requireNonNull(workload, "The workload cannot be null.");
         Objects.requireNonNull(recorder, "The recorder cannot be null.");
@@ -160,10 +210,99 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         Objects.requireNonNull(timescale, "The timescale cannot be null.");
         Objects.requireNonNull(mode, "The mode cannot be null.");
         Objects.requireNonNull(deadline, "The deadline cannot be null.");
-        HuntWorld world = new HuntWorld(backend, workload, seed, commands, recorder, buggify, timescale, mode,
-                                        deadline);
-        world.processor.start().orTimeout(30, TimeUnit.SECONDS).join();
+        if (nodeCount < 1) {
+            throw new IllegalArgumentException("A world needs at least one node, but " + nodeCount + " was asked for.");
+        }
+        HuntWorld world = new HuntWorld(backend, workload, seed, commands, nodeCount, recorder, buggify, timescale,
+                                        mode, deadline);
+        world.bootTogether();
         return world;
+    }
+
+    /**
+     * Starts every node from its own thread, all released at the same instant.
+     * <p>
+     * Calling {@code start()} on each node in turn looks concurrent and is not: the first node's coordinator has
+     * created and claimed every segment before the loop reaches the second, and the cluster boots in single file.
+     * That was measured on this harness -- with a sequential loop, exactly one of four nodes ever attempted to create
+     * the segments, so the arm built to observe a bootstrap race observed no race at all. Releasing the calls from a
+     * barrier is what makes the first deployment a first deployment.
+     */
+    private void bootTogether() {
+        if (nodes.size() == 1) {
+            nodes.getFirst().start().orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
+            return;
+        }
+        nodes.getFirst().resolveStorageIdentifier().orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch ready = new CountDownLatch(nodes.size());
+        List<CompletableFuture<Void>> started = new ArrayList<>(nodes.size());
+        for (HuntNode node : nodes) {
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            started.add(future);
+            Thread starter = new Thread(() -> {
+                ready.countDown();
+                try {
+                    release.await();
+                    // A node that cannot start is recorded and left down, not thrown out of the run. A deployment
+                    // where some instances failed to come up is a real state of the world and the interesting one;
+                    // aborting here would replace a run the oracles can judge with a stack trace nobody can.
+                    node.startOrRecordFailure().orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    // Already recorded by the node.
+                }
+                future.complete(null);
+            }, node.nodeId() + "-boot");
+            starter.setDaemon(true);
+            starter.start();
+        }
+        try {
+            if (!ready.await(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("Not every node reached the boot barrier within "
+                                                        + START_TIMEOUT + ".");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for the boot barrier.", e);
+        }
+        release.countDown();
+        CompletableFuture.allOf(started.toArray(CompletableFuture[]::new))
+                         .orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                         .join();
+        if (nodes.stream().noneMatch(HuntNode::isRunning)) {
+            throw new IllegalStateException("No node of the cluster started, so there is nothing to run.");
+        }
+    }
+
+    /**
+     * Returns the run's nodes, in the order they were created.
+     *
+     * @return the nodes; a single-node run returns one
+     */
+    public List<HuntNode> nodes() {
+        return nodes;
+    }
+
+    /**
+     * Returns the segments the run's token store holds, as the store itself reports them.
+     * <p>
+     * This is the authoritative answer to what a bootstrap produced, and the only one: the history says how many
+     * initialisations were attempted and which of them the store accepted, which is not the same as how many rows
+     * the store ended up with. Asking is what turns "exactly once" from an inference into a measurement.
+     *
+     * @return the segment identifiers, ascending
+     */
+    public List<Integer> knownSegments() {
+        return nodes.getFirst()
+                    .segments()
+                    .orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                    .join()
+                    .stream()
+                    .map(org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment::getSegmentId)
+                    .sorted()
+                    .toList();
     }
 
     /**
@@ -245,39 +384,32 @@ public final class HuntWorld implements FaultSite, AutoCloseable {
         return participants;
     }
 
+    @Override
+    public List<String> nodeNames() {
+        return nodes.stream().map(HuntNode::nodeId).toList();
+    }
+
+    @Override
+    public void crashNode(String nodeId) {
+        nodes.stream().filter(node -> node.nodeId().equals(nodeId)).forEach(HuntNode::crash);
+    }
+
+    @Override
+    public void restartNode(String nodeId) {
+        nodes.stream()
+             .filter(node -> node.nodeId().equals(nodeId))
+             .forEach(node -> node.restart().orTimeout(START_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join());
+    }
+
     /**
-     * Stops the processor and releases every thread and every store the run held.
+     * Stops every node and releases every thread and every store the run held.
      */
     @Override
     public void close() {
         pauses.resumeAll();
-        try {
-            processor.shutdown().orTimeout(30, TimeUnit.SECONDS).join();
-        } catch (RuntimeException e) {
-            // A processor that will not stop is a finding about the processor, not a reason to leak the threads
-            // below; the failure is visible in the run's own liveness accounting.
-        }
-        shutdown(coordinatorExecutor);
-        shutdown(workerExecutor);
+        nodes.forEach(HuntNode::close);
+        tokenStores.close();
         backend.release(engine);
-    }
-
-    private static void shutdown(ScheduledExecutorService executor) {
-        executor.shutdownNow();
-        try {
-            executor.awaitTermination(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private static ThreadFactory named(String prefix) {
-        AtomicInteger counter = new AtomicInteger();
-        return runnable -> {
-            Thread thread = new Thread(runnable, prefix + "-" + counter.getAndIncrement());
-            thread.setDaemon(true);
-            return thread;
-        };
     }
 
     /**

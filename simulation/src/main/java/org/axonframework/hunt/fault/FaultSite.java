@@ -62,4 +62,38 @@ public interface FaultSite {
      * @return the participant names, in a stable order
      */
     java.util.List<String> participants();
+
+    /**
+     * Returns the framework nodes the run has, so a fault can pick one to break.
+     * <p>
+     * A node is a different kind of target from a workload participant: a participant writes, a node reads and holds
+     * the claims that let it. The default is empty, which is what a site with no cluster has.
+     *
+     * @return the node identities, in a stable order
+     */
+    default java.util.List<String> nodeNames() {
+        return java.util.List.of();
+    }
+
+    /**
+     * Drops the named node without releasing anything it holds.
+     * <p>
+     * The default does nothing, which is what a site with no cluster can do.
+     *
+     * @param nodeId the node to drop
+     */
+    default void crashNode(String nodeId) {
+        // A site with no cluster has no node to crash.
+    }
+
+    /**
+     * Brings the named node back under the same identity.
+     * <p>
+     * The default does nothing, which is what a site with no cluster can do.
+     *
+     * @param nodeId the node to bring back
+     */
+    default void restartNode(String nodeId) {
+        // A site with no cluster has no node to restart.
+    }
 }

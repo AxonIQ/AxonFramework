@@ -727,3 +727,209 @@ the differential are what catch those.
 | A canary against the read side | Every mutation so far is in the storage engine. Mutating `messaging` needs the arms that would catch it -- claim handover, split, merge, replay -- and those need a claim-capable token store. | the phase that adds one |
 | `hunt-fuzz` and `hunt-chaos` CI jobs | Stubbed as comments in `.github/workflows/hunt.yml` rather than as disabled jobs, because a scheduled job that exists and does nothing reads as coverage. | P3 |
 | A per-backend verdict vector | One backend ships; a vector needs two. | P3 |
+
+---
+
+# Phase P2a -- the L2 multi-node layer
+
+## 1. Determinism seams (continued)
+
+### 1.8 A cluster is where the last of the reproducibility goes
+
+Measured, full table and verbatim output in `formal/INVARIANTS.md` section 2.1b. The short version: four nodes over
+one store reproduce nothing at all, and the new axis is visible directly in the diff --
+`node-2/claim/FAIL=2 against 1`. Which node wins a segment is not a function of the seed, and neither is how many
+times a claim is refused, so nothing downstream of segment assignment is either.
+
+There is no single-threaded cluster arm and there should not be one. Four coordinators against one database is the
+thing being measured.
+
+### 1.9 The token store's claim timeout does not travel with the other compressed timings
+
+`tokenClaimInterval` and `claimExtensionThreshold` are processor settings and go through
+`PooledStreamingEventProcessorConfiguration`. The claim timeout is a **store** setting
+(`JdbcTokenStoreConfiguration.claimTimeout`), so the backend has to be told it. That is why
+`HuntBackend.createTokenStores` takes it as a parameter rather than reading it from anywhere.
+
+It matters for more than wiring: `OwnershipChecker` derives when a claim lapsed from
+`tokenStoreClaimTimeoutMs` in the history header. A store configured with the shipped ten seconds while the header
+says a compressed hundred milliseconds would make every legitimate handover look like an overlap.
+
+### 1.10 A hundred-millisecond claim timeout does not survive a real database
+
+`HuntTimescale.compressed()` sets it to 100 ms, which is fine against a store that answers in nanoseconds. Over a
+JDBC round trip the owner's extension is still in flight when its own claim lapses, and the run turns into four
+nodes stealing from each other continuously. The cluster arms use
+`HuntTimescale.compressed().withClaimTimings(Duration.ofSeconds(2), Duration.ofMillis(400))`, which keeps the 5:1
+ratio between the timeout and the extension threshold that the compression exists to preserve.
+
+## 2. API traps (continued)
+
+### 2.20 `JdbcTokenStore` wants a `TransactionalExecutorProvider`, and the framework's one throws without Spring
+
+The constructor is
+`JdbcTokenStore(TransactionalExecutorProvider<Connection>, Converter, JdbcTokenStoreConfiguration)` -- not a
+`DataSource` and not a `ConnectionProvider`. The provider the framework ships,
+`JdbcTransactionalExecutorProvider`, has two branches: with a `null` `ProcessingContext` it opens and commits its own
+connection, and with a non-null one it demands a connection executor already attached to the context, throwing
+`IllegalStateException` when there is none
+(`messaging/src/main/java/org/axonframework/messaging/core/unitofwork/transaction/jdbc/JdbcTransactionalExecutorProvider.java:67-76`).
+
+`PooledStreamingEventProcessor` always passes a context, and the only thing in the tree that attaches the executor is
+Spring's `SpringTransactionManager`. A plain-Java harness therefore needs its own three-line provider that ignores the
+context and delegates to the no-context branch. That is not a workaround for a defect: it is the split-resource
+deployment, where each token operation is its own transaction, which is exactly the arm whose delivery guarantee is
+at-least-once.
+
+### 2.21 The converter is a separate constructor argument, and `new JacksonConverter()` already compiles
+
+`JdbcTokenStoreConfiguration` has three components and none of them is a converter; the class Javadoc mentioning a
+`contentType` default is stale. The `Converter` is the second constructor argument and is a hard requirement. It has
+to be able to do `converter.convert(token, byte[].class)`, so `PassThroughConverter` and a bare
+`ChainingContentTypeConverter` are both unusable. `new JacksonConverter()` works and needs no dependency added:
+`axon-conversion` declares Jackson at compile scope and `axon-messaging` depends on it.
+
+### 2.22 `GenericTokenTableFactory.INSTANCE` is the HSQLDB schema too
+
+There is no HSQL-specific token table factory, and none is needed: the generic DDL is
+`CREATE TABLE IF NOT EXISTS TokenEntry (... token BLOB NULL ...)`, which HSQLDB accepts. The three shipped factories
+have `protected` constructors, so use `.INSTANCE`.
+
+### 2.23 An HSQLDB in-memory catalogue outlives its last connection
+
+`jdbc:hsqldb:mem:<name>` keeps the database alive after every connection closes, so a suite that creates one per run
+leaks for the length of the build. Execute `SHUTDOWN` when the run releases the store.
+
+### 2.24 `PooledStreamingEventProcessorConfiguration` is mutable and its setters return `this`
+
+It reads like a builder and is not one: every setter mutates the instance. A cluster must therefore build **one
+configuration per node** -- sharing a template and calling `.coordinatorExecutor(...)` on it per node silently gives
+every node the last node's executors.
+
+### 2.25 Nothing spreads segments across nodes by default
+
+`maxSegmentProvider` defaults to `Short.MAX_VALUE`, so the first coordinator to reach the store claims every segment
+and the rest of the cluster idles. It is not a defect -- the default is documented -- but a multi-node scenario that
+does not cap it is a single-node scenario with extra threads, and no ownership question arises in it. `HuntWorld`
+caps a multi-node run at `segments / nodes`.
+
+### 2.26 Only one node ever attempts the segment initialisation if you start them in a loop
+
+`nodes.stream().map(HuntNode::start)` looks concurrent and is not: the stream is sequential and the first node's
+coordinator has created and claimed everything before the second `start()` is called. Measured: one of four nodes
+attempted the initialisation. Released from a `CountDownLatch` barrier instead, all four attempt it and six of the
+pairs overlap in time.
+
+## 3. Commands that worked (continued)
+
+```bash
+# The cluster arm and its race evidence.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ConcurrentBootstrapTest
+
+# The claim-capable backend: the inheritance proof and the F-9 expected-gap test.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=ClaimCapableBackendTest
+
+# What a cluster does to reproducibility. Prints the diff; asserts nothing it has not measured.
+./mvnw -q -Phunt -pl simulation -o test -Dtest=DeterminismProbeTest
+```
+
+## 4. Design decisions and their reasons (continued)
+
+### 4.26 A crashed node must not throw at anybody
+
+The first version of `HuntNode.crash()` called `shutdownNow()` on the node's executors and left the default rejection
+policy in place. That produced `RejectedExecutionException` **inside an unrelated writer's commit**, which rolled the
+writer's transaction back and made the arm report four `RolledBackEventsNeverObservable` violations that were
+entirely the harness's doing.
+
+The mechanism is worth remembering because it will recur with any in-heap shared store: a commit notifies the store's
+open streams inline, on the committing thread, and one of those streams belongs to the dead node's coordinator. A
+real crashed process is simply not there to be notified. `crash()` therefore installs
+`ThreadPoolExecutor.DiscardPolicy` before shutting the executors down, so work handed to a dead node vanishes instead
+of exploding.
+
+### 4.27 A crash does not shut the processor down, on purpose
+
+`processor.shutdown()` releases the node's claims, which is the one thing a crash never does. The whole reason the
+claim algebra exists is the state where an owner has stopped extending and has not given anything back.
+`HuntNode.crash()` drops the threads and abandons the processor; `close()` skips a crashed node, because asking a
+processor whose threads are gone to shut down cleanly waits for workers that will never run again.
+
+### 4.28 The harness works around F-9, and says so in three places
+
+Four processors starting at once against one JDBC token store cost three of them their start (F-9). Left alone, that
+serialises the boot and hides the segment race the scenario was written for. `HuntWorld` therefore resolves the
+storage identifier once before releasing the barrier, and `HuntNode` records a failed start and retries once.
+
+Neither is a framework patch, and both are documented in `FINDINGS.adoc` under F-9, in `HuntNode`'s Javadoc, and here,
+precisely so that a green cluster run is never read as evidence that F-9 is closed. The only thing that closes it is
+`ClaimCapableBackendTest` going red.
+
+### 4.29 Ownership intervals are derived conservatively, and the direction matters
+
+An interval starts when the store **answered** and expires from when the node **asked**. The claim was really granted
+somewhere between the two, so the narrow reading can only ever under-report an overlap. A checker that occasionally
+misses a violation costs a run; one that invents a violation costs a week of somebody's time chasing a defect that is
+not there.
+
+The one case that needed care: the same owner may always re-take its own claim, expired or not, so a grant to a node
+whose previous interval had already lapsed must open a **fresh** interval. Treating it as one long interval turns an
+ordinary re-claim into a manufactured overlap. `OwnershipCheckerTest` pins both directions.
+
+### 4.30 A permitted duplicate is reported, and the report costs the run its pass
+
+`DeliveryChecker` does not raise a violation for a repeated delivery inside a recovery window when the run declares
+at-least-once: the framework says a stolen claim may cause an event to be handled twice. It does report the
+distribution, and a report downgrades the verdict to undecided. That is deliberate. A projection that applied a
+transfer twice is a fact somebody should look at even where the deployment permits it, and a checker that stayed
+silent about it would be the reason nobody ever did.
+
+### 4.31 Loss and lateness are two oracles, not one
+
+`DeliveryChecker` owns whether an event arrived; `LivenessChecker` owns how long it took. The first version had the
+liveness checker also report undelivered events, and every ordinary run lit up: it was counting the events of
+*rejected* commits, whose eventIds are on the commit's invocation record even though the commit failed. Two lessons,
+both cheap to re-learn the hard way -- filter commits by outcome, and never let two oracles report one fact.
+
+### 4.32 The liveness horizon's basis is the coordinator's idle re-poll, not a measurement
+
+The coordinator re-polls an idle stream every five hundred milliseconds, hardcoded, and it does not compress
+(`Coordinator.java:983`). An event committed just after a coordinator went idle waits for that re-poll before anybody
+looks at it, so no honest horizon can sit below it. The cluster arms declare two seconds, which is four times it. The
+alternative -- taking a multiple of the slowest latency the arm happened to produce -- is circular and drifts upwards
+every time somebody's laptop is busy.
+
+## 5. Deferred to later phases (continued)
+
+| Deferred | Why | Owner |
+|---|---|---|
+| Scenarios S4, S8, S9 | The cluster harness, the claim-capable backend and the ownership, delivery and liveness oracles they need all ship here. S4 additionally needs a skew emulation, which is a decorator over the token store that offsets one node's timestamps, and which must be described as an emulation everywhere it appears. | P2b |
+| Real per-node clock skew | Impossible in one JVM through `ClockUtils` (F-4). The `ownershipSkewAllowance` field exists and is zero in both timescale arms; a skew arm sets it and must state exactly what its emulation does and does not model. | P2b |
+| Attributing a delivery to the node that made it | `DeliveryChecker` matches a repeated delivery against any open recovery window rather than the window of the segment it belonged to, because a delivery record carries no node. The projection is shared across nodes and the per-node wrapper that could stamp one exists; it was not done because the imprecision only widens the permitted set and never narrows it. | P2b, if a duplicate is ever attributed wrongly |
+| An exactly-once arm | No deployment in this tree shares a transactional resource between the token store and a read model, so declaring the mode would be declaring something the deployment cannot provide. The branch is exercised by `DeliveryCheckerTest` only, and the registry says so. | P3, on the Postgres same-database arm |
+| A DCB-native persistent event store | The claim-capable backend changes the **token** store only; events still go to the in-heap engine, because no store in this tree speaks the Dynamic Consistency Boundary protocol over JDBC. A real cross-backend event-store differential needs Axon Server or the commercial Postgres engine. | P3 |
+| The JPA token store's version of F-9 | `JpaTokenStore` keeps the same config-token design, so the same race is expected there. Not measured, and not claimed. | whoever adds a JPA backend |
+
+### 4.33 The green-but-broken audit for the bootstrap arms, and what it found
+
+Run before claiming any verdict for S15. Recorded here because the next phase will run the same list against S4, S8
+and S9, and because two of the rows came back short.
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| The workload really ran | 600 commands issued per seed, 250-267 committed, the rest rejected by the conflict check on hot accounts | ok |
+| The oracle really ran | 4 nodes recorded claim traffic in every seed, and canary C5 turned this exact arm red with 72 `AtMostOneSegmentOwner` violations. That is the only proof of an oracle worth having. | ok |
+| Deliveries add up | commits-ok x 2 events = deliveries exactly, per seed (267 -> 534, 250 -> 500, 256 -> 512): no loss and no repeats | ok |
+| The fault really landed | churn arm: `node-crash=1`, with `crashed` and `restarted` both in the history for every seed | ok |
+| The fault did not no-op | the crash is only recorded when it took down a node that was running; the crashed node's coordinator stops appearing and its claims stay in the table | ok |
+| No clock-skew masking | every latency is a difference of two `logicalTs` values, which come from one monotonic source; `wallTs` is never used for ordering or timing | ok |
+| Recovery completed | node-1 crashed at record 18, restarted at record 432, took a claim again immediately afterwards, and 496 deliveries followed | ok |
+| No silent error suppression | the run logs 21 `UnableToClaimTokenException` and 21 `SQLIntegrityConstraintViolationException`, all of them the losers of the segment-initialisation race, and all of them recorded as failed `init-segments` operations that the oracle sees. Zero `UnableToRetrieveIdentifierException`, which is the pre-resolution doing its job. | ok |
+| Baseline is fair | the harness changed, so it was re-baselined: 144 tests before, 181 after, with the same 144 still green | ok |
+| One pass is not a pass | 3 seeds per arm, same verdict on all of them | ok |
+| **Only one topology** | four nodes over four segments, and nothing else. A defect needing five nodes, or more segments than nodes, would not surface. | **short** |
+| **One crash per run** | the churn arm crashes one node once. Repeated failover is the hardening shape and this is the smoke shape. | **short** |
+
+The last two rows cap what may honestly be claimed for S15 at the smoke tier. They are not defects in the arm; they
+are the difference between a smoke budget and a hardening one, and quoting a hardening verdict off this run would be
+the exact overclaim the audit exists to prevent.

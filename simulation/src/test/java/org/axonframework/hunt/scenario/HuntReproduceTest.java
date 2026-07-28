@@ -59,7 +59,10 @@ class HuntReproduceTest {
                                          declared.buggifyProbability(),
                                          declared.oracles(),
                                          seed,
-                                         declared.budgets());
+                                         declared.budgets(),
+                                         declared.nodes(),
+                                         declared.deliveryMode(),
+                                         declared.livenessHorizon());
 
         // when it is replayed
         ScenarioResult result = ScenarioRunner.run(scenario, tier, seed, HuntHistories.directory("reproduce"));

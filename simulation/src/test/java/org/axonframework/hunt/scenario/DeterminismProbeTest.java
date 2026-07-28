@@ -75,6 +75,28 @@ class DeterminismProbeTest {
     }
 
     @Nested
+    class WithFourNodesSharingOneStore {
+
+        @Test
+        void reportsWhatTwoRunsOfOneSeedAgreedOn() {
+            // given the shipped cluster arm, which is the whole of what the multi-node layer adds
+            Scenario scenario = HuntScenarios.concurrentBootstrap();
+
+            // when the same seed is run twice and the two histories are diffed
+            DeterminismProbe.Reading reading =
+                    DeterminismProbe.probe(scenario, Tier.SMOKE, scenario.seed(),
+                                           HuntHistories.directory("determinism-cluster"));
+            System.out.println(reading);
+
+            // then both runs must at least have been real clusters, or the measurement is of something else; what
+            // the two runs agreed on is reported rather than asserted, because a cluster is where the last of the
+            // reproducibility goes and pretending otherwise is how a suite starts lying about its own seeds
+            assertThat(reading.determinism()).isEqualTo("REAL_THREADS");
+            assertThat(reading.differences()).as("reported differences: %s", reading).isNotNull();
+        }
+    }
+
+    @Nested
     class WithASingleWriterAndSingleThreadedExecutors {
 
         @Test

@@ -179,13 +179,132 @@ run of that arm.
 
 ---
 
+## Campaign of 2026-07-28 (L2, claim-capable backend)
+
+Two mutations, both in `messaging` rather than in the storage engine, aimed at the two oracles the multi-node layer
+added. The recipe is the same as above with `messaging` in place of `eventsourcing`:
+
+```bash
+./mvnw -q -o -pl messaging -am install -DskipTests   # after mutating
+./mvnw -q -Phunt -pl simulation -o test               # measure
+git checkout -- messaging                             # revert, always
+./mvnw -q -o -pl messaging -am install -DskipTests    # restore
+```
+
+| # | Mutation | Should be caught by | Caught? | Tier / seeds | Violations raised |
+|---|---|---|---|---|---|
+| C5 | Any node may claim a segment another node already holds | `AtMostOneSegmentOwner` | **yes** | SMOKE, fixed set | 72 `AtMostOneSegmentOwner`, 24 `LedgerConservesTotalBalance`, 24 `ProjectionMatchesFoldOfCommittedEvents`, 15 `AppendConformsToDcbModel`, 5 `LedgerBalanceNeverNegative` |
+| C6 | A batch's handler effects commit but this cycle's token progress does not | `DuplicateDeliveryOnlyInsideRecoveryWindow` | **no -- escaped** | SMOKE, fixed set | none; the suite went green |
+
+### C5 -- any node may claim a segment another node already holds
+
+```diff
+     public boolean mayClaim(String owner, TemporalAmount claimTimeout) {
+-        return this.owner == null || owner.equals(this.owner) || expired(claimTimeout);
++        return true;
+     }
+```
+
+in
+`messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jdbc/JdbcTokenEntry.java`.
+One line, and it removes the entire claim algebra: an entry owned by a live node now looks claimable to every other
+node, and `fetchAvailableSegments` -- which filters on the same method -- offers every segment to everybody.
+
+**Caught.** Test classes that went red:
+
+```
+org.axonframework.hunt.scenario.ConcurrentBootstrapTest$ANodeLeavingAndRejoiningMidStampede
+org.axonframework.hunt.scenario.ConcurrentBootstrapTest$FourNodesBootingIntoAnEmptyTokenStore
+```
+
+A sample violation, verbatim:
+
+```
+[AtMostOneSegmentOwner] For every segment, the intervals during which distinct nodes hold its token claim never
+overlap by more than the run's declared clock-skew allowance. | broken by: segment [hunt-projection/0] was held by
+node-1 and node-3 at the same time for 20576ms, which is more than the declared clock-skew allowance of 0ms
+```
+
+Three things are worth reading off that result.
+
+**The ownership oracle caught it directly, and the conservation law caught it independently.** Twenty-four
+`LedgerConservesTotalBalance` violations came from the same runs, because four nodes processing the same segment apply
+the same transfers several times and the projection's arithmetic stops adding up. That is the argument for a
+conservation law restated in a new place: nobody wrote an assertion about double processing, and the sum of the
+balances noticed anyway.
+
+**Every arm that stayed green stayed green correctly.** The whole single-node corpus was untouched, which is what a
+mutation in the claim algebra should do to a suite where only two scenarios have more than one node. It is also the
+measurement of how thin the multi-node coverage still is: two scenario identifiers, both bootstrap arms, are the
+entire blast radius of this mutation.
+
+**The overlap it reports is enormous** -- twenty seconds against a two-second claim timeout -- because with the
+algebra gone nobody ever loses a claim, so every node's interval runs to the end of the run. A subtler mutation would
+produce a subtler overlap, and whether the oracle catches one of those has not been measured here.
+
+### C6 -- a batch's effects commit without its progress
+
+```diff
+-        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
++        // canary: the batch's handler effects commit, this cycle's progress does not
+```
+
+in `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/WorkPackage.java`,
+removing the line whose own comment reads "One transaction handles the batch AND persists this cycle's progress".
+This is the classic at-least-once defect: the handler's effects land, the token does not advance, and the batch is
+handed to the handler again.
+
+**ESCAPED.** The suite went green: exit code 0, no test class red, and the only violations in the whole run were the
+eighteen the suite raises on purpose through its own conflict-check-bypass fault. A mutation that breaks the
+one-transaction guarantee between a batch and its progress cost the suite nothing, and that is a gap rather than a
+curiosity.
+
+Two compounding reasons, both established from the run rather than guessed.
+
+**The stale token had no observable effect, because no segment changed hands mid-batch.** A work package keeps its
+position in memory and advances through it whether or not the store was told; the stored token only matters when
+somebody re-reads it, which happens when a claim is handed over or a node comes back. In the bootstrap arms nothing
+handed a claim over mid-batch. The churn arm did crash and restart a node, and its history still shows five hundred
+and forty deliveries with **zero** repeats: the node came back and resumed past the point the crash interrupted,
+without re-reading far enough back to double anything.
+
+**Where the mutation did double deliveries, the oracle correctly refused to judge them.** Exactly one run in the
+suite saw them, and it is the arm that installs a store-duplicating fault:
+
+```
+INCONCLUSIVE fault_duplicate
+  note: Repeated deliveries, by how many times an event arrived: {2=308}; 0 repeat(s) inside a recovery window and
+  308 outside one, across 0 recorded window(s). Not judged because a fault made the store hold something other than
+  what was offered.
+```
+
+The oracle saw all three hundred and eight, counted them, and declined to blame the framework for them -- which is
+the right call for a run in which the harness itself is doubling appends, and the wrong outcome here, because these
+particular repeats were the mutation's and not the fault's. The downgrade is per run and total: one store-perturbing
+fault suppresses duplicate judgement for every repeat in that run, including the ones the fault could not have
+caused.
+
+### What would have caught it, and what that costs
+
+| Missing oracle | Why it would have caught C6 | Status |
+|---|---|---|
+| A stored-token monotonicity and coverage check: the token written for a segment must cover every event already delivered from it | The mutation stops writing the token entirely, so the stored token falls arbitrarily far behind the delivered prefix from the very first batch, with no handover needed | Not built. It is scenario S17 in the plan, and it needs the token store's writes recorded, which this phase's recording decorator deliberately does not do because storing a token carries no claim decision. |
+| A claim handover forced to land **mid-batch** | That is the only situation in which a stale stored token is read back during a run, and it is what turns C6 from invisible into a doubled effect | Not built. It is scenario S4, which needs a stall aimed at a work package rather than at a node, and is the next phase's. |
+| Attributing a store perturbation to the fault that caused it, so that a vanish or a torn batch does not suppress duplicate judgement the way a duplicated append legitimately does | Two of the three store-perturbing faults cannot cause a repeated delivery at all, so their runs should still judge duplicates | Not built. The `store-perturbed` note already carries which interference fired, so the refinement is small; it was not done here because it only matters once an arm produces duplicates for a reason other than the fault. |
+
+The honest summary is that the duplicate oracle works -- it counted every repeat -- and that nothing in the current
+scenario corpus puts it in a position to judge one. Two of the three gaps above are the next phase's scenarios, which
+is where this belongs; the third is a checker refinement worth doing when the first arm needs it.
+
+## What is not yet canaried
+
 ## What is not yet canaried
 
 Honest gaps, so that nobody reads the table above as covering more than it does.
 
 | Not canaried | Why | Owner |
 |---|---|---|
-| The read side: a processor that skips, duplicates or reorders a delivery | Needs a mutation in `messaging`, and the arms that would catch it (claim handover, split and merge, replay) need a claim-capable token store that does not exist yet | the phase that adds one |
+| ~~The read side: a processor that skips, duplicates or reorders a delivery~~ | Attempted as C6 above, and it escaped. The arms it needs -- a claim handover landing mid-batch, and a stored-token coverage oracle -- are named in that entry. | P2b |
 | The sequencing policy path | `SequenceKeyOrderPreserved` is exercised only by the arms in `SequencingPolicyOrderTest`, and a mutation of `SequencingEventHandlingComponent`'s chaining has not been run against it | follow-up |
 | Anything backend-specific | One backend ships. A per-backend verdict vector needs at least two | the phase that adds a backend |
 | Every mutation at a tier above smoke | The campaign was run at the smoke tier with the fixed seed set. Nothing here says how many seeds a subtler mutation would need | the phase that runs the fuzz tier |

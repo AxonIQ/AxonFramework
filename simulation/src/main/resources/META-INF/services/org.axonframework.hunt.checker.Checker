@@ -4,3 +4,6 @@ org.axonframework.hunt.checker.ConservationChecker
 org.axonframework.hunt.checker.AppendOutcomeChecker
 org.axonframework.hunt.checker.FaultLandingChecker
 org.axonframework.hunt.checker.OrderChecker
+org.axonframework.hunt.checker.OwnershipChecker
+org.axonframework.hunt.checker.DeliveryChecker
+org.axonframework.hunt.checker.LivenessChecker

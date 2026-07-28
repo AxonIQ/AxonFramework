@@ -154,6 +154,41 @@ public final class HistoryOps {
      */
     public static final String SEQUENCE_KEY = "sequenceKey";
 
+    /**
+     * A change in one node's lifecycle: it started, it was dropped without releasing anything, or it came back.
+     * Recorded as a standalone {@link RecordType#INFO} record carrying the node's identity and, under
+     * {@link #ACTION}, which of the three happened.
+     */
+    public static final String NODE = "node";
+
+    /**
+     * The value key a {@link #NODE node} record's lifecycle change is named under: {@code started}, {@code crashed}
+     * or {@code restarted}.
+     */
+    public static final String ACTION = "action";
+
+    /**
+     * The value key naming the segment a token operation addressed.
+     */
+    public static final String SEGMENT = "segment";
+
+    /**
+     * The value key naming the processor a token operation addressed.
+     */
+    public static final String PROCESSOR = "processor";
+
+    /**
+     * The value key naming how many segments an {@link #INIT_SEGMENTS initialisation} asked for.
+     */
+    public static final String SEGMENT_COUNT = "segmentCount";
+
+    /**
+     * The value key a settle {@link #PHASE phase} record reports under, saying whether the read side had caught up
+     * with the write side before any oracle looked at the run. Absent in histories written before the field existed,
+     * which every checker that needs it treats as "not stated" rather than as "no".
+     */
+    public static final String QUIESCED = "quiesced";
+
     private HistoryOps() {
         // Utility class.
     }

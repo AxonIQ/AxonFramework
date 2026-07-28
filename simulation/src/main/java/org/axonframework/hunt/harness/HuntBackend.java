@@ -65,6 +65,36 @@ public interface HuntBackend {
     }
 
     /**
+     * Creates the token store the run's nodes claim their segments through, one view per node.
+     * <p>
+     * The default hands every node the framework's in-heap store, which has no owner, no timestamp and no expiry, so
+     * every node's claim always succeeds. That is correct for a single-node run and vacuous for any other, which is
+     * why {@link #arbitratesTokenClaims()} exists alongside it: an ownership oracle must be able to tell the two
+     * apart rather than report a store that arbitrates nothing as a store that never broke.
+     *
+     * @param runId        identifies this run, so two runs never address the same underlying store
+     * @param claimTimeout how long a claim survives without extension; a store setting, so it cannot travel through
+     *                     the processor configuration the way the run's other compressed timings do
+     * @return a factory handing each node its own view of one shared token store
+     */
+    default TokenStores createTokenStores(String runId, java.time.Duration claimTimeout) {
+        return TokenStores.shared(
+                new org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore());
+    }
+
+    /**
+     * Indicates whether this backend's token store decides who owns a segment.
+     * <p>
+     * Recorded in the history header so that an ownership oracle can hold vacuously, and say so, on a store that
+     * implements no ownership at all instead of pretending it verified something.
+     *
+     * @return {@code true} when the store implements the claim algebra, {@code false} when it grants every claim
+     */
+    default boolean arbitratesTokenClaims() {
+        return false;
+    }
+
+    /**
      * Returns every registered backend, ordered by name.
      *
      * @return the registered backends

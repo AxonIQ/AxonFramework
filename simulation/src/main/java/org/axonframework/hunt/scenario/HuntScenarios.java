@@ -18,9 +18,12 @@ package org.axonframework.hunt.scenario;
 
 import org.axonframework.hunt.checker.AppendOutcomeChecker;
 import org.axonframework.hunt.checker.ConservationChecker;
+import org.axonframework.hunt.checker.DeliveryChecker;
 import org.axonframework.hunt.checker.FaultLandingChecker;
+import org.axonframework.hunt.checker.LivenessChecker;
 import org.axonframework.hunt.checker.ModelConformanceChecker;
 import org.axonframework.hunt.checker.OrderChecker;
+import org.axonframework.hunt.checker.OwnershipChecker;
 import org.axonframework.hunt.checker.VisibilityChecker;
 import org.axonframework.hunt.fault.AfterCommitFailureFault;
 import org.axonframework.hunt.fault.AppendRejectionFault;
@@ -29,8 +32,11 @@ import org.axonframework.hunt.fault.Fault;
 import org.axonframework.hunt.fault.FaultSchedule;
 import org.axonframework.hunt.fault.FaultWindow;
 import org.axonframework.hunt.fault.InjectedLatencyFault;
+import org.axonframework.hunt.fault.NodeCrashFault;
 import org.axonframework.hunt.fault.PrepareCommitFailureFault;
 import org.axonframework.hunt.harness.DeterminismMode;
+import org.axonframework.hunt.harness.HsqldbTokenStoreBackend;
+import org.axonframework.hunt.harness.HuntTimescale;
 import org.axonframework.hunt.workload.BatchWorkload;
 import org.axonframework.hunt.workload.LedgerWorkload;
 import org.axonframework.hunt.workload.SequencedWorkload;
@@ -115,6 +121,23 @@ public final class HuntScenarios {
      */
     public static final String PARTIAL_BATCH_VISIBILITY = "partial_batch_never_visible_to_concurrent_reader";
 
+    /**
+     * The identifier of the arm booting several nodes at once against a token store that holds nothing.
+     */
+    public static final String CONCURRENT_BOOTSTRAP = "concurrent_bootstrap_initializes_segments_exactly_once";
+
+    /**
+     * The identifier of the same bootstrap with a node dropped and brought back while the segments are still being
+     * taken.
+     */
+    public static final String CONCURRENT_BOOTSTRAP_WITH_CHURN =
+            "concurrent_bootstrap_initializes_segments_exactly_once_with_node_churn";
+
+    /**
+     * How many nodes a bootstrap arm boots at once.
+     */
+    public static final int BOOTSTRAP_NODES = 4;
+
     private HuntScenarios() {
         // Utility class.
     }
@@ -134,7 +157,9 @@ public final class HuntScenarios {
                        sequencingPolicyOrderWiredDefault(),
                        sequencingPolicyOrderNoOp(),
                        sequencingPolicyOrderPerAggregate(),
-                       partialBatchVisibility());
+                       partialBatchVisibility(),
+                       concurrentBootstrap(),
+                       concurrentBootstrapWithNodeChurn());
     }
 
     /**
@@ -413,6 +438,100 @@ public final class HuntScenarios {
                        // sometimes misses it.
                        .budget(Tier.SMOKE, new TierBudget(4_000, 3, Duration.ofSeconds(60)))
                        .budget(Tier.RELEASE, new TierBudget(40_000, 20, Duration.ofMinutes(10)))
+                       .build();
+    }
+
+    /**
+     * Several nodes booting at the same instant against a token store that holds nothing.
+     * <p>
+     * Genesis is the window the steady-state guarantees say nothing about. Every claim rule in the framework is
+     * written for a store that already has rows in it: a claim may be taken when the entry is unowned, owned by the
+     * same node, or expired, and all three presuppose an entry. The first deployment has no entries, so several nodes
+     * each discover an empty store, each conclude they must create the segments, and race. The contract for that race
+     * is that initialising a segment that already exists fails, which makes exactly one of them the winner -- and it
+     * is explicit that the outcome is undefined when the rows exist but belong to somebody else.
+     * <p>
+     * What the arm judges: that the store ends up holding exactly the configured number of segments and no more, that
+     * ownership held from the first instant rather than from after things settled, and that nothing was lost or
+     * doubled on the way to the projection. Ownership from the first instant is the part that matters. Checking it
+     * after the cluster has calmed down would skip the only interesting window.
+     * <p>
+     * It runs on the claim-capable backend, and it has to: the in-heap token store grants every claim to everybody,
+     * so this whole arm would pass against it without testing anything. The workload sequences by account so that
+     * events genuinely spread across segments; under the framework's wired default every event on a store speaking
+     * the Dynamic Consistency Boundary protocol resolves to one identifier, one identifier hashes to one segment, and
+     * a four-segment cluster would quietly be a one-segment cluster.
+     * <p>
+     * The liveness horizon is two seconds, and the basis is the coordinator's own idle re-poll, which is a hardcoded
+     * five hundred milliseconds and does not compress with anything. An event committed just after a coordinator went
+     * idle waits for that re-poll before anybody looks, so no honest horizon can be below it; two seconds is four
+     * times it, which leaves room for a claim handover on top without leaving so much room that a real stall would
+     * slip through. Measured against it, the slowest commit-to-delivery latency this arm produces is a few hundred
+     * milliseconds.
+     *
+     * @return the scenario
+     */
+    public static Scenario concurrentBootstrap() {
+        return bootstrapArm(CONCURRENT_BOOTSTRAP,
+                            "Four nodes booting at once against an empty token store",
+                            FaultSchedule.none(Duration.ofSeconds(20)));
+    }
+
+    /**
+     * The same bootstrap with one node dropped and brought back while the segments are still being taken.
+     * <p>
+     * <b>What this arm can and cannot race, stated rather than implied.</b> Creating the segments is over in
+     * milliseconds, and a fault window can only open after the world has been built, so nothing the fault plane does
+     * can collide with the initialisation itself. What it does collide with is the stampede that follows: four
+     * coordinators taking four segments over several claim intervals, rebalancing as they go. Dropping a node in the
+     * middle of that, without letting it release anything, and bringing it back under the same identity is a node
+     * leaving and rejoining a cluster that has not finished forming.
+     * <p>
+     * A repeated delivery is expected here and is permitted, because the crash opens a recovery window and the token
+     * store and the projection are not one transactional resource. It is still counted and reported, so a run that
+     * doubled a hundred deliveries is not confused with one that doubled two.
+     *
+     * @return the scenario
+     */
+    public static Scenario concurrentBootstrapWithNodeChurn() {
+        FaultSchedule schedule = FaultSchedule.builder()
+                                              .warmup(Duration.ZERO)
+                                              .window(FaultWindow.immediately("node-leaves-and-rejoins",
+                                                                              Duration.ofMillis(400),
+                                                                              new NodeCrashFault(1)))
+                                              .heal(Duration.ofMillis(200))
+                                              .settle(Duration.ofSeconds(20))
+                                              .build();
+        return bootstrapArm(CONCURRENT_BOOTSTRAP_WITH_CHURN,
+                            "Four nodes booting at once, one of them leaving and rejoining mid-stampede",
+                            schedule);
+    }
+
+    private static Scenario bootstrapArm(String id, String name, FaultSchedule schedule) {
+        return Scenario.builder(id, name)
+                       .claims("C18", "C19", "C20", "C36", "M16")
+                       .workload(LedgerWorkload::sequencedPerAccount)
+                       .backend(HsqldbTokenStoreBackend.NAME)
+                       .nodes(BOOTSTRAP_NODES)
+                       .deliveryMode(DeliveryMode.AT_LEAST_ONCE_NO_LOSS)
+                       .livenessHorizon(Duration.ofSeconds(2))
+                       // A claim timeout of a hundred milliseconds is fine against a store that answers in
+                       // nanoseconds and hopeless against one reached over JDBC: claims lapse while their owner waits
+                       // for the extension it already issued, and the run turns into nodes stealing from each other.
+                       // Widened together so the ratio the compression exists to preserve survives.
+                       .timescale(HuntTimescale.compressed()
+                                               .withClaimTimings(Duration.ofSeconds(2), Duration.ofMillis(400)))
+                       .faults(schedule)
+                       .oracles(OwnershipChecker.AT_MOST_ONE_SEGMENT_OWNER,
+                                DeliveryChecker.NO_COMMITTED_EVENT_GOES_UNDELIVERED,
+                                DeliveryChecker.DUPLICATE_DELIVERY_ONLY_INSIDE_RECOVERY_WINDOW,
+                                LivenessChecker.COMMITTED_EVENT_DELIVERED_WITHIN_HORIZON,
+                                LivenessChecker.ACCEPTED_COMMAND_COMPLETES,
+                                ConservationChecker.LEDGER_CONSERVES_TOTAL_BALANCE,
+                                ConservationChecker.PROJECTION_MATCHES_FOLD_OF_COMMITTED_EVENTS)
+                       .seed(1L)
+                       .budget(Tier.SMOKE, new TierBudget(600, 3, Duration.ofSeconds(90)))
+                       .budget(Tier.RELEASE, new TierBudget(20_000, 100, Duration.ofMinutes(15)))
                        .build();
     }
 }

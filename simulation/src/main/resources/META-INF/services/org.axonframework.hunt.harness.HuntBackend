@@ -1,1 +1,2 @@
 org.axonframework.hunt.harness.InMemoryHuntBackend
+org.axonframework.hunt.harness.HsqldbTokenStoreBackend

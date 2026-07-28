@@ -36,6 +36,13 @@ import java.util.Objects;
  * sixty seconds, and the coordinator's idle re-poll is a hardcoded five hundred milliseconds. A scenario that splits
  * segments must budget for the former in wall-clock time whatever this record says.
  *
+ * <p>
+ * <b>The clock-skew allowance is declared here, and it is zero unless a run says otherwise.</b> Whether two nodes
+ * may appear to hold one segment at once is decided by comparing timestamps one node wrote against another node's
+ * reading of the clock, so an ownership oracle needs a stated tolerance. Making it a field of the timings, recorded
+ * in the history header and read back by the checker, is what stops it becoming a silent fudge factor inside the
+ * check. Nothing in this suite emulates skew yet, so both arms declare zero.
+ *
  * @param name                    the arm's name, recorded in the history header
  * @param tokenClaimInterval      how often the coordinator tries to claim segments it does not hold
  * @param claimExtensionThreshold how long a work package may go without extending its claim
@@ -43,6 +50,8 @@ import java.util.Objects;
  * @param gapTimeout              how long a gap in a global sequence stays in a tracking token
  * @param stall                   how long a pause fault stalls a participant; longer than every timeout above
  * @param quiescence              the longest a run waits for the system to go quiet before judging it
+ * @param ownershipSkewAllowance  how far two nodes' clocks are allowed to disagree before an ownership overlap
+ *                                stops being evidence; zero unless the run deliberately emulates skew
  * @author Stefan Dragisic
  * @since 5.3.0
  */
@@ -52,7 +61,8 @@ public record HuntTimescale(String name,
                             Duration tokenStoreClaimTimeout,
                             Duration gapTimeout,
                             Duration stall,
-                            Duration quiescence) {
+                            Duration quiescence,
+                            Duration ownershipSkewAllowance) {
 
     /**
      * Compact constructor rejecting a missing name and any non-positive duration.
@@ -65,6 +75,29 @@ public record HuntTimescale(String name,
         requirePositive(gapTimeout, "gapTimeout");
         requirePositive(stall, "stall");
         requirePositive(quiescence, "quiescence");
+        Objects.requireNonNull(ownershipSkewAllowance, "The ownershipSkewAllowance cannot be null.");
+        if (ownershipSkewAllowance.isNegative()) {
+            throw new IllegalArgumentException(
+                    "The ownershipSkewAllowance cannot be negative, but was " + ownershipSkewAllowance + ".");
+        }
+    }
+
+    /**
+     * Returns this arm with a longer token-store claim timeout, for a run whose store is a real database.
+     * <p>
+     * A hundred-millisecond claim timeout is fine against a store that answers in nanoseconds and hopeless against
+     * one that answers over a JDBC round trip: claims expire while their owner is waiting for the extension it
+     * already issued, and every node spends the run stealing from every other. The ratio to the extension threshold
+     * is what the compression exists to preserve, so widening the timeout without widening the threshold would
+     * change the experiment.
+     *
+     * @param claimTimeout      how long a claim survives without extension
+     * @param extensionThreshold how long a work package may go without extending its claim
+     * @return the arm, with the two claim timings replaced
+     */
+    public HuntTimescale withClaimTimings(Duration claimTimeout, Duration extensionThreshold) {
+        return new HuntTimescale(name, tokenClaimInterval, extensionThreshold, claimTimeout, gapTimeout, stall,
+                                 quiescence, ownershipSkewAllowance);
     }
 
     /**
@@ -83,7 +116,8 @@ public record HuntTimescale(String name,
                                  Duration.ofMillis(100),
                                  Duration.ofMillis(600),
                                  Duration.ofMillis(300),
-                                 Duration.ofSeconds(30));
+                                 Duration.ofSeconds(30),
+                                 Duration.ZERO);
     }
 
     /**
@@ -99,7 +133,8 @@ public record HuntTimescale(String name,
                                  Duration.ofSeconds(10),
                                  Duration.ofSeconds(60),
                                  Duration.ofSeconds(30),
-                                 Duration.ofMinutes(5));
+                                 Duration.ofMinutes(5),
+                                 Duration.ZERO);
     }
 
     /**
@@ -133,6 +168,7 @@ public record HuntTimescale(String name,
         described.put("gapTimeoutMs", String.valueOf(gapTimeout.toMillis()));
         described.put("stallMs", String.valueOf(stall.toMillis()));
         described.put("quiescenceMs", String.valueOf(quiescence.toMillis()));
+        described.put("ownershipSkewAllowanceMs", String.valueOf(ownershipSkewAllowance.toMillis()));
         return Map.copyOf(described);
     }
 

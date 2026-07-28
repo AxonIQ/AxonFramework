@@ -66,6 +66,18 @@
             <artifactId>axon-eventsourcing</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <!--
+          An in-process database for the claim-capable backend. The framework's in-heap token store implements no
+          ownership at all, so every claim assertion made against it holds vacuously; a JdbcTokenStore over HSQLDB is
+          the cheapest store in this tree that carries a real owner, a real timestamp and a real expiry. Compile
+          scope, because the backend lives in src/main/java alongside the rest of the harness. The version is managed
+          by build/parent, where the integration tests already use it.
+        -->
+        <dependency>
+            <groupId>org.hsqldb</groupId>
+            <artifactId>hsqldb</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

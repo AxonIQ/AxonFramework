@@ -63,6 +63,12 @@ import java.util.function.Supplier;
  *                     runs regardless, so this is a guard against an oracle silently disappearing, not a filter
  * @param seed         the base seed; a tier running several seeds counts up from it
  * @param budgets      what the scenario may cost, per tier
+ * @param nodes        how many framework instances share the run's store and token store; one unless the scenario's
+ *                     claim is about what several of them do to each other
+ * @param deliveryMode the delivery guarantee this scenario's deployment can actually provide, declared rather than
+ *                     guessed, because the guarantee genuinely differs between deployments
+ * @param livenessHorizon how long a committed event may take to reach a consumer before that is a liveness failure;
+ *                     defaults to the timescale's quiescence budget, which is how long the runner itself waits
  * @author Stefan Dragisic
  * @since 5.3.0
  */
@@ -77,7 +83,10 @@ public record Scenario(String id,
                        double buggifyProbability,
                        Set<String> oracles,
                        long seed,
-                       Map<Tier, TierBudget> budgets) {
+                       Map<Tier, TierBudget> budgets,
+                       int nodes,
+                       DeliveryMode deliveryMode,
+                       Duration livenessHorizon) {
 
     /**
      * Compact constructor rejecting missing parts and defensively copying every collection.
@@ -90,6 +99,8 @@ public record Scenario(String id,
         Objects.requireNonNull(backend, "The backend cannot be null.");
         Objects.requireNonNull(timescale, "The timescale cannot be null.");
         Objects.requireNonNull(determinism, "The determinism cannot be null.");
+        Objects.requireNonNull(deliveryMode, "The deliveryMode cannot be null.");
+        Objects.requireNonNull(livenessHorizon, "The livenessHorizon cannot be null.");
         claims = Set.copyOf(Objects.requireNonNull(claims, "The claims cannot be null."));
         oracles = Set.copyOf(Objects.requireNonNull(oracles, "The oracles cannot be null."));
         budgets = Map.copyOf(Objects.requireNonNull(budgets, "The budgets cannot be null."));
@@ -99,6 +110,10 @@ public record Scenario(String id,
         if (buggifyProbability < 0.0 || buggifyProbability > 1.0) {
             throw new IllegalArgumentException(
                     "The buggifyProbability must be in [0,1], but was " + buggifyProbability + ".");
+        }
+        if (nodes < 1) {
+            throw new IllegalArgumentException(
+                    "The scenario [" + id + "] declares " + nodes + " nodes; it needs at least one.");
         }
     }
 
@@ -112,6 +127,22 @@ public record Scenario(String id,
      */
     public static Builder builder(String id, String name) {
         return new Builder(id, name);
+    }
+
+    /**
+     * Returns this scenario pointed at a different store.
+     * <p>
+     * This is the whole of the backend-differential mechanism. A scenario is backend-agnostic by construction, so
+     * running one somewhere else is a substitution rather than an edit, and a defect that appears on one store and
+     * not on another is attributable to that store's adapter instead of starting an argument.
+     *
+     * @param name the name of a registered backend
+     * @return the same scenario, driven against that backend
+     */
+    public Scenario onBackend(String name) {
+        return new Scenario(id, this.name, claims, workload, faults, Objects.requireNonNull(name, "The name cannot "
+                + "be null."), timescale, determinism, buggifyProbability, oracles, seed, budgets, nodes,
+                            deliveryMode, livenessHorizon);
     }
 
     /**
@@ -167,6 +198,9 @@ public record Scenario(String id,
         private DeterminismMode determinism = DeterminismMode.REAL_THREADS;
         private double buggifyProbability;
         private long seed;
+        private int nodes = 1;
+        private DeliveryMode deliveryMode = DeliveryMode.AT_LEAST_ONCE_NO_LOSS;
+        private @org.jspecify.annotations.Nullable Duration livenessHorizon;
 
         private Builder(String id, String name) {
             this.id = Objects.requireNonNull(id, "The id cannot be null.");
@@ -286,13 +320,54 @@ public record Scenario(String id,
         }
 
         /**
+         * Declares how many framework instances share the run's store and token store.
+         *
+         * @param count the node count; one unless the scenario's claim is about what several nodes do to each other
+         * @return this builder
+         */
+        public Builder nodes(int count) {
+            this.nodes = count;
+            return this;
+        }
+
+        /**
+         * Declares the delivery guarantee this scenario's deployment can actually provide.
+         *
+         * @param mode the mode; see {@link DeliveryMode} for why it is declared rather than inferred
+         * @return this builder
+         */
+        public Builder deliveryMode(DeliveryMode mode) {
+            this.deliveryMode = Objects.requireNonNull(mode, "The mode cannot be null.");
+            return this;
+        }
+
+        /**
+         * Declares how long a committed event may take to reach a consumer.
+         * <p>
+         * State the basis in the scenario's own documentation. A horizon nobody can justify is a constant somebody
+         * raised until the suite went green.
+         *
+         * @param horizon the liveness horizon
+         * @return this builder
+         */
+        public Builder livenessHorizon(Duration horizon) {
+            this.livenessHorizon = Objects.requireNonNull(horizon, "The horizon cannot be null.");
+            return this;
+        }
+
+        /**
          * Builds the scenario.
+         * <p>
+         * An undeclared liveness horizon resolves to the chosen timescale's quiescence budget, which is how long the
+         * runner itself waits for the read side before judging anything: past that point the run has already given
+         * up, so a longer horizon could never fire.
          *
          * @return the scenario
          */
         public Scenario build() {
             return new Scenario(id, name, claims, workload, faults, backend, timescale, determinism,
-                                buggifyProbability, oracles, seed, budgets);
+                                buggifyProbability, oracles, seed, budgets, nodes, deliveryMode,
+                                livenessHorizon == null ? timescale.quiescence() : livenessHorizon);
         }
     }
 }
