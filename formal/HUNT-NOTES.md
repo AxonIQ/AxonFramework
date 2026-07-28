@@ -1658,6 +1658,32 @@ EOF
 **Never recompile while a container arm is running.** Surefire is reading the same `target/test-classes` the compiler
 writes to.
 
+### 2.47 Counting tests: deleting `surefire-reports` is not enough, and the stale count is plausible
+
+P0 recorded that the `.txt` summary lies and P1a recorded that the XML `tests=` attribute lies. There is a third trap and
+it is the worst of the three, because the number it produces looks right. A build that excludes the `container` tag leaves
+the previous container run's report files in place, and surefire **touches their timestamps without re-running them**, so
+they are counted and they look current:
+
+```
+$ rm -rf simulation/target/surefire-reports
+$ ./mvnw -q -Phunt -pl simulation -o test
+testcases: 210        # 208 real, plus two resurrected from a run that took 168 seconds in a build that took 40
+```
+
+`rm -rf simulation/target` -- the whole directory, not just the reports -- is what gives the true count, because
+`target/surefire/` holds the forked JVM's state as well. The count then matches on every run:
+
+```
+$ rm -rf simulation/target
+$ ./mvnw -q -Phunt -pl simulation -o test
+EXIT=0   testcases: 208   container-tagged reports: 0   docker containers before=31 after=27
+```
+
+The `docker` count either side is the check worth keeping in the same command: it is the only direct proof that the default
+build starts nothing, and it is stronger than reading the tag list. Four containers *disappearing* is Ryuk reaping earlier
+runs; none was created.
+
 ## 4. Design decisions and their reasons (continued)
 
 ### 4.51 A fault that reaches outside the virtual machine goes through one seam, and the seam is on the backend
