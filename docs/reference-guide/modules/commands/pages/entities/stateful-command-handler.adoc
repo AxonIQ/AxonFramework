@@ -66,7 +66,7 @@ Without either attribute set, Axon falls back to the default resolver, which rea
 By default, an `@InjectEntity` parameter requires the entity to exist.
 If no entity can be found for the resolved identifier, Axon throws an `EntityNotFoundException`, failing the command instead of invoking the handler.
 
-Annotate the parameter with `@Nullable` to opt into create-or-update semantics instead.
+Annotate the parameter with any annotation matching `@Nullable` to opt into create-or-update semantics instead.
 A `@Nullable @InjectEntity` parameter resolves to `null` when the entity does not exist yet, allowing the handler to decide whether to create it:
 
 [source,java]

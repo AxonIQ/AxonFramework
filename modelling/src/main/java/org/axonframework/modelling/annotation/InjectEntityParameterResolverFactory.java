@@ -17,6 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -82,8 +83,8 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
             ParameterizedType parameterizedType = (ParameterizedType) parameter.getParameterizedType();
             entityClass = (Class<?>) parameterizedType.getActualTypeArguments()[1];
         }
-        // org.jspecify.annotationsNullable targets TYPE_USE only, hence use of Parameter#getAnnotatedType
-        boolean isNullable = parameter.getAnnotatedType().isAnnotationPresent(Nullable.class);
+
+        boolean isNullable = AnnotationUtils.hasAnnotationNamed(parameter.getAnnotatedType(), "nullable");
         return new InjectEntityParameterResolver(
                 configuration,
                 entityClass,

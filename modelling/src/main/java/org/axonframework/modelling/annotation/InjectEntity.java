@@ -50,7 +50,7 @@ import java.lang.annotation.Target;
  * When no entity can be found for the resolved identifier, the annotated parameter's nullability determines the
  * outcome. A non-nullable parameter (the default) results in an
  * {@link org.axonframework.modelling.repository.EntityNotFoundException} being propagated, failing the message being
- * handled. A parameter annotated with {@code org.jspecify.annotations.Nullable} instead resolves to {@code null},
+ * handled. A parameter annotated with an annotation resembling {@code "nullable"} will instead resolve to {@code null},
  * allowing the handler to deal with a missing entity itself, for example to support create-or-update semantics.
  *
  * @author Mitchell Herrijgers
