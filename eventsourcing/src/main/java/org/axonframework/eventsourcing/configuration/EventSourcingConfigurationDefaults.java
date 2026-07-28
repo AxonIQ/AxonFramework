@@ -23,11 +23,9 @@ import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
-import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
@@ -52,13 +50,13 @@ import java.util.List;
  * </ul>
  * Furthermore, this enhancer will decorate the:
  * <ul>
- *     <li>The {@link EventStorageEngine} in a {@link SnapshotCapableEventStorageEngine} <b>if</b> a
- *     {@link SnapshotStore} is present and it is not the same instance as the engine. When the engine and the
- *     snapshot store are the same instance, the engine handles snapshots natively (potentially in a single
- *     round-trip) and wrapping it would degrade performance.</li>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  * </ul>
+ * It also registers the {@link SnapshotSourcingConfigurationEnhancer}, which decorates the
+ * {@link EventStorageEngine} to support the {@link org.axonframework.eventsourcing.eventstore.SourcingStrategy.Snapshot
+ * snapshot sourcing strategy}. Registering it here rather than through the {@link java.util.ServiceLoader} means
+ * applications registering {@code this} enhancer manually receive it as well.
  *
  * @author Steven van Beelen
  * @author John Hendrikx
@@ -85,16 +83,7 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
                 .registerIfNotPresent(EventStorageEngine.class,
                                       EventSourcingConfigurationDefaults::defaultEventStorageEngine)
                 .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore);
-        registry.registerDecorator(
-                EventStorageEngine.class,
-                SnapshotCapableEventStorageEngine.DECORATION_ORDER,
-                (config, name, engine) -> {
-                    SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class).orElse(null);
-                    return snapshotStore == null || snapshotStore == engine
-                            ? engine
-                            : new SnapshotCapableEventStorageEngine(engine, snapshotStore);
-                }
-        );
+        registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
         registry.registerDecorator(
                 EventStore.class,
                 InterceptingEventStore.DECORATION_ORDER,
