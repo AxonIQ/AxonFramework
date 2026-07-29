@@ -21,6 +21,7 @@ import org.axonframework.common.CollectionUtils;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BinaryOperator;
 
 /**
  * {@link ConsistencyMarker} implementation that keeps track of a position per aggregate identifier. A single
@@ -75,19 +76,38 @@ public class AggregateBasedConsistencyMarker extends AbstractConsistencyMarker<A
         throw new IllegalArgumentException("Unsupported consistency marker: " + appendCondition.consistencyMarker());
     }
 
+    /**
+     * Returns a marker containing the aggregates of both {@code this} and the given {@code other} marker, keeping the
+     * <em>lowest</em> position for any aggregate both markers know about.
+     * <p>
+     * Positions of distinct aggregates are independent of one another, so an aggregate that only one of the two markers
+     * knows about keeps its position in the result. Dropping it would reset that aggregate to the start of its event
+     * stream, which both loses conflict detection for the aggregate and restarts its sequence numbers at zero.
+     *
+     * @param other the other marker to combine with
+     * @return a marker holding the lowest known position per aggregate of both markers
+     */
     @Override
     public AggregateBasedConsistencyMarker doLowerBound(AggregateBasedConsistencyMarker other) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return combineWith(other, Math::min);
     }
 
+    /**
+     * Returns a marker containing the aggregates of both {@code this} and the given {@code other} marker, keeping the
+     * <em>highest</em> position for any aggregate both markers know about.
+     *
+     * @param other the other marker to combine with
+     * @return a marker holding the highest known position per aggregate of both markers
+     */
     @Override
     public AggregateBasedConsistencyMarker doUpperBound(AggregateBasedConsistencyMarker other) {
+        return combineWith(other, Math::max);
+    }
+
+    private AggregateBasedConsistencyMarker combineWith(AggregateBasedConsistencyMarker other,
+                                                        BinaryOperator<Long> positionSelector) {
         Map<String, Long> newPositions = new HashMap<>(aggregatePositions);
-        other.aggregatePositions.forEach((id, seq) -> {
-            if (!newPositions.containsKey(id) || newPositions.get(id) < seq) {
-                newPositions.put(id, seq);
-            }
-        });
+        other.aggregatePositions.forEach((id, position) -> newPositions.merge(id, position, positionSelector));
         return new AggregateBasedConsistencyMarker(newPositions);
     }
 
