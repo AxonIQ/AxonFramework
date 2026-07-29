@@ -15,11 +15,13 @@ read as more than it is.
 
 ### Step 0 -- orient before reading code
 
-Use the knowledge graph before grepping: `graphify query "<question>"` to orient in the
+If a prebuilt knowledge graph is available (the optional `graphify` tool, with its output at
+`graphify-out/`), use it before grepping: `graphify query "<question>"` to orient in the
 subsystem, `graphify path "<A>" "<B>"` to find the wiring between two components, and
 `graphify explain "<Class>"` for a single class's role. Then open the cited `file:line`, because
-the graph orients and the source decides. If the graph is unavailable, grep, but expect to spend
-the time you saved reading.
+the graph orients and the source decides. Without it, grep -- starting from the checker classes
+named in the invariant registry and the `file:line` anchors in the claim corpus, which between
+them name most of the framework surface the suite touches.
 
 Then read the subsystem's own tests. This repository's existing suites are shared abstract
 classes that new backends extend, and their existing concurrent-append races are usable as
@@ -51,10 +53,10 @@ specified / dissolved). Append M-numbers.
 Method: `claims-and-scenarios.md` section 2. One row per failure mode, **including the rows that
 do not apply and why.** Each hypothesis names the claim and gap numbers it targets.
 
-If the `designing-distributed-system-tests` skill is available, its pitfall reference is the
-catalogue to walk. If it is not, walk the failure modes this suite already has hypotheses for --
-they are tabulated in `docs/testing-plans/axon-hunt.md` section 4 -- and add whatever the new
-subsystem introduces that none of them covers.
+The catalogue to walk is `pitfall-catalogue.md`, organised by claim kind with this suite's own
+findings as concrete instances of each row. The walk this suite already did -- per-row verdicts
+and the hypotheses each hit produced -- is tabulated in `docs/testing-plans/axon-hunt.md`
+section 4; extend that table, and end with what the new subsystem introduces that no row covers.
 
 ### Step 4 -- write scenario specifications, not scenarios
 
@@ -141,7 +143,7 @@ authority is the document named; check it before starting, because these move.
 | **Process managers / sagas** | Absent. They are the pattern most likely to produce interesting membership and idempotency claims when they arrive. |
 | **Message transformation / schema evolution** | Named as an open follow-up. It is the classic upgrade-shaped failure and there is no arm for it. |
 | **Upgrade and rollback across framework versions** | Needs two framework versions in one harness; out of scope for this iteration and named as such. |
-| **Distributed messaging over the server connector** | Blocked with measured evidence: no reachable connector artefact links against this reactor's storage-engine interface, and the failure is a run-time linkage error that the compiler does not catch. Recorded as a finding rather than skipped silently. |
+| **Distributed messaging over the server connector** | The *event store* half runs: the Axon Server arm links a released connector against this reactor with one method shimmed by the harness, recorded in `formal/CONNECTOR-COMPATIBILITY.md` (the linkage break itself is a finding). Distributed command/query routing over the connector has no coverage at all. |
 | **Two-phase / XA resource managers** | An accepted residual: it needs an XA transaction manager and two resource managers in the harness, and the cost is not justified before the single-resource and split-resource arms have produced findings. |
 
 ### Things the suite has built but never exercised in a scenario

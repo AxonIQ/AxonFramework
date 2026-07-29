@@ -89,12 +89,16 @@ class RegressionSeedsTest {
             assertThat(shipped).as("shipped histories under src/test/resources/hunt-histories").isNotEmpty();
 
             // when each is re-judged offline
-            // then the clean ones stay clean and the broken one stays broken, whatever the thread schedule of the
-            // machine replaying them
+            // then the clean ones stay clean and the broken ones stay broken, whatever the thread schedule of the
+            // machine replaying them. Two histories replay to FAIL: the deliberately bypassed conflict check, and the
+            // recorded Axon Server run in which the store accepted appends whose consistency boundaries forbade them.
             for (Path history : shipped) {
                 ScenarioResult result = ScenarioRunner.replay(history);
                 System.out.println(result);
-                Verdict expected = history.getFileName().toString().contains("bypass") ? Verdict.FAIL : Verdict.PASS;
+                String name = history.getFileName().toString();
+                Verdict expected = name.contains("bypass") || name.contains("boundary-violation")
+                        ? Verdict.FAIL
+                        : Verdict.PASS;
                 assertThat(result.verdict()).as("replaying %s: %s", history, result).isEqualTo(expected);
             }
         }

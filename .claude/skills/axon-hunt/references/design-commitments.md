@@ -200,13 +200,13 @@ analysers.
 ## 4. Lineage: what was copied, and what had to be adapted
 
 This harness deliberately copies an existing formal-plus-simulation setup rather than inventing
-one. The reference implementation is the **axon-flow-spec** repository on branch
-`poc/tla_dst` -- read it with `git show poc/tla_dst:<path>` or a temporary worktree, and never by
-checking the branch out over somebody's working tree. Its method is packaged as the
-`axon-flow-tla-dst` skill, which is the thing to load before designing a harness class; its
-`references/expanding.md` has the step-by-step expansion recipes.
+one: a prior private proof-of-concept pairing a TLA+ model with a deterministic simulation
+harness over a different event-sourced engine. That repository is not reachable from here and
+nothing below depends on it -- the table is the substance, and `recipes.md` plus
+`method-essentials.md` are the adapted, self-contained form of its method. The lineage is
+recorded as provenance and as a checklist of what a setup like this needs.
 
-Point at it rather than re-describing its code. What was taken:
+What was taken:
 
 | Taken | Adapted how |
 |---|---|

@@ -51,8 +51,9 @@ Two established patterns, both worth copying exactly:
   target" and "the cost is not justified before the cheaper arm has produced findings" are both
   complete answers; "not done" is not.
 
-A third, for anything blocked: **blocked, with evidence.** One arm here is not skipped silently
-but recorded as a finding carrying the linkage error that prevents it. A silent skip is
+A third, for anything blocked: **blocked, with evidence.** One arm here spent a phase blocked
+and was recorded as a finding carrying the linkage error that prevented it, until a harness
+shim unblocked it -- at which point the record became the compatibility table. A silent skip is
 indistinguishable from an oversight; a recorded block is a fact somebody can act on.
 
 ## 4. An escaped canary stays in the record

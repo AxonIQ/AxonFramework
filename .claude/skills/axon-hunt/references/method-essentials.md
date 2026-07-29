@@ -1,9 +1,9 @@
 # Method essentials -- the portable distillation
 
-**This file is self-sufficient.** It carries the load-bearing rules from the external
-distributed-systems-testing skills, so that adding a checker, a fault or a new arm works even
-where those skills are not installed. Go outward (see `knowledge-routing.md`) only for depth on
-a fault class or an analysis tool this suite has never built.
+**This file is self-sufficient.** It carries the load-bearing rules of the distributed-systems
+testing method this suite was built with, so that adding a checker, a fault or a new arm needs
+nothing outside this repository. For hypothesis generation against a new subsystem, the
+companion is `pitfall-catalogue.md`.
 
 Where this suite's own implementation already encodes a rule, the rule is stated with the
 suite's vocabulary, because that is the form you will actually need.

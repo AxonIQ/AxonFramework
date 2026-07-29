@@ -196,8 +196,9 @@ The third is the one that decays if nobody defends it. Two honest dispositions a
 - **accepted residual** -- no module exists in this tree to target, or the cost is not justified
   before a cheaper arm has produced findings. Both forms name the condition under which the
   residual should be revisited.
-- **blocked, with evidence** -- one arm is not skipped silently but recorded with the linkage
-  error that prevents it, as a finding of its own.
+- **blocked, with evidence** -- an arm that cannot run is recorded with the error that blocks
+  it, as a finding of its own, never skipped silently. One arm here spent a phase in that state
+  before a harness shim unblocked it.
 
 And keep a **redundancy check**. Some double coverage is deliberate (every safety cluster wants
 at least two independent falsification paths); some is accidental and expensive. Both should be

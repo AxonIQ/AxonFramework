@@ -13,9 +13,9 @@ that history against a reference model and a set of invariant checkers. It runs 
 clusters, real databases in containers, network partitions and process kills, and it
 model-checks two protocols with TLA+.
 
-It has found **19 defects and gaps** (`formal/FINDINGS.adoc`): 7 high severity, 7 medium, 4
-low, plus one measured non-defect. Thirteen were reproduced by a failing test, four confirmed by
-reading, two measured; two were also model-checked. Nothing in the framework was patched to get
+It has found **over twenty defects and gaps**; the at-a-glance table at the top of
+`formal/FINDINGS.adoc` is the ledger and owns every count, severity and reproduction state
+(this page does not copy them -- see section 8). Nothing in the framework was patched to get
 them -- that is a rule, see section 6.
 
 If you work on the event store, event processors, tokens or segments, this concerns you: the
@@ -120,8 +120,8 @@ The "when" column is the useful one.
 |---|---|---|
 | `simulation/` | The harness: workloads, faults, history recorder, checkers, scenarios, backends. A Maven module behind `-Phunt`, so `./mvnw verify` does not build it. | You are running or extending the suite. |
 | `formal/INVARIANTS.md` | The constitution, the measured determinism boundary, the invariant registry, the history schema, and the recipes for adding an invariant, scenario, fault, workload or backend. | Before writing any assertion. Before quoting any invariant wording. |
-| `formal/FINDINGS.adoc` | F-1..F-18: what is wrong, severity, evidence, per-backend vector, candidate fix, reproduce command, and how it was found. | Before reporting anything as new. When a suite arm goes red. |
-| `formal/CANARIES.md` | Seven planted defects, what each one caught, the two that escaped, and honest tables of what has never been canaried. | Before trusting a green run. |
+| `formal/FINDINGS.adoc` | F-1..F-n: what is wrong, severity, evidence, per-backend vector, candidate fix, reproduce command, and how it was found. | Before reporting anything as new. When a suite arm goes red. |
+| `formal/CANARIES.md` | The planted defects, what each one caught, which escaped, and honest tables of what has never been canaried. | Before trusting a green run. |
 | `formal/HUNT-NOTES.md` | Append-only working notes: determinism seams, API traps, commands that worked, design decisions and their reasons. | When something does not behave as you expect. Append whatever costs you an hour. |
 | `formal/CONNECTOR-COMPATIBILITY.md` | Which released Axon Server connector versions load against this reactor, which methods the harness shims and what each one models, and what to do about a combination that fails the gate. Derived from a runnable check, not from reading. | Before changing a connector or framework version. When a run fails with `AbstractMethodError` or a missing method. |
 | `formal/tla/` | Two TLA+ models (append protocol, token claim) with 15 configurations in violated/fixed pairs, plus a model-to-model cross-check. `README.md` has the bounds and every result. | Before touching a model, or when you want a property proven at small bounds rather than sampled. |
@@ -274,9 +274,12 @@ written down per arm in `formal/HUNT-NOTES.md`:
   none. Its event store is real and its claim side is not, so every ownership invariant reports itself
   inexpressible there. A verdict from that column is a verdict about the event store.
 - **One Axon Server**, never a cluster of them -- which is the failure that store exists to survive.
-- The Axon Server **differential column covers three of the five matrix scenarios**, at two seeds each. The run wedged
-  after an `OutOfMemoryError` partway through the fourth and was killed; one of the three is inconclusive on this store
-  because its hundred-event batches time out over gRPC, which is a budget shortfall and not a divergence.
+- The Axon Server **differential column covers three of the five matrix scenarios**, at two seeds each. The
+  `OutOfMemoryError` wedge in the matrix class is **reproducible** -- two runs, two OOMs, at the JVM's default maximum
+  heap -- so the matrix cannot currently complete end to end with this backend registered; the histories written before
+  the death replay offline to the expected vectors. Evidence and the next diagnostic step: `formal/HUNT-NOTES.md`
+  section 6.6. One of the three scenarios is inconclusive on this store because its hundred-event batches time out over
+  gRPC, which is a budget shortfall and not a divergence.
 - The Axon Server arm's **canary escaped**, by pushing the arm into undecidedness rather than failure. Its oracles have
   been shown to go red on two *real* defects there, which is worth more, but that is not the same as a planted one.
   `formal/CANARIES.md` has the escape and the few lines that would close it.
@@ -289,11 +292,13 @@ snapshots -- the arm substitutes the event store and nothing else, on purpose, s
 attributable to the event store.
 
 **Two open mechanisms.** F-16's mechanism on a clean engine is not fully explained; settling it
-needs the reader's token instrumented rather than inferred. F-19's is bounded and not explained: Axon
-Server accepts an append its consistency boundary forbids, under concurrency, and nine separate
-experiments narrowed it to "inside the append operation, one or two batches wide" without naming it --
-settling that one needs the server's own instrumentation rather than a client-side experiment. They are
-the two most valuable open questions in the set.
+needs the reader's token instrumented rather than inferred. F-19's is narrowed and not explained: on
+the suite's path the released connector-plus-server stack accepts appends their consistency boundaries
+forbid, under concurrent commits -- pinned by a committed history that replays to FAIL offline and
+readable checker-independently from that file -- while a probe driving the identical connector against
+the identical server measures zero; the entry names the environmental deltas to try next, and settling
+where the check and the sequencing come apart needs the server's own instrumentation. They are the two
+most valuable open questions in the set.
 
 ## 8. Where the truth lives
 

@@ -2580,3 +2580,78 @@ Both skill copies corrected, and both were wrong in *different* ways, which is i
 committed copy under `.claude/skills/` and the installed copy under `~/.claude-work/skills/` drift,
 and the committed one is the source of truth. `cp -R .claude/skills/axon-hunt ~/.claude-work/skills/`
 after editing.
+
+### 6.5 Review pass over the finished suite: F-19 was sharper than its own entry, and the entry's reader script was why
+
+Three corrections from one independent re-run of the Axon Server arm plus one offline analysis of its history, all now
+folded into the entry and its assets.
+
+**The "always ORIGIN" claim was an artefact of the tool that produced it.** The entry's history-reader script filtered
+on `marker != -1`, so it was structurally unable to see a violation on a sourced-marker append -- and then the entry
+generalized "the first violation is always ORIGIN" from two runs read with that script. A checker-independent scan of a
+fresh run's history (recorded conditions against the store's own final scan order, no model, no checker) found **eleven
+over-accepted appends of 133 accepted, all with sourced markers and none at ORIGIN**. The corrected script is in the
+entry and points at the committed pinned file. The lesson to carry: **a reader script is an oracle too, and a filter in
+it is a blind spot in the finding.** The "one per run" rate was the same class of error in the other direction -- the
+model reports one violation per run *by construction* (stop-at-first-divergence), so quoting it as a rate under-reported
+the effect elevenfold.
+
+**The suite's own pinning policy had not been applied to its highest-severity open finding.** "A finding here is pinned
+by its history file and never by its seed" -- and F-19 shipped no pinned history. It does now:
+`simulation/src/test/resources/hunt-histories/pinned-axonserver-boundary-violation.jsonl`, asserted by
+`RegressionSeedsTest` to replay to FAIL, which makes the F-19 observation re-checkable in seconds with no Docker.
+
+**Two of F-19's three attribution doors close under checker-independent evidence.** The framework-mangles-the-condition
+door: the record is written from the exact `AppendCondition` the wrapper hands the delegate, the connector's
+`appendEvents` bytecode ignores the `ProcessingContext` and passes that condition unchanged into `ConditionConverter`,
+and an over-acceptance is relative to the condition the store received, whatever it was derived from. The
+harness-or-model-misjudges door: the analysis uses no model; the scan mechanism is cross-validated by the probe's own
+assertion that every accepted batch sits at the position the store's returned marker names; and for six of the eleven
+violations the store *rejected other appends* over exactly the event it let the violator ignore, so the conflicting
+events' tags were demonstrably stored and enforced. What remains open is where between the connector and the server the
+check and the sequencing come apart -- and why the probe, which drives the identical class against the identical server,
+measures zero in fourteen runs. The environmental deltas (an open event stream, framework commit pacing, hot-tag skew)
+are listed in the entry as the bounded next step.
+
+Same pass, smaller corrections: F-11 reclassified (b) -> (c) -- the split/merge arm passes whether or not the finding
+holds because the redelivery is licensed, and the behaviour is three lines of source (`MergedTrackingToken.position()`
+is `Math.min`), so the inspection *is* the re-check; F-4/F-5's `SplitTask.java:113` citations drifted to `:114` after
+the upstream merge and were corrected; and the TLA violated/fixed pairs were re-run and match their documented state
+counts to the digit (2784 and 308).
+
+### 6.6 The backend-differential wedge is reproducible, and it is an OutOfMemoryError, not a hang
+
+HUNT.md records the Axon Server differential column as having wedged once "after an OutOfMemoryError partway through
+the fourth" matrix scenario. Re-run during review with all five backends registered: the first test method completed
+and wrote every history (3 scenarios x 5 backends x 2 seeds, finishing 08:52), and the second
+(`WhatEachStoreDeliveredOfWhatItCommitted`) died 22 minutes later with
+
+    java.lang.OutOfMemoryError: Java heap space   (surefire dumpstream, 09:14:38)
+
+on a fork running at the JVM default maximum heap -- no `-Xmx` is set anywhere in the module or the parent, so this is
+gigabytes accumulating across the ~40 scenario runs one differential JVM performs, not a small-heap artefact. Two runs,
+two OOMs: this is a harness defect in the matrix tier, not a one-off, and the weekly matrix job will not complete until
+it is found. The offline replays still work -- the method-1 histories written before the death replay to the expected
+vector (`postgres-jpa:FAIL` on `UnconditionalAppendNeverRejected`, `in-memory:PASS`), which is how F-14 was verified
+despite the wedge.
+
+Next diagnostic, for whoever picks it up: add `-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=target/` to the matrix
+invocation's `argLine` and read the dominator tree; the suspects, in order, are per-run Axon Server connections or
+buffered gRPC streams not released by `AxonServerHuntBackend.release`, and the recorder or wrapper retaining per-run
+state across the differential's accumulated runs.
+
+### 6.7 The framework's own unit-test flakiness, measured incidentally by three clean-tree builds
+
+Three runs of the review's verification build (`./mvnw -q -Phunt -pl simulation -am test`, identical tree, framework
+sources untouched) ran the messaging module's 4252 unit tests three times. Two of the three failed, each on a
+*different* method of the same framework test class, both Awaitility-window shaped:
+
+    PooledStreamingEventProcessorTest.isErrorForFailingMessageSourceOperation   expected: <false> but was: <true>
+    PooledStreamingEventProcessorTest.handlingEventsByMultipleEventHandlingComponents   ConditionTimeoutException (1s window)
+
+The framework's own CI runs with `-Dsurefire.rerunFailingTestsCount=5` (main.yml, pullrequest.yml, examples.yml), so
+this rate is invisible there by construction. It is visible here because the hunt gate judges by plain exit code. Two
+consequences worth carrying: a hunt CI job that builds with `-am` inherits the framework's flake rate through the
+upstream modules, not through the suite -- the suite's own 200+ cases were green in all three runs -- and the flaky
+class is `PooledStreamingEventProcessorTest`, the component this suite already holds three findings against. Nobody
+should page the suite for a red that names a messaging-module test.

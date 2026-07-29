@@ -111,30 +111,38 @@ them owns.
 Append to `HUNT-NOTES.md` whatever cost you an hour. That file exists so the next agent does
 not pay again.
 
-## Routing: which external knowledge to load, when
+## Knowledge: everything load-bearing is in this skill or in this repo
 
-Full table with WHEN / WHAT / what NOT to expect: **`references/knowledge-routing.md`**.
+This skill depends on **no external skill and no private repository**. Every reference under
+`references/` is self-sufficient for the work it describes, and the in-repo documents under
+"Where the truth lives" are the authority on specifics:
 
-| Task | Load |
+| Need | In this skill / this repo |
 |---|---|
-| Extending the harness; seams; fuzz/reproduce/regression wiring; expansion recipes | `axon-flow-tla-dst` (the setup this suite was modelled on) |
-| A new failure hypothesis, or a fault / DST / crash-recovery / formal arm of a kind the suite has not built | `designing-distributed-system-tests` (its `references/`, one file per topic) |
-| Running scenarios; landing evidence; the green-but-broken audit; picking a checker; classifying a finding | `executing-distributed-system-tests` |
-| The real DCB conflict semantics a checker or model must encode | `dcb-axoniq`, `dynamic-consistency-boundaries` |
-| AF5 API wiring for a workload, a backend or a probe | `axoniq-app-dev` (has its own internal routing), `axoniq-framework-5-expert` |
-| Orienting in an unfamiliar framework subsystem | `graphify` -- navigate before grep |
-| Third-party library docs (Testcontainers, Toxiproxy, TLC) | `ctx7` -- and plan for it being unavailable |
+| History discipline, checker picker, landing evidence, the green-but-broken audit, weak oracles, DST seam patterns, anti-hang design | `references/method-essentials.md` |
+| Hypothesis generation for a subsystem with no coverage | `references/pitfall-catalogue.md`, plus the walked table in `docs/testing-plans/axon-hunt.md` section 4 |
+| The DCB conflict semantics a checker, model rule or TLA+ operator must encode | `references/dcb-semantics.md`, and the rule table with engine `file:line` evidence in `formal/INVARIANTS.md` section 3.1 |
+| AF5 wiring for a workload, backend or probe -- verbatim, compiling, with the plain-Java traps | `formal/HUNT-NOTES.md` section 2; the published Javadoc is the fallback |
+| Contribution conventions for code in this repo | the repository's own `CLAUDE.md` and `.claude/rules/`; `build/checkstyle.xml` is the enforcement |
+| Third-party specifics (Testcontainers, Toxiproxy, TLC, JDBC drivers) | verified, pasted commands in `references/running.md` and `formal/HUNT-NOTES.md` -- they were run against the versions this suite uses, which beats documentation |
 
-**Those skills are harness-managed and may not exist where you are running.** A skill that
-dead-ends on a missing plugin is worthless, so the load-bearing essentials are distilled
-into this skill's own references:
+Two **optional** tools help when present and cost nothing when absent:
 
-| Reference | Self-sufficient? |
-|---|---|
-| `references/method-essentials.md` -- history-discipline field rules, the checker-picker table, landing evidence, the green-but-broken audit, the weak-oracle list, DST seam patterns | **Yes.** Enough to add a checker, a fault or an arm correctly with no external skill. Go outward only for depth on a fault class this suite has never built. |
-| `references/dcb-semantics.md` -- the conflict semantics a checker or TLA+ operator must encode | **Yes** for writing or reviewing one. Needs `dcb-axoniq` only for the design rationale of the boundary itself. |
-| `references/running.md`, `recipes.md`, `hunting-loop.md`, `traps.md`, `claims-and-scenarios.md`, `design-commitments.md`, `extending.md`, `honest-reporting.md` | **Yes.** They are about this repo and depend on nothing external. |
-| `references/knowledge-routing.md` | **Dependent by construction** -- it is the map to the external skills. Every row states what to do when the skill is absent. |
+- **`graphify`** -- a prebuilt knowledge graph of the framework, if `graphify-out/` exists.
+  `query`/`path`/`explain` to orient before grepping; the graph orients, the source decides;
+  never quote it as evidence. Absent: grep, starting from the checker classes in the invariant
+  registry and the `file:line` anchors in the claim corpus.
+- **`ctx7`** -- third-party library documentation. Its quota ran out partway through this
+  project, so nothing here may depend on it; the verified commands in `running.md` and
+  `HUNT-NOTES.md` exist precisely so it is never needed.
+
+**What this skill deliberately does not contain:** generic distributed-systems pedagogy beyond
+the distillations above (the method files carry the load-bearing rules, not the textbook); the
+design rationale of the DCB boundary concept itself (why an aggregate is the wrong unit, how to
+choose a boundary -- a modelling question; `dcb-semantics.md` is sufficient for *checking*
+work); AF5 application-building guidance beyond what the harness wires; and any copy of the
+numbers the in-repo documents own -- findings, invariants, canary results are read from
+`formal/`, never from here, because they move.
 
 ## The bug-hunting loop
 
@@ -426,7 +434,8 @@ contradicted the inference, not the measurement.
 | `references/hunting-loop.md` | Triaging, reproducing or interpreting a result. Determinism boundary and flake classification. |
 | `references/recipes.md` | Adding an invariant, fault, workload, backend, canary or model. |
 | `references/traps.md` | Before writing up any divergence as a finding. |
-| `references/method-essentials.md` | Writing a checker, a fault or a new arm without the external method skills. |
+| `references/method-essentials.md` | Writing a checker, a fault or a new arm. History discipline, oracles, landing evidence, audits, seams. |
+| `references/pitfall-catalogue.md` | Generating hypotheses for a subsystem with no coverage. |
 | `references/dcb-semantics.md` | Writing or reviewing anything that decides whether an append conflicts. |
 | `references/claims-and-scenarios.md` | Mining claims, or designing a scenario from a hypothesis. |
 | `references/design-commitments.md` | Making a design decision about the harness itself. |

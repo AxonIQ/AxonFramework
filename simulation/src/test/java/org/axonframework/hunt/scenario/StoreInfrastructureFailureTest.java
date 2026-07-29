@@ -234,6 +234,15 @@ class StoreInfrastructureFailureTest {
                 long missing = missingEvents(result);
                 System.out.println(result.scenarioId() + " missing=" + missing
                                            + " lossViolations=" + lossViolations(result));
+                // The skip itself is asserted, expected-gap style, because its presence on this deliberate arm has
+                // been measured rather than assumed: eight arm-runs across four suite runs, every one positive
+                // (missing between 2 and 8; the numbers are recorded with finding F-16). A hold of twice the gap
+                // timeout on every commit guarantees the ageing, so the only variance is how many indices interleave.
+                // This goes red the day the store stops skipping, which is the signal to close the finding.
+                assertThat(missing)
+                        .as("committed events the store held that no consumer ever received (finding F-16); zero "
+                                    + "means the gap is closed and this assertion must be turned around")
+                        .isPositive();
                 if (stalled(result) && missing > 0) {
                     assertThat(lossViolations(result))
                             .as("a read side that has stopped with %d event(s) still in the store must be judged, "

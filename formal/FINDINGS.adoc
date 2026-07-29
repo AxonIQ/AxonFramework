@@ -43,36 +43,38 @@ seconds. F-1 is the model.
 
 | F-1 | *(c)* | Two greps, printing both sides of the swap: the Spring Boot `@DefaultValue`s and the core defaults | yes
 | F-2 | *(c)* | One grep over `InMemoryTokenStore`. Weaker than F-1: shows the implementation, not the contract it contradicts | yes
-| F-3 | *(a)* | `PartialBatchVisibilityTest:90` -- `assertThat(torn)...isNotEmpty()`, where a `POLL` note is recorded only for a read that saw part of a batch | yes
+| F-3 | *(a)* | `PartialBatchVisibilityTest:92` -- `assertThat(torn)...isNotEmpty()`, where a `POLL` note is recorded only for a read that saw part of a batch | yes
 | F-4 | *(c)* | Two greps over the claim-expiry clock and the injected-clock contrast site | yes
 | F-5 | *(c)* | One grep over the hardcoded post-split block | yes
-| F-6 | *(a)* for the identifier collapse; the segment starvation is unpinned | `SequencingPolicyOrderTest:97` -- `resolvedSequenceKeys(history)).hasSize(1)` across six streams | yes
+| F-6 | *(a)* for the identifier collapse; the segment starvation is unpinned | `SequencingPolicyOrderTest:99` -- `resolvedSequenceKeys(history)).hasSize(1)` across six streams | yes
 | F-7 | *(a)* | `SequencingPolicyOrderTest` -- the `NoSuchElementException` note, `deliveredEvents` zero, and the delivery invariant FAIL. Three independent ways to go red | yes
-| F-8 | *(a)* | `TransactionPhaseFailureTest:163-168` -- a rollback was requested, and it carries `afterCommit=true` | yes
+| F-8 | *(a)* | `TransactionPhaseFailureTest:163-166` -- a rollback was requested, and it carries `afterCommit=true` | yes
 | F-9 | *(a)* | `ClaimCapableBackendTest:149` -- `assertThat(identifierFailures.get()).isPositive()` | yes
 | F-10 | *(a)* | `SegmentOwnershipUnderSkewTest` -- three assertions, one per measured bound, including `ownershipViolations).isNotEmpty()` | yes
-| F-11 | *(b)* | `SplitAndMergeUnderLoadTest` asserts `violations()).isEmpty()` -- the redelivery is licensed, so the arm passes whether or not the finding holds | yes
+| F-11 | *(c)* | Two greps and a `sed`: `MergedTrackingToken.position()` is `Math.min` of the two halves, `MergeTask` hands the merged segment that token, and the reference page plus both classes contain the word "redeliver" zero times. The split/merge arm exercises the behaviour but licenses it, so it pins nothing; the inspection is the re-check | yes
 | F-12 | *(c)* | Two greps. **The named arm passes**: the harness supplies the converter before the defect can fire | yes
 | F-13 | *(c)* | One grep. Not a defect; recorded as a harness constraint | yes
 | F-14 | *(a)* | `BackendDifferentialTest:272-277` -- the PostgreSQL arm must carry `UnconditionalAppendNeverRejected`, and the in-heap arm must be clean | **no** (container)
-| F-15 | *(b)* | Two inherited integration-test suites that currently fail. They assert the *guarantee*, so closing the gap makes them pass -- they do not pin the finding | **no** (container, and `-Pintegration-test`)
-| F-16 | *(b)* | `StoreInfrastructureFailureTest` prints `missing=` / `lossViolations=` every run; the loss assertion is inside `if (stalled && missing > 0)` | **no** (container)
+| F-15 | *(c)* | One `sed` printing the unconditional `throw new UnsupportedOperationException("Not implemented yet")` and one grep printing the `lowerBound` call that reaches it from every second sourcing. The defect is deterministic, so the code *is* the re-check; three inherited integration tests demonstrate reachability on PostgreSQL (they fail today and flip green when the method is implemented) | the inspection, yes; the demonstration needs a container |
+| F-16 | *(a)* | `StoreInfrastructureFailureTest` -- `assertThat(missing).isPositive()` on both deliberate arms, justified by a measured rate of eight positive arm-runs in eight; the loss-is-decided assertion follows it | **no** (container)
 | F-17 | *(c)* | One grep showing the store's `commit()` is a documented no-op. The measurement itself needs a source revert of `LateCommitFault` | **no** (container)
-| F-18 | *(a)*, twice | `ConnectorCompatibilityTest:305` -- the shimmed method must still be one the connector lacks; and `AxonServerBackendTest:104` asserts the `AbstractMethodError` itself | **the first, yes**
-| F-19 | *(b)* | `AppendBoundaryEnforcementUnderContentionTest` -- three constructions, reports its numbers, asserts only decidables. The suite arm reports the violation; the probe measures zero | **no** (container)
+| F-18 | *(a)*, twice | `ConnectorCompatibilityTest:307` -- the shimmed method must still be one the connector lacks; and `AxonServerBackendTest:106` asserts the `AbstractMethodError` itself | **the first, yes**
+| F-19 | *(a)* | `RegressionSeedsTest$PinnedHistoriesOfRunsNoSeedReproduces` -- the committed pinned history must replay to `FAIL`; plus a checker-independent script over the same file printing the eleven violations. The live probe (`AppendBoundaryEnforcementUnderContentionTest`) stays rate-based and container-bound | yes (the pin and the script; the live arm needs one)
 | F-20 | *(a)* | `AxonServerInfrastructureFailureTest` -- the append-failure classification set must be exactly `{AppendEventsTransactionRejectedException}` under eight landed cuts | **no** (container)
-| F-21 | *(a)* | `DurableProgressMonotonicityTest:130` and `:163`, against the `:207` control that asserts the guarantee | yes
-| F-22 | *(a)* | `BroadcastSentinelCollisionTest:109` -- a sentinel-valued key is handled in every segment, against the `:106` one-segment control | yes
+| F-21 | *(a)* | `DurableProgressMonotonicityTest:124` and `:165`, against the `:209` control that asserts the guarantee | yes
+| F-22 | *(a)* | `BroadcastSentinelCollisionTest:111` -- a sentinel-valued key is handled in every segment, against the `:108` one-segment control | yes
 | F-23 | *(c)* | A grep plus a `sed` on named lines, printing both sides of the mismatch | yes
 |===
 
-*Eleven of the twenty-three are asserted, four are probed, eight are inspected.* Six of the eight inspected are not a
-backlog: F-1, F-2, F-4, F-5, F-13 and F-23 are findings about what the code and its documentation *say*, and a test
-asserting a default value would restate the constant rather than check anything. F-12 and F-17 are the two where (c) is a
+*Thirteen of the twenty-three are asserted, none is probed, ten are inspected.* Eight of the ten inspected are not a
+backlog: F-1, F-2, F-4, F-5, F-11, F-13, F-15 and F-23 are findings about what the code and its documentation *say* --
+for F-11 and F-15 the behaviour is a deterministic property of named source lines, so the inspection is the re-check
+and the arms that exercise them are demonstrations rather than pins. F-12 and F-17 are the two where (c) is a
 concession rather than the right answer, and both say so in their own entries.
 
-Eight of the eleven asserted states run in the default build with no Docker. The container-tagged ones -- F-14, F-19,
-F-20, and the second half of F-18 -- are behind `-Dhunt.excludedGroups=fuzz`, which is what a nightly job clears.
+Ten of the thirteen asserted states run in the default build with no Docker -- including F-19, whose pinned history
+replays offline. The container-tagged ones -- F-14, F-16, F-20, the second half of F-18, and F-19's live re-sample --
+are behind the default `fuzz,container` exclusion, which is what a nightly job clears.
 
 == At a glance
 
@@ -191,7 +193,8 @@ F-20, and the second half of F-18 -- are behind `-Dhunt.excludedGroups=fuzz`, wh
   wall clock, so a neighbour that has aged past the threshold suppresses the gap for the hole below it, and nothing ever
   asks for that index again.
 | High
-| *Reproduced by test*, on PostgreSQL, on both configuration paths. Open.
+| *Reproduced by test*, on PostgreSQL, on both configuration paths, and pinned on the deliberate arms by a measured
+  rate of eight positive runs in eight. Open.
 
 | *F-17* `DatabaseTransactionCommitRacesAppendTransactionCommit`
 | On a store whose transaction lives on the processing context, the database transaction's commit and
@@ -213,14 +216,15 @@ F-20, and the second half of F-18 -- are behind `-Dhunt.excludedGroups=fuzz`, wh
   compatibility gate now names the set in seconds.
 
 | *F-19* `AxonServerAcceptsAnAppendItsBoundaryForbids`
-| On the suite's path, an append is accepted although an event matching its consistency boundary was committed at or
-  after its consistency marker before the append's own commit. The first violation is always an append carrying
-  `ConsistencyMarker.ORIGIN` -- "no event inside this boundary exists anywhere" -- and the rate is one per run, of about
-  72 such appends. The in-heap engine, on the identical scenario, does not. But a probe driving the published connector
-  directly does not reproduce it either, in three constructions over fourteen runs, so *whose* defect it is is open.
-| High (*if real*; the attribution is open)
-| *(b) probed.* The suite oracle reports it on demand; the committed probe measures zero. Mechanism and attribution
-  both open. Open.
+| On the suite's path, appends are accepted although an event matching their consistency boundary was committed at or
+  after their consistency marker -- eleven of 133 accepted appends in the pinned run, all carrying sourced markers, each
+  racing the append that committed its conflicting event, and six of the eleven conflicting events demonstrably visible
+  to the store because it rejected *other* appends over exactly them. The in-heap engine, on the identical scenario,
+  does not. A probe driving the published connector directly still measures zero in fourteen runs; the difference
+  between the two paths is unexplained and stated in the entry.
+| High (attribution between connector and server open; the observation itself is no longer hedged)
+| *Reproduced by test*, pinned by a committed history that replays to FAIL offline, and measurable from that history
+  checker-independently. Open.
 
 | *F-20* `ConnectorReportsEveryCommitFailureAsAConsistencyRejection`
 | The Axon Server connector wraps *every* throwable from an append commit in
@@ -230,6 +234,27 @@ F-20, and the second half of F-18 -- are behind `-Dhunt.excludedGroups=fuzz`, wh
   conflict.
 | High
 | *Confirmed in the connector's bytecode and reproduced by test.* Open.
+
+| *F-21* `AntiRewindGuardInactiveOnFirstStoreOfEveryClaim`
+| The guard that keeps a segment's durable progress monotonic compares against a field that is only written after a
+  first successful store, and a work package is built fresh on every claim -- so the first persist of every claim cycle
+  is unguarded, and a progress strategy can silently rewind a segment's durable position to the start of the stream.
+| High
+| *Reproduced by test*, with an in-test control demonstrating the candidate fix. Open.
+
+| *F-22* `BroadcastSentinelIsAPlainStringUserDataCanEqual`
+| The broadcast sequence identifier is the literal string `BROADCAST`, compared by value, so any sequencing policy
+  that extracts keys from event data delivers an event whose key equals that string once per segment instead of once.
+  The value was deliberately shortened from a collision-implausible one for cosmetic reasons.
+| Medium (High where sequence keys derive from user data)
+| *Reproduced by test*, against a one-segment control. Open.
+
+| *F-23* `SpringBootTokenStoreDefaultDefeatsOptionalTokenStore`
+| The feature that makes the pooled processor's token store optional-when-unset is unreachable through Spring Boot
+  properties, because the properties class defaults the setting to the non-empty literal `"tokenStore"` -- so the
+  "unset" branch never runs and an application without a bean of exactly that name fails at startup.
+| Medium
+| Confirmed by reading. Open.
 |===
 
 == F-1 -- Spring Boot autoconfigure inverts `gapTimeout` and `maxGapOffset`
@@ -476,7 +501,7 @@ injected `Clock`.
 
 * `common/src/main/java/org/axonframework/common/ClockUtils.java:49` -- `private static final AtomicReference<Clock> CLOCK`
 * `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/store/jpa/TokenEntry.java:159-160` -- `expired()` reads `ClockUtils.instant()`
-* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:113` -- by contrast, uses an injected `clock` field
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:114` -- by contrast, uses an injected `clock` field
 
 === Why it matters
 
@@ -521,7 +546,7 @@ scale with any of the processor's other timing settings.
 
 === Evidence
 
-* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:113` -- `clock.instant().plusSeconds(60)`
+* `messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/SplitTask.java:114` -- `clock.instant().plusSeconds(60)`
 
 The guard is also stored in a per-coordinator map, so it constrains only the splitting node; nothing
 stops another node claiming the segment mid-split.
@@ -1015,15 +1040,15 @@ java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC \
 == F-11 -- A merge rewinds to the lower of the two tokens, and nothing says so
 
 *Severity:* Medium +
-*Status:* Open. *Measured once; licensed since, and asserted nowhere.* +
-*Reproduction state:* *(b) probed.* `SplitAndMergeUnderLoadTest` runs the split/merge storm and asserts that splits and
-merges landed and that `result.violations()` is **empty** -- because `DeliveryChecker` deliberately licenses the
-redelivery a merge causes. So the arm passes *because* this finding is true, and it would go on passing if it stopped
-being true. The redelivery reaches stdout only through the checker's free-text measurement
-(`Repeated deliveries, by how many times an event arrived: ...`), which folds claim handovers, crash recovery and replay
-into the same counter and is not merge-specific. *Reaching (a) is not cheap:* a merge record carries `segment` and
-`carriedOut` but no token positions, so pinning "the surviving segment took the lower token" needs a new counting helper,
-and removing the licence instead would turn the arm red rather than pin the finding. +
+*Status:* Open. *Measured once; licensed since.* +
+*Reproduction state:* *(c) inspected*, and that is the right state: the defect is a documentation gap over behaviour the
+code states plainly, so the re-check is the code and the documentation themselves (commands under Reproduce).
+`SplitAndMergeUnderLoadTest` exercises the behaviour but cannot pin it: it asserts `result.violations()` is **empty**
+precisely because `DeliveryChecker` licenses the redelivery a merge causes, so the arm passes whether or not the
+behaviour holds, and the redelivery reaches stdout only through a free-text measurement that folds claim handovers,
+crash recovery and replay into one counter. *Reaching (a) is not cheap and buys nothing over the inspection:* a merge
+record carries `segment` and `carriedOut` but no token positions, so pinning "the surviving segment took the lower
+token" at run time needs a new counting helper for a fact three lines of source already state. +
 *Claims:* C24, C25, C38, M10
 
 === What is wrong
@@ -1066,15 +1091,32 @@ handlers must therefore be idempotent across a merge regardless of the token sto
 
 === Reproduce
 
+By inspection, in seconds. The merged segment's token reports the lower of the two halves' positions, the merge hands
+the surviving segment exactly that token, and neither the reference page nor the two classes mention the redelivery
+that follows:
+
+[source,bash]
+----
+sed -n '138,146p' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/token/MergedTrackingToken.java
+# -> position() is Math.min(lowerSegmentToken.position(), upperSegmentToken.position())
+grep -n 'MergedTrackingToken.merged' messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/MergeTask.java
+grep -c 'redeliver' docs/reference-guide/modules/events/pages/event-processors/streaming.adoc \
+  messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/pooled/MergeTask.java \
+  messaging/src/main/java/org/axonframework/messaging/eventhandling/processing/streaming/segmenting/Segment.java
+# -> 0, 0, 0
+----
+
+The behaviour under load:
+
 [source,bash]
 ----
 ./mvnw -Phunt -pl simulation -am test -Dtest=SplitAndMergeUnderLoadTest \
     -Dsurefire.failIfNoSpecifiedTests=false
 ----
 
-`DeliveryChecker` now opens a licence window at every recorded split and merge, so the arm passes and reports the
-repeats as a distribution rather than as a violation. Removing that licence turns the finding back into a red run, which
-is how it was found.
+`DeliveryChecker` opens a licence window at every recorded split and merge, so the arm passes and reports the repeats
+as a distribution rather than as a violation. Removing that licence turns the run red, which is how the behaviour was
+found -- but the arm cannot pin the finding, because it passes with the licence whether or not the behaviour holds.
 
 == F-12 -- Resetting tokens demands a converter even when there is nothing to convert
 
@@ -1256,6 +1298,17 @@ its caller will retry.
 
 The run prints one `VECTOR` line per scenario. The finding is the `postgres-jpa:FAIL` entries against `in-memory:PASS`.
 
+Known shortfall of that command: with the Axon Server backend registered, the class's *second* test method dies with an
+`OutOfMemoryError` after the first has written every history (reproduced twice; `formal/HUNT-NOTES.md` section 6.6).
+The vector is still obtainable from the histories the first method wrote, offline and in seconds:
+
+[source,bash]
+----
+./mvnw -q -Phunt -pl simulation -o test -Dtest=HistoryReplayTest -Dsurefire.failIfNoSpecifiedTests=false \
+    -Dhunt.history=simulation/target/hunt-histories/differential-postgres-jpa/dcb_append_rejected_after_marker_under_contention-1.jsonl
+# -> FAIL, [UnconditionalAppendNeverRejected]; the same file from differential-in-memory replays to PASS
+----
+
 === The same defect at the design level
 
 `formal/tla/DcbAppend.tla` models the append protocol with one flag, `INFINITY_IS_ORIGIN`, that turns the collapse above
@@ -1282,7 +1335,12 @@ java -XX:+UseParallelGC -cp formal/tla/tools/tla2tools.jar tlc2.TLC \
 == F-15 -- Sourcing twice in one processing context throws on the aggregate-based store
 
 *Severity:* High +
-*Status:* Open. *Reproduced by test.* +
+*Status:* Open. *Reproduced by test*, and the defect is a deterministic property of the source. +
+*Reproduction state:* *(c) inspected*, by choice: the throw is unconditional and the path that reaches it is three
+lines, so the inspection under Reproduce shows the defect in seconds with no container. The three inherited
+integration tests that fail on PostgreSQL are the runtime demonstration -- they assert the *guarantee*, so they are red
+while the gap exists and flip green when `doLowerBound` is implemented, which makes them a reproduce command rather
+than a pin a green build could carry. +
 *Claims:* C5, C6, C7 +
 *Backend vector:* `in-memory:PASS postgres-jpa:FAIL`
 
@@ -1338,27 +1396,41 @@ and `DefaultEventStoreTransaction` should not reach it.
 
 === Reproduce
 
+By inspection, in seconds and with no build -- the unconditional throw, and the call that reaches it from every second
+sourcing in one processing context:
+
+[source,bash]
+----
+sed -n '78,82p' eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/AggregateBasedConsistencyMarker.java
+# -> public AggregateBasedConsistencyMarker doLowerBound(...) { throw new UnsupportedOperationException("Not implemented yet"); }
+grep -n 'current.lowerBound(marker)' eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/DefaultEventStoreTransaction.java
+# -> the combine every sourcing after the first goes through
+----
+
+The runtime demonstration, on a real store:
+
 [source,bash]
 ----
 ./mvnw -Pintegration-test -pl integrationtests verify -Djacoco.skip=true \
     -Dtest=NoSuchUnitTest -Dsurefire.failIfNoSpecifiedTests=false -Dhunt.backend=postgres-jpa
 ----
 
-The same command without `-Dhunt.backend` runs the identical classes against the in-memory store and is green, which is
-the vector.
+Three cases fail with this exception and flip green the day `doLowerBound` is implemented. The same command without
+`-Dhunt.backend` runs the identical classes against the in-memory store and is green, which is the vector.
 
 == F-16 -- An event skipped for ever because its own timestamp aged past the gap timeout
 
 *Severity:* High +
-*Status:* Open. Measured on PostgreSQL, on both configuration paths. *The loss assertion is conditional on the skip having
-happened, so it is not a pin.* +
-*Reproduction state:* *(b) probed.* `StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout` prints
-`missing=<n> lossViolations=<n>` on both arms every run, and asserts the loss is judged rather than excused **inside**
-`if (stalled(result) && missing > 0)`. Close the gap and `missing` becomes zero, the branch never runs, and the arm goes
-green without anything having been checked. What it asserts unconditionally is that the fault landed and that the drain
-reported its shape. *Reaching (a) is one line* -- `assertThat(missing).isPositive()` on the already-computed local -- but
-it asserts that a race fires on every run, and the rate has never been measured. An earlier phase declined it on exactly
-those grounds and this one keeps that call: **measure the rate across runs first, then pin it.** That is the follow-up. +
+*Status:* Open. Measured on PostgreSQL, on both configuration paths, and **pinned on the deliberate arms**. +
+*Reproduction state:* *(a) asserted.* `StoreInfrastructureFailureTest$HoldingCommitsOpenPastTheStoresGapTimeout`
+asserts `assertThat(missing).isPositive()` on both chaos arms, expected-gap style: it goes red the day the store stops
+skipping. The pin was declined by two earlier phases because it asserts that the effect fires on every run and the rate
+had never been measured; the rate has now been measured -- **eight arm-runs across four suite runs, every one
+positive**: `missing` = 3/3 (the run recorded below), then 8/6, 7/4 and 3/2 on three review runs, two of them under
+heavy machine contention. On this arm the effect is not a race the assertion gambles on: the fault holds every commit
+open for twice the gap timeout, which guarantees the ageing, and the only variance left is how many indices interleave.
+The conditional loss-is-decided assertion stays as it was. The *clean* arms remain unasserted, deliberately -- they lose
+events only intermittently, and a test red on a clean engine some of the time is a flaky test rather than an oracle. +
 *Backend vector:* `in-memory: n/a` (no gaps to record -- an in-heap map has no index taken before a commit),
 `hsqldb-tokens: n/a` (same event store), `postgres-jpa-chaos: FAIL`, `postgres-jpa-chaos-spring-defaults: FAIL`,
 `postgres-jpa: intermittent`, `postgres-jpa-split-tokens: FAIL`.
@@ -1735,15 +1807,24 @@ here catches it downstream, which is second best.
     -Dsurefire.failIfNoSpecifiedTests=false
 ----
 
-== F-19 -- Axon Server accepts an append its consistency boundary forbids
+== F-19 -- Axon Server accepts appends their consistency boundaries forbid, on the suite's path
 
-*Severity:* High -- a documented consistency guarantee does not hold. +
-*Status:* Open, and **not reproducible outside the suite's own path as of the measurement below**. The oracle that found
-it still reports it. A committed probe that drives the published connector directly, in three constructions across
-fourteen runs, does **not** reproduce it. Mechanism open, and now also *attribution* open. +
-*Reproduction state:* *(b) probed.*
-`simulation/src/test/java/org/axonframework/hunt/harness/AppendBoundaryEnforcementUnderContentionTest.java` is committed
-and reports its numbers every run; it asserts only what one run can decide, and **not** the presence of the effect. +
+*Severity:* High -- a documented consistency guarantee does not hold on the released client-plus-server stack, under
+the suite's runtime shape. +
+*Status:* Open. Reproduced on demand by the suite arm (three independent runs across two days, a violation every run),
+**pinned by a committed history** that replays to `FAIL` offline for ever, and measurable from that history by a
+deterministic script with no container and no checker in the loop. The committed probe that drives the published
+connector directly, in three constructions across fourteen runs, still measures **zero** -- the difference between the
+two paths is real, unexplained, and stated below. Mechanism open; attribution narrowed to the connector/server stack. +
+*Reproduction state:* *(a) asserted*, offline:
+`simulation/src/test/resources/hunt-histories/pinned-axonserver-boundary-violation.jsonl` is committed and
+`RegressionSeedsTest$PinnedHistoriesOfRunsNoSeedReproduces` asserts it replays to `FAIL`; the analysis script under
+Reproduce shows the eleven violating appends from the same file in seconds, Docker-free. Stated precisely, because a
+pinned history guards the record and the oracles rather than the live store: the assertion goes red if a checker is
+weakened or the file stops being judged a violation, **not** when the stack is fixed. The day the live arm stops
+reproducing on a fixed connector/server combination, this pin becomes the historical record of the affected versions --
+move it into this entry's closure note rather than leaving it asserting a `FAIL` against versions nobody runs. The
+*live* re-sample stays rate-based and unasserted, which is what (b) was for. +
 *Claims:* C1, C5, C6, C7, C8, M9 +
 *Backend vector:* `axonserver:FAIL`, `in-memory:PASS`, `hsqldb-tokens:PASS`, `postgres-jpa:N/A (not a boundary store)`,
 `postgres-jpa-split-tokens:N/A (not a boundary store)` +
@@ -1754,81 +1835,85 @@ cause.
 
 [IMPORTANT]
 ====
-*What this entry used to claim, and why the claim was withdrawn.* It said "Reproduced by test, and reproduced again with
-no harness at all", and printed `accepted=83 ... over-accepted appends: 17` as the harness-free measurement. **No test
-was ever committed for it**, so that measurement could not be re-run, re-checked or compared against. The probe has now
-been written and committed, reconstructed from the shape this entry itself records, and it measures *zero* -- so the
-withdrawn sentence was not merely unverifiable, it is not confirmed by the construction it described. What survives is
-the suite-side observation, which is real and is reproduced below from the store's own recorded order.
+*Two corrections, in the order they were made.*
+
+*First, what this entry originally claimed and withdrew.* It said "Reproduced by test, and reproduced again with no
+harness at all", and printed `accepted=83 ... over-accepted appends: 17` as the harness-free measurement. **No test was
+ever committed for it**, so that measurement could not be re-run, re-checked or compared against. The probe was then
+written and committed, reconstructed from the shape this entry itself recorded, and it measures *zero*.
+
+*Second, what the withdrawn entry's replacement still got wrong, corrected by review.* It said "the first violation is
+always an append carrying `ConsistencyMarker.ORIGIN`" and "one violation per run, not seventeen". Both are artefacts of
+how the run was read, not facts about the store. The reader script this entry shipped filtered on `marker != -1`, so it
+was *structurally unable to see* a non-ORIGIN violation; and "one per run" is the reference model's stop-at-first-
+divergence rule, not a rate -- the model reports the first mismatch and downgrades the rest to notes, exactly as its own
+documentation says. A checker-independent scan of one run's history (below) finds **eleven** over-accepted appends of
+133 accepted, **all carrying sourced markers and none carrying ORIGIN**. The corrected script is under Reproduce.
 ====
 
 === What is wrong
 
 An append carrying a consistency marker `m` and a boundary `B` must be rejected when the store holds an event matching
-`B` at a position at or after `m`. On the suite's path, Axon Server accepts such an append under concurrent conditioned
-appends.
+`B` at a position at or after `m`. On the suite's path, Axon Server accepts such appends under concurrent conditioned
+appends -- not rarely, and not only at the opening burst.
 
-The sharpest available statement of the case, which is sharper than this entry previously had it: **the first violation
-is an append carrying `ConsistencyMarker.ORIGIN`** -- position `-1`, the condition an append carries when nothing sourced
-before it, and the strictest the protocol can express: *no event inside the boundary exists anywhere in the store.* It is
-not an append carrying a sourced marker. Read from the run's own history and its own post-run scan:
+The sharpest available statement, from the committed pinned history and its own final scan, with neither the reference
+model nor any checker in the loop:
 
 ----
-markers across the run's 296 appends: {ORIGIN(-1): 72, INFINITY: 33, 218: 7, 50: 6, 116: 6, ...}
-
-op-17 (writer-0-0)  ORIGIN  boundary=['acct-0']  accepted at position 4
-                    -- earlier matching: [(2, 'writer-4-0-w')]
-op-18 (writer-3-0)  ORIGIN  boundary=['acct-11'] accepted at position 8   -- earlier matching: []
-op-19 (writer-6-0)  ORIGIN  boundary=['acct-7']  accepted at position 6   -- earlier matching: []
-op-48 (writer-3-1)  ORIGIN  boundary=['acct-4']  accepted at position 14  -- earlier matching: []
+op-107  marker 20  boundary ['acct-0','acct-16']  own position 24  matching earlier: [(22, 'writer-0-2-w')]
+op-269  marker 50  boundary ['acct-0','acct-19']  own position 54  matching earlier: [(52, 'writer-0-6-w')]
+op-690  marker 126 boundary ['acct-0','acct-1']   own position 134 matching earlier: [(132, 'writer-5-19-w')]
+... eight more of the same shape ...
+over-accepted appends: 11 of 133 accepted
 ----
 
-Position 2 is below position 4, so the store had already sequenced an `acct-0` event when it sequenced an append that
-declared there were none. The window is inside the append operation and it is at the *opening burst*, when the store is
-empty and several writers commit at once.
+Three facts, each read directly off the history:
 
-**The rate on the suite's path, which is the number this entry previously did not have:** of the run's 72 ORIGIN appends,
-68 were rejected and 4 accepted; three of those four were legitimately the first inside their boundary, and **exactly one
-was over-accepted.** One violation per run, not seventeen. The `17` and `24` this entry used to quote came from the
-uncommitted probe and are withdrawn -- and they were never the same measurement as the suite's, which is what made them
-look like corroboration.
+* **Every violation is an append with a sourced marker.** The run's 72 ORIGIN appends were all enforced correctly; the
+  violations are ordinary source-then-append rounds, which is the shape every command handler produces.
+* **Every violator was in flight concurrently with the append that committed its conflicting event.** For all eleven,
+  the invocation/completion interval of the violator overlaps the interval of the append that owns the earlier matching
+  event -- for `op-107`, the conflicting batch completed at history index 235 and the violator at 236. The window is
+  concurrent commit processing, which is exactly where an atomicity gap between the condition check and the sequence
+  assignment would show.
+* **The store demonstrably saw the conflicting events.** For six of the eleven, the same event the violator was allowed
+  to ignore is the *earliest match* of one to three other appends the store **rejected** -- `writer-0-2-w` at position 22
+  is why `op-105`, `op-112` and `op-113` were refused, while `op-107`, whose boundary also covers it and whose marker is
+  below it, was accepted and sequenced above it. So the conflicting events' tags were stored, matched and enforced
+  against other writers; the acceptance is not a tag that went missing.
 
 === Evidence
 
-The suite found it through the reference-model oracle on the shipped contended-append scenario:
-
-----
-VECTOR dcb_append_rejected_after_marker_under_contention axonserver:FAIL
-  violation: [AppendConformsToDcbModel] ... broken by: an append the model rejects as conflicting was
-  recorded as successful | records: [#27, #68]
-----
-
-and the history shows the whole picture without any interpretation. `writer-1-0`'s batch is at store positions 6 and 7
-and carries `acct-1`; `writer-5-0`'s batch is at positions 10 and 11, was conditioned on marker `0` with boundary
-`[acct-1, acct-2]`, and was accepted:
-
-----
-   6 writer-1-0-w  tags=[acct-1]  appendIdx=28 marker=0 criteria=[[acct-1],[acct-0]]  completeIdx=57
-  10 writer-5-0-w  tags=[acct-2]  appendIdx=27 marker=0 criteria=[[acct-1],[acct-2]]  completeIdx=68
-----
-
-The store's own order puts `acct-1` at position 6, before position 10, and `writer-5-0`'s completion after
-`writer-1-0`'s.
-
-The suite arm reproduces this on demand. Re-run at the time of writing, on the same version combination:
+The suite found it through the reference-model oracle on the shipped contended-append scenario, and the arm reproduces
+it on demand -- three independent runs across two days, a `FAIL` every run, on the same version combination. The most
+recent:
 
 ----
 AXONSERVER ARM FAIL framework=5.3.0-SNAPSHOT connector=5.2.2 image=docker.axoniq.io/axoniq/axonserver:2026.0.0
   violation: [AppendConformsToDcbModel] ... broken by: an append the model rejects as conflicting was
-  recorded as successful | records: [#22, #57] | seed: 1
-  measured: Client verdicts on 296 append(s): 127 acknowledged, 0 event(s) left ambiguous by a failure that
+  recorded as successful | records: [#196, #236] | seed: 1
+  measured: Client verdicts on 296 append(s): 133 acknowledged, 0 event(s) left ambiguous by a failure that
   was not a decision, of which 0 turned out to be stored.
 ----
 
-Records `#22` and `#57` are the invocation and completion of `writer-0-0`, whose recorded condition is
-`marker: -1, criteria: [acct-0]`. That is the ORIGIN case quoted above. Note the record numbers moved between runs
-(`#27, #68` then `#22, #57`) while the *shape* did not: under real threads the arm re-samples rather than replays, so a
-finding here is pinned by its history file and never by its seed.
+Record numbers move between runs (`#27,#68`, then `#22,#57`, then `#196,#236`) while the shape does not: under real
+threads the arm re-samples rather than replays, so the finding is pinned by its **history file**, never by its seed.
+That file is now a committed regression asset --
+`simulation/src/test/resources/hunt-histories/pinned-axonserver-boundary-violation.jsonl` -- and
+`RegressionSeedsTest` asserts on every build, with no container, that it still replays to `FAIL`.
+
+The model reports one violation per run because it *must*: from the first divergence the model's positions run behind
+the store's, so every later mismatch is a note rather than a count (see "One harness defect this finding exposed"
+below). The count that is a count comes from the checker-independent scan under "What is wrong": **eleven over-accepted
+appends of 133 accepted** in the pinned run, each one an append whose declared window, read against the store's own
+final order, contains a committed event its boundary covers.
+
+Two structural checks on the same file say the scan can be trusted as a position order: the store held exactly the
+accepted appends' events (266 of 266, nothing extra, nothing missing), and all 133 accepted batches occupy consecutive
+scan positions in offer order. The committed probe independently validates the same scan mechanism against the server's
+own answer on every probe run: it asserts that every accepted append's batch sits at the position computed from the
+marker the store handed back.
 
 === What the committed probe measures, and what it does not
 
@@ -1942,12 +2027,25 @@ ruled out before anything was written up. Each of these was run.
   boundaries: exactly one accepted in both cases.
 
 | The same burst at ORIGIN rather than at marker 0
-| The row above used marker `0`; the violation is always on an append carrying ORIGIN (`-1`), so the burst was repeated at
-  ORIGIN. Committed as
+| The row above used marker `0`; at the time this entry believed the violation was ORIGIN-specific, so the burst was
+  repeated at ORIGIN. Committed as
   `AppendBoundaryEnforcementUnderContentionTest$EightWritersRacingOnAnEmptyStoreUnderOneBoundary`: forty bursts of eight
   writers under one identical boundary on a store emptied between bursts, `accepted per burst -> burst count: {1=40}`.
-  Exactly one accepted in every burst. **The store enforces ORIGIN correctly under a naked burst**, which is what moves
-  the open question from the mechanism to the attribution.
+  Exactly one accepted in every burst. **The store enforces ORIGIN correctly under a naked burst** -- consistent with the
+  later correction that the suite-path violations are not ORIGIN appends at all.
+
+| The recorded condition differing from the wire condition
+| Excluded at both ends. The record is written by `ControllableEventStorageEngine.appendEvents` from the exact
+  `AppendCondition` it passes to the delegate engine, so the record is the condition the connector received. And
+  `javap -c` on the connector's `appendEvents` shows it never reads the `ProcessingContext` and hands that same
+  condition straight to `ConditionConverter.convertAppendCondition` to open the wire transaction -- so nothing between
+  the record and the wire can rewrite it. An over-acceptance relative to the recorded condition is therefore an
+  over-acceptance relative to the condition the store was told to enforce, whatever the framework derived it from.
+
+| The conflicting events' tags going missing in conversion
+| Excluded by corroboration. For six of the eleven violations, the very event the violator was allowed to ignore is the
+  earliest match of other appends the store *rejected* -- the store matched and enforced those events' tags against
+  other writers in the same run. A dropped tag cannot be enforced against anybody.
 
 | The suite's own oracle
 | The same scenario, the same framework, the same workload and the same registered checkers report `PASS` on the in-heap
@@ -1965,36 +2063,38 @@ lined up, and both "the model accepts" appends do conflict at the store's real p
 first mismatch as a violation and every later one as a note, exactly as it already did after an append with an unknown
 outcome. **The count of model violations from a run is therefore not a magnitude; only the first one is evidence.**
 
-=== What is still open
+=== What is still open, and what review closed
 
-*The mechanism*, as before. Every construction that isolates one suspected cause behaves correctly, and settling it needs
-Axon Server's own instrumentation rather than a client-side experiment.
+The entry used to hold three attribution doors open: the store's, the framework's, and the oracle's. Two are now
+closed, by evidence rather than by argument.
 
-*And now the attribution, which is new and is the more urgent of the two.* The suite's oracle reports the violation on
-demand; a probe driving the published connector directly, in three constructions over fourteen runs, does not. Both of
-those are measurements, and they cannot both be the whole story. What separates the two paths is everything the suite
-puts between the workload and the connector -- the framework's `EventStore` and `EventStoreTransaction`, a
-`ProcessingContext`, and the harness's own storage-engine wrapper. Three possibilities remain open, and this entry
-deliberately names all three rather than picking one:
+*The framework's -- closed.* The record is taken from the exact `AppendCondition` the connector receives (the wrapper
+records and delegates the same object), the connector's `appendEvents` bytecode ignores the `ProcessingContext` and
+passes that condition unchanged into `ConditionConverter`, and the converter was already shown to be a faithful
+pass-through. Whatever the framework derived the condition *from*, the store was told to enforce the recorded one, and
+the store's own final order contradicts it. A condition mis-derived upstream could produce a *wrong* condition; it
+cannot make the store accept an append the condition it received forbids.
 
-. *The store's, and the probe's constructions do not hit it.* The probe issues either all-sourced or all-ORIGIN markers;
-  the suite's workload mixes them, issuing ORIGIN only on a writer's first append, so its ORIGIN appends race against a
-  store that other writers are already growing. The probe's all-ORIGIN run collapses to three acceptances precisely
-  because it does *not* have that mix.
-. *The framework's.* If the condition the connector is handed differs from the condition the application asked for --
-  a marker combined with `lowerBound` across two sourcings in one processing context, a boundary derived differently --
-  then the defect is on this side of the wire and the store is enforcing faithfully what it was told.
-. *The oracle's.* `ModelConformanceChecker` replays accepted appends in the store's own post-run scan order, which is
-  sound, and this suite has already found and fixed one unsoundness in it (below). A second one is not excluded, and the
-  probe's zero is the reason to look.
+*The oracle's -- closed for this observation.* The eleven violations are computed from the history with no model and no
+checker in the loop: recorded conditions against the store's own scan order. The scan mechanism is validated
+independently -- the probe asserts on every run that each accepted batch sits at the position the store's own returned
+marker names, and on the pinned run the scan holds exactly the accepted events with every batch contiguous. The
+model-conformance oracle's known limitation (positions running behind after the first divergence) affects the *count*
+the oracle reports, not the checker-independent one.
 
-*Deciding between them is a bounded piece of work and it is the next thing to do here:* record, on the suite's path, the
-`AppendCondition` as the connector receives it and compare it against the one the workload asked for. That is one
-recording point, and it separates possibility 2 from the other two outright.
+*What remains open is the mechanism, inside the connector/server stack.* The probe drives the identical connector class
+against the identical server and cannot elicit one violation in fourteen runs; the suite elicits eleven in one. The
+differences that remain between the two paths are environmental, not conditional: the suite has a streaming event
+processor holding an open event stream on the same context throughout, its commits are paced by the framework's
+processing-lifecycle phases rather than issued back-to-back, and its workload skews heavily onto one hot tag
+(`acct-0` appears in ten of the eleven violating boundaries). The bounded next step is to add exactly those three to
+the probe, one at a time -- an open stream first, then hot-key skew, then commit pacing -- and watch which one turns the
+zero into a number. Settling *where* in the connector/server stack the check and the sequencing come apart needs Axon
+Server's own instrumentation, which is beyond a client-side suite.
 
-Until then the severity above stands as *if real*, and this entry may not be quoted as an Axon Server defect. The version
-combination in the header is part of the observation, and so is the fact that only one of the two available reproductions
-shows it.
+The severity stands as High without the earlier *if real* hedge: the over-acceptance is real on the released stack, on
+the recorded run, checker-independently. What may still not be quoted is *whose defect it is* between the connector and
+the server; the version combination in the header is part of the observation.
 
 === Candidate fix
 
@@ -2004,54 +2104,69 @@ be sequenced after an event its check did not see.
 
 === Reproduce
 
+Offline, in seconds, no Docker -- the committed pinned history replayed and then read directly:
+
 ----
-# The suite arm that reports the violation. Under real threads this re-samples rather than replays; the recorded
-# history is the exact record, and the record numbers move between runs while the shape does not.
+# The pinned run replays to FAIL for ever; this assertion is what makes the finding (a) asserted.
+./mvnw -q -Phunt -pl simulation -o test -Dtest='RegressionSeedsTest$PinnedHistoriesOfRunsNoSeedReproduces' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The checker-independent count, from the same committed file. It judges each accepted append's recorded condition
+against the store's own final order and nothing else -- matching is per criterion by containsAll, disjunction across
+criteria, window from the marker (ORIGIN opens it fully) up to the append's own first position:
+
+----
+python3 - simulation/src/test/resources/hunt-histories/pinned-axonserver-boundary-violation.jsonl <<'EOF'
+import json, sys
+recs = sorted([r for r in map(json.loads, open(sys.argv[1])) if "idx" in r], key=lambda r: r["idx"])
+order = {e: i for i, e in enumerate([r for r in recs if r["op"] == "scan"][-1]["value"]["eventIds"])}
+tags, cond = {}, {}
+for r in recs:
+    if r["op"] == "append" and r["type"] == "INVOKE":
+        for e in r["value"]["events"]:
+            tags[e["id"]] = {t["value"] for t in e["tags"]}
+        cond[r["id"]] = (r["value"]["marker"],
+                         [{t["value"] for t in c["tags"]} for c in r["value"]["criteria"]],
+                         [e["id"] for e in r["value"]["events"]])
+ok = {r["id"] for r in recs if r["op"] == "append" and r["type"] == "OK"}
+violations = 0
+for opid, (marker, criteria, events) in sorted(cond.items()):
+    if opid not in ok or not criteria:
+        continue  # rejected, or unconditional: nothing to violate
+    mine = order[events[0]]
+    window = [(i, e) for e, i in order.items()
+              if max(marker, 0) <= i < mine and e not in events
+              and any(c <= tags[e] for c in criteria)]
+    if window:
+        violations += 1
+        print(opid, "marker", marker, "boundary", sorted(set().union(*criteria)),
+              "own position", mine, "matching earlier:", sorted(window))
+print("over-accepted appends:", violations, "of", len(ok & cond.keys()), "accepted")
+EOF
+----
+
+Prints the eleven violations and `over-accepted appends: 11 of 133 accepted`. (The script this entry used to carry
+filtered on `marker != -1` and could only see ORIGIN appends; that filter is what produced the withdrawn "always
+ORIGIN" claim.)
+
+Against a live server, which re-samples rather than replays:
+
+----
+# The suite arm. A violation every observed run; the history it writes is the record.
 ./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
     -Dtest='AxonServerBackendTest$TheShippedCorpusOnAxonServer' -Dsurefire.failIfNoSpecifiedTests=false
 
 # The committed probe: the published connector, driven directly, no harness on the path. Prints its numbers every run
-# and asserts only what one run can decide. Three constructions, one @Nested class each.
+# and asserts only what one run can decide. Three constructions, one @Nested class each. Measures zero to date.
 ./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
     -Dtest=AppendBoundaryEnforcementUnderContentionTest -Dsurefire.failIfNoSpecifiedTests=false
 
-# The ORIGIN case the first violation is always an instance of, on its own.
-./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz \
-    -Dtest='AppendBoundaryEnforcementUnderContentionTest$EightWritersRacingOnAnEmptyStoreUnderOneBoundary' \
-    -Dsurefire.failIfNoSpecifiedTests=false
-
-# The whole matrix, which is where the vector comes from.
+# The whole matrix, which is where the vector comes from. Known shortfall: its second test method currently dies
+# with an OutOfMemoryError after the first has written every history (HUNT-NOTES.md section 6.6); the vectors are
+# recoverable from those histories by offline replay.
 ./mvnw -Phunt -pl simulation -o test -Dhunt.excludedGroups=fuzz -Dtest=BackendDifferentialTest \
     -Dsurefire.failIfNoSpecifiedTests=false
-----
-
-To read the ORIGIN case out of a history the suite arm wrote, which is how the `marker: -1` above was found:
-
-----
-python3 - simulation/target/hunt-histories/axonserver-arm/*.jsonl <<'EOF'
-import json, sys, collections
-recs = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-order = {e: i for i, e in enumerate(
-        [r for r in recs if r.get("op") == "scan"][-1]["value"]["eventIds"])}
-tags, cond = {}, {}
-for r in recs:
-    if r.get("op") == "append" and r.get("type") == "INVOKE":
-        for e in r["value"]["events"]:
-            tags[e["id"]] = [t["value"] for t in e["tags"]]
-        cond[r["id"]] = (r["value"]["marker"], r["value"]["criteria"],
-                         [e["id"] for e in r["value"]["events"]])
-ok = {r["id"] for r in recs if r.get("op") == "append" and r.get("type") == "OK"}
-print("markers:", collections.Counter(m for m, _, _ in cond.values()).most_common(5))
-for opid, (m, c, evs) in sorted(cond.items()):
-    if m != -1 or opid not in ok:
-        continue
-    boundary = {t["value"] for cc in c for t in cc["tags"]}
-    mine = order.get(evs[0])
-    earlier = [(i, e) for e, i in order.items()
-               if i < mine and boundary & set(tags.get(e, []))]
-    print(opid, "ORIGIN boundary", sorted(boundary), "at position", mine,
-          "-- earlier matching:", sorted(earlier))
-EOF
 ----
 
 == F-20 -- The connector reports every commit failure as a consistency rejection
@@ -2269,7 +2384,8 @@ order.
 
 == F-22 -- The broadcast sentinel is a plain string that user data can equal
 
-*Severity:* Medium-High +
+*Severity:* Medium -- a real defect whose trigger is user data equalling one reserved string; High for any deployment
+whose sequence keys derive from user-controlled data, because there the collision is an input rather than an accident. +
 *Status:* Open. Confirmed by measurement; pinned by
 `simulation/src/test/java/org/axonframework/hunt/scenario/BroadcastSentinelCollisionTest.java`. +
 *Claims:* C41, C42, M20 +

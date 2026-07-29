@@ -1,10 +1,10 @@
 # DCB semantics a checker or a model must encode
 
 **This file is self-sufficient** for writing or reviewing anything that decides whether an
-append conflicts: a checker, a reference-model rule, or a TLA+ operator. Load `dcb-axoniq` or
-`dynamic-consistency-boundaries` only for the design rationale of the boundary concept itself
-(why an aggregate is the wrong unit, how to choose a boundary), which is a modelling question
-rather than a checking one.
+append conflicts: a checker, a reference-model rule, or a TLA+ operator. It deliberately does
+not carry the design rationale of the boundary concept itself (why an aggregate is the wrong
+unit, how to choose a boundary) -- that is a modelling question rather than a checking one, and
+nothing in this suite needs it.
 
 The normative in-repo statement of these rules is the reference-model rule table in
 `formal/INVARIANTS.md` section 3.1, with the engine `file:line` evidence for each. Read that
