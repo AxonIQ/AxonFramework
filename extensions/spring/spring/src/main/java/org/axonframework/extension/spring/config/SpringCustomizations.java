@@ -43,6 +43,15 @@ import java.util.function.Supplier;
 interface SpringCustomizations {
 
     /**
+     * The bean name a {@link TokenStore} is resolved under when the token-store setting is unset.
+     * <p>
+     * Both the JPA and JDBC auto configurations register their token store under this name, so preferring it keeps
+     * applications that declare several token stores resolving the same one they resolved before the setting became
+     * optional.
+     */
+    String CONVENTIONAL_TOKEN_STORE_BEAN_NAME = "tokenStore";
+
+    /**
      * Creates customizations for a pooled streaming event processing module.
      *
      * @param name     Module name.
@@ -118,10 +127,12 @@ interface SpringCustomizations {
      * {@link EventProcessorSettings#source() source} or
      * {@link EventProcessorSettings.PooledEventProcessorSettings#tokenStore() token-store} setting is explicitly set.
      * When a setting is unset (or empty), this customization falls back to resolving the unique, type-level component
-     * and only applies it when one is found. Otherwise, it leaves that part of the configuration untouched, allowing
-     * customizations applied after this one, like an {@code EventProcessorDefinition}, to supply it. A still-missing
-     * source or token store is reported when the resulting {@link PooledStreamingEventProcessorConfiguration} is
-     * validated.
+     * and only applies it when one is found. An unset token store prefers the
+     * {@link #CONVENTIONAL_TOKEN_STORE_BEAN_NAME conventional bean name} before that type-level lookup, so that
+     * applications declaring several token stores keep resolving the same one. Otherwise, it leaves that part of the
+     * configuration untouched, allowing customizations applied after this one, like an
+     * {@code EventProcessorDefinition}, to supply it. A still-missing source or token store is reported when the
+     * resulting {@link PooledStreamingEventProcessorConfiguration} is validated.
      */
     class SpringPooledStreamingEventProcessingModuleCustomization
             implements PooledStreamingEventProcessorModule.Customization {
@@ -169,10 +180,16 @@ interface SpringCustomizations {
             }
 
             String tokenStoreName = StringUtils.nonEmptyOrNull(settings.tokenStore()) ? settings.tokenStore() : null;
-            var tokenStore = getComponent(configuration, TokenStore.class, tokenStoreName, null);
+            TokenStore tokenStore;
             if (tokenStoreName != null) {
+                tokenStore = getComponent(configuration, TokenStore.class, tokenStoreName, null);
                 require(tokenStore != null, "Could not find a mandatory TokenStore with name '" + settings.tokenStore()
                         + "' for event processor '" + name + "'.");
+            } else {
+                tokenStore = getComponent(configuration,
+                                          TokenStore.class,
+                                          CONVENTIONAL_TOKEN_STORE_BEAN_NAME,
+                                          () -> getComponent(configuration, TokenStore.class, null, null));
             }
             if (tokenStore != null) {
                 result = result.tokenStore(tokenStore);
