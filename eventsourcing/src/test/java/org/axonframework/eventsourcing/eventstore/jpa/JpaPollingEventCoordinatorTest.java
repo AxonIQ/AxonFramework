@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,6 +69,43 @@ class JpaPollingEventCoordinatorTest {
 
             // then it still stops, because the polling loop does not rely on the interrupt surviving
             assertThat(termination).succeedsWithin(Duration.ofSeconds(10));
+        }
+
+        @Test
+        void returnsWhileAPollIsStillBlockedInsideTheCountQuery() throws InterruptedException {
+            // given a poll that has entered the count query and is blocked there, not observing the
+            // interrupt at all, the way a JDBC call waiting on a lock or a socket does not
+            CountDownLatch insidePoll = new CountDownLatch(1);
+            AtomicBoolean pollReleased = new AtomicBoolean();
+            JpaPollingEventCoordinator blockingCoordinator = new JpaPollingEventCoordinator(
+                    () -> {
+                        insidePoll.countDown();
+                        while (!pollReleased.get()) {
+                            try {
+                                Thread.sleep(Duration.ofMillis(10));
+                            } catch (InterruptedException e) {
+                                // Swallowed on purpose: a query in flight does not end because the
+                                // thread waiting on it was interrupted.
+                            }
+                        }
+                        throw new IllegalStateException("no EntityManager in this test");
+                    },
+                    POLLING_INTERVAL
+            );
+            EventCoordinator.Handle handle = blockingCoordinator.startCoordination(() -> {
+            });
+            assertThat(insidePoll.await(5, TimeUnit.SECONDS)).isTrue();
+
+            try {
+                // when the coordination is terminated while that poll is still blocked
+                CompletableFuture<Void> termination = CompletableFuture.runAsync(handle::terminate);
+
+                // then terminate returns on its own deadline instead of waiting out the query, which
+                // it can afford because the polling thread is a daemon
+                assertThat(termination).succeedsWithin(Duration.ofSeconds(15));
+            } finally {
+                pollReleased.set(true);
+            }
         }
     }
 }

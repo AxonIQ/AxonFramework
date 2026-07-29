@@ -53,6 +53,16 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
         SELECT COUNT(*) FROM AggregateEventEntry
         """;
 
+    /**
+     * The bound on how long {@link Handle#terminate()} waits for the polling thread to return.
+     * <p>
+     * A poll blocks in a JDBC call that does not respond to an interrupt, so waiting without a deadline hands the
+     * caller of {@code terminate()} - a shutdown sequence, or a test tearing down its context - the same unbounded
+     * wait as the query it happens to have caught. The polling thread is a daemon, so giving up on it costs nothing
+     * beyond the query it is still running.
+     */
+    private static final Duration TERMINATION_TIMEOUT = Duration.ofSeconds(5);
+
     private final EntityManagerProvider entityManagerProvider;
     private final Duration pollingInterval;
 
@@ -83,9 +93,10 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
      * - To terminate the polling thread when terminate is invoked.
      *
      * The interrupt is only an accelerator for the second case, never the condition itself: the
-     * callback runs arbitrary code that may consume the interrupt before the loop observes it. The
-     * terminated flag is therefore checked on every iteration, so a swallowed interrupt costs one
-     * more poll rather than leaving terminate blocked on join forever.
+     * callback runs arbitrary code that may consume the interrupt before the loop observes it, and a
+     * poll blocked in JDBC does not observe it at all. The terminated flag is therefore checked on
+     * every iteration, and terminate waits for the thread only up to TERMINATION_TIMEOUT, so neither
+     * a swallowed interrupt nor a slow query can leave terminate blocked forever.
      *
      * The COUNT(*) query is intentionally used for the JPA variant as it does not
      * have a gapless monotonic index that can be relied on.
@@ -123,6 +134,10 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
                     LOGGER.warn("Exception while polling AggregateEventEntry, retrying next poll interval", e);
                 }
 
+                if (terminated.get()) {
+                    break;  // do not call back into a component that is being shut down
+                }
+
                 onAppendDetected.run();  // if this throws an exception, terminates the coordination
             }
 
@@ -146,7 +161,13 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
                 pollingThread.interrupt();
 
                 try {
-                    pollingThread.join();
+                    if (!pollingThread.join(TERMINATION_TIMEOUT)) {
+                        LOGGER.warn(
+                            "Polling thread {} did not stop within {}, most likely blocked in a query that does not "
+                                + "respond to an interrupt. Leaving it to exit on its own; it is a daemon thread.",
+                            pollingThread.getName(), TERMINATION_TIMEOUT
+                        );
+                    }
                 } catch (InterruptedException e) {
                     // Best effort, tried waiting, but got interrupted, restore flag and ignore:
                     Thread.currentThread().interrupt();
