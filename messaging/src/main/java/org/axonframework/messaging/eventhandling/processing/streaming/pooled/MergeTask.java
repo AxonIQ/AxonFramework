@@ -107,6 +107,11 @@ class MergeTask extends CoordinatorTask {
      * Performs a {@link Segment} merge. Will succeed if either the given {@code workPackages} contain the
      * {@link WorkPackage}s corresponding to the given {@code segmentId} and the identifier to merge with. Or, if the
      * {@link TrackingToken}(s) for the segments can be claimed.
+     * <p>
+     * The surviving segment is given a {@link MergedTrackingToken} over both halves' tokens, whose position is the
+     * <em>lower</em> of the two. Taking the higher position would skip the events the further-behind half never
+     * reached, so instead the events the further-ahead half already handled are redelivered until the further-behind
+     * half catches up. Handlers must be idempotent across a merge.
      */
     @Override
     protected CompletableFuture<Boolean> task() {

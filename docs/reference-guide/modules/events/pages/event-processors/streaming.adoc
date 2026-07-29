@@ -918,6 +918,22 @@ To change the number of segments at runtime, the _split and merge_ operations sh
 Splitting and merging allow you to control the number of segments dynamically.
 There are roughly three approaches to do this.
 
+[WARNING]
+.A merge redelivers events
+====
+A split is free of redelivery: both halves start from the position their parent had reached.
+A merge is not.
+The two segments being merged are rarely at the same position, and the surviving segment resumes from the *lower* of the two.
+Resuming from the higher position would skip the events the further-behind segment never reached, losing them, so the framework deliberately resumes from the lower one.
+The events between the two positions that belong to the further-ahead segment are therefore handled a second time.
+
+This holds no matter which of the three approaches below performs the merge, and no matter how the `TokenStore` is deployed.
+It happens on a healthy cluster that never lost a token claim and never crashed.
+Redelivery ends once the further-behind half catches up, at which point the two positions collapse into one.
+
+Make your event handlers idempotent before you merge segments, for the same reasons and by the same means as described under <<token_stealing,token stealing>>.
+====
+
 ==== Axoniq Platform
 
 Through xref:axoniq-platform-reference:ROOT:index.adoc[Axoniq Platform]'s processor detail page, where you can scale the segments manually, or configure your segments to scale automatically with the number of your application's replicas.

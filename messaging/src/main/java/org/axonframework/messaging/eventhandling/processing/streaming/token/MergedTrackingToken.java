@@ -31,6 +31,14 @@ import java.util.OptionalLong;
  * Special Wrapped Token implementation that keeps track of two separate tokens, of which the streams have been merged
  * into a single one. This token keeps track of the progress of the two original "halves", by advancing each
  * individually, until both halves represent the same position.
+ * <p>
+ * Because the halves are rarely at the same position when they are merged, {@link #position()} reports the
+ * <em>lower</em> of the two. The merged segment consequently resumes behind the further-ahead half, and
+ * {@link #covers(TrackingToken)} reports {@code false} for every position in between, so the events the further-ahead
+ * half already handled are handled a second time. This is deliberate: reporting the higher position would skip the
+ * events the further-behind half never reached, losing them. Handlers must therefore be idempotent across a merge.
+ * Once the further-behind half catches up, both halves hold the same position, the wrapper collapses into a single
+ * token, and the redelivery ends.
  *
  * @author Allard Buijze
  * @since 4.1

@@ -126,6 +126,13 @@ public interface StreamingEventProcessor extends EventProcessor {
      * <p>
      * The processor must currently be actively processing the segment with given {@code segmentId}.
      * <p>
+     * <b>A merge redelivers events.</b> The two halves rarely sit at the same position, and the merged segment resumes
+     * from the <em>lower</em> of the two positions, because resuming from the higher one would skip the events the
+     * further-behind half never reached. Every event between the two positions that belongs to the further-ahead half
+     * is therefore handled a second time. Handlers must be idempotent across a merge, regardless of how the
+     * {@link TokenStore} is deployed and even on a cluster that never lost a claim and never crashed. Redelivery stops
+     * once the further-behind half catches up, at which point the two positions collapse into one.
+     * <p>
      * Use {@link #releaseSegment(int)} to force this processor to release any claims with tokens required to merge the
      * segments.
      * <p>
