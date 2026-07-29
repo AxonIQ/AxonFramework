@@ -42,6 +42,28 @@ import static org.axonframework.common.ObjectUtils.getOrDefault;
 
 /**
  * Implementation of a {@link TokenStore} that stores tracking tokens in memory. This implementation is thread-safe.
+ * <p>
+ * <b>This store performs no claim or ownership arbitration.</b> It keeps no owner, no claim timestamp and no claim
+ * timeout, because its tokens live on the heap of a single JVM and can never be reached by another process. The
+ * claim-related guarantees of {@link TokenStore} therefore do <b>not</b> hold here:
+ * <ul>
+ *     <li>{@link #fetchToken(String, int, ProcessingContext)} does not claim the token, and never fails because
+ *     another process holds it. It fails only when the segment was never initialized.</li>
+ *     <li>{@link TokenStore#extendClaim(String, int, ProcessingContext)} never fails because the claim was lost, as
+ *     it delegates to {@code fetchToken}.</li>
+ *     <li>{@link #storeToken(TrackingToken, String, int, ProcessingContext)} never fails because the token is
+ *     claimed elsewhere. It fails only when the segment was never initialized.</li>
+ *     <li>{@link #deleteToken(String, int, ProcessingContext)} does not require ownership of the token.</li>
+ *     <li>{@link #releaseClaim(String, int, ProcessingContext)} is a no-op.</li>
+ *     <li>{@link #fetchAvailableSegments(String, ProcessingContext)} returns every known segment, because no segment
+ *     is ever claimed. It is equivalent to {@link #fetchSegments(String, ProcessingContext)}.</li>
+ * </ul>
+ * Anything depending on those guarantees - a multi-process deployment, or a test asserting that a claim is refused or
+ * stolen - must use a claim-capable store instead, such as the
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc.JdbcTokenStore} or the
+ * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore}. Switching
+ * store does not by itself arbitrate between two processors of the same name inside one JVM: a claim identifies the
+ * node, which defaults to the JVM, so both are the same owner unless each is given its own node identifier.
  *
  * @author Rene de Waele
  * @author Christophe Bouhier
@@ -122,6 +144,12 @@ public class InMemoryTokenStore implements TokenStore {
         return old != null;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * This implementation does <b>not</b> claim the token. The returned future fails only when no token was
+     * initialized for the given {@code processorName} and {@code segmentId}, never because another process owns it.
+     */
     @Override
     public CompletableFuture<TrackingToken> fetchToken(String processorName,
                                                        int segmentId,
@@ -136,6 +164,11 @@ public class InMemoryTokenStore implements TokenStore {
         return completedFuture(st.trackingToken);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * This implementation is a no-op, as it holds no claims to release.
+     */
     @Override
     public CompletableFuture<Void> releaseClaim(String processorName,
                                                 int segment,
@@ -187,6 +220,12 @@ public class InMemoryTokenStore implements TokenStore {
         );
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * As this implementation never claims a segment, every known segment is reported as available. This method is
+     * equivalent to {@link #fetchSegments(String, ProcessingContext)}.
+     */
     @Override
     public CompletableFuture<List<Segment>> fetchAvailableSegments(String processorName, ProcessingContext context) {
         return fetchSegments(processorName, context);

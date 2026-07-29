@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -229,6 +230,100 @@ class InMemoryTokenStoreTest {
             assertThat(result.exceptionNow())
                     .isInstanceOf(UnableToInitializeTokenException.class)
                     .hasMessageContaining("Token was already present");
+        }
+    }
+
+    /**
+     * Pins the absence of claim and ownership arbitration in this store, as documented on the class. These are not
+     * guarantees of {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore};
+     * they are the behaviour a caller gets from this implementation, and any of them changing means ownership was
+     * introduced and the class documentation no longer holds.
+     */
+    @Nested
+    class NoOwnershipArbitration {
+
+        @Test
+        void fetchTokenTwiceInARowNeverConflicts() {
+            // given
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 1, null, createProcessingContext()));
+
+            // when / then - a second fetch of an already-fetched token is not refused
+            assertThatCode(() -> {
+                joinAndUnwrap(testSubject.fetchToken("proc", 0, null));
+                joinAndUnwrap(testSubject.fetchToken("proc", 0, null));
+            }).doesNotThrowAnyException();
+        }
+
+        @Test
+        void extendClaimNeverFailsOnAnInitializedSegment() {
+            // given
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 1, null, createProcessingContext()));
+
+            // when / then - the claim can never have been lost, as it was never taken
+            assertThatCode(() -> {
+                joinAndUnwrap(testSubject.extendClaim("proc", 0, null));
+                joinAndUnwrap(testSubject.extendClaim("proc", 0, null));
+            }).doesNotThrowAnyException();
+        }
+
+        @Test
+        void storeTokenSucceedsWithoutEverFetchingTheToken() {
+            // given
+            ProcessingContext ctx = createProcessingContext();
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 1, null, ctx));
+
+            // when - no fetch, so no claim, yet the write is accepted
+            joinAndUnwrap(testSubject.storeToken(new GlobalSequenceTrackingToken(5), "proc", 0, ctx));
+
+            // then
+            assertThat(joinAndUnwrap(testSubject.fetchToken("proc", 0, null)))
+                    .isEqualTo(new GlobalSequenceTrackingToken(5));
+        }
+
+        @Test
+        void releaseClaimLeavesTheStoredTokenIntact() {
+            // given
+            ProcessingContext ctx = createProcessingContext();
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 1, null, ctx));
+            joinAndUnwrap(testSubject.storeToken(new GlobalSequenceTrackingToken(7), "proc", 0, ctx));
+
+            // when - releasing a claim that was never taken
+            joinAndUnwrap(testSubject.releaseClaim("proc", 0, null));
+
+            // then - the token, and the segment, are still there
+            assertThat(joinAndUnwrap(testSubject.fetchToken("proc", 0, null)))
+                    .isEqualTo(new GlobalSequenceTrackingToken(7));
+            assertThat(joinAndUnwrap(testSubject.fetchSegments("proc", null))).hasSize(1);
+        }
+
+        @Test
+        void everySegmentStaysAvailableAfterAllTokensAreFetched() {
+            // given
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 4, null, createProcessingContext()));
+            List<Segment> allSegments = joinAndUnwrap(testSubject.fetchSegments("proc", null));
+            for (Segment segment : allSegments) {
+                joinAndUnwrap(testSubject.fetchToken("proc", segment, null));
+            }
+
+            // when
+            List<Segment> available = joinAndUnwrap(testSubject.fetchAvailableSegments("proc", null));
+
+            // then - fetching claims nothing, so availability is unchanged
+            assertThat(available).containsExactlyInAnyOrderElementsOf(allSegments);
+        }
+
+        @Test
+        void deleteTokenSucceedsWithoutOwningTheToken() {
+            // given
+            joinAndUnwrap(testSubject.initializeTokenSegments("proc", 2, null, createProcessingContext()));
+
+            // when - deleting a token this caller never fetched, so never owned
+            joinAndUnwrap(testSubject.deleteToken("proc", 0, null));
+
+            // then
+            assertThat(joinAndUnwrap(testSubject.fetchSegments("proc", null)))
+                    .extracting(Segment::getSegmentId)
+                    .containsExactly(1);
         }
     }
 
