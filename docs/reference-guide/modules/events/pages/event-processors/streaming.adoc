@@ -354,6 +354,8 @@ This value defaults to 5000 milliseconds.
 * `claimExtensionThreshold`: Threshold to extend the claim in the absence of events.
 The value defaults to 5000 milliseconds.
 
+Before sizing these values for a processor distributed over several instances, read <<token_claim_clocks,the claim timeout requires the clocks to agree>>: the timeout is measured across two machines' clocks, and the protocol tolerates no disagreement between them.
+
 Consider the following snippet if you want to configure these values:
 
 [tabs]
@@ -417,6 +419,42 @@ Examples of when a thread may get its token stolen are:
 - Too large event batch size.
 - Blocking operations inside event handlers.
 - Blocking exceptions inside event handlers.
+
+[#token_claim_clocks]
+==== The claim timeout requires the clocks to agree
+
+The comparison that decides whether a claim may be stolen has two sides that come from two different machines.
+The token's timestamp was written by whichever instance last held the claim, while the `claimTimeout` is measured against the clock of the instance asking to steal it.
+The comparison therefore only means what it says for as long as those clocks agree.
+
+[WARNING]
+====
+The claim protocol tolerates no clock skew.
+An instance whose clock runs ahead of the claim holder's considers a live claim expired that much earlier and takes it: the steal happens up to the lesser of the clock difference and one claim timeout before a correctly-clocked instance could have taken the same claim.
+Both instances then own the same segment, and handle the same events, until the loser next tries to write the token, which is the only way it finds out.
+
+Do not read the clock difference, or the claim timeout, as a bound on that overlap.
+The loser writes its token when a batch commits, so handlers that run long defer the discovery well past the claim timeout: a handler blocked for 60 seconds under a 10 second claim timeout keeps both instances on the segment for roughly the remaining 50 seconds, whatever the clock difference was.
+Enabling `coordinatorExtendsClaims` shortens that overlap, because the coordinator thread then attempts the claim extension of a work package that is busy processing events, but it is off by default and it only moves the discovery forward - it does not bound the overlap by the clock difference either.
+
+Nothing warns you when this happens: the instance taking the claim sees an ordinary expired token, and the instance losing it sees the same `UnableToClaimTokenException` a legitimate hand-over produces.
+Keep the clocks of every instance sharing a token store synchronized, with NTP or an equivalent.
+====
+
+The requirement comes from the store implementation rather than from `TokenStore`, which prescribes no timeout and no clock.
+A plain table of tokens offers no way to notice that an owner died, so the JDBC and JPA stores fall back on a claim that expires, and an expiring claim means comparing a timestamp one machine wrote against another machine's clock.
+A store whose backing technology releases a dead owner's claim itself keeps no such timestamp, and therefore needs no agreement between clocks.
+
+There is no clock difference small enough to be safe.
+An instance refreshes its claim well within the claim timeout, so while every refresh lands on schedule a small difference often finds no token old enough to take.
+A refresh is work a background thread performs when it is scheduled to, though, and one missed refresh already leaves the claim about as old as the `claimTimeout` - at which point any difference at all tips the comparison, and a segment still being processed changes hands.
+Consequently, raise the `claimTimeout` to cover your slowest batch, not to absorb a difference between clocks.
+
+[TIP]
+====
+To reproduce the effect in a test, move the application's clock instead of trying to skew a machine.
+The framework reads the current time through `org.axonframework.common.ClockUtils`, so `ClockUtils.set(Clock.offset(Clock.systemUTC(), Duration.ofSeconds(30)))` makes the whole application behave like an instance whose clock is 30 seconds ahead, and `ClockUtils.reset()` restores it.
+====
 
 ==== What are the consequences of token stealing?
 

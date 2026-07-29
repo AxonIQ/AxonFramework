@@ -26,6 +26,10 @@ import java.time.Duration;
 /**
  * Properties describing the settings for the default
  * {@link TokenStore Token Store}.
+ * <p>
+ * The claim timeout below is measured by comparing a timestamp another process wrote against this process' clock, so it
+ * only means what it says while the clocks of all processes sharing the store agree. See {@link TokenStore} for what a
+ * disagreement costs; raising this timeout does not buy tolerance for one.
  *
  * @author Gerard Klijs
  * @since 4.8.0

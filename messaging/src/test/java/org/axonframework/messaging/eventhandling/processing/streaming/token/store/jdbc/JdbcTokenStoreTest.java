@@ -429,6 +429,59 @@ class JdbcTokenStoreTest {
         assertNull(token);
     }
 
+    /**
+     * The claim's age is a timestamp one process wrote measured against another process' clock, so the protocol allows
+     * the two no disagreement. Both cases move the clock the whole application reads rather than the wall clock of a
+     * machine, which is the only way to model a disagreement in-process, and advance it in fixed steps so neither case
+     * depends on how long the test itself takes. {@code concurrentTokenStore} claims with a two-second timeout.
+     */
+    @Nested
+    class ClaimTimeoutAcrossDisagreeingClocks {
+
+        @Test
+        void clockAheadByLessThanTheClaimTimeoutTakesAClaimThatIsStillLive() {
+            // given a segment claimed by this process, and 600 milliseconds of real time passing for every process
+            Clock agreedClock = ClockUtils.get();
+            transactionManager.executeInTransaction(() -> joinAndUnwrap(
+                    tokenStore.initializeTokenSegments("skew", 1, null, createProcessingContext())));
+            transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(tokenStore.fetchToken("skew", 0, null)));
+            ClockUtils.set(Clock.offset(agreedClock, Duration.ofMillis(600)));
+
+            // then a process whose clock agrees cannot take the claim: 600 milliseconds against a two-second timeout
+            assertThrows(UnableToClaimTokenException.class, () -> transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(concurrentTokenStore.fetchToken("skew", 0, null))));
+
+            // when that same process reads the same store at the same instant, with a clock running 1500 milliseconds
+            // ahead - a disagreement well below its own claim timeout
+            ClockUtils.set(Clock.offset(agreedClock, Duration.ofMillis(600 + 1500)));
+
+            // then it takes the claim anyway, so no clock difference is small enough to be safe
+            assertDoesNotThrow(() -> transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(concurrentTokenStore.fetchToken("skew", 0, null))));
+        }
+
+        @Test
+        void theProcessThatLostTheSegmentOnlyLearnsWhenItNextWritesTheToken() {
+            // given a segment claimed by this process, taken by a process whose clock runs past the claim timeout ahead
+            transactionManager.executeInTransaction(() -> joinAndUnwrap(
+                    tokenStore.initializeTokenSegments("skew", 1, null, createProcessingContext())));
+            transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(tokenStore.fetchToken("skew", 0, null)));
+            ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofSeconds(2).plusMillis(1)));
+            transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(concurrentTokenStore.fetchToken("skew", 0, null)));
+
+            // when this process writes the token it still believes it owns
+            // then that write is refused, which is the first and only signal it gets
+            assertThrows(UnableToClaimTokenException.class, () -> transactionManager.executeInTransaction(
+                    () -> joinAndUnwrap(tokenStore.storeToken(new GlobalSequenceTrackingToken(1),
+                                                              "skew",
+                                                              0,
+                                                              createProcessingContext()))));
+        }
+    }
+
     @Test
     void stealToken() {
         transactionManager.executeInTransaction(

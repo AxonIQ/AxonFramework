@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.processing.streaming.token.sto
 
 import jakarta.persistence.LockModeType;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
@@ -83,6 +84,10 @@ public record JpaTokenStoreConfiguration(
      * <p>
      * Thus, if a claim has not been updated for the given {@code claimTimeout}, this process will 'steal' the claim.
      * Defaults to a duration of 10 seconds.
+     * <p>
+     * The age of a claim is measured by comparing a timestamp another process wrote against this process' clock, so
+     * this timeout only means what it says while the clocks of all processes sharing the store agree. See
+     * {@link TokenStore} for what a disagreement costs; raising this timeout does not buy tolerance for one.
      *
      * @param claimTimeout A timeout specifying the time after which this process will force a claim.
      * @return The configuration itself, for fluent API usage.

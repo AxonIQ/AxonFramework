@@ -31,6 +31,35 @@ import java.util.concurrent.CompletableFuture;
  * A {@link StreamingEventProcessor} that is tracking an event
  * stream can use the store to keep track of its position in the event stream. Tokens are stored by process name and
  * segment index, enabling the same processor to be distributed over multiple processes or machines.
+ * <p>
+ * <b>This interface prescribes no claim timeout, and therefore no clock.</b> The lease-and-timestamp model belongs to
+ * the implementations that need it: a plain token table offers no way to notice that an owner died, so the JDBC and JPA
+ * stores let a claim expire after a timeout, and decide whether a claim may be stolen by comparing the timestamp stored
+ * alongside the claim against the clock of the process asking. <b>For those implementations the claim protocol requires
+ * the clocks of all processes sharing the store to agree.</b> That timestamp was written by whichever
+ * process last held the claim, so on a distributed processor the two sides of the comparison are read from two
+ * different machines, and the comparison only means what it says while those machines agree on the time. A process
+ * whose clock runs ahead of the claim holder's considers a live claim expired that much earlier and takes it: the steal
+ * happens up to the lesser of the disagreement and one claim timeout before a correctly-clocked process could have
+ * taken the same claim. Both processes then own the same segment, and therefore handle the same events, until the loser
+ * next writes the token, which is the only way it finds out. Neither process is warned: the process taking the claim
+ * sees an ordinary expired row, and the process losing it sees the same {@link UnableToClaimTokenException} a
+ * legitimate hand-over produces.
+ * <p>
+ * Do not read the disagreement, or the claim timeout, as a bound on that overlap. The loser writes its token when a
+ * batch commits, so handlers that run long defer the discovery well past the claim timeout: a handler blocked for a
+ * minute under a ten-second claim timeout keeps both processes on the segment for roughly the remaining fifty seconds,
+ * whatever the disagreement was.
+ * <p>
+ * There is no amount of disagreement the protocol absorbs. An owner refreshes its claim well within the claim timeout,
+ * so while every refresh lands on schedule a small disagreement often finds no row old enough to take. A refresh is
+ * work a background thread performs when it is scheduled to, though, and one missed refresh already leaves the claim
+ * about as old as the claim timeout, at which point any disagreement at all tips the comparison. Keep the clocks
+ * synchronized, and size the claim timeout to cover the longest an owner may go between refreshes rather than to absorb
+ * a clock difference.
+ * <p>
+ * An implementation whose underlying store signals liveness itself, releasing a dead owner's claim rather than waiting
+ * for a timeout to elapse, needs no such timestamp and imposes no clock-agreement requirement.
  *
  * @author Allard Buijze
  * @author Rene de Waele

@@ -21,6 +21,7 @@ import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.Persistence;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.jpa.EntityManagerExecutor;
 import org.axonframework.common.jpa.SimpleEntityManagerProvider;
 import org.axonframework.conversion.TestConverter;
@@ -36,6 +37,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;
@@ -74,6 +76,7 @@ class JpaTokenStoreTest {
 
     @AfterEach
     public void rollback() {
+        ClockUtils.reset();
         transaction.rollback();
     }
 
@@ -409,6 +412,54 @@ class JpaTokenStoreTest {
             fail("Expected UnableToClaimTokenException");
         } catch (UnableToClaimTokenException e) {
             // expected
+        }
+    }
+
+    /**
+     * The claim's age is a timestamp one process wrote measured against another process' clock, so the protocol allows
+     * the two no disagreement. Both cases move the clock the whole application reads rather than the wall clock of a
+     * machine, which is the only way to model a disagreement in-process, and advance it in fixed steps so neither case
+     * depends on how long the test itself takes. {@code concurrentJpaTokenStore} claims with a two-second timeout.
+     */
+    @Nested
+    class ClaimTimeoutAcrossDisagreeingClocks {
+
+        @Test
+        void clockAheadByLessThanTheClaimTimeoutTakesAClaimThatIsStillLive() {
+            // given a segment claimed by this process, and 600 milliseconds of real time passing for every process
+            Clock agreedClock = ClockUtils.get();
+            joinAndUnwrap(jpaTokenStore.initializeTokenSegments("skew", 1, null, createProcessingContext()));
+            joinAndUnwrap(jpaTokenStore.fetchToken("skew", 0, null));
+            ClockUtils.set(Clock.offset(agreedClock, Duration.ofMillis(600)));
+
+            // then a process whose clock agrees cannot take the claim: 600 milliseconds against a two-second timeout
+            assertThrows(UnableToClaimTokenException.class,
+                         () -> joinAndUnwrap(concurrentJpaTokenStore.fetchToken("skew", 0, null)));
+
+            // when that same process reads the same store at the same instant, with a clock running 1500 milliseconds
+            // ahead - a disagreement well below its own claim timeout
+            ClockUtils.set(Clock.offset(agreedClock, Duration.ofMillis(600 + 1500)));
+
+            // then it takes the claim anyway, so no clock difference is small enough to be safe
+            assertDoesNotThrow(() -> joinAndUnwrap(concurrentJpaTokenStore.fetchToken("skew", 0, null)));
+        }
+
+        @Test
+        void theProcessThatLostTheSegmentOnlyLearnsWhenItNextWritesTheToken() {
+            // given a segment claimed by this process, taken by a process whose clock runs past the claim timeout ahead
+            var ctx = createProcessingContext();
+            joinAndUnwrap(jpaTokenStore.initializeTokenSegments("skew", 1, null, ctx));
+            joinAndUnwrap(jpaTokenStore.fetchToken("skew", 0, null));
+            ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofSeconds(2).plusMillis(1)));
+            joinAndUnwrap(concurrentJpaTokenStore.fetchToken("skew", 0, null));
+
+            // when this process writes the token it still believes it owns
+            // then that write is refused, which is the first and only signal it gets
+            assertThrows(UnableToClaimTokenException.class,
+                         () -> joinAndUnwrap(jpaTokenStore.storeToken(new GlobalSequenceTrackingToken(1),
+                                                                      "skew",
+                                                                      0,
+                                                                      ctx)));
         }
     }
 
