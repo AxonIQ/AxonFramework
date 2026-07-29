@@ -22,6 +22,8 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -208,7 +210,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                     return eventStorageEngine.appendEvents(appendCondition, processingContext, eventQueue)
                                              .thenApply(DefaultEventStoreTransaction::castTransaction)
                                              .thenAccept(tx -> {
-                                                 processingContext.onCommit(c -> tx.commit()
+                                                 processingContext.on(AppendPhase.APPEND_COMMIT, c -> tx.commit()
                                                      .thenAccept(v -> processingContext.onAfterCommit(c2 -> doAfterCommit(c2, tx, v)))
                                                  );
                                                  processingContext.onError((c, p, e) -> tx.rollback());
@@ -276,5 +278,27 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     @SuppressWarnings("unchecked")
     private static AppendTransaction<Object> castTransaction(AppendTransaction<?> at) {
         return (AppendTransaction<Object>) at;
+    }
+
+    /**
+     * The {@link ProcessingLifecycle.Phase phase} committing the {@link AppendTransaction}, ordered strictly before
+     * {@link DefaultPhases#COMMIT}.
+     * <p>
+     * Actions within a single phase have no order relative to one another and may run in parallel. A
+     * {@link org.axonframework.messaging.core.unitofwork.transaction.TransactionManager TransactionManager} bound to
+     * the {@link ProcessingContext} commits its {@code Transaction} in the {@code COMMIT} phase, so committing the
+     * {@code AppendTransaction} in that same phase would leave the moment the appended events become durable
+     * undefined: it could occur before, during or after {@link AppendTransaction#commit()}. Committing one phase
+     * earlier guarantees the {@code AppendTransaction} completes while that surrounding transaction is still open,
+     * making {@code commit()} the last point at which an append can still be refused.
+     */
+    private enum AppendPhase implements ProcessingLifecycle.Phase {
+
+        APPEND_COMMIT;
+
+        @Override
+        public int order() {
+            return DefaultPhases.COMMIT.order() - 1;
+        }
     }
 }

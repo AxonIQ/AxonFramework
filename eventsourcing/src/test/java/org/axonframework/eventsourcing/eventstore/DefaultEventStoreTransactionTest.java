@@ -23,6 +23,8 @@ import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.transaction.Transaction;
+import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -33,10 +35,13 @@ import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -609,6 +614,72 @@ class DefaultEventStoreTransactionTest {
                         .isInstanceOf(NullPointerException.class);
             });
             awaitSuccessfulCompletion(uow.execute());
+        }
+    }
+
+    @Nested
+    class CommitOrdering {
+
+        @Test
+        void appendTransactionCommitsBeforeTheTransactionBoundToTheProcessingContext() {
+            // given a store recording its commit, completing it asynchronously as a remote store would
+            List<String> commits = new CopyOnWriteArrayList<>();
+            InMemoryEventStorageEngine recordingEngine = new InMemoryEventStorageEngine() {
+                @Override
+                public CompletableFuture<AppendTransaction<?>> appendEvents(AppendCondition condition,
+                                                                            ProcessingContext context,
+                                                                            List<TaggedEventMessage<?>> events) {
+                    return super.appendEvents(condition, context, events)
+                                .<AppendTransaction<?>>thenApply(tx -> recordingCommit(tx, commits));
+                }
+            };
+            // and a transaction attached to the processing context, recording its commit as well
+            TransactionManager transactionManager = () -> new Transaction() {
+                @Override
+                public void commit() {
+                    commits.add("contextTransaction");
+                }
+
+                @Override
+                public void rollback() {
+                    // No rollback expected in this test.
+                }
+            };
+
+            // when appending an event within a unit of work carrying that transaction
+            var uow = aUnitOfWork();
+            transactionManager.attachToProcessingLifecycle(uow);
+            uow.runOnInvocation(context -> new DefaultEventStoreTransaction(
+                    recordingEngine, context, event -> new GenericTaggedEventMessage<>(event, Set.of(AGGREGATE_ID_TAG))
+            ).appendEvent(eventMessage(0)));
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then the append transaction committed while the context-bound transaction was still open
+            assertThat(commits).containsExactly("appendTransaction", "contextTransaction");
+        }
+
+        private <R> AppendTransaction<R> recordingCommit(AppendTransaction<R> delegate, List<String> commits) {
+            return new AppendTransaction<>() {
+                @Override
+                public CompletableFuture<R> commit() {
+                    return CompletableFuture.supplyAsync(() -> null)
+                                            .thenCompose(ignored -> delegate.commit())
+                                            .thenApply(result -> {
+                                                commits.add("appendTransaction");
+                                                return result;
+                                            });
+                }
+
+                @Override
+                public void rollback() {
+                    delegate.rollback();
+                }
+
+                @Override
+                public CompletableFuture<ConsistencyMarker> afterCommit(R commitResult) {
+                    return delegate.afterCommit(commitResult);
+                }
+            };
         }
     }
 
