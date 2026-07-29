@@ -82,6 +82,11 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
      * - To immediately trigger a notification when onEventsAppended is called.
      * - To terminate the polling thread when terminate is invoked.
      *
+     * The interrupt is only an accelerator for the second case, never the condition itself: the
+     * callback runs arbitrary code that may consume the interrupt before the loop observes it. The
+     * terminated flag is therefore checked on every iteration, so a swallowed interrupt costs one
+     * more poll rather than leaving terminate blocked on join forever.
+     *
      * The COUNT(*) query is intentionally used for the JPA variant as it does not
      * have a gapless monotonic index that can be relied on.
      *
@@ -96,7 +101,7 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
         Thread pollingThread = THREAD_FACTORY.newThread(() -> {
             long lastTotalEvents = 0;
 
-            for (;;) {
+            while (!terminated.get()) {
                 try {
                     Thread.sleep(pollingInterval);
 
