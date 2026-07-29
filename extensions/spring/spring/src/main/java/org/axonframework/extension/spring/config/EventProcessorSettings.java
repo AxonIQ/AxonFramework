@@ -131,10 +131,11 @@ public sealed interface EventProcessorSettings {
         int batchSize();
 
         /**
-         * Name of the token store of the bean.
+         * Name of the bean acting as token store for this pooled streaming processor.
          *
-         * @return Name of the bean acting as token store for this pooled streaming processor.
+         * @return only used if non-null.
          */
+        @Nullable
         String tokenStore();
     }
 }
