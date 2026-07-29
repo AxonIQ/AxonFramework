@@ -281,8 +281,8 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     }
 
     /**
-     * The {@link ProcessingLifecycle.Phase phase} committing the {@link AppendTransaction}, ordered strictly before
-     * {@link DefaultPhases#COMMIT}.
+     * The {@link ProcessingLifecycle.Phase phase} in which a {@code DefaultEventStoreTransaction} commits its
+     * {@link AppendTransaction}, ordered strictly before {@link DefaultPhases#COMMIT}.
      * <p>
      * Actions within a single phase have no order relative to one another and may run in parallel. A
      * {@link org.axonframework.messaging.core.unitofwork.transaction.TransactionManager TransactionManager} bound to
@@ -291,9 +291,23 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
      * undefined: it could occur before, during or after {@link AppendTransaction#commit()}. Committing one phase
      * earlier guarantees the {@code AppendTransaction} completes while that surrounding transaction is still open,
      * making {@code commit()} the last point at which an append can still be refused.
+     * <p>
+     * Anything observing the phase an action runs in sees this phase alongside the {@link DefaultPhases}, which is why
+     * it is published rather than kept internal. Most notably, an
+     * {@link ProcessingLifecycle.ErrorHandler ErrorHandler} registered through
+     * {@link ProcessingLifecycle#onError(ProcessingLifecycle.ErrorHandler) onError} is handed {@code APPEND_COMMIT},
+     * and not {@code COMMIT}, when the append commit is the action that failed. Match on this constant to recognize
+     * the append commit; a comparison against {@code COMMIT} alone does not cover it.
+     * <p>
+     * Note that a {@code ProcessingLifecycle} groups actions by {@link ProcessingLifecycle.Phase#order() order} rather
+     * than by phase identity. A separately defined phase sharing this phase's order is therefore indistinguishable
+     * from it, and its actions run together with the append commit.
      */
-    private enum AppendPhase implements ProcessingLifecycle.Phase {
+    public enum AppendPhase implements ProcessingLifecycle.Phase {
 
+        /**
+         * Commits the {@link AppendTransaction}, one order before {@link DefaultPhases#COMMIT}.
+         */
         APPEND_COMMIT;
 
         @Override

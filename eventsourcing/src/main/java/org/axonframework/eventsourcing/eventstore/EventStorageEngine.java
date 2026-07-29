@@ -193,10 +193,12 @@ public interface EventStorageEngine extends DescribableComponent {
         /**
          * Commit any underlying transactions to make the appended events visible to consumers.
          * <p>
-         * Called strictly before the
+         * Called in the {@link DefaultEventStoreTransaction.AppendPhase#APPEND_COMMIT APPEND_COMMIT} phase, which is
+         * ordered strictly before the
          * {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#COMMIT COMMIT} phase,
          * so that this invocation completes while a transaction bound to the {@link ProcessingContext} - which commits
-         * in the {@code COMMIT} phase - is still open.
+         * in the {@code COMMIT} phase - is still open. Being a phase of its own, it is observable: a failure of this
+         * method is attributed to {@code APPEND_COMMIT} rather than to {@code COMMIT}.
          * <p>
          * Note that an implementation relying on such a context-bound transaction may do no work here at all. On those
          * implementations the appended events become durable when that surrounding transaction commits, which is after

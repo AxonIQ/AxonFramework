@@ -658,6 +658,67 @@ class DefaultEventStoreTransactionTest {
             assertThat(commits).containsExactly("appendTransaction", "contextTransaction");
         }
 
+        @Test
+        void aFailedAppendCommitLeavesTheTransactionBoundToTheProcessingContextUncommitted() {
+            // given a store whose append commit refuses the append
+            RuntimeException appendFailure = new RuntimeException("Append refused.");
+            InMemoryEventStorageEngine refusingEngine = new InMemoryEventStorageEngine() {
+                @Override
+                public CompletableFuture<AppendTransaction<?>> appendEvents(AppendCondition condition,
+                                                                            ProcessingContext context,
+                                                                            List<TaggedEventMessage<?>> events) {
+                    return super.appendEvents(condition, context, events)
+                                .<AppendTransaction<?>>thenApply(tx -> failingCommit(tx, appendFailure));
+                }
+            };
+            // and a transaction attached to the processing context, recording what it is asked to do
+            List<String> transactionCalls = new CopyOnWriteArrayList<>();
+            TransactionManager transactionManager = () -> new Transaction() {
+                @Override
+                public void commit() {
+                    transactionCalls.add("commit");
+                }
+
+                @Override
+                public void rollback() {
+                    transactionCalls.add("rollback");
+                }
+            };
+
+            // when appending an event within a unit of work carrying that transaction
+            var uow = aUnitOfWork();
+            transactionManager.attachToProcessingLifecycle(uow);
+            uow.runOnInvocation(context -> new DefaultEventStoreTransaction(
+                    refusingEngine, context, event -> new GenericTaggedEventMessage<>(event, Set.of(AGGREGATE_ID_TAG))
+            ).appendEvent(eventMessage(0)));
+            CompletableFuture<Void> result = uow.execute();
+
+            // then the unit of work failed with the refusal
+            assertThatThrownBy(() -> awaitExceptionalCompletion(result)).hasRootCause(appendFailure);
+            // and the context-bound transaction rolled back without ever committing, because the COMMIT phase in
+            // which it would have committed is ordered after the phase that failed and therefore never ran
+            assertThat(transactionCalls).containsExactly("rollback");
+        }
+
+        private <R> AppendTransaction<R> failingCommit(AppendTransaction<R> delegate, Throwable failure) {
+            return new AppendTransaction<>() {
+                @Override
+                public CompletableFuture<R> commit() {
+                    return CompletableFuture.failedFuture(failure);
+                }
+
+                @Override
+                public void rollback() {
+                    delegate.rollback();
+                }
+
+                @Override
+                public CompletableFuture<ConsistencyMarker> afterCommit(R commitResult) {
+                    return delegate.afterCommit(commitResult);
+                }
+            };
+        }
+
         private <R> AppendTransaction<R> recordingCommit(AppendTransaction<R> delegate, List<String> commits) {
             return new AppendTransaction<>() {
                 @Override
