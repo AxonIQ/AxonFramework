@@ -394,11 +394,11 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                                                 processingContext
                                         ))
                                         .toList();
-        return CompletableFuture.allOf(storeFutures.toArray(CompletableFuture[]::new))
-                                .thenRun(() -> logger.info(
-                                        "Processor [{}] successfully reset tokens for segments [{}].",
-                                        name, segments
-                                ));
+        return FutureUtils.allOrEmpty(storeFutures)
+                          .thenRun(() -> logger.info(
+                                  "Processor [{}] successfully reset tokens for segments [{}].",
+                                  name, segments
+                          ));
     }
 
     private record SegmentToken(Segment segment, @Nullable TrackingToken token) {

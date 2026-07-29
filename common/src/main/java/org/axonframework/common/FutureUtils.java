@@ -19,6 +19,7 @@ package org.axonframework.common;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -71,6 +72,29 @@ public final class FutureUtils {
      */
     public static <T> CompletableFuture<T> emptyCompletedFuture() {
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Combines the given {@code futures} into a single {@link CompletableFuture} that completes once all of them
+     * complete, returning an already completed future when {@code futures} is empty.
+     * <p>
+     * This is a drop-in alternative to {@link CompletableFuture#allOf(CompletableFuture[])} for code paths that
+     * routinely deal with empty collections, such as fan-out over a dynamic set of handlers, subscribers, or segments.
+     * It avoids allocating an array and a dependent future for a combination that has nothing to wait for.
+     * <p>
+     * The returned future completes exceptionally with a {@link CompletionException} as soon as any of the given
+     * {@code futures} completes exceptionally, matching the behavior of
+     * {@link CompletableFuture#allOf(CompletableFuture[])}.
+     *
+     * @param futures the futures to combine
+     * @return a future that completes once every future in {@code futures} completes, or a completed future if
+     * {@code futures} is empty
+     * @since 5.3.0
+     */
+    public static CompletableFuture<Void> allOrEmpty(List<CompletableFuture<Void>> futures) {
+        return futures.isEmpty()
+                ? emptyCompletedFuture()
+                : CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
     }
 
     /**
