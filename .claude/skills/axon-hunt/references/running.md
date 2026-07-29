@@ -418,19 +418,27 @@ its settle budget. Budget for it; nothing is wedged.
 ## The gates that must hold before anything is committed
 
 ```bash
-# No framework code was touched. Both must print nothing.
+# No framework code was touched, by the whole branch. Must print nothing.
 #
-# Do NOT diff against `main`. The local `main` ref is not the merge base: this branch merges
-# `origin/main` periodically, so once upstream has moved, `git diff main -- messaging ...` reports
-# every framework commit the merge brought in and reads as a catastrophic gate failure. Measured:
-# 172 files and 13537 insertions of an unrelated upstream tracing feature, none of it local.
-# Ask the question the gate actually means -- has *this work* changed framework code -- which is a
-# question about the working tree and the commit, not about a branch ref.
-git status --porcelain -- messaging eventsourcing modelling common conversion extensions test integrationtests
-git diff --stat HEAD -- messaging eventsourcing modelling common conversion extensions test integrationtests
+# Compare against `origin/main`, and note the two things this command gets right that the two
+# obvious wrong forms get wrong.
+#
+#   `git diff --stat main -- ...` diffs against the LOCAL `main` ref, which is not the merge base:
+#   this branch merges `origin/main` periodically, so once upstream has moved this reports every
+#   framework commit the merge brought in and reads as a catastrophic gate failure. Measured on
+#   this branch: 172 files and 13537 insertions of unrelated upstream work, none of it local.
+#
+#   `git diff --stat HEAD -- ...` diffs the WORKING TREE against HEAD, so it is empty the moment
+#   anything is committed, whatever it contained. A gate that cannot fail after a commit is not a
+#   gate -- and this gate's whole job is to be checked after committing.
+#
+#   `integrationtests` is NOT in the list. The suite owns its own integration-test infrastructure
+#   and legitimately changes it (26 files on this branch); folding it in makes the gate red for ever
+#   and trains the next reader to ignore it.
+git diff --stat origin/main HEAD -- messaging eventsourcing modelling common conversion extensions test
 
-# After committing, the same question about the commit itself. Must print nothing.
-git show --stat --format= HEAD -- messaging eventsourcing modelling common conversion extensions test integrationtests
+# Nothing uncommitted anywhere either. Must print nothing.
+git status --short
 
 # ASCII only, across everything the suite adds. Must print nothing.
 LC_ALL=C grep -rn '[^ -~\t]' simulation formal .claude/skills/axon-hunt

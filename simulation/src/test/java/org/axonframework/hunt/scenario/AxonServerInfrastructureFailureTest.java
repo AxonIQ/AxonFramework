@@ -63,6 +63,28 @@ class AxonServerInfrastructureFailureTest {
     private static final String CHAOS_BACKEND = "axonserver-chaos";
 
     /**
+     * The one exception the connector answers every failed commit with, whatever the failure was.
+     */
+    private static final String CONSISTENCY_REJECTION = "AppendEventsTransactionRejectedException";
+
+    /**
+     * Counts how the run's failed appends were classified, by the exception the client was given.
+     * <p>
+     * Read from the history rather than from a checker, because no invariant is about the classification itself: an
+     * oracle can see that an append failed and can see what the failure was called, but the question of whether that
+     * name was the right one is a question about the connector's mapping and not about the store's behaviour.
+     */
+    private static Map<String, Long> appendFailureClassifications(ScenarioResult result) {
+        return HistoryView.read(result.history()).operations(HistoryOps.APPEND).stream()
+                          .filter(append -> append.completion() != null)
+                          .map(append -> append.completion().error())
+                          .filter(java.util.Objects::nonNull)
+                          .collect(java.util.stream.Collectors.groupingBy(error -> error,
+                                                                          java.util.TreeMap::new,
+                                                                          java.util.stream.Collectors.counting()));
+    }
+
+    /**
      * Prints everything a reader needs to check a verdict against, and returns the fault records.
      */
     private static List<HistoryRecord> report(String label, ScenarioResult result) {
@@ -176,6 +198,24 @@ class AxonServerInfrastructureFailureTest {
             assertThat(result.measurements())
                     .as("the client's own verdict set, including how much of it is ambiguous")
                     .anySatisfy(measured -> assertThat(measured).contains("ambiguous"));
+
+            // and this is the connector's mapping, held against the run that breaks its assumption. The network was cut
+            // underneath appends that were in flight; a dropped connection is an outcome nobody knows, and the store
+            // deciding against an append is an outcome somebody decided. The connector answers both with the same
+            // exception type, so every failure below is reported as a decision. Asserted as the whole classification
+            // set rather than as a count, because the count varies with where the cuts land and the set does not: the
+            // day a transport failure surfaces as anything other than a rejection, this assertion goes red and the
+            // finding is closed.
+            Map<String, Long> appendFailures = appendFailureClassifications(result);
+            System.out.println("as-partition append failure classifications: " + appendFailures);
+            assertThat(appendFailures)
+                    .as("appends must have failed while the network was cut, or this says nothing about the mapping")
+                    .isNotEmpty();
+            assertThat(appendFailures.keySet())
+                    .as("every commit failure under a network partition is reported as a consistency decision (the "
+                                + "connector maps all of them to one exception); a run that reports a transport "
+                                + "failure as such closes this gap and turns this assertion red")
+                    .containsExactly(CONSISTENCY_REJECTION);
 
             // and a cut that reached no commit window is reported as such and costs the run its verdict rather than
             // failing the arm. FAIL means the durability rule was broken; INCONCLUSIVE means the nemesis never reached

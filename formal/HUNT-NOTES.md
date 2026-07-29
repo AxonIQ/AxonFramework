@@ -2482,3 +2482,101 @@ gate actually means -- has *this work* changed framework code -- and they are co
 instructive one: a gate that goes red for the wrong reason trains the next person to wave it
 through, and this one goes red on every worktree whose upstream has moved. A gate nobody can pass
 honestly is the same problem as a gate nobody can fail.
+
+### 6.1 A finding whose reproducer was never committed had drifted from a finding into a story
+
+F-19 said "Reproduced by test, and reproduced again with no harness at all" and printed
+`accepted=83 ... over-accepted appends: 17` as the harness-free measurement. No test referenced it:
+`grep -rln 'F-19\|AcceptsAnAppendItsBoundary\|over-accepted' simulation/src integrationtests/src`
+returned nothing. The named arm, `BackendDifferentialTest`, prints `axonserver:FAIL` and asserts
+matrix shape, seed counts, non-null verdicts and each backend's `notApplicable` set -- nothing about
+that verdict.
+
+**The number that had gone unchecked for a phase was wrong by an order of magnitude, and in the
+direction that mattered.** Reconstructing the probe from the entry's own recorded shape -- eight
+threads, forty rounds, four hot tags, two sourcings per round, the lower marker, a two-event batch
+under the OR of the two boundaries -- and running it ten times measured **zero** over-accepted
+appends, over 991 accepted appends. The suite's own oracle still reports the violation on
+demand. Both are measurements; the entry had been quoting them as if they were the same one.
+
+Reading the suite's history settled what the two paths do differently, and it is the part the entry
+never had: **the first model violation is always an append carrying `ConsistencyMarker.ORIGIN`**
+(recorded `marker: -1`), not a sourced marker. Of that run's 296 appends, 72 carried ORIGIN, 68 were
+rejected, 4 accepted, and exactly **one** of the four was over-accepted. One per run, not seventeen.
+
+Three lessons, and the second is the expensive one.
+
+1. **A committed probe that measures zero is worth more than an uncommitted probe that measured
+   seventeen.** The zero is falsifiable and re-runnable; the seventeen was neither, and it had been
+   carrying a High-severity attribution.
+2. **Reconstructing a probe from a prose description reconstructs the description, not the
+   experiment.** The entry's shape paragraph was accurate and still missed the load-bearing detail,
+   because the detail was in the marker regime and the paragraph was about the thread count. If a
+   probe is not committed, what it measured cannot be recovered from what was written about it.
+3. **Prove the probe can see before believing its zero.** Three prints do that here, and they were
+   added *after* the first four runs came back zero, which is the wrong order: `own position minus
+   marker -> count: {0=28, 2=49, 4=22, 6=1}`, `accepted appends sequenced above their own marker:
+   72`, `stored events examined inside those windows: 192`. Sixty to seventy-two appends per run land
+   in the exact window the entry names, and 160-200 stored events were compared against an accepting
+   boundary. Without those, the zero was indistinguishable from a search of an empty window.
+
+### 6.2 Extending an elimination table beat repeating it, by one row
+
+F-19's elimination already recorded "eight writers racing at marker `0` on an empty store: exactly
+one accepted". The violation is on ORIGIN, which is marker `-1`. Repeating the burst at ORIGIN --
+forty bursts, eight writers, one identical boundary, store emptied between bursts -- gave
+`accepted per burst -> burst count: {1=40}`. Exactly one accepted, every time.
+
+That row is what moved F-19's open question from *the mechanism* to *the attribution*: the store
+enforces ORIGIN correctly under a naked burst, so the divergence lives somewhere between the
+workload and the connector. The next step is bounded and is written into the entry: record the
+`AppendCondition` as the connector receives it and compare it against the one the workload asked
+for. One recording point separates "the framework sent a different condition" from the other two
+possibilities outright.
+
+### 6.3 The audit that should have run every phase: does the named test assert the finding?
+
+Fourteen test classes are named across the findings and **all fourteen exist** -- so this was never
+a phantom-reference problem, which is why nobody caught it. Auditing all 23 findings for whether the
+named test *asserts* the finding found four more entries whose status outran their evidence:
+
+| Finding | Claimed | Actually |
+|---|---|---|
+| F-12 | "Reproduced by test" | The harness supplies the converter so the arm never reaches the defect, and the entry's own Reproduce block admits it two sentences after printing a command that exits 0. Worse than F-19: F-19 at least *runs* the code that misbehaves. |
+| F-11 | "Reproduced by test" | The arm asserts `violations()).isEmpty()`. The redelivery was deliberately licensed, so the arm passes *because* the finding is true and would pass if it stopped being true. |
+| F-16 | "Reproduced by test, on both configuration paths" | The loss assertion sits inside `if (stalled(result) && missing > 0)`. Close the gap and the branch never runs and the arm is green. |
+| F-20 | "reproduced by test" | Asserted that cuts landed and that the word "ambiguous" appeared in a label. Every number the entry quoted had been derived by hand from a history. |
+
+**One of the four was cheap to fix and got fixed.** F-20 is now state (a): the arm asserts that the
+classification set of the run's failed appends is *exactly*
+`{AppendEventsTransactionRejectedException}` after eight landed network cuts. Measured over two runs:
+200 of 200, then 190 of 190. The *set* is asserted rather than a count, because the count varies with
+where the cuts land and the set does not.
+
+**F-16's one-line fix was declined, deliberately.** `assertThat(missing).isPositive()` would pin it,
+on an already-computed local -- but it asserts that a race fires on every run and that rate has never
+been measured. An earlier phase declined it on exactly those grounds. Measure the rate first, then
+pin. Shipping the assertion because it is one line is how a suite acquires a test that is green by
+luck.
+
+### 6.4 The framework-untouched gate was wrong twice, in opposite directions
+
+Note at the end of section 5 records the first correction: `git diff --stat main -- <paths>` compares
+against the local `main` ref, which is not the merge base, so once upstream moves it reports every
+merged framework commit as the hunt's own work. Measured again here: **172 files, 13537 insertions.**
+
+The correction it landed on was `git diff --stat HEAD -- <paths>`, and that is wrong the other way:
+it diffs the *working tree* against HEAD, so it is empty the moment anything is committed, whatever
+it contained. **A gate whose whole job is to be checked after committing cannot be one that can only
+fail before committing.**
+
+The form that asks the question the gate means is
+`git diff --stat origin/main HEAD -- messaging eventsourcing modelling common conversion extensions test`.
+Empty on this branch. Note what is *not* in that path list: `integrationtests`, which the suite owns
+and legitimately changes -- 26 files on this branch. Folding it in makes the gate red for ever, which
+trains the next reader to wave it through, which is the same failure as a gate that cannot fail.
+
+Both skill copies corrected, and both were wrong in *different* ways, which is its own lesson: the
+committed copy under `.claude/skills/` and the installed copy under `~/.claude-work/skills/` drift,
+and the committed one is the source of truth. `cp -R .claude/skills/axon-hunt ~/.claude-work/skills/`
+after editing.
