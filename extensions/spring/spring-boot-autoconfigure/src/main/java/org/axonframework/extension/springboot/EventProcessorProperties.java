@@ -20,7 +20,10 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.extension.spring.config.EventProcessorSettings;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
+import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.eventhandling.EventBus;
+import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
@@ -155,10 +158,20 @@ public class EventProcessorProperties {
          */
         private String tokenStore = "tokenStore";
         /**
-         * The name of the bean that represents the sequencing policy for processing events. If no name is specified,
-         * the processor defaults to a {@link SequentialPerAggregatePolicy},
-         * which guarantees to process events originating from the same Aggregate instance sequentially, while events
-         * from different Aggregate instances may be processed concurrently.
+         * The name of the bean that represents the sequencing policy for processing events.
+         * <p>
+         * Nothing reads this property, so setting it has no effect. A sequencing policy belongs to the
+         * {@link EventHandlingComponent} rather than to the processor: the processor asks the component that would
+         * handle an event for that event's sequence identifier. Configure the policy on the component, for example
+         * through {@link SimpleEventHandlingComponent#create(String, SequencingPolicy)}.
+         * <p>
+         * A component given no policy uses a {@link SequentialPerAggregatePolicy} falling back to a
+         * {@link SequentialPolicy}. On an event store that publishes an aggregate identifier alongside each event, the
+         * first of the two answers, so events originating from the same Aggregate instance are handled sequentially
+         * while events from different Aggregate instances may be handled concurrently. On an event store speaking the
+         * Dynamic Consistency Boundary protocol no aggregate identifier is published, so the fallback answers for every
+         * event and the whole stream is handled sequentially by the single segment that fallback identifier hashes into
+         * - see {@link SequencingPolicy} for what to configure instead.
          */
         private String sequencingPolicy;
 
@@ -348,6 +361,12 @@ public class EventProcessorProperties {
         /**
          * Returns the name of the bean that defines the
          * {@link SequencingPolicy} for this processor.
+         * <p>
+         * Nothing acts on this name. A sequencing policy belongs to the {@link EventHandlingComponent} rather than to
+         * the processor: the processor asks the component that would handle an event for that event's sequence
+         * identifier. Configure the policy on the component, for example through
+         * {@link SimpleEventHandlingComponent#create(String, SequencingPolicy)}, whose Javadoc states what a component
+         * given no policy resolves to on an aggregate-based and on a Dynamic Consistency Boundary event store.
          *
          * @return the name of the bean that defines the
          * {@link SequencingPolicy} for this processor.
@@ -360,7 +379,11 @@ public class EventProcessorProperties {
          * Sets the name of the bean that defines the
          * {@link SequencingPolicy} for this processor. The
          * {@code SequencingPolicy} describes which Events must be handled sequentially, and which can be handled
-         * concurrently. Defaults to a {@link SequentialPerAggregatePolicy}.
+         * concurrently.
+         * <p>
+         * Nothing reads the value that is set here; configure the policy on the event handling component instead. See
+         * {@link #sequencingPolicy()} for where the policy does come from, and what it resolves to when none is
+         * configured.
          *
          * @param sequencingPolicy the name of the bean that defines the
          *                         {@link SequencingPolicy} for this

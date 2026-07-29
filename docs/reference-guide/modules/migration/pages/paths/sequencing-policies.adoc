@@ -104,8 +104,10 @@ Users migrating from Axon Framework 4 without migrating their event store to DCB
 
 * **DCB (tag-based) event store solution**: Events are stored using tags rather than aggregate identifiers.
 No aggregate identifier is placed in the processing context, so `SequentialPerAggregatePolicy` returns `Optional.empty()` for every event.
-The `HierarchicalSequencingPolicy` then falls back to `SequentialPolicy`, processing all events sequentially within a single segment (allowing no concurrency at all within the processing segment).
-This is the safe default, but limits parallelism: see the section below on defining an explicit policy.
+The `HierarchicalSequencingPolicy` then falls back to `SequentialPolicy`, which answers with the same constant sequence identifier for every event.
+Because a segment is chosen by hashing the sequence identifier, one identifier means one segment: every event is routed to the single segment that constant hashes into, and every other configured segment receives nothing.
+Raising the segment count or the thread count therefore buys no throughput at all.
+This is the safe default, but it removes parallelism entirely: see the section below on defining an explicit policy.
 
 == Define an explicit event sequencing policy
 

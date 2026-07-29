@@ -641,8 +641,11 @@ Thus, if the `SequencingPolicy` returns a _different_ value for two events, they
 Note that if the policy returns an `Optional#empty` as the sequence identifier, the event may be processed in parallel with _any_ other events.
 
 By default, a `HierarchicalSequencingPolicy` is configured, which first tries for the `SequentialPerAggregatePolicy`.
-If that fails, because the events don't contain aggregate information, it falls back to the `SequentialPolicy`.
-This policy handles events in the order they've been published within a **single** segment, thus eliminating any possibility for parallel processing.
+That policy does not read the aggregate identifier from the event itself, but from a resource the event store publishes on the xref:messaging-concepts:processing-context.adoc[processing context] alongside each event.
+Only the aggregate-based storage engines publish that resource.
+An event store speaking the Dynamic Consistency Boundary protocol does not, so there the policy resolves nothing for _every_ event, and the `HierarchicalSequencingPolicy` falls back to the `SequentialPolicy`.
+That fallback answers with the same constant sequence identifier for every event, so all events are handled in the order they've been published by a **single** segment, thus eliminating any possibility for parallel processing.
+Every other configured segment receives nothing, which means raising the segment count or the thread count buys no throughput while this fallback is in effect.
 
 As correctly sequencing your events is important for any application, we **highly** recommend you check out the <<sequential_processing,sequential processing>> section to understand how to configure a policy that fits with your application.
 Furthermore, as defining the right policy will allow for parallel processing, it will (greatly) impact event processing performance.

@@ -28,6 +28,15 @@ import java.util.Optional;
  * aggregates may be processed in different threads.
  * <p>
  * This policy only applies for event messages.
+ * <p>
+ * The aggregate identifier is not read from the event itself, but from the
+ * {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY} resource of the {@link ProcessingContext}. Only event stores that
+ * publish that resource alongside each event - the aggregate-based storage engines - allow this policy to resolve
+ * anything. On an event store speaking the Dynamic Consistency Boundary protocol, where events carry
+ * {@link org.axonframework.messaging.eventstreaming.Tag Tags} instead of an aggregate identifier, the resource is
+ * absent and this policy resolves {@link Optional#empty()} for <em>every</em> event. Used on its own there, it provides
+ * no sequencing at all; combine it with a fallback, or configure a policy that reads your application's own
+ * identifiers.
  *
  * @author Allard Buijze
  * @since 0.3.0

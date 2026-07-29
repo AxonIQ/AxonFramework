@@ -75,6 +75,14 @@ public class SimpleEventHandlingComponent implements
      * <p>
      * Uses a default sequencing policy that will first try for the {@link SequentialPerAggregatePolicy}, falling back
      * to the {@link SequentialPolicy} when the former returns no sequence value.
+     * <p>
+     * The {@code SequentialPerAggregatePolicy} half resolves a sequence identifier only on event stores that publish an
+     * aggregate identifier alongside the event. On an event store speaking the Dynamic Consistency Boundary protocol it
+     * resolves nothing, so the {@code SequentialPolicy} fallback answers for every event with a single constant
+     * identifier: events are handled strictly one at a time, and all of them are routed to the one
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment} that identifier hashes
+     * into. Use {@link #create(String, SequencingPolicy)} with a policy matching your application's ordering
+     * requirement to process events concurrently on such a store.
      *
      * @param name The name of the component, used for {@link DescribableComponent describing} the component.
      * @return A simple {@link EventHandlingComponent} instance with the given {@code name}.

@@ -33,8 +33,13 @@ import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentMatcher;
 import org.junit.jupiter.api.*;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +73,60 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
 
             // then
             assertThat(sequenceIdentifier).isEqualTo(AGGREGATE_IDENTIFIER);
+        }
+    }
+
+    /**
+     * The default policy on an event store that publishes no aggregate identifier, which is every store speaking the
+     * Dynamic Consistency Boundary protocol. Pins what the Javadoc on
+     * {@link SimpleEventHandlingComponent#create(String)} promises there: the per-aggregate half resolves nothing, so
+     * the fallback answers with one constant identifier for the whole stream, and that one identifier hashes into
+     * exactly one segment.
+     */
+    @Nested
+    class DefaultSequencingPolicyWithoutAnAggregateIdentifier {
+
+        @Test
+        void collapsesEventsOfIndependentEntitiesOntoOneSequenceIdentifier() {
+            // given a component with the wired default, and events carrying no aggregate identifier resource
+            var component = SimpleEventHandlingComponent.create("test");
+            var firstEvent = EventTestUtils.asEventMessage(new OrderEvent("order-1", "item-1"));
+            var secondEvent = EventTestUtils.asEventMessage(new OrderEvent("order-2", "item-2"));
+
+            // when
+            var firstIdentifier = component.sequenceIdentifierFor(firstEvent,
+                                                                 contextWithoutAggregateIdentifier(firstEvent));
+            var secondIdentifier = component.sequenceIdentifierFor(secondEvent,
+                                                                   contextWithoutAggregateIdentifier(secondEvent));
+
+            // then both collapse onto the fallback's constant, rather than onto their own entity
+            assertThat(firstIdentifier).isEqualTo(FULL_SEQUENTIAL_POLICY);
+            assertThat(secondIdentifier).isEqualTo(firstIdentifier);
+        }
+
+        @Test
+        void routesEveryEventIntoOneOfFourSegmentsLeavingTheOtherThreeEmpty() {
+            // given four segments, and a component with the wired default
+            var component = SimpleEventHandlingComponent.create("test");
+            List<Segment> segments = Segment.splitBalanced(Segment.ROOT_SEGMENT, 3);
+            assertThat(segments).hasSize(4);
+
+            // when routing events of six independent entities through the same segment matching the processor applies
+            var matcher = new SegmentMatcher((e, ctx) -> Optional.of(component.sequenceIdentifierFor(e, ctx)));
+            Map<Integer, Long> eventsPerSegment = new LinkedHashMap<>();
+            for (int entity = 0; entity < 6; entity++) {
+                var event = EventTestUtils.asEventMessage(new OrderEvent("order-" + entity, "item-" + entity));
+                var context = contextWithoutAggregateIdentifier(event);
+                for (Segment segment : segments) {
+                    if (matcher.matches(segment, event, context)) {
+                        eventsPerSegment.merge(segment.getSegmentId(), 1L, Long::sum);
+                    }
+                }
+            }
+
+            // then a single segment took all six, and the three other segments were never given anything to do
+            assertThat(eventsPerSegment).hasSize(1);
+            assertThat(eventsPerSegment.values()).containsExactly(6L);
         }
     }
 
@@ -256,6 +315,11 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
 
     private record OrderEvent(String orderId, String itemId) {
 
+    }
+
+    private static ProcessingContext contextWithoutAggregateIdentifier(EventMessage event) {
+        return StubProcessingContext.withComponent(Converter.class, PassThroughConverter.INSTANCE)
+                                    .withMessage(event);
     }
 
     private static ProcessingContext messageProcessingContext(EventMessage event) {
