@@ -202,6 +202,10 @@ public interface EventStorageEngine extends DescribableComponent {
 
         /**
          * Rolls back any events that have been appended, permanently making them unavailable for consumers.
+         * <p>
+         * Only invoked while the appended events are still invisible to consumers, in other words before
+         * {@link #commit()} has completed successfully. Once a commit has succeeded the events are published and this
+         * method is not invoked anymore.
          */
         void rollback();
 
