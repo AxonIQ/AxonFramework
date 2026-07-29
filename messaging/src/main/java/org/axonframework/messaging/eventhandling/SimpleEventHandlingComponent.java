@@ -23,6 +23,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy;
+import org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
@@ -34,12 +35,17 @@ import org.axonframework.messaging.eventhandling.replay.ReplayStatusChangedHandl
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.eventhandling.replay.ResetHandlerRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Simple implementation of the {@link EventHandlingComponent}, {@link EventHandlerRegistry}, and
@@ -58,6 +64,8 @@ public class SimpleEventHandlingComponent implements
         ResetHandlerRegistry<SimpleEventHandlingComponent>,
         ReplayStatusChangedHandlerRegistry<SimpleEventHandlingComponent> {
 
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
     private static final SequencingPolicy<? super EventMessage> DEFAULT_SEQUENCING_POLICY = new HierarchicalSequencingPolicy<>(
             SequentialPerAggregatePolicy.INSTANCE,
             SequentialPolicy.INSTANCE
@@ -68,6 +76,7 @@ public class SimpleEventHandlingComponent implements
     private final SequencingPolicy<? super EventMessage> sequencingPolicy;
     private final Set<ResetHandler> resetHandlers = ConcurrentHashMap.newKeySet();
     private final Set<ReplayStatusChangedHandler> replayStatusChangedHandlers = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean loggedSequencingFallback = new AtomicBoolean();
 
     /**
      * Instantiates a simple {@link EventHandlingComponent} that is able to handle events and delegate them to
@@ -161,19 +170,24 @@ public class SimpleEventHandlingComponent implements
      *         safest default option.</li>
      * </ul>
      * <p>
+     * Whenever the configured {@link SequencingPolicy} cannot determine a sequence identifier, the
+     * {@link EventMessage#identifier() event's identifier} is used instead, so the events carry no sequencing
+     * requirements relative to one another. For a {@link NoOpSequencingPolicy} that is the configured intent. For any
+     * other policy it is a downgrade from the sequencing that was asked for, so the first such fallback is logged at
+     * warn level, once per component.
+     * <p>
      * Override this method to provide custom sequencing behavior. Or use a
      * {@link SequenceOverridingEventHandlingComponent} if you cannot inherit from a certain
      * {@code EventHandlingComponent} implementation.
      * <p>
      */
-    @SuppressWarnings("OptionalGetWithoutIsPresent")
     @Override
     public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
         var qualifiedName = event.type().qualifiedName();
         List<EventHandler> handlers = eventHandlers.get(qualifiedName);
 
         if (handlers == null || handlers.isEmpty()) {
-            return sequencingPolicy.sequenceIdentifierFor(event, context).get();
+            return policySequenceIdentifierFor(event, context);
         }
 
         return handlers.stream()
@@ -181,7 +195,21 @@ public class SimpleEventHandlingComponent implements
                        .map(EventHandlingComponent.class::cast)
                        .findFirst()
                        .map(component -> component.sequenceIdentifierFor(event, context))
-                       .orElse(sequencingPolicy.sequenceIdentifierFor(event, context).get());
+                       .orElseGet(() -> policySequenceIdentifierFor(event, context));
+    }
+
+    private Object policySequenceIdentifierFor(EventMessage event, ProcessingContext context) {
+        Optional<Object> sequenceIdentifier = sequencingPolicy.sequenceIdentifierFor(event, context);
+        if (sequenceIdentifier.isEmpty()
+                && !(sequencingPolicy instanceof NoOpSequencingPolicy)
+                && loggedSequencingFallback.compareAndSet(false, true)) {
+            logger.warn("Sequencing policy [{}] of event handling component [{}] resolved no sequence identifier. "
+                                + "Falling back to the event identifier, so these events are handled concurrently "
+                                + "instead of in sequence. Logged once per component.",
+                        sequencingPolicy.getClass().getName(),
+                        name);
+        }
+        return sequenceIdentifier.orElseGet(event::identifier);
     }
 
     @Override
