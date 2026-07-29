@@ -18,12 +18,15 @@ package org.axonframework.integrationtests.testsuite.infrastructure;
 
 import org.axonframework.common.configuration.ComponentRegistry;
 
+import java.util.List;
+
 /**
  * {@link TestInfrastructure} implementation that uses the framework's default in-memory components.
  * <p>
- * No containers are started. The only configuration step is disabling the AxonServer enhancer so that classpath
- * scanning does not replace the in-memory defaults ({@code SimpleCommandBus}, {@code SimpleQueryBus},
- * {@code InMemoryEventStorageEngine}) with distributed AxonServer equivalents.
+ * No containers are started. The only configuration step is disabling the AxonServer-backed enhancers so that
+ * classpath scanning does not replace the in-memory defaults ({@code SimpleCommandBus}, {@code SimpleQueryBus},
+ * {@code InMemoryEventStorageEngine}) with distributed AxonServer equivalents, and does not activate multi-tenancy,
+ * which is AxonServer-backed as well.
  * <p>
  * Data "purging" is a no-op: each test shuts down and recreates the
  * {@link org.axonframework.common.configuration.AxonConfiguration} via
@@ -54,6 +57,17 @@ public final class InMemoryTestInfrastructure implements TestInfrastructure {
     private static final String AXON_SERVER_ENHANCER_FQCN =
             "io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer";
 
+    /**
+     * FQCN strings of the multi-tenancy configuration enhancers, disabled for the same reason and in the same way as
+     * {@link #AXON_SERVER_ENHANCER_FQCN}. Tenants are AxonServer contexts, so multi-tenancy cannot function on an
+     * in-memory infrastructure: its tenant provider would try to resolve an AxonServer connection manager at startup.
+     */
+    private static final List<String> MULTI_TENANCY_ENHANCER_FQCNS = List.of(
+            "io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationDefaults",
+            "io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults",
+            "io.axoniq.framework.messaging.multitenancy.annotation.TenantComponentParameterResolverFactoryConfigurationEnhancer"
+    );
+
     @Override
     public void start() {
         // No containers to start.
@@ -65,6 +79,8 @@ public final class InMemoryTestInfrastructure implements TestInfrastructure {
         // EventSourcingConfigurationDefaults already provides InMemoryEventStorageEngine;
         // MessagingConfigurationDefaults provides SimpleCommandBus / SimpleQueryBus.
         registry.disableEnhancer(AXON_SERVER_ENHANCER_FQCN);
+        // Multi-tenancy is AxonServer-backed, so it has no place on an in-memory infrastructure either.
+        MULTI_TENANCY_ENHANCER_FQCNS.forEach(registry::disableEnhancer);
     }
 
     @Override
