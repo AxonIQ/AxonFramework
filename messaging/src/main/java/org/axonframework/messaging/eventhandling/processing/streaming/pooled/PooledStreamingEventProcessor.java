@@ -322,11 +322,15 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
             @Nullable R resetContext,
             ProcessingContext processingContext
     ) {
+        byte[] convertedResetContext = convertedResetContext(resetContext, processingContext);
         return tokenStore.fetchSegments(name, processingContext)
                          .thenCompose(segments -> {
                              var tokenFutures = segments.stream()
                                                         .map(segment -> fetchTokenForSegment(
-                                                                segment, processingContext, startPosition, resetContext
+                                                                segment,
+                                                                processingContext,
+                                                                startPosition,
+                                                                convertedResetContext
                                                         ))
                                                         .toList();
                              return CompletableFuture.allOf(tokenFutures.toArray(CompletableFuture[]::new))
@@ -336,27 +340,31 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                          });
     }
 
-    private <R> CompletableFuture<SegmentToken> fetchTokenForSegment(
+    private CompletableFuture<SegmentToken> fetchTokenForSegment(
             Segment segment,
             ProcessingContext processingContext,
             TrackingToken startPosition,
-            @Nullable R resetContext
+            byte[] convertedResetContext
     ) {
         return tokenStore.fetchToken(name, segment.getSegmentId(), processingContext)
                          .thenApply(token -> new SegmentToken(
                                  segment,
-                                 ReplayToken.createReplayToken(
-                                         token,
-                                         startPosition,
-                                         convertedResetContext(
-                                                 resetContext,
-                                                 processingContext.component(GeneralConverter.class)
-                                         )
-                                 )
+                                 ReplayToken.createReplayToken(token, startPosition, convertedResetContext)
                          ));
     }
 
-    private <R> byte[] convertedResetContext(@Nullable R resetContext, Converter converter) {
+    /**
+     * Converts the given {@code resetContext} to a {@code byte[]}, once for the entire reset.
+     * <p>
+     * A {@code null} reset context needs no conversion, so no {@link GeneralConverter} is resolved from the
+     * {@code processingContext} in that case. This keeps a reset without a context working on processors whose
+     * {@link org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory} provides no components.
+     */
+    private <R> byte[] convertedResetContext(@Nullable R resetContext, ProcessingContext processingContext) {
+        if (resetContext == null) {
+            return new byte[0];
+        }
+        Converter converter = processingContext.component(GeneralConverter.class);
         byte[] convertedResetContext = converter.convert(resetContext, byte[].class);
         return convertedResetContext == null ? new byte[0] : convertedResetContext;
     }

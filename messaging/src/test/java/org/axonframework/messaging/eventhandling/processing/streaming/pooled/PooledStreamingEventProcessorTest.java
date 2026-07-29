@@ -28,6 +28,7 @@ import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.commandhandling.gateway.CommandResult;
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
@@ -2127,6 +2128,41 @@ class PooledStreamingEventProcessorTest {
 
             var thrown = assertThrows(IllegalStateException.class, () -> joinAndUnwrap(testSubject.resetTokens()));
             assertEquals("The Processor must be shut down before triggering a reset.", thrown.getMessage());
+        }
+
+        @Test
+        void resetTokensWithoutResetContextDoesNotRequireAConverter() {
+            // given - a processor whose unit of work provides no components at all, as is the default
+            TrackingToken initialToken = new GlobalSequenceTrackingToken(42);
+            int expectedSegmentCount = 2;
+            // given - the absent reset context is stored as an empty byte[], needing no conversion
+            TrackingToken expectedToken = ReplayToken.createReplayToken(initialToken, initialToken, new byte[0]);
+            simpleEhc.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+            withTestSubject(
+                    List.of(),
+                    c -> c.initialSegmentCount(expectedSegmentCount)
+                          .initialToken(source -> completedFuture(initialToken))
+                          .unitOfWorkFactory(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE))
+            );
+            // given - an initialized token per segment to reset
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             expectedSegmentCount,
+                                                             initialToken,
+                                                             null));
+
+            // when - resetting without a reset context, so there is nothing to convert
+            joinAndUnwrap(testSubject.resetTokens());
+
+            // then - every segment gets the same token, carrying the single empty reset context
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            assertThat(segments).hasSize(expectedSegmentCount);
+            for (Segment segment : segments) {
+                TrackingToken token = joinAndUnwrap(
+                        tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null)
+                );
+                assertThat(token).isEqualTo(expectedToken);
+                assertThat(ReplayToken.isReplay(token)).isTrue();
+            }
         }
 
         @Test
