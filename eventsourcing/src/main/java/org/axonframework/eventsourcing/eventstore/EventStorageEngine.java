@@ -184,7 +184,9 @@ public interface EventStorageEngine extends DescribableComponent {
     /**
      * Interface representing the transaction of an appendEvents invocation.
      * <p>
-     * Events may only be visible to consumers after the invocation of {@link #commit()}.
+     * Events may only be visible to consumers after the invocation of {@link #commit()}. Implementations must make
+     * those events visible <b>as a whole</b>: a consumer sourcing or streaming concurrently with a {@link #commit()}
+     * either observes none of the events of that invocation, or all of them, and never a strict prefix.
      *
      * @param <R> the type of the commit result
      */
