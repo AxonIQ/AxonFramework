@@ -20,25 +20,67 @@ import org.axonframework.common.ClockUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GapAwareTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.List;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 /**
  * Contains operations that are used to interact with {@link GapAwareTrackingToken} used in Aggregate based JPA event
  * store implementation.
  *
+ * @param gapTimeout           the amount of time in milliseconds until a gap may be considered timed out and thus ready
+ *                             for removal by {@link #withGapsCleaned(GapAwareTrackingToken, List)}
+ * @param maxGapOffset         the maximum distance in global indices between a gap and the highest index a token has
+ *                             seen; gaps further behind than this are dropped from the token
+ * @param lowestGlobalSequence the first global index the backing table is expected to contain
+ * @param logger               the logger to report an unparsable stored timestamp on
  * @author Mateusz Nowak
  * @since 5.0.0
  */
 record GapAwareTrackingTokenOperations(
         int gapTimeout,
+        int maxGapOffset,
+        long lowestGlobalSequence,
         Logger logger
 ) {
+
+    /**
+     * Advances the given {@code token} to the given {@code globalIndex}, recording every index in between as a gap.
+     * <p>
+     * Every hole below {@code globalIndex} is recorded, without exception. A hole exists precisely because that index
+     * was taken from the database sequence by a transaction that has not committed yet, and nothing about the rows a
+     * reader can see tells it whether that transaction is still going to commit. Choosing not to record the gap
+     * therefore drops the event for good once the transaction does commit: the token has moved past the index and holds
+     * nothing that would ever bring the reader back to it.
+     * <p>
+     * The cost of recording is bounded by the {@code maxGapOffset}, which drops gaps that have fallen further than that
+     * many indices behind the token, and by {@link #withGapsCleaned(GapAwareTrackingToken, List)}.
+     *
+     * @param token       the token to advance, or {@code null} when the reader has not established one yet
+     * @param globalIndex the global index of the event that was just read
+     * @return the given {@code token} advanced to {@code globalIndex}
+     */
+    GapAwareTrackingToken advance(@Nullable GapAwareTrackingToken token, long globalIndex) {
+        return token == null
+                ? GapAwareTrackingToken.newInstance(globalIndex, initialGaps(globalIndex))
+                : token.advanceTo(globalIndex, maxGapOffset);
+    }
+
+    private Collection<Long> initialGaps(long globalIndex) {
+        long lowestGap = Math.max(Math.min(lowestGlobalSequence, globalIndex), globalIndex - maxGapOffset);
+        return LongStream.range(lowestGap, globalIndex)
+                         .boxed()
+                         .collect(Collectors.toCollection(TreeSet::new));
+    }
 
     GapAwareTrackingToken withGapsCleaned(GapAwareTrackingToken token, List<Object[]> indexAndTimestampBetweenGaps) {
         Instant gapTimeoutThreshold = gapTimeoutThreshold();
@@ -80,7 +122,7 @@ record GapAwareTrackingTokenOperations(
         }
     }
 
-    Instant gapTimeoutThreshold() {
+    private Instant gapTimeoutThreshold() {
         return ClockUtils.instant().minus(gapTimeout, ChronoUnit.MILLIS);
     }
 }

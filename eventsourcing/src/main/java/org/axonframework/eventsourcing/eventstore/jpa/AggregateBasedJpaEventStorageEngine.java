@@ -61,20 +61,15 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
-import java.util.stream.Collectors;
-import java.util.stream.LongStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -138,8 +133,6 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private final Predicate<List<? extends AggregateEventEntry>> finalBatchPredicate;
     private final int batchSize;
     private final int gapCleaningThreshold;
-    private final int maxGapOffset;
-    private final long lowestGlobalSequence;
     private final EventTypeResolver eventTypeResolver;
 
     private final GapAwareTrackingTokenOperations tokenOperations;
@@ -174,11 +167,12 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         this.finalBatchPredicate = config.finalBatchPredicate();
         this.batchSize = config.batchSize();
         this.gapCleaningThreshold = config.gapCleaningThreshold();
-        this.lowestGlobalSequence = config.lowestGlobalSequence();
-        this.maxGapOffset = config.maxGapOffset();
         this.eventTypeResolver = config.eventTypeResolver();
 
-        this.tokenOperations = new GapAwareTrackingTokenOperations(config.gapTimeout(), logger);
+        this.tokenOperations = new GapAwareTrackingTokenOperations(config.gapTimeout(),
+                                                                  config.maxGapOffset(),
+                                                                  config.lowestGlobalSequence(),
+                                                                  logger);
         this.eventCoordinatorHandle = config.eventCoordinator().startCoordination(this::onAppendDetected);
         this.isConflictException = t -> persistenceExceptionResolver != null
             && t instanceof Exception ex
@@ -373,7 +367,6 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
             List<AggregateEventEntry> events = queryEventsBy(em, cleanedToken);
 
             GapAwareTrackingToken token = cleanedToken;
-            Instant gapTimeoutThreshold = tokenOperations.gapTimeoutThreshold();
 
             for (AggregateEventEntry event : events) {
                 String type = event.aggregateType();
@@ -383,7 +376,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                 Set<Tag> tags = type == null || identifier == null ? Set.of() : Set.of(new Tag(type, identifier));
 
                 // Always advance the cursor past every scanned event, regardless of match:
-                token = calculateToken(token, event.globalIndex(), event.timestamp(), gapTimeoutThreshold);
+                token = tokenOperations.advance(token, event.globalIndex());
                 cursorRef.set(token);
 
                 if (condition.matches(new QualifiedName(event.type()), tags)) {
@@ -418,24 +411,6 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         return eventsByTokenQuery.setParameter("token", token == null ? -1L : token.getIndex())
                                  .setMaxResults(batchSize)
                                  .getResultList();
-    }
-
-    private GapAwareTrackingToken calculateToken(@Nullable GapAwareTrackingToken token,
-                                                 long globalIndex,
-                                                 Instant timestamp,
-                                                 Instant gapTimeoutThreshold) {
-        boolean allowGaps = timestamp.isAfter(gapTimeoutThreshold);
-        return token == null
-                ? GapAwareTrackingToken.newInstance(globalIndex, calculateGaps(globalIndex, allowGaps))
-                : token.advanceTo(globalIndex, allowGaps ? maxGapOffset : 0);
-    }
-
-    private Collection<Long> calculateGaps(long globalIndex, boolean allowGaps) {
-        return allowGaps
-                ? LongStream.range(Math.min(lowestGlobalSequence, globalIndex), globalIndex)
-                            .boxed()
-                            .collect(Collectors.toCollection(TreeSet::new))
-                : Collections.emptySortedSet();
     }
 
     private GenericEventMessage convertToEventMessage(AggregateEventEntry event) {

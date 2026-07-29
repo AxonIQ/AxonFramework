@@ -236,7 +236,10 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
      * event with the highest known index.
      * <p>
      * If the gap is bigger it is assumed that the missing event will not be committed to the store anymore. This event
-     * storage engine will no longer look for those events the next time a batch is fetched.
+     * storage engine will no longer look for those events the next time a batch is fetched. That assumption is the one
+     * point at which a streaming reader gives up on an index: an event whose transaction commits after its index has
+     * fallen this far behind is never handed to that reader, even though the append succeeded. Raise this value for
+     * deployments with long-running append transactions.
      * <p>
      * Defaults to {@code 10000}.
      *
