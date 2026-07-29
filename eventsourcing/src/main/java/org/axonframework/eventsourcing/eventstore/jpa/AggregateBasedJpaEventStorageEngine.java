@@ -113,6 +113,10 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
             WHERE e.aggregateIdentifier = :id \
             AND e.aggregateSequenceNumber >= :seq \
             ORDER BY e.aggregateSequenceNumber ASC""";
+    private static final String LAST_SEQUENCE_NUMBER_QUERY = """
+            SELECT MAX(e.aggregateSequenceNumber) \
+            FROM AggregateEventEntry e \
+            WHERE e.aggregateIdentifier = :id""";
     private static final String EVENTS_BY_TOKEN_QUERY = """
             SELECT e \
             FROM AggregateEventEntry e \
@@ -199,7 +203,7 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         }
 
         return entityManagerExecutor(processingContext).apply(em -> {
-            AggregateBasedConsistencyMarker preCommitConsistencyMarker = AggregateBasedConsistencyMarker.from(condition);
+            AggregateBasedConsistencyMarker preCommitConsistencyMarker = markerFor(condition, events, em);
 
             try {
                 AggregateSequencer sequencer = preCommitConsistencyMarker.createSequencer();
@@ -235,6 +239,48 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                     .translateConflictException(preCommitConsistencyMarker, e, isConflictException);
             }
         });
+    }
+
+    /**
+     * Derives the {@link AggregateBasedConsistencyMarker} the given {@code events} should be sequenced from, based on
+     * the given {@code condition}.
+     * <p>
+     * For an unconditional append the marker is anchored at the end of the stream of every aggregate the {@code events}
+     * are tagged for. {@link AppendCondition#none()} carries the {@link ConsistencyMarker#INFINITY} marker, which holds
+     * no position for any aggregate, so without this step the sequencer would start every aggregate at sequence zero.
+     * The append would then collide with the events an aggregate already holds and be reported as a conflict, even
+     * though the caller asked for no consistency check at all. Resolving the highest stored sequence number per
+     * aggregate lets the append take the next sequence instead. Conditional appends are left as they are, so
+     * {@link ConsistencyMarker#ORIGIN} keeps meaning "the aggregate must still be empty".
+     *
+     * @param condition the condition the given {@code events} are appended under
+     * @param events    the events about to be appended
+     * @param em        the {@link EntityManager} to resolve the stored sequence numbers with
+     * @return the marker to sequence the given {@code events} from, never {@code null}
+     */
+    private static AggregateBasedConsistencyMarker markerFor(AppendCondition condition,
+                                                             List<TaggedEventMessage<?>> events,
+                                                             EntityManager em) {
+        AggregateBasedConsistencyMarker marker = AggregateBasedConsistencyMarker.from(condition);
+        if (condition.consistencyMarker() != ConsistencyMarker.INFINITY) {
+            return marker;
+        }
+
+        for (String aggregateIdentifier : events.stream()
+                                                .map(taggedEvent -> resolveAggregateIdentifier(taggedEvent.tags()))
+                                                .filter(Objects::nonNull)
+                                                .distinct()
+                                                .toList()) {
+            Long lastSequenceNumber = em.createQuery(LAST_SEQUENCE_NUMBER_QUERY, Long.class)
+                                        .setParameter("id", aggregateIdentifier)
+                                        .getSingleResult();
+            if (lastSequenceNumber != null) {
+                marker = marker.doUpperBound(
+                        new AggregateBasedConsistencyMarker(aggregateIdentifier, lastSequenceNumber)
+                );
+            }
+        }
+        return marker;
     }
 
     private static AggregateEventEntry mapToEntry(TaggedEventMessage<?> taggedEvent,

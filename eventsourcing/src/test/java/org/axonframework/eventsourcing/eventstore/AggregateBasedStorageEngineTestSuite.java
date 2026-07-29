@@ -392,6 +392,30 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
     }
 
     @Test
+    void unconditionalAppendContinuesAnAggregateThatAlreadyHoldsEvents() {
+        // given an aggregate that already holds one event
+        appendEvents(
+                AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA),
+                taggedEventMessage("event-0", TEST_AGGREGATE_TAGS)
+        );
+
+        // when appending to that same aggregate without any consistency condition
+        ConsistencyMarker result = appendEvents(
+                AppendCondition.none(),
+                taggedEventMessage("event-1", TEST_AGGREGATE_TAGS)
+        );
+
+        // then the append lands after the events already stored, instead of being rejected as a conflict for a
+        // condition that asked for no consistency check at all
+        assertThat(result).isEqualTo(new AggregateBasedConsistencyMarker(TEST_AGGREGATE_ID, 1));
+        StepVerifier.create(FluxUtils.of(testSubject.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))))
+                    .expectNextMatches(entryWithAggregateEvent("event-0", 0))
+                    .expectNextMatches(entryWithAggregateEvent("event-1", 1))
+                    .expectNextMatches(AggregateBasedStorageEngineTestSuite::assertMarkerEntry)
+                    .verifyComplete();
+    }
+
+    @Test
     void sourcingFromTwoAggregateStreamsReturnsACombinedStream() {
         var appendMarker = appendEvents(
                 AppendCondition.none(),
