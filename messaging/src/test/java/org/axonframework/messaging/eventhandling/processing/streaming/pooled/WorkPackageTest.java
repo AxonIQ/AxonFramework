@@ -23,6 +23,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.progress.S
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.GapAwareTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
@@ -467,10 +468,52 @@ class WorkPackageTest {
         assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
     }
 
+    @Test
+    void persistProgressIgnoresATokenBehindTheClaimedTokenOnTheFirstStoreOfAClaim() {
+        // given: a segment whose durable progress sits at position 5, freshly claimed by a new work package
+        TrackingToken claimedToken = new GlobalSequenceTrackingToken(5L);
+        persistProgressInUnitOfWork(claimedToken);
+        assertEquals(claimedToken, fetchStoredToken());
+        WorkPackage freshlyClaimed = testSubjectBuilder.initialToken(claimedToken).build();
+        clearInvocations(tokenStore);
+
+        // when: the very first progress offered after the claim is behind the claimed position
+        persistProgressInUnitOfWork(freshlyClaimed, new GlobalSequenceTrackingToken(3L));
+
+        // then: it is ignored, so the claimed progress survives the first store of the claim cycle
+        verify(tokenStore, never()).storeToken(
+                eq(new GlobalSequenceTrackingToken(3L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        );
+        assertEquals(claimedToken, fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressStoresTheFirstAdvanceOfAClaimThatHasNotConsumedAnythingYet() {
+        // given: a segment claimed right after a reset, so the claimed token describes no consumed position yet. The
+        // raw token type is the one a JPA-backed event store hands out; its covers(..) rejects a null argument.
+        TrackingToken tokenAtReset = GapAwareTrackingToken.newInstance(5L, Collections.emptyList());
+        TrackingToken claimedToken = ReplayToken.createReplayToken(tokenAtReset);
+        WorkPackage freshlyClaimed = testSubjectBuilder.initialToken(claimedToken).build();
+
+        // when: the first progress offered after the claim advances into the replay
+        TrackingToken advanced = ReplayToken.createReplayToken(
+                tokenAtReset, GapAwareTrackingToken.newInstance(1L, Collections.emptyList())
+        );
+        persistProgressInUnitOfWork(freshlyClaimed, advanced);
+
+        // then: the advance is stored; the monotonicity guard has no position to compare against, so it stays inert
+        assertEquals(advanced, fetchStoredToken());
+    }
+
     private void persistProgressInUnitOfWork(TrackingToken candidate) {
+        persistProgressInUnitOfWork(testSubject, candidate);
+    }
+
+    private void persistProgressInUnitOfWork(WorkPackage workPackage, TrackingToken candidate) {
         FutureUtils.joinAndUnwrap(
                 UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
-                                                  .executeWithResult(ctx -> testSubject.persistProgress(candidate, ctx))
+                                                  .executeWithResult(ctx -> workPackage.persistProgress(candidate, ctx))
         );
     }
 
