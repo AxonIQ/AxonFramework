@@ -274,6 +274,51 @@ class ProcessorEventHandlingComponentsTest {
         }
 
         @Test
+        void componentCarryingTheBroadcastSentinelsValueAsDataHandlesInASingleSegment() {
+            // given a component sequenced by a value taken off the event that happens to read "BROADCAST", which any
+            // value-extracting policy (metadata, property, extraction, per-aggregate) can produce. Spelled as a
+            // literal rather than derived from the sentinel, so this stays a value a user could write even if
+            // toString() changes.
+            RecordingEventHandlingComponent component =
+                    recordingComponent("data-carrying", EVENT_NAME, "BROADCAST");
+            testSubject = new ProcessorEventHandlingComponents(List.of(component));
+            EventMessage event = EventTestUtils.asEventMessage("payload");
+
+            // when the same event is handled in every segment
+            handleInSegment(event, segments[0]);
+            handleInSegment(event, segments[1]);
+
+            // then it was handled once in total, not once per segment
+            assertThat(component.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void sequenceIdentifiersForKeepsTheSentinelApartFromAnIdenticallyValuedIdentifier() {
+            // given one component requesting a broadcast and one sequenced by a value that happens to read
+            // "BROADCAST". The two hash into the same bucket of the resolved set, so only identity equality keeps
+            // them from collapsing into a single element and losing one component's identifier.
+            EventMessage event = EventTestUtils.asEventMessage("payload");
+            ProcessorEventHandlingComponents subject = new ProcessorEventHandlingComponents(List.of(
+                    recordingComponent("broadcast", EVENT_NAME, SequencingPolicy.BROADCAST),
+                    recordingComponent("data-carrying", EVENT_NAME, "BROADCAST")
+            ));
+            AtomicReference<Set<Object>> capturedIdentifiers = new AtomicReference<>();
+
+            // when
+            UnitOfWorkTestUtils.aUnitOfWork()
+                               .executeWithResult(ctx -> {
+                                   capturedIdentifiers.set(subject.sequenceIdentifiersFor(event, ctx));
+                                   return CompletableFuture.completedFuture(null);
+                               })
+                               .orTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+                               .join();
+
+            // then both survive as separate elements
+            assertThat(capturedIdentifiers.get())
+                    .containsExactlyInAnyOrder(SequencingPolicy.BROADCAST, "BROADCAST");
+        }
+
+        @Test
         void sequenceIdentifiersForExcludesNonSupportingComponents() {
             // given a component that supports the event and one that does not
             EventMessage event = EventTestUtils.asEventMessage("payload");

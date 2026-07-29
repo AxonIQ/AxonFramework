@@ -59,16 +59,35 @@ public interface SequencingPolicy<M extends Message> {
      * Well-known sentinel sequence identifier signaling that a message should be handled by <b>every</b> handler
      * eligible for it, rather than being routed to a single one based on its sequence identifier.
      * <p>
-     * When the sequence identifier resolved for a message equals {@code BROADCAST}, that message is
-     * delivered to every eligible handler instead of only the one its identifier would otherwise select. Such messages
-     * remain sequenced relative to one another wherever sequencing applies.
+     * When the sequence identifier resolved for a message <b>is this exact instance</b>, that message is delivered to
+     * every eligible handler instead of only the one its identifier would otherwise select. Such messages remain
+     * sequenced relative to one another wherever sequencing applies.
      * <p>
-     * Note: This uses a String constant to provide consistent {@link Object#hashCode()} and
-     * {@link Object#equals(Object)} behaviour across JVM restarts.
+     * Note: this is a unique instance recognized by identity, not by value. A policy requests a broadcast only by
+     * returning {@code SequencingPolicy.BROADCAST} itself. Sequence identifiers extracted from a message - a metadata
+     * value, a payload property, or an entity identifier - can never request a broadcast by accident, whatever their
+     * value.
+     * <p>
+     * Equality is identity, while {@link Object#hashCode()} is deliberately a fixed value rather than the identity
+     * hash. Identity equality is what makes an accidental broadcast impossible. The fixed hash is only a safety net:
+     * every recognition site skips segment routing for this instance, but a site that hashed the sentinel into a
+     * segment regardless would then pick the same segment on every run instead of a different arbitrary one after each
+     * restart. Sharing a hash bucket with the {@code String} {@code "BROADCAST"} is harmless, since identity equality
+     * still keeps the two apart wherever sequence identifiers are collected or keyed.
      *
      * @since 5.3.0
      */
-    Object BROADCAST = "BROADCAST";
+    Object BROADCAST = new Object() {
+        @Override
+        public int hashCode() {
+            return "BROADCAST".hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "BROADCAST";
+        }
+    };
 
     /**
      * Returns the sequence identifier for the given {@code message}. When two messages have the same identifier (as
