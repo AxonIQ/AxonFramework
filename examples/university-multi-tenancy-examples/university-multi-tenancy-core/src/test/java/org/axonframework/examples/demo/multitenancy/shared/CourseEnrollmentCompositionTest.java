@@ -83,7 +83,11 @@ class CourseEnrollmentCompositionTest {
         TenantProvider tenantProvider = new DemoTenantProvider(TENANT);
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        UniversityModuleConfiguration.configure(configurer);
+        // A backing without per-tenant event stores keeps the read model written by the command handler, so
+        // this test observes an enrollment's
+        // full effect without a projection to wait for. It is also the only shape a single shared event store
+        // supports, since an event streamed from it cannot be attributed to a tenant.
+        UniversityModuleConfiguration.configure(configurer, DemoBacking.IN_MEMORY);
         configurer.componentRegistry(registry -> {
             MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)

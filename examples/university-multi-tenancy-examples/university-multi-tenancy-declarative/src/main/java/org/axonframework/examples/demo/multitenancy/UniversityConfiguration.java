@@ -21,6 +21,7 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
+import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantProcessorRestartConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
@@ -28,6 +29,9 @@ import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
+
+import java.time.Duration;
 
 /**
  * Wires the university's tenant-aware pieces onto an {@link EventSourcingConfigurer}, the declarative
@@ -41,6 +45,9 @@ import org.axonframework.examples.demo.multitenancy.university.read.statistics.C
  * tenant's own event store.
  */
 public final class UniversityConfiguration {
+
+    // The framework's own default.
+    private static final Duration PROCESSOR_RESTART_TIMEOUT = Duration.ofSeconds(30);
 
     private UniversityConfiguration() {
         // Utility class, not meant to be instantiated.
@@ -57,6 +64,11 @@ public final class UniversityConfiguration {
      * memory that is one shared store rather than one per tenant. Against Axon Server the application
      * registers none: the multi-tenancy defaults own that registration so every tenant's snapshots land
      * in its own context, and an application-registered store is refused.
+     * <p>
+     * That single shared event store is also why this path fills the read model
+     * inline rather than from a projection. An event streamed from a store
+     * every tenant shares cannot be attributed to one tenant, so tenant-aware event processing needs the
+     * per-tenant event stores only {@link #configureForAxonServer} has.
      *
      * @param configurer         the configurer to extend
      * @param tenantProvider     the provider of the application's tenants
@@ -67,7 +79,7 @@ public final class UniversityConfiguration {
                                  TenantProvider tenantProvider,
                                  TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                  TenantComponentProvider<AuditLog> auditProvider) {
-        UniversityModuleConfiguration.configure(configurer)
+        UniversityModuleConfiguration.configure(configurer, DemoBacking.IN_MEMORY)
                                      .componentRegistry(registry -> {
                                          MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
                                          // Run in memory: no Axon Server connection, tenants come from the DemoTenantProvider.
@@ -88,6 +100,11 @@ public final class UniversityConfiguration {
      * default auto-discovering tenant provider watching Axon Server's contexts, and the course write side
      * is registered against the per-tenant, tenant-aware event store Axon Server provides. This path needs
      * a running multi-context (Enterprise Edition) Axon Server.
+     * <p>
+     * Because every tenant has its own event store here, the framework knows which tenant a streamed event
+     * came from, so this path fills the read model from a projection.
+     * One ordinary pooled streaming processor consumes every tenant's events, and no multi-tenancy wiring is
+     * needed to make it tenant-aware.
      *
      * @param configurer         the configurer to extend
      * @param statisticsProvider the provider of the per-tenant course-statistics stores
@@ -96,11 +113,27 @@ public final class UniversityConfiguration {
     public static void configureForAxonServer(EventSourcingConfigurer configurer,
                                               TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                               TenantComponentProvider<AuditLog> auditProvider) {
-        UniversityModuleConfiguration.configure(configurer)
+        UniversityModuleConfiguration.configure(configurer, DemoBacking.AXON_SERVER)
                                      .componentRegistry(registry -> {
                                          MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
                                          registerTenantComponents(registry, statisticsProvider, auditProvider);
+                                         registerProcessorRestartTimeout(registry);
                                      });
+    }
+
+    /**
+     * Registers how long each processor gets to stop and start again when the set of tenants changes.
+     * <p>
+     * A tenant change restarts the running streaming event processors, and this bounds how long each one gets.
+     * The framework already registers a default, so raise this only for a deployment whose processors are slow
+     * to stop and start. Shown here at the default value, so the knob is visible without changing the demo.
+     *
+     * @param registry the registry to register the restart configuration on
+     */
+    private static void registerProcessorRestartTimeout(ComponentRegistry registry) {
+        registry.registerComponent(MultiTenantProcessorRestartConfiguration.class,
+                                   config -> MultiTenantProcessorRestartConfiguration.DEFAULT
+                                           .restartTimeout(PROCESSOR_RESTART_TIMEOUT));
     }
 
     /**

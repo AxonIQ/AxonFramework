@@ -40,8 +40,11 @@ public interface AuditLog extends AutoCloseable {
 
     /**
      * Records the given audit {@code entry} for this tenant.
+     * <p>
+     * Recording the same {@code entry} again has no effect, so an entry written from a streamed event survives
+     * that event reaching the handler more than once.
      *
-     * @param entry the audit entry to record
+     * @param entry the audit entry to record, ignored when an identical entry was already recorded
      */
     void record(String entry);
 
