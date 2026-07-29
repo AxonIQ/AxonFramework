@@ -72,8 +72,10 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
      * <p>
      * This implementation will delegate the decision to the {@link EventHandlingComponent}.
      * <p>
-     * When any of the components returns the {@link SequencingPolicy#BROADCAST} sequence identifier
-     * for the given {@code eventMessage}, segment matching is skipped and the event is handled by every segment.
+     * When any of the components returns the {@link SequencingPolicy#BROADCAST} instance itself as the sequence
+     * identifier for the given {@code eventMessage}, segment matching is skipped and the event is handled by every
+     * segment. The comparison is by identity, so an identifier that merely carries the same value as data is matched
+     * against the segment like any other.
      *
      * @param eventMessage The message for which to identify if the processor can handle it.
      * @param segment      The segment for which the event should be processed.
@@ -108,6 +110,8 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
             }
 
             var sequenceIdentifiers = eventHandlingComponents.sequenceIdentifiersFor(eventMessage, context);
+            // The sentinel inherits Object's identity equals, so this lookup resolves by identity: a sequence
+            // identifier that merely reads "BROADCAST" as data shares the sentinel's hash bucket but never matches it.
             if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST)) {
                 return true;
             }
