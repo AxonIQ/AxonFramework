@@ -22,6 +22,7 @@ import org.junit.jupiter.params.*;
 import org.junit.jupiter.params.provider.*;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
@@ -123,6 +124,68 @@ class FutureUtilsTest {
 
             // then
             assertThat(result).isNull();
+        }
+    }
+
+    @Nested
+    class AllOrEmpty {
+
+        @Test
+        void emptyListResultsInCompletedFuture() {
+            // given
+            List<CompletableFuture<Void>> futures = List.of();
+
+            // when
+            CompletableFuture<Void> result = FutureUtils.allOrEmpty(futures);
+
+            // then
+            assertThat(result).isCompletedWithValue(null);
+        }
+
+        @Test
+        void completesOnlyAfterEveryFutureCompleted() {
+            // given
+            CompletableFuture<Void> first = new CompletableFuture<>();
+            CompletableFuture<Void> second = new CompletableFuture<>();
+
+            // when
+            CompletableFuture<Void> result = FutureUtils.allOrEmpty(List.of(first, second));
+
+            // then
+            assertThat(result).isNotDone();
+            first.complete(null);
+            assertThat(result).isNotDone();
+            second.complete(null);
+            assertThat(result).isCompletedWithValue(null);
+        }
+
+        @Test
+        void completedFuturesResultInCompletedFuture() {
+            // given
+            List<CompletableFuture<Void>> futures = List.of(FutureUtils.emptyCompletedFuture(),
+                                                           FutureUtils.emptyCompletedFuture());
+
+            // when
+            CompletableFuture<Void> result = FutureUtils.allOrEmpty(futures);
+
+            // then
+            assertThat(result).isCompletedWithValue(null);
+        }
+
+        @Test
+        void failingFutureResultsInExceptionallyCompletedFuture() {
+            // given
+            IllegalStateException expected = new IllegalStateException("first failed");
+            CompletableFuture<Void> failing = CompletableFuture.failedFuture(expected);
+            CompletableFuture<Void> succeeding = FutureUtils.emptyCompletedFuture();
+
+            // when
+            CompletableFuture<Void> result = FutureUtils.allOrEmpty(List.of(failing, succeeding));
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(result, Duration.ofSeconds(1)))
+                    .isSameAs(expected);
         }
     }
 }
