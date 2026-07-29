@@ -41,9 +41,9 @@ public class JpaEventStorageEngineConfigurationProperties {
     public JpaEventStorageEngineConfigurationProperties(
         @DefaultValue("100") int batchSize,
         @DefaultValue("250") int gapCleaningThreshold,
-        @DefaultValue("10000") int gapTimeout,
+        @DefaultValue("60000") int gapTimeout,
         @DefaultValue("1") long lowestGlobalSequence,
-        @DefaultValue("60000") int maxGapOffset,
+        @DefaultValue("10000") int maxGapOffset,
         @DefaultValue("1000") long pollingInterval
     ) {
         this.batchSize = batchSize;
@@ -75,7 +75,7 @@ public class JpaEventStorageEngineConfigurationProperties {
     /**
      * Retrieves the time until a gap in global index is considered as timed out.
      *
-     * @return The time until a gap in global index is considered as timed out.
+     * @return The time until a gap in global index is considered as timed out. Defaults to 60000 ms.
      */
     public int gapTimeout() {
         return gapTimeout;
@@ -94,6 +94,7 @@ public class JpaEventStorageEngineConfigurationProperties {
      * Retrieves the maximum distance in sequence numbers between a gap and the event with the highest known index.
      *
      * @return The maximum distance in sequence numbers between a gap and the event with the highest known index.
+     * Defaults to 10000.
      */
     public int maxGapOffset() {
         return maxGapOffset;

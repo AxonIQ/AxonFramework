@@ -37,9 +37,9 @@ public class AxonConfig {
                         engineConfig -> engineConfig
                                 .batchSize(100)
                                 .gapCleaningThreshold(250)
-                                .gapTimeout(10000)
+                                .gapTimeout(60000)
                                 .lowestGlobalSequence(1)
-                                .maxGapOffset(60000)
+                                .maxGapOffset(10000)
                                 .persistenceExceptionResolver(
                                         config.getComponent(PersistenceExceptionResolver.class)
                                 )
