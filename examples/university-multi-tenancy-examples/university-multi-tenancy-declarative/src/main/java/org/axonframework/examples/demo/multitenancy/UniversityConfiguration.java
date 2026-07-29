@@ -19,7 +19,7 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
-import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTenancyConfigurationDefaults;
+import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
