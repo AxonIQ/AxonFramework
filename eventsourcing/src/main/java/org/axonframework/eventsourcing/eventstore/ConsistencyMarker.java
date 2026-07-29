@@ -25,6 +25,13 @@ import org.axonframework.messaging.core.Context;
  * Consistency Markers are used to identify the expected position new events should be inserted at, in order to avoid
  * conflicts. If the actual insert position doesn't match the position described in this ConsistencyMarker, there may
  * have been a concurrency conflict.
+ * <p/>
+ * A ConsistencyMarker does not have to describe a single position. An implementation may instead track a position per
+ * key, such as one position per aggregate identifier. Since those positions are independent of one another,
+ * {@link #lowerBound(ConsistencyMarker)} and {@link #upperBound(ConsistencyMarker)} combine such markers per key, over
+ * the keys of <em>both</em> markers, and never drop a key that only one of the two markers holds a position for. As a
+ * result, two such markers without any key in common have the same lower and upper bound: neither marker describes the
+ * keys of the other, so all positions of both are retained.
  *
  * @author Allard Buijze
  * @author Steven van Beelen
@@ -58,7 +65,8 @@ public interface ConsistencyMarker {
     /**
      * Returns a ConsistencyMarker that represents the lower bound of {@code this} and given {@code other} markers.
      * Effectively, this means that any events whose position in the event stream is beyond either {@code this} or the
-     * {@code other} marker, will also be beyond the returned marker.
+     * {@code other} marker, will also be beyond the returned marker. For markers that track a position per key, this
+     * holds per key, as described in the class-level documentation.
      *
      * @param other The other marker to create the lower bound for
      * @return a ConsistencyMarker that represents the lower bound of two other markers
@@ -68,7 +76,8 @@ public interface ConsistencyMarker {
     /**
      * Returns a ConsistencyMarker that represents the upper bound of {@code this} and given {@code other} markers.
      * Effectively, this means that only events whose position in the event stream is beyond both {@code this} and the
-     * {@code other} marker, will also be beyond the returned marker.
+     * {@code other} marker, will also be beyond the returned marker. For markers that track a position per key, this
+     * holds per key, as described in the class-level documentation.
      *
      * @param other The other marker to create the upper bound for
      * @return a ConsistencyMarker that represents the upper bound of two other markers
