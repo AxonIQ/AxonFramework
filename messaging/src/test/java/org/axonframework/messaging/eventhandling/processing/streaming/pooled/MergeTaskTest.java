@@ -31,9 +31,14 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.mockito.stubbing.Answer;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -353,6 +358,92 @@ class MergeTaskTest {
             // then - the result is exceptionally completed, and both release deadlines are removed
             assertThat(result).isDone();
             assertThat(result.isCompletedExceptionally()).isTrue();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsReleasesDeadlinesOfBothHalvesWhenAHalfsTokenCannotBeFetched() {
+            // given - the segment to be merged with is owned elsewhere, so no token is rewritten at all
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
+                    .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("owned elsewhere")));
+
+            // when
+            testSubject.run();
+
+            // then - a merge that never happened must not keep either half unclaimable
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsReleasesDeadlinesWhenAbortingAWorkPackageFails() {
+            // given
+            workPackages.put(SEGMENT_TO_MERGE, workPackageOne);
+            when(workPackageOne.segment()).thenReturn(SEGMENT_ZERO);
+            when(workPackageOne.abort(null))
+                    .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("abort failed")));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+    }
+
+    @Nested
+    class WhenMergeSegmentsSucceeds {
+
+        @Test
+        void runClearsReleasesDeadlinesOfBothHalves() {
+            // given
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
+            when(tokenStore.deleteToken(anyString(), anyInt(), any())).thenReturn(FutureUtils.emptyCompletedFuture());
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any()))
+                    .thenReturn(FutureUtils.emptyCompletedFuture());
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runKeepsBothHalvesBlockedForEveryTokenStoreWriteOfTheMerge() {
+            // given - the block only prevents the Coordinator re-claiming a half-merged segment if it outlives the
+            // token rewrite, so record which halves were still blocked on each write the merge performs
+            List<Set<Integer>> blockedSegmentsPerTokenWrite = new ArrayList<>();
+            Answer<CompletableFuture<Void>> recordBlockedSegments = invocation -> {
+                blockedSegmentsPerTokenWrite.add(new HashSet<>(releasesDeadlines.keySet()));
+                return FutureUtils.emptyCompletedFuture();
+            };
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
+            when(tokenStore.deleteToken(anyString(), anyInt(), any())).thenAnswer(recordBlockedSegments);
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any()))
+                    .thenAnswer(recordBlockedSegments);
+
+            // when
+            testSubject.run();
+
+            // then - three writes (delete both halves, initialize the merged segment), each with both halves blocked
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(blockedSegmentsPerTokenWrite)
+                    .containsExactly(Set.of(SEGMENT_TO_MERGE, SEGMENT_TO_BE_MERGED),
+                                     Set.of(SEGMENT_TO_MERGE, SEGMENT_TO_BE_MERGED),
+                                     Set.of(SEGMENT_TO_MERGE, SEGMENT_TO_BE_MERGED));
             assertThat(releasesDeadlines).isEmpty();
         }
     }

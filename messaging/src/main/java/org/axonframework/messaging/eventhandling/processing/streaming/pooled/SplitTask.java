@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -110,13 +111,18 @@ class SplitTask extends CoordinatorTask {
     protected CompletableFuture<Boolean> task() {
         // Block the segment from being claimed by the Coordinator while we perform the split.
         // This prevents a race condition where the Coordinator might claim a segment that's being split.
-        releasesDeadlines.put(segmentId,
-                              clock.instant().plusSeconds(60)); // Block for 1 minute (will be cleared after split)
+        releasesDeadlines.put(segmentId, clock.instant().plus(RECLAIM_BLOCK_TIMEOUT));
 
         logger.debug("Processor [{}] will perform split instruction for segment {}.", name, segmentId);
         // Remove WorkPackage so that the CoordinatorTask cannot find it to release its claim upon impending abortion.
         WorkPackage workPackage = workPackages.remove(segmentId);
-        return workPackage != null ? abortAndSplit(workPackage) : fetchSegmentAndSplit(segmentId);
+        // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, say) into a failed
+        // future, so the handler below observes it rather than being skipped along with the rest of the chain.
+        return FutureUtils
+                .runFailing(() -> workPackage != null ? abortAndSplit(workPackage) : fetchSegmentAndSplit(segmentId))
+                // Lift the block however the split ends. Clearing it only on the paths that reach the token rewrite
+                // would leave a failed abort or segment fetch blocking re-claim until the ceiling expires.
+                .whenComplete((result, throwable) -> releasesDeadlines.remove(segmentId));
     }
 
     private CompletableFuture<Boolean> abortAndSplit(WorkPackage workPackage) {
@@ -138,10 +144,7 @@ class SplitTask extends CoordinatorTask {
                         context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
                                              .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
                                              .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
-                )).whenComplete((result, throwable) ->
-                        // Remove the segment from the releases deadlines to allow the Coordinator to claim the split segments
-                        releasesDeadlines.remove(segmentToSplit.getSegmentId())
-                );
+                ));
     }
 
     private CompletableFuture<Boolean> splitAndRelease(TrackerStatus[] splitStatuses,
