@@ -71,14 +71,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.stream.LongStream;
 import javax.sql.DataSource;
 
@@ -245,56 +244,71 @@ class AggregateBasedJpaEventStorageEngineIT
     }
 
     @Test
-    void gapsForVeryOldEventsAreNotIncluded() {
-        EntityManager entityManager = entityManagerProvider.getEntityManager();
-        Transaction transaction = transactionManager.startTransaction();
-        entityManager.createQuery("DELETE FROM AggregateEventEntry dee").executeUpdate();
-        entityManager.clear();
-        transaction.commit();
+    void streamDeliversAnEventCommittedIntoAHoleUnderAnEventOlderThanTheGapTimeout() {
+        // given an event stored under a clock an hour behind, so the reader will see it as far older
+        // than the gap timeout - which is what a long append transaction produces without any clock
+        // trickery, because a timestamp is set when the message is created, not when it commits
+        clearEventTable();
+        ClockUtils.set(fixed(ClockUtils.instant().minus(1, ChronoUnit.HOURS)));
+        appendCommitAndWait(testSubject, AppendCondition.none(), taggedEventMessage("below-the-hole", Set.of()));
+        long belowTheHole = highestGlobalIndex();
 
-        Instant now = ClockUtils.instant();
+        // and a hole directly above it, left by an append that took its index from the sequence and
+        // has not committed yet, with a visible event above that hole
+        restartGlobalIndexSequence(belowTheHole + 2);
+        appendCommitAndWait(testSubject, AppendCondition.none(), taggedEventMessage("above-the-hole", Set.of()));
 
-        ClockUtils.set(fixed(now.minus(1, ChronoUnit.HOURS)));
-        appendCommitAndWait(testSubject, AppendCondition.none(),
-                            taggedEventMessage("-1", Set.of()), taggedEventMessage("0", Set.of()));
-
-        ClockUtils.set(fixed(now.minus(2, ChronoUnit.MINUTES)));
-        appendCommitAndWait(testSubject, AppendCondition.none(),
-                            taggedEventMessage("-2", Set.of()), taggedEventMessage("1", Set.of()));
-
-        ClockUtils.set(fixed(now.minus(50, ChronoUnit.SECONDS)));
-        appendCommitAndWait(testSubject, AppendCondition.none(),
-                            taggedEventMessage("-3", Set.of()), taggedEventMessage("2", Set.of()));
-
-        ClockUtils.set(fixed(now));
-        appendCommitAndWait(testSubject, AppendCondition.none(),
-                            taggedEventMessage("-4", Set.of()), taggedEventMessage("3", Set.of()));
-
-        entityManager.clear();
-        transaction.commit();
-        transaction = transactionManager.startTransaction();
-        entityManager.createQuery("DELETE FROM AggregateEventEntry dee WHERE dee.aggregateSequenceNumber < 0")
-                     .executeUpdate();
-        transaction.commit();
-
+        // when a reader crosses the hole, seeing only the event above it and its hour-old timestamp
+        ClockUtils.reset();
         MessageStream<EventMessage> stream = testSubject.stream(
-                StreamingCondition.startingFrom(new GapAwareTrackingToken(0, Collections.emptySet()))
+                StreamingCondition.startingFrom(GapAwareTrackingToken.newInstance(belowTheHole, emptySet()))
         );
+        assertThat(nextPayload(stream)).isEqualTo("above-the-hole");
 
-        List<GapAwareTrackingToken> tokens = new ArrayList<>();
+        // and the append that was holding the skipped index finally commits
+        restartGlobalIndexSequence(belowTheHole + 1);
+        appendCommitAndWait(testSubject, AppendCondition.none(), taggedEventMessage("committed-late", Set.of()));
 
-        // Grab the messages without using reduce on an infinite stream:
-        await().until(() -> {
-            stream.next().flatMap(e -> TrackingToken.fromContext(e))
-                  .map(GapAwareTrackingToken.class::cast)
-                  .ifPresent(tokens::add);
+        // then the reader comes back for that index, because crossing the hole recorded it as a gap
+        // regardless of how old the event above it looked
+        assertThat(nextPayload(stream)).isEqualTo("committed-late");
+    }
 
-            return tokens.size() == 8;
-        });
+    private void clearEventTable() {
+        inTransaction(entityManager -> entityManager.createQuery("DELETE FROM AggregateEventEntry").executeUpdate());
+    }
 
-        assertThat(tokens).allSatisfy(token -> {
-            assertThat(!token.hasGaps() || token.getGaps().first() >= 5L).isTrue();
-        });
+    private long highestGlobalIndex() {
+        return inTransaction(entityManager -> entityManager
+                .createQuery("SELECT MAX(e.globalIndex) FROM AggregateEventEntry e", Long.class)
+                .getSingleResult());
+    }
+
+    /**
+     * Skips or rewinds the global index sequence, standing in for an append that has taken an index but not committed.
+     */
+    private void restartGlobalIndexSequence(long nextGlobalIndex) {
+        inTransaction(entityManager -> entityManager
+                .createNativeQuery("ALTER SEQUENCE \"aggregate-event-global-index-sequence\" RESTART WITH "
+                                           + nextGlobalIndex)
+                .executeUpdate());
+    }
+
+    private <R> R inTransaction(Function<EntityManager, R> action) {
+        Transaction transaction = transactionManager.startTransaction();
+        try {
+            EntityManager entityManager = entityManagerProvider.getEntityManager();
+            R result = action.apply(entityManager);
+            entityManager.clear();
+            return result;
+        } finally {
+            transaction.commit();
+        }
+    }
+
+    private static String nextPayload(MessageStream<EventMessage> stream) {
+        await().until(() -> stream.peek().isPresent());
+        return stream.next().orElseThrow().message().payloadAs(String.class);
     }
 
     @Test

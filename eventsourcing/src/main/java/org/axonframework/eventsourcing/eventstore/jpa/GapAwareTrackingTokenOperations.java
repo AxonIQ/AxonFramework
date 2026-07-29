@@ -82,6 +82,25 @@ record GapAwareTrackingTokenOperations(
                          .collect(Collectors.toCollection(TreeSet::new));
     }
 
+    /**
+     * Drops the leading gaps of the given {@code token} that are old enough to be considered permanent holes.
+     * <p>
+     * A gap is dropped once the row above it exists and carries a stored timestamp older than {@code gapTimeout}. That
+     * comparison has the same weakness as deciding gap recording from a timestamp had: the stored timestamp is the
+     * moment the event was created, not the moment its transaction committed, and the distance between the two is
+     * unbounded. A gap can therefore still be dropped while the transaction that holds it is about to commit. The
+     * window is {@code gapTimeout} wide instead of unbounded, and cleaning only starts above
+     * {@code gapCleaningThreshold} gaps, but it is a mitigation rather than a proof.
+     * <p>
+     * Recording every hole makes that threshold easy to reach: with permanent holes in the table, cleaning becomes the
+     * normal path rather than the exception, so this comparison runs far more often than it did when holes below
+     * seemingly old events were dropped outright.
+     *
+     * @param token                        the token whose gaps to clean
+     * @param indexAndTimestampBetweenGaps the {@code globalIndex} and stored {@code timestamp} of every row between the
+     *                                     lowest and the highest gap of the {@code token}, in index order
+     * @return the given {@code token} with its timed-out leading gaps removed
+     */
     GapAwareTrackingToken withGapsCleaned(GapAwareTrackingToken token, List<Object[]> indexAndTimestampBetweenGaps) {
         Instant gapTimeoutThreshold = gapTimeoutThreshold();
         GapAwareTrackingToken cleanedToken = token;
