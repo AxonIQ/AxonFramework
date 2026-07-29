@@ -52,6 +52,10 @@ class MultiTenancyDemoTest {
         // and the per-tenant event-storage demonstration did not run, as it needs each tenant's own Axon Server
         // event store, which the in-memory demo does not have
         assertThat(outcome.eventStorage().demonstrated()).isFalse();
+        // and the per-tenant snapshotting demonstration did not run either, as in memory every tenant
+        // shares one snapshot store. CourseEnrollmentCompositionTest covers the snapshot round trip
+        // against that shared store
+        assertThat(outcome.snapshotting().demonstrated()).isFalse();
     }
 
     @Test

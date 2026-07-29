@@ -17,7 +17,7 @@ application and its beans:
 ```
 org.axonframework.examples.demo.multitenancy
 +- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: the two per-tenant providers, the query handler, and the course modules
++- UniversityConfiguration   the beans: the two per-tenant providers, the query handler, the course modules, and a snapshot store for when multi-tenancy is off
 +- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
 ```
 
@@ -27,9 +27,9 @@ enrollment command handler is registered with the course, so there is no separat
 The starter's multi-tenancy auto-configuration picks the provider beans up, subscribes them to the tenant
 lifecycle, installs the tenant parameter resolver and interceptor, and registers the default
 auto-discovering `AxonServerTenantProvider`. The starter also registers the course module beans, so the
-course is sourced from and appended to its tenant's own event store. There is no manual multi-tenancy
-wiring at all: the tenants are discovered from Axon Server's contexts (with `_admin` filtered out),
-exactly as in the declarative demo's Axon Server path.
+course is sourced from and appended to its tenant's own event store, and snapshotted into that tenant's own
+snapshot store. There is no manual multi-tenancy wiring at all: the tenants are discovered from Axon
+Server's contexts (with `_admin` filtered out), exactly as in the declarative demo's Axon Server path.
 
 ## Requires Axon Server
 
@@ -62,7 +62,9 @@ declarative demo, this time proving the auto-configuration path. It also asserts
 context, which exists on the server, is filtered out of the discovered tenants. Because it runs against a
 real Axon Server, it also asserts the per-tenant event-storage demonstration: the same course identifier fills
 to capacity and rejects a further enrollment in one tenant, while still accepting one in another,
-sourced from that tenant's own event store.
+sourced from that tenant's own event store. It asserts the per-tenant snapshot demonstration for the same
+reason: both tenants hold their own snapshot of that same course identifier, and each holds only its own
+tenant's student.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:
@@ -87,4 +89,7 @@ container). Run it with `mvn verify` (it runs at the `verify` phase).
 `MultiTenancyDisabledTest` proves the disable toggle. With `axon.multitenancy.enabled=false`, the
 auto-configuration installs no tenant resolution, so dispatching a tenant-scoped enrollment fails because
 its tenant is never resolved. That failure is the observable proof that the feature is fully off. The
-test disables Axon Server as well, so it needs none and runs as an ordinary unit test.
+test disables Axon Server as well, so it needs none and runs as an ordinary unit test. Because the course
+carries a snapshot policy, `UniversityConfiguration` contributes one shared `SnapshotStore` while
+multi-tenancy is off, which is what keeps that configuration runnable: with the feature on, the defaults
+supply one per tenant and a store the application registers itself is refused.

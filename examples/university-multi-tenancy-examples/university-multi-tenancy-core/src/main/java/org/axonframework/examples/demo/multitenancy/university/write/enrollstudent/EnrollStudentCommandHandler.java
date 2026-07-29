@@ -24,11 +24,13 @@ import org.axonframework.examples.demo.multitenancy.university.events.StudentEnr
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
 
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -80,14 +82,14 @@ class EnrollStudentCommandHandler {
     }
 
     private List<StudentEnrolledInCourse> decide(EnrollStudent command, State state) {
-        if (!state.open) {
+        if (!state.open()) {
             throw new CourseNotOpenException(command.courseId());
         }
         if (state.isEnrolled(command.studentId())) {
             return List.of();
         }
         if (state.isFull()) {
-            throw new CourseFullException(command.courseId(), state.capacity);
+            throw new CourseFullException(command.courseId(), state.capacity());
         }
         return List.of(new StudentEnrolledInCourse(command.courseId(), command.studentId()));
     }
@@ -95,28 +97,51 @@ class EnrollStudentCommandHandler {
     /**
      * The slice's own view of a course: whether it is open, how many seats it offers, and who is already
      * enrolled, which is all this handler needs to decide on an enrollment.
+     * <p>
+     * The course is snapshotted, and a snapshot is the entity itself handed to the {@code Converter}, so
+     * this is an immutable record rather than a mutable class: each {@link EventSourcingHandler} returns
+     * the evolved course instead of changing this one. A record's components are exactly the state to
+     * capture, so it converts both ways without any converter-specific annotation. A mutable class whose
+     * private fields have no accessors converts to an empty document against the default converter, and the
+     * course then silently comes back blank.
+     * <p>
+     * Snapshots are per tenant. The framework stores each course's snapshot in the snapshot store of the
+     * tenant whose command triggered it, and reads it back from that same store when sourcing that
+     * tenant's course, so the same course identifier in two tenants is two unrelated snapshots.
+     * <p>
+     * {@link Snapshotting#afterEvents()} triggers once <em>more than</em> one event has been applied while
+     * sourcing. Opening a course applies none, enrolling the first student applies one, and enrolling the
+     * second applies two and so snapshots the course. The threshold is deliberately tiny to keep the demo
+     * short. A real system snapshots after hundreds of events.
      */
     @EventSourcedEntity(tagKey = UniversityTags.COURSE_ID)
-    static final class State {
+    @Snapshotting(afterEvents = 1)
+    record State(boolean open, int capacity, Set<String> enrolledStudents) {
 
-        private boolean open;
-        private int capacity;
-        private final Set<String> enrolledStudents = new LinkedHashSet<>();
+        State {
+            // Also covers the constructor a snapshot is converted back through, where the students may be
+            // absent.
+            enrolledStudents = enrolledStudents == null
+                    ? Set.of()
+                    : Collections.unmodifiableSet(new LinkedHashSet<>(enrolledStudents));
+        }
 
         @EntityCreator
         State() {
             // A fresh course, evolved from its own tenant's events before the command handler sees it.
+            this(false, 0, Set.of());
         }
 
         @EventSourcingHandler
-        void evolve(CourseOpened event) {
-            this.open = true;
-            this.capacity = event.capacity();
+        State evolve(CourseOpened event) {
+            return new State(true, event.capacity(), enrolledStudents);
         }
 
         @EventSourcingHandler
-        void evolve(StudentEnrolledInCourse event) {
-            this.enrolledStudents.add(event.studentId());
+        State evolve(StudentEnrolledInCourse event) {
+            Set<String> enrolled = new LinkedHashSet<>(enrolledStudents);
+            enrolled.add(event.studentId());
+            return new State(open, capacity, enrolled);
         }
 
         private boolean isEnrolled(String studentId) {

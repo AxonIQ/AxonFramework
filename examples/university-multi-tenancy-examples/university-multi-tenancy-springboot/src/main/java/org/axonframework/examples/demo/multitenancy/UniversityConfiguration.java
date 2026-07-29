@@ -19,12 +19,15 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
 import org.axonframework.common.configuration.Module;
+import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.write.opencourse.OpenCourseConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -62,6 +65,27 @@ public class UniversityConfiguration {
     @Bean
     public TenantComponentProvider<AuditLog> auditLogProvider() {
         return TenantComponents.auditLogProvider();
+    }
+
+    /**
+     * A single shared {@link SnapshotStore}, for runs where multi-tenancy is switched off.
+     * <p>
+     * The course carries a snapshot policy, so a snapshot store has to be present or the configuration
+     * fails to start. While multi-tenancy is active the defaults supply one per tenant, so this bean must
+     * not exist then: a store the application registers itself is refused.
+     * <p>
+     * Tenants are Axon Server contexts, so the feature is inactive whenever either
+     * {@code axon.multitenancy.enabled} or {@code axon.axonserver.enabled} is off, and this bean covers both.
+     * The condition has to be property-based rather than {@code @ConditionalOnMissingBean}, because the
+     * per-tenant registration happens in Axon's component registry rather than in the bean factory, so no
+     * bean exists for Spring to find.
+     *
+     * @return one snapshot store shared by the whole application
+     */
+    @Bean
+    @ConditionalOnExpression("!${axon.multitenancy.enabled:true} or !${axon.axonserver.enabled:true}")
+    public SnapshotStore snapshotStore() {
+        return new InMemorySnapshotStore();
     }
 
     /**

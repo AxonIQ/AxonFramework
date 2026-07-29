@@ -23,6 +23,8 @@ import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTena
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
@@ -51,7 +53,10 @@ public final class UniversityConfiguration {
      * <p>
      * The Axon Server configuration enhancer is disabled and the {@code tenantProvider} is registered
      * explicitly, so the demo runs fully in memory, on a single shared in-memory event store rather than
-     * one per tenant.
+     * one per tenant. The course is snapshotted, so this path also needs a {@link SnapshotStore}, and in
+     * memory that is one shared store rather than one per tenant. Against Axon Server the application
+     * registers none: the multi-tenancy defaults own that registration so every tenant's snapshots land
+     * in its own context, and an application-registered store is refused.
      *
      * @param configurer         the configurer to extend
      * @param tenantProvider     the provider of the application's tenants
@@ -68,7 +73,9 @@ public final class UniversityConfiguration {
                                          // Run in memory: no Axon Server connection, tenants come from the DemoTenantProvider.
                                          registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
                                                  .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
-                                                 .registerComponent(TenantProvider.class, config -> tenantProvider);
+                                                 .registerComponent(TenantProvider.class, config -> tenantProvider)
+                                                 .registerComponent(SnapshotStore.class,
+                                                                    config -> new InMemorySnapshotStore());
                                          registerTenantComponents(registry, statisticsProvider, auditProvider);
                                      });
     }
