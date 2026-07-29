@@ -62,6 +62,15 @@ class AggregateBasedJpaEventStorageEngineConfigurationTest {
     }
 
     @Test
+    void zeroMaxGapOffsetThrowsException() {
+        // A maxGapOffset of 0 records no gap at all, which skips every event whose transaction commits
+        // after a higher global index became visible.
+        assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.maxGapOffset(0))
+                .isInstanceOf(AxonConfigurationException.class)
+                .hasMessageContaining("maxGapOffset");
+    }
+
+    @Test
     void negativeLowestGlobalSequenceThrowsException() {
         assertThatThrownBy(() -> AggregateBasedJpaEventStorageEngineConfiguration.DEFAULT.lowestGlobalSequence(-1))
                 .isInstanceOf(AxonConfigurationException.class);

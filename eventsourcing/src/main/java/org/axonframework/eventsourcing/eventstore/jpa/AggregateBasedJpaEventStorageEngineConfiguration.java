@@ -108,7 +108,10 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
         requireNonNull(eventCoordinator, "The eventCoordinator must not be null.");
         assertStrictPositive(batchSize, "The batchSize must be a positive number.");
         assertPositive(gapCleaningThreshold, "gapCleaningThreshold");
-        assertPositive(maxGapOffset, "The maxGapOffset must be a positive number.");
+        assertStrictPositive(maxGapOffset,
+                             "The maxGapOffset must be greater than zero; a maxGapOffset of 0 records no gaps at all, "
+                                     + "which loses every event whose transaction commits after a later index became "
+                                     + "visible.");
         assertPositive(lowestGlobalSequence, "The lowestGlobalSequence must be a positive number.");
         assertPositive(gapTimeout, "gapTimeout");
         requireNonNull(eventTypeResolver, "The eventTypeResolver must not be null.");
@@ -213,6 +216,16 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
     /**
      * Sets the threshold of number of gaps in a token before an attempt to clean gaps up is taken.
      * <p>
+     * Because every hole a reader discovers is recorded as a gap, a store that contains permanent holes - deleted
+     * rows, rolled back appends, a sequence that is not gapless - crosses this threshold as a matter of course rather
+     * than exceptionally. Simulating a 10% permanent-hole rate over 400 batches crosses the default threshold on 375
+     * of them, peaking at 940 outstanding gaps. Each crossing runs a cleaning query over the whole span between the
+     * lowest and highest gap, and that query is not limited to a batch. Lower this value to clean more eagerly at the
+     * cost of running that query more often, raise it to carry more gaps in the token instead.
+     * <p>
+     * The same applies to a replay: it starts below every hole the table has ever had, so it fetches its batches with
+     * the gap-aware query and pays for cleaning on top, where a stream at the head of the store pays for neither.
+     * <p>
      * Defaults to {@code 250}.
      *
      * @param gapCleaningThreshold an {@code int} specifying the threshold of number of gaps in a token before an
@@ -238,10 +251,17 @@ public record AggregateBasedJpaEventStorageEngineConfiguration(
      * If the gap is bigger it is assumed that the missing event will not be committed to the store anymore. This event
      * storage engine will no longer look for those events the next time a batch is fetched. That assumption is the one
      * point at which a streaming reader gives up on an index: an event whose transaction commits after its index has
-     * fallen this far behind is never handed to that reader, even though the append succeeded. Raise this value for
-     * deployments with long-running append transactions.
+     * fallen this far behind is never handed to that reader, even though the append succeeded.
      * <p>
-     * Defaults to {@code 10000}.
+     * Raising this value is not free, because a token carries its outstanding gaps and is written on every batch. A
+     * gap costs roughly nine bytes serialized, so a token holding the full offset measures about 88 KB at
+     * {@code 10000} and about 527 KB at {@code 60000} - the value the Spring Boot starter configures. Every gap is
+     * also listed individually in the {@code IN} clause of the query that fetches the next batch, which exceeds
+     * Oracle's limit of 1000 expressions per list ({@code ORA-01795}) far below either of those figures. Treat a
+     * deployment that routinely fills this offset as one that needs shorter append transactions, not a larger offset.
+     * <p>
+     * Defaults to {@code 10000}, and must be greater than zero: at {@code 0} no gap is ever recorded, so every event
+     * whose transaction commits after a higher index became visible is skipped for good.
      *
      * @param maxGapOffset an {@code int} specifying the maximum distance in sequence numbers between a missing event
      *                     and the event with the highest known index
