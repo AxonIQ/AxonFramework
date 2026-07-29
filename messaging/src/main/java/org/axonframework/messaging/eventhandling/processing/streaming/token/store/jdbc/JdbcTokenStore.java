@@ -39,6 +39,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;
 import java.util.List;
@@ -158,6 +159,14 @@ public class JdbcTokenStore implements TokenStore {
         });
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The identifier lives in a row of the token table, created the first time any process asks for it. When several
+     * processes ask at the same instant, they all try to create that row and only one of them can; the others adopt the
+     * identifier the winner stored instead of failing, so that starting several processors together against a fresh
+     * token table brings all of them up.
+     */
     @Override
     public CompletableFuture<String> retrieveStorageIdentifier(@Nullable ProcessingContext context) {
         return connectionExecutor(context).apply(connection -> {
@@ -182,6 +191,7 @@ public class JdbcTokenStore implements TokenStore {
     }
 
     private ConfigToken initializeConfigToken(Connection connection) {
+        Savepoint beforeInsert = savepointOrNull(connection);
         try {
             return (ConfigToken) insertTokenEntry(connection,
                                                   new ConfigToken(Collections.singletonMap("id",
@@ -190,9 +200,48 @@ public class JdbcTokenStore implements TokenStore {
                                                   CONFIG_TOKEN_ID,
                                                   CONFIG_SEGMENT);
         } catch (SQLException e) {
+            ConfigToken concurrentlyInitialized = readConfigTokenAfterFailedInsert(connection, beforeInsert);
+            if (concurrentlyInitialized != null) {
+                return concurrentlyInitialized;
+            }
             throw new UnableToRetrieveIdentifierException(
-                    "Exception while attempting to initialize the config token. It may have been concurrently initialized.",
+                    "Exception while attempting to initialize the config token.",
                     e);
+        }
+    }
+
+    /**
+     * Marks the connection so a failed config-token insert can be undone without losing the surrounding transaction.
+     * <p>
+     * Returns {@code null} when the connection auto-commits, in which case a failed insert does not affect any other
+     * statement, and when the driver does not support savepoints.
+     */
+    @Nullable
+    private Savepoint savepointOrNull(Connection connection) {
+        try {
+            return connection.getAutoCommit() ? null : connection.setSavepoint();
+        } catch (SQLException e) {
+            logger.debug("Could not set a savepoint before initializing the config token.", e);
+            return null;
+        }
+    }
+
+    /**
+     * Reads the config token another process inserted first, returning {@code null} when there is none to read.
+     * <p>
+     * Rolls the connection back to {@code beforeInsert} first, because databases that abort the entire transaction on a
+     * constraint violation would otherwise refuse the read.
+     */
+    @Nullable
+    private ConfigToken readConfigTokenAfterFailedInsert(Connection connection, @Nullable Savepoint beforeInsert) {
+        try {
+            if (beforeInsert != null) {
+                connection.rollback(beforeInsert);
+            }
+            return retrieveConfigToken(connection);
+        } catch (SQLException | UnableToRetrieveIdentifierException e) {
+            logger.debug("Could not re-read the config token after the insert failed.", e);
+            return null;
         }
     }
 
