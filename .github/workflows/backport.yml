@@ -17,6 +17,8 @@ jobs:
       startsWith(github.event.comment.body, '/backport') &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     steps:
+      - uses: actions/checkout@v7
+
       - name: Parse target branch from comment
         id: parse
         env:
