@@ -310,13 +310,12 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                                .orElseThrow();
     }
 
-    /**
-     * Returns {@code true} if all the uncovered {@code ScannedEntityCreators} are without a payload, suggesting the
-     * event payload is never used. Returns {@code false} otherwise.
-     *
-     * @return {@code true} if all the uncovered {@code ScannedEntityCreators} are without a payload, suggesting the
-     * event payload is never used. Returns {@code false} otherwise
-     */
+/**
+ * Indicates whether every {@link EntityCreator} of this entity requires an event payload to construct an
+ * instance. When that holds and no event is available, the entity cannot exist yet.
+ *
+ * @return {@code true} when no creator is able to construct an entity without an event payload
+ */
     private boolean hasEventBasedCreatorsOnly() {
         return creators.stream()
                        .noneMatch(ScannedEntityCreator::isWithoutPayload);
