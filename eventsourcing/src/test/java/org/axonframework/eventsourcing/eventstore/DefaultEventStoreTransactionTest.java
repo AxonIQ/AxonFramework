@@ -412,34 +412,44 @@ class DefaultEventStoreTransactionTest {
 
         @Test
         void rollbackIsNotRequestedWhenTheFailureArrivesAfterASuccessfulCommit() {
-            // given an engine recording every rollback request, and a failure strictly after the commit succeeded
+            // given an engine recording commits and rollbacks, and a failure strictly after the commit succeeded
             var recordingEngine = new RollbackRecordingEventStorageEngine(false);
-            var event = eventMessage(0);
 
             // when
             var uow = aUnitOfWork();
             uow.runOnPreInvocation(context -> {
                    EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
-                   transaction.appendEvent(event);
+                   transaction.appendEvent(eventMessage(0));
                })
                .runOnAfterCommit(context -> {
                    throw new IllegalStateException("Simulated failure after commit");
                });
             assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
 
-            // then the committed batch cannot be taken back, so no rollback may be requested for it
+            // then the batch committed, and a committed batch cannot be taken back by a rollback
+            assertThat(recordingEngine.successfulCommits()).isOne();
             assertThat(recordingEngine.rollbacks()).isZero();
+        }
 
-            var verificationUow = aUnitOfWork();
-            var committedEvents = new AtomicReference<MessageStream<? extends EventMessage>>();
-            verificationUow.runOnPreInvocation(context -> {
-                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
-                committedEvents.set(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA)));
-            });
-            awaitSuccessfulCompletion(verificationUow.execute());
-            StepVerifier.create(FluxUtils.of(committedEvents.get()))
-                        .assertNext(entry -> assertEvent(entry.message(), event))
-                        .verifyComplete();
+        @Test
+        void rollbackIsNotRequestedWhenAnotherCommitPhaseHandlerFails() {
+            // given an unrelated COMMIT phase handler that fails, registered before the append attaches its own
+            var recordingEngine = new RollbackRecordingEventStorageEngine(false);
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnCommit(context -> {
+                   throw new IllegalStateException("Simulated failure of an unrelated commit handler");
+               })
+               .runOnPreInvocation(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
+                   transaction.appendEvent(eventMessage(0));
+               });
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+
+            // then all handlers of a phase run, so this batch committed as well and must not be rolled back
+            assertThat(recordingEngine.successfulCommits()).isOne();
+            assertThat(recordingEngine.rollbacks()).isZero();
         }
 
         @Test
@@ -461,16 +471,22 @@ class DefaultEventStoreTransactionTest {
     }
 
     /**
-     * Counts the {@link AppendTransaction#rollback() rollbacks} the framework requests, and optionally refuses the
-     * commit so a rollback is warranted.
+     * Counts the successful {@link AppendTransaction#commit() commits} and the
+     * {@link AppendTransaction#rollback() rollbacks} the framework requests, and optionally refuses the commit so a
+     * rollback is warranted.
      */
     private static class RollbackRecordingEventStorageEngine extends InMemoryEventStorageEngine {
 
+        private final AtomicInteger successfulCommits = new AtomicInteger();
         private final AtomicInteger rollbacks = new AtomicInteger();
         private final boolean failCommit;
 
         private RollbackRecordingEventStorageEngine(boolean failCommit) {
             this.failCommit = failCommit;
+        }
+
+        private int successfulCommits() {
+            return successfulCommits.get();
         }
 
         private int rollbacks() {
@@ -493,7 +509,10 @@ class DefaultEventStoreTransactionTest {
                 public CompletableFuture<Object> commit() {
                     return failCommit
                             ? CompletableFuture.failedFuture(new IllegalStateException("Simulated commit failure"))
-                            : typed.commit();
+                            : typed.commit().thenApply(result -> {
+                                successfulCommits.incrementAndGet();
+                                return result;
+                            });
                 }
 
                 @Override
