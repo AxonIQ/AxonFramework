@@ -6,6 +6,51 @@ somebody after a defect that was not there, or left a hole reading as coverage.
 
 ---
 
+## 0. What gets filed, and how long it may be
+
+**Only a finding with a test that fails on unfixed code and passes on fixed code may be filed
+upstream.** Everything else stays in `FINDINGS.adoc`. Full table and the three shapes that look like
+evidence but are not: see "What may be reported upstream" in `SKILL.md`. Documentation-only findings
+are never filed.
+
+**An issue or pull request description is 500 to 600 characters of prose. Not words.** Permalinks,
+code blocks and table rows do not count against it, since they are what the reader came for.
+
+That budget buys roughly:
+
+```
+## Problem
+Two sentences. What breaks, when. One measured number.
+
+## Reproduce
+Three numbered lines, or one command. Then Observed / Expected.
+
+## Suspect
+One permalink to file:line, one clause on the mechanism.
+
+## Fix
+One sentence.
+```
+
+What that excludes, permanently:
+
+- **Narration.** How the work was done, what verification found, what an earlier revision of the
+  description claimed. State what is true, in the present tense, once.
+- **Method.** Testcase counts, mutation walkthroughs, how many runs in which direction, which
+  surefire attribute undercounts, machine load.
+- **Provenance.** That the finding came from deterministic simulation testing, and links into
+  `formal/`. The reader is being asked to fix code, not to audit the suite.
+- **Repetition.** The same fact in two sections.
+
+What survives at any length, because it is what the reader acts on: every `file:line`, every measured
+number, every `Fixes #nnnn`, and every stated limitation, behaviour change or open decision. If the
+budget forces a choice, cut prose and keep those.
+
+One consequence worth stating plainly: a description this short cannot carry an argument. If a finding
+needs three paragraphs to be believed, the test is doing too little.
+
+---
+
 ## 1. Paste real output
 
 - **Never claim an unrun result.** No verdict from a command that was not executed and whose

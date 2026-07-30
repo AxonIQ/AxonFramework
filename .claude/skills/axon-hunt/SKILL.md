@@ -165,6 +165,42 @@ Detail, with the determinism boundary spelled out: **`references/hunting-loop.md
    pinned history for a contended run or a pinned seed for a single-threaded one. Reject: say
    what it actually was, and if it was the harness, fix the harness and pin that.
 
+## What may be reported upstream
+
+Recording a finding and reporting it are different acts with different bars. `FINDINGS.adoc` takes
+everything the suite learned. An issue or a pull request on `AxonIQ/AxonFramework` or
+`AxonIQ/axoniq-framework` takes far less.
+
+**The bar for reporting: a test that fails on unfixed code and passes on fixed code.** Nothing else
+gets filed. Not a grep, not a measurement, not an argument from reading the source.
+
+| Kind of finding | Record in `FINDINGS.adoc` | File upstream |
+|---|---|---|
+| Behaviour is wrong, and a test proves it | yes | **yes** |
+| Behaviour is wrong, but nothing can be made to fail | yes | **no** |
+| Behaviour is correct, only the documentation is silent or wrong | yes | **no** |
+| A design or API you would prefer differently | yes | **no** |
+| Harness defect | yes, plus fix the harness | **no** |
+
+Three shapes that look like evidence and are not:
+
+- **A characterisation test** that passes before and after. It pins today's behaviour so a future
+  change is noticed. It demonstrates no defect.
+- **A mutation-validated test**, red only when you deliberately break production code. That proves
+  the test has teeth, not that a bug exists.
+- **An inspection** -- a `grep`, a `sed`, a `javap` showing what the source says. Enough to record a
+  finding. Never enough to ask somebody to change their code.
+
+If the fix would be documentation, the answer is no. A reviewer cannot act on it the way they act on
+a failing test, and it costs them the same triage. Keep it in `FINDINGS.adoc`, where the next person
+hunting this subsystem will find it.
+
+**This is not an invitation to force a test.** If the only way to make something fail is a fake that
+asserts against itself, or an assertion on a private field nothing reads, then the finding does not
+meet the bar. Say so and move on. A finding recorded honestly and not filed is a good outcome; a
+filed issue whose test proves nothing is worse than silence, because it spends somebody else's
+attention and teaches them to discount the next one.
+
 ## Running it
 
 Every command, verified, with the traps: **`references/running.md`**.
