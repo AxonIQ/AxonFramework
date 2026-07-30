@@ -1,4 +1,4 @@
-name: Axon Framework (Dependency Upgrade to project)
+name: Axon Framework (Add to project)
 
 on:
   pull_request:
@@ -7,14 +7,14 @@ on:
 
 jobs:
   add-to-project:
-    name: Add Dependency Upgrade PR to project
+    name: Add PR to project
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' }}
+    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions[bot]' }}
     steps:
       - uses: actions/add-to-project@main
         with:
           project-url: https://github.com/orgs/Axoniq/projects/25
           github-token: ${{ secrets.ADD_PROJECT_TOKEN }}
-          labeled: 'Type: Dependency Upgrade'
+          labeled: 'Type: Dependency Upgrade,Type: Port'
         # prevent failure if the PR is already added to the project
         continue-on-error: true

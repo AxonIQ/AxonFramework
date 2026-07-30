@@ -34,14 +34,5 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           target_branches: ${{ steps.parse.outputs.branch }}
           add_author_as_assignee: true
+          add_labels: 'Type: Port'
           copy_labels_pattern: '.*'
-
-      - name: Add backport PRs to project
-        if: steps.backport.outputs.created_pull_requests != '[]'
-        env:
-          GH_TOKEN: ${{ secrets.ADD_PROJECT_TOKEN }}
-        run: |
-          echo '${{ steps.backport.outputs.created_pull_requests }}' | jq -r '.[]' | while read pr; do
-            gh project item-add 25 --owner AxonIQ --url "https://github.com/${{ github.repository }}/pull/$pr"
-          done
-        continue-on-error: true
