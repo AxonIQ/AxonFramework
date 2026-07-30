@@ -20,6 +20,13 @@ tenant's instance into each message handler, so a handler never resolves a tenan
   seats in another. Reading a tenant's events back as a stream, to rebuild the statistics as a projection
   instead of updating them in the handler, is added in a later step. In memory there is one shared event
   store, so this isolation is shown only against Axon Server.
+* **Per-tenant snapshotting** (Axon Server): the course carries a snapshot policy, and each tenant's
+  snapshots live in that tenant's own context, so the same course identifier in two tenants is two
+  unrelated snapshots. A snapshot is a performance optimization, so no behavior reveals which tenant's
+  store it landed in. The demo therefore reads the per-tenant snapshot stores directly: both tenants hold
+  their own snapshot of that identifier, and each holds only its own tenant's student. It compares snapshot
+  contents rather than snapshot envelopes, since two envelopes never compare equal. In memory every tenant
+  shares one snapshot store, so this isolation is not shown.
 * **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
   tenant's own components, matched by type, with the tenant resolved from the message metadata.
 * **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant

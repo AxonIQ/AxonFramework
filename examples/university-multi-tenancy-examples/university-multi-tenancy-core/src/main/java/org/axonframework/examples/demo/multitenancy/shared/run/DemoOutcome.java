@@ -28,6 +28,8 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
  * @param eventStorage               what the per-tenant event-storage demonstration observed (only demonstrated
  *                                   against Axon Server)
+ * @param snapshotting               what the per-tenant snapshotting demonstration observed (only demonstrated
+ *                                   against Axon Server)
  */
 public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
@@ -35,6 +37,7 @@ public record DemoOutcome(int springfieldEnrollments,
                           boolean unknownTenantRejected,
                           boolean shelbyvilleClosedOnRemoval,
                           boolean allClosedOnShutdown,
-                          EventStorageOutcome eventStorage) {
+                          EventStorageOutcome eventStorage,
+                          SnapshottingOutcome snapshotting) {
 
 }

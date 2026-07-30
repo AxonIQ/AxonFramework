@@ -19,7 +19,7 @@ package org.axonframework.examples.demo.multitenancy.shared.tenant;
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
-import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.api.AxonServerTenantProvider;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
 

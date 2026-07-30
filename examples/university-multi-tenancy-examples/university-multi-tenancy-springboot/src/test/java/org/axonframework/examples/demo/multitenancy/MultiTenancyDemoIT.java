@@ -28,10 +28,16 @@ import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.EventStorageOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
+import org.axonframework.examples.demo.multitenancy.shared.run.SnapshottingOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseSnapshot;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
@@ -167,6 +173,8 @@ class MultiTenancyDemoIT {
                 .run()) {
 
             AxonConfiguration configuration = context.getBean(AxonConfiguration.class);
+            QualifiedName courseSnapshots = EnrollStudentConfiguration.courseSnapshotName(
+                    configuration.getComponent(MessageTypeResolver.class));
             TenantProvider tenantProvider = configuration.getComponent(TenantProvider.class);
             AxonServerTenantContextManager serverContexts =
                     new AxonServerTenantContextManager(configuration.getComponent(AxonServerConnectionManager.class));
@@ -185,6 +193,9 @@ class MultiTenancyDemoIT {
                                                     auditProvider(context),
                                                     TenantProvisioning.axonServer(configuration,
                                                                                   DemoLifecycle.KNOWN_TENANTS),
+                                                    TenantSnapshots.axonServer(configuration,
+                                                                               courseSnapshots,
+                                                                               CourseSnapshot.class),
                                                     context::close);
 
             // then both of Springfield's components saw only its own two enrollments, matched by type
@@ -207,6 +218,14 @@ class MultiTenancyDemoIT {
             assertThat(eventStorage.demonstrated()).isTrue();
             assertThat(eventStorage.springfieldRejectedWhenFull()).isTrue();
             assertThat(eventStorage.shelbyvilleAcceptedSameCourseId()).isTrue();
+
+            // and per-tenant snapshotting kept the same course identifier isolated too: both tenants' own
+            // stores hold a snapshot of that identifier, and each holds only its own tenant's student, so
+            // neither tenant read the other's snapshot
+            SnapshottingOutcome snapshotting = outcome.snapshotting();
+            assertThat(snapshotting.demonstrated()).isTrue();
+            assertThat(snapshotting.bothTenantsHoldOwnSnapshot()).isTrue();
+            assertThat(snapshotting.snapshotsHoldTheirOwnStudents()).isTrue();
 
             // and registering two providers for one component type is rejected at configuration time
             assertThat(ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType()).isTrue();
