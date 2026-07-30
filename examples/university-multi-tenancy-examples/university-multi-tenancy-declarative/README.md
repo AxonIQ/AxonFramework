@@ -93,7 +93,7 @@ threshold, and each tenant's snapshot goes to its own snapshot store. Both tenan
 snapshot of the same course identifier, and each holds only its own tenant's student. The in-memory run
 snapshots into one store shared by every tenant, so it cannot show the isolation.
 
-It also registers a `MultiTenantProcessorRestartConfiguration`, which is the only thing about tenant-aware
+It also registers a `MultiTenantStreamingProcessorRestartConfiguration`, which is the only thing about tenant-aware
 event processing an application configures. A tenant change restarts the running processors, and this bounds how
 long each one gets to stop and start. It is registered at the value the framework already defaults to, so the
 run behaves identically and the point is only to show where the knob is.

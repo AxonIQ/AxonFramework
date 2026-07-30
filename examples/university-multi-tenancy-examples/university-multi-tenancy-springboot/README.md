@@ -35,7 +35,7 @@ The projection processor bean is worth looking at for what it does not say. It n
 processor per tenant. A single one serves every tenant, because the auto-configuration makes the event store it
 streams from tenant-aware and re-opens that stream when the set of tenants changes.
 
-One bean is there purely to show a knob: `MultiTenantProcessorRestartConfiguration` bounds how long each
+One bean is there purely to show a knob: `MultiTenantStreamingProcessorRestartConfiguration` bounds how long each
 processor gets to stop and start when the set of tenants changes. The starter defaults it, so an application only
 declares it to raise it, which a deployment with slow-starting processors would.
 

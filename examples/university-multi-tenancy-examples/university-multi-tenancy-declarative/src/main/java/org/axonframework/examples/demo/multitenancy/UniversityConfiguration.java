@@ -21,7 +21,7 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
-import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantProcessorRestartConfiguration;
+import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantStreamingProcessorRestartConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
@@ -131,8 +131,8 @@ public final class UniversityConfiguration {
      * @param registry the registry to register the restart configuration on
      */
     private static void registerProcessorRestartTimeout(ComponentRegistry registry) {
-        registry.registerComponent(MultiTenantProcessorRestartConfiguration.class,
-                                   config -> MultiTenantProcessorRestartConfiguration.DEFAULT
+        registry.registerComponent(MultiTenantStreamingProcessorRestartConfiguration.class,
+                                   config -> MultiTenantStreamingProcessorRestartConfiguration.DEFAULT
                                            .restartTimeout(PROCESSOR_RESTART_TIMEOUT));
     }
 

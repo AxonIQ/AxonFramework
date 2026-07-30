@@ -18,7 +18,7 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.api.AxonServerTenantProvider;
-import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantProcessorRestartConfiguration;
+import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantStreamingProcessorRestartConfiguration;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
@@ -222,7 +222,7 @@ public class UniversityConfiguration {
      */
     @Bean
     @ConditionalOnExpression("${axon.multitenancy.enabled:true} and ${axon.axonserver.enabled:true}")
-    public MultiTenantProcessorRestartConfiguration processorRestartConfiguration() {
-        return MultiTenantProcessorRestartConfiguration.DEFAULT.restartTimeout(PROCESSOR_RESTART_TIMEOUT);
+    public MultiTenantStreamingProcessorRestartConfiguration processorRestartConfiguration() {
+        return MultiTenantStreamingProcessorRestartConfiguration.DEFAULT.restartTimeout(PROCESSOR_RESTART_TIMEOUT);
     }
 }
