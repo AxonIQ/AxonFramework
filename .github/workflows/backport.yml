@@ -17,7 +17,16 @@ jobs:
       startsWith(github.event.comment.body, '/backport') &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     steps:
+      - name: Parse target branch from comment
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          branch=$(echo "$COMMENT_BODY" | awk 'NR==1{print $2}')
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+
       - name: Backport
         uses: korthout/backport-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          target_branches: ${{ steps.parse.outputs.branch }}
