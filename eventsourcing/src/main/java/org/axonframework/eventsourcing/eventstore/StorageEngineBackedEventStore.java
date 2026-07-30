@@ -99,7 +99,7 @@ public class StorageEngineBackedEventStore implements EventStore {
             }
             return eventStorageEngine.appendEvents(none, context, taggedEvents)
                                      .thenApply(StorageEngineBackedEventStore::castTransaction)
-                                     .thenCompose(tx -> tx.commit().thenApply(v -> tx.afterCommit(v)))
+                                     .thenCompose(tx -> tx.commit().thenCompose(v -> tx.afterCommit(v)))
                                      .thenApply(marker -> null)
                                      .thenCompose(r -> eventBus.publish(context, events));
         } else {
