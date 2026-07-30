@@ -48,6 +48,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -86,6 +87,9 @@ import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
 class Coordinator {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    private static final int INITIAL_STREAM_REOPEN_DELAY = 500;
+    private static final int MAX_STREAM_REOPEN_DELAY = 60000;
 
     private final String name;
     private final StreamableEventSource eventSource;
@@ -758,6 +762,10 @@ class Coordinator {
         private TrackingToken lastScheduledToken = NoToken.INSTANCE;
         private boolean availabilityCallbackSupported;
         private long unclaimedSegmentValidationThreshold;
+        // Grows while the source keeps completing the stream with an error, and returns to its initial value as soon as
+        // a replacement stream delivers an event.
+        private int streamReopenDelay = INITIAL_STREAM_REOPEN_DELAY;
+        private Instant reopenStreamNotBefore = Instant.EPOCH;
         private final long generation = coordinationTaskGeneration.incrementAndGet();
 
         @Override
@@ -1195,11 +1203,23 @@ class Coordinator {
             // the last scheduled token, thus we started new WorkPackages and need to start at the new position.
             if (eventStream != null
                     && (eventStream.isCompleted() || !Objects.equals(trackingToken, lastScheduledToken))) {
-                if (eventStream.isCompleted()) {
-                    // The trailing argument is only logged when the source completed the stream with an error.
+                Optional<Throwable> completionError = eventStream.isCompleted()
+                        ? eventStream.error()
+                        : Optional.empty();
+                if (completionError.isPresent()) {
+                    // A source that fails on open, or right after it, keeps failing for as long as whatever it depends
+                    // on is unavailable. Replacing the stream at once would reopen it as fast as the coordination task
+                    // runs, so the replacement waits, and waits longer the longer the source keeps failing.
+                    streamReopenDelay = Math.min(streamReopenDelay * 2, MAX_STREAM_REOPEN_DELAY);
+                    reopenStreamNotBefore = clock.instant().plusMillis(streamReopenDelay);
+                    logger.warn("""
+                                Processor [{}] (Coordination Task [{}]) will replace the stream its source completed \
+                                with an error by one starting at token [{}], in {}ms.""",
+                                name, generation, trackingToken, streamReopenDelay, completionError.get());
+                } else if (eventStream.isCompleted()) {
                     logger.info("Processor [{}] (Coordination Task [{}]) will replace the stream its source completed "
                                         + "by one starting at token [{}].",
-                                name, generation, trackingToken, eventStream.error().orElse(null));
+                                name, generation, trackingToken);
                 } else {
                     logger.debug("Processor [{}] (Coordination Task [{}]) will close the current stream.",
                                  name, generation);
@@ -1207,6 +1227,12 @@ class Coordinator {
                 closeStreamQuietly();
                 eventStream = null;
                 lastScheduledToken = NoToken.INSTANCE;
+            }
+
+            if (eventStream == null && clock.instant().isBefore(reopenStreamNotBefore)) {
+                // Still waiting out the delay after a failing source. This path leaves the claims alone, so a source
+                // that is briefly away does not move segments between nodes by itself.
+                return emptyCompletedFuture();
             }
 
             if (eventStream == null && !workPackages.isEmpty() && !(trackingToken instanceof NoToken)) {
@@ -1250,7 +1276,12 @@ class Coordinator {
             if (eventStream == null) {
                 return null;
             }
-            return eventStream.next().orElse(null);
+            MessageStream.Entry<? extends EventMessage> entry = eventStream.next().orElse(null);
+            if (entry != null) {
+                // The source delivered, so a later failure starts waiting from the initial delay again.
+                streamReopenDelay = INITIAL_STREAM_REOPEN_DELAY;
+            }
+            return entry;
         }
 
         private boolean hasNextEvent() {
