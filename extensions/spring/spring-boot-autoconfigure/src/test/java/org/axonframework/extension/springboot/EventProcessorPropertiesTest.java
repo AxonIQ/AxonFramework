@@ -16,8 +16,10 @@
 
 package org.axonframework.extension.springboot;
 
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.extension.spring.config.EventProcessorSettings;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.junit.jupiter.api.*;
@@ -64,7 +66,30 @@ class EventProcessorPropertiesTest {
             // when / then - the unset name resolves the TokenStore by type instead of demanding a named bean
             new ApplicationContextRunner()
                     .withUserConfiguration(TestContext.class)
-                    .run(context -> assertThat(context).hasNotFailed());
+                    .run(context -> assertThat(selectedTokenStore(context.getBean(AxonConfiguration.class)))
+                            .isSameAs(context.getBean("customTokenStore", TokenStore.class)));
+        }
+
+        @Test
+        void prefersTheConventionallyNamedTokenStoreBeanWhenSeveralBeansExist() {
+            // given - two TokenStore beans, one of them named "tokenStore", and no token-store property is set
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class, ConventionalTokenStoreContext.class)
+                    // when / then - the conventional bean name wins over an ambiguous type-level lookup
+                    .run(context -> assertThat(selectedTokenStore(context.getBean(AxonConfiguration.class)))
+                            .isSameAs(context.getBean("tokenStore", TokenStore.class)));
+        }
+
+        @Test
+        void reportsTheLookedForBeanNameWhenNoTokenStoreCanBeResolved() {
+            // given - two TokenStore beans, neither named "tokenStore", and no token-store property is set
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class, SecondUnconventionalTokenStoreContext.class)
+                    // when / then - naming the bean that was looked for is what makes the failure actionable
+                    .run(context -> assertThat(context)
+                            .getFailure()
+                            .hasStackTraceContaining("Could not find a mandatory TokenStore with name 'tokenStore'")
+                            .hasStackTraceContaining("The TokenStore is a hard requirement"));
         }
     }
 
@@ -95,6 +120,21 @@ class EventProcessorPropertiesTest {
         }
     }
 
+    /**
+     * Returns the {@link TokenStore} the single pooled processor of the application was configured with.
+     */
+    private static TokenStore selectedTokenStore(AxonConfiguration axonConfiguration) {
+        var processorConfigurations =
+                axonConfiguration.getModuleConfigurations()
+                                 .stream()
+                                 .flatMap(module -> module
+                                         .getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)
+                                         .stream())
+                                 .toList();
+        assertThat(processorConfigurations).hasSize(1);
+        return processorConfigurations.getFirst().tokenStore();
+    }
+
     private static Environment environmentWith(String... keysAndValues) {
         MockEnvironment environment = new MockEnvironment();
         for (int i = 0; i < keysAndValues.length; i += 2) {
@@ -121,6 +161,24 @@ class EventProcessorPropertiesTest {
             public void on(String event) {
                 // a handler is required for a pooled processor to be constructed at all
             }
+        }
+    }
+
+    @Configuration
+    static class ConventionalTokenStoreContext {
+
+        @Bean
+        public TokenStore tokenStore() {
+            return new InMemoryTokenStore();
+        }
+    }
+
+    @Configuration
+    static class SecondUnconventionalTokenStoreContext {
+
+        @Bean
+        public TokenStore anotherTokenStore() {
+            return new InMemoryTokenStore();
         }
     }
 }

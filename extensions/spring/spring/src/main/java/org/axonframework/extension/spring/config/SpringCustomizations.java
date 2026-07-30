@@ -131,8 +131,10 @@ interface SpringCustomizations {
      * {@link #CONVENTIONAL_TOKEN_STORE_BEAN_NAME conventional bean name} before that type-level lookup, so that
      * applications declaring several token stores keep resolving the same one. Otherwise, it leaves that part of the
      * configuration untouched, allowing customizations applied after this one, like an
-     * {@code EventProcessorDefinition}, to supply it. A still-missing source or token store is reported when the
-     * resulting {@link PooledStreamingEventProcessorConfiguration} is validated.
+     * {@code EventProcessorDefinition}, to supply it. A still-missing source is reported when the resulting
+     * {@link PooledStreamingEventProcessorConfiguration} is validated, a still-missing token store by
+     * {@link #requireResolvedTokenStore(String, PooledStreamingEventProcessorConfiguration)} once all customizations
+     * have been applied.
      */
     class SpringPooledStreamingEventProcessingModuleCustomization
             implements PooledStreamingEventProcessorModule.Customization {
@@ -197,6 +199,26 @@ interface SpringCustomizations {
 
             return result;
         }
+    }
+
+    /**
+     * Verifies a {@link TokenStore} ended up on the given {@code configuration} of the event processor with the given
+     * {@code name}, after every customization had the opportunity to supply one.
+     * <p>
+     * Names the {@link #CONVENTIONAL_TOKEN_STORE_BEAN_NAME bean that was looked for}, as that is the information
+     * needed to fix the configuration, and is no longer available once the
+     * {@link PooledStreamingEventProcessorConfiguration} itself reports the missing token store during validation.
+     *
+     * @param name          the name of the event processor the {@code configuration} belongs to
+     * @param configuration the event processor configuration with all customizations applied
+     */
+    static void requireResolvedTokenStore(String name, PooledStreamingEventProcessorConfiguration configuration) {
+        require(configuration.tokenStore() != null,
+                "Could not find a mandatory TokenStore with name '" + CONVENTIONAL_TOKEN_STORE_BEAN_NAME
+                        + "' for event processor '" + name + "'. The TokenStore is a hard requirement and should be "
+                        + "provided, either by naming a TokenStore bean '" + CONVENTIONAL_TOKEN_STORE_BEAN_NAME
+                        + "', by declaring a single TokenStore bean, or by setting the token-store property of this "
+                        + "event processor.");
     }
 
     /**

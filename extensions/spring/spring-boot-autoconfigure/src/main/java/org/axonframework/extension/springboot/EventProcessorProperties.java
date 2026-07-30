@@ -34,6 +34,7 @@ import org.springframework.core.env.Environment;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -333,10 +334,11 @@ public class EventProcessorProperties {
         /**
          * Sets the name of the TokenStore bean.
          *
-         * @param tokenStore A name of the Spring Bean used for this processor, or {@code null} to leave it unset.
+         * @param tokenStore the name of the Spring Bean used for this processor; omitting the property, rather than
+         *                   binding it to {@code null}, is what leaves the name unset
          */
-        public void setTokenStore(@Nullable String tokenStore) {
-            this.tokenStore = tokenStore;
+        public void setTokenStore(String tokenStore) {
+            this.tokenStore = Objects.requireNonNull(tokenStore, "TokenStore cannot be null");
         }
 
         /**

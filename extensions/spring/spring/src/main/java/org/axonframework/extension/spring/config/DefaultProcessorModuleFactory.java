@@ -144,6 +144,7 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
                                 for (var extension : extensionsCustomizations) {
                                     result = extension.apply(axonConfig, result);
                                 }
+                                SpringCustomizations.requireResolvedTokenStore(processorName, result);
                                 return result;
                             };
                     yield EventProcessorModule
