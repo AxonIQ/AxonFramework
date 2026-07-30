@@ -1193,20 +1193,25 @@ class Coordinator {
         private CompletableFuture<Void> ensureOpenStream(@Nullable TrackingToken trackingToken) {
             // Close the old stream when it can no longer be read from. Either it is completed, or the token differs from
             // the last scheduled token, thus we started new WorkPackages and need to start at the new position.
+            Throwable sourceFailure = null;
             if (eventStream != null
                     && (eventStream.isCompleted() || !Objects.equals(trackingToken, lastScheduledToken))) {
-                if (eventStream.isCompleted()) {
-                    // The trailing argument is only logged when the source completed the stream with an error.
-                    logger.info("Processor [{}] (Coordination Task [{}]) will replace the stream its source completed "
-                                        + "by one starting at token [{}].",
-                                name, generation, trackingToken, eventStream.error().orElse(null));
-                } else {
-                    logger.debug("Processor [{}] (Coordination Task [{}]) will close the current stream.",
-                                 name, generation);
-                }
+                boolean completed = eventStream.isCompleted();
+                // Read once, so the reason logged is the reason acted on.
+                sourceFailure = completed ? eventStream.error().orElse(null) : null;
+                logClosingStream(completed, sourceFailure, trackingToken);
                 closeStreamQuietly();
                 eventStream = null;
                 lastScheduledToken = NoToken.INSTANCE;
+            }
+
+            if (sourceFailure != null) {
+                // A source that failed a stream keeps failing it for as long as whatever it depends on is unavailable.
+                // Opening a replacement right here would do so on every coordination run, which is as fast as the
+                // coordinator runs at all. Reporting the failure instead hands the retry to the coordinator's own error
+                // handling, which logs the cause, releases the claims and paces the next attempt about a second later.
+                // That is what a failing source did before a completed stream became a reason to reopen.
+                return CompletableFuture.failedFuture(sourceFailure);
             }
 
             if (eventStream == null && !workPackages.isEmpty() && !(trackingToken instanceof NoToken)) {
@@ -1234,6 +1239,28 @@ class Coordinator {
                 });
             }
             return emptyCompletedFuture();
+        }
+
+        /**
+         * Logs why the stream about to be closed can no longer be read from: its source completed it, or a new position
+         * is needed. A source that failed the stream is not logged here, since reporting that failure logs its cause.
+         *
+         * @param completed     whether the source completed the stream about to be closed
+         * @param sourceFailure the error the source completed the stream with, or {@code null} if it did not fail it
+         * @param trackingToken the position a replacement stream would start at, if any
+         */
+        private void logClosingStream(boolean completed,
+                                      @Nullable Throwable sourceFailure,
+                                      @Nullable TrackingToken trackingToken) {
+            if (!completed) {
+                logger.debug("Processor [{}] (Coordination Task [{}]) will close the current stream.",
+                             name, generation);
+            } else if (sourceFailure == null) {
+                logger.info("""
+                            Processor [{}] (Coordination Task [{}]) will replace the stream its source completed by one \
+                            starting at token [{}].""",
+                            name, generation, trackingToken);
+            }
         }
 
         private boolean isSpaceAvailable() {

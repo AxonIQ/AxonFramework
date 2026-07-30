@@ -26,6 +26,11 @@ or against Axon Server with the toggle, starts it, and hands the gateways and pr
 `DemoLifecycle`. In memory the event store is a single shared store; against Axon Server each tenant has
 its own.
 
+The course carries a snapshot policy, so a `SnapshotStore` is needed too. In memory `UniversityConfiguration`
+registers one shared `InMemorySnapshotStore`. Against Axon Server it registers none: the multi-tenancy
+defaults own that registration so each tenant's snapshots land in its own context, and a store the
+application registers itself is refused.
+
 ## Running
 
 From this module's directory:
@@ -74,6 +79,11 @@ The Axon Server run additionally shows per-tenant event storage, which the in-me
 it has one shared event store. The two known tenants open a course under the same identifier: one fills
 it and rejects a further enrollment as full, while the same identifier still accepts one in the other
 tenant, because each tenant's events are sourced from its own store.
+
+It also shows per-tenant snapshotting. Enrolling the second student crosses the course's snapshot
+threshold, and each tenant's snapshot goes to its own snapshot store. Both tenants therefore hold a
+snapshot of the same course identifier, and each holds only its own tenant's student. The in-memory run
+snapshots into one store shared by every tenant, so it cannot show the isolation.
 
 ## The same demo, wired by Spring Boot
 

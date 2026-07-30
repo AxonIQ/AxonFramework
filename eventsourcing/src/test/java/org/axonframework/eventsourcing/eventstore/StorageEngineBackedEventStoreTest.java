@@ -83,4 +83,36 @@ class StorageEngineBackedEventStoreTest {
         // Check that publish future has completed:
         assertThat(future.isDone()).isTrue();
     }
+
+    @Test
+    void futureFromPublishShouldNotCompleteBeforeAfterCommitFutureCompletes() {
+        CompletableFuture<String> commitFuture = CompletableFuture.completedFuture("ok");
+        CompletableFuture<ConsistencyMarker> afterCommitFuture = new CompletableFuture<>();
+        CompletableFuture<Void> eventBusPublishFuture = CompletableFuture.completedFuture(null);
+
+        when(eventStorageEngine.appendEvents(any(), eq(null), anyList()))
+            .thenReturn(CompletableFuture.completedFuture(appendTransaction));
+
+        when(eventBus.publish(eq(null), anyList()))
+            .thenReturn(eventBusPublishFuture);
+
+        when(appendTransaction.commit()).thenReturn(commitFuture);
+        when(appendTransaction.afterCommit(any())).thenReturn(afterCommitFuture);
+
+        CompletableFuture<Void> future = store.publish(
+            null,
+            Stream.of("A", "B", "C", "D").map(e -> new GenericEventMessage(new MessageType(e.getClass()), e)).toList()
+        );
+
+        // Check that publish future hasn't completed yet as AppendTransaction#afterCommit hasn't yet completed:
+        assertThat(future.isDone()).isFalse();
+
+        // Now complete afterCommit:
+        afterCommitFuture.complete(ConsistencyMarker.ORIGIN);
+
+        future.join();
+
+        // Check that publish future has completed:
+        assertThat(future.isDone()).isTrue();
+    }
 }

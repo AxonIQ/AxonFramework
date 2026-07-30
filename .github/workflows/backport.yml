@@ -1,0 +1,38 @@
+name: Axon Framework (Backport)
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  backport:
+    name: Backport PR
+    runs-on: ubuntu-latest
+    if: >
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/backport') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse target branch from comment
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          branch=$(echo "$COMMENT_BODY" | awk 'NR==1{print $2}')
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+
+      - name: Backport
+        id: backport
+        uses: korthout/backport-action@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          target_branches: ${{ steps.parse.outputs.branch }}
+          add_author_as_assignee: true
+          add_labels: 'Type: Port'
+          copy_labels_pattern: '.*'

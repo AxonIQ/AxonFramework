@@ -24,7 +24,7 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *
  * @param demonstrated                     whether the event-storage demonstration ran (only against Axon Server)
  * @param springfieldRejectedWhenFull      whether a further enrollment into Springfield's full course was rejected
- * @param shelbyvilleAcceptedSameCourseId  whether the same course identifier still accepted an enrollment in
+ * @param shelbyvilleAcceptedSameCourseId  whether the same course identifier still accepted its enrollments in
  *                                         Shelbyville, proving its event store did not see Springfield's events
  */
 public record EventStorageOutcome(boolean demonstrated,
@@ -35,7 +35,7 @@ public record EventStorageOutcome(boolean demonstrated,
      * The outcome of a run that exercised per-tenant event storage, carrying what it observed.
      *
      * @param springfieldRejectedWhenFull     whether a further enrollment into Springfield's full course was rejected
-     * @param shelbyvilleAcceptedSameCourseId whether the same course identifier still accepted an enrollment in
+     * @param shelbyvilleAcceptedSameCourseId whether the same course identifier still accepted its enrollments in
      *                                        Shelbyville
      * @return an outcome marked as demonstrated
      */

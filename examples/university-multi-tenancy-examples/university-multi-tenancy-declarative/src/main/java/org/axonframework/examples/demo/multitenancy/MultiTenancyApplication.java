@@ -25,9 +25,14 @@ import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProv
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseSnapshot;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,6 +91,7 @@ public class MultiTenancyApplication {
                                  statisticsProvider,
                                  auditProvider,
                                  TenantProvisioning.inMemory(tenantProvider),
+                                 TenantSnapshots.<CourseSnapshot>inMemory(),
                                  configuration::shutdown);
     }
 
@@ -106,11 +112,15 @@ public class MultiTenancyApplication {
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 
+        QualifiedName courseSnapshots = EnrollStudentConfiguration.courseSnapshotName(
+                configuration.getComponent(MessageTypeResolver.class));
+
         return DemoLifecycle.run(configuration.getComponent(CommandGateway.class),
                                  configuration.getComponent(QueryGateway.class),
                                  statisticsProvider,
                                  auditProvider,
                                  TenantProvisioning.axonServer(configuration, DemoLifecycle.KNOWN_TENANTS),
+                                 TenantSnapshots.axonServer(configuration, courseSnapshots, CourseSnapshot.class),
                                  configuration::shutdown);
     }
 }

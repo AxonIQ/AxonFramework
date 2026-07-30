@@ -22,9 +22,14 @@ import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseSnapshot;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +68,8 @@ public class DemoRunner implements CommandLineRunner {
      * @param queryGateway       the gateway statistics are read on
      * @param statisticsProvider the provider of the per-tenant course-statistics stores
      * @param auditProvider      the provider of the per-tenant audit logs
-     * @param axonConfiguration  the Axon configuration, to resolve the Axon Server tenant provider from
+     * @param axonConfiguration  the Axon configuration, to resolve the Axon Server tenant provider and the
+     *                           per-tenant snapshot stores from
      * @param applicationContext the context to close when the demo has finished, triggering cleanup
      */
     public DemoRunner(CommandGateway commandGateway,
@@ -82,6 +88,8 @@ public class DemoRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        QualifiedName courseSnapshots = EnrollStudentConfiguration.courseSnapshotName(
+                axonConfiguration.getComponent(MessageTypeResolver.class));
         logger.info("Two providers for one component type are rejected at configuration time: {}",
                     ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType());
         DemoOutcome outcome = DemoLifecycle.run(commandGateway,
@@ -90,6 +98,9 @@ public class DemoRunner implements CommandLineRunner {
                                                 auditProvider,
                                                 TenantProvisioning.axonServer(axonConfiguration,
                                                                               DemoLifecycle.KNOWN_TENANTS),
+                                                TenantSnapshots.axonServer(axonConfiguration,
+                                                                           courseSnapshots,
+                                                                           CourseSnapshot.class),
                                                 applicationContext::close);
         logger.info("Demo finished. Outcome: {}", outcome);
     }
