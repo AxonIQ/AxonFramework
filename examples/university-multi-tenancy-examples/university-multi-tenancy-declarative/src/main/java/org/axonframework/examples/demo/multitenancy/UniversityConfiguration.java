@@ -20,7 +20,6 @@ import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigur
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
-import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
@@ -35,10 +34,10 @@ import org.axonframework.examples.demo.multitenancy.university.read.statistics.C
  * <p>
  * The domain itself, the write slices and the statistics read slice, is registered by
  * {@link UniversityModuleConfiguration}, shared with the Spring Boot demo. This class only adds the
- * multi-tenancy wiring around it: it turns on the multi-tenancy enhancer and registers one
- * {@link TenantComponentProvider} per tenant-scoped component type, so the framework hands each handler
- * the components of the message's tenant, matched by type, and routes the course's events to that
- * tenant's own event store.
+ * multi-tenancy wiring around it. Multi-tenancy itself is active because the {@code axoniq-multi-tenancy}
+ * module is on the classpath, so all this class registers is one {@link TenantComponentProvider} per
+ * tenant-scoped component type. The framework then hands each handler the components of the message's
+ * tenant, matched by type, and routes the course's events to that tenant's own event store.
  */
 public final class UniversityConfiguration {
 
@@ -69,7 +68,6 @@ public final class UniversityConfiguration {
                                  TenantComponentProvider<AuditLog> auditProvider) {
         UniversityModuleConfiguration.configure(configurer)
                                      .componentRegistry(registry -> {
-                                         MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
                                          // Run in memory: no Axon Server connection, tenants come from the DemoTenantProvider.
                                          registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
                                                  .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
@@ -84,8 +82,8 @@ public final class UniversityConfiguration {
      * Registers the Axon Server backed tenant-aware wiring on the given {@code configurer}: the same
      * university domain, and one {@link TenantComponentProvider} per tenant-scoped component type.
      * <p>
-     * The Axon Server configuration enhancer is left enabled, so the multi-tenancy enhancer registers its
-     * default auto-discovering tenant provider watching Axon Server's contexts, and the course write side
+     * The Axon Server configuration enhancer is left enabled, so multi-tenancy uses its default
+     * auto-discovering tenant provider watching Axon Server's contexts, and the course write side
      * is registered against the per-tenant, tenant-aware event store Axon Server provides. This path needs
      * a running multi-context (Enterprise Edition) Axon Server.
      *
@@ -97,10 +95,9 @@ public final class UniversityConfiguration {
                                               TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                               TenantComponentProvider<AuditLog> auditProvider) {
         UniversityModuleConfiguration.configure(configurer)
-                                     .componentRegistry(registry -> {
-                                         MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
-                                         registerTenantComponents(registry, statisticsProvider, auditProvider);
-                                     });
+                                     .componentRegistry(registry -> registerTenantComponents(registry,
+                                                                                             statisticsProvider,
+                                                                                             auditProvider));
     }
 
     /**

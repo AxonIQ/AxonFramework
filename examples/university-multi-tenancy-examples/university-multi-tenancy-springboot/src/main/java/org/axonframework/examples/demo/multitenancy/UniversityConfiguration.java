@@ -36,11 +36,13 @@ import org.springframework.context.annotation.Configuration;
  * {@link TenantComponentProvider} bean per tenant-scoped component type, the statistics query handler,
  * and each write slice's modules, as ordinary beans.
  * <p>
- * The multi-tenancy auto-configuration from the Axoniq Framework Spring Boot starter activates the
- * feature (tenants are Axon Server contexts, so it activates only while Axon Server is enabled), picks
- * these provider beans up, subscribes them to the tenant lifecycle, and installs the tenant parameter
- * resolver and interceptor. It also registers the default auto-discovering {@link AxonServerTenantProvider},
- * which watches Axon Server's contexts and registers each as a tenant (filtering out {@code _admin}). So
+ * Multi-tenancy is active because the {@code axoniq-multi-tenancy} module is on the classpath. The
+ * auto-configuration from the Axoniq Framework Spring Boot starter only switches it off again when
+ * {@code axon.multitenancy.enabled=false} or {@code axon.axonserver.enabled=false}, since tenants are Axon
+ * Server contexts. The framework picks these provider beans up, subscribes them to the tenant lifecycle,
+ * and installs the tenant parameter resolver and interceptor. It also registers the default
+ * auto-discovering {@link AxonServerTenantProvider}, which watches Axon Server's contexts and registers
+ * each as a tenant (filtering out {@code _admin}). So
  * the framework hands each command and query handler the components of the message's tenant for their
  * {@code @TenantScoped} parameters, matched by type, with no explicit multi-tenancy wiring here at all.
  */
