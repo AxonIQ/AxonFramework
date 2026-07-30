@@ -1193,6 +1193,63 @@ class PooledStreamingEventProcessorTest {
                    .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(nextEvent));
             verify(stubMessageSource, atLeast(2)).open(any(), isNull());
         }
+
+        @Test
+        void pacesReopeningWhileTheSourceKeepsFailingEveryStreamItHandsOut() throws InterruptedException {
+            // given - a source that keeps failing every stream it hands out, as a backend that cannot serve one yet
+            //         does. Each attempt costs a call on that backend, so retrying on every coordination run is what
+            //         has to be avoided.
+            AtomicInteger openCount = new AtomicInteger();
+            stubMessageSource.setOnOpen(openCount::incrementAndGet);
+            startEventProcessor();
+
+            // when - the failure arrives the way a remote source reports one, after the coordination run that opened
+            //        the stream rather than during it
+            boolean reportedError = failStreamsFor(1500);
+
+            // then - the retry is paced by the coordinator's error handling rather than following every coordination
+            // run. 1500ms at a one-second pace allows two opens, so five leaves room for a slow machine.
+            assertThat(openCount.get()).describedAs("streams opened in 1500ms").isLessThanOrEqualTo(5);
+            // and the failure is reported rather than swallowed by an immediate replacement. Observed while the source
+            // was failing, since the flag clears again on every run that manages to open a stream.
+            assertThat(reportedError).describedAs("processor reported the failing source").isTrue();
+            // and the retry is scheduled with a delay rather than immediately
+            verify(coordinatorExecutor, atLeastOnce())
+                    .schedule(any(Runnable.class), longThat(delay -> delay >= 500), eq(TimeUnit.MILLISECONDS));
+        }
+
+        @Test
+        void resumesOnceTheSourceStopsFailingEveryStream() throws InterruptedException {
+            // given - a source failing every stream it hands out for a while
+            AtomicInteger openCount = new AtomicInteger();
+            stubMessageSource.setOnOpen(openCount::incrementAndGet);
+            startEventProcessor();
+            failStreamsFor(700);
+            assertThat(openCount).describedAs("streams opened while failing").hasValueGreaterThan(0);
+
+            // when - the source recovers
+            EventMessage event = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(event);
+
+            // then - waiting between attempts does not wedge the processor, it picks the segment back up and handles
+            // what it missed
+            await().atMost(10, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(event));
+            assertThat(testSubject.processingStatus()).containsKey(0);
+        }
+
+        // Fails whatever stream is open, repeatedly, for the given duration. Runs on the calling thread so every
+        // failure lands between two coordination runs, which is when a remote source reports one. Returns whether the
+        // processor reported an error at any point, which a single read after the fact could miss.
+        private boolean failStreamsFor(long millis) throws InterruptedException {
+            boolean reportedError = false;
+            for (long elapsed = 0; elapsed < millis; elapsed += 25) {
+                stubMessageSource.failOpenStreams(new IllegalStateException("Source unreachable"));
+                Thread.sleep(25);
+                reportedError |= testSubject.isError();
+            }
+            return reportedError;
+        }
     }
 
     @Nested

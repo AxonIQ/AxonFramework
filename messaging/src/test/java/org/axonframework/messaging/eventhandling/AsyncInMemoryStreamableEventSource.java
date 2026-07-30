@@ -204,6 +204,21 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
     }
 
     /**
+     * Completes every currently open stream with the given {@code cause}, as if this source failed them, without
+     * clearing the published events.
+     * <p>
+     * Such a stream reports {@link MessageStream#isCompleted()} as {@code true} and the given {@code cause} as its
+     * {@link MessageStream#error()}. This mirrors a source that cannot serve a stream at all, such as a backend that is
+     * unreachable or does not know the requested context yet. Call this repeatedly to model a source that keeps failing
+     * every stream opened against it.
+     *
+     * @param cause the error to complete every currently open stream with
+     */
+    public void failOpenStreams(Throwable cause) {
+        openStreams.forEach(stream -> stream.completeExceptionally(cause));
+    }
+
+    /**
      * Set a handler to be called whenever a stream is opened.
      *
      * @param onOpen the handler to call
@@ -244,6 +259,7 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
         private final AtomicReference<Runnable> callback = new AtomicReference<>(NO_OP_CALLBACK);
         private final StreamingCondition condition;
         private volatile boolean closed = false;
+        private volatile @Nullable Throwable completionError;
 
         public AsyncMessageStream(StreamingCondition condition) {
             this.condition = condition;
@@ -357,7 +373,7 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
 
         @Override
         public @NonNull Optional<Throwable> error() {
-            return Optional.empty();
+            return Optional.ofNullable(completionError);
         }
 
         @Override
@@ -406,6 +422,14 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                     currentCallback.run();
                 }
             }
+        }
+
+        private void completeExceptionally(Throwable cause) {
+            if (closed) {
+                return;
+            }
+            completionError = cause;
+            complete();
         }
 
         private void complete() {
