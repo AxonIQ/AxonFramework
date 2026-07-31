@@ -21,11 +21,16 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantNotResolvedException
 import org.axonframework.common.ExceptionUtils;
 
 /**
- * Recognizes a failure that a handler raised, whether it reaches the caller as itself or crosses Axon
- * Server first. In memory the exception travels as itself, so the type is matched directly. Over Axon
- * Server the failure crosses the wire and is reconstructed as a generic execution exception that only
- * carries the original type and message as text, so the type's simple name is matched in the message as
- * well.
+ * Recognizes a failure by type, whether it reaches the caller as itself or crosses Axon Server first. In memory
+ * the exception travels as itself, so the type is matched directly. Over Axon Server the failure is
+ * reconstructed as a generic execution exception that only carries the original type and message as text, so the
+ * type's simple name is matched in the message as well.
+ * <p>
+ * That covers both a failure a handler raised and one the framework raised before a handler was reached, which is
+ * how a tenant it cannot resolve is refused.
+ *
+ * @author Laura Devriendt
+ * @since 5.3.0
  */
 public final class RemoteExceptions {
 

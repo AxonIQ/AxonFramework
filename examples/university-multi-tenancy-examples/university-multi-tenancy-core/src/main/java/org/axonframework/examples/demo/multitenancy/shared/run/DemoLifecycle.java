@@ -166,10 +166,12 @@ public final class DemoLifecycle {
         step(1, "Subscribe to both known tenants' statistics, before either enrolls a student");
         EventStorageOutcome eventStorage;
         SubscriptionQueryOutcome subscriptionOutcome;
-        // Closed however steps 2 and 3 end, so a failure in either does not leave a tenant's subscription query
-        // open on its connection.
-        try (StatisticsSubscription springfieldSubscription = StatisticsSubscription.openFor(queryGateway, SPRINGFIELD, TENANT_READY_TIMEOUT);
-             StatisticsSubscription shelbyvilleSubscription = StatisticsSubscription.openFor(queryGateway, SHELBYVILLE, TENANT_READY_TIMEOUT)) {
+        // A subscription query holds a registration on its tenant's connection until it is closed, so both are
+        // closed however the steps below end.
+        try (StatisticsSubscription springfieldSubscription =
+                     StatisticsSubscription.openFor(queryGateway, SPRINGFIELD, TENANT_READY_TIMEOUT);
+             StatisticsSubscription shelbyvilleSubscription =
+                     StatisticsSubscription.openFor(queryGateway, SHELBYVILLE, TENANT_READY_TIMEOUT)) {
 
             step(2, "Enroll students, each appending to its own tenant's event store");
             eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());

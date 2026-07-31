@@ -30,12 +30,16 @@ org.axonframework.examples.demo.multitenancy
    |  +- SnapshottingOutcome          what the per-tenant snapshot isolation observed, asserted by the tests
    |  +- StreamingOutcome             what the tenant-aware event processing observed, asserted by the tests
    |  +- SubscriptionQueryOutcome     what the tenant-aware subscription-query isolation and completion observed
-   |  +- TenantView                   renders one tenant's isolated view
+   |  +- QueryRejectionOutcome        what the query-side tenant guardrails observed
+   |  +- TenantView                   renders a tenant's isolated view, and what each subscription received
    |  +- ProviderAmbiguityGuardrail   the configuration-time guardrail
    +- messaging                       drives the command and query gateways
-   |  +- Enrollments                  opens courses, enrolls, and reads or subscribes to statistics through the gateways
+   |  +- Enrollments                  opens courses and enrolls students, through the command gateway
+   |  +- StatisticsQueries            reads a tenant's statistics, once or as a subscription
+   |  +- StatisticsSubscription       one tenant's open subscription, and every update it received
+   |  +- TenantRejections             observes the framework refusing a message it cannot resolve a tenant for
    |  +- TenantMetadataFactory        builds the metadata that carries a tenant on a message
-   |  +- RemoteExceptions             recognizes a handler failure whether raised as itself or reconstructed over Axon Server
+   |  +- RemoteExceptions             recognizes a failure whether raised as itself or reconstructed over Axon Server
    +- tenant                          supplies the tenants and their per-tenant components
    |  +- TenantProvisioning           in-memory vs Axon Server tenant provisioning (and whether it isolates event stores)
    |  +- TenantSnapshots              reads one tenant's own snapshot store, to observe where a snapshot landed
@@ -48,7 +52,8 @@ org.axonframework.examples.demo.multitenancy
 ## The lifecycle
 
 `DemoLifecycle.run` reads top to bottom as the story both demos tell, against an already-started
-application:
+application. Each step announces itself in the log as `--- Step N`, so a run can be followed against the list
+below, and a step that needs something the run does not have says so instead of passing silently:
 
 1. Subscribe to the statistics of both tenants known at startup, before either enrolls a single student.
 2. Enroll students in those tenants, and read each tenant's statistics back to show it sees only its own.
