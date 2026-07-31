@@ -40,7 +40,9 @@ import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -146,19 +148,20 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
 
             result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 
@@ -174,11 +177,11 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
 
             result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
@@ -202,19 +205,20 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
 
             result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 
@@ -238,16 +242,18 @@ class EntityCreationTest {
         void creationsThrowsWhenCreateCommandComesSinceNonNullEntityIsExpected() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
 
         @Test
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 
@@ -271,8 +277,9 @@ class EntityCreationTest {
         void creationsThrowsWhenCreateCommandComesSinceNonNullEntityIsExpected() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
 
         @Test
@@ -304,16 +311,18 @@ class EntityCreationTest {
         void creationsThrowsWhenCreateCommandComesSinceNonNullEntityIsExpected() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
 
         @Test
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 
@@ -340,14 +349,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 
@@ -374,14 +383,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 
@@ -408,14 +417,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 
@@ -442,14 +451,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 
@@ -476,14 +485,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 
@@ -510,14 +519,14 @@ class EntityCreationTest {
         void creationIsSuccessfulWhenCreateCommandComesFirst() {
             CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
 
         @Test
         void creationsIsSuccessfulWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isNotCompletedExceptionally();
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
         }
     }
 }
