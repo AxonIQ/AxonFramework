@@ -31,6 +31,7 @@ import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 import org.axonframework.modelling.annotation.InjectEntity;
 
 import java.util.Collections;
@@ -88,17 +89,21 @@ class EnrollStudentCommandHandler {
      * @param eventAppender         the appender the enrollment event is appended through
      * @param courseStatisticsStore the injected course-statistics store of the command's tenant
      * @param auditLog              the injected audit log of the command's tenant
+     * @param updateEmitter         the update emitter to notify open subscription queries through, on the
+     *                              backing that fills the read model here
      */
     @CommandHandler
     void handle(EnrollStudent command,
                 @InjectEntity(idProperty = UniversityTags.COURSE_ID) State state,
                 EventAppender eventAppender,
                 @TenantScoped CourseStatisticsStore courseStatisticsStore,
-                @TenantScoped AuditLog auditLog) {
+                @TenantScoped AuditLog auditLog,
+                QueryUpdateEmitter updateEmitter) {
         List<StudentEnrolledInCourse> events = decide(command, state);
         eventAppender.append(events);
         if (!backing.projectsReadModel() && !events.isEmpty()) {
-            ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, command.courseId(), command.studentId());
+            ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, updateEmitter,
+                                             command.courseId(), command.studentId());
         }
     }
 

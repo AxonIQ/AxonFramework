@@ -26,6 +26,8 @@ import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisio
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsProjection;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.GetTenantStatistics;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.ReadModelWrites;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.StatisticsConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatisticsQueryHandler;
@@ -33,6 +35,8 @@ import org.axonframework.examples.demo.multitenancy.university.write.enrollstude
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudent;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +44,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
@@ -62,9 +67,13 @@ import java.util.function.BooleanSupplier;
  * every observation of one below waits for it to catch up. On a shared event store the command handler fills it
  * instead, and those waits return at once.
  * <p>
- * {@link #run} reads top to bottom as the story: tenants known at startup, the course snapshotted per
- * tenant, a tenant added at runtime, one processor serving all of them, an unknown tenant rejected, a tenant
- * removed, and shutdown.
+ * Either way, recording an enrollment is also the one place that emits an update for any of that tenant's open
+ * {@link GetTenantStatistics} subscription queries, through {@link ReadModelWrites}. Subscribing and emitting
+ * both name no tenant, and each subscription still only ever receives its own tenant's updates.
+ * <p>
+ * {@link #run} reads top to bottom as the story: tenants known at startup, their subscriptions proven isolated,
+ * the course snapshotted per tenant, a tenant added at runtime, one processor serving all of them, an unknown
+ * tenant rejected on both the command and the query side, a tenant removed, and shutdown.
  */
 public final class DemoLifecycle {
 
@@ -140,7 +149,12 @@ public final class DemoLifecycle {
         provisioning.prepareKnownTenants();
         logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statisticsProvider));
 
-        // 1. Enroll students in the tenants known at startup. Each enrollment appends to the tenant's own
+        // 1. Subscribe to both known tenants' statistics before either enrolls a student, so their own
+        // subscription receives the updates the enrollments below trigger, not just their final value.
+        LiveStatistics springfieldLive = subscribeToStatistics(queryGateway, SPRINGFIELD);
+        LiveStatistics shelbyvilleLive = subscribeToStatistics(queryGateway, SHELBYVILLE);
+
+        // 2. Enroll students in the tenants known at startup. Each enrollment appends to the tenant's own
         // event store, and against Axon Server the same course identifier in two tenants shows the event
         // stores are isolated.
         EventStorageOutcome eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());
@@ -149,34 +163,42 @@ public final class DemoLifecycle {
         logTenantView("Springfield University", queryGateway, SPRINGFIELD);
         logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
-        // 2. Filling those courses snapshotted them. Each snapshot went to its own tenant's snapshot store,
+        // 3. Neither subscription received the other's updates, even though recording an enrollment never
+        // names a tenant when it emits one. Both subscriptions are done once this is observed.
+        SubscriptionQueryOutcome subscriptionOutcome =
+                proveSubscriptionUpdateIsolation(springfieldLive, shelbyvilleLive);
+        springfieldLive.cancel();
+        shelbyvilleLive.cancel();
+
+        // 4. Filling those courses snapshotted them. Each snapshot went to its own tenant's snapshot store,
         // so the same course identifier yields two snapshots holding two different sets of students.
         SnapshottingOutcome snapshottingOutcome = snapshots.hasPerTenantSnapshotStore()
                 ? proveSnapshotIsolation(snapshots)
                 : SnapshottingOutcome.notDemonstrated();
 
-        // 3. Add a tenant at runtime. Its instances materialize on its first command, no config change, and
+        // 5. Add a tenant at runtime. Its instances materialize on its first command, no config change, and
         // the running processor re-opens its stream so this tenant's events are projected too.
         provisioning.addTenant(OGDENVILLE);
         enrollWhenTenantReady(commandGateway);
         awaitProjected(queryGateway, OGDENVILLE, OGDENVILLE_ENROLLMENTS, RUNTIME_TENANT_PROJECTION_TIMEOUT);
         logTenantView("Ogdenville University (added at runtime)", queryGateway, OGDENVILLE);
 
-        // 4. All three tenants were served by one processor, not one processor each. Read before Shelbyville
+        // 6. All three tenants were served by one processor, not one processor each. Read before Shelbyville
         // is removed below, while its read model is still there to compare.
         StreamingOutcome streaming = observeStreaming(processorNames, queryGateway);
 
-        // 5. A command for a tenant the application does not know is rejected.
+        // 7. A command or query for a tenant the application does not know is rejected.
         boolean unknownTenantRejected = unknownTenantIsRejected(commandGateway);
+        boolean unknownTenantQueryRejected = unknownTenantQueryIsRejected(queryGateway);
 
-        // 6. Removing a tenant closes its per-tenant instances.
+        // 8. Removing a tenant closes its per-tenant instances.
         boolean shelbyvilleClosedOnRemoval =
                 removingTenantClosesItsInstances(provisioning, statisticsProvider, auditProvider);
 
-        // 7. Shutting down closes every remaining tenant's instances.
+        // 9. Shutting down closes every remaining tenant's instances.
         return shutDownAndBuildOutcome(shutdown, queryGateway, statisticsProvider, auditProvider,
-                                       unknownTenantRejected, shelbyvilleClosedOnRemoval, eventStorage,
-                                       snapshottingOutcome, streaming);
+                                       unknownTenantRejected, unknownTenantQueryRejected, shelbyvilleClosedOnRemoval,
+                                       eventStorage, snapshottingOutcome, streaming, subscriptionOutcome);
     }
 
     /**
@@ -313,6 +335,99 @@ public final class DemoLifecycle {
     }
 
     /**
+     * Subscribes to the given {@code tenant}'s statistics and collects every update the subscription
+     * receives, including its initial result, so {@link #proveSubscriptionUpdateIsolation} can inspect what
+     * arrived without anything leaking from the other tenant's own subscription.
+     * <p>
+     * Returns only once that initial result has arrived. In memory, registering a subscription query is
+     * synchronous, so this returns at once. Against Axon Server it is a round trip over the tenant's own
+     * connection, and the registration for future updates completes before the initial result does, the same
+     * ordering the local query bus uses; an enrollment sent before this returns could otherwise race that
+     * registration and never reach this subscription, which would misreport as a leak rather than as what it
+     * is: an update missed because nothing was listening for it yet.
+     *
+     * @param queryGateway the gateway the subscription query is sent on
+     * @param tenant       the tenant to subscribe to
+     * @return the tenant's open subscription and what it has received so far
+     */
+    private static LiveStatistics subscribeToStatistics(QueryGateway queryGateway, TenantDescriptor tenant) {
+        List<TenantStatistics> received = new CopyOnWriteArrayList<>();
+        AtomicReference<Subscription> subscription = new AtomicReference<>();
+        Enrollments.subscribeToStatistics(queryGateway, tenant).subscribe(new Subscriber<>() {
+            @Override
+            public void onSubscribe(Subscription s) {
+                subscription.set(s);
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(TenantStatistics statistics) {
+                received.add(statistics);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                logger.warn("Tenant [{}]'s statistics subscription failed.", tenant.tenantId(), throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                // Nothing to do: the demo cancels the subscription itself once it is done observing it.
+            }
+        });
+        holdsWithin("tenant [" + tenant.tenantId() + "] subscription active", TENANT_READY_TIMEOUT,
+                   () -> !received.isEmpty());
+        return new LiveStatistics(received, subscription);
+    }
+
+    /**
+     * Proves that recording an enrollment never reaches the other tenant's subscription, even though neither
+     * {@link ReadModelWrites} nor {@link Enrollments#subscribeToStatistics} names a tenant when emitting or
+     * subscribing. Springfield and Shelbyville each opened their own subscription before either enrolled a
+     * student, so each should have received exactly its own initial result plus one update per accepted
+     * enrollment, and no more: a leak would add the other tenant's updates on top of that.
+     *
+     * @param springfield Springfield's own open subscription
+     * @param shelbyville Shelbyville's own open subscription
+     * @return the observed subscription-query isolation outcome
+     */
+    private static SubscriptionQueryOutcome proveSubscriptionUpdateIsolation(LiveStatistics springfield,
+                                                                             LiveStatistics shelbyville) {
+        int expectedSpringfieldUpdates = SPRINGFIELD_ENROLLMENTS + 1;
+        int expectedShelbyvilleUpdates = SHELBYVILLE_ENROLLMENTS + 1;
+        holdsWithin("Springfield's subscription received " + expectedSpringfieldUpdates + " update(s)",
+                    PROJECTION_TIMEOUT, () -> springfield.received().size() >= expectedSpringfieldUpdates);
+        holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleUpdates + " update(s)",
+                    PROJECTION_TIMEOUT, () -> shelbyville.received().size() >= expectedShelbyvilleUpdates);
+
+        int springfieldUpdatesReceived = springfield.received().size();
+        int shelbyvilleUpdatesReceived = shelbyville.received().size();
+        boolean isolatedByTenant = springfieldUpdatesReceived == expectedSpringfieldUpdates
+                && shelbyvilleUpdatesReceived == expectedShelbyvilleUpdates;
+        logger.info("""
+                    Springfield's subscription received {} update(s), Shelbyville's received {}. \
+                    Neither received the other's: {}""",
+                    springfieldUpdatesReceived, shelbyvilleUpdatesReceived, isolatedByTenant);
+        return new SubscriptionQueryOutcome(springfieldUpdatesReceived, shelbyvilleUpdatesReceived, isolatedByTenant);
+    }
+
+    /**
+     * One tenant's open subscription query: every {@link TenantStatistics} update it has received so far, and
+     * the means to cancel it. The subscription itself is captured through an {@link AtomicReference} since it
+     * only arrives once the publisher calls back {@code onSubscribe}, which for these in-process publishers
+     * has already happened by the time {@link #subscribeToStatistics} returns.
+     *
+     * @param received     every update received so far, including the initial result
+     * @param subscription the subscription {@link #cancel()} cancels
+     */
+    private record LiveStatistics(List<TenantStatistics> received, AtomicReference<Subscription> subscription) {
+
+        void cancel() {
+            subscription.get().cancel();
+        }
+    }
+
+    /**
      * Reports what served the three tenants' projections, so the demo can show it was one processor rather than
      * one per tenant. Springfield and Shelbyville hold the same course identifier, so a leak between them would
      * show up as a wrong count. Counts are read fresh here rather than reused from the waits above.
@@ -401,6 +516,23 @@ public final class DemoLifecycle {
     }
 
     /**
+     * Sends a statistics query for a tenant the application does not know and confirms it is rejected. The
+     * query gateway resolves tenants against the same known tenants the command gateway does, so an
+     * unrecognized tenant is rejected on the read side exactly as it is on the write side.
+     */
+    private static boolean unknownTenantQueryIsRejected(QueryGateway queryGateway) {
+        boolean rejected;
+        try {
+            Enrollments.statistics(queryGateway, UNKNOWN);
+            rejected = false;
+        } catch (RuntimeException e) {
+            rejected = Enrollments.causedByTenantNotResolved(e);
+        }
+        logger.info("Query for an unknown tenant rejected: {}", rejected);
+        return rejected;
+    }
+
+    /**
      * Removes Shelbyville through the {@code provisioning} and confirms both of its instances were
      * closed. The per-tenant components are {@link AutoCloseable} and closed by the framework on
      * removal, so this reads their state before and after removing the tenant.
@@ -426,10 +558,12 @@ public final class DemoLifecycle {
                                                        TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                                                        TenantComponentProvider<AuditLog> auditProvider,
                                                        boolean unknownTenantRejected,
+                                                       boolean unknownTenantQueryRejected,
                                                        boolean shelbyvilleClosedOnRemoval,
                                                        EventStorageOutcome eventStorage,
                                                        SnapshottingOutcome snapshotting,
-                                                       StreamingOutcome streaming) {
+                                                       StreamingOutcome streaming,
+                                                       SubscriptionQueryOutcome subscriptionQuery) {
         // Read the totals through queries while the application is still running.
         TenantStatistics springfield = Enrollments.statistics(queryGateway, SPRINGFIELD);
         int ogdenvilleEnrollments = Enrollments.statistics(queryGateway, OGDENVILLE).totalEnrollments();
@@ -452,11 +586,13 @@ public final class DemoLifecycle {
                                springfield.auditEntries(),
                                ogdenvilleEnrollments,
                                unknownTenantRejected,
+                               unknownTenantQueryRejected,
                                shelbyvilleClosedOnRemoval,
                                allClosedOnShutdown,
                                eventStorage,
                                snapshotting,
-                               streaming);
+                               streaming,
+                               subscriptionQuery);
     }
 
     /**

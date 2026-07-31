@@ -60,6 +60,14 @@
             <artifactId>axoniq-multi-tenancy</artifactId>
         </dependency>
 
+        <!-- Subscription queries: axon-messaging depends on reactor-core only optionally, so the
+             subscription-query gateway method needs it added here explicitly. -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <version>${reactor.version}</version>
+        </dependency>
+
         <!-- Used by the Axon Server context helper to await context creation and deletion. -->
         <dependency>
             <groupId>org.awaitility</groupId>

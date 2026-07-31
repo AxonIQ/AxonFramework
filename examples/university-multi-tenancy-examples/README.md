@@ -42,8 +42,16 @@ that code. The demo shows, at the moment:
   shares one snapshot store, so this isolation is not shown.
 * **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
   tenant's own components, matched by type, with the tenant resolved from the message metadata.
+* **Tenant-aware subscription queries**: both tenants known at startup subscribe to their own statistics
+  before enrolling a single student. Recording an enrollment emits an update through a deliberately
+  tenant-blind predicate, and each subscription still only ever receives its own tenant's updates: the
+  framework isolates emission by the tenant it resolves for the update, not by anything the predicate says.
+* **Direct queries routed through the per-tenant connector** (Axon Server): this whole demo runs in one
+  process, where a query handler is always subscribed locally, so the demos explicitly turn off preferring
+  that local handler. Without it, a direct query would never reach the per-tenant connector at all.
 * **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
-  rejected, a tenant removed (closing its instances), and cleanup on shutdown.
+  rejected on both the command and the query side, a tenant removed (closing its instances), and cleanup
+  on shutdown.
 * **A configuration-time guardrail**: registering two providers for one component type is refused 
   because the framework cannot know which instance a parameter of that type should receive.
 * **Context filtering** (Axon Server): tenants are discovered from Axon Server's contexts, with the

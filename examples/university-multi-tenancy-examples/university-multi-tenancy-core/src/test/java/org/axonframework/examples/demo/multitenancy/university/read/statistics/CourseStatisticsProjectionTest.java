@@ -16,10 +16,18 @@
 
 package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
+import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,10 +49,11 @@ class CourseStatisticsProjectionTest {
     private final CourseStatisticsProjection testSubject = new CourseStatisticsProjection();
     private final CourseStatisticsStore statisticsStore = CourseStatisticsStore.inMemory("springfield");
     private final AuditLog auditLog = AuditLog.inMemory("springfield");
+    private final RecordingQueryUpdateEmitter updateEmitter = new RecordingQueryUpdateEmitter();
 
     @Test
     void projectsAnEnrollmentIntoTheStatisticsAndTheAuditLog() {
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
 
         assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 1));
         assertThat(auditLog.entries()).containsExactly("Enrolled student [alice] in course [" + COURSE_ID + "]");
@@ -52,11 +61,21 @@ class CourseStatisticsProjectionTest {
 
     @Test
     void countsEachStudentOfACourseSeparately() {
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog);
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
 
         assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 2));
         assertThat(auditLog.entries()).hasSize(2);
+    }
+
+    @Test
+    void emitsTheFreshStatisticsForEveryEnrollment() {
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+        assertThat(updateEmitter.emitted()).containsExactly(
+                new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1),
+                new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 2)), 2));
     }
 
     @Nested
@@ -66,8 +85,8 @@ class CourseStatisticsProjectionTest {
         void handlingTheSameEnrollmentTwiceLeavesTheStatisticsUnchanged() {
             StudentEnrolledInCourse event = new StudentEnrolledInCourse(COURSE_ID, "alice");
 
-            testSubject.on(event, statisticsStore, auditLog);
-            testSubject.on(event, statisticsStore, auditLog);
+            testSubject.on(event, statisticsStore, auditLog, updateEmitter);
+            testSubject.on(event, statisticsStore, auditLog, updateEmitter);
 
             assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 1));
         }
@@ -76,8 +95,8 @@ class CourseStatisticsProjectionTest {
         void handlingTheSameEnrollmentTwiceLeavesTheAuditLogUnchanged() {
             StudentEnrolledInCourse event = new StudentEnrolledInCourse(COURSE_ID, "alice");
 
-            testSubject.on(event, statisticsStore, auditLog);
-            testSubject.on(event, statisticsStore, auditLog);
+            testSubject.on(event, statisticsStore, auditLog, updateEmitter);
+            testSubject.on(event, statisticsStore, auditLog, updateEmitter);
 
             assertThat(auditLog.entries()).hasSize(1);
         }
@@ -86,9 +105,9 @@ class CourseStatisticsProjectionTest {
         void aRepeatOfOneEnrollmentDoesNotAffectAnother() {
             StudentEnrolledInCourse alice = new StudentEnrolledInCourse(COURSE_ID, "alice");
 
-            testSubject.on(alice, statisticsStore, auditLog);
-            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog);
-            testSubject.on(alice, statisticsStore, auditLog);
+            testSubject.on(alice, statisticsStore, auditLog, updateEmitter);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+            testSubject.on(alice, statisticsStore, auditLog, updateEmitter);
 
             assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 2));
             assertThat(auditLog.entries()).hasSize(2);
@@ -97,8 +116,8 @@ class CourseStatisticsProjectionTest {
 
     @Test
     void keepsTheEnrollmentsOfTwoCoursesApart() {
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog);
-        testSubject.on(new StudentEnrolledInCourse("law-200", "bob"), statisticsStore, auditLog);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+        testSubject.on(new StudentEnrolledInCourse("law-200", "bob"), statisticsStore, auditLog, updateEmitter);
 
         assertThat(statisticsStore.statistics()).containsExactlyInAnyOrder(
                 new CourseStatistics(COURSE_ID, 1),
@@ -113,11 +132,57 @@ class CourseStatisticsProjectionTest {
 
     @Test
     void theAuditLogKeepsTheOrderThingsHappenedIn() {
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog);
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
 
         assertThat(auditLog.entries()).containsExactly(
                 "Enrolled student [alice] in course [" + COURSE_ID + "]",
                 "Enrolled student [bob] in course [" + COURSE_ID + "]");
+    }
+
+    // A recording QueryUpdateEmitter rather than a mock: the interaction under test is "what was emitted",
+    // a plain state-based capture, not a call that must or must not have happened.
+    private static final class RecordingQueryUpdateEmitter implements QueryUpdateEmitter {
+
+        private final List<Object> emitted = new ArrayList<>();
+
+        List<Object> emitted() {
+            return emitted;
+        }
+
+        @Override
+        public <Q> void emit(Class<Q> queryType, Predicate<? super Q> filter, Supplier<Object> updateSupplier) {
+            emitted.add(updateSupplier.get());
+        }
+
+        @Override
+        public void emit(QualifiedName queryName, Predicate<Object> filter, Supplier<Object> updateSupplier) {
+            emitted.add(updateSupplier.get());
+        }
+
+        @Override
+        public <Q> void complete(Class<Q> queryType, Predicate<? super Q> filter) {
+            // Not exercised by these tests.
+        }
+
+        @Override
+        public void complete(QualifiedName queryName, Predicate<Object> filter) {
+            // Not exercised by these tests.
+        }
+
+        @Override
+        public <Q> void completeExceptionally(Class<Q> queryType, Predicate<? super Q> filter, Throwable cause) {
+            // Not exercised by these tests.
+        }
+
+        @Override
+        public void completeExceptionally(QualifiedName queryName, Predicate<Object> filter, Throwable cause) {
+            // Not exercised by these tests.
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            descriptor.describeProperty("emitted", emitted);
+        }
     }
 }

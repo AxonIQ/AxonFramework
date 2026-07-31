@@ -28,11 +28,14 @@ import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
+import org.awaitility.Awaitility;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.Enrollments;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseNotOpenException;
@@ -43,12 +46,18 @@ import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,6 +82,7 @@ class CourseEnrollmentCompositionTest {
 
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
+    private QueryGateway queryGateway;
     private TenantComponentProvider<CourseStatisticsStore> statisticsProvider;
     private TenantComponentProvider<AuditLog> auditProvider;
 
@@ -102,6 +112,7 @@ class CourseEnrollmentCompositionTest {
         configuration = configurer.build();
         configuration.start();
         commandGateway = configuration.getComponent(CommandGateway.class);
+        queryGateway = configuration.getComponent(QueryGateway.class);
     }
 
     @AfterEach
@@ -191,6 +202,22 @@ class CourseEnrollmentCompositionTest {
                 .containsExactly(new CourseStatistics(COURSE_ID, 1));
     }
 
+    @Test
+    void enrollingAStudentEmitsAnUpdateToTheTenantsOwnSubscription() {
+        openCourse(COURSE_ID, CAPACITY);
+        List<TenantStatistics> received = subscribeToStatistics();
+
+        enroll(COURSE_ID, "alice");
+
+        // The subscription's initial result is the tenant's statistics at subscribe time, empty here since
+        // the course was only just opened, followed by the update the enrollment's handler emits.
+        Awaitility.await("the enrollment's update is received")
+                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
+                  .untilAsserted(() -> assertThat(received).containsExactly(
+                          new TenantStatistics(List.of(), 0),
+                          new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1)));
+    }
+
     // Reads the snapshot straight from the store the configuration was given, under the same name the
     // entity's repository stores it with.
     @Nullable
@@ -217,5 +244,34 @@ class CourseEnrollmentCompositionTest {
                       .getResultMessage()
                       .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                       .join();
+    }
+
+    // Subscribes to the tenant's statistics and collects every update received, including the initial
+    // result, requesting an unbounded number of updates up front so the demo's own Subscriber shape stays
+    // out of the assertion.
+    private List<TenantStatistics> subscribeToStatistics() {
+        List<TenantStatistics> received = new CopyOnWriteArrayList<>();
+        Enrollments.subscribeToStatistics(queryGateway, TENANT).subscribe(new Subscriber<>() {
+            @Override
+            public void onSubscribe(Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(TenantStatistics statistics) {
+                received.add(statistics);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                // Not expected in this test; a missing update speaks for itself in the assertion.
+            }
+
+            @Override
+            public void onComplete() {
+                // Not expected in this test: the subscription stays open until the test ends.
+            }
+        });
+        return received;
     }
 }

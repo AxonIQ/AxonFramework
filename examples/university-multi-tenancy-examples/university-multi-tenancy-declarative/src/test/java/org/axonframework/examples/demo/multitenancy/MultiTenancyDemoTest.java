@@ -24,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Smoke test running the demo through its own entry point and asserting the observed outcome:
- * per-tenant isolation, the unknown-tenant guardrail, destroy on tenant removal, and cleanup on
- * shutdown. The configuration-time ambiguity guardrail is asserted separately.
+ * per-tenant isolation, subscription-query isolation, the unknown-tenant guardrail on both commands
+ * and queries, destroy on tenant removal, and cleanup on shutdown. The configuration-time ambiguity
+ * guardrail is asserted separately.
  */
 class MultiTenancyDemoTest {
 
@@ -45,6 +46,10 @@ class MultiTenancyDemoTest {
         assertThat(outcome.ogdenvilleEnrollments()).isEqualTo(1);
         // and a command for an unknown tenant was rejected
         assertThat(outcome.unknownTenantRejected()).isTrue();
+        // and a query for an unknown tenant was rejected too
+        assertThat(outcome.unknownTenantQueryRejected()).isTrue();
+        // and Springfield's and Shelbyville's own subscription queries each received only their own updates
+        assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
         // and removing Shelbyville closed its instances
         assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
         // and shutting down closed every remaining tenant's instances

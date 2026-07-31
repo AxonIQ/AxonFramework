@@ -59,10 +59,12 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 * **Multiple component types.** Every tenant view prints both an enrollment count and an audit-entry
   count, so both providers are injected, each matched by type.
 * **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
+* **Subscription-query isolation.** Springfield's and Shelbyville's own subscriptions, opened before
+  either enrolls a student, each receive only their own tenant's updates.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
-* **Unknown tenant rejected.** A command for a tenant the application does not know fails with a
-  `TenantNotResolvedException`, so no instance is ever built for it.
+* **Unknown tenant rejected.** A command, and then a query, for a tenant the application does not know
+  each fail with a `TenantNotResolvedException`, so no instance is ever built for it.
 * **Ambiguity rejected.** Registering two providers for one component type is refused.
 * **Cleanup.** Removing a tenant closes its instances, and shutting down closes the rest.
 
@@ -93,18 +95,31 @@ threshold, and each tenant's snapshot goes to its own snapshot store. Both tenan
 snapshot of the same course identifier, and each holds only its own tenant's student. The in-memory run
 snapshots into one store shared by every tenant, so it cannot show the isolation.
 
-It also registers a `MultiTenantProcessorRestartConfiguration`, which is the only thing about tenant-aware
+It also registers a `MultiTenantStreamingProcessorRestartConfiguration`, which is the only thing about tenant-aware
 event processing an application configures. A tenant change restarts the running processors, and this bounds how
 long each one gets to stop and start. It is registered at the value the framework already defaults to, so the
 run behaves identically and the point is only to show where the knob is.
 
-Finally, it shows tenant-aware event processing. The log reports how many streaming event processors served
+Against Axon Server, the demo also turns off preferring a locally subscribed query handler
+(`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
+where a query handler is always subscribed locally, so without this a direct query would never reach the
+per-tenant query connector at all: tenant resolution would only ever happen once handling starts, never at
+dispatch. A subscription query always routes through the connector regardless of this setting.
+
+It shows tenant-aware event processing too. The log reports how many streaming event processors served
 all three tenants, and the answer is one rather than one per tenant. The two known tenants hold the same
 course identifier, so their separate enrollment counts show that single processor keeping their read models
 apart. Ogdenville, added while the application is running, is picked up
 without any configuration change: the framework re-opens the stream to include it, and its enrollment is
 projected into its own read model. Because the read model now trails the command that appended the event,
 the run waits for the projection to catch up before reading it.
+
+Finally, it shows tenant-aware subscription queries. Both known tenants subscribe to their own statistics
+before either enrolls a student, and recording an enrollment emits an update through a deliberately
+tenant-blind predicate. The log reports how many updates each subscription received: each is exactly its
+own tenant's accepted enrollments plus its initial result, never inflated by the other tenant's activity,
+which is what proves the framework isolates emission by the tenant it resolves for the update rather than
+by the predicate. A query for an unknown tenant is rejected the same way an unknown-tenant command is.
 
 ## The same demo, wired by Spring Boot
 

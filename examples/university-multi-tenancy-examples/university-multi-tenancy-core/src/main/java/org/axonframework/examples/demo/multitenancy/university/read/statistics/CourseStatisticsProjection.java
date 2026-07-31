@@ -20,6 +20,7 @@ import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 
 /**
  * Builds every tenant's course statistics from the enrollment events of every tenant, writing each into the
@@ -30,7 +31,9 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
  * <p>
  * Which tenant an event belongs to follows from the event store it was streamed from, not from anything stored
  * in the event. The framework puts that tenant on the processing context and resolves the {@link TenantScoped}
- * parameters below from it, the same injection the command and query handlers use.
+ * parameters below from it, the same injection the command and query handlers use. The
+ * {@link QueryUpdateEmitter} parameter resolves from that same processing context, so the statistics update it
+ * emits is isolated to that tenant's own subscription queries too.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -39,16 +42,19 @@ public class CourseStatisticsProjection {
 
     /**
      * Records the enrollment in the course statistics and audit log of the tenant whose event store this
-     * event was streamed from.
+     * event was streamed from, and emits the tenant's fresh statistics to any open subscription query.
      *
      * @param event                 the enrollment event being projected
      * @param courseStatisticsStore the injected course-statistics store of the event's tenant
      * @param auditLog              the injected audit log of the event's tenant
+     * @param updateEmitter         the update emitter to notify open subscription queries through
      */
     @EventHandler
     public void on(StudentEnrolledInCourse event,
                    @TenantScoped CourseStatisticsStore courseStatisticsStore,
-                   @TenantScoped AuditLog auditLog) {
-        ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, event.courseId(), event.studentId());
+                   @TenantScoped AuditLog auditLog,
+                   QueryUpdateEmitter updateEmitter) {
+        ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, updateEmitter,
+                                         event.courseId(), event.studentId());
     }
 }
