@@ -56,6 +56,10 @@ class MultiTenancyDemoTest {
         // shares one snapshot store. CourseEnrollmentCompositionTest covers the snapshot round trip
         // against that shared store
         assertThat(outcome.snapshotting().demonstrated()).isFalse();
+        // and neither did tenant-aware event processing, which needs each tenant to have its own event store
+        // so that a streamed event can be attributed to a tenant. This run therefore registers no projection
+        // and has its command handler fill the read model instead, which is what the counts above reflect
+        assertThat(outcome.streaming().demonstrated()).isFalse();
     }
 
     @Test

@@ -26,6 +26,14 @@ or against Axon Server with the toggle, starts it, and hands the gateways and pr
 `DemoLifecycle`. In memory the event store is a single shared store; against Axon Server each tenant has
 its own.
 
+That difference decides where the statistics come from. Against Axon Server the configuration also
+registers one ordinary pooled streaming processor running `CourseStatisticsProjection`, which builds every
+tenant's statistics from the stored events. Making that processor tenant-aware takes no wiring at all: the
+declaration names no tenant, and the multi-tenancy defaults make the event store it streams from
+tenant-aware. In memory a shared event store leaves a streamed event with no tenant to attribute it to, so
+that run registers no projection and has the command handler fill the read model instead. That inline write is a
+shortcut, not the shape to copy: given per-tenant event stores, prefer the projection.
+
 The course carries a snapshot policy, so a `SnapshotStore` is needed too. In memory `UniversityConfiguration`
 registers one shared `InMemorySnapshotStore`. Against Axon Server it registers none: the multi-tenancy
 defaults own that registration so each tenant's snapshots land in its own context, and a store the
@@ -84,6 +92,19 @@ It also shows per-tenant snapshotting. Enrolling the second student crosses the 
 threshold, and each tenant's snapshot goes to its own snapshot store. Both tenants therefore hold a
 snapshot of the same course identifier, and each holds only its own tenant's student. The in-memory run
 snapshots into one store shared by every tenant, so it cannot show the isolation.
+
+It also registers a `MultiTenantStreamingProcessorRestartConfiguration`, which is the only thing about tenant-aware
+event processing an application configures. A tenant change restarts the running processors, and this bounds how
+long each one gets to stop and start. It is registered at the value the framework already defaults to, so the
+run behaves identically and the point is only to show where the knob is.
+
+Finally, it shows tenant-aware event processing. The log reports how many streaming event processors served
+all three tenants, and the answer is one rather than one per tenant. The two known tenants hold the same
+course identifier, so their separate enrollment counts show that single processor keeping their read models
+apart. Ogdenville, added while the application is running, is picked up
+without any configuration change: the framework re-opens the stream to include it, and its enrollment is
+projected into its own read model. Because the read model now trails the command that appended the event,
+the run waits for the projection to catch up before reading it.
 
 ## The same demo, wired by Spring Boot
 

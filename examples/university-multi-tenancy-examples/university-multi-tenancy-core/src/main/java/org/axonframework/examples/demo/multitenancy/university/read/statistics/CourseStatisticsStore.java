@@ -40,11 +40,18 @@ public interface CourseStatisticsStore extends AutoCloseable {
     }
 
     /**
-     * Records one enrollment for the given {@code courseId}.
+     * Records that the given {@code studentId} is enrolled in the given {@code courseId}.
+     * <p>
+     * Recording the same student in the same course again has no effect. That matters because this store is
+     * filled from a streamed event, and an event can reach a handler more than once: the stream is re-opened
+     * whenever a tenant is added or removed, and the processor cannot always tell that an event was already
+     * handled. Counting enrollments instead of remembering who is enrolled would drift upwards every time
+     * that happens.
      *
-     * @param courseId the identifier of the course to record an enrollment for
+     * @param courseId  the identifier of the course enrolled in
+     * @param studentId the identifier of the enrolled student
      */
-    void recordEnrollment(String courseId);
+    void recordEnrollment(String courseId, String studentId);
 
     /**
      * Returns the enrollment statistics per course held for this tenant.

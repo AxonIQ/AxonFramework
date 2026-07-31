@@ -17,19 +17,33 @@ application and its beans:
 ```
 org.axonframework.examples.demo.multitenancy
 +- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: the two per-tenant providers, the query handler, the course modules, and a snapshot store for when multi-tenancy is off
++- UniversityConfiguration   the beans: providers, handlers, course modules, projection, processor, stores, timeout
 +- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
 ```
 
 `UniversityConfiguration` declares one `TenantComponentProvider` bean per tenant-scoped component type,
-the statistics query handler, and the event-sourced course as two module beans, and nothing else. The
-enrollment command handler is registered with the course, so there is no separate handler bean for it.
-The starter's multi-tenancy auto-configuration picks the provider beans up, subscribes them to the tenant
-lifecycle, installs the tenant parameter resolver and interceptor, and registers the default
-auto-discovering `AxonServerTenantProvider`. The starter also registers the course module beans, so the
-course is sourced from and appended to its tenant's own event store, and snapshotted into that tenant's own
-snapshot store. There is no manual multi-tenancy wiring at all: the tenants are discovered from Axon
+the statistics query handler, the event-sourced course as two module beans, and the projection processor,
+and nothing else. The enrollment command handler is registered with the course, so there is no separate
+handler bean for it. The starter's multi-tenancy auto-configuration picks the provider beans up, subscribes
+them to the tenant lifecycle, installs the tenant parameter resolver and interceptor, and registers the
+default auto-discovering `AxonServerTenantProvider`. The starter also registers the course module beans, so
+the course is sourced from and appended to its tenant's own event store, and snapshotted into that tenant's
+own snapshot store. There is no manual multi-tenancy wiring at all: the tenants are discovered from Axon
 Server's contexts (with `_admin` filtered out), exactly as in the declarative demo's Axon Server path.
+
+The projection processor bean is worth looking at for what it does not say. It names no tenant and declares no
+processor per tenant. A single one serves every tenant, because the auto-configuration makes the event store it
+streams from tenant-aware and re-opens that stream when the set of tenants changes.
+
+One bean is there purely to show a knob: `MultiTenantStreamingProcessorRestartConfiguration` bounds how long each
+processor gets to stop and start when the set of tenants changes. The starter defaults it, so an application only
+declares it to raise it, which a deployment with slow-starting processors would.
+
+Two Spring specifics are worth knowing, since neither applies to the declarative demo. The processor is
+declared through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently
+ignored on this path. And the token store bean has to be named exactly `tokenStore`, because Spring resolves a
+processor's token store by bean name and fails hard when that name is missing, where the declarative path
+resolves by type and falls back to an in-memory store.
 
 ## Requires Axon Server
 
@@ -65,6 +79,12 @@ to capacity and rejects a further enrollment in one tenant, while still acceptin
 sourced from that tenant's own event store. It asserts the per-tenant snapshot demonstration for the same
 reason: both tenants hold their own snapshot of that same course identifier, and each holds only its own
 tenant's student.
+
+It also asserts tenant-aware event processing, which likewise needs per-tenant event stores. Exactly one
+streaming event processor served all three tenants, and each tenant's read model holds only its own
+enrollments even though two of them use the same course identifier. The tenant added while the
+application was running is projected too, which only happens if the processor re-opened its stream to
+include a tenant that did not exist when it started.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:

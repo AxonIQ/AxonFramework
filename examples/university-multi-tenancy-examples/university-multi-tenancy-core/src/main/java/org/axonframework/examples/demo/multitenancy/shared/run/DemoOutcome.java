@@ -30,6 +30,8 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *                                   against Axon Server)
  * @param snapshotting               what the per-tenant snapshotting demonstration observed (only demonstrated
  *                                   against Axon Server)
+ * @param streaming                  what the tenant-aware event-processing demonstration observed (only
+ *                                   demonstrated against Axon Server)
  */
 public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
@@ -38,6 +40,7 @@ public record DemoOutcome(int springfieldEnrollments,
                           boolean shelbyvilleClosedOnRemoval,
                           boolean allClosedOnShutdown,
                           EventStorageOutcome eventStorage,
-                          SnapshottingOutcome snapshotting) {
+                          SnapshottingOutcome snapshotting,
+                          StreamingOutcome streaming) {
 
 }
