@@ -69,11 +69,12 @@ import java.util.stream.IntStream;
  * every observation of one below waits for it to catch up. On a shared event store the command handler fills it
  * instead, and those waits return at once.
  * <p>
- * Either way, recording an enrollment is also the one place that emits an update for any of that tenant's open
- * {@link GetTenantStatistics} subscription queries, and that completes them once none of that tenant's courses
- * has a seat left, through {@link ReadModelWrites}. Subscribing, emitting, and completing all name no tenant,
- * and still each subscription only ever receives its own tenant's updates, and only the tenant that ran out of
- * seats everywhere sees its subscription completed.
+ * Where a projection runs, it is also what tells a tenant's open {@link GetTenantStatistics} subscription queries
+ * about the change, and what completes them once none of that tenant's courses has a seat left, through
+ * {@link ReadModelWrites}. Subscribing, announcing, and completing all name no tenant, and still each subscription
+ * only ever receives its own tenant's updates, and only the tenant that ran out of seats everywhere sees its
+ * subscription completed. Without a projection there is nothing to announce a change, so the in-memory run shows
+ * a subscription's initial result and nothing after it.
  * <p>
  * {@link #run} reads top to bottom as the story: tenants known at startup, their subscriptions proven isolated,
  * the course snapshotted per tenant, a tenant added at runtime, one processor serving all of them, an unknown
@@ -181,7 +182,14 @@ public final class DemoLifecycle {
             logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
             step(3, "Check what each tenant's own subscription received, and which one completed");
-            subscriptionOutcome = proveSubscriptionUpdateIsolation(springfieldSubscription, shelbyvilleSubscription);
+            if (provisioning.hasPerTenantEventStore()) {
+                subscriptionOutcome = proveSubscriptionUpdateIsolation(springfieldSubscription,
+                                                                       shelbyvilleSubscription);
+            } else {
+                subscriptionOutcome = SubscriptionQueryOutcome.notDemonstrated();
+                notOnThisBacking("no projection runs here to tell subscribers about a change, so a subscription "
+                                         + "receives its initial result and nothing after it");
+            }
         }
 
         step(4, "Show where each tenant's snapshot of the same course identifier ended up");
@@ -440,10 +448,10 @@ public final class DemoLifecycle {
                     Neither tenant received the other's updates: {}. \
                     Only the tenant that ran out of seats was completed: {}""",
                     isolatedByTenant, completionScopedToTenant);
-        return new SubscriptionQueryOutcome(springfieldTotals.size(),
-                                            shelbyvilleTotals.size(),
-                                            isolatedByTenant,
-                                            completionScopedToTenant);
+        return SubscriptionQueryOutcome.demonstratedWith(springfieldTotals.size(),
+                                                        shelbyvilleTotals.size(),
+                                                        isolatedByTenant,
+                                                        completionScopedToTenant);
     }
 
     /**

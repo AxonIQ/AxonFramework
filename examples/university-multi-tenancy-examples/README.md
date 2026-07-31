@@ -42,10 +42,12 @@ that code. The demo shows, at the moment:
   shares one snapshot store, so this isolation is not shown.
 * **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
   tenant's own components, matched by type, with the tenant resolved from the message metadata.
-* **Tenant-aware subscription queries**: both tenants known at startup subscribe to their own statistics
-  before enrolling a single student. Emitting an update, and completing the subscription once a tenant runs out
-  of seats, both use a deliberately tenant-blind predicate, and each tenant still only ever sees its own. The
-  framework scopes both to the tenant it resolves for the message, not to anything the predicate says.
+* **Tenant-aware subscription queries** (Axon Server): both tenants known at startup subscribe to their own
+  statistics before enrolling a single student. The projection tells a tenant's subscribers about a change, and
+  completes their subscription once that tenant runs out of seats, both through a deliberately tenant-blind
+  predicate, and each tenant still only ever sees its own. The framework scopes both to the tenant it resolves
+  for the event, not to anything the predicate says. In memory no projection runs, so there is nothing to
+  announce a change and a subscription only ever sees its initial result.
 * **Direct queries routed through the per-tenant connector** (Axon Server): the demos turn off preferring a
   locally subscribed handler, since in one process a direct query would otherwise never reach the connector.
   That is about what the demo can show, not about correctness: the tenant is checked before dispatch either way.

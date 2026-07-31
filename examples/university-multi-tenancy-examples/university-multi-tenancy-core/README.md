@@ -64,9 +64,10 @@ below, and a step that needs something the run does not have says so instead of 
    tenants use distinct identifiers and this isolation is not shown. Shelbyville opens its course with a seat to
    spare, so it still has room afterwards, which is what step 3 needs.
 3. Confirm neither tenant's subscription received the other's updates, and that only Springfield's, which ran
-   out of seats, was completed. Emitting and completing both use a tenant-blind predicate, so what is observed
+   out of seats, was completed. Announcing and completing both use a tenant-blind predicate, so what is observed
    here is the framework's isolation rather than the predicate's. Each subscription saw its own tenant's
-   enrollments arriving one at a time, compared as a whole sequence so a replaced update fails too.
+   enrollments arriving one at a time, compared as a whole sequence so a replaced update fails too. In memory no
+   projection runs, so nothing announces a change and this is not shown.
 4. Show where those snapshots ended up. The course carries a snapshot policy, so enrolling the second
    student snapshots it, and the rejected third enrollment sources the course from that snapshot. Against
    Axon Server both tenants end up with their own snapshot of the same course identifier, and each snapshot
@@ -105,10 +106,12 @@ event was streamed from, and the framework puts it on the processing context of 
 That makes the read model eventually consistent, so every observation of one in the lifecycle waits for the
 projection to catch up.
 
-Being the one write, `ReadModelWrites` is also the one place that tells open subscription queries about a
-change: it emits the tenant's fresh statistics per enrollment, and completes that tenant's subscriptions once
-none of its courses has a seat left. Neither predicate names a tenant, and the framework scopes both to the
-tenant of the message being handled.
+`ReadModelWrites` also holds the one place that tells open subscription queries about a change: it emits the
+tenant's fresh statistics per enrollment, and completes that tenant's subscriptions once none of its courses has
+a seat left. Only the projection calls it. Telling read-side subscribers about a change belongs to the event
+handler that projected it, not to the command handler that decided it, so the in-memory run, which has no
+projection, announces nothing. Neither predicate names a tenant, and the framework scopes both to the tenant of
+the event being handled.
 
 Two details keep the updates a subscriber sees matching the enrollments that happened. Emitting follows the
 read-model write, so a redelivered enrollment changes nothing and emits nothing. And a course counts as having

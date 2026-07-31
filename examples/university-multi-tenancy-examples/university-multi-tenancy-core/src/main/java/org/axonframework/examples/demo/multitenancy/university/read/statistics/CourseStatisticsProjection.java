@@ -55,8 +55,11 @@ public class CourseStatisticsProjection {
     }
 
     /**
-     * Records the enrollment in the course statistics and audit log of the tenant whose event store this
-     * event was streamed from, and emits the tenant's fresh statistics to any open subscription query.
+     * Records the enrollment in the course statistics and audit log of the tenant whose event store this event was
+     * streamed from, then tells that tenant's open subscription queries about it.
+     * <p>
+     * Announcing a change to subscribers is the event handler's job. A command handler decides what happened, and
+     * this is what tells the read side's listeners that it did.
      *
      * @param event                 the enrollment event being projected
      * @param courseStatisticsStore the injected course-statistics store of the event's tenant
@@ -68,7 +71,9 @@ public class CourseStatisticsProjection {
                    @TenantScoped CourseStatisticsStore courseStatisticsStore,
                    @TenantScoped AuditLog auditLog,
                    QueryUpdateEmitter updateEmitter) {
-        ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, updateEmitter,
-                                         event.courseId(), event.studentId());
+        if (ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog,
+                                            event.courseId(), event.studentId())) {
+            ReadModelWrites.announceEnrollment(updateEmitter, courseStatisticsStore, auditLog, event.courseId());
+        }
     }
 }

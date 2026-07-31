@@ -23,19 +23,16 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
-import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
-import org.axonframework.examples.demo.multitenancy.shared.messaging.StatisticsSubscription;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatistics;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
-import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseNotOpenException;
@@ -46,7 +43,6 @@ import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,12 +73,8 @@ class CourseEnrollmentCompositionTest {
 
     private final SnapshotStore snapshotStore = new InMemorySnapshotStore();
 
-    @Nullable
-    private StatisticsSubscription subscription;
-
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
-    private QueryGateway queryGateway;
     private TenantComponentProvider<CourseStatisticsStore> statisticsProvider;
     private TenantComponentProvider<AuditLog> auditProvider;
 
@@ -93,10 +85,9 @@ class CourseEnrollmentCompositionTest {
         TenantProvider tenantProvider = new DemoTenantProvider(TENANT);
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        // A backing without per-tenant event stores keeps the read model written by the command handler, so
-        // this test observes an enrollment's
-        // full effect without a projection to wait for. It is also the only shape a single shared event store
-        // supports, since an event streamed from it cannot be attributed to a tenant.
+        // A backing without per-tenant event stores keeps the read model written by the command handler, so this
+        // test observes an enrollment's full effect without a projection to wait for. It is also the only shape a
+        // single shared event store supports, since an event streamed from it cannot be attributed to a tenant.
         UniversityModuleConfiguration.configure(configurer, DemoBacking.IN_MEMORY);
         configurer.componentRegistry(registry -> {
             MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
@@ -112,14 +103,10 @@ class CourseEnrollmentCompositionTest {
         configuration = configurer.build();
         configuration.start();
         commandGateway = configuration.getComponent(CommandGateway.class);
-        queryGateway = configuration.getComponent(QueryGateway.class);
     }
 
     @AfterEach
     void tearDown() {
-        if (subscription != null) {
-            subscription.close();
-        }
         configuration.shutdown();
     }
 
@@ -205,38 +192,6 @@ class CourseEnrollmentCompositionTest {
                 .containsExactly(new CourseStatistics(COURSE_ID, 1));
     }
 
-    @Test
-    void enrollingAStudentEmitsAnUpdateToTheTenantsOwnSubscription() {
-        openCourse(COURSE_ID, CAPACITY);
-        StatisticsSubscription statistics = subscribeToStatistics();
-
-        enroll(COURSE_ID, "alice");
-
-        // The subscription's initial result is the tenant's statistics at subscribe time, empty here since
-        // the course was only just opened, followed by the update the enrollment's handler emits.
-        Awaitility.await("the enrollment's update is received")
-                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .untilAsserted(() -> assertThat(statistics.received()).containsExactly(
-                          new TenantStatistics(List.of(), 0),
-                          new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1)));
-    }
-
-    @Test
-    void fillingTheCourseCompletesTheTenantsOwnSubscription() {
-        openCourse(COURSE_ID, CAPACITY);
-        StatisticsSubscription statistics = subscribeToStatistics();
-
-        enroll(COURSE_ID, "alice");
-        enroll(COURSE_ID, "bob");
-
-        // The command handler fills the read model on this backing, and the enrollment that leaves no seats
-        // completes the subscription rather than only updating it.
-        Awaitility.await("the subscription completes once the course is full")
-                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .until(statistics::isCompleted);
-        assertThat(statistics.receivedCount()).isEqualTo(CAPACITY + 1);
-    }
-
     // Reads the snapshot straight from the store the configuration was given, under the same name the
     // entity's repository stores it with.
     @Nullable
@@ -265,9 +220,4 @@ class CourseEnrollmentCompositionTest {
                       .join();
     }
 
-    private StatisticsSubscription subscribeToStatistics() {
-        subscription = StatisticsSubscription.openFor(queryGateway, TENANT, Duration.ofSeconds(TIMEOUT_SECONDS));
-        assertThat(subscription.failure()).isEmpty();
-        return subscription;
-    }
 }

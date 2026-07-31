@@ -28,15 +28,10 @@ import java.util.Objects;
  * Recording the same enrollment twice leaves the read model as it was. See
  * {@link CourseStatisticsStore#recordEnrollment} for why that matters.
  * <p>
- * Being the one write also makes this the one place that emits the fresh statistics to any open
- * {@link GetTenantStatistics} subscription query, and the one place that completes those subscriptions once
- * none of the tenant's courses has a seat left. Neither the emit nor the complete predicate names a tenant, and
- * still only that tenant's own subscriptions are affected: the framework resolves the tenant of the message
- * being handled and scopes both to it.
- * <p>
- * Emitting follows the write rather than the event, so a redelivered enrollment that leaves the read model as it
- * was emits nothing either. A subscriber sees one update per enrollment however often its event arrives, and
- * each update carries the statistics as that enrollment left them.
+ * Telling open subscription queries about the change is separate, in {@link #announceEnrollment}, and only the
+ * projection does it. Announcing follows the write rather than the event, so a redelivered enrollment that leaves
+ * the read model as it was announces nothing either, and a subscriber sees one update per enrollment however
+ * often its event arrives.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -70,39 +65,56 @@ public final class ReadModelWrites {
     }
 
     /**
-     * Records one enrollment in the given tenant's {@code courseStatisticsStore} and {@code auditLog}, and
-     * emits the tenant's fresh statistics to any open {@link GetTenantStatistics} subscription query through
-     * the given {@code updateEmitter}. All three belong to a single tenant, so this never names one: the
-     * caller was handed the instances of the tenant whose message it is handling.
+     * Records one enrollment in the given tenant's {@code courseStatisticsStore} and {@code auditLog}, reporting
+     * whether it was new to them. Both belong to a single tenant, so this never names one: the caller was handed
+     * the instances of the tenant whose message it is handling.
      * <p>
-     * Once that enrollment leaves every one of the tenant's courses with no seats left, its open subscriptions
-     * are completed as well: there is no further enrollment to report, so there is no further update to expect.
-     * A subscription reports the whole tenant, so one full course is not enough to complete it.
-     * Completing after the emit is what lets the subscriber still see the update that filled the course.
-     * <p>
-     * An enrollment this store already held changes nothing, so it emits nothing and completes nothing.
+     * An enrollment they already held changes nothing, and reports {@code false}.
      *
      * @param courseStatisticsStore the course-statistics store of the tenant the enrollment belongs to
      * @param auditLog              the audit log of the tenant the enrollment belongs to
-     * @param updateEmitter         the update emitter to notify open subscription queries through
      * @param courseId              the identifier of the course enrolled in
      * @param studentId             the identifier of the enrolled student
+     * @return {@code true} if this enrollment was newly recorded, {@code false} if it was already held
      */
-    public static void recordEnrollment(CourseStatisticsStore courseStatisticsStore,
-                                        AuditLog auditLog,
-                                        QueryUpdateEmitter updateEmitter,
-                                        String courseId,
-                                        String studentId) {
+    public static boolean recordEnrollment(CourseStatisticsStore courseStatisticsStore,
+                                           AuditLog auditLog,
+                                           String courseId,
+                                           String studentId) {
         Objects.requireNonNull(courseStatisticsStore, "The course-statistics store must not be null");
         Objects.requireNonNull(auditLog, "The audit log must not be null");
-        Objects.requireNonNull(updateEmitter, "The update emitter must not be null");
         Objects.requireNonNull(courseId, "The course id must not be null");
         Objects.requireNonNull(studentId, "The student id must not be null");
         if (!courseStatisticsStore.recordEnrollment(courseId, studentId)) {
-            // Already held, so there is nothing to audit and nothing fresh to report either.
-            return;
+            return false;
         }
         auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
+        return true;
+    }
+
+    /**
+     * Tells any open {@link GetTenantStatistics} subscription query of this tenant that its statistics changed, and
+     * completes those subscriptions once none of the tenant's courses has a seat left.
+     * <p>
+     * Neither the emit nor the complete predicate names a tenant, and still only that tenant's own subscriptions
+     * are affected: the framework resolves the tenant of the event being handled and scopes both to it.
+     * <p>
+     * Announcing belongs with the event handler that projected the change, not with the command handler that
+     * decided it. A command handler has no business telling read-side subscribers anything.
+     *
+     * @param updateEmitter         the update emitter to notify open subscription queries through
+     * @param courseStatisticsStore the course-statistics store of the tenant the enrollment belongs to
+     * @param auditLog              the audit log of the tenant the enrollment belongs to
+     * @param courseId              the identifier of the course enrolled in
+     */
+    public static void announceEnrollment(QueryUpdateEmitter updateEmitter,
+                                          CourseStatisticsStore courseStatisticsStore,
+                                          AuditLog auditLog,
+                                          String courseId) {
+        Objects.requireNonNull(updateEmitter, "The update emitter must not be null");
+        Objects.requireNonNull(courseStatisticsStore, "The course-statistics store must not be null");
+        Objects.requireNonNull(auditLog, "The audit log must not be null");
+        Objects.requireNonNull(courseId, "The course id must not be null");
         // Read the statistics now and emit that value. The supplier overload is invoked later, by which time a
         // batch of enrollments would report its end state for every update in the batch.
         TenantStatistics freshStatistics = new TenantStatistics(courseStatisticsStore.statistics(),
@@ -112,4 +124,5 @@ public final class ReadModelWrites {
             updateEmitter.complete(GetTenantStatistics.class, query -> true);
         }
     }
+
 }

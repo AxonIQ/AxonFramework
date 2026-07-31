@@ -59,10 +59,9 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 * **Multiple component types.** Every tenant view prints both an enrollment count and an audit-entry
   count, so both providers are injected, each matched by type.
 * **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
-* **Subscription-query isolation.** Springfield's and Shelbyville's own subscriptions, opened before
-  either enrolls a student, each receive only their own tenant's updates.
-* **Subscription completion per tenant.** Springfield runs out of seats, so its own subscription is
-  completed, while Shelbyville keeps a free seat and its subscription stays open.
+* **Subscription queries reach the right tenant.** Each known tenant subscribes to its own statistics and
+  receives its own initial result. Updates after that come from the projection, which only the Axon Server run
+  has, so isolation of updates and completion is shown there rather than here.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
 * **Unknown tenant rejected.** A command, and then a query, for a tenant the application does not know
@@ -117,12 +116,11 @@ without any configuration change: the framework re-opens the stream to include i
 projected into its own read model. Because the read model now trails the command that appended the event,
 the run waits for the projection to catch up before reading it.
 
-Finally, it shows tenant-aware subscription queries. Both known tenants subscribe before either enrolls a
-student, and the log reports the totals each subscription saw: its own tenant's enrollments, arriving one at a
-time. Springfield then runs out of seats and its subscription completes, while Shelbyville opened its course
-with a seat to spare and stays open. Emitting and completing both use a tenant-blind predicate, so that
-separation is the framework's. A query is rejected the same way a command is when its tenant is unknown,
-removed, or not named at all.
+Finally, both known tenants open a subscription query on their own statistics and each receives its own initial
+result, so the subscription is routed by tenant like any other query. What a subscriber hears after that comes
+from the projection, and this run has none, so the log says the step is not shown here and the Axon Server run
+is where update isolation and completion are proven. A query is rejected the same way a command is when its
+tenant is unknown, removed, or not named at all.
 
 ## The same demo, wired by Spring Boot
 

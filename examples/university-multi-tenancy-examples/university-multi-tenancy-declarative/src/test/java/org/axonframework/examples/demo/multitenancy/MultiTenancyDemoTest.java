@@ -16,7 +16,6 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
-import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.junit.jupiter.api.Test;
@@ -53,14 +52,6 @@ class MultiTenancyDemoTest {
         assertThat(outcome.queryRejections().rejectedForMissingTenant()).isTrue();
         // and Shelbyville stopped being queryable once its tenant was removed
         assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
-        // and Springfield's and Shelbyville's own subscription queries each received only their own updates
-        assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
-        // each seeing its own initial result plus one update per enrollment, and nothing more
-        int expectedUpdates = DemoLifecycle.STUDENTS_PER_KNOWN_TENANT + 1;
-        assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived()).isEqualTo(expectedUpdates);
-        assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived()).isEqualTo(expectedUpdates);
-        // and filling Springfield's course completed only its own subscription, leaving Shelbyville's open
-        assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();
         // and removing Shelbyville closed its instances
         assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
         // and shutting down closed every remaining tenant's instances
@@ -76,6 +67,9 @@ class MultiTenancyDemoTest {
         // so that a streamed event can be attributed to a tenant. This run therefore registers no projection
         // and has its command handler fill the read model instead, which is what the counts above reflect
         assertThat(outcome.streaming().demonstrated()).isFalse();
+        // and subscription updates were not shown either, since telling a subscriber about a change is the
+        // projection's job and no projection runs here
+        assertThat(outcome.subscriptionQuery().demonstrated()).isFalse();
     }
 
     @Test

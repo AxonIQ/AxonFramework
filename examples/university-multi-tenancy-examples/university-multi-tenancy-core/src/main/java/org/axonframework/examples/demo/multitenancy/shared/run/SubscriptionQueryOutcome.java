@@ -17,26 +17,55 @@
 package org.axonframework.examples.demo.multitenancy.shared.run;
 
 /**
- * What the tenant-aware subscription-query demonstration observed. Unlike per-tenant event storage,
- * snapshotting, and event processing, this holds identically in memory and against Axon Server, so there is
- * no not-demonstrated case: both tenants known at startup subscribe to their own statistics before either
- * enrolls a student.
+ * What the tenant-aware subscription-query demonstration observed. It needs each tenant to have its own event
+ * store, since only then does a projection run to tell subscribers about a change, so it only runs on the Axon
+ * Server paths. In memory it is {@link #notDemonstrated() not demonstrated}.
  *
- * @param springfieldUpdatesReceived the number of updates Springfield's own subscription received, including
- *                                   its initial result
- * @param shelbyvilleUpdatesReceived the number of updates Shelbyville's own subscription received, including
- *                                   its initial result
- * @param isolatedByTenant           whether each subscription saw exactly its own tenant's enrollments
- *                                   arriving one at a time, and so none of the other tenant's updates
+ * @param demonstrated               whether the subscription-query demonstration ran (only against Axon Server)
+ * @param springfieldUpdatesReceived the number of updates Springfield's own subscription received, including its
+ *                                   initial result
+ * @param shelbyvilleUpdatesReceived the number of updates Shelbyville's own subscription received, including its
+ *                                   initial result
+ * @param isolatedByTenant           whether each subscription saw exactly its own tenant's enrollments arriving
+ *                                   one at a time, and so none of the other tenant's updates
  * @param completionScopedToTenant   whether Springfield running out of seats completed only Springfield's
  *                                   subscription, leaving Shelbyville's open on its own free seat
  * @author Jakob Hatzl
  * @author Laura Devriendt
  * @since 5.3.0
  */
-public record SubscriptionQueryOutcome(int springfieldUpdatesReceived,
+public record SubscriptionQueryOutcome(boolean demonstrated,
+                                       int springfieldUpdatesReceived,
                                        int shelbyvilleUpdatesReceived,
                                        boolean isolatedByTenant,
                                        boolean completionScopedToTenant) {
 
+    /**
+     * The outcome of a run that exercised tenant-aware subscription queries, carrying what it observed.
+     *
+     * @param springfieldUpdatesReceived the updates Springfield's own subscription received
+     * @param shelbyvilleUpdatesReceived the updates Shelbyville's own subscription received
+     * @param isolatedByTenant           whether neither subscription received the other tenant's updates
+     * @param completionScopedToTenant   whether only the tenant out of seats had its subscription completed
+     * @return an outcome marked as demonstrated
+     */
+    public static SubscriptionQueryOutcome demonstratedWith(int springfieldUpdatesReceived,
+                                                            int shelbyvilleUpdatesReceived,
+                                                            boolean isolatedByTenant,
+                                                            boolean completionScopedToTenant) {
+        return new SubscriptionQueryOutcome(true,
+                                            springfieldUpdatesReceived,
+                                            shelbyvilleUpdatesReceived,
+                                            isolatedByTenant,
+                                            completionScopedToTenant);
+    }
+
+    /**
+     * The outcome of a run that did not exercise tenant-aware subscription queries, such as the in-memory demo.
+     *
+     * @return an outcome marked as not demonstrated
+     */
+    public static SubscriptionQueryOutcome notDemonstrated() {
+        return new SubscriptionQueryOutcome(false, 0, 0, false, false);
+    }
 }

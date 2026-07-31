@@ -207,6 +207,7 @@ class MultiTenancyDemoIT {
             assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
             // and Springfield's and Shelbyville's own subscription queries each received only their own
             // updates, routed through their own tenant's Axon Server connection
+            assertThat(outcome.subscriptionQuery().demonstrated()).isTrue();
             assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
             // each seeing its own initial result plus one update per enrollment, and nothing more
             int expectedUpdates = DemoLifecycle.STUDENTS_PER_KNOWN_TENANT + 1;
