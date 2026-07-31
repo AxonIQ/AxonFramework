@@ -79,7 +79,7 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
 
         InjectEntity annotation = parameter.getAnnotation(InjectEntity.class);
         boolean isOptional = Optional.class.equals(parameter.getType());
-        boolean isNullable = AnnotationUtils.hasAnnotationNamed(parameter.getAnnotatedType(), "nullable");
+        boolean isNullable = AnnotationUtils.hasAnnotationNamed(parameter, "nullable");
 
         EntityTypeInfo entityTypeInfo = getEntityTypeInfo(isOptional, parameter, executable);
         EntityIdResolver<?> entityIdResolver = getEntityIdResolver(annotation);

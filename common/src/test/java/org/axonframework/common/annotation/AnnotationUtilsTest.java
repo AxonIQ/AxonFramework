@@ -452,6 +452,18 @@ class AnnotationUtilsTest {
             assertThat(hasAnnotationNamed(parameter.getAnnotatedType(), "Nullable")).isFalse();
         }
 
+        @Test
+        void detectsTypeUseAnnotationWhenPassingParameterItself() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedTest.class.getDeclaredMethod(
+                    "methodWithTypeUseAnnotatedParameter", String.class
+            );
+            Parameter parameter = method.getParameters()[0];
+
+            // Passing the Parameter itself (declaration position) must also find a TYPE_USE-only annotation,
+            // since hasAnnotationNamed additionally inspects Parameter#getAnnotatedType() for Parameter elements.
+            assertThat(hasAnnotationNamed(parameter, "Nullable")).isTrue();
+        }
+
         @CustomMarker
         void annotatedMethod() {
         }
@@ -473,6 +485,32 @@ class AnnotationUtilsTest {
 
         @Retention(RetentionPolicy.RUNTIME)
         @Target(ElementType.TYPE_USE)
+        @interface Nullable {
+
+        }
+    }
+
+    @Nested
+    class HasAnnotationNamedOnDeclarationOnlyParameterTest {
+
+        @Test
+        void detectsDeclarationOnlyAnnotationOnParameter() throws NoSuchMethodException {
+            Method method = HasAnnotationNamedOnDeclarationOnlyParameterTest.class.getDeclaredMethod(
+                    "methodWithDeclarationOnlyAnnotatedParameter", String.class
+            );
+            Parameter parameter = method.getParameters()[0];
+
+            // JSR-305's javax.annotation.Nullable is declaration-only (no TYPE_USE target), so it is only visible
+            // on the Parameter itself, never on Parameter#getAnnotatedType().
+            assertThat(hasAnnotationNamed(parameter, "Nullable")).isTrue();
+            assertThat(hasAnnotationNamed(parameter.getAnnotatedType(), "Nullable")).isFalse();
+        }
+
+        void methodWithDeclarationOnlyAnnotatedParameter(@Nullable String value) {
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.PARAMETER)
         @interface Nullable {
 
         }
