@@ -41,10 +41,9 @@ declares it to raise it, which a deployment with slow-starting processors would.
 
 Another bean turns off preferring a locally subscribed query handler
 (`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
-where a query handler is always subscribed locally, so without this a direct query is answered locally and
-never reaches the per-tenant query connector, leaving the routing unshown. Correctness does not depend on it:
-the tenant is resolved and checked before the query is dispatched either way. A subscription query always
-routes through the connector regardless of this setting.
+where a query handler is always subscribed locally, so without this a direct query never reaches the per-tenant
+query connector, leaving that routing unshown. Correctness does not depend on it: the tenant is checked before
+dispatch either way. A subscription query always routes through the connector regardless.
 
 Two Spring specifics are worth knowing, since neither applies to the declarative demo. The processor is
 declared through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently
@@ -93,13 +92,11 @@ enrollments even though two of them use the same course identifier. The tenant a
 application was running is projected too, which only happens if the processor re-opened its stream to
 include a tenant that did not exist when it started.
 
-It also asserts tenant-aware subscription queries and the query-side guardrails: both known tenants' own
-subscriptions received only their own updates, and only Springfield's, which ran out of seats, was completed,
-while Shelbyville's kept a free seat and stayed open. A query for an unknown tenant is rejected the same way
-an unknown-tenant command is, and so are a query naming no tenant at all and a query for a tenant that has
-been removed. Being the Axon Server path, with `preferLocalQueryHandler(false)` set, this is also where a
-direct query is proven to actually route through the per-tenant connector rather than being served from a
-locally subscribed handler.
+It also asserts tenant-aware subscription queries and the query-side guardrails: each tenant's subscription
+received only its own updates, and only Springfield's, which ran out of seats, completed. A query is rejected
+when its tenant is unknown, removed, or not named. Being the Axon Server path with
+`preferLocalQueryHandler(false)` set, this is also where a direct query is proven to route through the
+per-tenant connector rather than being served locally.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:

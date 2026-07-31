@@ -43,24 +43,15 @@ that code. The demo shows, at the moment:
 * **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
   tenant's own components, matched by type, with the tenant resolved from the message metadata.
 * **Tenant-aware subscription queries**: both tenants known at startup subscribe to their own statistics
-  before enrolling a single student. Recording an enrollment emits an update through a deliberately
-  tenant-blind predicate, and each subscription still only ever receives its own tenant's updates: the
-  framework isolates emission by the tenant it resolves for the update, not by anything the predicate says.
-* **Tenant-scoped subscription completion**: completing a subscription is scoped the same way. Springfield
-  runs out of seats, so its own subscriptions are completed, through an equally tenant-blind predicate, while
-  Shelbyville keeps a free seat and its subscription stays open. One tenant running out of things to report
-  says nothing about another's.
-* **Direct queries routed through the per-tenant connector** (Axon Server): this whole demo runs in one
-  process, where a query handler is always subscribed locally, so the demos explicitly turn off preferring
-  that local handler. Without it a direct query is answered locally and never reaches the per-tenant connector,
-  so the routing would go unshown. The tenant is resolved and checked before dispatch either way, so this is
-  about what the demo can demonstrate, not about correctness.
-* **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
-  rejected on both the command and the query side, a tenant removed (closing its instances and no longer
-  answering queries), and cleanup on shutdown.
-* **A query has to name a tenant**: a query carrying no tenant metadata at all is rejected at dispatch, since
-  a tenant is what decides which components answer it. A tenant that is no longer served is refused the same
-  way one that never existed is.
+  before enrolling a single student. Emitting an update, and completing the subscription once a tenant runs out
+  of seats, both use a deliberately tenant-blind predicate, and each tenant still only ever sees its own. The
+  framework scopes both to the tenant it resolves for the message, not to anything the predicate says.
+* **Direct queries routed through the per-tenant connector** (Axon Server): the demos turn off preferring a
+  locally subscribed handler, since in one process a direct query would otherwise never reach the connector.
+  That is about what the demo can show, not about correctness: the tenant is checked before dispatch either way.
+* **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, a tenant removed (closing its
+  instances), and cleanup on shutdown. A command or query whose tenant the framework cannot resolve is rejected
+  before it reaches a handler, whether that tenant is unknown, removed, or not named at all.
 * **A configuration-time guardrail**: registering two providers for one component type is refused 
   because the framework cannot know which instance a parameter of that type should receive.
 * **Context filtering** (Axon Server): tenants are discovered from Axon Server's contexts, with the

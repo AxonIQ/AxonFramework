@@ -56,17 +56,12 @@ application:
    known tenants open a course under the same identifier: Springfield fills it to capacity and a further
    enrollment is rejected as full, while the same identifier still accepts an enrollment in the other tenant,
    which proves each tenant's events live in its own store. In memory there is one shared event store, so the
-   tenants use distinct identifiers and this isolation is not shown. Shelbyville opens its course with one
-   seat more than it fills, so its course still has room afterwards, which is what step 3 needs.
-3. Confirm neither tenant's subscription received the other's updates, and that only Springfield's was
-   completed. Recording an enrollment emits an update, and completes the tenant's subscriptions once none of
-   that tenant's courses has a seat left, both through a deliberately tenant-blind predicate. That is what proves the
-   isolation is enforced by the framework rather than by the predicate. Each subscription saw exactly its own
-   tenant's enrollments arriving one at a time and no more, compared as the whole sequence rather than only
-   its length, so a leak that replaced an update instead of adding one would not pass either. That comparison
-   is exact rather than duplicate-tolerant because emitting follows the read-model write, so a redelivered
-   enrollment adds no update. Springfield's
-   course filled, so its subscription was completed, while Shelbyville's kept a free seat and stayed open.
+   tenants use distinct identifiers and this isolation is not shown. Shelbyville opens its course with a seat to
+   spare, so it still has room afterwards, which is what step 3 needs.
+3. Confirm neither tenant's subscription received the other's updates, and that only Springfield's, which ran
+   out of seats, was completed. Emitting and completing both use a tenant-blind predicate, so what is observed
+   here is the framework's isolation rather than the predicate's. Each subscription saw its own tenant's
+   enrollments arriving one at a time, compared as a whole sequence so a replaced update fails too.
 4. Show where those snapshots ended up. The course carries a snapshot policy, so enrolling the second
    student snapshots it, and the rejected third enrollment sources the course from that snapshot. Against
    Axon Server both tenants end up with their own snapshot of the same course identifier, and each snapshot
@@ -106,21 +101,15 @@ That makes the read model eventually consistent, so every observation of one in 
 projection to catch up.
 
 Being the one write, `ReadModelWrites` is also the one place that tells open subscription queries about a
-change: it emits the tenant's fresh statistics for every enrollment, and completes that tenant's subscriptions
-once none of its courses has a seat left. A subscription reports the whole tenant, so one full course is not
-enough to complete it, and a course that was opened but has nobody enrolled yet still counts as one with
-seats left. Neither the emit nor the complete predicate names a tenant, and both are still scoped to one,
-because the framework resolves the tenant of the message being handled.
+change: it emits the tenant's fresh statistics per enrollment, and completes that tenant's subscriptions once
+none of its courses has a seat left. Neither predicate names a tenant, and the framework scopes both to the
+tenant of the message being handled.
 
-Knowing when a course has no seats left is why the read model holds each course's capacity. On the Axon Server
-path the projection takes it from
-`CourseOpened`, the only event carrying it. On the shared in-memory store the enroll-student handler takes it
-from the course it already sourced, so the open-course slice knows nothing about the read model.
-
-Emitting follows the write rather than the event. An enrollment the read model already held changes nothing, so
-it emits nothing, which is what keeps one enrollment worth one update however often its event arrives. Without
-that, the idempotent read model below would still be correct while every redelivery pushed a duplicate update
-at every subscriber.
+Two details keep the updates a subscriber sees matching the enrollments that happened. Emitting follows the
+read-model write, so a redelivered enrollment changes nothing and emits nothing. And a course counts as having
+seats until the read model both knows its capacity and sees it filled, so neither an untracked course nor one
+nobody enrolled in yet can complete a subscription early. That capacity comes from `CourseOpened` on the
+projection path, and from the course the enroll-student handler already sourced on the shared in-memory store.
 
 ### The projection is idempotent, on purpose
 

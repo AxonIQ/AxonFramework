@@ -106,9 +106,8 @@ run behaves identically and the point is only to show where the knob is.
 Against Axon Server, the demo also turns off preferring a locally subscribed query handler
 (`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
 where a query handler is always subscribed locally, so without this a direct query would never reach the
-per-tenant query connector at all, so the demo would not show the routing it is about. Correctness does not
-depend on it: the tenant is resolved and checked before the query is dispatched either way. A subscription
-query always routes through the connector regardless of this setting.
+per-tenant query connector at all, leaving that routing unshown. Correctness does not depend on it: the tenant
+is checked before dispatch either way. A subscription query always routes through the connector regardless.
 
 It shows tenant-aware event processing too. The log reports how many streaming event processors served
 all three tenants, and the answer is one rather than one per tenant. The two known tenants hold the same
@@ -118,17 +117,12 @@ without any configuration change: the framework re-opens the stream to include i
 projected into its own read model. Because the read model now trails the command that appended the event,
 the run waits for the projection to catch up before reading it.
 
-Finally, it shows tenant-aware subscription queries. Both known tenants subscribe to their own statistics
-before either enrolls a student, and recording an enrollment emits an update through a deliberately
-tenant-blind predicate. The log reports the enrollment totals each subscription saw: exactly its own tenant's
-enrollments arriving one at a time, never inflated by the other tenant's activity, which is what proves the
-framework isolates emission by the tenant it resolves for the update rather than by the predicate.
-
-Completion is scoped the same way, through an equally tenant-blind predicate. Springfield runs out of seats, so
-its own subscription is completed, while Shelbyville opened its course with a seat to spare and its subscription
-stays open. A subscription reports the whole tenant, so it completes only once none of that tenant's courses has
-a seat left. A query for an unknown tenant is rejected the same way an unknown-tenant command is,
-and so are a query naming no tenant at all and a query for a tenant that has been removed.
+Finally, it shows tenant-aware subscription queries. Both known tenants subscribe before either enrolls a
+student, and the log reports the totals each subscription saw: its own tenant's enrollments, arriving one at a
+time. Springfield then runs out of seats and its subscription completes, while Shelbyville opened its course
+with a seat to spare and stays open. Emitting and completing both use a tenant-blind predicate, so that
+separation is the framework's. A query is rejected the same way a command is when its tenant is unknown,
+removed, or not named at all.
 
 ## The same demo, wired by Spring Boot
 
