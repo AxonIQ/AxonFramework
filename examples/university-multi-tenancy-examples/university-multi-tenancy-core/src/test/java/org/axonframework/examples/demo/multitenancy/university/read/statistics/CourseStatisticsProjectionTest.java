@@ -81,8 +81,7 @@ class CourseStatisticsProjectionTest {
             testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
             testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
 
-            // Both enrollments emit, and only the one that filled the course completes, so a subscriber still
-            // sees the update that filled it.
+            // Both enrollments emit, and only the one that filled the course completes.
             assertThat(updateEmitter.emitted()).hasSize(2);
             assertThat(updateEmitter.completions()).isEqualTo(1);
         }
@@ -103,8 +102,7 @@ class CourseStatisticsProjectionTest {
             testSubject.on(new CourseOpened(COURSE_ID, 3), statisticsStore);
             testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
 
-            // The same event again. The read model is unchanged, so there is nothing fresh to report and a
-            // subscriber must not see a second update for one enrollment.
+            // The same event again. The read model is unchanged, so there is nothing fresh to report.
             testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
 
             assertThat(updateEmitter.emitted()).hasSize(1);
@@ -207,9 +205,8 @@ class CourseStatisticsProjectionTest {
     // a plain state-based capture, not a call that must or must not have happened.
     private static final class RecordingQueryUpdateEmitter implements QueryUpdateEmitter {
 
-        // The suppliers rather than their outcomes, resolved only when the test asks what was emitted. An
-        // emitter that is handed a supplier reading live state would then report the final state for every
-        // update, which is exactly what ReadModelWrites must not do.
+        // The suppliers, resolved only when the test asks what was emitted, so an update built from live state
+        // would show up as the final state rather than the state its own enrollment left behind.
         private final List<Supplier<Object>> emitted = new ArrayList<>();
         private int completions;
 

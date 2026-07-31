@@ -99,11 +99,8 @@ public final class DemoLifecycle {
     // same identifier to show the two event stores are isolated.
     private static final String SHARED_COURSE_ID = "cs-101";
     /**
-     * How many students each tenant known at startup enrolls. Fixed by the demo's enrollment step, which sends
-     * exactly this many, so the course capacities are expressed against it rather than the other way round.
-     * <p>
-     * Public because the demos' tests derive the number of subscription updates a tenant should receive from it:
-     * its initial result plus one update per enrollment.
+     * How many students each tenant known at startup enrolls. A subscription to that tenant's statistics receives
+     * one update per enrollment, on top of its initial result.
      */
     public static final int STUDENTS_PER_KNOWN_TENANT = 2;
     // Springfield offers exactly the seats it fills, so its course ends up full and a further enrollment is
@@ -282,8 +279,7 @@ public final class DemoLifecycle {
      * command waits until the tenant accepts commands, and enrolling the second student crosses the course's
      * snapshot threshold.
      * <p>
-     * Whether that leaves the course full is up to the {@code capacity} the caller opens it with, which is
-     * what lets one tenant end up with a full course and another with room to spare.
+     * Whether that leaves the course full is up to the {@code capacity} it is opened with.
      *
      * @param commandGateway the gateway enrollments are sent on
      * @param tenant         the tenant whose course to open
@@ -376,16 +372,12 @@ public final class DemoLifecycle {
     }
 
     /**
-     * Subscribes to the given {@code tenant}'s statistics and collects every update the subscription
-     * receives, including its initial result, so {@link #proveSubscriptionUpdateIsolation} can inspect what
-     * arrived without anything leaking from the other tenant's own subscription.
+     * Subscribes to the given {@code tenant}'s statistics and collects every update it receives, including its
+     * initial result.
      * <p>
-     * Returns only once that initial result has arrived. In memory, registering a subscription query is
-     * synchronous, so this returns at once. Against Axon Server it is a round trip over the tenant's own
-     * connection, and the registration for future updates completes before the initial result does, the same
-     * ordering the local query bus uses. An enrollment sent before this returns could otherwise race that
-     * registration and never reach this subscription, which would misreport as a leak rather than as what it
-     * is: an update missed because nothing was listening for it yet.
+     * Returns only once that initial result has arrived. A subscription query registers for updates before it
+     * delivers its initial result, so waiting for that result is how a caller knows an update it triggers next
+     * will reach the subscription.
      *
      * @param queryGateway the gateway the subscription query is sent on
      * @param tenant       the tenant to subscribe to
@@ -395,8 +387,7 @@ public final class DemoLifecycle {
                                                                 TenantDescriptor tenant) {
         List<TenantStatistics> received = new CopyOnWriteArrayList<>();
         AtomicBoolean completed = new AtomicBoolean();
-        // Completion is recorded rather than ignored: whether this tenant's subscription was completed, while
-        // the other tenant's was not, is what shows completion is scoped to one tenant.
+        // Recorded, since which tenant's subscription completes is what the demo observes.
         Disposable subscription = Flux.from(Enrollments.subscribeToStatistics(queryGateway, tenant))
                                       .doOnComplete(() -> completed.set(true))
                                       .subscribe(received::add,
@@ -406,8 +397,7 @@ public final class DemoLifecycle {
                                      TENANT_READY_TIMEOUT,
                                      () -> !received.isEmpty());
         if (!active) {
-            // Said loudly, so a run whose updates never arrive says the subscription never started rather than
-            // leaving the isolation check below to report it as a leak.
+            // Said loudly, so a run whose updates never arrive says the subscription never started.
             logger.warn("""
                         Tenant [{}]'s statistics subscription produced no initial result within {}. \
                         Anything observed on it below is unreliable.""",
@@ -417,15 +407,9 @@ public final class DemoLifecycle {
     }
 
     /**
-     * Proves that recording an enrollment never reaches the other tenant's subscription, even though neither
-     * {@link ReadModelWrites} nor {@link Enrollments#subscribeToStatistics} names a tenant when emitting or
-     * subscribing. Springfield and Shelbyville each opened their own subscription before either enrolled a
-     * student, so each should have received exactly its own initial result plus one update per accepted
-     * enrollment, and no more: a leak would add the other tenant's updates on top of that.
-     * <p>
-     * Springfield also ran out of seats, so its subscriptions were completed, while Shelbyville kept a free seat
-     * and its subscription stayed open. Completing names no tenant either, so that difference is what
-     * shows the framework scopes completion to one tenant as well as emission.
+     * Proves that recording an enrollment never reaches the other tenant's subscription, and that only the tenant
+     * which ran out of seats has its subscription completed, even though neither {@link ReadModelWrites} nor
+     * {@link Enrollments#subscribeToStatistics} names a tenant when emitting, completing, or subscribing.
      *
      * @param springfield the open subscription of Springfield, whose course fills
      * @param shelbyville the open subscription of Shelbyville, whose course keeps a free seat
@@ -443,13 +427,12 @@ public final class DemoLifecycle {
                 holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleTotals.size() + " update(s)",
                             PROJECTION_TIMEOUT,
                             () -> shelbyville.receivedCount() >= expectedShelbyvilleTotals.size());
-        // Springfield ran out of seats, so its subscription is completed. Awaited, since the completion trails the
-        // update that filled it, and awaited last, so a leak into Shelbyville must have been emitted before it.
+        // Springfield ran out of seats, so its subscription is completed. Awaited last, since it is the final
+        // signal Springfield produces.
         boolean springfieldCompleted =
                 holdsWithin("Springfield's subscription completed", PROJECTION_TIMEOUT, springfield::isCompleted);
         if (!springfieldArrived || !shelbyvilleArrived || !springfieldCompleted) {
-            // Said loudly, so a run reporting no isolation says which observation never arrived rather than
-            // reading as a leak between tenants.
+            // Said loudly, so a run reporting no isolation says which observation never arrived.
             logger.warn("""
                         Not every subscription observation arrived within {}. Springfield's updates: {}, \
                         Shelbyville's updates: {}, Springfield completed: {}. \
@@ -459,8 +442,6 @@ public final class DemoLifecycle {
 
         List<Integer> springfieldTotals = springfield.receivedTotals();
         List<Integer> shelbyvilleTotals = shelbyville.receivedTotals();
-        // Comparing the whole sequence rather than only its length also catches a leak that replaces an update
-        // instead of adding one, which a count on its own would read as correct.
         boolean isolatedByTenant = springfieldTotals.equals(expectedSpringfieldTotals)
                 && shelbyvilleTotals.equals(expectedShelbyvilleTotals);
         boolean completionScopedToTenant = springfieldCompleted && !shelbyville.isCompleted();
@@ -620,7 +601,7 @@ public final class DemoLifecycle {
      * not be resolved, so that no instance is ever built for it.
      * <p>
      * The command and query sides resolve tenants against the same known tenants, so a refusal looks identical
-     * whichever gateway raised it, which is why all three unknown-tenant checks share this.
+     * whichever gateway raised it.
      *
      * @param description names what was dispatched, so the log says which refusal was observed
      * @param dispatch    the dispatch expected to be refused
@@ -634,11 +615,8 @@ public final class DemoLifecycle {
 
     /**
      * Sends the given {@code dispatch} and returns whether the framework refused it because its tenant could not
-     * be resolved, without reporting the outcome. Suitable for a caller that polls, where reporting every
-     * attempt would read as repeated failure.
-     * <p>
-     * A failure for any other reason is reported, since it says something other than "the tenant was refused"
-     * and would otherwise be indistinguishable from it.
+     * be resolved, without reporting the outcome. A failure for any other reason is logged instead, since it
+     * means something other than the tenant being refused.
      *
      * @param description names what was dispatched, so a failure says which dispatch it belonged to
      * @param dispatch    the dispatch expected to be refused
@@ -652,8 +630,6 @@ public final class DemoLifecycle {
             if (Enrollments.causedByTenantNotResolved(failure)) {
                 return true;
             }
-            // Said loudly, so a failure for some other reason does not read as the framework declining to reject
-            // an unresolved tenant.
             logger.warn("The {} failed, but not because its tenant could not be resolved.", description, failure);
             return false;
         }

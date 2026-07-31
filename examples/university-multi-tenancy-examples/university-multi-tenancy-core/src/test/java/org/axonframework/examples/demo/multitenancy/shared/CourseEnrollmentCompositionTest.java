@@ -256,8 +256,7 @@ class CourseEnrollmentCompositionTest {
 
     // Subscribes to the tenant's statistics and collects every update received, including the initial
     // result. Returns only once that initial result has arrived, so the enrollment under test cannot race the
-    // registration for future updates and be missed. A failure is recorded rather than swallowed, so a broken
-    // subscription says so instead of surfacing as an assertion timeout.
+    // subscription's registration for updates.
     @Test
     void fillingTheCourseCompletesTheTenantsOwnSubscription() {
         openCourse(COURSE_ID, CAPACITY);
@@ -266,8 +265,8 @@ class CourseEnrollmentCompositionTest {
         enroll(COURSE_ID, "alice");
         enroll(COURSE_ID, "bob");
 
-        // The command handler is what fills the read model on this backing, and the enrollment that leaves no
-        // seats completes the subscription rather than only updating it.
+        // The command handler fills the read model on this backing, and the enrollment that leaves no seats
+        // completes the subscription rather than only updating it.
         Awaitility.await("the subscription completes once the course is full")
                   .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
                   .until(() -> completed);
@@ -282,8 +281,6 @@ class CourseEnrollmentCompositionTest {
                            .subscribe(received::add, failure::set);
         Awaitility.await("the subscription's initial result arrives")
                   .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  // A failure ends the wait too, so a broken subscription reports its cause below rather than
-                  // running out the clock.
                   .until(() -> !received.isEmpty() || failure.get() != null);
         assertThat(failure.get()).isNull();
         return received;

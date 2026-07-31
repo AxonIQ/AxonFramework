@@ -34,10 +34,9 @@ import java.util.Objects;
  * still only that tenant's own subscriptions are affected: the framework resolves the tenant of the message
  * being handled and scopes both to it.
  * <p>
- * Emitting follows the write rather than the event, so a redelivered enrollment that leaves the read model as
- * it was emits nothing either. A subscriber therefore sees one update per enrollment however often its event
- * arrives, which is what lets the demo compare the updates it received one for one. Each update carries the
- * statistics as that enrollment left them, so a batch of enrollments reports its steps rather than its result.
+ * Emitting follows the write rather than the event, so a redelivered enrollment that leaves the read model as it
+ * was emits nothing either. A subscriber sees one update per enrollment however often its event arrives, and
+ * each update carries the statistics as that enrollment left them.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -104,12 +103,8 @@ public final class ReadModelWrites {
             return;
         }
         auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
-        // Read now, and hand the emitter a value rather than a supplier. Each update has to carry the statistics
-        // this enrollment left behind, and a supplier is invoked later, so a batch holding several enrollments
-        // would report the batch's end state for every one of them. This builds the update even when nothing is
-        // subscribed, which for a read model this size is a cheaper price than a wrong update. Two threads
-        // recording for one tenant can still snapshot each other's write, so this reports one enrollment at a
-        // time rather than a strict order.
+        // Read the statistics now and emit that value. The supplier overload is invoked later, by which time a
+        // batch of enrollments would report its end state for every update in the batch.
         TenantStatistics freshStatistics = new TenantStatistics(courseStatisticsStore.statistics(),
                                                                 auditLog.entries().size());
         updateEmitter.emit(GetTenantStatistics.class, query -> true, freshStatistics);

@@ -44,7 +44,7 @@ class CourseStatisticsStoreTest {
         void reportsNothingNewForAnEnrollmentItAlreadyHolds() {
             testSubject.recordEnrollment(COURSE_ID, "alice");
 
-            // What the emitting side keys on: nothing changed, so there is nothing fresh to report.
+            // Nothing changed, so there is nothing fresh to report.
             assertThat(testSubject.recordEnrollment(COURSE_ID, "alice")).isFalse();
             assertThat(testSubject.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 1));
         }
@@ -89,8 +89,7 @@ class CourseStatisticsStoreTest {
             testSubject.recordEnrollment(COURSE_ID, "alice");
             testSubject.recordEnrollment(OTHER_COURSE_ID, "bob");
 
-            // The statistics a subscription reports cover the whole tenant, so a single full course must not
-            // complete it while another course can still take enrollments.
+            // A subscription reports the whole tenant, so another course with seats keeps it open.
             assertThat(testSubject.isEveryCourseFull()).isFalse();
         }
 
