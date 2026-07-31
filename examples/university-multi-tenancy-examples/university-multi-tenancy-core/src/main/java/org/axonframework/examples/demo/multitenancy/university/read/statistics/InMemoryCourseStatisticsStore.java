@@ -38,6 +38,8 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     private final String tenantId;
     // The enrolled students per course rather than a count, so recording the same enrollment twice is a no-op.
     private final ConcurrentMap<String, Set<String>> enrolledStudentsByCourse = new ConcurrentHashMap<>();
+    // The capacity per course, so a course with no seats left can be told apart from one still filling up.
+    private final ConcurrentMap<String, Integer> capacityByCourse = new ConcurrentHashMap<>();
     private volatile boolean closed = false;
 
     /**
@@ -47,6 +49,20 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
      */
     InMemoryCourseStatisticsStore(String tenantId) {
         this.tenantId = Objects.requireNonNull(tenantId, "The tenant id must not be null");
+    }
+
+    @Override
+    public void recordCourseOpened(String courseId, int capacity) {
+        capacityByCourse.put(courseId, capacity);
+    }
+
+    @Override
+    public boolean isFull(String courseId) {
+        Integer capacity = capacityByCourse.get(courseId);
+        if (capacity == null) {
+            return false;
+        }
+        return enrolledStudentsByCourse.getOrDefault(courseId, Set.of()).size() >= capacity;
     }
 
     @Override

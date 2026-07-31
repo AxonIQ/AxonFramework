@@ -208,6 +208,9 @@ class MultiTenancyDemoIT {
             // and Springfield's and Shelbyville's own subscription queries each received only their own
             // updates, routed through their own tenant's Axon Server connection
             assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
+            // and filling Springfield's course completed only its own subscription, leaving Shelbyville's
+            // open on its course's free seat, so completion is scoped to a tenant just as emission is
+            assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();
             // and removing Shelbyville closed its instances
             assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
             // and shutting down closed every remaining tenant's instances

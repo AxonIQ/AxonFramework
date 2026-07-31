@@ -54,6 +54,8 @@ class MultiTenancyDemoTest {
         assertThat(outcome.removedTenantQueryRejected()).isTrue();
         // and Springfield's and Shelbyville's own subscription queries each received only their own updates
         assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
+        // and filling Springfield's course completed only its own subscription, leaving Shelbyville's open
+        assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();
         // and removing Shelbyville closed its instances
         assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
         // and shutting down closed every remaining tenant's instances

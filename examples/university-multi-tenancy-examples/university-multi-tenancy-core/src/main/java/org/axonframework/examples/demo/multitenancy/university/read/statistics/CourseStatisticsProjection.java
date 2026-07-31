@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
@@ -39,6 +40,19 @@ import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
  * @since 5.3.0
  */
 public class CourseStatisticsProjection {
+
+    /**
+     * Records the course's capacity in the course statistics of the tenant whose event store this event was
+     * streamed from, so that tenant's read model can tell when the course has no seats left.
+     *
+     * @param event                 the course-opened event being projected
+     * @param courseStatisticsStore the injected course-statistics store of the event's tenant
+     */
+    @EventHandler
+    public void on(CourseOpened event,
+                   @TenantScoped CourseStatisticsStore courseStatisticsStore) {
+        ReadModelWrites.recordCourseOpened(courseStatisticsStore, event.courseId(), event.capacity());
+    }
 
     /**
      * Records the enrollment in the course statistics and audit log of the tenant whose event store this

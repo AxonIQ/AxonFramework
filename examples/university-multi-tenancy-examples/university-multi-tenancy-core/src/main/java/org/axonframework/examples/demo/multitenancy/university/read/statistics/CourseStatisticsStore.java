@@ -40,6 +40,30 @@ public interface CourseStatisticsStore extends AutoCloseable {
     }
 
     /**
+     * Records that the given {@code courseId} was opened with the given {@code capacity}, so this store can
+     * tell when that course has no seats left.
+     * <p>
+     * Recording the same course again has no effect, for the same reason
+     * {@link #recordEnrollment(String, String)} is idempotent.
+     *
+     * @param courseId the identifier of the course that was opened
+     * @param capacity the number of seats the course offers
+     */
+    void recordCourseOpened(String courseId, int capacity);
+
+    /**
+     * Indicates whether the given {@code courseId} has no seats left, which is when it can receive no
+     * further enrollments and so has nothing left to report.
+     * <p>
+     * Returns {@code false} for a course whose capacity this store has not seen, since an unknown capacity
+     * is no reason to declare a course full.
+     *
+     * @param courseId the identifier of the course to check
+     * @return {@code true} if the course is known to be at capacity
+     */
+    boolean isFull(String courseId);
+
+    /**
      * Records that the given {@code studentId} is enrolled in the given {@code courseId}.
      * <p>
      * Recording the same student in the same course again has no effect. That matters because this store is

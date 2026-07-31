@@ -26,12 +26,14 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *                                   its initial result
  * @param shelbyvilleUpdatesReceived the number of updates Shelbyville's own subscription received, including
  *                                   its initial result
- * @param isolatedByTenant           whether each subscription received exactly as many updates as its own
- *                                   tenant's accepted enrollments account for, and so none of the other
- *                                   tenant's updates
+ * @param isolatedByTenant           whether each subscription saw exactly its own tenant's enrollments
+ *                                   arriving one at a time, and so none of the other tenant's updates
+ * @param completionScopedToTenant   whether filling Springfield's course completed only Springfield's
+ *                                   subscription, leaving Shelbyville's open on its course's free seat
  */
 public record SubscriptionQueryOutcome(int springfieldUpdatesReceived,
                                        int shelbyvilleUpdatesReceived,
-                                       boolean isolatedByTenant) {
+                                       boolean isolatedByTenant,
+                                       boolean completionScopedToTenant) {
 
 }

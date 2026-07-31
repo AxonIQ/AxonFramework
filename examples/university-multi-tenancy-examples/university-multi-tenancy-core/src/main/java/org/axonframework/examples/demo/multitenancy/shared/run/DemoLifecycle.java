@@ -45,8 +45,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.stream.IntStream;
 
 /**
  * The tenant lifecycle both demos walk through, once the application has been configured and started.
@@ -68,8 +70,10 @@ import java.util.function.BooleanSupplier;
  * instead, and those waits return at once.
  * <p>
  * Either way, recording an enrollment is also the one place that emits an update for any of that tenant's open
- * {@link GetTenantStatistics} subscription queries, through {@link ReadModelWrites}. Subscribing and emitting
- * both name no tenant, and each subscription still only ever receives its own tenant's updates.
+ * {@link GetTenantStatistics} subscription queries, and that completes them once the course has no seats left,
+ * through {@link ReadModelWrites}. Subscribing, emitting, and completing all name no tenant, and still each
+ * subscription only ever receives its own tenant's updates, and only the tenant whose course filled sees its
+ * subscription completed.
  * <p>
  * {@link #run} reads top to bottom as the story: tenants known at startup, their subscriptions proven isolated,
  * the course snapshotted per tenant, a tenant added at runtime, one processor serving all of them, an unknown
@@ -96,6 +100,10 @@ public final class DemoLifecycle {
     // fill-then-reject.
     private static final String SHARED_COURSE_ID = "cs-101";
     private static final int COURSE_CAPACITY = 2;
+    // Shelbyville offers one seat more than it fills, so its course still has room once its two students are
+    // enrolled. That is what makes subscription completion observable as something scoped to one tenant:
+    // Springfield's course fills, so its subscriptions complete, while Shelbyville's stay open.
+    private static final int SHELBYVILLE_COURSE_CAPACITY = COURSE_CAPACITY + 1;
     // In memory there is one shared event store, so Shelbyville uses a distinct identifier to avoid
     // colliding with Springfield's course on that shared store.
     private static final String SHELBYVILLE_COURSE_ID = "law-200";
@@ -103,9 +111,9 @@ public final class DemoLifecycle {
     private static final String OGDENVILLE_COURSE_ID = "econ-300";
 
     // How many enrollments each tenant ends up with, and so how many its read model should show. Both tenants
-    // known at startup fill their course to capacity, so both cross the snapshot threshold, while the
-    // runtime-added tenant enrolls one student. A rejected enrollment appends nothing, so it never reaches a
-    // read model.
+    // known at startup enroll two students, so both cross the snapshot threshold, while the runtime-added
+    // tenant enrolls one. Only Springfield's course is filled to capacity by that, and a rejected enrollment
+    // appends nothing, so it never reaches a read model.
     private static final int SPRINGFIELD_ENROLLMENTS = COURSE_CAPACITY;
     private static final int SHELBYVILLE_ENROLLMENTS = COURSE_CAPACITY;
     private static final int OGDENVILLE_ENROLLMENTS = 1;
@@ -163,8 +171,9 @@ public final class DemoLifecycle {
         logTenantView("Springfield University", queryGateway, SPRINGFIELD);
         logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
-        // 3. Neither subscription received the other's updates, even though recording an enrollment never
-        // names a tenant when it emits one. Both subscriptions are done once this is observed.
+        // 3. Neither subscription received the other's updates, and only Springfield's, whose course filled,
+        // was completed, even though recording an enrollment names no tenant when it emits or completes. Both
+        // subscriptions are done once this is observed.
         SubscriptionQueryOutcome subscriptionOutcome =
                 proveSubscriptionUpdateIsolation(springfieldLive, shelbyvilleLive);
         springfieldLive.cancel();
@@ -230,14 +239,16 @@ public final class DemoLifecycle {
     private static EventStorageOutcome enrollStudents(CommandGateway commandGateway, boolean hasPerTenantEventStore) {
         String shelbyvilleCourse = hasPerTenantEventStore ? SHARED_COURSE_ID : SHELBYVILLE_COURSE_ID;
 
-        // Springfield's course is fresh, so both enrollments are expected to land.
-        if (!fillCourse(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "alice", "bob")) {
+        // Springfield's course is fresh, so both enrollments are expected to land, and they fill it.
+        if (!fillCourse(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, COURSE_CAPACITY, "alice", "bob")) {
             throw new IllegalStateException("Springfield's course did not accept both of its students");
         }
-        boolean shelbyvilleAccepted = fillCourse(commandGateway, SHELBYVILLE, shelbyvilleCourse, "carol", "dave");
+        // Shelbyville offers a seat more than it fills, so its course still has room afterwards.
+        boolean shelbyvilleAccepted = fillCourse(commandGateway, SHELBYVILLE, shelbyvilleCourse,
+                                                 SHELBYVILLE_COURSE_CAPACITY, "carol", "dave");
 
-        // Both courses are full now, so this is rejected from that tenant's own events. It also sources the
-        // course once more, which is the load that reads the snapshot back.
+        // Springfield's course is full now, so this is rejected from that tenant's own events. It also sources
+        // the course once more, which is the load that reads the snapshot back.
         boolean springfieldRejectedWhenFull =
                 !Enrollments.tryEnroll(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "frank");
 
@@ -247,13 +258,17 @@ public final class DemoLifecycle {
     }
 
     /**
-     * Opens the given tenant's course and enrolls both students, filling it to capacity. The first command
-     * waits until the tenant accepts commands, and enrolling the second student crosses the course's
+     * Opens the given tenant's course with the given {@code capacity} and enrolls both students. The first
+     * command waits until the tenant accepts commands, and enrolling the second student crosses the course's
      * snapshot threshold.
+     * <p>
+     * Whether that leaves the course full is up to the {@code capacity} the caller opens it with, which is
+     * what lets one tenant end up with a full course and another with room to spare.
      *
      * @param commandGateway the gateway enrollments are sent on
      * @param tenant         the tenant whose course to fill
      * @param courseId       the identifier of the course to open and fill
+     * @param capacity       the number of seats the course offers
      * @param firstStudent   the student enrolled first
      * @param secondStudent  the student enrolled second, whose enrollment snapshots the course
      * @return whether both students were accepted
@@ -261,9 +276,10 @@ public final class DemoLifecycle {
     private static boolean fillCourse(CommandGateway commandGateway,
                                       TenantDescriptor tenant,
                                       String courseId,
+                                      int capacity,
                                       String firstStudent,
                                       String secondStudent) {
-        whenTenantReady(tenant, () -> Enrollments.openCourse(commandGateway, tenant, courseId, COURSE_CAPACITY));
+        whenTenantReady(tenant, () -> Enrollments.openCourse(commandGateway, tenant, courseId, capacity));
         // Both attempts are sent, so a rejected first student does not skip the second.
         boolean firstAccepted = Enrollments.tryEnroll(commandGateway, tenant, courseId, firstStudent);
         boolean secondAccepted = Enrollments.tryEnroll(commandGateway, tenant, courseId, secondStudent);
@@ -358,11 +374,12 @@ public final class DemoLifecycle {
     private static LiveStatistics subscribeToStatistics(QueryGateway queryGateway, TenantDescriptor tenant) {
         List<TenantStatistics> received = new CopyOnWriteArrayList<>();
         AtomicReference<Subscription> subscription = new AtomicReference<>();
+        AtomicBoolean completed = new AtomicBoolean();
         Enrollments.subscribeToStatistics(queryGateway, tenant).subscribe(new Subscriber<>() {
             @Override
-            public void onSubscribe(Subscription s) {
-                subscription.set(s);
-                s.request(Long.MAX_VALUE);
+            public void onSubscribe(Subscription incomingSubscription) {
+                subscription.set(incomingSubscription);
+                incomingSubscription.request(Long.MAX_VALUE);
             }
 
             @Override
@@ -377,12 +394,14 @@ public final class DemoLifecycle {
 
             @Override
             public void onComplete() {
-                // Nothing to do: the demo cancels the subscription itself once it is done observing it.
+                // Recorded rather than ignored: whether this tenant's subscription was completed, while the
+                // other tenant's was not, is what shows completion is scoped to one tenant.
+                completed.set(true);
             }
         });
         holdsWithin("tenant [" + tenant.tenantId() + "] subscription active", TENANT_READY_TIMEOUT,
                    () -> !received.isEmpty());
-        return new LiveStatistics(received, subscription);
+        return new LiveStatistics(received, subscription, completed);
     }
 
     /**
@@ -392,28 +411,56 @@ public final class DemoLifecycle {
      * student, so each should have received exactly its own initial result plus one update per accepted
      * enrollment, and no more: a leak would add the other tenant's updates on top of that.
      *
+     * Filling Springfield's course also completed its subscriptions, while Shelbyville's course kept a free
+     * seat and its subscription stayed open. Completing names no tenant either, so that difference is what
+     * shows the framework scopes completion to one tenant as well as emission.
+     *
      * @param springfield Springfield's own open subscription
      * @param shelbyville Shelbyville's own open subscription
      * @return the observed subscription-query isolation outcome
      */
     private static SubscriptionQueryOutcome proveSubscriptionUpdateIsolation(LiveStatistics springfield,
                                                                              LiveStatistics shelbyville) {
-        int expectedSpringfieldUpdates = SPRINGFIELD_ENROLLMENTS + 1;
-        int expectedShelbyvilleUpdates = SHELBYVILLE_ENROLLMENTS + 1;
-        holdsWithin("Springfield's subscription received " + expectedSpringfieldUpdates + " update(s)",
-                    PROJECTION_TIMEOUT, () -> springfield.received().size() >= expectedSpringfieldUpdates);
-        holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleUpdates + " update(s)",
-                    PROJECTION_TIMEOUT, () -> shelbyville.received().size() >= expectedShelbyvilleUpdates);
+        List<Integer> expectedSpringfieldTotals = enrollmentsArrivingOneAtATime(SPRINGFIELD_ENROLLMENTS);
+        List<Integer> expectedShelbyvilleTotals = enrollmentsArrivingOneAtATime(SHELBYVILLE_ENROLLMENTS);
+        holdsWithin("Springfield's subscription received " + expectedSpringfieldTotals.size() + " update(s)",
+                    PROJECTION_TIMEOUT,
+                    () -> springfield.received().size() >= expectedSpringfieldTotals.size());
+        holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleTotals.size() + " update(s)",
+                    PROJECTION_TIMEOUT,
+                    () -> shelbyville.received().size() >= expectedShelbyvilleTotals.size());
+        // Springfield's course filled, so its subscription is completed. Awaited, since the completion trails
+        // the update that filled it.
+        holdsWithin("Springfield's subscription completed", PROJECTION_TIMEOUT, springfield::isCompleted);
 
-        int springfieldUpdatesReceived = springfield.received().size();
-        int shelbyvilleUpdatesReceived = shelbyville.received().size();
-        boolean isolatedByTenant = springfieldUpdatesReceived == expectedSpringfieldUpdates
-                && shelbyvilleUpdatesReceived == expectedShelbyvilleUpdates;
+        List<Integer> springfieldTotals = springfield.totalsReceived();
+        List<Integer> shelbyvilleTotals = shelbyville.totalsReceived();
+        // Comparing the whole sequence rather than only its length also catches a leak that replaces an update
+        // instead of adding one, which a count on its own would read as correct.
+        boolean isolatedByTenant = springfieldTotals.equals(expectedSpringfieldTotals)
+                && shelbyvilleTotals.equals(expectedShelbyvilleTotals);
+        boolean completionScopedToTenant = springfield.isCompleted() && !shelbyville.isCompleted();
         logger.info("""
-                    Springfield's subscription received {} update(s), Shelbyville's received {}. \
-                    Neither received the other's: {}""",
-                    springfieldUpdatesReceived, shelbyvilleUpdatesReceived, isolatedByTenant);
-        return new SubscriptionQueryOutcome(springfieldUpdatesReceived, shelbyvilleUpdatesReceived, isolatedByTenant);
+                    Springfield's subscription saw enrollment totals {}, Shelbyville's saw {}. \
+                    Neither received the other's: {}. \
+                    Springfield's course filled so its subscription completed, while Shelbyville's kept a free \
+                    seat and stayed open: {}""",
+                    springfieldTotals, shelbyvilleTotals, isolatedByTenant, completionScopedToTenant);
+        return new SubscriptionQueryOutcome(springfieldTotals.size(),
+                                            shelbyvilleTotals.size(),
+                                            isolatedByTenant,
+                                            completionScopedToTenant);
+    }
+
+    /**
+     * The running enrollment totals a subscription should see for a tenant that ends up with {@code
+     * enrollments} enrollments: its initial result of nothing yet, then one entry per enrollment as it lands.
+     *
+     * @param enrollments the number of enrollments the tenant ends up with
+     * @return the totals expected, in the order they should arrive
+     */
+    private static List<Integer> enrollmentsArrivingOneAtATime(int enrollments) {
+        return IntStream.rangeClosed(0, enrollments).boxed().toList();
     }
 
     /**
@@ -424,11 +471,27 @@ public final class DemoLifecycle {
      *
      * @param received     every update received so far, including the initial result
      * @param subscription the subscription {@link #cancel()} cancels
+     * @param completed    whether the publisher completed this subscription
      */
-    private record LiveStatistics(List<TenantStatistics> received, AtomicReference<Subscription> subscription) {
+    private record LiveStatistics(List<TenantStatistics> received,
+                                  AtomicReference<Subscription> subscription,
+                                  AtomicBoolean completed) {
 
         void cancel() {
             subscription.get().cancel();
+        }
+
+        boolean isCompleted() {
+            return completed.get();
+        }
+
+        /**
+         * The running enrollment total this subscription saw, one entry per update received. Starting from the
+         * initial result, each entry should be the tenant's own total at that moment, so the whole list reads
+         * as that tenant's enrollments arriving one at a time.
+         */
+        List<Integer> totalsReceived() {
+            return received.stream().map(TenantStatistics::totalEnrollments).toList();
         }
     }
 

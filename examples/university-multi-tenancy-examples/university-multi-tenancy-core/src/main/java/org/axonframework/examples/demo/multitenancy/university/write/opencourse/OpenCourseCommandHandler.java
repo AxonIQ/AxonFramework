@@ -16,8 +16,12 @@
 
 package org.axonframework.examples.demo.multitenancy.university.write.opencourse;
 
+import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
+import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
 import org.axonframework.examples.demo.multitenancy.university.UniversityTags;
 import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.ReadModelWrites;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
@@ -26,6 +30,7 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Handles opening a course, following the load-decide-append shape. The {@link State} is injected, having
@@ -38,18 +43,37 @@ import java.util.List;
  */
 class OpenCourseCommandHandler {
 
+    private final DemoBacking backing;
+
+    /**
+     * Constructs a handler that records the course's capacity in the read model itself only when the given
+     * {@code backing} has no projection to do it, mirroring how the enroll-student handler fills the rest of
+     * the read model on that same backing.
+     *
+     * @param backing what backs this run
+     */
+    OpenCourseCommandHandler(DemoBacking backing) {
+        this.backing = Objects.requireNonNull(backing, "The backing must not be null");
+    }
+
     /**
      * Opens the course, unless it is already open, so the command is idempotent.
      *
-     * @param command       the command opening the course
-     * @param state         the injected course state, sourced from the command's tenant's event store
-     * @param eventAppender the appender the opening event is appended through
+     * @param command               the command opening the course
+     * @param state                 the injected course state, sourced from the command's tenant's event store
+     * @param eventAppender         the appender the opening event is appended through
+     * @param courseStatisticsStore the injected course-statistics store of the command's tenant
      */
     @CommandHandler
     void handle(OpenCourse command,
                 @InjectEntity(idProperty = UniversityTags.COURSE_ID) State state,
-                EventAppender eventAppender) {
-        eventAppender.append(decide(command, state));
+                EventAppender eventAppender,
+                @TenantScoped CourseStatisticsStore courseStatisticsStore) {
+        List<CourseOpened> events = decide(command, state);
+        eventAppender.append(events);
+        if (!backing.projectsReadModel() && !events.isEmpty()) {
+            ReadModelWrites.recordCourseOpened(courseStatisticsStore, command.courseId(), command.capacity());
+        }
     }
 
     private List<CourseOpened> decide(OpenCourse command, State state) {

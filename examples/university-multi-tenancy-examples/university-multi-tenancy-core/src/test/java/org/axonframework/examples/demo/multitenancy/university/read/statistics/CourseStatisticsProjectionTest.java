@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
@@ -57,6 +58,42 @@ class CourseStatisticsProjectionTest {
 
         assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 1));
         assertThat(auditLog.entries()).containsExactly("Enrolled student [alice] in course [" + COURSE_ID + "]");
+    }
+
+    @Nested
+    class SubscriptionCompletion {
+
+        @Test
+        void completesTheSubscriptionOnceTheCourseHasNoSeatsLeft() {
+            testSubject.on(new CourseOpened(COURSE_ID, 2), statisticsStore);
+
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+            // Both enrollments emit, and only the one that filled the course completes, so a subscriber still
+            // sees the update that filled it.
+            assertThat(updateEmitter.emitted()).hasSize(2);
+            assertThat(updateEmitter.completions()).isEqualTo(1);
+        }
+
+        @Test
+        void keepsTheSubscriptionOpenWhileTheCourseHasSeatsLeft() {
+            testSubject.on(new CourseOpened(COURSE_ID, 3), statisticsStore);
+
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+            assertThat(updateEmitter.emitted()).hasSize(2);
+            assertThat(updateEmitter.completions()).isZero();
+        }
+
+        @Test
+        void keepsTheSubscriptionOpenWhenTheCourseCapacityWasNeverProjected() {
+            // Without a projected capacity there is nothing to call full, so nothing is completed either.
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+
+            assertThat(updateEmitter.completions()).isZero();
+        }
     }
 
     @Test
@@ -145,9 +182,14 @@ class CourseStatisticsProjectionTest {
     private static final class RecordingQueryUpdateEmitter implements QueryUpdateEmitter {
 
         private final List<Object> emitted = new ArrayList<>();
+        private int completions;
 
         List<Object> emitted() {
             return emitted;
+        }
+
+        int completions() {
+            return completions;
         }
 
         @Override
@@ -162,12 +204,12 @@ class CourseStatisticsProjectionTest {
 
         @Override
         public <Q> void complete(Class<Q> queryType, Predicate<? super Q> filter) {
-            // Not exercised by these tests.
+            completions++;
         }
 
         @Override
         public void complete(QualifiedName queryName, Predicate<Object> filter) {
-            // Not exercised by these tests.
+            completions++;
         }
 
         @Override

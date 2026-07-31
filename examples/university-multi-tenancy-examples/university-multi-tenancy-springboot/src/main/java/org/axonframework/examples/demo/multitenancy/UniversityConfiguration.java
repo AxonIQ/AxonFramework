@@ -130,7 +130,7 @@ public class UniversityConfiguration {
      */
     @Bean
     public Module openCourseCommandHandling() {
-        return OpenCourseConfiguration.commandModule();
+        return OpenCourseConfiguration.commandModule(DemoBacking.AXON_SERVER);
     }
 
     /**
