@@ -106,8 +106,9 @@ run behaves identically and the point is only to show where the knob is.
 Against Axon Server, the demo also turns off preferring a locally subscribed query handler
 (`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
 where a query handler is always subscribed locally, so without this a direct query would never reach the
-per-tenant query connector at all: tenant resolution would only ever happen once handling starts, never at
-dispatch. A subscription query always routes through the connector regardless of this setting.
+per-tenant query connector at all, so the demo would not show the routing it is about. Correctness does not
+depend on it: the tenant is resolved and checked before the query is dispatched either way. A subscription
+query always routes through the connector regardless of this setting.
 
 It shows tenant-aware event processing too. The log reports how many streaming event processors served
 all three tenants, and the answer is one rather than one per tenant. The two known tenants hold the same

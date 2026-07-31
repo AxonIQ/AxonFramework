@@ -65,7 +65,7 @@
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
-            <version>${projectreactor.version}</version>
+            <version>${reactor.version}</version>
         </dependency>
 
         <!-- Used by the Axon Server context helper to await context creation and deletion. -->

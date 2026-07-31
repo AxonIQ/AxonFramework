@@ -52,7 +52,9 @@ that code. The demo shows, at the moment:
   says nothing about another's.
 * **Direct queries routed through the per-tenant connector** (Axon Server): this whole demo runs in one
   process, where a query handler is always subscribed locally, so the demos explicitly turn off preferring
-  that local handler. Without it, a direct query would never reach the per-tenant connector at all.
+  that local handler. Without it a direct query is answered locally and never reaches the per-tenant connector,
+  so the routing would go unshown. The tenant is resolved and checked before dispatch either way, so this is
+  about what the demo can demonstrate, not about correctness.
 * **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
   rejected on both the command and the query side, a tenant removed (closing its instances and no longer
   answering queries), and cleanup on shutdown.

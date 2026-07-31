@@ -148,9 +148,10 @@ public final class UniversityConfiguration {
      * per-tenant {@link MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
      * <p>
      * This whole demo runs in one process, where every query handler is always subscribed locally, so
-     * without this a direct {@code query()} would never reach the connector at all: tenant resolution would
-     * only ever happen once handling starts, never at dispatch. A subscription query always routes through
-     * the connector regardless of this setting.
+     * without this a direct {@code query()} is answered from the local segment and never reaches the connector,
+     * so the demo would not show the per-tenant routing it is about. Correctness does not depend on it: the
+     * tenant is resolved and checked before the query is dispatched either way. A subscription query always
+     * routes through the connector regardless of this setting.
      *
      * @param registry the registry to register the distributed query bus configuration on
      */
