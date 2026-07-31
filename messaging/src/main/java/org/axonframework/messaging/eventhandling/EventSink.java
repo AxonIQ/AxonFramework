@@ -53,7 +53,7 @@ public interface EventSink extends DescribableComponent {
      * @param events  The {@link EventMessage events} to publish in this sink.
      * @return A {@link CompletableFuture} of {@link Void}. When this completes and a non-null {@code context} was
      * given, this means the {@code events} have been successfully staged. When a null {@code context} was provided,
-     * successful completion of this future means the {@code events} where published.
+     * successful completion of this future means the {@code events} were published.
      */
     default CompletableFuture<Void> publish(@Nullable ProcessingContext context,
                                             EventMessage @Nullable ... events) {
@@ -74,7 +74,7 @@ public interface EventSink extends DescribableComponent {
      * @param events  The {@link EventMessage events} to publish in this sink.
      * @return A {@link CompletableFuture} of {@link Void}. When this completes and a non-null {@code context} was
      * given, this means the {@code events} have been successfully staged. When a null {@code context} was provided,
-     * successful completion of this future means the {@code events} where published.
+     * successful completion of this future means the {@code events} were published.
      */
     CompletableFuture<Void> publish(@Nullable ProcessingContext context,
                                     List<? extends EventMessage> events);
