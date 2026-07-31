@@ -16,14 +16,20 @@
 
 package org.axonframework.modelling.repository;
 
+import org.axonframework.common.AxonNonTransientException;
+
 /**
  * Exception indicating that an entity could not be found in the {@link Repository}.
+ * <p>
+ * A missing entity is definitionally non-transient: retrying the same operation will not make the entity appear.
+ * As an {@link AxonNonTransientException}, this is reflected in retry policies and dead-letter classification via
+ * {@link org.axonframework.common.ExceptionUtils#isExplicitlyNonTransient(Throwable)}.
  *
  * @author Allard Buijze
  * @author Steven van Beelen
  * @since 0.4.0
  */
-public class EntityNotFoundException extends RuntimeException {
+public class EntityNotFoundException extends AxonNonTransientException {
 
     private final Object identifier;
 
