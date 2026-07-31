@@ -23,20 +23,20 @@ import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer
 import org.axonframework.examples.university.shared.ids.StudentId
 import org.axonframework.modelling.annotation.InjectEntity
-import java.util.Optional
 
 class EnrollStudentCommandHandler {
+
+    /**
+     * The nullable [EnrollStudentState]? parameter receives `null` until the student is enrolled, letting this
+     * handler create-or-update without an `@Nullable` annotation. Kotlin's type already carries that information.
+     */
     @CommandHandler
     internal fun handle(
         command: EnrollStudent,
-        @InjectEntity(idProperty = EnrollStudent.ID_PROP) state: Optional<EnrollStudentState>,
+        @InjectEntity(idProperty = EnrollStudent.ID_PROP) state: EnrollStudentState?,
         eventAppender: EventAppender
     ) {
-        if (state.isEmpty) {
-            eventAppender.append(EnrollStudentState().decide(command))
-        } else {
-            eventAppender.append(state.get().decide(command))
-        }
+        eventAppender.append((state ?: EnrollStudentState()).decide(command))
     }
 }
 

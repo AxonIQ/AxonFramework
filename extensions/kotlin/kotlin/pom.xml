@@ -50,6 +50,16 @@
             <scope>provided</scope>
         </dependency>
 
+        <!--
+        Reads the @kotlin.Metadata annotation to recover declared nullability, which the compiler otherwise only
+        emits as a CLASS-retention annotation that is invisible to reflection. Deliberately preferred over
+        kotlin-reflect here, as it decodes a single annotation rather than building a full KClass model.
+        -->
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-metadata-jvm</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>

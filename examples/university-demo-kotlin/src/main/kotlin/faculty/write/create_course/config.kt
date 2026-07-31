@@ -16,7 +16,6 @@
 
 package org.axonframework.examples.university.faculty.write.create_course
 
-import jakarta.annotation.Nullable
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer
 import org.axonframework.examples.university.shared.ids.CourseId
 import org.axonframework.extension.kotlin.eventsourcing.EventSourcedEntityModuleExt.autodetected
@@ -24,21 +23,21 @@ import org.axonframework.messaging.commandhandling.annotation.CommandHandler
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule
 import org.axonframework.messaging.eventhandling.gateway.EventAppender
 import org.axonframework.modelling.annotation.InjectEntity
-import java.util.Optional
 
 class CreateCourseCommandHandler {
 
+    /**
+     * Declaring the injected state as the nullable [CreateCourseState]? opts into create-or-update semantics: the
+     * parameter is `null` until the course exists, rather than the command failing with an
+     * `EntityNotFoundException`. No `@Nullable` annotation is needed, as the Kotlin type says it already.
+     */
     @CommandHandler
     internal fun handle(
         command: CreateCourse,
-        @InjectEntity(idProperty = CreateCourse.ID) state: Optional<CreateCourseState>,
+        @InjectEntity(idProperty = CreateCourse.ID) state: CreateCourseState?,
         eventAppender: EventAppender
     ) {
-        if (state.isEmpty) {
-            eventAppender.append(CreateCourseState().decide(command))
-        } else {
-            eventAppender.append(state.get().decide(command))
-        }
+        eventAppender.append((state ?: CreateCourseState()).decide(command))
     }
 
 }
