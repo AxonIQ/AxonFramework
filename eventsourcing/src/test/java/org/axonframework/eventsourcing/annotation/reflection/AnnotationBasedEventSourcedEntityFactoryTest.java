@@ -143,11 +143,18 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundIfNoMatchingPayloadType() {
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
-            assertThrows(EntityNotFoundException.class, () -> {
+            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
                 factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
             });
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+        }
+
+        @Test
+        void throwsEntityNotFoundForNullEventMessage() {
+            assertThrows(EntityNotFoundException.class,
+                         () -> factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -207,11 +214,18 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundIfNoMatchingPayloadType() {
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
             eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"), new PayloadSpecificPayload("my-specific-payload"));
-            assertThrows(EntityNotFoundException.class, () -> {
+            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
                 factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
             });
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+        }
+
+        @Test
+        void throwsEntityNotFoundForNullEventMessage() {
+            assertThrows(EntityNotFoundException.class,
+                         () -> factory.create("test-id", null, new StubProcessingContext()));
         }
 
         public static class PayloadSpecificTestEntity {

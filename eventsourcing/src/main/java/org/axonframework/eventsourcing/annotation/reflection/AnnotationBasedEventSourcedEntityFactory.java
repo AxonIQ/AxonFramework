@@ -272,8 +272,8 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             compatibleCreators = getMethodsCompatibleWithIdAndNoMessage(id);
         }
         if (compatibleCreators.isEmpty()) {
-            if (hasEventBasedCreatorsOnly()) {
-                // If there are only event-based creators, but no eventMessage, that means we were not able to find the entity
+            if (eventMessage == null) {
+                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet
                 throw new EntityNotFoundException(id);
             }
             StringBuilder message = new StringBuilder(
@@ -308,17 +308,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         return matchingCreators.stream()
                                .max(Comparator.comparingInt(ScannedEntityCreator::getParameterCount))
                                .orElseThrow();
-    }
-
-/**
- * Indicates whether every {@link EntityCreator} of this entity requires an event payload to construct an
- * instance. When that holds and no event is available, the entity cannot exist yet.
- *
- * @return {@code true} when no creator is able to construct an entity without an event payload
- */
-    private boolean hasEventBasedCreatorsOnly() {
-        return creators.stream()
-                       .noneMatch(ScannedEntityCreator::isWithoutPayload);
     }
 
     @Nullable
