@@ -363,7 +363,7 @@ public final class DemoLifecycle {
      * Returns only once that initial result has arrived. In memory, registering a subscription query is
      * synchronous, so this returns at once. Against Axon Server it is a round trip over the tenant's own
      * connection, and the registration for future updates completes before the initial result does, the same
-     * ordering the local query bus uses; an enrollment sent before this returns could otherwise race that
+     * ordering the local query bus uses. An enrollment sent before this returns could otherwise race that
      * registration and never reach this subscription, which would misreport as a leak rather than as what it
      * is: an update missed because nothing was listening for it yet.
      *

@@ -46,12 +46,19 @@ that code. The demo shows, at the moment:
   before enrolling a single student. Recording an enrollment emits an update through a deliberately
   tenant-blind predicate, and each subscription still only ever receives its own tenant's updates: the
   framework isolates emission by the tenant it resolves for the update, not by anything the predicate says.
+* **Tenant-scoped subscription completion**: completing a subscription is scoped the same way. Springfield's
+  course fills up, so its own subscriptions are completed, through an equally tenant-blind predicate, while
+  Shelbyville's course keeps a free seat and its subscription stays open. One tenant running out of things to
+  report says nothing about another's.
 * **Direct queries routed through the per-tenant connector** (Axon Server): this whole demo runs in one
   process, where a query handler is always subscribed locally, so the demos explicitly turn off preferring
   that local handler. Without it, a direct query would never reach the per-tenant connector at all.
 * **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
-  rejected on both the command and the query side, a tenant removed (closing its instances), and cleanup
-  on shutdown.
+  rejected on both the command and the query side, a tenant removed (closing its instances and no longer
+  answering queries), and cleanup on shutdown.
+* **A query has to name a tenant**: a query carrying no tenant metadata at all is rejected at dispatch, since
+  a tenant is what decides which components answer it. A tenant that is no longer served is refused the same
+  way one that never existed is.
 * **A configuration-time guardrail**: registering two providers for one component type is refused 
   because the framework cannot know which instance a parameter of that type should receive.
 * **Context filtering** (Axon Server): tenants are discovered from Axon Server's contexts, with the

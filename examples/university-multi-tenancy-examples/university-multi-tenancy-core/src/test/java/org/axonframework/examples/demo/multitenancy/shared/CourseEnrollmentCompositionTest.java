@@ -264,7 +264,7 @@ class CourseEnrollmentCompositionTest {
 
             @Override
             public void onError(Throwable throwable) {
-                // Not expected in this test; a missing update speaks for itself in the assertion.
+                // Not expected in this test. A missing update speaks for itself in the assertion.
             }
 
             @Override

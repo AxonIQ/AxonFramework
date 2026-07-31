@@ -92,11 +92,13 @@ enrollments even though two of them use the same course identifier. The tenant a
 application was running is projected too, which only happens if the processor re-opened its stream to
 include a tenant that did not exist when it started.
 
-It also asserts tenant-aware subscription queries and the query-side unknown-tenant guardrail: both known
-tenants' own subscriptions received only their own updates, and a query for an unknown tenant is rejected
-the same way an unknown-tenant command is. Being the Axon Server path, with `preferLocalQueryHandler(false)`
-set, this is also where a direct query is proven to actually route through the per-tenant connector rather
-than being served from a locally subscribed handler.
+It also asserts tenant-aware subscription queries and the query-side guardrails: both known tenants' own
+subscriptions received only their own updates, and only Springfield's, whose course filled up, was completed,
+while Shelbyville's kept a free seat and stayed open. A query for an unknown tenant is rejected the same way
+an unknown-tenant command is, and so are a query naming no tenant at all and a query for a tenant that has
+been removed. Being the Axon Server path, with `preferLocalQueryHandler(false)` set, this is also where a
+direct query is proven to actually route through the per-tenant connector rather than being served from a
+locally subscribed handler.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:

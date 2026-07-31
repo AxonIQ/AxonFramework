@@ -61,10 +61,13 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 * **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
 * **Subscription-query isolation.** Springfield's and Shelbyville's own subscriptions, opened before
   either enrolls a student, each receive only their own tenant's updates.
+* **Subscription completion per tenant.** Springfield's course fills up, so its own subscription is
+  completed, while Shelbyville's course keeps a free seat and its subscription stays open.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
 * **Unknown tenant rejected.** A command, and then a query, for a tenant the application does not know
-  each fail with a `TenantNotResolvedException`, so no instance is ever built for it.
+  each fail with a `TenantNotResolvedException`, so no instance is ever built for it. A query carrying no
+  tenant metadata at all, and a query for a tenant that has been removed, fail the same way.
 * **Ambiguity rejected.** Registering two providers for one component type is refused.
 * **Cleanup.** Removing a tenant closes its instances, and shutting down closes the rest.
 
@@ -116,10 +119,14 @@ the run waits for the projection to catch up before reading it.
 
 Finally, it shows tenant-aware subscription queries. Both known tenants subscribe to their own statistics
 before either enrolls a student, and recording an enrollment emits an update through a deliberately
-tenant-blind predicate. The log reports how many updates each subscription received: each is exactly its
-own tenant's accepted enrollments plus its initial result, never inflated by the other tenant's activity,
-which is what proves the framework isolates emission by the tenant it resolves for the update rather than
-by the predicate. A query for an unknown tenant is rejected the same way an unknown-tenant command is.
+tenant-blind predicate. The log reports the enrollment totals each subscription saw: exactly its own tenant's
+enrollments arriving one at a time, never inflated by the other tenant's activity, which is what proves the
+framework isolates emission by the tenant it resolves for the update rather than by the predicate.
+
+Completion is scoped the same way, through an equally tenant-blind predicate. Springfield's course fills up,
+so its own subscription is completed, while Shelbyville opened its course with a seat to spare and its
+subscription stays open. A query for an unknown tenant is rejected the same way an unknown-tenant command is,
+and so are a query naming no tenant at all and a query for a tenant that has been removed.
 
 ## The same demo, wired by Spring Boot
 
