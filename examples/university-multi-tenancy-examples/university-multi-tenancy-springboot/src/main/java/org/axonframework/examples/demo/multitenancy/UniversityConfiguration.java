@@ -230,13 +230,12 @@ public class UniversityConfiguration {
 
     /**
      * Turns off preferring a locally subscribed query handler, so a direct query is routed through the
-     * per-tenant {@link MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
+     * per-tenant {@link MultiTenantAxonServerQueryBusConnector} rather than served from the local segment. See
+     * {@link DistributedQueryBusConfiguration#preferLocalQueryHandler(boolean)} for what the setting does.
      * <p>
-     * This whole demo runs in one process, where every query handler is always subscribed locally, so
-     * without this a direct {@code query()} is answered from the local segment and never reaches the connector,
-     * so the demo would not show the per-tenant routing it is about. Correctness does not depend on it: the
-     * tenant is resolved and checked before the query is dispatched either way. A subscription query always
-     * routes through the connector regardless of this setting.
+     * This demo runs in one process, where a query handler is always subscribed locally, so without this the
+     * connector is never exercised and the routing this demo is about would go unshown. Correctness does not
+     * depend on it. A subscription query always routes through the connector regardless.
      *
      * @return the distributed query bus configuration with direct queries routed through the connector
      */

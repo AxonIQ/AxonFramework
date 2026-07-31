@@ -60,8 +60,8 @@
             <artifactId>axoniq-multi-tenancy</artifactId>
         </dependency>
 
-        <!-- Subscription queries: axon-messaging depends on reactor-core only optionally, so the
-             subscription-query gateway method needs it added here explicitly. -->
+        <!-- The QueryGateway returns a Publisher rather than a Flux precisely so Reactor stays optional, so a
+             demo that uses Flux directly opts in by declaring it here. -->
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
