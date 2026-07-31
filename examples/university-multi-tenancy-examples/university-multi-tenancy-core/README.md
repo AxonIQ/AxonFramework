@@ -108,16 +108,19 @@ projection to catch up.
 Being the one write, `ReadModelWrites` is also the one place that tells open subscription queries about a
 change: it emits the tenant's fresh statistics for every enrollment, and completes that tenant's subscriptions
 once none of its courses has a seat left. A subscription reports the whole tenant, so one full course is not
-enough to complete it. Neither the emit nor the complete predicate names a tenant, and both are
-still scoped to one, because the framework resolves the tenant of the message being handled. Knowing when a course has no seats
-left is why the read model holds each course's capacity. On the Axon Server path the projection takes it from
+enough to complete it, and a course that was opened but has nobody enrolled yet still counts as one with
+seats left. Neither the emit nor the complete predicate names a tenant, and both are still scoped to one,
+because the framework resolves the tenant of the message being handled.
+
+Knowing when a course has no seats left is why the read model holds each course's capacity. On the Axon Server
+path the projection takes it from
 `CourseOpened`, the only event carrying it. On the shared in-memory store the enroll-student handler takes it
 from the course it already sourced, so the open-course slice knows nothing about the read model.
 
 Emitting follows the write rather than the event. An enrollment the read model already held changes nothing, so
 it emits nothing, which is what keeps one enrollment worth one update however often its event arrives. Without
-that, the idempotent read model below would still be correct while every redelivery pushed a duplicate update at
-every subscriber.
+that, the idempotent read model below would still be correct while every redelivery pushed a duplicate update
+at every subscriber.
 
 ### The projection is idempotent, on purpose
 

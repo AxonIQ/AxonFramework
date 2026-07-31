@@ -24,7 +24,7 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * either a local handler or a tenant's own connection.
  *
  * @param rejectedForUnknownTenant whether a query naming a tenant the application never registered was refused
- * @param rejectedForMissingTenant  whether a query carrying no tenant metadata at all was refused
+ * @param rejectedForMissingTenant whether a query carrying no tenant metadata at all was refused
  * @param rejectedForRemovedTenant whether a query naming a tenant that has been removed was refused
  * @author Laura Devriendt
  * @since 5.3.0

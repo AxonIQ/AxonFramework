@@ -73,7 +73,7 @@ import java.util.stream.IntStream;
  * {@link GetTenantStatistics} subscription queries, and that completes them once none of that tenant's courses
  * has a seat left, through {@link ReadModelWrites}. Subscribing, emitting, and completing all name no tenant,
  * and still each subscription only ever receives its own tenant's updates, and only the tenant that ran out of
- * seats sees its subscription completed.
+ * seats everywhere sees its subscription completed.
  * <p>
  * {@link #run} reads top to bottom as the story: tenants known at startup, their subscriptions proven isolated,
  * the course snapshotted per tenant, a tenant added at runtime, one processor serving all of them, an unknown
@@ -98,13 +98,18 @@ public final class DemoLifecycle {
     // Springfield always uses this identifier, and against Axon Server Shelbyville opens a course under the
     // same identifier to show the two event stores are isolated.
     private static final String SHARED_COURSE_ID = "cs-101";
-    // How many students each tenant known at startup enrolls. Fixed by openCourseAndEnroll, which sends exactly
-    // this many, so the capacities below are expressed against it rather than the other way round.
-    private static final int STUDENTS_PER_KNOWN_TENANT = 2;
+    /**
+     * How many students each tenant known at startup enrolls. Fixed by the demo's enrollment step, which sends
+     * exactly this many, so the course capacities are expressed against it rather than the other way round.
+     * <p>
+     * Public because the demos' tests derive the number of subscription updates a tenant should receive from it:
+     * its initial result plus one update per enrollment.
+     */
+    public static final int STUDENTS_PER_KNOWN_TENANT = 2;
     // Springfield offers exactly the seats it fills, so its course ends up full and a further enrollment is
     // rejected.
     private static final int SPRINGFIELD_COURSE_CAPACITY = STUDENTS_PER_KNOWN_TENANT;
-    // Shelbyville offers one seat more, so its course still has room once its students are enrolled. That
+    // Shelbyville offers one seat more, so it still has a free seat once its students are enrolled. That
     // difference is what makes subscription completion observable as something scoped to one tenant.
     private static final int SHELBYVILLE_COURSE_CAPACITY = STUDENTS_PER_KNOWN_TENANT + 1;
     // In memory there is one shared event store, so Shelbyville uses a distinct identifier to avoid
@@ -418,8 +423,8 @@ public final class DemoLifecycle {
      * student, so each should have received exactly its own initial result plus one update per accepted
      * enrollment, and no more: a leak would add the other tenant's updates on top of that.
      * <p>
-     * Filling Springfield's course also completed its subscriptions, while Shelbyville's course kept a free
-     * seat and its subscription stayed open. Completing names no tenant either, so that difference is what
+     * Springfield also ran out of seats, so its subscriptions were completed, while Shelbyville kept a free seat
+     * and its subscription stayed open. Completing names no tenant either, so that difference is what
      * shows the framework scopes completion to one tenant as well as emission.
      *
      * @param springfield the open subscription of Springfield, whose course fills
@@ -438,7 +443,7 @@ public final class DemoLifecycle {
                 holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleTotals.size() + " update(s)",
                             PROJECTION_TIMEOUT,
                             () -> shelbyville.receivedCount() >= expectedShelbyvilleTotals.size());
-        // Springfield's course filled, so its subscription is completed. Awaited, since the completion trails the
+        // Springfield ran out of seats, so its subscription is completed. Awaited, since the completion trails the
         // update that filled it, and awaited last, so a leak into Shelbyville must have been emitted before it.
         boolean springfieldCompleted =
                 holdsWithin("Springfield's subscription completed", PROJECTION_TIMEOUT, springfield::isCompleted);

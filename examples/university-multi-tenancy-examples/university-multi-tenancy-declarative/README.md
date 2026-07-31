@@ -123,9 +123,10 @@ tenant-blind predicate. The log reports the enrollment totals each subscription 
 enrollments arriving one at a time, never inflated by the other tenant's activity, which is what proves the
 framework isolates emission by the tenant it resolves for the update rather than by the predicate.
 
-Completion is scoped the same way, through an equally tenant-blind predicate. Springfield's course fills up,
-so its own subscription is completed, while Shelbyville opened its course with a seat to spare and its
-subscription stays open. A query for an unknown tenant is rejected the same way an unknown-tenant command is,
+Completion is scoped the same way, through an equally tenant-blind predicate. Springfield runs out of seats, so
+its own subscription is completed, while Shelbyville opened its course with a seat to spare and its subscription
+stays open. A subscription reports the whole tenant, so it completes only once none of that tenant's courses has
+a seat left. A query for an unknown tenant is rejected the same way an unknown-tenant command is,
 and so are a query naming no tenant at all and a query for a tenant that has been removed.
 
 ## The same demo, wired by Spring Boot

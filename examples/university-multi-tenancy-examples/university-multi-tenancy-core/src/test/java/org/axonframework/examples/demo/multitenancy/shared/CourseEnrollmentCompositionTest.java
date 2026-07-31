@@ -83,6 +83,7 @@ class CourseEnrollmentCompositionTest {
 
     @Nullable
     private Disposable subscription;
+    private volatile boolean completed;
 
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
@@ -257,10 +258,27 @@ class CourseEnrollmentCompositionTest {
     // result. Returns only once that initial result has arrived, so the enrollment under test cannot race the
     // registration for future updates and be missed. A failure is recorded rather than swallowed, so a broken
     // subscription says so instead of surfacing as an assertion timeout.
+    @Test
+    void fillingTheCourseCompletesTheTenantsOwnSubscription() {
+        openCourse(COURSE_ID, CAPACITY);
+        List<TenantStatistics> received = subscribeToStatistics();
+
+        enroll(COURSE_ID, "alice");
+        enroll(COURSE_ID, "bob");
+
+        // The command handler is what fills the read model on this backing, and the enrollment that leaves no
+        // seats completes the subscription rather than only updating it.
+        Awaitility.await("the subscription completes once the course is full")
+                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
+                  .until(() -> completed);
+        assertThat(received).hasSize(CAPACITY + 1);
+    }
+
     private List<TenantStatistics> subscribeToStatistics() {
         List<TenantStatistics> received = new CopyOnWriteArrayList<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         subscription = Flux.from(Enrollments.subscribeToStatistics(queryGateway, TENANT))
+                           .doOnComplete(() -> completed = true)
                            .subscribe(received::add, failure::set);
         Awaitility.await("the subscription's initial result arrives")
                   .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))

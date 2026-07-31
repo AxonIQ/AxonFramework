@@ -93,7 +93,7 @@ application was running is projected too, which only happens if the processor re
 include a tenant that did not exist when it started.
 
 It also asserts tenant-aware subscription queries and the query-side guardrails: both known tenants' own
-subscriptions received only their own updates, and only Springfield's, whose course filled up, was completed,
+subscriptions received only their own updates, and only Springfield's, which ran out of seats, was completed,
 while Shelbyville's kept a free seat and stayed open. A query for an unknown tenant is rejected the same way
 an unknown-tenant command is, and so are a query naming no tenant at all and a query for a tenant that has
 been removed. Being the Axon Server path, with `preferLocalQueryHandler(false)` set, this is also where a

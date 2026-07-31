@@ -28,8 +28,8 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *                                   its initial result
  * @param isolatedByTenant           whether each subscription saw exactly its own tenant's enrollments
  *                                   arriving one at a time, and so none of the other tenant's updates
- * @param completionScopedToTenant   whether filling Springfield's course completed only Springfield's
- *                                   subscription, leaving Shelbyville's open on its course's free seat
+ * @param completionScopedToTenant   whether Springfield running out of seats completed only Springfield's
+ *                                   subscription, leaving Shelbyville's open on its own free seat
  * @author Jakob Hatzl
  * @author Laura Devriendt
  * @since 5.3.0

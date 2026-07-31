@@ -209,10 +209,9 @@ class MultiTenancyDemoIT {
             // updates, routed through their own tenant's Axon Server connection
             assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
             // each seeing its own initial result plus one update per enrollment, and nothing more
-            assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived())
-                    .isEqualTo(outcome.springfieldEnrollments() + 1);
-            assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived())
-                    .isEqualTo(outcome.springfieldEnrollments() + 1);
+            int expectedUpdates = DemoLifecycle.STUDENTS_PER_KNOWN_TENANT + 1;
+            assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived()).isEqualTo(expectedUpdates);
+            assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived()).isEqualTo(expectedUpdates);
             // and filling Springfield's course completed only its own subscription, leaving Shelbyville's
             // open on its course's free seat, so completion is scoped to a tenant just as emission is
             assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();

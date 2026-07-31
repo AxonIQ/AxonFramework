@@ -207,11 +207,14 @@ class CourseStatisticsProjectionTest {
     // a plain state-based capture, not a call that must or must not have happened.
     private static final class RecordingQueryUpdateEmitter implements QueryUpdateEmitter {
 
-        private final List<Object> emitted = new ArrayList<>();
+        // The suppliers rather than their outcomes, resolved only when the test asks what was emitted. An
+        // emitter that is handed a supplier reading live state would then report the final state for every
+        // update, which is exactly what ReadModelWrites must not do.
+        private final List<Supplier<Object>> emitted = new ArrayList<>();
         private int completions;
 
         List<Object> emitted() {
-            return emitted;
+            return emitted.stream().map(Supplier::get).toList();
         }
 
         int completions() {
@@ -220,12 +223,12 @@ class CourseStatisticsProjectionTest {
 
         @Override
         public <Q> void emit(Class<Q> queryType, Predicate<? super Q> filter, Supplier<Object> updateSupplier) {
-            emitted.add(updateSupplier.get());
+            emitted.add(updateSupplier);
         }
 
         @Override
         public void emit(QualifiedName queryName, Predicate<Object> filter, Supplier<Object> updateSupplier) {
-            emitted.add(updateSupplier.get());
+            emitted.add(updateSupplier);
         }
 
         @Override

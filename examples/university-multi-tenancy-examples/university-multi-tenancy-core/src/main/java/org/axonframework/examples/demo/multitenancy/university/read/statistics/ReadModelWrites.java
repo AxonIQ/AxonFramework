@@ -29,10 +29,10 @@ import java.util.Objects;
  * {@link CourseStatisticsStore#recordEnrollment} for why that matters.
  * <p>
  * Being the one write also makes this the one place that emits the fresh statistics to any open
- * {@link GetTenantStatistics} subscription query, and the one place that completes those subscriptions once none
- * of the tenant's courses has a seat left. Neither the emit nor the complete predicate names a tenant, and still only that
- * tenant's own subscriptions are affected: the framework resolves the tenant of the message being handled and
- * scopes both to it.
+ * {@link GetTenantStatistics} subscription query, and the one place that completes those subscriptions once
+ * none of the tenant's courses has a seat left. Neither the emit nor the complete predicate names a tenant, and
+ * still only that tenant's own subscriptions are affected: the framework resolves the tenant of the message
+ * being handled and scopes both to it.
  * <p>
  * Emitting follows the write rather than the event, so a redelivered enrollment that leaves the read model as
  * it was emits nothing either. A subscriber therefore sees one update per enrollment however often its event
@@ -106,8 +106,10 @@ public final class ReadModelWrites {
         auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
         // Read now, and hand the emitter a value rather than a supplier. Each update has to carry the statistics
         // this enrollment left behind, and a supplier is invoked later, so a batch holding several enrollments
-        // would report the batch's end state for every one of them. The cost is building this even when nothing
-        // is subscribed, which for a read model this size is not worth a wrong update.
+        // would report the batch's end state for every one of them. This builds the update even when nothing is
+        // subscribed, which for a read model this size is a cheaper price than a wrong update. Two threads
+        // recording for one tenant can still snapshot each other's write, so this reports one enrollment at a
+        // time rather than a strict order.
         TenantStatistics freshStatistics = new TenantStatistics(courseStatisticsStore.statistics(),
                                                                 auditLog.entries().size());
         updateEmitter.emit(GetTenantStatistics.class, query -> true, freshStatistics);

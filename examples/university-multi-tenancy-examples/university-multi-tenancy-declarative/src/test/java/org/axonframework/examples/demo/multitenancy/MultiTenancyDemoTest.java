@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.demo.multitenancy;
 
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.junit.jupiter.api.Test;
@@ -55,10 +56,9 @@ class MultiTenancyDemoTest {
         // and Springfield's and Shelbyville's own subscription queries each received only their own updates
         assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
         // each seeing its own initial result plus one update per enrollment, and nothing more
-        assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived())
-                .isEqualTo(outcome.springfieldEnrollments() + 1);
-        assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived())
-                .isEqualTo(outcome.springfieldEnrollments() + 1);
+        int expectedUpdates = DemoLifecycle.STUDENTS_PER_KNOWN_TENANT + 1;
+        assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived()).isEqualTo(expectedUpdates);
+        assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived()).isEqualTo(expectedUpdates);
         // and filling Springfield's course completed only its own subscription, leaving Shelbyville's open
         assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();
         // and removing Shelbyville closed its instances
