@@ -30,7 +30,7 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
-import org.axonframework.examples.demo.multitenancy.shared.messaging.Enrollments;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.StatisticsSubscription;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatistics;
@@ -52,14 +52,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,8 +78,7 @@ class CourseEnrollmentCompositionTest {
     private final SnapshotStore snapshotStore = new InMemorySnapshotStore();
 
     @Nullable
-    private Disposable subscription;
-    private volatile boolean completed;
+    private StatisticsSubscription subscription;
 
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
@@ -123,7 +118,7 @@ class CourseEnrollmentCompositionTest {
     @AfterEach
     void tearDown() {
         if (subscription != null) {
-            subscription.dispose();
+            subscription.close();
         }
         configuration.shutdown();
     }
@@ -213,7 +208,7 @@ class CourseEnrollmentCompositionTest {
     @Test
     void enrollingAStudentEmitsAnUpdateToTheTenantsOwnSubscription() {
         openCourse(COURSE_ID, CAPACITY);
-        List<TenantStatistics> received = subscribeToStatistics();
+        StatisticsSubscription statistics = subscribeToStatistics();
 
         enroll(COURSE_ID, "alice");
 
@@ -221,9 +216,25 @@ class CourseEnrollmentCompositionTest {
         // the course was only just opened, followed by the update the enrollment's handler emits.
         Awaitility.await("the enrollment's update is received")
                   .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .untilAsserted(() -> assertThat(received).containsExactly(
+                  .untilAsserted(() -> assertThat(statistics.received()).containsExactly(
                           new TenantStatistics(List.of(), 0),
                           new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1)));
+    }
+
+    @Test
+    void fillingTheCourseCompletesTheTenantsOwnSubscription() {
+        openCourse(COURSE_ID, CAPACITY);
+        StatisticsSubscription statistics = subscribeToStatistics();
+
+        enroll(COURSE_ID, "alice");
+        enroll(COURSE_ID, "bob");
+
+        // The command handler fills the read model on this backing, and the enrollment that leaves no seats
+        // completes the subscription rather than only updating it.
+        Awaitility.await("the subscription completes once the course is full")
+                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
+                  .until(statistics::isCompleted);
+        assertThat(statistics.receivedCount()).isEqualTo(CAPACITY + 1);
     }
 
     // Reads the snapshot straight from the store the configuration was given, under the same name the
@@ -254,35 +265,9 @@ class CourseEnrollmentCompositionTest {
                       .join();
     }
 
-    // Subscribes to the tenant's statistics and collects every update received, including the initial
-    // result. Returns only once that initial result has arrived, so the enrollment under test cannot race the
-    // subscription's registration for updates.
-    @Test
-    void fillingTheCourseCompletesTheTenantsOwnSubscription() {
-        openCourse(COURSE_ID, CAPACITY);
-        List<TenantStatistics> received = subscribeToStatistics();
-
-        enroll(COURSE_ID, "alice");
-        enroll(COURSE_ID, "bob");
-
-        // The command handler fills the read model on this backing, and the enrollment that leaves no seats
-        // completes the subscription rather than only updating it.
-        Awaitility.await("the subscription completes once the course is full")
-                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .until(() -> completed);
-        assertThat(received).hasSize(CAPACITY + 1);
-    }
-
-    private List<TenantStatistics> subscribeToStatistics() {
-        List<TenantStatistics> received = new CopyOnWriteArrayList<>();
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-        subscription = Flux.from(Enrollments.subscribeToStatistics(queryGateway, TENANT))
-                           .doOnComplete(() -> completed = true)
-                           .subscribe(received::add, failure::set);
-        Awaitility.await("the subscription's initial result arrives")
-                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .until(() -> !received.isEmpty() || failure.get() != null);
-        assertThat(failure.get()).isNull();
-        return received;
+    private StatisticsSubscription subscribeToStatistics() {
+        subscription = StatisticsSubscription.openFor(queryGateway, TENANT, Duration.ofSeconds(TIMEOUT_SECONDS));
+        assertThat(subscription.failure()).isEmpty();
+        return subscription;
     }
 }
