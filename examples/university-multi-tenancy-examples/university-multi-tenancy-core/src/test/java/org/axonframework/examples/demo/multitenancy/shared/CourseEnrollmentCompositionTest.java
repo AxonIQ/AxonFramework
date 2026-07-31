@@ -52,13 +52,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -247,31 +247,18 @@ class CourseEnrollmentCompositionTest {
     }
 
     // Subscribes to the tenant's statistics and collects every update received, including the initial
-    // result, requesting an unbounded number of updates up front so the demo's own Subscriber shape stays
-    // out of the assertion.
+    // result. Returns only once that initial result has arrived, so the enrollment under test cannot race the
+    // registration for future updates and be missed. A failure is recorded rather than swallowed, so a broken
+    // subscription says so instead of surfacing as an assertion timeout.
     private List<TenantStatistics> subscribeToStatistics() {
         List<TenantStatistics> received = new CopyOnWriteArrayList<>();
-        Enrollments.subscribeToStatistics(queryGateway, TENANT).subscribe(new Subscriber<>() {
-            @Override
-            public void onSubscribe(Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
-            @Override
-            public void onNext(TenantStatistics statistics) {
-                received.add(statistics);
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                // Not expected in this test. A missing update speaks for itself in the assertion.
-            }
-
-            @Override
-            public void onComplete() {
-                // Not expected in this test: the subscription stays open until the test ends.
-            }
-        });
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Flux.from(Enrollments.subscribeToStatistics(queryGateway, TENANT))
+            .subscribe(received::add, failure::set);
+        Awaitility.await("the subscription's initial result arrives")
+                  .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
+                  .until(() -> !received.isEmpty());
+        assertThat(failure.get()).isNull();
         return received;
     }
 }

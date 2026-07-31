@@ -17,7 +17,6 @@
 package org.axonframework.examples.demo.multitenancy.university.write.opencourse;
 
 import org.axonframework.common.configuration.Module;
-import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
 import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
@@ -25,9 +24,8 @@ import org.axonframework.messaging.commandhandling.configuration.CommandHandling
 
 /**
  * Registers the open-course write slice. The declarative demo passes its {@link EventSourcingConfigurer}
- * to {@link #configure(EventSourcingConfigurer, DemoBacking)}, and the Spring Boot demo exposes
- * {@link #entityModule()} and {@link #commandModule(DemoBacking)} as {@link Module} beans the starter picks
- * up.
+ * to {@link #configure(EventSourcingConfigurer)}, and the Spring Boot demo exposes {@link #entityModule()}
+ * and {@link #commandModule()} as {@link Module} beans the starter picks up.
  */
 public final class OpenCourseConfiguration {
 
@@ -39,12 +37,11 @@ public final class OpenCourseConfiguration {
      * Registers the slice's entity and command handler on the given {@code configurer}.
      *
      * @param configurer the event sourcing configurer to register the slice on
-     * @param backing    what backs this run
      * @return the given {@code configurer}, for further configuring
      */
-    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer, DemoBacking backing) {
+    public static EventSourcingConfigurer configure(EventSourcingConfigurer configurer) {
         return configurer.registerEntity(entityModuleBuilder())
-                         .registerCommandHandlingModule(commandModuleBuilder(backing));
+                         .registerCommandHandlingModule(commandModuleBuilder());
     }
 
     /**
@@ -61,21 +58,19 @@ public final class OpenCourseConfiguration {
      * The slice's command handling module, for wiring styles that register modules as beans, such as
      * Spring Boot.
      *
-     * @param backing what backs this run
      * @return the command handling module
      */
-    public static Module commandModule(DemoBacking backing) {
-        return commandModuleBuilder(backing).build();
+    public static Module commandModule() {
+        return commandModuleBuilder().build();
     }
 
     private static EventSourcedEntityModule<String, OpenCourseCommandHandler.State> entityModuleBuilder() {
         return EventSourcedEntityModule.autodetected(String.class, OpenCourseCommandHandler.State.class);
     }
 
-    private static ModuleBuilder<CommandHandlingModule> commandModuleBuilder(DemoBacking backing) {
+    private static ModuleBuilder<CommandHandlingModule> commandModuleBuilder() {
         return CommandHandlingModule.named("OpenCourse")
                                     .commandHandlers()
-                                    .autodetectedCommandHandlingComponent(
-                                            config -> new OpenCourseCommandHandler(backing));
+                                    .autodetectedCommandHandlingComponent(config -> new OpenCourseCommandHandler());
     }
 }

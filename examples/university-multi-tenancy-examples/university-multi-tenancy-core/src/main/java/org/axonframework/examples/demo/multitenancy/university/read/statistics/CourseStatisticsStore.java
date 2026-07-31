@@ -40,42 +40,43 @@ public interface CourseStatisticsStore extends AutoCloseable {
     }
 
     /**
-     * Records that the given {@code courseId} was opened with the given {@code capacity}, so this store can
-     * tell when that course has no seats left.
+     * Records how many seats the given {@code courseId} offers, so this store can tell when that course has
+     * no seats left.
      * <p>
-     * Recording the same course again has no effect, for the same reason
-     * {@link #recordEnrollment(String, String)} is idempotent.
+     * Recording the same course again overwrites the capacity held for it. A course's capacity does not change
+     * in this demo, so a repeat carries the same number and leaves the store as it was.
      *
-     * @param courseId the identifier of the course that was opened
+     * @param courseId the identifier of the course
      * @param capacity the number of seats the course offers
      */
-    void recordCourseOpened(String courseId, int capacity);
+    void recordCourseCapacity(String courseId, int capacity);
 
     /**
-     * Indicates whether the given {@code courseId} has no seats left, which is when it can receive no
-     * further enrollments and so has nothing left to report.
+     * Indicates whether the given {@code courseId} is at capacity, and so can receive no further enrollments.
      * <p>
-     * Returns {@code false} for a course whose capacity this store has not seen, since an unknown capacity
-     * is no reason to declare a course full.
+     * Returns {@code false} for a course whose capacity this store has not seen, since an unknown capacity is
+     * no reason to declare a course full.
      *
      * @param courseId the identifier of the course to check
      * @return {@code true} if the course is known to be at capacity
      */
-    boolean isFull(String courseId);
+    boolean isCourseFull(String courseId);
 
     /**
-     * Records that the given {@code studentId} is enrolled in the given {@code courseId}.
+     * Records that the given {@code studentId} is enrolled in the given {@code courseId}, reporting whether
+     * that enrollment was new to this store.
      * <p>
-     * Recording the same student in the same course again has no effect. That matters because this store is
-     * filled from a streamed event, and an event can reach a handler more than once: the stream is re-opened
-     * whenever a tenant is added or removed, and the processor cannot always tell that an event was already
-     * handled. Counting enrollments instead of remembering who is enrolled would drift upwards every time
-     * that happens.
+     * Recording the same student in the same course again has no effect, and reports {@code false}. That
+     * matters because this store is filled from a streamed event, and an event can reach a handler more than
+     * once: the stream is re-opened whenever a tenant is added or removed, and the processor cannot always tell
+     * that an event was already handled. Counting enrollments instead of remembering who is enrolled would
+     * drift upwards every time that happens, and anything derived from this write would repeat with it.
      *
      * @param courseId  the identifier of the course enrolled in
      * @param studentId the identifier of the enrolled student
+     * @return {@code true} if this enrollment was newly recorded, {@code false} if it was already held
      */
-    void recordEnrollment(String courseId, String studentId);
+    boolean recordEnrollment(String courseId, String studentId);
 
     /**
      * Returns the enrollment statistics per course held for this tenant.

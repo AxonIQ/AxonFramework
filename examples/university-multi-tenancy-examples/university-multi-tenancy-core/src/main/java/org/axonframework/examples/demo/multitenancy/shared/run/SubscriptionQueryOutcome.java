@@ -30,6 +30,8 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *                                   arriving one at a time, and so none of the other tenant's updates
  * @param completionScopedToTenant   whether filling Springfield's course completed only Springfield's
  *                                   subscription, leaving Shelbyville's open on its course's free seat
+ * @author Jakob Hatzl
+ * @since 5.3.0
  */
 public record SubscriptionQueryOutcome(int springfieldUpdatesReceived,
                                        int shelbyvilleUpdatesReceived,

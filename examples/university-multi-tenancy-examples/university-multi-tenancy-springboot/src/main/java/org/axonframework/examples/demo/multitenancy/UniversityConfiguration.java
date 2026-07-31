@@ -130,7 +130,7 @@ public class UniversityConfiguration {
      */
     @Bean
     public Module openCourseCommandHandling() {
-        return OpenCourseConfiguration.commandModule(DemoBacking.AXON_SERVER);
+        return OpenCourseConfiguration.commandModule();
     }
 
     /**
@@ -229,7 +229,7 @@ public class UniversityConfiguration {
 
     /**
      * Turns off preferring a locally subscribed query handler, so a direct query is routed through the
-     * per-tenant {@code MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
+     * per-tenant {@link io.axoniq.framework.messaging.multitenancy.axonserver.queryhandling.MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
      * <p>
      * This whole demo runs in one process, where every query handler is always subscribed locally, so
      * without this a direct {@code query()} would never reach the connector at all: tenant resolution would

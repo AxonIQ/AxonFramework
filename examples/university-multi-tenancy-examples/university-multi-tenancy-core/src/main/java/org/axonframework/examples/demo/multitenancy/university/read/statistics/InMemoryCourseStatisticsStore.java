@@ -52,12 +52,12 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     }
 
     @Override
-    public void recordCourseOpened(String courseId, int capacity) {
+    public void recordCourseCapacity(String courseId, int capacity) {
         capacityByCourse.put(courseId, capacity);
     }
 
     @Override
-    public boolean isFull(String courseId) {
+    public boolean isCourseFull(String courseId) {
         Integer capacity = capacityByCourse.get(courseId);
         if (capacity == null) {
             return false;
@@ -66,9 +66,9 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     }
 
     @Override
-    public void recordEnrollment(String courseId, String studentId) {
-        enrolledStudentsByCourse.computeIfAbsent(courseId, ignored -> ConcurrentHashMap.newKeySet())
-                                .add(studentId);
+    public boolean recordEnrollment(String courseId, String studentId) {
+        return enrolledStudentsByCourse.computeIfAbsent(courseId, ignored -> ConcurrentHashMap.newKeySet())
+                                       .add(studentId);
     }
 
     @Override

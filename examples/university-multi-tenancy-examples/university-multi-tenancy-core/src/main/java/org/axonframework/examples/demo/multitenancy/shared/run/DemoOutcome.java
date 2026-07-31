@@ -24,9 +24,7 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * @param springfieldAuditEntries    the entries recorded in Springfield's audit log
  * @param ogdenvilleEnrollments      the enrollments recorded in the runtime-added Ogdenville's store
  * @param unknownTenantRejected      whether a command for an unknown tenant was rejected
- * @param unknownTenantQueryRejected whether a query for an unknown tenant was rejected
- * @param queryWithoutTenantRejected whether a query carrying no tenant metadata at all was rejected
- * @param removedTenantQueryRejected whether Shelbyville stopped being queryable once its tenant was removed
+ * @param queryRejections            what the query-side tenant guardrails observed
  * @param shelbyvilleClosedOnRemoval whether Shelbyville's instances were closed when its tenant was removed
  * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
  * @param eventStorage               what the per-tenant event-storage demonstration observed (only demonstrated
@@ -41,9 +39,7 @@ public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
                           int ogdenvilleEnrollments,
                           boolean unknownTenantRejected,
-                          boolean unknownTenantQueryRejected,
-                          boolean queryWithoutTenantRejected,
-                          boolean removedTenantQueryRejected,
+                          QueryRejectionOutcome queryRejections,
                           boolean shelbyvilleClosedOnRemoval,
                           boolean allClosedOnShutdown,
                           EventStorageOutcome eventStorage,

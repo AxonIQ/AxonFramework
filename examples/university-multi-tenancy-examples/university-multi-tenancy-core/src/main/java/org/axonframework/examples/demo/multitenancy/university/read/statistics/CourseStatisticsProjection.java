@@ -51,7 +51,7 @@ public class CourseStatisticsProjection {
     @EventHandler
     public void on(CourseOpened event,
                    @TenantScoped CourseStatisticsStore courseStatisticsStore) {
-        ReadModelWrites.recordCourseOpened(courseStatisticsStore, event.courseId(), event.capacity());
+        ReadModelWrites.recordCourseCapacity(courseStatisticsStore, event.courseId(), event.capacity());
     }
 
     /**

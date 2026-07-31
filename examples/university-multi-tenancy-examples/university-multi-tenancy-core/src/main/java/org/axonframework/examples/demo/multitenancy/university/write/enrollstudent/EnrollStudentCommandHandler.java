@@ -102,6 +102,9 @@ class EnrollStudentCommandHandler {
         List<StudentEnrolledInCourse> events = decide(command, state);
         eventAppender.append(events);
         if (!backing.projectsReadModel() && !events.isEmpty()) {
+            // The course's capacity comes from the state this handler already sourced, so the read model can
+            // tell a full course from one with seats left without the open-course slice knowing about it.
+            ReadModelWrites.recordCourseCapacity(courseStatisticsStore, command.courseId(), state.capacity());
             ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, updateEmitter,
                                              command.courseId(), command.studentId());
         }

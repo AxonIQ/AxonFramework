@@ -41,7 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * Handling the same event twice is exercised on purpose. Events are delivered at least once, and re-opening
  * the stream on a tenant change makes a repeat more likely than usual, so the demo's exact-count assertions
- * only hold because the read model is keyed on identity rather than counted.
+ * only hold because the read model is keyed on identity rather than counted, and because what is emitted to a
+ * subscriber follows that write rather than the event.
  */
 class CourseStatisticsProjectionTest {
 
@@ -61,7 +62,17 @@ class CourseStatisticsProjectionTest {
     }
 
     @Nested
-    class SubscriptionCompletion {
+    class SubscriptionUpdates {
+
+        @Test
+        void emitsTheFreshStatisticsForEveryEnrollment() {
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+            assertThat(updateEmitter.emitted()).containsExactly(
+                    new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1),
+                    new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 2)), 2));
+        }
 
         @Test
         void completesTheSubscriptionOnceTheCourseHasNoSeatsLeft() {
@@ -88,6 +99,31 @@ class CourseStatisticsProjectionTest {
         }
 
         @Test
+        void emitsNothingForAnEnrollmentItAlreadyHeld() {
+            testSubject.on(new CourseOpened(COURSE_ID, 3), statisticsStore);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+
+            // The same event again. The read model is unchanged, so there is nothing fresh to report and a
+            // subscriber must not see a second update for one enrollment.
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+
+            assertThat(updateEmitter.emitted()).hasSize(1);
+            assertThat(updateEmitter.completions()).isZero();
+        }
+
+        @Test
+        void doesNotCompleteAgainWhenTheEnrollmentThatFilledTheCourseIsRedelivered() {
+            testSubject.on(new CourseOpened(COURSE_ID, 2), statisticsStore);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+            testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
+
+            assertThat(updateEmitter.emitted()).hasSize(2);
+            assertThat(updateEmitter.completions()).isEqualTo(1);
+        }
+
+        @Test
         void keepsTheSubscriptionOpenWhenTheCourseCapacityWasNeverProjected() {
             // Without a projected capacity there is nothing to call full, so nothing is completed either.
             testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
@@ -103,16 +139,6 @@ class CourseStatisticsProjectionTest {
 
         assertThat(statisticsStore.statistics()).containsExactly(new CourseStatistics(COURSE_ID, 2));
         assertThat(auditLog.entries()).hasSize(2);
-    }
-
-    @Test
-    void emitsTheFreshStatisticsForEveryEnrollment() {
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "alice"), statisticsStore, auditLog, updateEmitter);
-        testSubject.on(new StudentEnrolledInCourse(COURSE_ID, "bob"), statisticsStore, auditLog, updateEmitter);
-
-        assertThat(updateEmitter.emitted()).containsExactly(
-                new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 1)), 1),
-                new TenantStatistics(List.of(new CourseStatistics(COURSE_ID, 2)), 2));
     }
 
     @Nested

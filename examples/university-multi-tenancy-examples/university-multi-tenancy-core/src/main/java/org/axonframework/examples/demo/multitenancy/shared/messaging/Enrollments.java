@@ -127,9 +127,7 @@ public final class Enrollments {
      * @return the tenant's isolated statistics
      */
     public static TenantStatistics statistics(QueryGateway queryGateway, TenantDescriptor tenant) {
-        QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
-                                                     new GetTenantStatistics())
-                .andMetadata(TenantMetadataFactory.forTenant(tenant));
+        QueryMessage query = statisticsQuery().andMetadata(TenantMetadataFactory.forTenant(tenant));
         return queryGateway.query(query, TenantStatistics.class)
                            .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                            .join();
@@ -145,21 +143,19 @@ public final class Enrollments {
      * does not know.
      *
      * @param queryGateway the gateway to send the query on
-     * @return never returns normally
+     * @throws RuntimeException always, carrying the framework's refusal to serve a query without a tenant
      */
-    public static TenantStatistics statisticsWithoutTenant(QueryGateway queryGateway) {
-        QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
-                                                     new GetTenantStatistics());
-        return queryGateway.query(query, TenantStatistics.class)
-                           .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                           .join();
+    public static void statisticsWithoutTenant(QueryGateway queryGateway) {
+        queryGateway.query(statisticsQuery(), TenantStatistics.class)
+                    .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .join();
     }
 
     /**
      * Subscribes to the given {@code tenant}'s statistics by sending a {@link GetTenantStatistics}
      * subscription query carrying that tenant in metadata. The returned publisher emits the tenant's
-     * current statistics first, and every fresh update {@link ReadModelWrites} emits after, for as long as
-     * it is subscribed to.
+     * current statistics first, and every fresh update {@link ReadModelWrites} emits after. It completes once
+     * the tenant's course has no seats left, since there is no further enrollment to report.
      * <p>
      * The tenant travels only in the query's metadata, resolved once from this initial query. Emitting a
      * later update never names a tenant either, and still only this subscription's own tenant receives it:
@@ -172,10 +168,14 @@ public final class Enrollments {
      */
     public static Publisher<TenantStatistics> subscribeToStatistics(QueryGateway queryGateway,
                                                                     TenantDescriptor tenant) {
-        QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
-                                                     new GetTenantStatistics())
-                .andMetadata(TenantMetadataFactory.forTenant(tenant));
+        QueryMessage query = statisticsQuery().andMetadata(TenantMetadataFactory.forTenant(tenant));
         return queryGateway.subscriptionQuery(query, TenantStatistics.class);
+    }
+
+    // The statistics query itself, carrying no tenant. Callers add the tenant metadata that routes it, except
+    // the one that deliberately leaves it off.
+    private static QueryMessage statisticsQuery() {
+        return new GenericQueryMessage(new MessageType(GetTenantStatistics.class), new GetTenantStatistics());
     }
 
     /**

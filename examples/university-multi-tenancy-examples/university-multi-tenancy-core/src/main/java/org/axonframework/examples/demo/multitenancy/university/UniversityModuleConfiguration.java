@@ -50,7 +50,7 @@ public final class UniversityModuleConfiguration {
         // configured with rather than being told again and risking a different answer.
         configurer = configurer.componentRegistry(registry -> registry.registerComponent(DemoBacking.class,
                                                                                          config -> backing));
-        configurer = OpenCourseConfiguration.configure(configurer, backing);
+        configurer = OpenCourseConfiguration.configure(configurer);
         configurer = EnrollStudentConfiguration.configure(configurer, backing);
         configurer = StatisticsConfiguration.configure(configurer, backing);
         return configurer;

@@ -63,7 +63,9 @@ application:
    course has no seats left, both through a deliberately tenant-blind predicate. That is what proves the
    isolation is enforced by the framework rather than by the predicate. Each subscription saw exactly its own
    tenant's enrollments arriving one at a time and no more, compared as the whole sequence rather than only
-   its length, so a leak that replaced an update instead of adding one would not pass either. Springfield's
+   its length, so a leak that replaced an update instead of adding one would not pass either. That comparison
+   is exact rather than duplicate-tolerant because emitting follows the read-model write, so a redelivered
+   enrollment adds no update. Springfield's
    course filled, so its subscription was completed, while Shelbyville's kept a free seat and stayed open.
 4. Show where those snapshots ended up. The course carries a snapshot policy, so enrolling the second
    student snapshots it, and the rejected third enrollment sources the course from that snapshot. Against
@@ -109,6 +111,11 @@ once the course has no seats left. Neither the emit nor the complete predicate n
 still scoped to one, because the framework resolves the tenant of the message being handled. Knowing when a
 course is full is why the projection also handles `CourseOpened`, which is the only thing that carries a
 course's capacity.
+
+Emitting follows the write rather than the event. An enrollment the read model already held changes nothing, so
+it emits nothing, which is what keeps one enrollment worth one update however often its event arrives. Without
+that, the idempotent read model below would still be correct while every redelivery pushed a duplicate update at
+every subscriber.
 
 ### The projection is idempotent, on purpose
 

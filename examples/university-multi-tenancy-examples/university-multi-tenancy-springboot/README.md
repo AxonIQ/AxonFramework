@@ -17,7 +17,8 @@ application and its beans:
 ```
 org.axonframework.examples.demo.multitenancy
 +- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: providers, handlers, course modules, projection, processor, stores, timeout, query routing
++- UniversityConfiguration   the beans: providers, handlers, course modules, projection, processor,
+|                            stores, timeout, query routing
 +- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
 ```
 
