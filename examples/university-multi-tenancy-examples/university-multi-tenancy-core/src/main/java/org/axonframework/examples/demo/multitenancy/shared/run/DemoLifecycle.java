@@ -187,17 +187,22 @@ public final class DemoLifecycle {
         // is removed below, while its read model is still there to compare.
         StreamingOutcome streaming = observeStreaming(processorNames, queryGateway);
 
-        // 7. A command or query for a tenant the application does not know is rejected.
+        // 7. A command or query for a tenant the application does not know is rejected, and so is a query
+        // that names no tenant at all.
         boolean unknownTenantRejected = unknownTenantIsRejected(commandGateway);
         boolean unknownTenantQueryRejected = unknownTenantQueryIsRejected(queryGateway);
+        boolean queryWithoutTenantRejected = queryWithoutTenantIsRejected(queryGateway);
 
-        // 8. Removing a tenant closes its per-tenant instances.
+        // 8. Removing a tenant closes its per-tenant instances, and its statistics stop being queryable.
         boolean shelbyvilleClosedOnRemoval =
                 removingTenantClosesItsInstances(provisioning, statisticsProvider, auditProvider);
+        boolean removedTenantQueryRejected = removedTenantQueryIsRejected(queryGateway);
 
         // 9. Shutting down closes every remaining tenant's instances.
         return shutDownAndBuildOutcome(shutdown, queryGateway, statisticsProvider, auditProvider,
-                                       unknownTenantRejected, unknownTenantQueryRejected, shelbyvilleClosedOnRemoval,
+                                       unknownTenantRejected, unknownTenantQueryRejected,
+                                       queryWithoutTenantRejected, removedTenantQueryRejected,
+                                       shelbyvilleClosedOnRemoval,
                                        eventStorage, snapshottingOutcome, streaming, subscriptionOutcome);
     }
 
@@ -533,6 +538,48 @@ public final class DemoLifecycle {
     }
 
     /**
+     * Sends a statistics query carrying no tenant metadata at all and confirms it is rejected. A tenant is
+     * what decides which components answer the query, so a query that names none cannot be served, and the
+     * framework says so at dispatch rather than letting it reach a handler.
+     */
+    private static boolean queryWithoutTenantIsRejected(QueryGateway queryGateway) {
+        boolean rejected;
+        try {
+            Enrollments.statisticsWithoutTenant(queryGateway);
+            rejected = false;
+        } catch (RuntimeException failure) {
+            rejected = Enrollments.causedByTenantNotResolved(failure);
+        }
+        logger.info("Query naming no tenant rejected: {}", rejected);
+        return rejected;
+    }
+
+    /**
+     * Confirms that Shelbyville's statistics stop being queryable once its tenant has been removed, which is
+     * the read-side counterpart of the unknown-tenant rejection: a tenant that is no longer served is as
+     * unservable as one that never was.
+     * <p>
+     * This waits rather than asserting once. Removal reaches the tenant provider before the routing to that
+     * tenant is torn down, so a query sent in that window still succeeds. That is the mirror image of the
+     * window {@link #whenTenantReady} tolerates while a tenant spins up.
+     */
+    private static boolean removedTenantQueryIsRejected(QueryGateway queryGateway) {
+        boolean rejected = holdsWithin(
+                "removed tenant [" + SHELBYVILLE.tenantId() + "] is no longer queryable",
+                TENANT_READY_TIMEOUT,
+                () -> {
+                    try {
+                        Enrollments.statistics(queryGateway, SHELBYVILLE);
+                        return false;
+                    } catch (RuntimeException failure) {
+                        return Enrollments.causedByTenantNotResolved(failure);
+                    }
+                });
+        logger.info("Query for the removed tenant [{}] rejected: {}", SHELBYVILLE.tenantId(), rejected);
+        return rejected;
+    }
+
+    /**
      * Removes Shelbyville through the {@code provisioning} and confirms both of its instances were
      * closed. The per-tenant components are {@link AutoCloseable} and closed by the framework on
      * removal, so this reads their state before and after removing the tenant.
@@ -559,6 +606,8 @@ public final class DemoLifecycle {
                                                        TenantComponentProvider<AuditLog> auditProvider,
                                                        boolean unknownTenantRejected,
                                                        boolean unknownTenantQueryRejected,
+                                                       boolean queryWithoutTenantRejected,
+                                                       boolean removedTenantQueryRejected,
                                                        boolean shelbyvilleClosedOnRemoval,
                                                        EventStorageOutcome eventStorage,
                                                        SnapshottingOutcome snapshotting,
@@ -587,6 +636,8 @@ public final class DemoLifecycle {
                                ogdenvilleEnrollments,
                                unknownTenantRejected,
                                unknownTenantQueryRejected,
+                               queryWithoutTenantRejected,
+                               removedTenantQueryRejected,
                                shelbyvilleClosedOnRemoval,
                                allClosedOnShutdown,
                                eventStorage,

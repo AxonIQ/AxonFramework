@@ -136,6 +136,26 @@ public final class Enrollments {
     }
 
     /**
+     * Reads statistics without naming a tenant at all, by sending a {@link GetTenantStatistics} query that
+     * carries no tenant metadata, and blocks for the response.
+     * <p>
+     * There is no tenant to serve such a query for, so the framework rejects it at dispatch rather than
+     * letting it reach a handler that would have nothing to resolve its components from. The tenant is the
+     * only thing missing here, which is what separates this from a query naming a tenant the application
+     * does not know.
+     *
+     * @param queryGateway the gateway to send the query on
+     * @return never returns normally
+     */
+    public static TenantStatistics statisticsWithoutTenant(QueryGateway queryGateway) {
+        QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
+                                                     new GetTenantStatistics());
+        return queryGateway.query(query, TenantStatistics.class)
+                           .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                           .join();
+    }
+
+    /**
      * Subscribes to the given {@code tenant}'s statistics by sending a {@link GetTenantStatistics}
      * subscription query carrying that tenant in metadata. The returned publisher emits the tenant's
      * current statistics first, and every fresh update {@link ReadModelWrites} emits after, for as long as
