@@ -163,8 +163,7 @@ public final class DemoLifecycle {
         provisioning.prepareKnownTenants();
         logger.info("Providers subscribed at startup. Known tenants: {}", tenantIds(statisticsProvider));
 
-        // 1. Subscribe to both known tenants' statistics before either enrolls a student, so their own
-        // subscription receives the updates the enrollments below trigger, not just their final value.
+        step(1, "Subscribe to both known tenants' statistics, before either enrolls a student");
         EventStorageOutcome eventStorage;
         SubscriptionQueryOutcome subscriptionOutcome;
         // Closed however steps 2 and 3 end, so a failure in either does not leave a tenant's subscription query
@@ -172,39 +171,37 @@ public final class DemoLifecycle {
         try (StatisticsSubscription springfieldSubscription = subscribeToStatistics(queryGateway, SPRINGFIELD);
              StatisticsSubscription shelbyvilleSubscription = subscribeToStatistics(queryGateway, SHELBYVILLE)) {
 
-            // 2. Enroll students in the tenants known at startup. Each enrollment appends to the tenant's own
-            // event store, and against Axon Server the same course identifier in two tenants shows the event
-            // stores are isolated.
+            step(2, "Enroll students, each appending to its own tenant's event store");
             eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());
             awaitProjected(queryGateway, SPRINGFIELD, SPRINGFIELD_ENROLLMENTS, PROJECTION_TIMEOUT);
             awaitProjected(queryGateway, SHELBYVILLE, SHELBYVILLE_ENROLLMENTS, PROJECTION_TIMEOUT);
             logTenantView("Springfield University", queryGateway, SPRINGFIELD);
             logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
-            // 3. Neither subscription received the other's updates, and only Springfield's, whose course filled,
-            // was completed, even though recording an enrollment names no tenant when it emits or completes.
+            step(3, "Check what each tenant's own subscription received, and which one completed");
             subscriptionOutcome = proveSubscriptionUpdateIsolation(springfieldSubscription, shelbyvilleSubscription);
         }
 
-        // 4. Filling those courses snapshotted them. Each snapshot went to its own tenant's snapshot store,
-        // so the same course identifier yields two snapshots holding two different sets of students.
-        SnapshottingOutcome snapshottingOutcome = snapshots.hasPerTenantSnapshotStore()
-                ? proveSnapshotIsolation(snapshots)
-                : SnapshottingOutcome.notDemonstrated();
+        step(4, "Show where each tenant's snapshot of the same course identifier ended up");
+        SnapshottingOutcome snapshottingOutcome;
+        if (snapshots.hasPerTenantSnapshotStore()) {
+            snapshottingOutcome = proveSnapshotIsolation(snapshots);
+        } else {
+            snapshottingOutcome = SnapshottingOutcome.notDemonstrated();
+            notOnThisBacking("every tenant shares one snapshot store here, so there is no per-tenant store to read");
+        }
 
-        // 5. Add a tenant at runtime. Its instances materialize on its first command, no config change, and
-        // the running processor re-opens its stream so this tenant's events are projected too.
+        step(5, "Add a tenant while running, with no configuration change");
         provisioning.addTenant(OGDENVILLE);
         enrollWhenTenantReady(commandGateway);
         awaitProjected(queryGateway, OGDENVILLE, OGDENVILLE_ENROLLMENTS, RUNTIME_TENANT_PROJECTION_TIMEOUT);
         logTenantView("Ogdenville University (added at runtime)", queryGateway, OGDENVILLE);
 
-        // 6. All three tenants were served by one processor, not one processor each. Read before Shelbyville
-        // is removed below, while its read model is still there to compare.
+        // Read before Shelbyville is removed below, while its read model is still there to compare.
+        step(6, "Count what served all three tenants' projections");
         StreamingOutcome streaming = observeStreaming(processorNames, queryGateway);
 
-        // 7. A command or query for a tenant the application does not know is rejected, and so is a query
-        // that names no tenant at all.
+        step(7, "Send a command and queries the framework cannot resolve a tenant for");
         boolean unknownTenantRejected = observeUnresolvedTenantRejection(
                 "command for an unknown tenant",
                 () -> Enrollments.enroll(commandGateway, UNKNOWN, SHARED_COURSE_ID, "eve"));
@@ -216,7 +213,7 @@ public final class DemoLifecycle {
                 "query naming no tenant",
                 () -> Enrollments.queryStatisticsWithoutTenant(queryGateway));
 
-        // 8. Removing a tenant closes its per-tenant instances, and its statistics stop being queryable.
+        step(8, "Remove a tenant, closing its instances and ending its queries");
         boolean shelbyvilleClosedOnRemoval =
                 removingTenantClosesItsInstances(provisioning, statisticsProvider, auditProvider);
         boolean removedTenantQueryRejected = removedTenantQueryIsRejected(queryGateway);
@@ -224,10 +221,30 @@ public final class DemoLifecycle {
                                                                           queryWithoutTenantRejected,
                                                                           removedTenantQueryRejected);
 
-        // 9. Shutting down closes every remaining tenant's instances.
+        step(9, "Shut down, closing every remaining tenant's instances");
         return shutDownAndBuildOutcome(shutdown, queryGateway, statisticsProvider, auditProvider,
                                        unknownTenantRejected, queryRejections, shelbyvilleClosedOnRemoval,
                                        eventStorage, snapshottingOutcome, streaming, subscriptionOutcome);
+    }
+
+    /**
+     * Announces the lifecycle step about to run, so the log reads as the numbered story the READMEs tell.
+     *
+     * @param number what step this is
+     * @param what   what the step sets out to show
+     */
+    private static void step(int number, String what) {
+        logger.info("--- Step {}: {}", number, what);
+    }
+
+    /**
+     * Reports that the step just announced needs something this run does not have, so a reader is not left with a
+     * heading and no observation under it.
+     *
+     * @param why what this backing lacks
+     */
+    private static void notOnThisBacking(String why) {
+        logger.info("    Not shown on this run: {}.", why);
     }
 
     /**
@@ -269,9 +286,12 @@ public final class DemoLifecycle {
         boolean springfieldRejectedWhenFull =
                 !Enrollments.tryEnroll(commandGateway, SPRINGFIELD, SHARED_COURSE_ID, "frank");
 
-        return hasPerTenantEventStore
-                ? EventStorageOutcome.demonstratedWith(springfieldRejectedWhenFull, shelbyvilleAccepted)
-                : EventStorageOutcome.notDemonstrated();
+        if (!hasPerTenantEventStore) {
+            notOnThisBacking("one shared event store here, so the same course identifier cannot show two "
+                                     + "isolated streams");
+            return EventStorageOutcome.notDemonstrated();
+        }
+        return EventStorageOutcome.demonstratedWith(springfieldRejectedWhenFull, shelbyvilleAccepted);
     }
 
     /**
@@ -389,8 +409,18 @@ public final class DemoLifecycle {
         AtomicBoolean completed = new AtomicBoolean();
         // Recorded, since which tenant's subscription completes is what the demo observes.
         Disposable subscription = Flux.from(Enrollments.subscribeToStatistics(queryGateway, tenant))
-                                      .doOnComplete(() -> completed.set(true))
-                                      .subscribe(received::add,
+                                      .doOnComplete(() -> {
+                                          completed.set(true);
+                                          logger.info("Tenant [{}]'s subscription completed: no seats left anywhere.",
+                                                      tenant.tenantId());
+                                      })
+                                      .subscribe(statistics -> {
+                                                     // Shown as it arrives, since a subscription query's point is
+                                                     // that the tenant hears about a change when it happens.
+                                                     logger.info("Tenant [{}]'s subscription received: {} enrollment(s).",
+                                                                 tenant.tenantId(), statistics.totalEnrollments());
+                                                     received.add(statistics);
+                                                 },
                                                  failure -> logger.warn("Tenant [{}]'s statistics subscription failed.",
                                                                         tenant.tenantId(), failure));
         boolean active = holdsWithin("tenant [" + tenant.tenantId() + "] subscription active",
@@ -445,12 +475,14 @@ public final class DemoLifecycle {
         boolean isolatedByTenant = springfieldTotals.equals(expectedSpringfieldTotals)
                 && shelbyvilleTotals.equals(expectedShelbyvilleTotals);
         boolean completionScopedToTenant = springfieldCompleted && !shelbyville.isCompleted();
+        logger.info("{}", TenantView.renderSubscriptions(springfieldTotals,
+                                                        springfield.isCompleted(),
+                                                        shelbyvilleTotals,
+                                                        shelbyville.isCompleted()));
         logger.info("""
-                    Springfield's subscription saw enrollment totals {}, Shelbyville's saw {}. \
-                    Neither received the other's: {}. \
-                    Springfield's course filled so its subscription completed, while Shelbyville's kept a free \
-                    seat and stayed open: {}""",
-                    springfieldTotals, shelbyvilleTotals, isolatedByTenant, completionScopedToTenant);
+                    Neither tenant received the other's updates: {}. \
+                    Only the tenant that ran out of seats was completed: {}""",
+                    isolatedByTenant, completionScopedToTenant);
         return new SubscriptionQueryOutcome(springfieldTotals.size(),
                                             shelbyvilleTotals.size(),
                                             isolatedByTenant,
@@ -535,6 +567,8 @@ public final class DemoLifecycle {
      */
     private static StreamingOutcome observeStreaming(List<String> processorNames, QueryGateway queryGateway) {
         if (!processorNames.contains(StatisticsConfiguration.PROCESSOR_NAME)) {
+            notOnThisBacking("no projection runs here, since a shared event store cannot attribute an event "
+                                     + "to a tenant, so the command handler fills the read model instead");
             return StreamingOutcome.notDemonstrated();
         }
         int springfieldProjected = Enrollments.statistics(queryGateway, SPRINGFIELD).totalEnrollments();
@@ -577,6 +611,10 @@ public final class DemoLifecycle {
      * @param firstCommands the commands to send, retried until the tenant accepts them
      */
     private static void whenTenantReady(TenantDescriptor tenant, Runnable firstCommands) {
+        logger.info("""
+                    Waiting for tenant [{}] to accept commands. \
+                    Until it does, the framework logs the attempts it rejects, which is expected here.""",
+                    tenant.tenantId());
         Awaitility.await("tenant [" + tenant.tenantId() + "] ready for commands")
                   .atMost(TENANT_READY_TIMEOUT)
                   .ignoreExceptionsMatching(Enrollments::causedByTenantNotReady)

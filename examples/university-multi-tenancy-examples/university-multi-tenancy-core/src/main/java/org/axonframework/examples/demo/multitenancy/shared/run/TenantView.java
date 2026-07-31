@@ -34,6 +34,30 @@ final class TenantView {
     }
 
     /**
+     * Renders what each tenant's own subscription received, as a multi-line, human-readable block.
+     *
+     * @param springfieldTotals    the running enrollment totals Springfield's subscription received
+     * @param springfieldCompleted whether Springfield's subscription was completed
+     * @param shelbyvilleTotals    the running enrollment totals Shelbyville's subscription received
+     * @param shelbyvilleCompleted whether Shelbyville's subscription was completed
+     * @return the rendered view
+     */
+    public static String renderSubscriptions(List<Integer> springfieldTotals,
+                                             boolean springfieldCompleted,
+                                             List<Integer> shelbyvilleTotals,
+                                             boolean shelbyvilleCompleted) {
+        return """
+
+               Subscription queries, one per tenant:
+                 - Springfield received %s, and its subscription %s
+                 - Shelbyville received %s, and its subscription %s
+               """.formatted(springfieldTotals,
+                             springfieldCompleted ? "completed" : "stayed open",
+                             shelbyvilleTotals,
+                             shelbyvilleCompleted ? "completed" : "stayed open");
+    }
+
+    /**
      * Renders the given {@code statistics} under the given {@code label} as a multi-line,
      * human-readable block.
      *
