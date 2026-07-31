@@ -18,7 +18,8 @@ org.axonframework.examples.demo.multitenancy
 |  +- write/enrollstudent             the enroll-student slice: command, handler (+ its State entity), exceptions, wiring
 |  +- read/statistics                 the statistics read slice: query, response, handler, the CourseStatisticsStore read model, wiring
 |     +- CourseStatisticsProjection   projects every tenant's events into that tenant's own read model
-|     +- ReadModelWrites              the one write both of them use, so either fills it identically
+|     +- ReadModelWrites              the one write both of them use, so either fills it identically,
+|                                      and so the one place that emits and completes subscription updates
 +- shared                             the demo harness both runnable demos use, grouped by what each part does
    +- DemoBacking                     in memory or Axon Server, the one fact the two runs' differences derive from
    +- run                             runs the scenario and reports what it observed
@@ -28,12 +29,17 @@ org.axonframework.examples.demo.multitenancy
    |  +- EventStorageOutcome          what the per-tenant event-storage isolation observed, asserted by the tests
    |  +- SnapshottingOutcome          what the per-tenant snapshot isolation observed, asserted by the tests
    |  +- StreamingOutcome             what the tenant-aware event processing observed, asserted by the tests
-   |  +- TenantView                   renders one tenant's isolated view
+   |  +- SubscriptionQueryOutcome     what the tenant-aware subscription-query isolation and completion observed
+   |  +- QueryRejectionOutcome        what the query-side tenant guardrails observed
+   |  +- TenantView                   renders a tenant's isolated view, and what each subscription received
    |  +- ProviderAmbiguityGuardrail   the configuration-time guardrail
    +- messaging                       drives the command and query gateways
-   |  +- Enrollments                  opens courses, enrolls, and reads statistics through the gateways
+   |  +- Enrollments                  opens courses and enrolls students, through the command gateway
+   |  +- StatisticsQueries            reads a tenant's statistics, once or as a subscription
+   |  +- StatisticsSubscription       one tenant's open subscription, and every update it received
+   |  +- TenantRejections             observes the framework refusing a message it cannot resolve a tenant for
    |  +- TenantMetadataFactory        builds the metadata that carries a tenant on a message
-   |  +- RemoteExceptions             recognizes a handler failure whether raised as itself or reconstructed over Axon Server
+   |  +- RemoteExceptions             recognizes a failure whether raised as itself or reconstructed over Axon Server
    +- tenant                          supplies the tenants and their per-tenant components
    |  +- TenantProvisioning           in-memory vs Axon Server tenant provisioning (and whether it isolates event stores)
    |  +- TenantSnapshots              reads one tenant's own snapshot store, to observe where a snapshot landed
@@ -46,15 +52,23 @@ org.axonframework.examples.demo.multitenancy
 ## The lifecycle
 
 `DemoLifecycle.run` reads top to bottom as the story both demos tell, against an already-started
-application:
+application. Each step announces itself in the log as `--- Step N`, so a run can be followed against the list
+below, and a step that needs something the run does not have says so instead of passing silently:
 
-1. Enroll students in the tenants known at startup, and read each tenant's statistics back to show it
-   sees only its own. Each enrollment is one command that appends to the tenant's own event store. Against
-   Axon Server the two known tenants open a course under the same identifier: one fills it to capacity and
-   a further enrollment is rejected as full, while the same identifier still accepts an enrollment in the
-   other tenant, which proves each tenant's events live in its own store. In memory there is one shared
-   event store, so the tenants use distinct identifiers and this isolation is not shown.
-2. Show where those snapshots ended up. The course carries a snapshot policy, so enrolling the second
+1. Subscribe to the statistics of both tenants known at startup, before either enrolls a single student.
+2. Enroll students in those tenants, and read each tenant's statistics back to show it sees only its own.
+   Each enrollment is one command that appends to the tenant's own event store. Against Axon Server the two
+   known tenants open a course under the same identifier: Springfield fills it to capacity and a further
+   enrollment is rejected as full, while the same identifier still accepts an enrollment in the other tenant,
+   which proves each tenant's events live in its own store. In memory there is one shared event store, so the
+   tenants use distinct identifiers and this isolation is not shown. Shelbyville opens its course with a seat to
+   spare, so it still has room afterwards, which is what step 3 needs.
+3. Confirm neither tenant's subscription received the other's updates, and that only Springfield's, which ran
+   out of seats, was completed. Announcing and completing both use a tenant-blind predicate, so what is observed
+   here is the framework's isolation rather than the predicate's. Each subscription saw its own tenant's
+   enrollments arriving one at a time, compared as a whole sequence so a replaced update fails too. In memory no
+   projection runs, so nothing announces a change and this is not shown.
+4. Show where those snapshots ended up. The course carries a snapshot policy, so enrolling the second
    student snapshots it, and the rejected third enrollment sources the course from that snapshot. Against
    Axon Server both tenants end up with their own snapshot of the same course identifier, and each snapshot
    holds only its own tenant's student, which is what proves neither tenant read the other's. It compares
@@ -63,15 +77,19 @@ application:
    read the other's snapshot. A snapshot captures the state its triggering load sourced rather than the
    state that command leaves behind, so each holds one student. In memory every tenant shares one snapshot
    store, so this isolation is not shown.
-3. Add a tenant at runtime, enroll into it, and show its components appear on first use. Against Axon
+5. Add a tenant at runtime, enroll into it, and show its components appear on first use. Against Axon
    Server this also shows the running processor picking the tenant up: it re-opens its stream to include a
    tenant that did not exist when it started, and projects that tenant's enrollment.
-4. Count what served all three tenants' projections. Against Axon Server there is one streaming event
+6. Count what served all three tenants' projections. Against Axon Server there is one streaming event
    processor rather than one per tenant, and each tenant's read model holds only its own enrollments even
    though two of them use the same course identifier. In memory no projection runs, so this is not shown.
-5. Send a command for an unknown tenant and confirm it is rejected.
-6. Remove a tenant and confirm its per-tenant instances are closed.
-7. Shut down and confirm every remaining tenant's instances are closed.
+7. Send a command, and then a query, for an unknown tenant and confirm both are rejected, and confirm a
+   query carrying no tenant metadata at all is rejected too. A tenant is what decides which components
+   answer a query, so a query naming none cannot be served.
+8. Remove a tenant, confirm its per-tenant instances are closed, and confirm its statistics stop being
+   queryable. That last check waits rather than asserting once: removal reaches the tenant provider before
+   the routing to that tenant is torn down, so a query sent in that window still succeeds.
+9. Shut down and confirm every remaining tenant's instances are closed.
 
 The configuration-time guardrail (`ProviderAmbiguityGuardrail`) is a separate, standalone check, since
 it is about configuration rather than the running lifecycle.
@@ -87,6 +105,19 @@ event was streamed from, and the framework puts it on the processing context of 
 
 That makes the read model eventually consistent, so every observation of one in the lifecycle waits for the
 projection to catch up.
+
+`ReadModelWrites` also holds the one place that tells open subscription queries about a change: it emits the
+tenant's fresh statistics per enrollment, and completes that tenant's subscriptions once none of its courses has
+a seat left. Only the projection calls it. Telling read-side subscribers about a change belongs to the event
+handler that projected it, not to the command handler that decided it, so the in-memory run, which has no
+projection, announces nothing. Neither predicate names a tenant, and the framework scopes both to the tenant of
+the event being handled.
+
+Two details keep the updates a subscriber sees matching the enrollments that happened. Emitting follows the
+read-model write, so a redelivered enrollment changes nothing and emits nothing. And a course counts as having
+seats until the read model both knows its capacity and sees it filled, so neither an untracked course nor one
+nobody enrolled in yet can complete a subscription early. That capacity comes from `CourseOpened` on the
+projection path, and from the course the enroll-student handler already sourced on the shared in-memory store.
 
 ### The projection is idempotent, on purpose
 

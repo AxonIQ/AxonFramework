@@ -17,7 +17,7 @@ application and its beans:
 ```
 org.axonframework.examples.demo.multitenancy
 +- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: providers, handlers, course modules, projection, processor, stores, timeout
++- UniversityConfiguration   the beans: providers, handlers, modules, projection, processor, stores, knobs
 +- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
 ```
 
@@ -38,6 +38,12 @@ streams from tenant-aware and re-opens that stream when the set of tenants chang
 One bean is there purely to show a knob: `MultiTenantStreamingProcessorRestartConfiguration` bounds how long each
 processor gets to stop and start when the set of tenants changes. The starter defaults it, so an application only
 declares it to raise it, which a deployment with slow-starting processors would.
+
+Another bean turns off preferring a locally subscribed query handler
+(`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
+where a query handler is always subscribed locally, so without this a direct query never reaches the per-tenant
+query connector, leaving that routing unshown. Correctness does not depend on it: the tenant is checked before
+dispatch either way. A subscription query always routes through the connector regardless.
 
 Two Spring specifics are worth knowing, since neither applies to the declarative demo. The processor is
 declared through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently
@@ -85,6 +91,12 @@ streaming event processor served all three tenants, and each tenant's read model
 enrollments even though two of them use the same course identifier. The tenant added while the
 application was running is projected too, which only happens if the processor re-opened its stream to
 include a tenant that did not exist when it started.
+
+It also asserts tenant-aware subscription queries and the query-side guardrails: each tenant's subscription
+received only its own updates, and only Springfield's, which ran out of seats, completed. A query is rejected
+when its tenant is unknown, removed, or not named. Being the Axon Server path with
+`preferLocalQueryHandler(false)` set, this is also where a direct query is proven to route through the
+per-tenant connector rather than being served locally.
 
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:

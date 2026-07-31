@@ -98,7 +98,8 @@ class EnrollStudentCommandHandler {
         List<StudentEnrolledInCourse> events = decide(command, state);
         eventAppender.append(events);
         if (!backing.projectsReadModel() && !events.isEmpty()) {
-            ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, command.courseId(), command.studentId());
+            ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog,
+                                             command.courseId(), command.studentId());
         }
     }
 

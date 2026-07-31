@@ -24,6 +24,7 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * @param springfieldAuditEntries    the entries recorded in Springfield's audit log
  * @param ogdenvilleEnrollments      the enrollments recorded in the runtime-added Ogdenville's store
  * @param unknownTenantRejected      whether a command for an unknown tenant was rejected
+ * @param queryRejections            what the query-side tenant guardrails observed
  * @param shelbyvilleClosedOnRemoval whether Shelbyville's instances were closed when its tenant was removed
  * @param allClosedOnShutdown        whether every remaining tenant's instances were closed on shutdown
  * @param eventStorage               what the per-tenant event-storage demonstration observed (only demonstrated
@@ -32,15 +33,18 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  *                                   against Axon Server)
  * @param streaming                  what the tenant-aware event-processing demonstration observed (only
  *                                   demonstrated against Axon Server)
+ * @param subscriptionQuery          what the tenant-aware subscription-query demonstration observed
  */
 public record DemoOutcome(int springfieldEnrollments,
                           int springfieldAuditEntries,
                           int ogdenvilleEnrollments,
                           boolean unknownTenantRejected,
+                          QueryRejectionOutcome queryRejections,
                           boolean shelbyvilleClosedOnRemoval,
                           boolean allClosedOnShutdown,
                           EventStorageOutcome eventStorage,
                           SnapshottingOutcome snapshotting,
-                          StreamingOutcome streaming) {
+                          StreamingOutcome streaming,
+                          SubscriptionQueryOutcome subscriptionQuery) {
 
 }

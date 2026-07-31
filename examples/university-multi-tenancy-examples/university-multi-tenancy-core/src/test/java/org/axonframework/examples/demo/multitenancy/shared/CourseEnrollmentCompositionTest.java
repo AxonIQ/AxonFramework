@@ -48,6 +48,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,10 +84,9 @@ class CourseEnrollmentCompositionTest {
         TenantProvider tenantProvider = new DemoTenantProvider(TENANT);
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        // A backing without per-tenant event stores keeps the read model written by the command handler, so
-        // this test observes an enrollment's
-        // full effect without a projection to wait for. It is also the only shape a single shared event store
-        // supports, since an event streamed from it cannot be attributed to a tenant.
+        // A backing without per-tenant event stores keeps the read model written by the command handler, so this
+        // test observes an enrollment's full effect without a projection to wait for. It is also the only shape a
+        // single shared event store supports, since an event streamed from it cannot be attributed to a tenant.
         UniversityModuleConfiguration.configure(configurer, DemoBacking.IN_MEMORY);
         configurer.componentRegistry(registry -> {
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
@@ -216,4 +217,5 @@ class CourseEnrollmentCompositionTest {
                       .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                       .join();
     }
+
 }

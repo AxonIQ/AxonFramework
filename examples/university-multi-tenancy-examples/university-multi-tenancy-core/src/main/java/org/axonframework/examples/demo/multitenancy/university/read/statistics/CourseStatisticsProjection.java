@@ -18,8 +18,10 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import io.axoniq.framework.messaging.multitenancy.annotation.TenantScoped;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 
 /**
  * Builds every tenant's course statistics from the enrollment events of every tenant, writing each into the
@@ -30,7 +32,9 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
  * <p>
  * Which tenant an event belongs to follows from the event store it was streamed from, not from anything stored
  * in the event. The framework puts that tenant on the processing context and resolves the {@link TenantScoped}
- * parameters below from it, the same injection the command and query handlers use.
+ * parameters below from it, the same injection the command and query handlers use. The
+ * {@link QueryUpdateEmitter} parameter resolves from that same processing context, so the statistics update it
+ * emits is isolated to that tenant's own subscription queries too.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -38,17 +42,38 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 public class CourseStatisticsProjection {
 
     /**
-     * Records the enrollment in the course statistics and audit log of the tenant whose event store this
-     * event was streamed from.
+     * Records the course's capacity in the course statistics of the tenant whose event store this event was
+     * streamed from, so that tenant's read model can tell when the course has no seats left.
+     *
+     * @param event                 the course-opened event being projected
+     * @param courseStatisticsStore the injected course-statistics store of the event's tenant
+     */
+    @EventHandler
+    public void on(CourseOpened event,
+                   @TenantScoped CourseStatisticsStore courseStatisticsStore) {
+        ReadModelWrites.recordCourseCapacity(courseStatisticsStore, event.courseId(), event.capacity());
+    }
+
+    /**
+     * Records the enrollment in the course statistics and audit log of the tenant whose event store this event was
+     * streamed from, then tells that tenant's open subscription queries about it.
+     * <p>
+     * Announcing a change to subscribers is the event handler's job. A command handler decides what happened, and
+     * this is what tells the read side's listeners that it did.
      *
      * @param event                 the enrollment event being projected
      * @param courseStatisticsStore the injected course-statistics store of the event's tenant
      * @param auditLog              the injected audit log of the event's tenant
+     * @param updateEmitter         the update emitter to notify open subscription queries through
      */
     @EventHandler
     public void on(StudentEnrolledInCourse event,
                    @TenantScoped CourseStatisticsStore courseStatisticsStore,
-                   @TenantScoped AuditLog auditLog) {
-        ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, event.courseId(), event.studentId());
+                   @TenantScoped AuditLog auditLog,
+                   QueryUpdateEmitter updateEmitter) {
+        if (ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog,
+                                            event.courseId(), event.studentId())) {
+            ReadModelWrites.announceEnrollment(updateEmitter, courseStatisticsStore, auditLog, event.courseId());
+        }
     }
 }

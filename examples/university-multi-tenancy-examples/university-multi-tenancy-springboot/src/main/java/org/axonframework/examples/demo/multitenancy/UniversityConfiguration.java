@@ -18,7 +18,9 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.api.AxonServerTenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.queryhandling.MultiTenantAxonServerQueryBusConnector;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantStreamingProcessorRestartConfiguration;
+import io.axoniq.framework.messaging.queryhandling.distributed.DistributedQueryBusConfiguration;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
@@ -226,5 +228,22 @@ public class UniversityConfiguration {
     @ConditionalOnExpression("${axon.multitenancy.enabled:true} and ${axon.axonserver.enabled:true}")
     public MultiTenantStreamingProcessorRestartConfiguration processorRestartConfiguration() {
         return MultiTenantStreamingProcessorRestartConfiguration.DEFAULT.restartTimeout(PROCESSOR_RESTART_TIMEOUT);
+    }
+
+    /**
+     * Turns off preferring a locally subscribed query handler, so a direct query is routed through the
+     * per-tenant {@link MultiTenantAxonServerQueryBusConnector} rather than served from the local segment. See
+     * {@link DistributedQueryBusConfiguration#preferLocalQueryHandler(boolean)} for what the setting does.
+     * <p>
+     * This demo runs in one process, where a query handler is always subscribed locally, so without this the
+     * connector is never exercised and the routing this demo is about would go unshown. Correctness does not
+     * depend on it. A subscription query always routes through the connector regardless.
+     *
+     * @return the distributed query bus configuration with direct queries routed through the connector
+     */
+    @Bean
+    @ConditionalOnExpression("${axon.multitenancy.enabled:true} and ${axon.axonserver.enabled:true}")
+    public DistributedQueryBusConfiguration distributedQueryBusConfiguration() {
+        return DistributedQueryBusConfiguration.DEFAULT.preferLocalQueryHandler(false);
     }
 }

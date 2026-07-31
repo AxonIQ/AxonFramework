@@ -59,10 +59,14 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 * **Multiple component types.** Every tenant view prints both an enrollment count and an audit-entry
   count, so both providers are injected, each matched by type.
 * **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
+* **Subscription queries reach the right tenant.** Each known tenant subscribes to its own statistics and
+  receives its own initial result. Updates after that come from the projection, which only the Axon Server run
+  has, so isolation of updates and completion is shown there rather than here.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
-* **Unknown tenant rejected.** A command for a tenant the application does not know fails with a
-  `TenantNotResolvedException`, so no instance is ever built for it.
+* **Unknown tenant rejected.** A command, and then a query, for a tenant the application does not know
+  each fail with a `TenantNotResolvedException`, so no instance is ever built for it. A query carrying no
+  tenant metadata at all, and a query for a tenant that has been removed, fail the same way.
 * **Ambiguity rejected.** Registering two providers for one component type is refused.
 * **Cleanup.** Removing a tenant closes its instances, and shutting down closes the rest.
 
@@ -98,13 +102,25 @@ event processing an application configures. A tenant change restarts the running
 long each one gets to stop and start. It is registered at the value the framework already defaults to, so the
 run behaves identically and the point is only to show where the knob is.
 
-Finally, it shows tenant-aware event processing. The log reports how many streaming event processors served
+Against Axon Server, the demo also turns off preferring a locally subscribed query handler
+(`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
+where a query handler is always subscribed locally, so without this a direct query would never reach the
+per-tenant query connector at all, leaving that routing unshown. Correctness does not depend on it: the tenant
+is checked before dispatch either way. A subscription query always routes through the connector regardless.
+
+It shows tenant-aware event processing too. The log reports how many streaming event processors served
 all three tenants, and the answer is one rather than one per tenant. The two known tenants hold the same
 course identifier, so their separate enrollment counts show that single processor keeping their read models
 apart. Ogdenville, added while the application is running, is picked up
 without any configuration change: the framework re-opens the stream to include it, and its enrollment is
 projected into its own read model. Because the read model now trails the command that appended the event,
 the run waits for the projection to catch up before reading it.
+
+Finally, both known tenants open a subscription query on their own statistics and each receives its own initial
+result, so the subscription is routed by tenant like any other query. What a subscriber hears after that comes
+from the projection, and this run has none, so the log says the step is not shown here and the Axon Server run
+is where update isolation and completion are proven. A query is rejected the same way a command is when its
+tenant is unknown, removed, or not named at all.
 
 ## The same demo, wired by Spring Boot
 
