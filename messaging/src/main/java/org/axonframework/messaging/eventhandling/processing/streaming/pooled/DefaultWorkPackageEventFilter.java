@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Default implementation of a {@link WorkPackage.EventFilter} that filters events based on the
@@ -111,9 +110,7 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
             if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST)) {
                 return true;
             }
-            return sequenceIdentifiers.stream().anyMatch(identifier -> new SegmentMatcher(
-                    (e, ctx) -> Optional.of(identifier)).matches(segment, eventMessage, context)
-            );
+            return sequenceIdentifiers.stream().anyMatch(identifier -> SegmentMatcher.matches(segment, identifier));
         } catch (Exception e) {
             errorHandler.handleError(
                     new ErrorContext(eventProcessor, e, Collections.singletonList(eventMessage), context)
