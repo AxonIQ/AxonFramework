@@ -52,15 +52,18 @@ public interface CourseStatisticsStore extends AutoCloseable {
     void recordCourseCapacity(String courseId, int capacity);
 
     /**
-     * Indicates whether the given {@code courseId} is at capacity, and so can receive no further enrollments.
+     * Indicates whether every course this tenant holds is at capacity, and so whether the tenant's statistics
+     * can still change at all.
      * <p>
-     * Returns {@code false} for a course whose capacity this store has not seen, since an unknown capacity is
-     * no reason to declare a course full.
+     * This is a tenant-wide question rather than a per-course one, because {@link GetTenantStatistics} reports
+     * the whole tenant. A single full course says nothing while another still has seats.
+     * <p>
+     * Returns {@code false} while any course's capacity is unknown to this store, since an unknown capacity is
+     * no reason to declare a course full, and {@code false} for a tenant holding no courses at all.
      *
-     * @param courseId the identifier of the course to check
-     * @return {@code true} if the course is known to be at capacity
+     * @return {@code true} if every course held is known to be at capacity
      */
-    boolean isCourseFull(String courseId);
+    boolean isEveryCourseFull();
 
     /**
      * Records that the given {@code studentId} is enrolled in the given {@code courseId}, reporting whether

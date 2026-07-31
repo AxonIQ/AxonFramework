@@ -20,6 +20,7 @@ import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigur
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
+import io.axoniq.framework.messaging.multitenancy.axonserver.queryhandling.MultiTenantAxonServerQueryBusConnector;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantStreamingProcessorRestartConfiguration;
 import io.axoniq.framework.messaging.queryhandling.distributed.DistributedQueryBusConfiguration;
@@ -144,7 +145,7 @@ public final class UniversityConfiguration {
 
     /**
      * Turns off preferring a locally subscribed query handler, so a direct query is routed through the
-     * per-tenant {@link io.axoniq.framework.messaging.multitenancy.axonserver.queryhandling.MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
+     * per-tenant {@link MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
      * <p>
      * This whole demo runs in one process, where every query handler is always subscribed locally, so
      * without this a direct {@code query()} would never reach the connector at all: tenant resolution would

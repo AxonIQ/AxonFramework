@@ -31,6 +31,7 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * @param completionScopedToTenant   whether filling Springfield's course completed only Springfield's
  *                                   subscription, leaving Shelbyville's open on its course's free seat
  * @author Jakob Hatzl
+ * @author Laura Devriendt
  * @since 5.3.0
  */
 public record SubscriptionQueryOutcome(int springfieldUpdatesReceived,

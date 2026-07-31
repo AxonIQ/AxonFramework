@@ -116,8 +116,11 @@ public final class DemoLifecycle {
     // known at startup enroll two students, so both cross the snapshot threshold, while the runtime-added
     // tenant enrolls one. Only Springfield's course is filled to capacity by that, and a rejected enrollment
     // appends nothing, so it never reaches a read model.
-    private static final int SPRINGFIELD_ENROLLMENTS = 2;
-    private static final int SHELBYVILLE_ENROLLMENTS = 2;
+    // Springfield enrolls exactly its capacity, so its course fills. Shelbyville enrolls the same number into a
+    // course with one seat more, so its own course keeps a seat free. That relation, not the numbers, is what
+    // the subscription-completion step observes.
+    private static final int SPRINGFIELD_ENROLLMENTS = SPRINGFIELD_COURSE_CAPACITY;
+    private static final int SHELBYVILLE_ENROLLMENTS = SHELBYVILLE_COURSE_CAPACITY - 1;
     private static final int OGDENVILLE_ENROLLMENTS = 1;
 
     // A tenant's context and command bus connector are created asynchronously, so its first command waits.
@@ -161,25 +164,26 @@ public final class DemoLifecycle {
 
         // 1. Subscribe to both known tenants' statistics before either enrolls a student, so their own
         // subscription receives the updates the enrollments below trigger, not just their final value.
-        StatisticsSubscription springfieldSubscription = subscribeToStatistics(queryGateway, SPRINGFIELD);
-        StatisticsSubscription shelbyvilleSubscription = subscribeToStatistics(queryGateway, SHELBYVILLE);
+        EventStorageOutcome eventStorage;
+        SubscriptionQueryOutcome subscriptionOutcome;
+        // Closed however steps 2 and 3 end, so a failure in either does not leave a tenant's subscription query
+        // open on its connection.
+        try (StatisticsSubscription springfieldSubscription = subscribeToStatistics(queryGateway, SPRINGFIELD);
+             StatisticsSubscription shelbyvilleSubscription = subscribeToStatistics(queryGateway, SHELBYVILLE)) {
 
-        // 2. Enroll students in the tenants known at startup. Each enrollment appends to the tenant's own
-        // event store, and against Axon Server the same course identifier in two tenants shows the event
-        // stores are isolated.
-        EventStorageOutcome eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());
-        awaitProjected(queryGateway, SPRINGFIELD, SPRINGFIELD_ENROLLMENTS, PROJECTION_TIMEOUT);
-        awaitProjected(queryGateway, SHELBYVILLE, SHELBYVILLE_ENROLLMENTS, PROJECTION_TIMEOUT);
-        logTenantView("Springfield University", queryGateway, SPRINGFIELD);
-        logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
+            // 2. Enroll students in the tenants known at startup. Each enrollment appends to the tenant's own
+            // event store, and against Axon Server the same course identifier in two tenants shows the event
+            // stores are isolated.
+            eventStorage = enrollStudents(commandGateway, provisioning.hasPerTenantEventStore());
+            awaitProjected(queryGateway, SPRINGFIELD, SPRINGFIELD_ENROLLMENTS, PROJECTION_TIMEOUT);
+            awaitProjected(queryGateway, SHELBYVILLE, SHELBYVILLE_ENROLLMENTS, PROJECTION_TIMEOUT);
+            logTenantView("Springfield University", queryGateway, SPRINGFIELD);
+            logTenantView("Shelbyville University", queryGateway, SHELBYVILLE);
 
-        // 3. Neither subscription received the other's updates, and only Springfield's, whose course filled,
-        // was completed, even though recording an enrollment names no tenant when it emits or completes. Both
-        // subscriptions are done once this is observed.
-        SubscriptionQueryOutcome subscriptionOutcome =
-                proveSubscriptionUpdateIsolation(springfieldSubscription, shelbyvilleSubscription);
-        springfieldSubscription.cancel();
-        shelbyvilleSubscription.cancel();
+            // 3. Neither subscription received the other's updates, and only Springfield's, whose course filled,
+            // was completed, even though recording an enrollment names no tenant when it emits or completes.
+            subscriptionOutcome = proveSubscriptionUpdateIsolation(springfieldSubscription, shelbyvilleSubscription);
+        }
 
         // 4. Filling those courses snapshotted them. Each snapshot went to its own tenant's snapshot store,
         // so the same course identifier yields two snapshots holding two different sets of students.
@@ -200,16 +204,16 @@ public final class DemoLifecycle {
 
         // 7. A command or query for a tenant the application does not know is rejected, and so is a query
         // that names no tenant at all.
-        boolean unknownTenantRejected = isRejectedAsUnresolvedTenant(
-                "Command for an unknown tenant",
+        boolean unknownTenantRejected = observeUnresolvedTenantRejection(
+                "command for an unknown tenant",
                 () -> Enrollments.enroll(commandGateway, UNKNOWN, SHARED_COURSE_ID, "eve"));
-        boolean unknownTenantQueryRejected = isRejectedAsUnresolvedTenant(
-                "Query for an unknown tenant",
+        boolean unknownTenantQueryRejected = observeUnresolvedTenantRejection(
+                "query for an unknown tenant",
                 () -> Enrollments.statistics(queryGateway, UNKNOWN));
         // A tenant is what decides which components answer a query, so a query naming none cannot be served.
-        boolean queryWithoutTenantRejected = isRejectedAsUnresolvedTenant(
-                "Query naming no tenant",
-                () -> Enrollments.statisticsWithoutTenant(queryGateway));
+        boolean queryWithoutTenantRejected = observeUnresolvedTenantRejection(
+                "query naming no tenant",
+                () -> Enrollments.queryStatisticsWithoutTenant(queryGateway));
 
         // 8. Removing a tenant closes its per-tenant instances, and its statistics stop being queryable.
         boolean shelbyvilleClosedOnRemoval =
@@ -278,8 +282,8 @@ public final class DemoLifecycle {
      * what lets one tenant end up with a full course and another with room to spare.
      *
      * @param commandGateway the gateway enrollments are sent on
-     * @param tenant         the tenant whose course to fill
-     * @param courseId       the identifier of the course to open and fill
+     * @param tenant         the tenant whose course to open
+     * @param courseId       the identifier of the course to open and enroll into
      * @param capacity       the number of seats the course offers
      * @param firstStudent   the student enrolled first
      * @param secondStudent  the student enrolled second, whose enrollment snapshots the course
@@ -400,8 +404,9 @@ public final class DemoLifecycle {
         if (!active) {
             // Said loudly, so a run whose updates never arrive says the subscription never started rather than
             // leaving the isolation check below to report it as a leak.
-            logger.warn("Tenant [{}]'s statistics subscription produced no initial result within {}. "
-                                + "Anything observed on it below is unreliable.",
+            logger.warn("""
+                        Tenant [{}]'s statistics subscription produced no initial result within {}. \
+                        Anything observed on it below is unreliable.""",
                         tenant.tenantId(), TENANT_READY_TIMEOUT);
         }
         return new StatisticsSubscription(received, subscription, completed);
@@ -426,15 +431,27 @@ public final class DemoLifecycle {
                                                                              StatisticsSubscription shelbyville) {
         List<Integer> expectedSpringfieldTotals = expectedRunningTotals(SPRINGFIELD_ENROLLMENTS);
         List<Integer> expectedShelbyvilleTotals = expectedRunningTotals(SHELBYVILLE_ENROLLMENTS);
-        holdsWithin("Springfield's subscription received " + expectedSpringfieldTotals.size() + " update(s)",
-                    PROJECTION_TIMEOUT,
-                    () -> springfield.received().size() >= expectedSpringfieldTotals.size());
-        holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleTotals.size() + " update(s)",
-                    PROJECTION_TIMEOUT,
-                    () -> shelbyville.received().size() >= expectedShelbyvilleTotals.size());
-        // Springfield's course filled, so its subscription is completed. Awaited, since the completion trails
-        // the update that filled it.
-        holdsWithin("Springfield's subscription completed", PROJECTION_TIMEOUT, springfield::isCompleted);
+        boolean springfieldArrived =
+                holdsWithin("Springfield's subscription received " + expectedSpringfieldTotals.size() + " update(s)",
+                            PROJECTION_TIMEOUT,
+                            () -> springfield.receivedCount() >= expectedSpringfieldTotals.size());
+        boolean shelbyvilleArrived =
+                holdsWithin("Shelbyville's subscription received " + expectedShelbyvilleTotals.size() + " update(s)",
+                            PROJECTION_TIMEOUT,
+                            () -> shelbyville.receivedCount() >= expectedShelbyvilleTotals.size());
+        // Springfield's course filled, so its subscription is completed. Awaited, since the completion trails the
+        // update that filled it, and awaited last, so a leak into Shelbyville must have been emitted before it.
+        boolean springfieldCompleted =
+                holdsWithin("Springfield's subscription completed", PROJECTION_TIMEOUT, springfield::isCompleted);
+        if (!springfieldArrived || !shelbyvilleArrived || !springfieldCompleted) {
+            // Said loudly, so a run reporting no isolation says which observation never arrived rather than
+            // reading as a leak between tenants.
+            logger.warn("""
+                        Not every subscription observation arrived within {}. Springfield's updates: {}, \
+                        Shelbyville's updates: {}, Springfield completed: {}. \
+                        What follows understates what the framework did.""",
+                        PROJECTION_TIMEOUT, springfieldArrived, shelbyvilleArrived, springfieldCompleted);
+        }
 
         List<Integer> springfieldTotals = springfield.receivedTotals();
         List<Integer> shelbyvilleTotals = shelbyville.receivedTotals();
@@ -470,7 +487,7 @@ public final class DemoLifecycle {
      * One tenant's open statistics subscription: every {@link TenantStatistics} update it has received so far,
      * whether it was completed, and the means to cancel it.
      */
-    private static final class StatisticsSubscription {
+    private static final class StatisticsSubscription implements AutoCloseable {
 
         private final List<TenantStatistics> received;
         private final Disposable subscription;
@@ -487,7 +504,8 @@ public final class DemoLifecycle {
         /**
          * Stops receiving updates on this subscription.
          */
-        void cancel() {
+        @Override
+        public void close() {
             subscription.dispose();
         }
 
@@ -501,12 +519,12 @@ public final class DemoLifecycle {
         }
 
         /**
-         * The updates received so far, including the initial result.
+         * The number of updates received so far, including the initial result.
          *
-         * @return the updates received, in the order they arrived
+         * @return how many updates arrived
          */
-        List<TenantStatistics> received() {
-            return received;
+        int receivedCount() {
+            return received.size();
         }
 
         /**
@@ -594,8 +612,8 @@ public final class DemoLifecycle {
     }
 
     /**
-     * Sends the given {@code dispatch} and confirms the framework refused it because its tenant could not be
-     * resolved, so that no instance is ever built for it.
+     * Sends the given {@code dispatch} and observes whether the framework refused it because its tenant could
+     * not be resolved, so that no instance is ever built for it.
      * <p>
      * The command and query sides resolve tenants against the same known tenants, so a refusal looks identical
      * whichever gateway raised it, which is why all three unknown-tenant checks share this.
@@ -604,15 +622,21 @@ public final class DemoLifecycle {
      * @param dispatch    the dispatch expected to be refused
      * @return whether the dispatch was refused for an unresolved tenant
      */
-    private static boolean isRejectedAsUnresolvedTenant(String description, Runnable dispatch) {
+    private static boolean observeUnresolvedTenantRejection(String description, Runnable dispatch) {
         boolean rejected;
         try {
             dispatch.run();
             rejected = false;
         } catch (RuntimeException failure) {
             rejected = Enrollments.causedByTenantNotResolved(failure);
+            if (!rejected) {
+                // Said loudly, so a failure for some other reason does not read as the framework declining to
+                // reject an unresolved tenant.
+                logger.warn("The {} failed, but not because its tenant could not be resolved.",
+                            description, failure);
+            }
         }
-        logger.info("{} rejected: {}", description, rejected);
+        logger.info("The {} was rejected: {}", description, rejected);
         return rejected;
     }
 
@@ -624,21 +648,17 @@ public final class DemoLifecycle {
      * This waits rather than asserting once. Removal reaches the tenant provider before the routing to that
      * tenant is torn down, so a query sent in that window still succeeds. That is the mirror image of the
      * window {@link #whenTenantReady} tolerates while a tenant spins up.
+     *
+     * @param queryGateway the gateway the statistics query is sent on
+     * @return whether the removed tenant's statistics stopped being queryable
      */
     private static boolean removedTenantQueryIsRejected(QueryGateway queryGateway) {
-        boolean rejected = holdsWithin(
+        return holdsWithin(
                 "removed tenant [" + SHELBYVILLE.tenantId() + "] is no longer queryable",
                 TENANT_READY_TIMEOUT,
-                () -> {
-                    try {
-                        Enrollments.statistics(queryGateway, SHELBYVILLE);
-                        return false;
-                    } catch (RuntimeException failure) {
-                        return Enrollments.causedByTenantNotResolved(failure);
-                    }
-                });
-        logger.info("Query for the removed tenant [{}] rejected: {}", SHELBYVILLE.tenantId(), rejected);
-        return rejected;
+                () -> observeUnresolvedTenantRejection(
+                        "query for the removed tenant [" + SHELBYVILLE.tenantId() + "]",
+                        () -> Enrollments.statistics(queryGateway, SHELBYVILLE)));
     }
 
     /**

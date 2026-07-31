@@ -47,11 +47,11 @@ class MultiTenancyDemoTest {
         // and a command for an unknown tenant was rejected
         assertThat(outcome.unknownTenantRejected()).isTrue();
         // and a query for an unknown tenant was rejected too
-        assertThat(outcome.queryRejections().unknownTenant()).isTrue();
+        assertThat(outcome.queryRejections().rejectedForUnknownTenant()).isTrue();
         // and so was a query naming no tenant at all, which has nothing to resolve components from
-        assertThat(outcome.queryRejections().withoutTenant()).isTrue();
+        assertThat(outcome.queryRejections().rejectedWithoutTenant()).isTrue();
         // and Shelbyville stopped being queryable once its tenant was removed
-        assertThat(outcome.queryRejections().removedTenant()).isTrue();
+        assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
         // and Springfield's and Shelbyville's own subscription queries each received only their own updates
         assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
         // each seeing its own initial result plus one update per enrollment, and nothing more

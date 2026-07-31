@@ -47,10 +47,10 @@
         <awaitility.version>4.3.0</awaitility.version>
         <!-- Log4j2 as the single logging solution, matching the other plain-Java examples. -->
         <log4j.version>2.26.1</log4j.version>
-        <!-- Reactor Core, which the subscription-query gateway method needs at runtime (axon-messaging
-             depends on it only optionally). Kept in step with the version the framework builds against
-             (build/parent), which is not inherited here because the flattened parent pom drops its
-             properties. -->
+        <!-- Reactor Core, which the subscription-query gateway method and the demo's own Flux usage compile
+             against (axon-messaging depends on it only optionally). Kept in step with the version the framework
+             builds against (build/parent), which is not inherited here because the flattened parent pom drops
+             its properties. -->
         <projectreactor.version>3.8.6</projectreactor.version>
 
         <!-- Spring Boot, for the Spring Boot demo. Kept in step with the version the framework builds

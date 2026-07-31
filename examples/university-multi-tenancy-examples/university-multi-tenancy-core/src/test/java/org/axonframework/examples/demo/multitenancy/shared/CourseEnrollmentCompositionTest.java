@@ -52,6 +52,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
@@ -79,6 +80,9 @@ class CourseEnrollmentCompositionTest {
     private static final long TIMEOUT_SECONDS = 5;
 
     private final SnapshotStore snapshotStore = new InMemorySnapshotStore();
+
+    @Nullable
+    private Disposable subscription;
 
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
@@ -117,6 +121,9 @@ class CourseEnrollmentCompositionTest {
 
     @AfterEach
     void tearDown() {
+        if (subscription != null) {
+            subscription.dispose();
+        }
         configuration.shutdown();
     }
 
@@ -253,11 +260,13 @@ class CourseEnrollmentCompositionTest {
     private List<TenantStatistics> subscribeToStatistics() {
         List<TenantStatistics> received = new CopyOnWriteArrayList<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        Flux.from(Enrollments.subscribeToStatistics(queryGateway, TENANT))
-            .subscribe(received::add, failure::set);
+        subscription = Flux.from(Enrollments.subscribeToStatistics(queryGateway, TENANT))
+                           .subscribe(received::add, failure::set);
         Awaitility.await("the subscription's initial result arrives")
                   .atMost(Duration.ofSeconds(TIMEOUT_SECONDS))
-                  .until(() -> !received.isEmpty());
+                  // A failure ends the wait too, so a broken subscription reports its cause below rather than
+                  // running out the clock.
+                  .until(() -> !received.isEmpty() || failure.get() != null);
         assertThat(failure.get()).isNull();
         return received;
     }

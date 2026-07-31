@@ -46,10 +46,10 @@ that code. The demo shows, at the moment:
   before enrolling a single student. Recording an enrollment emits an update through a deliberately
   tenant-blind predicate, and each subscription still only ever receives its own tenant's updates: the
   framework isolates emission by the tenant it resolves for the update, not by anything the predicate says.
-* **Tenant-scoped subscription completion**: completing a subscription is scoped the same way. Springfield's
-  course fills up, so its own subscriptions are completed, through an equally tenant-blind predicate, while
-  Shelbyville's course keeps a free seat and its subscription stays open. One tenant running out of things to
-  report says nothing about another's.
+* **Tenant-scoped subscription completion**: completing a subscription is scoped the same way. Springfield
+  runs out of seats, so its own subscriptions are completed, through an equally tenant-blind predicate, while
+  Shelbyville keeps a free seat and its subscription stays open. One tenant running out of things to report
+  says nothing about another's.
 * **Direct queries routed through the per-tenant connector** (Axon Server): this whole demo runs in one
   process, where a query handler is always subscribed locally, so the demos explicitly turn off preferring
   that local handler. Without it, a direct query would never reach the per-tenant connector at all.

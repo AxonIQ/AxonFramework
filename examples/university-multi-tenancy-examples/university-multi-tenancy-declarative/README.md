@@ -61,8 +61,8 @@ The run walks the whole tenant lifecycle (the behaviors listed in the
 * **Isolation.** Springfield, Shelbyville, and Ogdenville each see only their own enrollments.
 * **Subscription-query isolation.** Springfield's and Shelbyville's own subscriptions, opened before
   either enrolls a student, each receive only their own tenant's updates.
-* **Subscription completion per tenant.** Springfield's course fills up, so its own subscription is
-  completed, while Shelbyville's course keeps a free seat and its subscription stays open.
+* **Subscription completion per tenant.** Springfield runs out of seats, so its own subscription is
+  completed, while Shelbyville keeps a free seat and its subscription stays open.
 * **Replay on startup.** The provider already knows the tenants before the first command.
 * **Runtime tenants.** Ogdenville is added while running and its instances appear on its first command.
 * **Unknown tenant rejected.** A command, and then a query, for a tenant the application does not know

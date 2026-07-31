@@ -23,14 +23,14 @@ package org.axonframework.examples.demo.multitenancy.shared.run;
  * These hold identically in memory and against Axon Server, since the refusal happens before a query reaches
  * either a local handler or a tenant's own connection.
  *
- * @param unknownTenant whether a query naming a tenant the application never registered was refused
- * @param withoutTenant whether a query carrying no tenant metadata at all was refused
- * @param removedTenant whether a query naming a tenant that has been removed was refused
+ * @param rejectedForUnknownTenant whether a query naming a tenant the application never registered was refused
+ * @param rejectedWithoutTenant    whether a query carrying no tenant metadata at all was refused
+ * @param rejectedForRemovedTenant whether a query naming a tenant that has been removed was refused
  * @author Laura Devriendt
  * @since 5.3.0
  */
-public record QueryRejectionOutcome(boolean unknownTenant,
-                                    boolean withoutTenant,
-                                    boolean removedTenant) {
+public record QueryRejectionOutcome(boolean rejectedForUnknownTenant,
+                                    boolean rejectedWithoutTenant,
+                                    boolean rejectedForRemovedTenant) {
 
 }

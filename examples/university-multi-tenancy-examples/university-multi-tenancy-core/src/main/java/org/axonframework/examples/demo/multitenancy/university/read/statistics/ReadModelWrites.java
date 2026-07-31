@@ -29,14 +29,15 @@ import java.util.Objects;
  * {@link CourseStatisticsStore#recordEnrollment} for why that matters.
  * <p>
  * Being the one write also makes this the one place that emits the fresh statistics to any open
- * {@link GetTenantStatistics} subscription query, and the one place that completes those subscriptions once a
- * course has no seats left. Neither the emit nor the complete predicate names a tenant, and still only that
+ * {@link GetTenantStatistics} subscription query, and the one place that completes those subscriptions once none
+ * of the tenant's courses has a seat left. Neither the emit nor the complete predicate names a tenant, and still only that
  * tenant's own subscriptions are affected: the framework resolves the tenant of the message being handled and
  * scopes both to it.
  * <p>
  * Emitting follows the write rather than the event, so a redelivered enrollment that leaves the read model as
  * it was emits nothing either. A subscriber therefore sees one update per enrollment however often its event
- * arrives, which is what lets the demo compare the updates it received one for one.
+ * arrives, which is what lets the demo compare the updates it received one for one. Each update carries the
+ * statistics as that enrollment left them, so a batch of enrollments reports its steps rather than its result.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -53,6 +54,9 @@ public final class ReadModelWrites {
      * <p>
      * This records no audit entry and emits no update: a course's capacity is not an enrollment, and the
      * statistics a subscription reports are about enrollments.
+     * <p>
+     * Record a course's capacity before its enrollments. Until the store knows it, that course counts as having
+     * seats left, so nothing about it can be reported as complete.
      *
      * @param courseStatisticsStore the course-statistics store of the tenant the course belongs to
      * @param courseId              the identifier of the course
@@ -72,8 +76,9 @@ public final class ReadModelWrites {
      * the given {@code updateEmitter}. All three belong to a single tenant, so this never names one: the
      * caller was handed the instances of the tenant whose message it is handling.
      * <p>
-     * Once that enrollment leaves the course with no seats left, the tenant's open subscriptions are completed
-     * as well: a full course can receive no further enrollments, so there is no further update to expect.
+     * Once that enrollment leaves every one of the tenant's courses with no seats left, its open subscriptions
+     * are completed as well: there is no further enrollment to report, so there is no further update to expect.
+     * A subscription reports the whole tenant, so one full course is not enough to complete it.
      * Completing after the emit is what lets the subscriber still see the update that filled the course.
      * <p>
      * An enrollment this store already held changes nothing, so it emits nothing and completes nothing.
@@ -94,16 +99,18 @@ public final class ReadModelWrites {
         Objects.requireNonNull(updateEmitter, "The update emitter must not be null");
         Objects.requireNonNull(courseId, "The course id must not be null");
         Objects.requireNonNull(studentId, "The student id must not be null");
-        boolean newlyRecorded = courseStatisticsStore.recordEnrollment(courseId, studentId);
-        auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
-        if (!newlyRecorded) {
+        if (!courseStatisticsStore.recordEnrollment(courseId, studentId)) {
+            // Already held, so there is nothing to audit and nothing fresh to report either.
             return;
         }
-        updateEmitter.emit(GetTenantStatistics.class,
-                           query -> true,
-                           () -> new TenantStatistics(courseStatisticsStore.statistics(),
-                                                      auditLog.entries().size()));
-        if (courseStatisticsStore.isCourseFull(courseId)) {
+        auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
+        // Read now rather than through the supplier overload. That one is only invoked once the unit of work
+        // commits, so a batch holding several enrollments would report the batch's final total for every one of
+        // them instead of the total each enrollment left behind.
+        TenantStatistics freshStatistics = new TenantStatistics(courseStatisticsStore.statistics(),
+                                                                auditLog.entries().size());
+        updateEmitter.emit(GetTenantStatistics.class, query -> true, freshStatistics);
+        if (courseStatisticsStore.isEveryCourseFull()) {
             updateEmitter.complete(GetTenantStatistics.class, query -> true);
         }
     }

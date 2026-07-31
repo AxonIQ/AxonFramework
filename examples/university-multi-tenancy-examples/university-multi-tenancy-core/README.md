@@ -50,7 +50,7 @@ org.axonframework.examples.demo.multitenancy
 `DemoLifecycle.run` reads top to bottom as the story both demos tell, against an already-started
 application:
 
-1. Subscribe to both tenants known at startup's statistics, before either enrolls a single student.
+1. Subscribe to the statistics of both tenants known at startup, before either enrolls a single student.
 2. Enroll students in those tenants, and read each tenant's statistics back to show it sees only its own.
    Each enrollment is one command that appends to the tenant's own event store. Against Axon Server the two
    known tenants open a course under the same identifier: Springfield fills it to capacity and a further
@@ -59,8 +59,8 @@ application:
    tenants use distinct identifiers and this isolation is not shown. Shelbyville opens its course with one
    seat more than it fills, so its course still has room afterwards, which is what step 3 needs.
 3. Confirm neither tenant's subscription received the other's updates, and that only Springfield's was
-   completed. Recording an enrollment emits an update, and completes the tenant's subscriptions once the
-   course has no seats left, both through a deliberately tenant-blind predicate. That is what proves the
+   completed. Recording an enrollment emits an update, and completes the tenant's subscriptions once none of
+   that tenant's courses has a seat left, both through a deliberately tenant-blind predicate. That is what proves the
    isolation is enforced by the framework rather than by the predicate. Each subscription saw exactly its own
    tenant's enrollments arriving one at a time and no more, compared as the whole sequence rather than only
    its length, so a leak that replaced an update instead of adding one would not pass either. That comparison
@@ -107,10 +107,12 @@ projection to catch up.
 
 Being the one write, `ReadModelWrites` is also the one place that tells open subscription queries about a
 change: it emits the tenant's fresh statistics for every enrollment, and completes that tenant's subscriptions
-once the course has no seats left. Neither the emit nor the complete predicate names a tenant, and both are
-still scoped to one, because the framework resolves the tenant of the message being handled. Knowing when a
-course is full is why the projection also handles `CourseOpened`, which is the only thing that carries a
-course's capacity.
+once none of its courses has a seat left. A subscription reports the whole tenant, so one full course is not
+enough to complete it. Neither the emit nor the complete predicate names a tenant, and both are
+still scoped to one, because the framework resolves the tenant of the message being handled. Knowing when a course has no seats
+left is why the read model holds each course's capacity. On the Axon Server path the projection takes it from
+`CourseOpened`, the only event carrying it. On the shared in-memory store the enroll-student handler takes it
+from the course it already sourced, so the open-course slice knows nothing about the read model.
 
 Emitting follows the write rather than the event. An enrollment the read model already held changes nothing, so
 it emits nothing, which is what keeps one enrollment worth one update however often its event arrives. Without

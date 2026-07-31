@@ -134,8 +134,8 @@ public final class Enrollments {
     }
 
     /**
-     * Reads statistics without naming a tenant at all, by sending a {@link GetTenantStatistics} query that
-     * carries no tenant metadata, and blocks for the response.
+     * Sends a {@link GetTenantStatistics} query carrying no tenant metadata at all and blocks, expecting the
+     * framework to refuse it.
      * <p>
      * There is no tenant to serve such a query for, so the framework rejects it at dispatch rather than
      * letting it reach a handler that would have nothing to resolve its components from. The tenant is the
@@ -145,7 +145,7 @@ public final class Enrollments {
      * @param queryGateway the gateway to send the query on
      * @throws RuntimeException always, carrying the framework's refusal to serve a query without a tenant
      */
-    public static void statisticsWithoutTenant(QueryGateway queryGateway) {
+    public static void queryStatisticsWithoutTenant(QueryGateway queryGateway) {
         queryGateway.query(statisticsQuery(), TenantStatistics.class)
                     .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     .join();

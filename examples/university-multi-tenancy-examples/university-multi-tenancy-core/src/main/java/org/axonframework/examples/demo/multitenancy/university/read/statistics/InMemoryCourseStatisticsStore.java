@@ -57,7 +57,14 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     }
 
     @Override
-    public boolean isCourseFull(String courseId) {
+    public boolean isEveryCourseFull() {
+        if (enrolledStudentsByCourse.isEmpty()) {
+            return false;
+        }
+        return enrolledStudentsByCourse.keySet().stream().allMatch(this::isCourseFull);
+    }
+
+    private boolean isCourseFull(String courseId) {
         Integer capacity = capacityByCourse.get(courseId);
         if (capacity == null) {
             return false;

@@ -199,12 +199,12 @@ class MultiTenancyDemoIT {
             // and a command for an unknown tenant was rejected
             assertThat(outcome.unknownTenantRejected()).isTrue();
             // and a query for an unknown tenant was rejected too
-            assertThat(outcome.queryRejections().unknownTenant()).isTrue();
+            assertThat(outcome.queryRejections().rejectedForUnknownTenant()).isTrue();
             // and so was a query naming no tenant at all, which has nothing to resolve components from
-            assertThat(outcome.queryRejections().withoutTenant()).isTrue();
+            assertThat(outcome.queryRejections().rejectedWithoutTenant()).isTrue();
             // and Shelbyville stopped being queryable once its tenant was removed, which is the read-side
             // counterpart of the unknown-tenant rejection
-            assertThat(outcome.queryRejections().removedTenant()).isTrue();
+            assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
             // and Springfield's and Shelbyville's own subscription queries each received only their own
             // updates, routed through their own tenant's Axon Server connection
             assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
