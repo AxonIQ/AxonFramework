@@ -69,9 +69,9 @@ public final class Enrollments {
 
     /**
      * Enrolls a student by sending an {@link EnrollStudent} command for the given {@code tenant}, and
-     * blocks until it has been handled. The handler both appends to that tenant's own event store and
-     * updates that tenant's injected components, so the enrollment lands in the right tenant's event stream
-     * and read model.
+     * blocks until it has been handled. The handler appends to that tenant's own event store, so the
+     * enrollment lands in the right tenant's event stream, and the tenant's read model follows from that
+     * event.
      *
      * @param commandGateway the gateway to send the command on
      * @param tenant         the tenant the enrollment belongs to

@@ -23,22 +23,17 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.testcontainer.AxonServerContainer;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoApplication;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.AxonServerTenantContextManager;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.EventStorageOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.run.SnapshottingOutcome;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
+import org.axonframework.examples.demo.multitenancy.shared.run.StreamingOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
-import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseSnapshot;
-import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
-import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.core.MessageTypeResolver;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.StatisticsConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.boot.WebApplicationType;
@@ -62,6 +57,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * isolation across both component types, the unknown-tenant and ambiguity guardrails, destroy on tenant
  * removal, and cleanup on shutdown. It also asserts that the {@code _admin} context is filtered out of
  * the discovered tenants.
+ * <p>
+ * Being the Axon Server path, this is also where the per-tenant features the in-memory demo cannot show are
+ * asserted: event-store and snapshot isolation, and tenant-aware event processing, where one ordinary pooled
+ * streaming processor projects every tenant's events into that tenant's own read model.
  * <p>
  * The application is booted directly rather than through {@code @SpringBootTest}, because the demo stops
  * the context as its final step and a managed test context must not be closed from within a test. The
@@ -173,8 +172,6 @@ class MultiTenancyDemoIT {
                 .run()) {
 
             AxonConfiguration configuration = context.getBean(AxonConfiguration.class);
-            QualifiedName courseSnapshots = EnrollStudentConfiguration.courseSnapshotName(
-                    configuration.getComponent(MessageTypeResolver.class));
             TenantProvider tenantProvider = configuration.getComponent(TenantProvider.class);
             AxonServerTenantContextManager serverContexts =
                     new AxonServerTenantContextManager(configuration.getComponent(AxonServerConnectionManager.class));
@@ -187,16 +184,10 @@ class MultiTenancyDemoIT {
             assertThat(tenantProvider.tenants()).extracting(TenantDescriptor::tenantId).doesNotContain(ADMIN_CONTEXT);
 
             // when the demo runs end to end through the beans, the multi-tenancy autoconfiguration wired
-            DemoOutcome outcome = DemoLifecycle.run(context.getBean(CommandGateway.class),
-                                                    context.getBean(QueryGateway.class),
-                                                    courseStatisticsProvider(context),
-                                                    auditProvider(context),
-                                                    TenantProvisioning.axonServer(configuration,
-                                                                                  DemoLifecycle.KNOWN_TENANTS),
-                                                    TenantSnapshots.axonServer(configuration,
-                                                                               courseSnapshots,
-                                                                               CourseSnapshot.class),
-                                                    context::close);
+            DemoOutcome outcome = DemoLifecycle.run(DemoApplication.axonServer(configuration,
+                                                                               courseStatisticsProvider(context),
+                                                                               auditProvider(context),
+                                                                               context::close));
 
             // then both of Springfield's components saw only its own two enrollments, matched by type
             // and isolated from the other tenants
@@ -226,6 +217,19 @@ class MultiTenancyDemoIT {
             assertThat(snapshotting.demonstrated()).isTrue();
             assertThat(snapshotting.bothTenantsHoldOwnSnapshot()).isTrue();
             assertThat(snapshotting.snapshotsHoldTheirOwnStudents()).isTrue();
+
+            // and one ordinary pooled streaming processor projected every tenant's events, rather than one
+            // processor per tenant. Asserted by name, so a per-tenant processor would show up as an extra entry
+            StreamingOutcome streaming = outcome.streaming();
+            assertThat(streaming.demonstrated()).isTrue();
+            assertThat(streaming.processorNames()).containsExactly(StatisticsConfiguration.PROCESSOR_NAME);
+            // and that one processor kept the three tenants' read models apart. Springfield and Shelbyville
+            // hold the same course identifier, so a leak between them would show up as a wrong count here
+            assertThat(streaming.springfieldProjected()).isEqualTo(2);
+            assertThat(streaming.shelbyvilleProjected()).isEqualTo(2);
+            // and the tenant added at runtime was picked up: the processor re-opened its stream to include a
+            // tenant that did not exist when it started, and projected that tenant's enrollment
+            assertThat(streaming.ogdenvilleProjected()).isEqualTo(1);
 
             // and registering two providers for one component type is rejected at configuration time
             assertThat(ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType()).isTrue();

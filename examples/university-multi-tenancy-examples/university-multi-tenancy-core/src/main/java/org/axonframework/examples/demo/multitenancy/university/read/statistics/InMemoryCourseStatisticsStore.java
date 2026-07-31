@@ -21,9 +21,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory {@link CourseStatisticsStore}, backing the demo without external infrastructure.
@@ -36,7 +36,8 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     private static final Logger logger = LoggerFactory.getLogger(InMemoryCourseStatisticsStore.class);
 
     private final String tenantId;
-    private final ConcurrentMap<String, AtomicInteger> enrollmentsByCourse = new ConcurrentHashMap<>();
+    // The enrolled students per course rather than a count, so recording the same enrollment twice is a no-op.
+    private final ConcurrentMap<String, Set<String>> enrolledStudentsByCourse = new ConcurrentHashMap<>();
     private volatile boolean closed = false;
 
     /**
@@ -49,16 +50,17 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     }
 
     @Override
-    public void recordEnrollment(String courseId) {
-        enrollmentsByCourse.computeIfAbsent(courseId, ignored -> new AtomicInteger()).incrementAndGet();
+    public void recordEnrollment(String courseId, String studentId) {
+        enrolledStudentsByCourse.computeIfAbsent(courseId, ignored -> ConcurrentHashMap.newKeySet())
+                                .add(studentId);
     }
 
     @Override
     public List<CourseStatistics> statistics() {
-        return enrollmentsByCourse.entrySet()
-                                  .stream()
-                                  .map(entry -> new CourseStatistics(entry.getKey(), entry.getValue().get()))
-                                  .toList();
+        return enrolledStudentsByCourse.entrySet()
+                                       .stream()
+                                       .map(entry -> new CourseStatistics(entry.getKey(), entry.getValue().size()))
+                                       .toList();
     }
 
     @Override

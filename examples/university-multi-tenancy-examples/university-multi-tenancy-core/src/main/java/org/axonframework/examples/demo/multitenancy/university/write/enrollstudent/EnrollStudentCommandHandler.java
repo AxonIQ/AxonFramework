@@ -21,7 +21,10 @@ import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.UniversityTags;
 import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.examples.demo.multitenancy.university.events.StudentEnrolledInCourse;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsProjection;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.ReadModelWrites;
+import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.Snapshotting;
@@ -33,6 +36,7 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -42,12 +46,29 @@ import java.util.Set;
  * <p>
  * The handler names no tenant. Sourcing the injected {@link State} and appending the resulting event are
  * both routed to the tenant's own event store by the framework, so the same course identifier in two
- * tenants is two isolated event streams. It also shows the two features working together in one handler:
- * alongside the event-sourced {@link State}, it takes the tenant's {@link TenantScoped}
- * {@link CourseStatisticsStore} and {@link AuditLog}, each injected for the command's tenant, matched by
- * type.
+ * tenants is two isolated event streams.
+ * <p>
+ * Where each tenant has its own event store, appending is all this handler does, and the
+ * {@link CourseStatisticsProjection} builds the read model from the appended events. On a backing without
+ * per-tenant event stores it also fills the read model itself, from the {@link TenantScoped}
+ * {@link CourseStatisticsStore} and {@link AuditLog} injected for the command's tenant.
+ * <p>
+ * That second path is a shortcut, not the shape to copy. A read model belongs on the event side, and it only
+ * survives here because one shared event store leaves a streamed event with no tenant to attribute it to.
  */
 class EnrollStudentCommandHandler {
+
+    private final DemoBacking backing;
+
+    /**
+     * Constructs a handler that fills the read model itself only when the given {@code backing}
+     * says no projection does.
+     *
+     * @param backing    what backs this run
+     */
+    EnrollStudentCommandHandler(DemoBacking backing) {
+        this.backing = Objects.requireNonNull(backing, "The backing must not be null");
+    }
 
     /**
      * Enrolls a student, rejecting the command with a {@link CourseNotOpenException} when the course was
@@ -55,11 +76,12 @@ class EnrollStudentCommandHandler {
      * in the course is idempotent. Both decisions read the course sourced from the command's tenant's own
      * event store, so they reflect only that tenant's events.
      * <p>
-     * The statistics store and audit log are updated here to keep this demo self-contained while the
-     * tenant-aware read stream is still to come. That is a shortcut, not the recommended shape: a read
-     * model should be a projection that consumes the appended {@link StudentEnrolledInCourse} events, not
-     * something a command handler writes to. Once per-tenant event streaming is available, this write side
-     * appends only, and the statistics become such a projection.
+     * Appending the event is all this handler does against Axon Server, where the
+     * {@link CourseStatisticsProjection} builds the read model from the appended
+     * {@link StudentEnrolledInCourse} events instead. Only the in-memory run, whose single shared event
+     * store leaves a streamed event with no tenant to attribute it to, has this handler fill the read model
+     * as well. The {@link TenantScoped} parameters are injected either way, since a command always resolves
+     * to a tenant.
      *
      * @param command               the command enrolling the student
      * @param state                 the injected course state, sourced from the command's tenant's event store
@@ -75,9 +97,8 @@ class EnrollStudentCommandHandler {
                 @TenantScoped AuditLog auditLog) {
         List<StudentEnrolledInCourse> events = decide(command, state);
         eventAppender.append(events);
-        if (!events.isEmpty()) {
-            courseStatisticsStore.recordEnrollment(command.courseId());
-            auditLog.record("Enrolled student [" + command.studentId() + "] in course [" + command.courseId() + "]");
+        if (!backing.projectsReadModel() && !events.isEmpty()) {
+            ReadModelWrites.recordEnrollment(courseStatisticsStore, auditLog, command.courseId(), command.studentId());
         }
     }
 

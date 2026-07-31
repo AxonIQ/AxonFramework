@@ -18,19 +18,12 @@ package org.axonframework.examples.demo.multitenancy;
 
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoApplication;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantSnapshots;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
-import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseSnapshot;
-import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
-import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.core.MessageTypeResolver;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -39,10 +32,10 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * Drives the demo end to end once the Spring Boot application has started, then stops it. It resolves
- * the framework gateways, the Axon configuration, and the tenant-aware providers as ordinary beans and
- * hands them to the shared {@link DemoLifecycle}, so it runs the identical story the declarative demo
- * runs, only against Axon Server.
+ * Drives the demo end to end once the Spring Boot application has started, then stops it. It takes the
+ * tenant-aware providers and the Axon configuration as ordinary beans, and hands the application the
+ * configuration describes to the shared {@link DemoLifecycle}, so it runs the identical story the declarative
+ * demo runs, only against Axon Server.
  * <p>
  * It is excluded from the {@code test} profile, so the smoke test can boot the same autoconfigured
  * context and drive the lifecycle itself rather than have this runner stop the context out from under
@@ -54,8 +47,6 @@ public class DemoRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(DemoRunner.class);
 
-    private final CommandGateway commandGateway;
-    private final QueryGateway queryGateway;
     private final TenantComponentProvider<CourseStatisticsStore> statisticsProvider;
     private final TenantComponentProvider<AuditLog> auditProvider;
     private final AxonConfiguration axonConfiguration;
@@ -64,22 +55,16 @@ public class DemoRunner implements CommandLineRunner {
     /**
      * Constructs the runner from the autoconfigured framework and demo beans.
      *
-     * @param commandGateway     the gateway enrollments are sent on
-     * @param queryGateway       the gateway statistics are read on
      * @param statisticsProvider the provider of the per-tenant course-statistics stores
      * @param auditProvider      the provider of the per-tenant audit logs
-     * @param axonConfiguration  the Axon configuration, to resolve the Axon Server tenant provider and the
-     *                           per-tenant snapshot stores from
+     * @param axonConfiguration  the Axon configuration, which the gateways, tenant provider, per-tenant
+     *                           snapshot stores and registered processors are all resolved from
      * @param applicationContext the context to close when the demo has finished, triggering cleanup
      */
-    public DemoRunner(CommandGateway commandGateway,
-                      QueryGateway queryGateway,
-                      TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
+    public DemoRunner(TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
                       TenantComponentProvider<AuditLog> auditProvider,
                       AxonConfiguration axonConfiguration,
                       ConfigurableApplicationContext applicationContext) {
-        this.commandGateway = commandGateway;
-        this.queryGateway = queryGateway;
         this.statisticsProvider = statisticsProvider;
         this.auditProvider = auditProvider;
         this.axonConfiguration = axonConfiguration;
@@ -88,20 +73,12 @@ public class DemoRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        QualifiedName courseSnapshots = EnrollStudentConfiguration.courseSnapshotName(
-                axonConfiguration.getComponent(MessageTypeResolver.class));
         logger.info("Two providers for one component type are rejected at configuration time: {}",
                     ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType());
-        DemoOutcome outcome = DemoLifecycle.run(commandGateway,
-                                                queryGateway,
-                                                statisticsProvider,
-                                                auditProvider,
-                                                TenantProvisioning.axonServer(axonConfiguration,
-                                                                              DemoLifecycle.KNOWN_TENANTS),
-                                                TenantSnapshots.axonServer(axonConfiguration,
-                                                                           courseSnapshots,
-                                                                           CourseSnapshot.class),
-                                                applicationContext::close);
+        DemoOutcome outcome = DemoLifecycle.run(DemoApplication.axonServer(axonConfiguration,
+                                                                           statisticsProvider,
+                                                                           auditProvider,
+                                                                           applicationContext::close));
         logger.info("Demo finished. Outcome: {}", outcome);
     }
 }
