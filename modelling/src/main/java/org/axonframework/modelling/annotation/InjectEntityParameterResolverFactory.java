@@ -17,6 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
@@ -107,7 +108,7 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
         }
         if (entityType instanceof Class<?> entityClass) {
             if (ManagedEntity.class.isAssignableFrom(entityClass)) {
-                throw new IllegalArgumentException(
+                throw new AxonConfigurationException(
                         ("Cannot inject entity for parameter [%s] of [%s]: a raw ManagedEntity does not specify its "
                                 + "entity type. Use ManagedEntity<ID, MyEntity> instead.")
                                 .formatted(parameter.getName(), executable)
@@ -115,7 +116,7 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
             }
             return new EntityTypeInfo(entityClass, false);
         }
-        throw new IllegalArgumentException(
+        throw new AxonConfigurationException(
                 "Cannot inject entity for parameter [%s] of [%s]: unsupported parameter type [%s]."
                         .formatted(parameter.getName(), executable, entityType)
         );
@@ -126,7 +127,7 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
         if (isOptional) {
             Type parameterizedType = parameter.getParameterizedType();
             if (!(parameterizedType instanceof ParameterizedType)) {
-                throw new IllegalArgumentException(
+                throw new AxonConfigurationException(
                         ("Cannot inject entity for parameter [%s] of [%s]: a raw Optional does not specify the "
                                 + "entity type. Use Optional<MyEntity> or Optional<ManagedEntity<ID, MyEntity>> "
                                 + "instead.").formatted(parameter.getName(), executable)
@@ -146,8 +147,9 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
         try {
             return getConstructorFunctionWithZeroArguments(annotation.idResolver()).get();
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to instantiate id resolver: " + annotation.idResolver().getName(),
-                                            e);
+            throw new AxonConfigurationException(
+                    "Failed to instantiate id resolver: " + annotation.idResolver().getName(), e
+            );
         }
     }
 

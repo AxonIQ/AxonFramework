@@ -17,6 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
@@ -35,6 +36,10 @@ import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityLoader;
 import org.junit.jupiter.api.*;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -312,7 +317,7 @@ class InjectEntityParameterResolverFactoryTest {
             // when & then
             assertThatThrownBy(() -> new InjectEntityParameterResolverFactory(configuration)
                     .createInstance(method, method.getParameters(), 0))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(AxonConfigurationException.class);
         }
 
         @Test
@@ -324,7 +329,7 @@ class InjectEntityParameterResolverFactoryTest {
             // when & then
             assertThatThrownBy(() -> new InjectEntityParameterResolverFactory(configuration)
                     .createInstance(method, method.getParameters(), 0))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(AxonConfigurationException.class);
         }
     }
 
