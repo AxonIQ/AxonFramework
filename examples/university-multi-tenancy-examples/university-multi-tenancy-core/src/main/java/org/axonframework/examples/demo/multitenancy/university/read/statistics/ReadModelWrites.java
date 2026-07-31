@@ -17,6 +17,7 @@
 package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 
 import java.util.Objects;
 
@@ -26,6 +27,11 @@ import java.util.Objects;
  * <p>
  * Recording the same enrollment twice leaves the read model as it was. See
  * {@link CourseStatisticsStore#recordEnrollment} for why that matters.
+ * <p>
+ * Being the one write also makes this the one place that emits the fresh statistics to any open
+ * {@link GetTenantStatistics} subscription query. The predicate handed to the emitter never names a tenant, and
+ * still only that tenant's own subscriptions receive it: the framework resolves the update's tenant from the
+ * store and audit log it was built from, and isolates emission by it.
  *
  * @author Laura Devriendt
  * @since 5.3.0
@@ -37,24 +43,30 @@ public final class ReadModelWrites {
     }
 
     /**
-     * Records one enrollment in the given tenant's {@code courseStatisticsStore} and {@code auditLog}. Both
-     * belong to a single tenant, so this never names one: the caller was handed the instances of the tenant
-     * whose message it is handling.
+     * Records one enrollment in the given tenant's {@code courseStatisticsStore} and {@code auditLog}, and
+     * emits the tenant's fresh statistics to any open {@link GetTenantStatistics} subscription query through
+     * the given {@code updateEmitter}. All three belong to a single tenant, so this never names one: the
+     * caller was handed the instances of the tenant whose message it is handling.
      *
      * @param courseStatisticsStore the course-statistics store of the tenant the enrollment belongs to
      * @param auditLog              the audit log of the tenant the enrollment belongs to
+     * @param updateEmitter         the update emitter to notify open subscription queries through
      * @param courseId              the identifier of the course enrolled in
      * @param studentId             the identifier of the enrolled student
      */
     public static void recordEnrollment(CourseStatisticsStore courseStatisticsStore,
                                         AuditLog auditLog,
+                                        QueryUpdateEmitter updateEmitter,
                                         String courseId,
                                         String studentId) {
         Objects.requireNonNull(courseStatisticsStore, "The course-statistics store must not be null");
         Objects.requireNonNull(auditLog, "The audit log must not be null");
+        Objects.requireNonNull(updateEmitter, "The update emitter must not be null");
         Objects.requireNonNull(courseId, "The course id must not be null");
         Objects.requireNonNull(studentId, "The student id must not be null");
         courseStatisticsStore.recordEnrollment(courseId, studentId);
         auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
+        updateEmitter.emit(GetTenantStatistics.class, query -> true,
+                          new TenantStatistics(courseStatisticsStore.statistics(), auditLog.entries().size()));
     }
 }

@@ -19,6 +19,7 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.axonserver.api.AxonServerTenantProvider;
 import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenantStreamingProcessorRestartConfiguration;
+import io.axoniq.framework.messaging.queryhandling.distributed.DistributedQueryBusConfiguration;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
@@ -224,5 +225,22 @@ public class UniversityConfiguration {
     @ConditionalOnExpression("${axon.multitenancy.enabled:true} and ${axon.axonserver.enabled:true}")
     public MultiTenantStreamingProcessorRestartConfiguration processorRestartConfiguration() {
         return MultiTenantStreamingProcessorRestartConfiguration.DEFAULT.restartTimeout(PROCESSOR_RESTART_TIMEOUT);
+    }
+
+    /**
+     * Turns off preferring a locally subscribed query handler, so a direct query is routed through the
+     * per-tenant {@code MultiTenantAxonServerQueryBusConnector} rather than served from the local segment.
+     * <p>
+     * This whole demo runs in one process, where every query handler is always subscribed locally, so
+     * without this a direct {@code query()} would never reach the connector at all: tenant resolution would
+     * only ever happen once handling starts, never at dispatch. A subscription query always routes through
+     * the connector regardless of this setting.
+     *
+     * @return the distributed query bus configuration with direct queries routed through the connector
+     */
+    @Bean
+    @ConditionalOnExpression("${axon.multitenancy.enabled:true} and ${axon.axonserver.enabled:true}")
+    public DistributedQueryBusConfiguration distributedQueryBusConfiguration() {
+        return DistributedQueryBusConfiguration.DEFAULT.preferLocalQueryHandler(false);
     }
 }

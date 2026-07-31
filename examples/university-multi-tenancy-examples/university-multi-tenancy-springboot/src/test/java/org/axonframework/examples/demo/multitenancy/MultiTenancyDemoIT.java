@@ -54,13 +54,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * driving the shared demo lifecycle through the framework beans the multi-tenancy autoconfiguration
  * wired. Because the Spring Boot multi-tenancy path activates only against Axon Server, the test runs
  * one in a container. It asserts the same observed outcome as the declarative demo: per-tenant
- * isolation across both component types, the unknown-tenant and ambiguity guardrails, destroy on tenant
- * removal, and cleanup on shutdown. It also asserts that the {@code _admin} context is filtered out of
- * the discovered tenants.
+ * isolation across both component types, subscription-query isolation, the unknown-tenant guardrail on
+ * both commands and queries, the ambiguity guardrail, destroy on tenant removal, and cleanup on
+ * shutdown. It also asserts that the {@code _admin} context is filtered out of the discovered tenants.
  * <p>
  * Being the Axon Server path, this is also where the per-tenant features the in-memory demo cannot show are
- * asserted: event-store and snapshot isolation, and tenant-aware event processing, where one ordinary pooled
- * streaming processor projects every tenant's events into that tenant's own read model.
+ * asserted: event-store and snapshot isolation, tenant-aware event processing, where one ordinary pooled
+ * streaming processor projects every tenant's events into that tenant's own read model, and direct queries
+ * actually routed through the per-tenant query connector rather than served from the local segment.
  * <p>
  * The application is booted directly rather than through {@code @SpringBootTest}, because the demo stops
  * the context as its final step and a managed test context must not be closed from within a test. The
@@ -197,6 +198,11 @@ class MultiTenancyDemoIT {
             assertThat(outcome.ogdenvilleEnrollments()).isEqualTo(1);
             // and a command for an unknown tenant was rejected
             assertThat(outcome.unknownTenantRejected()).isTrue();
+            // and a query for an unknown tenant was rejected too
+            assertThat(outcome.unknownTenantQueryRejected()).isTrue();
+            // and Springfield's and Shelbyville's own subscription queries each received only their own
+            // updates, routed through their own tenant's Axon Server connection
+            assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
             // and removing Shelbyville closed its instances
             assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
             // and shutting down closed every remaining tenant's instances

@@ -20,6 +20,7 @@ import io.axoniq.framework.messaging.multitenancy.api.MetadataBasedTenantResolve
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantNotResolvedException;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.GetTenantStatistics;
+import org.axonframework.examples.demo.multitenancy.university.read.statistics.ReadModelWrites;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.TenantStatistics;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudent;
@@ -29,6 +30,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.queryhandling.GenericQueryMessage;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.reactivestreams.Publisher;
 
 import java.util.concurrent.TimeUnit;
 
@@ -131,6 +133,29 @@ public final class Enrollments {
         return queryGateway.query(query, TenantStatistics.class)
                            .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                            .join();
+    }
+
+    /**
+     * Subscribes to the given {@code tenant}'s statistics by sending a {@link GetTenantStatistics}
+     * subscription query carrying that tenant in metadata. The returned publisher emits the tenant's
+     * current statistics first, and every fresh update {@link ReadModelWrites} emits after, for as long as
+     * it is subscribed to.
+     * <p>
+     * The tenant travels only in the query's metadata, resolved once from this initial query. Emitting a
+     * later update never names a tenant either, and still only this subscription's own tenant receives it:
+     * the framework isolates emission by the tenant it resolves for the update, not by anything this
+     * subscription's own query says.
+     *
+     * @param queryGateway the gateway to send the subscription query on
+     * @param tenant       the tenant whose statistics to subscribe to
+     * @return a publisher of the tenant's statistics, starting with its current value
+     */
+    public static Publisher<TenantStatistics> subscribeToStatistics(QueryGateway queryGateway,
+                                                                    TenantDescriptor tenant) {
+        QueryMessage query = new GenericQueryMessage(new MessageType(GetTenantStatistics.class),
+                                                     new GetTenantStatistics())
+                .andMetadata(TenantMetadataFactory.forTenant(tenant));
+        return queryGateway.subscriptionQuery(query, TenantStatistics.class);
     }
 
     /**
