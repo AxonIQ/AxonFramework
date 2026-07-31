@@ -104,9 +104,10 @@ public final class ReadModelWrites {
             return;
         }
         auditLog.record("Enrolled student [" + studentId + "] in course [" + courseId + "]");
-        // Read now rather than through the supplier overload. That one is only invoked once the unit of work
-        // commits, so a batch holding several enrollments would report the batch's final total for every one of
-        // them instead of the total each enrollment left behind.
+        // Read now, and hand the emitter a value rather than a supplier. Each update has to carry the statistics
+        // this enrollment left behind, and a supplier is invoked later, so a batch holding several enrollments
+        // would report the batch's end state for every one of them. The cost is building this even when nothing
+        // is subscribed, which for a read model this size is not worth a wrong update.
         TenantStatistics freshStatistics = new TenantStatistics(courseStatisticsStore.statistics(),
                                                                 auditLog.entries().size());
         updateEmitter.emit(GetTenantStatistics.class, query -> true, freshStatistics);

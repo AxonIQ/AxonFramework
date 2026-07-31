@@ -19,6 +19,7 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -58,10 +59,14 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
 
     @Override
     public boolean isEveryCourseFull() {
-        if (enrolledStudentsByCourse.isEmpty()) {
+        // Every course this store has heard of, by capacity or by enrollment. A course that was opened and has
+        // no enrollments yet is still one this tenant can receive an enrollment for.
+        Set<String> heldCourses = new HashSet<>(capacityByCourse.keySet());
+        heldCourses.addAll(enrolledStudentsByCourse.keySet());
+        if (heldCourses.isEmpty()) {
             return false;
         }
-        return enrolledStudentsByCourse.keySet().stream().allMatch(this::isCourseFull);
+        return heldCourses.stream().allMatch(this::isCourseFull);
     }
 
     private boolean isCourseFull(String courseId) {

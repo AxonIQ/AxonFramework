@@ -55,6 +55,10 @@ public interface CourseStatisticsStore extends AutoCloseable {
      * Indicates whether every course this tenant holds is at capacity, and so whether the tenant's statistics
      * can still change at all.
      * <p>
+     * A course counts as held once this store knows either its capacity or an enrollment in it, so a course that
+     * was opened and has nobody enrolled yet still keeps the tenant from being full. That is a wider set than
+     * {@link #statistics()} reports, which covers only courses somebody enrolled in.
+     * <p>
      * This is a tenant-wide question rather than a per-course one, because {@link GetTenantStatistics} reports
      * the whole tenant. A single full course says nothing while another still has seats.
      * <p>

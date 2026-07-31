@@ -201,7 +201,7 @@ class MultiTenancyDemoIT {
             // and a query for an unknown tenant was rejected too
             assertThat(outcome.queryRejections().rejectedForUnknownTenant()).isTrue();
             // and so was a query naming no tenant at all, which has nothing to resolve components from
-            assertThat(outcome.queryRejections().rejectedWithoutTenant()).isTrue();
+            assertThat(outcome.queryRejections().rejectedForMissingTenant()).isTrue();
             // and Shelbyville stopped being queryable once its tenant was removed, which is the read-side
             // counterpart of the unknown-tenant rejection
             assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
@@ -209,8 +209,10 @@ class MultiTenancyDemoIT {
             // updates, routed through their own tenant's Axon Server connection
             assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
             // each seeing its own initial result plus one update per enrollment, and nothing more
-            assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived()).isEqualTo(3);
-            assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived()).isEqualTo(3);
+            assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived())
+                    .isEqualTo(outcome.springfieldEnrollments() + 1);
+            assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived())
+                    .isEqualTo(outcome.springfieldEnrollments() + 1);
             // and filling Springfield's course completed only its own subscription, leaving Shelbyville's
             // open on its course's free seat, so completion is scoped to a tenant just as emission is
             assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();

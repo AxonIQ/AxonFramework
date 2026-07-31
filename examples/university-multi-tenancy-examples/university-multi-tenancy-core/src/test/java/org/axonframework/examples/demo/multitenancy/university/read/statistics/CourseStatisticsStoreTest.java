@@ -95,6 +95,16 @@ class CourseStatisticsStoreTest {
         }
 
         @Test
+        void anOpenCourseWithoutEnrollmentsKeepsTheTenantFromBeingFull() {
+            testSubject.recordCourseCapacity(COURSE_ID, 1);
+            testSubject.recordCourseCapacity(OTHER_COURSE_ID, 1);
+            testSubject.recordEnrollment(COURSE_ID, "alice");
+
+            // The second course was opened and nobody enrolled yet, so the tenant can still receive one.
+            assertThat(testSubject.isEveryCourseFull()).isFalse();
+        }
+
+        @Test
         void aCourseOfUnknownCapacityKeepsTheTenantFromBeingFull() {
             // No capacity recorded, so nothing about this course can be called full.
             testSubject.recordEnrollment(COURSE_ID, "alice");

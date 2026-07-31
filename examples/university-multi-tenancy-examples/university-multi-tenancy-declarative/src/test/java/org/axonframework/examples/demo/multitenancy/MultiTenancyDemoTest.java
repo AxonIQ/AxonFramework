@@ -49,14 +49,16 @@ class MultiTenancyDemoTest {
         // and a query for an unknown tenant was rejected too
         assertThat(outcome.queryRejections().rejectedForUnknownTenant()).isTrue();
         // and so was a query naming no tenant at all, which has nothing to resolve components from
-        assertThat(outcome.queryRejections().rejectedWithoutTenant()).isTrue();
+        assertThat(outcome.queryRejections().rejectedForMissingTenant()).isTrue();
         // and Shelbyville stopped being queryable once its tenant was removed
         assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
         // and Springfield's and Shelbyville's own subscription queries each received only their own updates
         assertThat(outcome.subscriptionQuery().isolatedByTenant()).isTrue();
         // each seeing its own initial result plus one update per enrollment, and nothing more
-        assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived()).isEqualTo(3);
-        assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived()).isEqualTo(3);
+        assertThat(outcome.subscriptionQuery().springfieldUpdatesReceived())
+                .isEqualTo(outcome.springfieldEnrollments() + 1);
+        assertThat(outcome.subscriptionQuery().shelbyvilleUpdatesReceived())
+                .isEqualTo(outcome.springfieldEnrollments() + 1);
         // and filling Springfield's course completed only its own subscription, leaving Shelbyville's open
         assertThat(outcome.subscriptionQuery().completionScopedToTenant()).isTrue();
         // and removing Shelbyville closed its instances
