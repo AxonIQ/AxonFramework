@@ -250,11 +250,12 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void usesIdFactoryMethodForNullEventMessage() {
-            FactoryMethodsTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
-            assertNotNull(entity);
-            assertEquals("test-id", entity.getId());
-            assertNull(entity.getEventMessage());
+        void throwsEntityNotFoundForIdOnlyFactoryMethodWithoutEventMessage() {
+            // A method-based no-arg/id-only @EntityCreator must be treated the same as a constructor-based one: no
+            // event message present means the entity does not exist yet, regardless of whether the creator is a
+            // Constructor or a static factory Method.
+            assertThrows(EntityNotFoundException.class,
+                         () -> factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test

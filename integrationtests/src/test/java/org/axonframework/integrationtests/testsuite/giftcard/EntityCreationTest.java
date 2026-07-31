@@ -25,6 +25,8 @@ import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardEvent
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardEventCreatorStateful;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardIdCreator;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardIdCreatorStateful;
+import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardIdFactoryMethodCreator;
+import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardIdFactoryMethodCreatorStateful;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardNoArgCreator;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardNoArgCreatorStateful;
 import org.axonframework.integrationtests.testsuite.giftcard.state.NullableGiftCardEventCreatorStateful;
@@ -188,8 +190,38 @@ class EntityCreationTest {
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
+        }
+    }
+
+    @Nested
+    class IdentifierFactoryMethodEntityCreationInstanceCommandHandler {
+
+        @BeforeEach
+        void setUp() {
+            startFor(EventSourcedEntityModule.autodetected(String.class, GiftCardIdFactoryMethodCreator.class));
+        }
+
+        @Test
+        void creationIsSuccessfulWhenCreateCommandComesFirst() {
+            CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
+
+            result = commandGateway.send(new RedeemCardCommand("cardId", 100), Void.class);
+
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
+        }
+
+        @Test
+        void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
+            CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 
@@ -286,8 +318,47 @@ class EntityCreationTest {
         void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
-            assertThat(result).isCompletedExceptionally();
-            assertThat(result.exceptionNow()).isInstanceOf(EntityNotFoundException.class);
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
+        }
+    }
+
+    @Nested
+    class IdentifierFactoryMethodNonNullEntityCreationStatefulCommandHandler {
+
+        @BeforeEach
+        void setUp() {
+            CommandHandlingModule commandHandlingModule =
+                    CommandHandlingModule.named("GiftCardIdFactoryMethodCreatorStateful")
+                                         .commandHandlers()
+                                         .autodetectedCommandHandlingComponent(
+                                                 c -> new GiftCardIdFactoryMethodCreatorStateful()
+                                         )
+                                         .build();
+            EventSourcedEntityModule<String, GiftCardIdFactoryMethodCreatorStateful.GiftCard> eventSourcedEntityModule =
+                    EventSourcedEntityModule.autodetected(String.class,
+                                                          GiftCardIdFactoryMethodCreatorStateful.GiftCard.class);
+
+            startFor(commandHandlingModule, eventSourcedEntityModule);
+        }
+
+        @Test
+        void creationsThrowsWhenCreateCommandComesSinceNonNullEntityIsExpected() {
+            CompletableFuture<Void> result = commandGateway.send(new IssueCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        void creationsThrowsWhenHandlingInstanceCommandBeforeHandlingAnyCreateCommand() {
+            CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
+
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .withCauseInstanceOf(EntityNotFoundException.class);
         }
     }
 

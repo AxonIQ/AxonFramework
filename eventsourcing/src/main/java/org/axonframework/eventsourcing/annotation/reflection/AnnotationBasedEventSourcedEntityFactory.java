@@ -394,26 +394,25 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         }
 
         /**
-         * Returns {@code true} when this {@link EntityCreator} annotated {@link Constructor} has no parameters beyond
-         * {@link InjectEntityId}-annotated ones, and no {@code firstEventMessage} is present, indicating that the entity
-         * has never been created by an event and therefore does not exist.
+         * Returns {@code true} when this {@link EntityCreator} annotated {@link Executable} (a {@link Constructor} or
+         * a static factory {@link java.lang.reflect.Method}) has no parameters beyond {@link InjectEntityId}-annotated
+         * ones, and no {@code firstEventMessage} is present, indicating that the entity has never been created by an
+         * event and therefore does not exist.
          * <p>
-         * Concretely, this returns {@code true} when all three conditions hold:
+         * Concretely, this returns {@code true} when both conditions hold:
          * <ul>
-         *   <li>the underlying {@link Executable} is a {@link Constructor}</li>
-         *   <li>every parameter resolver is an {@link IdTypeParameterResolver} (covers both zero-arg constructors and
-         *       constructors whose only parameters are {@link InjectEntityId}-annotated)</li>
+         *   <li>every parameter resolver is an {@link IdTypeParameterResolver} (covers both zero-arg creators and
+         *       creators whose only parameters are {@link InjectEntityId}-annotated)</li>
          *   <li>{@code firstEventMessage} is {@code null}</li>
          * </ul>
          *
          * @param firstEventMessage the first {@link EventMessage}, if any, for the entity that is about to be
          *                          constructed
-         * @return {@code true} when the constructor requires no event to produce an entity but no event was supplied,
+         * @return {@code true} when the creator requires no event to produce an entity but no event was supplied,
          * meaning the entity does not exist yet
          */
         private boolean isNoArgOrIdBasedCreatorWithoutFirstEvent(@Nullable EventMessage firstEventMessage) {
-            return executable instanceof Constructor
-                    && firstEventMessage == null
+            return firstEventMessage == null
                     && Arrays.stream(parameterResolvers).allMatch(r -> r == idTypeParameterResolver);
         }
 
