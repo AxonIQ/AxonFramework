@@ -44,6 +44,7 @@ public class GiftCardNoArgCreatorStateful {
     @CommandHandler
     public void handle(IssueCardCommand command,
                        @InjectEntity GiftCard entity) {
+        // This throw is never reached, as the GiftCard is expected while it can never exist for the IssueCardCommand.
         throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
     }
 
