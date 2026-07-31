@@ -362,6 +362,10 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         }
 
         private E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
+            if (isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
+                throw new EntityNotFoundException(id);
+            }
+
             ProcessingContext contextWithId = context.withResource(ID_KEY, id);
             ProcessingContext convertedContext = mapContextWithMessageIfNecessary(contextWithId);
 
@@ -369,10 +373,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                     Arrays.stream(parameterResolvers)
                           .map(resolver -> tryResolveParameterValue(resolver, convertedContext))
                           .toArray(CompletableFuture[]::new);
-
-            if (isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
-                throw new EntityNotFoundException(id);
-            }
 
             return CompletableFuture.allOf(resolvedParams)
                                     .thenApply(v -> Arrays.stream(resolvedParams)
