@@ -306,6 +306,26 @@ class InjectEntityParameterResolverFactoryTest {
     }
 
     @Nested
+    class DeclarationOnlyNullableParameter {
+
+        @Test
+        void resolvesToNullWhenMissingAndDeclarationOnlyNullable() throws NoSuchMethodException {
+            // given: a JSR-305-style @Nullable, declaration-only (no TYPE_USE target), unlike jspecify's @Nullable
+            Method method =
+                    DeclarationOnlyNullableHandlers.class.getDeclaredMethod("plainEntityNullable", GiftCard.class);
+            StateManager stateManager = stateManagerLoading(
+                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
+            );
+
+            // when
+            Object result = resolve(method, stateManager);
+
+            // then
+            assertThat(result).isNull();
+        }
+    }
+
+    @Nested
     class Misconfiguration {
 
         @Test
@@ -410,6 +430,19 @@ class InjectEntityParameterResolverFactoryTest {
         }
 
         void notAnnotated(GiftCard card) {
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class DeclarationOnlyNullableHandlers {
+
+        void plainEntityNullable(@Nullable @InjectEntity(idResolver = FixedIdResolver.class) GiftCard card) {
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.PARAMETER)
+        @interface Nullable {
+
         }
     }
 }
