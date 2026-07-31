@@ -20,8 +20,7 @@ import io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigur
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
-import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTenancyConfigurationDefaults;
-import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
+import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
@@ -62,12 +61,11 @@ public final class ProviderAmbiguityGuardrail {
     public static boolean rejectsTwoProvidersForOneType() {
         MessagingConfigurer configurer = MessagingConfigurer.create();
         configurer.componentRegistry(registry -> {
-            // The parameter resolver that rejects the ambiguity is installed by the multi-tenancy
-            // enhancer, so it is enabled here too. This guardrail is about provider ambiguity, so it
+            // The parameter resolver that rejects the ambiguity comes with multi-tenancy, which is active
+            // as soon as the module is on the classpath. This guardrail is about provider ambiguity, so it
             // runs in memory regardless of whether the demo itself runs against Axon Server. Both
             // Axon Server enhancers are disabled: the multi-tenancy defaults would otherwise register a
             // multi-tenant command bus connector that needs an AxonServerConnectionManager we do not have.
-            MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
                     .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
                     .registerComponent(TenantProvider.class,

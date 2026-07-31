@@ -274,12 +274,8 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                                               Set<Class<? extends E>> concreteTypes) {
         // #3784: inspection of concrete (sub) types does not work with EntityMembers, that's why we need to
         // differentiate here.
-        var hasMemberEntities = !ReflectionUtils.collectMatchingMethodsAndFields(entityType, isAnnotatedWith(EntityMember.class))
-                                                .isEmpty() || concreteTypes.stream()
-                                                                           .anyMatch(concreteType -> !ReflectionUtils.collectMatchingMethodsAndFields(
-                                                                                                                             concreteType,
-                                                                                                                             isAnnotatedWith(EntityMember.class))
-                                                                                                                     .isEmpty());
+        var hasMemberEntities = hasEntityMembers(entityType) || concreteTypes.stream()
+                                                                             .anyMatch(this::hasEntityMembers);
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType,
                 parameterResolverFactory,
@@ -307,6 +303,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         return builder.build();
     }
 
+    private boolean hasEntityMembers(Class<?> type) {
+        return !ReflectionUtils.collectMatchingMethodsAndFields(type, isAnnotatedWith(EntityMember.class)).isEmpty();
+    }
+
     private LinkedList<QualifiedName> initializeDetectedHandlers(
             EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected
     ) {
@@ -319,7 +319,8 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                                                       .qualifiedName();
                      if (commandsToSkip.contains(qualifiedName)) {
                          logger.debug(
-                                 "Skipping registration of command handler for [{}] on [{}] (already registered by parent)",
+                                 "Skipping registration of command handler for [{}] on [{}] "
+                                         + "(already registered by parent)",
                                  qualifiedName,
                                  entityType);
                          return;
@@ -357,9 +358,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private void addPayloadTypeFromHandler(QualifiedName qualifiedName, MessageHandlingMember<?> handler) {
         if (payloadTypes.containsKey(qualifiedName) && !payloadTypes.get(qualifiedName).equals(handler.payloadType())) {
             throw new AxonConfigurationException(
-                    "The scanned message handler methods expect different payload types for the same message type. Message of qualified name ["
-                            + qualifiedName + "] declares both [" + payloadTypes.get(qualifiedName) + "] and ["
-                            + handler.payloadType() + "] as wanted representations");
+                    "The scanned message handler methods expect different payload types for the same message type. "
+                            + "Message of qualified name [" + qualifiedName + "] declares both ["
+                            + payloadTypes.get(qualifiedName) + "] and [" + handler.payloadType()
+                            + "] as wanted representations");
         }
         logger.debug("Discovered payload type [{}] for message type [{}] on entity [{}]",
                      handler.payloadType().getName(),

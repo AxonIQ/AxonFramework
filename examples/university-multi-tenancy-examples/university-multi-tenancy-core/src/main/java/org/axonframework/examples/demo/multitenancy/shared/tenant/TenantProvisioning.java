@@ -19,17 +19,18 @@ package org.axonframework.examples.demo.multitenancy.shared.tenant;
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
-import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerTenantProvider;
+import io.axoniq.framework.messaging.multitenancy.axonserver.api.AxonServerTenantProvider;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
 
 import java.time.Duration;
 import java.util.List;
 
 /**
- * How a run provisions and removes its tenants, and the only thing that differs between the demo's
- * in-memory and Axon Server runs. The rest of the lifecycle is identical, so isolating these three
- * operations captures the whole difference between the two backings.
+ * How a run provisions and removes its tenants. The rest of the lifecycle is identical between the demo's
+ * in-memory and Axon Server runs, so isolating these three operations captures the whole difference in how
+ * tenants come and go.
  * <p>
  * Get one through {@link #inMemory(DemoTenantProvider)} or {@link #axonServer(AxonConfiguration, List)}.
  */
@@ -58,9 +59,7 @@ public interface TenantProvisioning {
     void removeTenant(TenantDescriptor tenant);
 
     /**
-     * Whether this backing gives each tenant its own event store, which only Axon Server does. The
-     * per-tenant event-storage demonstration of the demo needs this, so the lifecycle reads it to decide
-     * whether to run that demonstration rather than taking a separate flag that could disagree with the backing.
+     * Whether this backing gives each tenant its own event store, which only Axon Server does.
      *
      * @return {@code true} against Axon Server, {@code false} in memory
      */
@@ -92,7 +91,7 @@ public interface TenantProvisioning {
 
             @Override
             public boolean hasPerTenantEventStore() {
-                return false;
+                return DemoBacking.IN_MEMORY.hasPerTenantEventStore();
             }
         };
     }
@@ -142,7 +141,7 @@ public interface TenantProvisioning {
 
             @Override
             public boolean hasPerTenantEventStore() {
-                return true;
+                return DemoBacking.AXON_SERVER.hasPerTenantEventStore();
             }
         };
     }

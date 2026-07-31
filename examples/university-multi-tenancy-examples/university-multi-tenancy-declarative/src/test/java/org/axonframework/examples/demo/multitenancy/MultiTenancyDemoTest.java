@@ -24,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Smoke test running the demo through its own entry point and asserting the observed outcome:
- * per-tenant isolation, the unknown-tenant guardrail, destroy on tenant removal, and cleanup on
- * shutdown. The configuration-time ambiguity guardrail is asserted separately.
+ * per-tenant isolation, subscription-query isolation, the unknown-tenant guardrail on both commands
+ * and queries, destroy on tenant removal, and cleanup on shutdown. The configuration-time ambiguity
+ * guardrail is asserted separately.
  */
 class MultiTenancyDemoTest {
 
@@ -45,6 +46,12 @@ class MultiTenancyDemoTest {
         assertThat(outcome.ogdenvilleEnrollments()).isEqualTo(1);
         // and a command for an unknown tenant was rejected
         assertThat(outcome.unknownTenantRejected()).isTrue();
+        // and a query for an unknown tenant was rejected too
+        assertThat(outcome.queryRejections().rejectedForUnknownTenant()).isTrue();
+        // and so was a query naming no tenant at all, which has nothing to resolve components from
+        assertThat(outcome.queryRejections().rejectedForMissingTenant()).isTrue();
+        // and Shelbyville stopped being queryable once its tenant was removed
+        assertThat(outcome.queryRejections().rejectedForRemovedTenant()).isTrue();
         // and removing Shelbyville closed its instances
         assertThat(outcome.shelbyvilleClosedOnRemoval()).isTrue();
         // and shutting down closed every remaining tenant's instances
@@ -52,6 +59,17 @@ class MultiTenancyDemoTest {
         // and the per-tenant event-storage demonstration did not run, as it needs each tenant's own Axon Server
         // event store, which the in-memory demo does not have
         assertThat(outcome.eventStorage().demonstrated()).isFalse();
+        // and the per-tenant snapshotting demonstration did not run either, as in memory every tenant
+        // shares one snapshot store. CourseEnrollmentCompositionTest covers the snapshot round trip
+        // against that shared store
+        assertThat(outcome.snapshotting().demonstrated()).isFalse();
+        // and neither did tenant-aware event processing, which needs each tenant to have its own event store
+        // so that a streamed event can be attributed to a tenant. This run therefore registers no projection
+        // and has its command handler fill the read model instead, which is what the counts above reflect
+        assertThat(outcome.streaming().demonstrated()).isFalse();
+        // and subscription updates were not shown either, since telling a subscriber about a change is the
+        // projection's job and no projection runs here
+        assertThat(outcome.subscriptionQuery().demonstrated()).isFalse();
     }
 
     @Test

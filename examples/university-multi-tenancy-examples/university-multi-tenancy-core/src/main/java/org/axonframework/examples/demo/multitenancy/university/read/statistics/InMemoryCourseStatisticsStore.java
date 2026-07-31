@@ -19,11 +19,12 @@ package org.axonframework.examples.demo.multitenancy.university.read.statistics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory {@link CourseStatisticsStore}, backing the demo without external infrastructure.
@@ -36,7 +37,10 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     private static final Logger logger = LoggerFactory.getLogger(InMemoryCourseStatisticsStore.class);
 
     private final String tenantId;
-    private final ConcurrentMap<String, AtomicInteger> enrollmentsByCourse = new ConcurrentHashMap<>();
+    // The enrolled students per course rather than a count, so recording the same enrollment twice is a no-op.
+    private final ConcurrentMap<String, Set<String>> enrolledStudentsByCourse = new ConcurrentHashMap<>();
+    // The capacity per course, so a course with no seats left can be told apart from one still filling up.
+    private final ConcurrentMap<String, Integer> capacityByCourse = new ConcurrentHashMap<>();
     private volatile boolean closed = false;
 
     /**
@@ -49,16 +53,42 @@ class InMemoryCourseStatisticsStore implements CourseStatisticsStore {
     }
 
     @Override
-    public void recordEnrollment(String courseId) {
-        enrollmentsByCourse.computeIfAbsent(courseId, ignored -> new AtomicInteger()).incrementAndGet();
+    public void recordCourseCapacity(String courseId, int capacity) {
+        capacityByCourse.put(courseId, capacity);
+    }
+
+    @Override
+    public boolean isEveryCourseFull() {
+        // Every course this store has heard of, by capacity or by enrollment. A course that was opened and has
+        // no enrollments yet is still one this tenant can receive an enrollment for.
+        Set<String> heldCourses = new HashSet<>(capacityByCourse.keySet());
+        heldCourses.addAll(enrolledStudentsByCourse.keySet());
+        if (heldCourses.isEmpty()) {
+            return false;
+        }
+        return heldCourses.stream().allMatch(this::isCourseFull);
+    }
+
+    private boolean isCourseFull(String courseId) {
+        Integer capacity = capacityByCourse.get(courseId);
+        if (capacity == null) {
+            return false;
+        }
+        return enrolledStudentsByCourse.getOrDefault(courseId, Set.of()).size() >= capacity;
+    }
+
+    @Override
+    public boolean recordEnrollment(String courseId, String studentId) {
+        return enrolledStudentsByCourse.computeIfAbsent(courseId, ignored -> ConcurrentHashMap.newKeySet())
+                                       .add(studentId);
     }
 
     @Override
     public List<CourseStatistics> statistics() {
-        return enrollmentsByCourse.entrySet()
-                                  .stream()
-                                  .map(entry -> new CourseStatistics(entry.getKey(), entry.getValue().get()))
-                                  .toList();
+        return enrolledStudentsByCourse.entrySet()
+                                       .stream()
+                                       .map(entry -> new CourseStatistics(entry.getKey(), entry.getValue().size()))
+                                       .toList();
     }
 
     @Override

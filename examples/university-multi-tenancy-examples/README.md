@@ -7,23 +7,53 @@ the declarative Configuration API and through Spring Boot autoconfiguration.
 
 A platform hosts several universities. Each is its own tenant, and their data must never mix.
 Multi-tenancy lets you register a tenant-scoped component once and have the framework inject the right
-tenant's instance into each message handler, so a handler never resolves a tenant itself. The
-[core module](university-multi-tenancy-core/README.md) holds that code. The demo shows, at the moment:
+tenant's instance into each message handler, so a handler never resolves a tenant itself, whether it
+handles a command, a query, or an event. The [core module](university-multi-tenancy-core/README.md) holds
+that code. The demo shows, at the moment:
 
-* **One enrollment, both features at once.** Enrolling a student is a single event-sourced command whose
-  handler sources the `Course` from, and appends to, the tenant's own event store, and updates that
-  tenant's `@TenantScoped` read-model components, each resolved from the message's tenant. The realistic
-  part is the write side: event sourcing plus tenant-scoped injection in one handler. Updating the
-  read-model components from that same handler is a deliberate interim shortcut (see the next bullet).
+* **One enrollment, event-sourced per tenant.** Enrolling a student is a single command whose handler
+  sources the `Course` from, and appends to, the tenant's own event store, without naming a tenant itself.
 * **Per-tenant event storage** (Axon Server): because each tenant has its own event store, the same course
   identifier in two tenants is two isolated event streams, so a course full in one tenant still has free
-  seats in another. Reading a tenant's events back as a stream, to rebuild the statistics as a projection
-  instead of updating them in the handler, is added in a later step. In memory there is one shared event
-  store, so this isolation is shown only against Axon Server.
+  seats in another. In memory there is one shared event store, so this isolation is shown only against
+  Axon Server.
+* **Tenant-aware event processing** (Axon Server): one ordinary pooled streaming event processor consumes
+  every tenant's events and writes each into that tenant's own read model. There is no processor and no
+  token store per tenant, and nothing in the processor declaration mentions a tenant. Nothing identifies
+  the tenant inside the stored event either: the tenant follows from which store the event was streamed
+  from, and the framework puts it on the processing context so the handler's `@TenantScoped` parameters
+  resolve to that tenant. Adding a tenant at runtime needs no configuration change, since the framework
+  re-opens the stream to include it. In memory a shared event store leaves a streamed event with no tenant
+  to attribute it to, so that run fills the read model from the command handler instead. That is a shortcut, not
+  the shape to copy: given per-tenant event stores, prefer the projection.
+* **The one knob there is** (Axon Server): a tenant change restarts the running processors, and each restart is
+  bounded by a timeout. The framework defaults it, and both demos show where an application would raise it for a
+  deployment whose processors are slow to stop and start.
+* **An idempotent projection**, which a streamed read model has to be. Events arrive at least once, and
+  re-opening the stream on a tenant change makes a repeat more likely than usual, so the statistics are
+  derived from the student identifiers in the events rather than counted. Handling the same enrollment twice
+  leaves the read model unchanged.
+* **Per-tenant snapshotting** (Axon Server): the course carries a snapshot policy, and each tenant's
+  snapshots live in that tenant's own context, so the same course identifier in two tenants is two
+  unrelated snapshots. A snapshot is a performance optimization, so no behavior reveals which tenant's
+  store it landed in. The demo therefore reads the per-tenant snapshot stores directly: both tenants hold
+  their own snapshot of that identifier, and each holds only its own tenant's student. It compares snapshot
+  contents rather than snapshot envelopes, since two envelopes never compare equal. In memory every tenant
+  shares one snapshot store, so this isolation is not shown.
 * **Tenant-scoped injection on the read side too**: the statistics query handler is handed the querying
   tenant's own components, matched by type, with the tenant resolved from the message metadata.
-* **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, an unknown tenant
-  rejected, a tenant removed (closing its instances), and cleanup on shutdown.
+* **Tenant-aware subscription queries** (Axon Server): both tenants known at startup subscribe to their own
+  statistics before enrolling a single student. The projection tells a tenant's subscribers about a change, and
+  completes their subscription once that tenant runs out of seats, both through a deliberately tenant-blind
+  predicate, and each tenant still only ever sees its own. The framework scopes both to the tenant it resolves
+  for the event, not to anything the predicate says. In memory no projection runs, so there is nothing to
+  announce a change and a subscription only ever sees its initial result.
+* **Direct queries routed through the per-tenant connector** (Axon Server): the demos turn off preferring a
+  locally subscribed handler, since in one process a direct query would otherwise never reach the connector.
+  That is about what the demo can show, not about correctness: the tenant is checked before dispatch either way.
+* **The tenant lifecycle**: tenants known at startup, a tenant added at runtime, a tenant removed (closing its
+  instances), and cleanup on shutdown. A command or query whose tenant the framework cannot resolve is rejected
+  before it reaches a handler, whether that tenant is unknown, removed, or not named at all.
 * **A configuration-time guardrail**: registering two providers for one component type is refused 
   because the framework cannot know which instance a parameter of that type should receive.
 * **Context filtering** (Axon Server): tenants are discovered from Axon Server's contexts, with the

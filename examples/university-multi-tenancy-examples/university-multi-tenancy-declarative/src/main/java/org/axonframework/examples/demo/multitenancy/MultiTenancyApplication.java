@@ -19,6 +19,7 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.examples.demo.multitenancy.shared.run.DemoApplication;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
@@ -27,8 +28,6 @@ import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponen
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
-import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * The same lifecycle runs two ways, selected by the {@code demo.axon-server.enabled} toggle: in memory by
  * default (tenants from a {@link DemoTenantProvider}), or against Axon Server (tenants are real
- * contexts). Only the {@link TenantProvisioning} changes.
+ * contexts). Which backing a run uses is the only choice each entry point makes.
  */
 public class MultiTenancyApplication {
 
@@ -81,18 +80,16 @@ public class MultiTenancyApplication {
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 
-        return DemoLifecycle.run(configuration.getComponent(CommandGateway.class),
-                                 configuration.getComponent(QueryGateway.class),
-                                 statisticsProvider,
-                                 auditProvider,
-                                 TenantProvisioning.inMemory(tenantProvider),
-                                 configuration::shutdown);
+        return DemoLifecycle.run(DemoApplication.inMemory(configuration,
+                                                          tenantProvider,
+                                                          statisticsProvider,
+                                                          auditProvider));
     }
 
     /**
      * Runs the demo end to end against Axon Server, sourcing the tenants from Axon Server contexts
-     * rather than from an in-memory provider. The lifecycle is identical to {@link #run()}. Only the
-     * {@link TenantProvisioning} differs. This path needs a running multi-context (Enterprise Edition)
+     * rather than from an in-memory provider. The lifecycle is identical to {@link #run()}, and the
+     * backing is the only difference. This path needs a running multi-context (Enterprise Edition)
      * Axon Server, reachable on its default {@code localhost} address.
      *
      * @return the observed outcome of the demo run
@@ -106,11 +103,9 @@ public class MultiTenancyApplication {
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 
-        return DemoLifecycle.run(configuration.getComponent(CommandGateway.class),
-                                 configuration.getComponent(QueryGateway.class),
-                                 statisticsProvider,
-                                 auditProvider,
-                                 TenantProvisioning.axonServer(configuration, DemoLifecycle.KNOWN_TENANTS),
-                                 configuration::shutdown);
+        return DemoLifecycle.run(DemoApplication.axonServer(configuration,
+                                                           statisticsProvider,
+                                                           auditProvider,
+                                                           configuration::shutdown));
     }
 }

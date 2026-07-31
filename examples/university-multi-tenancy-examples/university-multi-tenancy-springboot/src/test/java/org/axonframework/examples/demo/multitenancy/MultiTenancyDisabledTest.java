@@ -18,6 +18,7 @@ package org.axonframework.examples.demo.multitenancy;
 
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.messaging.Enrollments;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.RemoteExceptions;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
@@ -51,7 +52,7 @@ class MultiTenancyDisabledTest {
             // when a tenant-scoped enrollment is dispatched with multi-tenancy disabled
             // then it fails, because the tenant is never resolved without the multi-tenancy machinery
             assertThatThrownBy(() -> Enrollments.enroll(commandGateway, DemoLifecycle.SPRINGFIELD, "cs-101", "alice"))
-                    .matches(Enrollments::causedByTenantNotResolved,
+                    .matches(RemoteExceptions::causedByTenantNotResolved,
                              "caused by TenantNotResolvedException when multi-tenancy is disabled");
         }
     }

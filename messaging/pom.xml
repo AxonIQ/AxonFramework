@@ -171,6 +171,16 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          Activates Mono#contextCapture()/Flux#contextCapture() in tests. Without this library on the classpath the
+          capture performed by MonoUtils/FluxUtils is a documented no-op, so the ThreadLocal-propagation regression
+          tests in MonoUtilsTest and FluxUtilsTest could not observe anything.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.hsqldb</groupId>
             <artifactId>hsqldb</artifactId>

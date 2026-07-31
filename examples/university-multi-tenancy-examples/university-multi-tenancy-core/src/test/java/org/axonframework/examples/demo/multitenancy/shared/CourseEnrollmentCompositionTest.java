@@ -21,10 +21,12 @@ import io.axoniq.framework.messaging.multitenancy.api.MetadataBasedTenantResolve
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
 import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
-import io.axoniq.framework.messaging.multitenancy.axonserver.AxonServerMultiTenancyConfigurationDefaults;
-import io.axoniq.framework.messaging.multitenancy.configuration.MultiTenancyConfigurationUtils.MultiTenancyEnabled;
+import io.axoniq.framework.messaging.multitenancy.axonserver.configuration.AxonServerMultiTenancyConfigurationDefaults;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
@@ -34,14 +36,20 @@ import org.axonframework.examples.demo.multitenancy.university.UniversityModuleC
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseNotOpenException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudent;
+import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudentConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.write.opencourse.OpenCourse;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.QualifiedName;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,6 +70,8 @@ class CourseEnrollmentCompositionTest {
     private static final int CAPACITY = 2;
     private static final long TIMEOUT_SECONDS = 5;
 
+    private final SnapshotStore snapshotStore = new InMemorySnapshotStore();
+
     private AxonConfiguration configuration;
     private CommandGateway commandGateway;
     private TenantComponentProvider<CourseStatisticsStore> statisticsProvider;
@@ -74,14 +84,19 @@ class CourseEnrollmentCompositionTest {
         TenantProvider tenantProvider = new DemoTenantProvider(TENANT);
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        UniversityModuleConfiguration.configure(configurer);
+        // A backing without per-tenant event stores keeps the read model written by the command handler, so this
+        // test observes an enrollment's full effect without a projection to wait for. It is also the only shape a
+        // single shared event store supports, since an event streamed from it cannot be attributed to a tenant.
+        UniversityModuleConfiguration.configure(configurer, DemoBacking.IN_MEMORY);
         configurer.componentRegistry(registry -> {
-            MultiTenancyEnabled.enableMultiTenancyEnhancer(registry);
             registry.disableEnhancer(AxonServerConfigurationEnhancer.class)
                     .disableEnhancer(AxonServerMultiTenancyConfigurationDefaults.class)
                     .registerComponent(TenantProvider.class, config -> tenantProvider)
                     .registerComponent(TenantComponentProvider.class, "courseStatistics", config -> statisticsProvider)
-                    .registerComponent(TenantComponentProvider.class, "auditLog", config -> auditProvider);
+                    .registerComponent(TenantComponentProvider.class, "auditLog", config -> auditProvider)
+                    // The course is snapshotted, so it needs a snapshot store. In memory that is one
+                    // shared store. Against Axon Server the multi-tenancy defaults give each tenant its own.
+                    .registerComponent(SnapshotStore.class, config -> snapshotStore);
         });
         configuration = configurer.build();
         configuration.start();
@@ -105,6 +120,24 @@ class CourseEnrollmentCompositionTest {
         assertThat(statisticsProvider.componentFor(TENANT).statistics())
                 .containsExactly(new CourseStatistics(COURSE_ID, 2));
         assertThat(auditProvider.componentFor(TENANT).entries()).hasSize(2);
+    }
+
+    @Test
+    void fillingTheCourseSnapshotsItAndTheSnapshotSourcesBackTheFullCourse() {
+        openCourse(COURSE_ID, CAPACITY);
+        enroll(COURSE_ID, "alice");
+        // Crosses the course's snapshot threshold, so this load snapshots the course.
+        enroll(COURSE_ID, "bob");
+
+        // The snapshot was really written, under the name the framework stores it with. Whether the entity
+        // survives conversion is a separate question, asserted by CourseSnapshotConversionTest: the
+        // in-memory store keeps the entity instance as-is, so this path never converts anything.
+        assertThat(storedCourseSnapshot()).isNotNull();
+
+        // And sourcing from that snapshot restores the full course rather than a blank one: a blank course
+        // would be rejected as not open instead of as full.
+        assertThatThrownBy(() -> enroll(COURSE_ID, "carol"))
+                .hasRootCauseInstanceOf(CourseFullException.class);
     }
 
     @Test
@@ -157,6 +190,17 @@ class CourseEnrollmentCompositionTest {
                 .containsExactly(new CourseStatistics(COURSE_ID, 1));
     }
 
+    // Reads the snapshot straight from the store the configuration was given, under the same name the
+    // entity's repository stores it with.
+    @Nullable
+    private Snapshot storedCourseSnapshot() {
+        QualifiedName courseSnapshotName =
+                EnrollStudentConfiguration.courseSnapshotName(configuration.getComponent(MessageTypeResolver.class));
+        return snapshotStore.load(courseSnapshotName, COURSE_ID, null)
+                            .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            .join();
+    }
+
     private void openCourse(String courseId, int capacity) {
         send(new OpenCourse(courseId, capacity));
     }
@@ -173,4 +217,5 @@ class CourseEnrollmentCompositionTest {
                       .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                       .join();
     }
+
 }

@@ -170,7 +170,7 @@ public class SimpleEventBus implements EventBus {
             futures.add(processor.apply(newMessages, context));
         }
 
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+        return FutureUtils.allOrEmpty(futures);
     }
 
     @Override

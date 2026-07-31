@@ -21,7 +21,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * In-memory {@link AuditLog}, backing the demo without external infrastructure.
@@ -31,7 +32,9 @@ class InMemoryAuditLog implements AuditLog {
     private static final Logger logger = LoggerFactory.getLogger(InMemoryAuditLog.class);
 
     private final String tenantId;
-    private final List<String> entries = new CopyOnWriteArrayList<>();
+    // A set, so recording the same entry twice is a no-op. Insertion-ordered and lock-free for reads, so the
+    // log still reads in the order things happened.
+    private final Set<String> entries = new CopyOnWriteArraySet<>();
     private volatile boolean closed = false;
 
     /**

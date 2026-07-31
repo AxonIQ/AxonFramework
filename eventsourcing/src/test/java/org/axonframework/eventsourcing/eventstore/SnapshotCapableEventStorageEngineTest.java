@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 
 /**
@@ -164,6 +165,67 @@ class SnapshotCapableEventStorageEngineTest {
                 return list;
             })
             .join();
+    }
+
+    @Nested
+    class Decorate {
+
+        @Test
+        void decoratesAnEngineThatIsNotTheSnapshotStore() {
+            EventStorageEngine result = SnapshotCapableEventStorageEngine.decorate(delegate, snapshotStore);
+
+            assertThat(result).isInstanceOf(SnapshotCapableEventStorageEngine.class);
+        }
+
+        // Such an engine resolves the snapshot within its own source call, so decorating costs it a round trip.
+        @Test
+        void returnsAnEngineThatIsTheSnapshotStoreAsIs() {
+            SnapshotResolvingEngine snapshotResolvingEngine = new SnapshotResolvingEngine();
+
+            EventStorageEngine result =
+                    SnapshotCapableEventStorageEngine.decorate(snapshotResolvingEngine, snapshotResolvingEngine);
+
+            assertThat(result).isSameAs(snapshotResolvingEngine);
+        }
+
+        // A module registry receives the copied decorator definition and re-runs the enhancer that registers it, so the
+        // same engine is composed twice. The second composition must not add a second snapshot load.
+        @Test
+        void returnsAnAlreadyDecoratedEngineAsIs() {
+            EventStorageEngine once = SnapshotCapableEventStorageEngine.decorate(delegate, snapshotStore);
+
+            EventStorageEngine twice = SnapshotCapableEventStorageEngine.decorate(once, new InMemorySnapshotStore());
+
+            assertThat(twice).isSameAs(once);
+        }
+
+        @Test
+        void rejectsANullEngine() {
+            assertThatThrownBy(() -> SnapshotCapableEventStorageEngine.decorate(null, snapshotStore))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("The engine parameter cannot be null.");
+        }
+
+        @Test
+        void rejectsANullSnapshotStore() {
+            assertThatThrownBy(() -> SnapshotCapableEventStorageEngine.decorate(delegate, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("The snapshotStore parameter cannot be null.");
+        }
+    }
+
+    // An engine that is its own snapshot store, as PostgresqlEventStorageEngine is.
+    private static class SnapshotResolvingEngine extends InMemoryEventStorageEngine implements SnapshotStore {
+
+        @Override
+        public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s, ProcessingContext context) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
+            return CompletableFuture.completedFuture(null);
+        }
     }
 
     private static SnapshotStore failingSnapshotStore() {
