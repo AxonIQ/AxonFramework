@@ -27,31 +27,25 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.*;
+import org.mockito.*;
+import org.mockito.junit.jupiter.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.UnaryOperator;
 
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link EventSourcingRepository}.
@@ -235,6 +229,35 @@ class EventSourcingRepositoryTest {
         ManagedEntity<String, String> loaded = testSubject.loadOrCreate("test", processingContext).join();
 
         assertEquals("test()", loaded.entity());
+    }
+
+    @Test
+    void loadOrCreateAllowsSubsequentResolutionToObserveEntityCreatedWithinSameUnitOfWork() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        eventsToLoad = List.of();
+
+        when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
+
+        CompletableFuture<ManagedEntity<String, String>> firstResult =
+                testSubject.loadOrCreate("test", processingContext);
+
+        ExecutionException firstException = assertThrows(ExecutionException.class, firstResult::get);
+        assertInstanceOf(EntityNotFoundException.class, firstException.getCause());
+
+        // Even though initialize() failed, the entity must still be subscribed for live updates - this is what
+        // allows a same-unit-of-work creation to be observed by a later resolution instead of a poisoned result.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<ManagedEntity<String, String>> entityCaptor = ArgumentCaptor.forClass(ManagedEntity.class);
+        verify(handler).subscribe(entityCaptor.capture(), eq(processingContext));
+        ManagedEntity<String, String> subscribedEntity = entityCaptor.getValue();
+
+        // Simulate a creation event being appended and applied via the onAppend callback a real
+        // EntityLifecycleHandler would have registered through subscribe(...).
+        subscribedEntity.applyStateChange(current -> "test(created)");
+
+        ManagedEntity<String, String> secondResult = testSubject.loadOrCreate("test", processingContext).join();
+
+        assertEquals("test(created)", secondResult.entity());
     }
 
     private static boolean conditionPredicate(SourcingCondition condition) {
