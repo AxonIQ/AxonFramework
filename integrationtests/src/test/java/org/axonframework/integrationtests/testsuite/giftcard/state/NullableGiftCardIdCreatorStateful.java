@@ -27,11 +27,13 @@ import org.axonframework.integrationtests.testsuite.giftcard.events.CardRedeemed
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.Nullable;
 
 /**
  * A stateful command handler for which the entity is created based on the identifier, will succeed for instance command
  * handlers because the handler lives outside the entity and receives a {@code null} entity when it does not exist yet.
+ * The type is deliberately wrapped in a {@link ManagedEntity} to validate nullability support for those as well.
  * <p>
  * Although the command defines the identifier and the constructor could produce an entity without any preceding event,
  * the {@code @InjectEntity} parameter is annotated {@code @Nullable} here, so it consistently resolves to {@code null}
@@ -43,7 +45,7 @@ public class NullableGiftCardIdCreatorStateful {
 
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity @Nullable GiftCard entity,
+                       @InjectEntity @Nullable ManagedEntity<String, GiftCard> entity,
                        EventAppender appender) {
         if (entity == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
