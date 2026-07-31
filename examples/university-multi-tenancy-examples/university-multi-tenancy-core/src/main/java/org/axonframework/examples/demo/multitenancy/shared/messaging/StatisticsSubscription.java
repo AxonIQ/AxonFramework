@@ -55,7 +55,7 @@ public final class StatisticsSubscription implements AutoCloseable {
 
     private StatisticsSubscription(QueryGateway queryGateway, TenantDescriptor tenant) {
         this.tenantId = tenant.tenantId();
-        this.subscription = Flux.from(Statistics.subscribeTo(queryGateway, tenant))
+        this.subscription = Flux.from(StatisticsQueries.subscribeTo(queryGateway, tenant))
                                 .doOnComplete(() -> {
                                     completed.set(true);
                                     logger.info("Tenant [{}]'s subscription completed: no seats left anywhere.",

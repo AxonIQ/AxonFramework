@@ -40,11 +40,11 @@ import java.util.concurrent.TimeUnit;
  * @author Laura Devriendt
  * @since 5.3.0
  */
-public final class Statistics {
+public final class StatisticsQueries {
 
     private static final long TIMEOUT_SECONDS = 5;
 
-    private Statistics() {
+    private StatisticsQueries() {
         // Utility class, not meant to be instantiated.
     }
 

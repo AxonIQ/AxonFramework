@@ -18,7 +18,6 @@ package org.axonframework.examples.demo.multitenancy.shared.messaging;
 
 import io.axoniq.framework.messaging.multitenancy.api.MetadataBasedTenantResolver;
 import io.axoniq.framework.messaging.multitenancy.api.TenantDescriptor;
-import io.axoniq.framework.messaging.multitenancy.api.TenantNotResolvedException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.CourseFullException;
 import org.axonframework.examples.demo.multitenancy.university.write.enrollstudent.EnrollStudent;
 import org.axonframework.examples.demo.multitenancy.university.write.opencourse.OpenCourse;
@@ -32,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * {@link MetadataBasedTenantResolver#DEFAULT_TENANT_METADATA_KEY}. That metadata is how the framework routes the
  * command to the right tenant's components, so neither the payloads nor this class ever name a tenant field.
  * <p>
- * The read side is {@link Statistics}.
+ * The read side is {@link StatisticsQueries}.
  */
 public final class Enrollments {
 
@@ -109,41 +108,4 @@ public final class Enrollments {
         }
     }
 
-    /**
-     * Returns {@code true} if the given {@code throwable} was caused by a
-     * {@link TenantNotResolvedException}, the failure the framework raises for an unknown tenant, whether
-     * it reaches the caller as itself or reconstructed over Axon Server.
-     *
-     * @param throwable the throwable to inspect
-     * @return {@code true} if a {@link TenantNotResolvedException} is in its cause chain
-     */
-    public static boolean causedByTenantNotResolved(Throwable throwable) {
-        return RemoteExceptions.causedBy(throwable, TenantNotResolvedException.class);
-    }
-
-    /**
-     * Returns {@code true} if the given {@code throwable} indicates a tenant that is not ready for commands
-     * yet, so a caller adding a tenant at runtime can retry until it is. That is either its tenant not being
-     * resolved, or its Axon Server context still propagating so a command routed to it is briefly rejected
-     * as an unknown context. Both are transient while a runtime-added tenant spins up.
-     *
-     * @param throwable the throwable to inspect
-     * @return {@code true} if the failure is a transient not-ready-yet condition
-     */
-    public static boolean causedByTenantNotReady(Throwable throwable) {
-        return causedByTenantNotResolved(throwable) || causedByUnknownContext(throwable);
-    }
-
-    // The tenant's Axon Server context is created before the command routing to it is in place, so a command
-    // sent in that window comes back as an "Unknown Context" failure. Matched by message, as it crosses the
-    // wire as a generic execution exception carrying only the original text.
-    private static boolean causedByUnknownContext(Throwable throwable) {
-        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
-            String message = cause.getMessage();
-            if (message != null && message.contains("Unknown Context")) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

@@ -22,7 +22,8 @@ import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.shared.messaging.Enrollments;
-import org.axonframework.examples.demo.multitenancy.shared.messaging.Statistics;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.RemoteExceptions;
+import org.axonframework.examples.demo.multitenancy.shared.messaging.StatisticsQueries;
 import org.axonframework.examples.demo.multitenancy.shared.messaging.StatisticsSubscription;
 import org.axonframework.examples.demo.multitenancy.shared.messaging.TenantRejections;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
@@ -206,11 +207,11 @@ public final class DemoLifecycle {
                 () -> Enrollments.enroll(commandGateway, UNKNOWN, SHARED_COURSE_ID, "eve"));
         boolean unknownTenantQueryRejected = TenantRejections.observe(
                 "query for an unknown tenant",
-                () -> Statistics.read(queryGateway, UNKNOWN));
+                () -> StatisticsQueries.read(queryGateway, UNKNOWN));
         // A tenant is what decides which components answer a query, so a query naming none cannot be served.
         boolean queryWithoutTenantRejected = TenantRejections.observe(
                 "query naming no tenant",
-                () -> Statistics.readWithoutTenant(queryGateway));
+                () -> StatisticsQueries.readWithoutTenant(queryGateway));
 
         step(8, "Remove a tenant, closing its instances and ending its queries");
         boolean shelbyvilleClosedOnRemoval =
@@ -381,7 +382,7 @@ public final class DemoLifecycle {
         boolean caughtUp = holdsWithin(
                 "tenant [" + tenant.tenantId() + "] projected " + expected + " enrollments",
                 atMost,
-                () -> Statistics.read(queryGateway, tenant).totalEnrollments() >= expected);
+                () -> StatisticsQueries.read(queryGateway, tenant).totalEnrollments() >= expected);
         if (!caughtUp) {
             // Said loudly, so a run that ends with an unexplained count says why rather than leaving the
             // reader to infer it from a missing number.
@@ -469,9 +470,9 @@ public final class DemoLifecycle {
                                      + "to a tenant, so the command handler fills the read model instead");
             return StreamingOutcome.notDemonstrated();
         }
-        int springfieldProjected = Statistics.read(queryGateway, SPRINGFIELD).totalEnrollments();
-        int shelbyvilleProjected = Statistics.read(queryGateway, SHELBYVILLE).totalEnrollments();
-        int ogdenvilleProjected = Statistics.read(queryGateway, OGDENVILLE).totalEnrollments();
+        int springfieldProjected = StatisticsQueries.read(queryGateway, SPRINGFIELD).totalEnrollments();
+        int shelbyvilleProjected = StatisticsQueries.read(queryGateway, SHELBYVILLE).totalEnrollments();
+        int ogdenvilleProjected = StatisticsQueries.read(queryGateway, OGDENVILLE).totalEnrollments();
         logger.info("""
                     Three tenants were served by {} streaming event processor(s) {}. \
                     Projected enrollments per tenant: springfield={}, shelbyville={}, ogdenville={}""",
@@ -515,7 +516,7 @@ public final class DemoLifecycle {
                     tenant.tenantId());
         Awaitility.await("tenant [" + tenant.tenantId() + "] ready for commands")
                   .atMost(TENANT_READY_TIMEOUT)
-                  .ignoreExceptionsMatching(Enrollments::causedByTenantNotReady)
+                  .ignoreExceptionsMatching(RemoteExceptions::causedByTenantNotReady)
                   .until(() -> {
                       firstCommands.run();
                       return true;
@@ -528,7 +529,7 @@ public final class DemoLifecycle {
      */
     private static void logTenantView(String label, QueryGateway queryGateway, TenantDescriptor tenant) {
         if (logger.isInfoEnabled()) {
-            logger.info("{}", TenantView.render(label, Statistics.read(queryGateway, tenant)));
+            logger.info("{}", TenantView.render(label, StatisticsQueries.read(queryGateway, tenant)));
         }
     }
 
@@ -550,7 +551,7 @@ public final class DemoLifecycle {
                 TENANT_READY_TIMEOUT,
                 () -> TenantRejections.isRejected(
                         "query for the removed tenant [" + SHELBYVILLE.tenantId() + "]",
-                        () -> Statistics.read(queryGateway, SHELBYVILLE)));
+                        () -> StatisticsQueries.read(queryGateway, SHELBYVILLE)));
         logger.info("The query for the removed tenant [{}] was rejected: {}", SHELBYVILLE.tenantId(), rejected);
         return rejected;
     }
@@ -588,8 +589,8 @@ public final class DemoLifecycle {
                                                        StreamingOutcome streaming,
                                                        SubscriptionQueryOutcome subscriptionQuery) {
         // Read the totals through queries while the application is still running.
-        TenantStatistics springfield = Statistics.read(queryGateway, SPRINGFIELD);
-        int ogdenvilleEnrollments = Statistics.read(queryGateway, OGDENVILLE).totalEnrollments();
+        TenantStatistics springfield = StatisticsQueries.read(queryGateway, SPRINGFIELD);
+        int ogdenvilleEnrollments = StatisticsQueries.read(queryGateway, OGDENVILLE).totalEnrollments();
 
         // Both components of every still-registered tenant should be closed once shutdown cancels the
         // provider subscriptions.
