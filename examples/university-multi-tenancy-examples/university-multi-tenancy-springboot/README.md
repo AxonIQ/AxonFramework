@@ -41,9 +41,10 @@ declares it to raise it, which a deployment with slow-starting processors would.
 
 Another bean turns off preferring a locally subscribed query handler
 (`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
-where a query handler is always subscribed locally, so without this a direct query would never reach the
-per-tenant query connector at all. A subscription query always routes through the connector regardless of
-this setting.
+where a query handler is always subscribed locally, so without this a direct query is answered locally and
+never reaches the per-tenant query connector, leaving the routing unshown. Correctness does not depend on it:
+the tenant is resolved and checked before the query is dispatched either way. A subscription query always
+routes through the connector regardless of this setting.
 
 Two Spring specifics are worth knowing, since neither applies to the declarative demo. The processor is
 declared through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently
