@@ -20,32 +20,32 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
-import org.axonframework.eventsourcing.EntityMissingAfterLoadOrCreateException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.EntityEvolver;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 
 /**
- * Combines an {@link EventSourcedEntityFactory} and an {@link EntityEvolver}
- * to ensure an entity exists and apply state transitions.
+ * Combines an {@link EventSourcedEntityFactory} and an {@link EntityEvolver} to ensure an entity exists and apply state
+ * transitions.
  * <p>
- * If the given entity is {@code null}, a new instance is created using the
- * factory. The resulting entity is then passed to the evolver to apply the
- * given event (if any).
+ * If the given entity is {@code null}, a new instance is created using the factory. The resulting entity is then passed
+ * to the evolver to apply the given event (if any).
  * <p>
  * This effectively provides "initialize or evolve" semantics.
  *
  * @param <I> the type of the identifier of the entity to create
  * @param <E> the type of the entity to create
- * @since 5.1.0
  * @author John Hendrikx
+ * @since 5.1.0
  */
 @Internal
 public class InitializingEntityEvolver<I, E> implements DescribableComponent {
+
     private final EventSourcedEntityFactory<I, E> entityFactory;
     private final EntityEvolver<E> entityEvolver;
 
@@ -64,43 +64,46 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
      * Creates an empty entity {@code E}.
      *
      * @param identifier the entity's identifier, cannot be {@code null}
-     * @param context a {@link ProcessingContext}, cannot be {@code null}
+     * @param context    a {@link ProcessingContext}, cannot be {@code null}
      * @return a new entity of type {@code E}
+     * @throws EntityNotFoundException when the {@link EventSourcedEntityFactory} returns {@code null}, signaling the
+     *                                 entity did not exist yet.
      */
     public E initialize(I identifier, ProcessingContext context) {
         E entity = entityFactory.create(
-            Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
-            null,
-            Objects.requireNonNull(context, "The context parameter must not be null.")
+                Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
+                null,
+                Objects.requireNonNull(context, "The context parameter must not be null.")
         );
 
         if (entity == null) {
-            throw new EntityMissingAfterLoadOrCreateException(identifier);
+            throw new EntityNotFoundException(identifier);
         }
 
         return entity;
     }
 
     /**
-     * Initializes or evolves the given entity using the given message. If the entity
-     * is {@code null}, creates the entity using the given message, otherwise evolves it.
+     * Initializes or evolves the given entity using the given message. If the entity is {@code null}, creates the
+     * entity using the given message, otherwise evolves it.
      *
      * @param identifier the entity's identifier, cannot be {@code null}
-     * @param entity the current state, can be {@code null}
-     * @param message an event message to initialize or evolve the entity with, cannot be {@code null}
-     * @param context a {@link ProcessingContext}, cannot be {@code null}
+     * @param entity     the current state, can be {@code null}
+     * @param message    an event message to initialize or evolve the entity with, cannot be {@code null}
+     * @param context    a {@link ProcessingContext}, cannot be {@code null}
      * @return an entity in its new state, never {@code null}
      */
     public E evolve(I identifier, @Nullable E entity, EventMessage message, ProcessingContext context) {
         return ensureInitializedThenEvolve(
-            Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
-            entity,
-            Objects.requireNonNull(message, "The message parameter must not be null."),
-            Objects.requireNonNull(context, "The context parameter must not be null.")
+                Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
+                entity,
+                Objects.requireNonNull(message, "The message parameter must not be null."),
+                Objects.requireNonNull(context, "The context parameter must not be null.")
         );
     }
 
-    private E ensureInitializedThenEvolve(I identifier, @Nullable E entity, EventMessage message, ProcessingContext context) {
+    private E ensureInitializedThenEvolve(I identifier, @Nullable E entity, EventMessage message,
+                                          ProcessingContext context) {
         if (entity == null) {
             entity = entityFactory.create(identifier, message, context);
 

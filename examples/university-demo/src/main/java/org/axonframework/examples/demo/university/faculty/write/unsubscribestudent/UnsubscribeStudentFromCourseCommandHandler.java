@@ -34,6 +34,7 @@ import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.annotation.InjectEntity;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -42,9 +43,13 @@ class UnsubscribeStudentFromCourseCommandHandler {
     @CommandHandler
     void handle(
             UnsubscribeStudentFromCourse command,
-            @InjectEntity(idResolver = SubscriptionIdResolver.class) State state,
+            @Nullable @InjectEntity(idResolver = SubscriptionIdResolver.class) State state,
             EventAppender eventAppender
     ) {
+        if (state == null) {
+            // Receiving command for non-existent course-and-student combination
+            return;
+        }
         var events = decide(command, state);
         eventAppender.append(events);
     }

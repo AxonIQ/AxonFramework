@@ -16,16 +16,18 @@
 
 package org.axonframework.examples.demo.multitenancy.university.write.opencourse;
 
-import org.axonframework.examples.demo.multitenancy.university.UniversityTags;
-import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.examples.demo.multitenancy.university.UniversityTags;
+import org.axonframework.examples.demo.multitenancy.university.events.CourseOpened;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Handles opening a course, following the load-decide-append shape. The {@link State} is injected, having
@@ -47,13 +49,13 @@ class OpenCourseCommandHandler {
      */
     @CommandHandler
     void handle(OpenCourse command,
-                @InjectEntity(idProperty = UniversityTags.COURSE_ID) State state,
+                @InjectEntity(idProperty = UniversityTags.COURSE_ID) Optional<State> state,
                 EventAppender eventAppender) {
-        eventAppender.append(decide(command, state));
+        eventAppender.append(decide(command, state.orElse(null)));
     }
 
-    private List<CourseOpened> decide(OpenCourse command, State state) {
-        if (state.open) {
+    private List<CourseOpened> decide(OpenCourse command, @Nullable State state) {
+        if (state != null && state.open) {
             return List.of();
         }
         return List.of(new CourseOpened(command.courseId(), command.capacity()));

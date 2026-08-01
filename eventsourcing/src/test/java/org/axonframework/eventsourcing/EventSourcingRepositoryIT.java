@@ -28,6 +28,7 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -224,7 +225,7 @@ class EventSourcingRepositoryIT {
         assertThatThrownBy(() -> testSubject.loadOrCreate("test", processingContext).join())
             .isInstanceOf(CompletionException.class)
             .cause()
-            .isInstanceOf(EntityMissingAfterLoadOrCreateException.class);
+            .isInstanceOf(EntityNotFoundException.class);
     }
 
     @Test

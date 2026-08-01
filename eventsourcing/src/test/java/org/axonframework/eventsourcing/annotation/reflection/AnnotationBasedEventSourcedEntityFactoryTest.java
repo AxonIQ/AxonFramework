@@ -77,16 +77,15 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void usesIdConstructorWithoutMessage() {
-            EventMessageTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
-            assertNotNull(entity);
-            assertEquals("test-id", entity.getId());
-            assertNull(entity.getEventMessage());
+        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
         void usesEventMessageConstructorWithEventMessage() {
-            EventMessageTestEntity entity = factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+            EventMessageTestEntity entity =
+                    factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+
             assertNotNull(entity);
             assertEquals("test-id", entity.getId());
             assertSame(eventMessage, entity.getEventMessage());
@@ -117,7 +116,6 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
                 return eventMessage;
             }
         }
-
     }
 
     @Nested
@@ -138,18 +136,25 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
         @Test
         void usesEventMessageConstructorWithCorrectPayloadType() {
-            PayloadTypeSpecificTestEntity entity = factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+            PayloadTypeSpecificTestEntity entity =
+                    factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+
             assertNotNull(entity);
             assertSame(eventMessage, entity.getEventMessage());
         }
 
         @Test
-        void throwsErrorIfNoMatchingPayloadType() {
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
             AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
                 factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
             });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found"));
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+        }
+
+        @Test
+        void returnsNullForNullEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -173,7 +178,8 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
 
             @EntityCreator(payloadQualifiedNames = "metadata-required-test-type")
-            public PayloadTypeSpecificTestEntity(EventMessage eventMessage, @MetadataValue(required = true, value = "blabla") Integer blabla) {
+            public PayloadTypeSpecificTestEntity(EventMessage eventMessage,
+                                                 @MetadataValue(required = true, value = "blabla") Integer blabla) {
                 this.eventMessage = eventMessage;
             }
 
@@ -202,19 +208,30 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
         @Test
         void usesEventPayloadConstructorWithCorrectPayloadType() {
-            eventMessage = new GenericEventMessage(new MessageType(PayloadSpecificPayload.class), new PayloadSpecificPayload("my-specific-payload"));
-            PayloadSpecificTestEntity entity = factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+            eventMessage = new GenericEventMessage(new MessageType(PayloadSpecificPayload.class),
+                                                   new PayloadSpecificPayload("my-specific-payload"));
+            PayloadSpecificTestEntity entity =
+                    factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+
             assertNotNull(entity);
             assertEquals("my-specific-payload", entity.getPayload());
         }
 
         @Test
-        void throwsErrorIfNoMatchingPayloadType() {
-            eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"), new PayloadSpecificPayload("my-specific-payload"));
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
-                factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
-            });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found"));
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
+            eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"),
+                                                   new PayloadSpecificPayload("my-specific-payload"));
+
+            AxonConfigurationException exception = assertThrows(
+                    AxonConfigurationException.class,
+                    () -> factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage))
+            );
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+        }
+
+        @Test
+        void returnsNullForNullEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         public static class PayloadSpecificTestEntity {
@@ -233,7 +250,9 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
         public record PayloadSpecificPayload(
                 String payload
-        ) {}
+        ) {
+
+        }
     }
 
     @Nested
@@ -253,16 +272,18 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void usesIdFactoryMethodForNullEventMessage() {
-            FactoryMethodsTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
-            assertNotNull(entity);
-            assertEquals("test-id", entity.getId());
-            assertNull(entity.getEventMessage());
+        void returnsNullForIdOnlyFactoryMethodWithoutEventMessage() {
+            // A method-based no-arg/id-only @EntityCreator must be treated the same as a constructor-based one: no
+            // event message present means the entity does not exist yet, regardless of whether the creator is a
+            // Constructor or a static factory Method.
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
         void usesEventMessageFactoryMethodForEventMessage() {
-            FactoryMethodsTestEntity entity = factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+            FactoryMethodsTestEntity entity =
+                    factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+
             assertNotNull(entity);
             assertEquals("test-id", entity.getId());
             assertSame(eventMessage, entity.getEventMessage());
@@ -332,7 +353,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void invokesSimpleMethodIfMessageNotPresent() {
+        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     MostSpecificHandlerEntity.class,
                     String.class,
@@ -341,8 +362,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
                     converter
             );
 
-            var entity = factory.create("test-id", null, new StubProcessingContext());
-            assertEquals("simply-id", entity.invoked);
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         static class MostSpecificHandlerEntity {
@@ -391,6 +411,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         public static abstract class BaseEntity {
+
             protected final String id;
 
             protected BaseEntity(String id) {
@@ -403,6 +424,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         public static class SubEntity extends BaseEntity {
+
             public SubEntity(String id) {
                 super(id);
             }
@@ -414,6 +436,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         public static class ConcreteEntity {
+
             private final String id;
 
             public ConcreteEntity(String id) {

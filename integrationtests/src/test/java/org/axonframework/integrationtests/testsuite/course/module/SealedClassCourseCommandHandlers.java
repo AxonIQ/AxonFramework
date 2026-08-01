@@ -26,11 +26,12 @@ import org.axonframework.integrationtests.testsuite.course.events.CoursePublishe
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 public class SealedClassCourseCommandHandlers {
 
     @CommandHandler
-    public void handle(CreateCourse cmd, @InjectEntity CourseState state, EventAppender appender) {
+    public void handle(CreateCourse cmd, @InjectEntity @Nullable CourseState state, EventAppender appender) {
         appender.append(new CourseCreated(cmd.courseId()));
     }
 

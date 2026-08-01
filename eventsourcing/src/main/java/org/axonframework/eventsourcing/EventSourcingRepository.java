@@ -26,6 +26,7 @@ import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.EntityEvolver;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
 import org.jspecify.annotations.Nullable;
@@ -34,10 +35,10 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElseGet;
 
 /**
  * {@link Repository} implementation which manages event-sourced entities and delegates
@@ -177,15 +178,60 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     private CompletableFuture<ManagedEntity<ID, E>> doLoad(ID identifier,
                                                            boolean create,
                                                            ProcessingContext context) {
+        AtomicReference<EntityNotFoundException> failureRef = new AtomicReference<>();
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
 
         return managedEntities.computeIfAbsent(
                 identifier,
                 id -> lifecycleHandler.source(identifier, context)
-                        .thenApply(entity -> create && entity == null ? lifecycleHandler.initialize(identifier, context) : entity)
-                        .thenApply(e -> new EventSourcedEntity<>(identifier, e))
-                        .whenComplete((entity, exception) -> updateActiveEntity(entity, context, exception))
-        ).thenApply(Function.identity());
+                                      .thenApply(
+                                              entity -> create && entity == null
+                                                      ? catchAndAllowForEntityNotFound(identifier, context, failureRef)
+                                                      : entity
+                                      )
+                                      .thenApply(e -> new EventSourcedEntity<>(identifier, e))
+                                      .whenComplete((entity, exception) -> updateActiveEntity(
+                                              entity, context, exception
+                                      ))
+        ).thenApply(
+                entity -> {
+                    if (create && entity.entity() == null) {
+                        throw requireNonNullElseGet(failureRef.get(), () -> new EntityNotFoundException(identifier));
+                    }
+                    return entity;
+                }
+        );
+    }
+
+    /**
+     * Invokes {@link EntityLifecycleHandler#initialize(Object, ProcessingContext)}, treating an
+     * {@link EntityNotFoundException} as a legitimately-{@code null} entity state rather than a failure.
+     * <p>
+     * This allows the resulting {@link EventSourcedEntity} to still be {@link #updateActiveEntity registered and
+     * subscribed} for live updates even though the entity does not exist yet: if the caller (e.g. a command handler
+     * resolving an {@code @InjectEntity} parameter with create-or-update semantics) subsequently appends creation
+     * events for the same identifier within the same {@link ProcessingContext}, those events are applied to this
+     * entity via its subscription, so a later {@link #doLoad} call for the same identifier observes the created
+     * entity instead of a permanently poisoned not-found result. The caught exception is captured in
+     * {@code failureRef} so the caller whose invocation actually triggered it can still see the original
+     * exception instance.
+     *
+     * @param identifier    the identifier of the entity to initialize
+     * @param context       the {@link ProcessingContext} to initialize the entity in
+     * @param failureRef captures the original {@link EntityNotFoundException}, if any, thrown by the
+     *                      {@code lifecycleHandler}
+     * @return the initialized entity, or {@code null} when the {@code lifecycleHandler} reports the entity does not
+     * exist yet
+     */
+    private @Nullable E catchAndAllowForEntityNotFound(ID identifier,
+                                                       ProcessingContext context,
+                                                       AtomicReference<EntityNotFoundException> failureRef) {
+        try {
+            return lifecycleHandler.initialize(identifier, context);
+        } catch (EntityNotFoundException e) {
+            failureRef.set(e);
+            return null;
+        }
     }
 
     @Override

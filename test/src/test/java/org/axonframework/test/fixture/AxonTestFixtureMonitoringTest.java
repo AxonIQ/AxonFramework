@@ -16,17 +16,17 @@
 
 package org.axonframework.test.fixture;
 
-import org.axonframework.messaging.commandhandling.annotation.Command;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
-import org.axonframework.messaging.eventhandling.annotation.Event;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.messaging.commandhandling.annotation.Command;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
+import org.axonframework.messaging.eventhandling.annotation.Event;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
 import org.axonframework.test.fixture.AxonTestFixture.Customization;
 import org.axonframework.test.fixture.AxonTestFixtureMonitoringTest.Domain.CourseAlreadyExists;
@@ -35,10 +35,9 @@ import org.axonframework.test.fixture.AxonTestFixtureMonitoringTest.Domain.Creat
 import org.axonframework.test.util.MessageMonitorReport;
 import org.axonframework.test.util.RecordingMessageMonitor;
 import org.junit.jupiter.api.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,25 +48,27 @@ import static org.axonframework.test.fixture.AxonTestFixtureMonitoringTest.Domai
  */
 public class AxonTestFixtureMonitoringTest {
 
-    private static final Logger logger = LoggerFactory.getLogger(AxonTestFixtureMonitoringTest.class);
-
     static class Domain {
 
         // configure application using given messageMonitor
-        static EventSourcingConfigurer configurer(final MessageMonitorReport report, boolean isLoggingEnabled) {
+        static EventSourcingConfigurer configurer(final MessageMonitorReport report) {
 
             final var configurer = EventSourcingConfigurer.create();
 
-            final var entity = EventSourcedEntityModule.autodetected(String.class,
-                                                                  Domain.CourseCreatedCommandHandler.State.class);
+            final var entity = EventSourcedEntityModule.autodetected(
+                    String.class,
+                    Domain.CourseCreatedCommandHandler.State.class
+            );
 
             configurer.messaging(mc -> mc.registerMessageMonitor(c -> new RecordingMessageMonitor(report)));
 
+            CommandHandlingModule.CommandHandlerPhase commandHandlingModule =
+                    CommandHandlingModule.named("CreateCourse")
+                                         .commandHandlers()
+                                         .autodetectedCommandHandlingComponent(c -> new CourseCreatedCommandHandler());
+
             return configurer.registerEntity(entity)
-                             .registerCommandHandlingModule(CommandHandlingModule.named("CreateCourse")
-                                                                                 .commandHandlers()
-                                                                                 .autodetectedCommandHandlingComponent(c -> new Domain.CourseCreatedCommandHandler()))
-                    ;
+                             .registerCommandHandlingModule(commandHandlingModule);
         }
 
         public static final String COURSE_ID = "courseId";
@@ -95,10 +96,16 @@ public class AxonTestFixtureMonitoringTest {
 
         static class CourseCreatedCommandHandler {
 
+            @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
             @CommandHandler(commandName = "org.axonframework.test.fixture.CreateCourse")
-            void handle(CreateCourse cmd, @InjectEntity(idProperty = COURSE_ID) CourseCreatedCommandHandler.State state,
+            void handle(CreateCourse cmd,
+                        @InjectEntity(idProperty = COURSE_ID) Optional<CourseCreatedCommandHandler.State> state,
                         EventAppender eventAppender) {
-                eventAppender.append(state.decide(cmd));
+                state.ifPresentOrElse(
+                        value -> eventAppender.append(value.decide(cmd)),
+                        // Bit ugly, but making an empty state object to access the decide method
+                        () -> eventAppender.append(new CourseCreatedCommandHandler.State().decide(cmd))
+                );
             }
 
             @EventSourcedEntity(tagKey = COURSE_ID)
@@ -132,26 +139,22 @@ public class AxonTestFixtureMonitoringTest {
     void registeredCommandMessageMonitor() {
         var report = new MessageMonitorReport();
         final var courseId = UUID.randomUUID().toString();
-        final var fixture = AxonTestFixture.with(
-                configurer(report, false),
-                Customization::asIntegrationTest
-        );
+        final var fixture = AxonTestFixture.with(configurer(report), Customization::asIntegrationTest);
 
-        fixture
-                .given()
-                .noPriorActivity()
-                .when()
-                .command(new CreateCourse(courseId, "Math"))
-                .then()
-                .success()
-                .events(new CourseCreated(courseId, "Math"),
-                        new Domain.JustSomeAdditionalCourseCreated(courseId, "Math"))
-                .and()
-                .when()
-                .command(new CreateCourse(courseId, "Math"))
-                .then()
-                .noEvents()
-                .exception(CourseAlreadyExists.class);
+        fixture.given()
+               .noPriorActivity()
+               .when()
+               .command(new CreateCourse(courseId, "Math"))
+               .then()
+               .success()
+               .events(new CourseCreated(courseId, "Math"),
+                       new Domain.JustSomeAdditionalCourseCreated(courseId, "Math"))
+               .and()
+               .when()
+               .command(new CreateCourse(courseId, "Math"))
+               .then()
+               .noEvents()
+               .exception(CourseAlreadyExists.class);
 
         // running the sample produced reports via the registered message monitor
         assertThat(report).hasSize(4);

@@ -25,6 +25,7 @@ import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -33,15 +34,15 @@ class PublishCourseCommandHandler {
     @CommandHandler
     void handle(
             PublishCourse command,
-            @InjectEntity(idProperty = CourseCatalogTags.COURSE_ID) State state,
+            @Nullable @InjectEntity(idProperty = CourseCatalogTags.COURSE_ID) State state,
             EventAppender eventAppender
     ) {
         eventAppender.append(decide(command, state));
     }
 
-    private List<CoursePublished> decide(PublishCourse command, State state) {
+    private List<CoursePublished> decide(PublishCourse command, @Nullable State state) {
         // Idempotency: re-publishing a course is a no-op rather than an error.
-        if (state.published) {
+        if (state != null && state.published) {
             return List.of();
         }
         return List.of(new CoursePublished(Ids.CATALOG_ID, command.courseId(), command.name(), command.range()));

@@ -41,13 +41,13 @@ class UpdateCourseCapacityCommandHandler {
     @CommandHandler
     void handle(
             UpdateCourseCapacity command,
-            @InjectEntity(idProperty = CourseCatalogTags.COURSE_ID) State state,
+            @Nullable @InjectEntity(idProperty = CourseCatalogTags.COURSE_ID) State state,
             EventAppender eventAppender
     ) {
         eventAppender.append(decide(command, state));
     }
 
-    private List<CourseCapacityChanged> decide(UpdateCourseCapacity command, State state) {
+    private List<CourseCapacityChanged> decide(UpdateCourseCapacity command, @Nullable State state) {
         assertCoursePublished(state);
         assertNewRangeFitsCurrentEnrolments(state, command);
         if (command.newRange().equals(state.range)) {
@@ -56,8 +56,8 @@ class UpdateCourseCapacityCommandHandler {
         return List.of(new CourseCapacityChanged(command.courseId(), command.newRange()));
     }
 
-    private static void assertCoursePublished(State state) {
-        if (!state.published) {
+    private static void assertCoursePublished(@Nullable State state) {
+        if (state == null || !state.published) {
             throw new IllegalStateException("Course with given id does not exist");
         }
     }

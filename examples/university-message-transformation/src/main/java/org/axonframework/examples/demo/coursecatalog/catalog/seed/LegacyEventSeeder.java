@@ -35,6 +35,7 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -55,8 +56,8 @@ import java.util.UUID;
 public class LegacyEventSeeder {
 
     @CommandHandler
-    void handle(SeedCatalog command, @InjectEntity State state, EventAppender appender) {
-        if (state.alreadySeeded) {
+    void handle(SeedCatalog command, @InjectEntity Optional<State> state, EventAppender appender) {
+        if (state.isPresent()) {
             return;
         }
         CatalogId catalogId = command.catalogId();
