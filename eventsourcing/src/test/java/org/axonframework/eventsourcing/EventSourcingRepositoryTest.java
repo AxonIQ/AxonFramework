@@ -260,6 +260,26 @@ class EventSourcingRepositoryTest {
         assertEquals("test(created)", secondResult.entity());
     }
 
+    @Test
+    void loadThenLoadOrCreateReusesCachedEntityWithoutInvokingInitialize() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        eventsToLoad = List.of();
+
+        // load() caches a ManagedEntity with a null entity() for "test", without ever invoking initialize(...)
+        ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+        assertNull(loaded.entity());
+
+        // loadOrCreate() for the same identifier, within the same context, reuses that cached future instead of
+        // recomputing it, so initialize(...) is never invoked for this identifier.
+        CompletableFuture<ManagedEntity<String, String>> result =
+                testSubject.loadOrCreate("test", processingContext);
+
+        ExecutionException exception = assertThrows(ExecutionException.class, result::get);
+        assertInstanceOf(EntityNotFoundException.class, exception.getCause());
+
+        verify(handler, never()).initialize(eq("test"), eq(processingContext));
+    }
+
     private static boolean conditionPredicate(SourcingCondition condition) {
         return condition.matches(new QualifiedName("ignored"), TEST_TAGS);
     }
