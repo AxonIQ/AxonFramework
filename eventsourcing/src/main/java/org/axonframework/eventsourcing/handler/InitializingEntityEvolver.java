@@ -20,11 +20,11 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
-import org.axonframework.eventsourcing.EntityMissingAfterLoadOrCreateException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.EntityEvolver;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
@@ -75,7 +75,7 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
         );
 
         if (entity == null) {
-            throw new EntityMissingAfterLoadOrCreateException(identifier);
+            throw new EntityNotFoundException(identifier);
         }
 
         return entity;

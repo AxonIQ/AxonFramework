@@ -81,10 +81,9 @@ public interface EventSourcedEntityFactory<ID, E> {
     /**
      * Creates an entity of type {@code E} with the given identifier. The identifier is guaranteed to be non-null. The
      * supplied {@code firstEventMessage} is the first event message that is present in the stream of the entity. If no
-     * event messages are present, this method will be called with a {@code null} {@code firstEventMessage} to get an
-     * initial state when calling {@link EventSourcingRepository#loadOrCreate(Object, ProcessingContext)}. Using
-     * {@link EventSourcingRepository#load(Object, ProcessingContext)} would never call this method with a {@code null}
-     * {@code firstEventMessage}.
+     * event messages are present this method should return {@code null}, signaling this factory was not able to
+     * instantiate the entity. Using {@link EventSourcingRepository#load(Object, ProcessingContext)} would never call
+     * this method with a {@code null} {@code firstEventMessage}.
      * <p>
      * Invocations with a non-null {@code firstEventMessage} must always return a non-null entity, while invocations
      * with a null {@code firstEventMessage} may return null.

@@ -31,7 +31,6 @@ import org.axonframework.messaging.core.annotation.PayloadParameterResolver;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
@@ -273,8 +272,9 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         }
         if (compatibleCreators.isEmpty()) {
             if (eventMessage == null) {
-                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet
-                throw new EntityNotFoundException(id);
+                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet.
+                // Return no-op ScannedEntityCreator, which defaults to returning null for the entity creation.
+                return new ScannedEntityCreator();
             }
             StringBuilder message = new StringBuilder(
                     "No suitable @EntityCreator found for id: [%s] and event message [%s]. Candidates were:"
@@ -332,6 +332,22 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         private final @Nullable Class<?> concreteIdType;
         private final @Nullable Class<?> expectedPayloadRepresentation;
         private final boolean hasMessageParameter;
+        private final boolean noOp;
+
+        /**
+         * Constructs a no-op variant of the {@code ScannedEntityCreator}, enforcing {@code null} to be returned from
+         * the {@link ScannedEntityCreator#invoke(Object, EventMessage, ProcessingContext)} operation.
+         */
+        @SuppressWarnings("DataFlowIssue")
+        private ScannedEntityCreator() {
+            this.executable = null;
+            this.parameterResolvers = null;
+            this.payloadQualifiedNames = null;
+            this.concreteIdType = null;
+            this.expectedPayloadRepresentation = null;
+            this.hasMessageParameter = false;
+            this.noOp = true;
+        }
 
         private ScannedEntityCreator(
                 Executable executable,
@@ -348,11 +364,12 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = concreteIdType;
             this.expectedPayloadRepresentation = expectedPayloadRepresentation;
             this.hasMessageParameter = hasMessageParameter;
+            this.noOp = false;
         }
 
-        private E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
-            if (isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
-                throw new EntityNotFoundException(id);
+        private @Nullable E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
+            if (noOp || isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
+                return null;
             }
 
             ProcessingContext contextWithId = context.withResource(ID_KEY, id);
@@ -383,8 +400,8 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         }
 
         /**
-         * Returns {@code true} when this {@link EntityCreator} annotated {@link Executable} (a {@link Constructor} or
-         * a static factory {@link java.lang.reflect.Method}) has no parameters beyond {@link InjectEntityId}-annotated
+         * Returns {@code true} when this {@link EntityCreator} annotated {@link Executable} (a {@link Constructor} or a
+         * static factory {@link java.lang.reflect.Method}) has no parameters beyond {@link InjectEntityId}-annotated
          * ones, and no {@code firstEventMessage} is present, indicating that the entity has never been created by an
          * event and therefore does not exist.
          * <p>

@@ -21,8 +21,9 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 
 /**
  * Exception thrown by the {@link EventSourcedEntityFactory} when the entity returned by
- * {@link EventSourcedEntityFactory#create(Object, EventMessage, ProcessingContext)} is {@code null} when calling it with a {@code null}
- * {@code firstEventMessage} during the {@link EventSourcingRepository#loadOrCreate(Object, ProcessingContext)}.
+ * {@link EventSourcedEntityFactory#create(Object, EventMessage, ProcessingContext)} is {@code null} when calling it
+ * with a {@code null} {@code firstEventMessage} during the
+ * {@link EventSourcingRepository#loadOrCreate(Object, ProcessingContext)}.
  * <p>
  * This indicates that the factory is incapable of creating an entity without an event message, as is the case with
  * entities that only have a constructor that takes an event message or its payload. If this is the case, the
@@ -34,7 +35,11 @@ import org.axonframework.messaging.eventhandling.EventMessage;
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
+ * @deprecated in favor of {@link org.axonframework.modelling.repository.EntityNotFoundException}, which more broadly
+ * serves any {@link org.axonframework.modelling.repository.Repository} being unable to find <b>or</b>> recreate an
+ * entity
  */
+@Deprecated(forRemoval = true, since = "5.3.0")
 public class EntityMissingAfterLoadOrCreateException extends RuntimeException {
 
     /**

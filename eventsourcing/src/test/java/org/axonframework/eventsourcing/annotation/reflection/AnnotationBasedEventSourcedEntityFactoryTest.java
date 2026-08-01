@@ -17,7 +17,6 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -78,9 +77,8 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundForIdOnlyConstructorWithoutEventMessage() {
-            assertThrows(EntityNotFoundException.class,
-                         () -> factory.create("test-id", null, new StubProcessingContext()));
+        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -152,9 +150,8 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundForNullEventMessage() {
-            assertThrows(EntityNotFoundException.class,
-                         () -> factory.create("test-id", null, new StubProcessingContext()));
+        void returnsNullForNullEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -223,9 +220,8 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundForNullEventMessage() {
-            assertThrows(EntityNotFoundException.class,
-                         () -> factory.create("test-id", null, new StubProcessingContext()));
+        void returnsNullForNullEventMessage() {
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         public static class PayloadSpecificTestEntity {
@@ -264,12 +260,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundForIdOnlyFactoryMethodWithoutEventMessage() {
+        void returnsNullForIdOnlyFactoryMethodWithoutEventMessage() {
             // A method-based no-arg/id-only @EntityCreator must be treated the same as a constructor-based one: no
             // event message present means the entity does not exist yet, regardless of whether the creator is a
             // Constructor or a static factory Method.
-            assertThrows(EntityNotFoundException.class,
-                         () -> factory.create("test-id", null, new StubProcessingContext()));
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         @Test
@@ -344,7 +339,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsEntityNotFoundForIdOnlyConstructorWithoutEventMessage() {
+        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     MostSpecificHandlerEntity.class,
                     String.class,
@@ -353,8 +348,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
                     converter
             );
 
-            assertThrows(EntityNotFoundException.class,
-                         () -> factory.create("test-id", null, new StubProcessingContext()));
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
         }
 
         static class MostSpecificHandlerEntity {
