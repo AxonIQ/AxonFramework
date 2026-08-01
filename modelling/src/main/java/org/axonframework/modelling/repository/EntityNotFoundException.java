@@ -19,10 +19,10 @@ package org.axonframework.modelling.repository;
 import org.axonframework.common.AxonNonTransientException;
 
 /**
- * Exception indicating that an entity could not be found in the {@link Repository}.
+ * Exception indicating that an entity could not be found in, or recreated by, the {@link Repository}.
  * <p>
- * A missing entity is definitionally non-transient: retrying the same operation will not make the entity appear.
- * As an {@link AxonNonTransientException}, this is reflected in retry policies and dead-letter classification via
+ * A missing entity is definitionally non-transient: retrying the same operation will not make the entity appear. As an
+ * {@link AxonNonTransientException}, this is reflected in retry policies and dead-letter classification via
  * {@link org.axonframework.common.ExceptionUtils#isExplicitlyNonTransient(Throwable)}.
  *
  * @author Allard Buijze
@@ -37,7 +37,7 @@ public class EntityNotFoundException extends AxonNonTransientException {
      * Initialize an {@code EntityNotFoundException} for being unable to load an entity with the given
      * {@code identifier}.
      *
-     * @param identifier the identifier of the aggregate that could not be found
+     * @param identifier the identifier of the entity that could not be found
      */
     public EntityNotFoundException(Object identifier) {
         super("No entity found for identifier [" + identifier + "].");
@@ -48,7 +48,7 @@ public class EntityNotFoundException extends AxonNonTransientException {
      * Initialize an {@code EntityNotFoundException} for being unable to load an entity with the given
      * {@code identifier}, using the given {@code message} as the {@link RuntimeException#getMessage()}.
      *
-     * @param identifier the identifier of the aggregate that could not be found
+     * @param identifier the identifier of the entity that could not be found
      * @param message    the message describing the cause of the exception
      */
     public EntityNotFoundException(Object identifier, String message) {
@@ -61,7 +61,7 @@ public class EntityNotFoundException extends AxonNonTransientException {
      * {@code identifier}, using the given {@code message} as the {@link RuntimeException#getMessage()} and the given
      * {@code cause} as the {@link RuntimeException#getCause()}.
      *
-     * @param identifier the identifier of the aggregate that could not be found
+     * @param identifier the identifier of the entity that could not be found
      * @param message    the message describing the cause of the exception
      * @param cause      the underlying cause of the exception
      */
@@ -71,9 +71,9 @@ public class EntityNotFoundException extends AxonNonTransientException {
     }
 
     /**
-     * Returns the identifier of the identifier that could not be found.
+     * Returns the identifier of the entity that could not be found.
      *
-     * @return the identifier of the identifier that could not be found
+     * @return the identifier of the entity that could not be found
      */
     public Object identifier() {
         return identifier;

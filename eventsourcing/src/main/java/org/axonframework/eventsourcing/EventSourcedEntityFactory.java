@@ -92,19 +92,19 @@ public interface EventSourcedEntityFactory<ID, E> {
      * command handler which should be invoked when the entity does not exist. If this is a
      * {@link EntityMetamodelBuilder#creationalCommandHandler(QualifiedName, CommandHandler) creational command
      * handler}, this should return {@code null}. If this is a
-     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance
-     * command handler}, this should return the non-null initial state of the entity. For example, using the no-argument
+     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance command
+     * handler}, this should return the non-null initial state of the entity. For example, using the no-argument
      * constructor of the entity, or a constructor that takes the identifier as a parameter.
      * <p>
      * It is recommended to use {@link #fromNoArgument(Supplier)}, {@link #fromIdentifier(Function)} or
      * {@link #fromEventMessage(BiFunction)} to create a factory that creates the entity based on the constructor of the
      * entity. This will ensure that the right factory is created.
      *
-     * @param id                The identifier of the entity to create. This is guaranteed to be non-null.
-     * @param firstEventMessage The first event message that is present in the stream of the entity. This may be
-     *                          {@code null} if no event messages are present.
-     * @param context           The processing context.
-     * @return The entity to create. This may be {@code null} if no entity should be created.
+     * @param id                the identifier of the entity to create. This is guaranteed to be non-null
+     * @param firstEventMessage the first event message that is present in the stream of the entity. This may be
+     *                          {@code null} if no event messages are present
+     * @param context           the processing context
+     * @return the entity to create. This may be {@code null} if no entity could or should be created
      */
     @Nullable
     E create(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context);
@@ -114,18 +114,18 @@ public interface EventSourcedEntityFactory<ID, E> {
      * <p>
      * Should be used when your entity is mutable, and you want to create it with a no-argument constructor. All command
      * handlers of your entity should be
-     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance
-     * command handler}. If you would like the identifier to be passed to the constructor, use
-     * {@link #fromIdentifier(Function)} instead.
+     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance command
+     * handler}. If you would like the identifier to be passed to the constructor, use {@link #fromIdentifier(Function)}
+     * instead.
      *
-     * @param creator A {@link Supplier} that creates the entity. This should be a no-argument constructor.
-     * @param <ID>    The type of the identifier of the entity.
-     * @param <E>     The type of the entity.
-     * @return A factory that creates the entity using the no-argument constructor.
+     * @param creator a {@link Supplier} that creates the entity. This should be a no-argument constructor
+     * @param <ID>    the type of the identifier of the entity
+     * @param <E>     the type of the entity
+     * @return a factory that creates the entity using the no-argument constructor
      */
     static <ID, E> EventSourcedEntityFactory<ID, E> fromNoArgument(Supplier<E> creator) {
         Objects.requireNonNull(creator, "The creator must not be null.");
-        return (id, evt, context) -> creator.get();
+        return (id, event, context) -> creator.get();
     }
 
     /**
@@ -134,18 +134,18 @@ public interface EventSourcedEntityFactory<ID, E> {
      * <p>
      * Should be used when your entity is mutable, and you want to create it with a constructor that takes the
      * identifier as parameter. All command handlers of your entity should be
-     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance
-     * command handler}.
+     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance command
+     * handler}.
      *
-     * @param creator A {@link Function} that creates the entity. This should be a constructor with the identifier as
-     *                parameter.
-     * @param <ID>    The type of the identifier of the entity.
-     * @param <E>     The type of the entity.
-     * @return A factory that creates the entity using the constructor with the identifier as parameter.
+     * @param creator a {@link Function} that creates the entity. This should be a constructor with the identifier as
+     *                parameter
+     * @param <ID>    the type of the identifier of the entity
+     * @param <E>     the type of the entity
+     * @return a factory that creates the entity using the constructor with the identifier as parameter
      */
     static <ID, E> EventSourcedEntityFactory<ID, E> fromIdentifier(Function<ID, E> creator) {
         Objects.requireNonNull(creator, "The creator must not be null.");
-        return (id, evt, context) -> creator.apply(id);
+        return (id, event, context) -> creator.apply(id);
     }
 
     /**
@@ -157,22 +157,19 @@ public interface EventSourcedEntityFactory<ID, E> {
      * combination of
      * {@link EntityMetamodelBuilder#creationalCommandHandler(QualifiedName, CommandHandler) creational command
      * handlers} to create the entity if no events exist for it, and
-     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance
-     * command handlers} to handle commands when it does exist. If a command could potentially handle both cases, it
-     * would need to be registered as both a creational and instance command handler.
+     * {@link EntityMetamodelBuilder#instanceCommandHandler(QualifiedName, EntityCommandHandler) instance command
+     * handlers} to handle commands when it does exist. If a command could potentially handle both cases, it would need
+     * to be registered as both a creational and instance command handler.
      *
-     * @param creator A {@link BiFunction} that creates the entity. This should be a constructor with the identifier and
-     *                the event as parameters.
-     * @param <ID>    The type of the identifier of the entity.
-     * @param <E>     The type of the entity.
-     * @return A factory that creates the entity using the constructor with the identifier and the event message as
-     * parameters.
+     * @param creator a {@link BiFunction} that creates the entity. This should be a constructor with the identifier and
+     *                the event as parameters
+     * @param <ID>    the type of the identifier of the entity
+     * @param <E>     the type of the entity
+     * @return a factory that creates the entity using the constructor with the identifier and the event message as
+     * parameters
      */
-    static <ID, E> EventSourcedEntityFactory<ID, E> fromEventMessage(
-            BiFunction<ID, EventMessage, E> creator) {
+    static <ID, E> EventSourcedEntityFactory<ID, E> fromEventMessage(BiFunction<ID, EventMessage, E> creator) {
         Objects.requireNonNull(creator, "The creator must not be null.");
-        return (id, evt, context) -> evt == null
-                ? null
-                : creator.apply(id, evt);
+        return (id, event, context) -> event == null ? null : creator.apply(id, event);
     }
 }
