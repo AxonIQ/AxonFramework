@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
@@ -40,7 +41,7 @@ import java.util.concurrent.CompletableFuture;
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
-public interface StateManager {
+public interface StateManager extends DescribableComponent {
 
     /**
      * Registers an {@link Repository} for use with this {@code StateManager}. The combination of

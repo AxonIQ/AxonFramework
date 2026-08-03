@@ -17,6 +17,7 @@
 package org.axonframework.modelling;
 
 import org.axonframework.common.configuration.Module;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
@@ -120,5 +121,11 @@ public class HierarchicalStateManager implements StateManager {
      */
     public StateManager getChild() {
         return child;
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("parent", parent);
+        descriptor.describeProperty("child", child);
     }
 }

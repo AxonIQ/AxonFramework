@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
@@ -27,8 +28,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -230,6 +230,7 @@ class SnapshotCapableEventStorageEngineTest {
 
     private static SnapshotStore failingSnapshotStore() {
         return new SnapshotStore() {
+
             @Override
             public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s,
                                                  ProcessingContext context) {
@@ -239,6 +240,11 @@ class SnapshotCapableEventStorageEngineTest {
             @Override
             public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
                 return CompletableFuture.failedFuture(new RuntimeException("snapshot store failure"));
+            }
+
+            @Override
+            public void describeTo(ComponentDescriptor descriptor) {
+                throw new UnsupportedOperationException();
             }
         };
     }

@@ -16,11 +16,12 @@
 
 package org.axonframework.modelling.tracing;
 
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.tracing.Span;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.attributes.EntityIdSpanAttributesProvider;
-import org.axonframework.common.annotation.Internal;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
@@ -133,5 +134,11 @@ public final class TracingStateManager implements StateManager {
     @Override
     public <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
         return delegate.repository(entityType, idType);
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeWrapperOf(descriptor);
+        descriptor.describeProperty("spanFactory", spanFactory);
     }
 }
