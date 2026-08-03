@@ -19,15 +19,15 @@ package org.axonframework.common.nullability;
 import java.lang.reflect.Parameter;
 
 /**
- * The declared nullability of a {@link Parameter}, as reported by a {@link NullabilityDetector}.
+ * The declared nullability of a {@link Parameter}, as reported by a {@link NullabilityResolver}.
  * <p>
  * This is deliberately three-valued. Absence of a {@code Nullable} annotation is not evidence that a parameter is
- * non-null, since most Java code carries no nullability annotations at all. A detector that cannot form an opinion
- * therefore reports {@link #UNKNOWN} rather than {@link #NON_NULL}, allowing lower-priority detectors to answer and
+ * non-null, since most Java code carries no nullability annotations at all. A resolver that cannot form an opinion
+ * therefore reports {@link #UNKNOWN} rather than {@link #NON_NULL}, allowing lower-priority resolvers to answer and
  * letting the caller apply its own default.
  *
  * @author Mateusz Nowak
- * @see NullabilityDetector
+ * @see NullabilityResolver
  * @since 5.3.0
  */
 public enum Nullability {

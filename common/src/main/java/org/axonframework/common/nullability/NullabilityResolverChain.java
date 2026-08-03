@@ -23,33 +23,33 @@ import java.util.ServiceLoader;
 import java.util.stream.StreamSupport;
 
 /**
- * Holds the {@link NullabilityDetector} instances discovered through the {@link ServiceLoader}, ordered by descending
- * {@link NullabilityDetector#priority()}.
+ * Holds the {@link NullabilityResolver} instances discovered through the {@link ServiceLoader}, ordered by descending
+ * {@link NullabilityResolver#priority()}.
  * <p>
- * Kept package-private and separate from {@link NullabilityDetector} because an interface cannot hold the private
+ * Kept package-private and separate from {@link NullabilityResolver} because an interface cannot hold the private
  * static state this loading requires. Callers reach this through
- * {@link NullabilityDetector#nullabilityOf(Parameter)}.
+ * {@link NullabilityResolver#nullabilityOf(Parameter)}.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
  */
-final class NullabilityDetectorChain {
+final class NullabilityResolverChain {
 
-    private static final List<NullabilityDetector> DETECTORS = load();
+    private static final List<NullabilityResolver> RESOLVERS = load();
 
-    private NullabilityDetectorChain() {
+    private NullabilityResolverChain() {
         // Utility class, not meant to be instantiated.
     }
 
-    private static List<NullabilityDetector> load() {
-        return StreamSupport.stream(ServiceLoader.load(NullabilityDetector.class).spliterator(), false)
-                            .sorted(Comparator.comparingInt(NullabilityDetector::priority).reversed())
+    private static List<NullabilityResolver> load() {
+        return StreamSupport.stream(ServiceLoader.load(NullabilityResolver.class).spliterator(), false)
+                            .sorted(Comparator.comparingInt(NullabilityResolver::priority).reversed())
                             .toList();
     }
 
-    static Nullability detect(Parameter parameter) {
-        for (NullabilityDetector detector : DETECTORS) {
-            Nullability nullability = detector.detect(parameter);
+    static Nullability resolve(Parameter parameter) {
+        for (NullabilityResolver resolver : RESOLVERS) {
+            Nullability nullability = resolver.resolve(parameter);
             if (nullability != Nullability.UNKNOWN) {
                 return nullability;
             }

@@ -29,15 +29,15 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating the {@link NullabilityDetector} contract, its {@link AnnotationBasedNullabilityDetector}
+ * Test class validating the {@link NullabilityResolver} contract, its {@link AnnotationBasedNullabilityResolver}
  * default implementation, and the {@link java.util.ServiceLoader}-backed chain resolving through both.
  * <p>
- * Each nullability flavor lives in its own holder class, since the detector matches on the annotation's simple name
+ * Each nullability flavor lives in its own holder class, since the resolver matches on the annotation's simple name
  * and several holders therefore need an annotation named exactly {@code Nullable}.
  *
  * @author Mateusz Nowak
  */
-class NullabilityDetectorTest {
+class NullabilityResolverTest {
 
     private static Parameter parameterOf(Class<?> holder, String methodName) throws NoSuchMethodException {
         return holder.getDeclaredMethod(methodName, Object.class).getParameters()[0];
@@ -46,7 +46,7 @@ class NullabilityDetectorTest {
     @Nested
     class AnnotationBasedDetection {
 
-        private final AnnotationBasedNullabilityDetector testSubject = new AnnotationBasedNullabilityDetector();
+        private final AnnotationBasedNullabilityResolver testSubject = new AnnotationBasedNullabilityResolver();
 
         @Test
         void detectsTypeUseNullable() throws NoSuchMethodException {
@@ -54,7 +54,7 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(TypeUseHolder.class, "nullableParameter");
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.NULLABLE);
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.NULLABLE);
         }
 
         @Test
@@ -63,7 +63,7 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(DeclarationHolder.class, "nullableParameter");
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.NULLABLE);
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.NULLABLE);
         }
 
         @Test
@@ -72,17 +72,17 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(OtherHolder.class, "differentlyCasedNullable");
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.NULLABLE);
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.NULLABLE);
         }
 
         @Test
         void reportsUnknownRatherThanNonNullForAnUnannotatedParameter() throws NoSuchMethodException {
-            // given: absence of an annotation is not evidence of non-nullness in Java, so the detector must abstain
-            // and leave room for a lower-priority detector to answer
+            // given: absence of an annotation is not evidence of non-nullness in Java, so the resolver must abstain
+            // and leave room for a lower-priority resolver to answer
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.UNKNOWN);
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.UNKNOWN);
         }
 
         @Test
@@ -91,12 +91,12 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(OtherHolder.class, "unrelatedAnnotation");
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.UNKNOWN);
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.UNKNOWN);
         }
 
         @Test
         void defaultsToTheLowestPriority() {
-            // given: the general-purpose default must be outrankable by language-specific detectors
+            // given: the general-purpose default must be outrankable by language-specific resolvers
             assertThat(testSubject.priority()).isZero();
         }
     }
@@ -110,17 +110,17 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(TypeUseHolder.class, "nullableParameter");
 
             // when / then
-            assertThat(NullabilityDetector.nullabilityOf(parameter)).isEqualTo(Nullability.NULLABLE);
-            assertThat(NullabilityDetector.isNullable(parameter)).isTrue();
+            assertThat(NullabilityResolver.nullabilityOf(parameter)).isEqualTo(Nullability.NULLABLE);
+            assertThat(NullabilityResolver.isNullable(parameter)).isTrue();
         }
 
         @Test
-        void resolvesUnknownWhenNoDetectorCanTell() throws NoSuchMethodException {
+        void resolvesUnknownWhenNoResolverCanTell() throws NoSuchMethodException {
             // given
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
             // when / then
-            assertThat(NullabilityDetector.nullabilityOf(parameter)).isEqualTo(Nullability.UNKNOWN);
+            assertThat(NullabilityResolver.nullabilityOf(parameter)).isEqualTo(Nullability.UNKNOWN);
         }
 
         @Test
@@ -129,7 +129,7 @@ class NullabilityDetectorTest {
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
             // when / then
-            assertThat(NullabilityDetector.isNullable(parameter)).isFalse();
+            assertThat(NullabilityResolver.isNullable(parameter)).isFalse();
         }
     }
 
@@ -137,37 +137,37 @@ class NullabilityDetectorTest {
     class PriorityOrdering {
 
         @Test
-        void higherPriorityDetectorAnswersFirst() throws NoSuchMethodException {
-            // given two detectors disagreeing about the same parameter
-            NullabilityDetector low = detector(Nullability.NULLABLE, 0);
-            NullabilityDetector high = detector(Nullability.NON_NULL, 1000);
+        void higherPriorityResolverAnswersFirst() throws NoSuchMethodException {
+            // given two resolvers disagreeing about the same parameter
+            NullabilityResolver low = resolver(Nullability.NULLABLE, 0);
+            NullabilityResolver high = resolver(Nullability.NON_NULL, 1000);
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
             // when ordering them the way the chain does
-            List<NullabilityDetector> ordered = orderedAsChain(List.of(low, high));
+            List<NullabilityResolver> ordered = orderedAsChain(List.of(low, high));
 
             // then
             assertThat(firstAnswer(ordered, parameter)).isEqualTo(Nullability.NON_NULL);
         }
 
         @Test
-        void anAbstainingDetectorDefersToTheNextOne() throws NoSuchMethodException {
-            // given a high-priority detector that cannot tell, as the Kotlin detector does for Java classes
-            NullabilityDetector abstaining = detector(Nullability.UNKNOWN, 1000);
-            NullabilityDetector answering = detector(Nullability.NULLABLE, 0);
+        void anAbstainingResolverDefersToTheNextOne() throws NoSuchMethodException {
+            // given a high-priority resolver that cannot tell, as the Kotlin resolver does for Java classes
+            NullabilityResolver abstaining = resolver(Nullability.UNKNOWN, 1000);
+            NullabilityResolver answering = resolver(Nullability.NULLABLE, 0);
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
             // when
-            List<NullabilityDetector> ordered = orderedAsChain(List.of(abstaining, answering));
+            List<NullabilityResolver> ordered = orderedAsChain(List.of(abstaining, answering));
 
             // then
             assertThat(firstAnswer(ordered, parameter)).isEqualTo(Nullability.NULLABLE);
         }
 
-        private static NullabilityDetector detector(Nullability answer, int priority) {
-            return new NullabilityDetector() {
+        private static NullabilityResolver resolver(Nullability answer, int priority) {
+            return new NullabilityResolver() {
                 @Override
-                public Nullability detect(Parameter parameter) {
+                public Nullability resolve(Parameter parameter) {
                     return answer;
                 }
 
@@ -178,15 +178,15 @@ class NullabilityDetectorTest {
             };
         }
 
-        private static List<NullabilityDetector> orderedAsChain(List<NullabilityDetector> detectors) {
-            return detectors.stream()
-                            .sorted(Comparator.comparingInt(NullabilityDetector::priority).reversed())
+        private static List<NullabilityResolver> orderedAsChain(List<NullabilityResolver> resolvers) {
+            return resolvers.stream()
+                            .sorted(Comparator.comparingInt(NullabilityResolver::priority).reversed())
                             .toList();
         }
 
-        private static Nullability firstAnswer(List<NullabilityDetector> detectors, Parameter parameter) {
-            return detectors.stream()
-                            .map(detector -> detector.detect(parameter))
+        private static Nullability firstAnswer(List<NullabilityResolver> resolvers, Parameter parameter) {
+            return resolvers.stream()
+                            .map(resolver -> resolver.resolve(parameter))
                             .filter(nullability -> nullability != Nullability.UNKNOWN)
                             .findFirst()
                             .orElse(Nullability.UNKNOWN);

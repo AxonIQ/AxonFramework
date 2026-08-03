@@ -17,7 +17,7 @@
 package org.axonframework.extension.kotlin.common
 
 import org.axonframework.common.nullability.Nullability
-import org.axonframework.common.nullability.NullabilityDetector
+import org.axonframework.common.nullability.NullabilityResolver
 import java.lang.invoke.MethodType
 import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
@@ -31,19 +31,19 @@ import kotlin.metadata.jvm.KotlinClassMetadata
 import kotlin.metadata.jvm.signature
 
 /**
- * [NullabilityDetector] that reports the nullability Kotlin declared for a parameter, so that a nullable type such as
+ * [NullabilityResolver] that reports the nullability Kotlin declared for a parameter, so that a nullable type such as
  * `state: MyEntity?` is honored the same way a Java `@Nullable` parameter is.
  *
  * Kotlin does not express nullability through an annotation that survives to runtime: `T?` compiles to
  * `org.jetbrains.annotations.Nullable`, which has [java.lang.annotation.RetentionPolicy.CLASS] retention and is
  * therefore absent from the class file at runtime. Reflection can never see it. The information does survive in the
  * [Metadata] annotation the compiler attaches to every Kotlin class, which is `RUNTIME`-retained, and that is what
- * this detector decodes.
+ * this resolver decodes.
  *
- * Only that single annotation is read and decoded; no `kotlin-reflect` model is built. Detection happens once per
+ * Only that single annotation is read and decoded; no `kotlin-reflect` model is built. Resolution happens once per
  * handler during startup, never per message.
  *
- * Reports [Nullability.UNKNOWN], leaving the decision to lower-priority detectors, when:
+ * Reports [Nullability.UNKNOWN], leaving the decision to lower-priority resolvers, when:
  *  - the declaring class was not compiled by Kotlin;
  *  - the metadata cannot be read, for instance because it was written by a newer compiler;
  *  - no declaration matching the JVM signature is found, as happens for `@JvmStatic` companion members whose
@@ -53,17 +53,17 @@ import kotlin.metadata.jvm.signature
  *    instance. Rather than risk reading the nullability of the wrong parameter, no answer is given.
  *
  * @author Mateusz Nowak
- * @see NullabilityDetector
+ * @see NullabilityResolver
  * @since 5.3.0
  */
-class KotlinNullabilityDetector : NullabilityDetector {
+class KotlinMetadataNullabilityResolver : NullabilityResolver {
 
     /**
      * Outranks the annotation-based default, as Kotlin's own type information is authoritative for Kotlin sources.
      */
     override fun priority(): Int = 1000
 
-    override fun detect(parameter: Parameter): Nullability {
+    override fun resolve(parameter: Parameter): Nullability {
         val executable = parameter.declaringExecutable
         val index = executable.parameters.indexOf(parameter)
         if (index < 0) {

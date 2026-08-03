@@ -18,14 +18,14 @@ package org.axonframework.extension.kotlin.common
 
 import org.assertj.core.api.Assertions.assertThat
 import org.axonframework.common.nullability.Nullability
-import org.axonframework.common.nullability.NullabilityDetector
+import org.axonframework.common.nullability.NullabilityResolver
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Parameter
 
-class KotlinNullabilityDetectorTest {
+class KotlinMetadataNullabilityResolverTest {
 
-    private val testSubject = KotlinNullabilityDetector()
+    private val testSubject = KotlinMetadataNullabilityResolver()
 
     private fun parameterOf(methodName: String, index: Int = 0): Parameter =
         Handlers::class.java.declaredMethods.single { it.name == methodName }.parameters[index]
@@ -39,7 +39,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = parameterOf("nullableState")
 
             // when
-            val result = testSubject.detect(parameter)
+            val result = testSubject.resolve(parameter)
 
             // then
             assertThat(result).isEqualTo(Nullability.NULLABLE)
@@ -51,7 +51,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = parameterOf("nonNullState")
 
             // when
-            val result = testSubject.detect(parameter)
+            val result = testSubject.resolve(parameter)
 
             // then
             assertThat(result).isEqualTo(Nullability.NON_NULL)
@@ -64,8 +64,8 @@ class KotlinNullabilityDetectorTest {
             val state = parameterOf("mixed", 1)
 
             // when / then
-            assertThat(testSubject.detect(command)).isEqualTo(Nullability.NON_NULL)
-            assertThat(testSubject.detect(state)).isEqualTo(Nullability.NULLABLE)
+            assertThat(testSubject.resolve(command)).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(state)).isEqualTo(Nullability.NULLABLE)
         }
 
         @Test
@@ -79,8 +79,8 @@ class KotlinNullabilityDetectorTest {
                 .parameters[0]
 
             // when / then
-            assertThat(testSubject.detect(nullableOverload)).isEqualTo(Nullability.NULLABLE)
-            assertThat(testSubject.detect(nonNullOverload)).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(nullableOverload)).isEqualTo(Nullability.NULLABLE)
+            assertThat(testSubject.resolve(nonNullOverload)).isEqualTo(Nullability.NON_NULL)
         }
 
         @Test
@@ -89,8 +89,8 @@ class KotlinNullabilityDetectorTest {
             val constructor = WithConstructor::class.java.declaredConstructors.single()
 
             // when / then
-            assertThat(testSubject.detect(constructor.parameters[0])).isEqualTo(Nullability.NON_NULL)
-            assertThat(testSubject.detect(constructor.parameters[1])).isEqualTo(Nullability.NULLABLE)
+            assertThat(testSubject.resolve(constructor.parameters[0])).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(constructor.parameters[1])).isEqualTo(Nullability.NULLABLE)
         }
 
         @Test
@@ -99,7 +99,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = parameterOf("primitive")
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.NON_NULL)
         }
     }
 
@@ -112,7 +112,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = java.util.ArrayList::class.java.getDeclaredMethod("add", Any::class.java).parameters[0]
 
             // when / then
-            assertThat(testSubject.detect(parameter)).isEqualTo(Nullability.UNKNOWN)
+            assertThat(testSubject.resolve(parameter)).isEqualTo(Nullability.UNKNOWN)
         }
 
         @Test
@@ -122,7 +122,7 @@ class KotlinNullabilityDetectorTest {
             val method = Handlers::class.java.declaredMethods.single { it.name == "suspending" }
 
             // when / then
-            assertThat(testSubject.detect(method.parameters[0])).isEqualTo(Nullability.UNKNOWN)
+            assertThat(testSubject.resolve(method.parameters[0])).isEqualTo(Nullability.UNKNOWN)
         }
     }
 
@@ -130,16 +130,16 @@ class KotlinNullabilityDetectorTest {
     inner class ThroughTheServiceLoaderChain {
 
         @Test
-        fun `detector is discovered and outranks the annotation-based default`() {
+        fun `resolver is discovered and outranks the annotation-based default`() {
             // given a Kotlin nullable parameter carrying no Nullable annotation whatsoever
             val parameter = parameterOf("nullableState")
 
-            // when resolving through the chain rather than the detector directly
-            val result = NullabilityDetector.nullabilityOf(parameter)
+            // when resolving through the chain rather than the resolver directly
+            val result = NullabilityResolver.nullabilityOf(parameter)
 
             // then
             assertThat(result).isEqualTo(Nullability.NULLABLE)
-            assertThat(NullabilityDetector.isNullable(parameter)).isTrue()
+            assertThat(NullabilityResolver.isNullable(parameter)).isTrue()
         }
 
         @Test
@@ -148,7 +148,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = parameterOf("nonNullState")
 
             // when / then
-            assertThat(NullabilityDetector.isNullable(parameter)).isFalse()
+            assertThat(NullabilityResolver.isNullable(parameter)).isFalse()
         }
 
         @Test
@@ -159,7 +159,7 @@ class KotlinNullabilityDetectorTest {
             val parameter = parameterOf("contradictorilyAnnotated")
 
             // when
-            val result = NullabilityDetector.nullabilityOf(parameter)
+            val result = NullabilityResolver.nullabilityOf(parameter)
 
             // then
             assertThat(result).isEqualTo(Nullability.NON_NULL)

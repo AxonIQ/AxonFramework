@@ -393,7 +393,7 @@ public final class AnnotationUtils {
      * {@code org.jetbrains.annotations.Nullable} uses {@link java.lang.annotation.RetentionPolicy#CLASS} retention
      * and is therefore absent from the class file at runtime, in either position. Since Kotlin compiles its nullable
      * types to exactly that annotation, a Kotlin {@code T?} cannot be recognized here either. Use a
-     * {@link org.axonframework.common.nullability.NullabilityDetector} instead, which the Kotlin extension implements by reading Kotlin's own metadata.
+     * {@link org.axonframework.common.nullability.NullabilityResolver} instead, which the Kotlin extension implements by reading Kotlin's own metadata.
      *
      * @param element        the element to inspect
      * @param annotationName the simple name of the annotation to find, matched ignoring case

@@ -21,7 +21,7 @@ import org.axonframework.common.annotation.AnnotationUtils;
 import java.lang.reflect.Parameter;
 
 /**
- * The default {@link NullabilityDetector}, reporting a parameter as {@link Nullability#NULLABLE} when it carries an
+ * The default {@link NullabilityResolver}, reporting a parameter as {@link Nullability#NULLABLE} when it carries an
  * annotation whose simple name is {@code Nullable}, regardless of which library declares it.
  * <p>
  * This covers the runtime-visible variants, whichever position they occupy: jspecify's
@@ -29,21 +29,21 @@ import java.lang.reflect.Parameter;
  * JSR-305's {@code javax.annotation.Nullable} in the declaration position. It cannot cover
  * {@code org.jetbrains.annotations.Nullable}, which uses {@link java.lang.annotation.RetentionPolicy#CLASS} retention
  * and is therefore absent from the class file at runtime. Kotlin compiles its nullable types to that annotation, so
- * Kotlin sources need a dedicated detector rather than this one.
+ * Kotlin sources need a dedicated resolver rather than this one.
  * <p>
  * Never reports {@link Nullability#NON_NULL}: an unannotated Java parameter says nothing about whether it accepts
  * {@code null}, so anything other than an explicit {@code Nullable} annotation yields {@link Nullability#UNKNOWN}.
  *
  * @author Mateusz Nowak
- * @see NullabilityDetector
+ * @see NullabilityResolver
  * @since 5.3.0
  */
-public class AnnotationBasedNullabilityDetector implements NullabilityDetector {
+public class AnnotationBasedNullabilityResolver implements NullabilityResolver {
 
     private static final String NULLABLE = "nullable";
 
     @Override
-    public Nullability detect(Parameter parameter) {
+    public Nullability resolve(Parameter parameter) {
         return AnnotationUtils.hasAnnotationNamed(parameter, NULLABLE)
                 ? Nullability.NULLABLE
                 : Nullability.UNKNOWN;

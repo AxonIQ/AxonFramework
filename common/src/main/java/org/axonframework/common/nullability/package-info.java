@@ -15,12 +15,12 @@
  */
 
 /**
- * Detection of the nullability declared for a method or constructor parameter.
+ * Resolution of the nullability declared for a method or constructor parameter.
  * <p>
  * Annotations are only one way a language expresses nullability, which is why this lives beside rather than inside
  * the annotation utilities. Kotlin, for one, encodes it in its type system. The
- * {@link org.axonframework.common.nullability.NullabilityDetector} service interface lets such languages contribute
- * detection the framework cannot perform on its own.
+ * {@link org.axonframework.common.nullability.NullabilityResolver} service interface lets such languages contribute
+ * resolution the framework cannot perform on its own.
  */
 @NullMarked
 package org.axonframework.common.nullability;

@@ -23,43 +23,43 @@ import java.util.ServiceLoader;
  * Determines whether a {@link Parameter} is declared as accepting {@code null}.
  * <p>
  * Not every language expresses nullability through annotations that survive to runtime. Java typically uses a
- * {@code Nullable} annotation, which {@link AnnotationBasedNullabilityDetector} reads. Kotlin, on the other hand,
+ * {@code Nullable} annotation, which {@link AnnotationBasedNullabilityResolver} reads. Kotlin, on the other hand,
  * encodes nullability in its type system and compiles it to an annotation with {@link
  * java.lang.annotation.RetentionPolicy#CLASS} retention, which reflection cannot observe. This interface exists so
- * such languages can contribute their own detection without the framework depending on their tooling.
+ * such languages can contribute their own resolution without the framework depending on their tooling.
  * <p>
  * Implementations are discovered through the {@link ServiceLoader} mechanism, by declaring them in a
- * {@code META-INF/services/org.axonframework.common.nullability.NullabilityDetector} file. They are consulted in
+ * {@code META-INF/services/org.axonframework.common.nullability.NullabilityResolver} file. They are consulted in
  * descending {@link #priority()} order, and the first to return something other than {@link Nullability#UNKNOWN}
  * wins. Implementations must return {@link Nullability#UNKNOWN} for parameters they know nothing about, so that
- * lower-priority detectors still get their turn.
+ * lower-priority resolvers still get their turn.
  * <p>
- * Detection happens while message handlers are being inspected, which is during application startup rather than per
+ * Resolution happens while message handlers are being inspected, which is during application startup rather than per
  * message. Implementations may therefore favor accuracy over speed, but must be thread-safe.
  *
  * @author Mateusz Nowak
  * @see Nullability
- * @see AnnotationBasedNullabilityDetector
+ * @see AnnotationBasedNullabilityResolver
  * @since 5.3.0
  */
-public interface NullabilityDetector {
+public interface NullabilityResolver {
 
     /**
      * Determines the declared {@link Nullability} of the given {@code parameter}.
      *
      * @param parameter the parameter to determine the nullability of
-     * @return the declared nullability, or {@link Nullability#UNKNOWN} when this detector cannot tell
+     * @return the declared nullability, or {@link Nullability#UNKNOWN} when this resolver cannot tell
      */
-    Nullability detect(Parameter parameter);
+    Nullability resolve(Parameter parameter);
 
     /**
-     * The priority of this detector relative to others, with higher values being consulted first.
+     * The priority of this resolver relative to others, with higher values being consulted first.
      * <p>
-     * A detector that can speak authoritatively for a subset of parameters, such as one backed by a language's own
-     * type information, should outrank the general-purpose {@link AnnotationBasedNullabilityDetector} at priority
+     * A resolver that can speak authoritatively for a subset of parameters, such as one backed by a language's own
+     * type information, should outrank the general-purpose {@link AnnotationBasedNullabilityResolver} at priority
      * {@code 0}.
      *
-     * @return the priority of this detector, defaulting to {@code 0}
+     * @return the priority of this resolver, defaulting to {@code 0}
      */
     default int priority() {
         return 0;
@@ -67,13 +67,13 @@ public interface NullabilityDetector {
 
     /**
      * Determines the declared {@link Nullability} of the given {@code parameter}, consulting every
-     * {@code NullabilityDetector} found on the classpath in descending {@link #priority()} order.
+     * {@code NullabilityResolver} found on the classpath in descending {@link #priority()} order.
      *
      * @param parameter the parameter to determine the nullability of
-     * @return the declared nullability, or {@link Nullability#UNKNOWN} when no detector could tell
+     * @return the declared nullability, or {@link Nullability#UNKNOWN} when no resolver could tell
      */
     static Nullability nullabilityOf(Parameter parameter) {
-        return NullabilityDetectorChain.detect(parameter);
+        return NullabilityResolverChain.resolve(parameter);
     }
 
     /**
