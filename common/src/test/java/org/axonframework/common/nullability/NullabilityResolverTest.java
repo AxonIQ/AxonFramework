@@ -30,6 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Test class validating nullability resolution through {@link NullabilityResolver#nullabilityOf(Parameter)}, which
  * consults the {@link java.util.ServiceLoader}-discovered resolvers and then the built-in annotation check.
  * <p>
+ * No resolver is registered in this module, so these tests cover the annotation fallback and the entry points.
+ * Discovery, {@link org.axonframework.common.Priority} ordering, and tolerance of a resolver that fails to load are
+ * covered where the chain is actually consumed, in {@code InjectEntityParameterResolverFactoryTest}.
+ * <p>
  * Each nullability flavor lives in its own holder class, since the resolver matches on the annotation's simple name
  * and several holders therefore need an annotation named exactly {@code Nullable}.
  *
@@ -92,10 +96,10 @@ class NullabilityResolverTest {
     }
 
     @Nested
-    class ChainResolution {
+    class ChainEntryPoints {
 
         @Test
-        void resolvesNullableThroughTheServiceLoader() throws NoSuchMethodException {
+        void nullabilityOfAndIsNullableAgreeForAnAnnotatedParameter() throws NoSuchMethodException {
             // given
             Parameter parameter = parameterOf(TypeUseHolder.class, "nullableParameter");
 
@@ -105,11 +109,11 @@ class NullabilityResolverTest {
         }
 
         @Test
-        void resolvesUnknownWhenNoResolverCanTell() throws NoSuchMethodException {
-            // given
+        void isNullableReportsFalseForAnUndeterminedParameter() throws NoSuchMethodException {
+            // given: isNullable collapses UNKNOWN and NON_NULL, so callers default to the stricter contract
             Parameter parameter = parameterOf(OtherHolder.class, "unannotated");
 
-            // when / then: isNullable collapses UNKNOWN and NON_NULL, so callers default to the stricter contract
+            // when / then
             assertThat(NullabilityResolver.nullabilityOf(parameter)).isEqualTo(Nullability.UNKNOWN);
             assertThat(NullabilityResolver.isNullable(parameter)).isFalse();
         }

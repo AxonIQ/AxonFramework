@@ -38,10 +38,10 @@ import kotlin.reflect.jvm.kotlinFunction
  * therefore absent from the class file at runtime. Reflecting over the JVM signature can never see it, so this
  * resolver reads the declaration as Kotlin itself models it.
  *
- * A Kotlin declaration does not always have one value parameter per JVM parameter: an inner class constructor
- * receives the outer instance ahead of the declared ones, and a `suspend` function carries a trailing `Continuation`.
- * Leading synthetic parameters are skipped via [headOffset], and anything left unmapped, such as that trailing
- * `Continuation`, reports [Nullability.UNKNOWN].
+ * A Kotlin declaration does not always have one value parameter per JVM parameter. An inner class constructor
+ * receives the outer instance ahead of the declared ones, an enum constructor receives the name and ordinal, and a
+ * `suspend` function carries a trailing `Continuation`. Leading synthetic parameters are skipped via [headOffset],
+ * and anything left unmapped, such as that trailing `Continuation`, reports [Nullability.UNKNOWN].
  *
  * Also reports [Nullability.UNKNOWN], leaving the decision to the built-in annotation check, when the declaring class
  * was not compiled by Kotlin or the declaration cannot be mapped to a Kotlin function at all. The former matters more
@@ -87,12 +87,29 @@ class KotlinReflectNullabilityResolver : NullabilityResolver {
     }.getOrNull()
 
     /**
-     * The number of JVM parameters preceding the first Kotlin value parameter. An inner class constructor receives
-     * the outer instance first; everything else starts at zero.
+     * The number of JVM parameters preceding the first Kotlin value parameter.
+     *
+     * Only constructors carry any: an enum constructor is handed its name and ordinal, and an inner class constructor
+     * its outer instance. Everything else, including the trailing `Continuation` of a `suspend` function, starts at
+     * zero and is bounded by the value-parameter count instead.
      */
     private fun headOffset(executable: Executable): Int {
+        if (executable !is Constructor<*>) {
+            return 0
+        }
         val declaringClass = executable.declaringClass
-        val isInner = declaringClass.isMemberClass && !Modifier.isStatic(declaringClass.modifiers)
-        return if (executable is Constructor<*> && isInner) 1 else 0
+        return when {
+            declaringClass.isEnum -> ENUM_CONSTRUCTOR_HEAD_PARAMETERS
+            declaringClass.isMemberClass && !Modifier.isStatic(declaringClass.modifiers) -> 1
+            else -> 0
+        }
+    }
+
+    private companion object {
+
+        /**
+         * An enum constructor receives `(String name, int ordinal)` before its declared parameters.
+         */
+        private const val ENUM_CONSTRUCTOR_HEAD_PARAMETERS = 2
     }
 }

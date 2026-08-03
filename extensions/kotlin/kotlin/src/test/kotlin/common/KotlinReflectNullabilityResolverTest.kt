@@ -113,6 +113,18 @@ class KotlinReflectNullabilityResolverTest {
         }
 
         @Test
+        fun `declared parameters of an enum constructor resolve past name and ordinal`() {
+            // given an enum whose constructor declares three parameters. The JVM prepends name and ordinal, so
+            // without an offset the first declared parameter would read the third one's nullability.
+            val constructor = Suit::class.java.declaredConstructors.single()
+
+            // when / then
+            assertThat(testSubject.resolve(constructor.parameters[2])).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(constructor.parameters[3])).isEqualTo(Nullability.NULLABLE)
+            assertThat(testSubject.resolve(constructor.parameters[4])).isEqualTo(Nullability.NON_NULL)
+        }
+
+        @Test
         fun `primitive parameters resolve to NON_NULL`() {
             // given a Kotlin 'Int', which is a non-null type compiled to a JVM primitive
             val parameter = parameterOf("primitive")
@@ -141,6 +153,16 @@ class KotlinReflectNullabilityResolverTest {
 
             // when / then
             assertThat(testSubject.resolve(method.parameters[1])).isEqualTo(Nullability.UNKNOWN)
+        }
+
+        @Test
+        fun `the synthetic name and ordinal of an enum constructor resolve to UNKNOWN`() {
+            // given
+            val constructor = Suit::class.java.declaredConstructors.single()
+
+            // when / then
+            assertThat(testSubject.resolve(constructor.parameters[0])).isEqualTo(Nullability.UNKNOWN)
+            assertThat(testSubject.resolve(constructor.parameters[1])).isEqualTo(Nullability.UNKNOWN)
         }
 
         @Test
@@ -225,4 +247,9 @@ class KotlinReflectNullabilityResolverTest {
 
     @Suppress("unused")
     inner class Inner(val id: String, val state: State?)
+
+    @Suppress("unused")
+    enum class Suit(val label: String, val state: State?, val rank: Int) {
+        SPADES("spades", null, 1)
+    }
 }
