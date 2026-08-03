@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.snapshot.store.tracing;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.eventsourcing.eventstore.Position;
@@ -132,6 +133,11 @@ class TracingSnapshotStoreTest {
                                                           @Nullable ProcessingContext context) {
             this.loadContext = context;
             return loadResult;
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            // No-op - not required for testing
         }
     }
 

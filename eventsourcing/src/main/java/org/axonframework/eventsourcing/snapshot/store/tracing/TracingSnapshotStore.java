@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.snapshot.store.tracing;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.tracing.Span;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.attributes.EntityIdSpanAttributesProvider;
@@ -91,5 +92,11 @@ public final class TracingSnapshotStore implements SnapshotStore {
             span.addAttribute(EntityIdSpanAttributesProvider.DEFAULT_ATTRIBUTE_KEY, identifier.toString());
         }
         return span;
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeWrapperOf(descriptor);
+        descriptor.describeProperty("spanFactory", spanFactory);
     }
 }

@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.snapshot.store;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -37,7 +38,7 @@ import java.util.concurrent.CompletableFuture;
  * @since 5.1.0
  */
 @Internal
-public interface SnapshotStore {
+public interface SnapshotStore extends DescribableComponent {
 
     /**
      * Persists a snapshot under the given name and identifier. This replaces any previous

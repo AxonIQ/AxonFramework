@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.snapshot.inmemory;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.QualifiedName;
@@ -42,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @since 5.1.0
  */
 public class InMemorySnapshotStore implements SnapshotStore {
+
     private final Map<QualifiedName, Map<Object, Snapshot>> entitiesByIdentifierByName = new ConcurrentHashMap<>();
 
     @Override
@@ -67,5 +69,10 @@ public class InMemorySnapshotStore implements SnapshotStore {
         Map<Object, Snapshot> entitiesByIdentifier = entitiesByIdentifierByName.get(qualifiedName);
 
         return CompletableFuture.completedFuture(entitiesByIdentifier == null ? null : entitiesByIdentifier.get(identifier));
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        // No-op - nothing to describe
     }
 }
