@@ -23,9 +23,9 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Parameter
 
-class KotlinMetadataNullabilityResolverTest {
+class KotlinReflectNullabilityResolverTest {
 
-    private val testSubject = KotlinMetadataNullabilityResolver()
+    private val testSubject = KotlinReflectNullabilityResolver()
 
     private fun parameterOf(methodName: String, index: Int = 0): Parameter =
         Handlers::class.java.declaredMethods.single { it.name == methodName }.parameters[index]
@@ -94,6 +94,25 @@ class KotlinMetadataNullabilityResolverTest {
         }
 
         @Test
+        fun `declared parameters of a suspend function resolve past the Continuation`() {
+            // given a suspend function declaring one nullable parameter
+            val method = Handlers::class.java.declaredMethods.single { it.name == "suspending" }
+
+            // when / then
+            assertThat(testSubject.resolve(method.parameters[0])).isEqualTo(Nullability.NULLABLE)
+        }
+
+        @Test
+        fun `declared parameters of an inner class constructor resolve past the outer instance`() {
+            // given an inner class constructor declaring a non-null and a nullable parameter
+            val constructor = Inner::class.java.declaredConstructors.single()
+
+            // when / then
+            assertThat(testSubject.resolve(constructor.parameters[1])).isEqualTo(Nullability.NON_NULL)
+            assertThat(testSubject.resolve(constructor.parameters[2])).isEqualTo(Nullability.NULLABLE)
+        }
+
+        @Test
         fun `primitive parameters resolve to NON_NULL`() {
             // given a Kotlin 'Int', which is a non-null type compiled to a JVM primitive
             val parameter = parameterOf("primitive")
@@ -116,13 +135,21 @@ class KotlinMetadataNullabilityResolverTest {
         }
 
         @Test
-        fun `suspend functions resolve to UNKNOWN rather than misreading the Continuation`() {
-            // given a suspend function, whose JVM signature carries a trailing Continuation that Kotlin does not
-            // model as a value parameter
+        fun `the trailing Continuation of a suspend function resolves to UNKNOWN`() {
+            // given a suspend function, whose JVM signature carries a Continuation Kotlin does not model
             val method = Handlers::class.java.declaredMethods.single { it.name == "suspending" }
 
             // when / then
-            assertThat(testSubject.resolve(method.parameters[0])).isEqualTo(Nullability.UNKNOWN)
+            assertThat(testSubject.resolve(method.parameters[1])).isEqualTo(Nullability.UNKNOWN)
+        }
+
+        @Test
+        fun `the outer instance of an inner class constructor resolves to UNKNOWN`() {
+            // given an inner class constructor, whose JVM signature carries the outer instance first
+            val constructor = Inner::class.java.declaredConstructors.single()
+
+            // when / then
+            assertThat(testSubject.resolve(constructor.parameters[0])).isEqualTo(Nullability.UNKNOWN)
         }
     }
 
@@ -195,4 +222,7 @@ class KotlinMetadataNullabilityResolverTest {
 
     @Suppress("unused")
     class WithConstructor(val id: String, val state: State?)
+
+    @Suppress("unused")
+    inner class Inner(val id: String, val state: State?)
 }

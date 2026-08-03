@@ -60,12 +60,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Not part of the kotlin-bom, but released in lockstep with the compiler. -->
-            <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-metadata-jvm</artifactId>
-                <version>${kotlin.version}</version>
-            </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlinx</groupId>
                 <artifactId>kotlinx-serialization-core</artifactId>
