@@ -16,34 +16,30 @@
 
 package org.axonframework.common.nullability;
 
+import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.annotation.PriorityAnnotationComparator;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
-import static java.util.ServiceLoader.load;
-
 /**
- * Locates {@link NullabilityResolver} instances on the class path using the {@link ServiceLoader} mechanism, and
- * consults them in descending {@link NullabilityResolver#priority()} order.
+ * Consults the {@link NullabilityResolver} instances found on the class path, falling back to reading a
+ * {@code Nullable} annotation when none of them has an opinion.
  * <p>
- * Resolvers are located with the class loader of the class declaring the parameter under inspection, falling back to
- * the thread context class loader, so that a resolver shipped alongside the inspected code is found. A provider that
- * cannot be instantiated, typically because an optional dependency is absent, is logged and skipped rather than
- * failing the whole chain.
+ * Resolvers are located with the class loader of the class declaring the parameter under inspection, and cached
+ * against that class. A provider that cannot be instantiated, typically because an optional dependency is absent, is
+ * logged and skipped rather than failing the whole chain.
  * <p>
- * Kept package-private and separate from {@link NullabilityResolver} because an interface cannot hold the logic this
+ * Kept package-private and separate from {@link NullabilityResolver} because an interface cannot hold the state this
  * requires. Callers reach this through {@link NullabilityResolver#nullabilityOf(Parameter)}.
- * <p>
- * Marked {@link Internal} because it exists purely to serve that call, and carries no contract of its own.
  *
  * @author Mateusz Nowak
  * @see ServiceLoader
@@ -53,44 +49,51 @@ import static java.util.ServiceLoader.load;
 final class NullabilityResolverChain {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NullabilityResolverChain.class);
+    private static final String NULLABLE = "nullable";
+
+    /**
+     * Caching against the declaring {@link Class} rather than its loader is what keeps this leak-free: the value is
+     * reachable only from that class, which already references its own loader, so no reachability edge is added that
+     * did not exist already, and the entry dies with the class.
+     */
+    private static final ClassValue<List<NullabilityResolver>> RESOLVERS = new ClassValue<>() {
+        @Override
+        protected List<NullabilityResolver> computeValue(Class<?> type) {
+            return load(type.getClassLoader());
+        }
+    };
 
     private NullabilityResolverChain() {
         // not meant to be publicly instantiated
     }
 
     static Nullability resolve(Parameter parameter) {
-        Class<?> declaringClass = parameter.getDeclaringExecutable().getDeclaringClass();
-        for (NullabilityResolver resolver : resolversFor(declaringClass.getClassLoader())) {
+        for (NullabilityResolver resolver : RESOLVERS.get(parameter.getDeclaringExecutable().getDeclaringClass())) {
             Nullability nullability = resolver.resolve(parameter);
             if (nullability != Nullability.UNKNOWN) {
                 return nullability;
             }
         }
-        return Nullability.UNKNOWN;
+        return AnnotationUtils.hasAnnotationNamed(parameter, NULLABLE) ? Nullability.NULLABLE : Nullability.UNKNOWN;
     }
 
     /**
      * @param classLoader the loader to locate resolvers with, {@code null} for a class loaded by the bootstrap loader
      */
-    private static List<NullabilityResolver> resolversFor(@Nullable ClassLoader classLoader) {
-        Iterator<NullabilityResolver> iterator = load(NullabilityResolver.class, classLoader == null
+    private static List<NullabilityResolver> load(@Nullable ClassLoader classLoader) {
+        Iterator<NullabilityResolver> iterator = ServiceLoader.load(NullabilityResolver.class, classLoader == null
                 ? Thread.currentThread().getContextClassLoader()
                 : classLoader).iterator();
         List<NullabilityResolver> resolvers = new ArrayList<>();
         while (iterator.hasNext()) {
             try {
                 resolvers.add(iterator.next());
-            } catch (ServiceConfigurationError e) {
-                LOGGER.info(
-                        "NullabilityResolver instance ignored, as one of the required classes is not available on the classpath: {}",
-                        e.getMessage()
-                );
-            } catch (NoClassDefFoundError e) {
-                LOGGER.info("NullabilityResolver instance ignored. It relies on a class that cannot be found: {}",
-                            e.getMessage());
+            } catch (ServiceConfigurationError | NoClassDefFoundError e) {
+                LOGGER.info("NullabilityResolver instance ignored, as it relies on a class that is not available "
+                                    + "on the classpath: {}", e.getMessage());
             }
         }
-        resolvers.sort(Comparator.comparingInt(NullabilityResolver::priority).reversed());
-        return resolvers;
+        resolvers.sort(PriorityAnnotationComparator.getInstance());
+        return List.copyOf(resolvers);
     }
 }

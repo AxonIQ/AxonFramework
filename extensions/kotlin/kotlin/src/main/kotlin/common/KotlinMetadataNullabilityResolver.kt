@@ -16,6 +16,7 @@
 
 package org.axonframework.extension.kotlin.common
 
+import org.axonframework.common.Priority
 import org.axonframework.common.annotation.Internal
 import org.axonframework.common.nullability.Nullability
 import org.axonframework.common.nullability.NullabilityResolver
@@ -60,32 +61,25 @@ import kotlin.metadata.jvm.signature
  * @since 5.3.0
  */
 @Internal
+@Priority(Priority.HIGH)
 class KotlinMetadataNullabilityResolver : NullabilityResolver {
-
-    /**
-     * Outranks the annotation-based default, as Kotlin's own type information is authoritative for Kotlin sources.
-     */
-    override fun priority(): Int = 1000
 
     override fun resolve(parameter: Parameter): Nullability {
         val executable = parameter.declaringExecutable
-        val index = executable.parameters.indexOf(parameter)
-        if (index < 0) {
-            return Nullability.UNKNOWN
-        }
         val valueParameters = valueParametersOf(executable) ?: return Nullability.UNKNOWN
         // A count mismatch means the JVM signature carries parameters Kotlin does not model, so indices cannot be
         // trusted to line up.
         if (valueParameters.size != executable.parameterCount) {
             return Nullability.UNKNOWN
         }
+        val index = executable.parameters.indexOf(parameter)
         return if (valueParameters[index].type.isNullable) Nullability.NULLABLE else Nullability.NON_NULL
     }
 
     private fun valueParametersOf(executable: Executable): List<KmValueParameter>? {
         val metadata = executable.declaringClass.getAnnotation(Metadata::class.java) ?: return null
         val classMetadata = runCatching { KotlinClassMetadata.readLenient(metadata) }.getOrNull() ?: return null
-        val signature = executable.jvmMethodSignature() ?: return null
+        val signature = executable.jvmMethodSignature()
         return when (executable) {
             is Constructor<*> -> (classMetadata as? KotlinClassMetadata.Class)
                 ?.kmClass
@@ -109,13 +103,9 @@ class KotlinMetadataNullabilityResolver : NullabilityResolver {
         else -> null
     }
 
-    private fun Executable.jvmMethodSignature(): JvmMethodSignature? = runCatching {
-        JvmMethodSignature(
-            if (this is Constructor<*>) "<init>" else name,
-            MethodType.methodType(
-                if (this is Method) returnType else Void.TYPE,
-                parameterTypes
-            ).toMethodDescriptorString()
-        )
-    }.getOrNull()
+    private fun Executable.jvmMethodSignature(): JvmMethodSignature = JvmMethodSignature(
+        if (this is Constructor<*>) "<init>" else name,
+        MethodType.methodType(if (this is Method) returnType else Void.TYPE, parameterTypes)
+            .toMethodDescriptorString()
+    )
 }
