@@ -19,10 +19,12 @@ package org.axonframework.messaging.tracing.attributes;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -138,6 +140,38 @@ class DefaultSpanAttributesProviderRegistryTest {
 
             // then
             assertThat(providers).contains(PROVIDER_A);
+        }
+    }
+
+    @Nested
+    class DescribeTo {
+
+        @Test
+        void describesRegisteredProviderDefinitions() {
+            // given two registered providers
+            testSubject.registerProvider(c -> PROVIDER_A)
+                       .registerProvider(c -> PROVIDER_B);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
+
+            // when
+            testSubject.describeTo(descriptor);
+
+            // then the registry exposes its provider definitions
+            Collection<?> providerDefinitions = descriptor.getProperty("providerDefinitions");
+            assertThat(providerDefinitions).hasSize(2);
+        }
+
+        @Test
+        void describesAnEmptyRegistry() {
+            // given no registered providers
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
+
+            // when
+            testSubject.describeTo(descriptor);
+
+            // then the provider definitions are described as an empty collection
+            Collection<?> providerDefinitions = descriptor.getProperty("providerDefinitions");
+            assertThat(providerDefinitions).isEmpty();
         }
     }
 }

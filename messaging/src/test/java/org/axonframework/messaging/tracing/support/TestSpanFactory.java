@@ -20,6 +20,7 @@ import org.axonframework.messaging.tracing.Span;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.SpanScope;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -126,6 +127,11 @@ public class TestSpanFactory implements SpanFactory {
     public Span createDisconnectedHandlerSpan(String operationName, Message message,
                                               @Nullable ProcessingContext context) {
         return recordMessageSpan(TestSpanType.DISCONNECTED_HANDLER, operationName, message, context);
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        // No-op - not required for testing
     }
 
     /**

@@ -21,6 +21,7 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.infra.ComponentDescriptor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,5 +59,10 @@ public final class DefaultSpanAttributesProviderRegistry implements SpanAttribut
             providers.add(creator.createComponent().resolve(config));
         }
         return providers;
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("providerDefinitions", providerDefinitions);
     }
 }

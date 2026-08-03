@@ -17,6 +17,7 @@
 package org.axonframework.messaging.tracing;
 
 import org.axonframework.common.IdentifierFactory;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -95,6 +96,11 @@ public final class LoggingSpanFactory implements SpanFactory {
                                               @Nullable ProcessingContext context) {
         return new LoggingSpan(operationName, () -> "Disconnected handler span started (new trace, linked to "
                 + message.getClass().getSimpleName() + ")");
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        // No-op - nothing to describe
     }
 
     private static String handlerSpanStartLog(Message message) {
