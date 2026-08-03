@@ -18,9 +18,9 @@
  * Resolution of the nullability declared for a method or constructor parameter.
  * <p>
  * Annotations are only one way a language expresses nullability, which is why this lives beside rather than inside
- * the annotation utilities. Kotlin, for one, encodes it in its type system. The
- * {@link org.axonframework.common.nullability.NullabilityResolver} service interface lets such languages contribute
- * resolution the framework cannot perform on its own.
+ * the annotation utilities. Kotlin, for one, encodes it in its type system, which
+ * {@link org.axonframework.common.nullability.Nullability} reads through the optional {@code kotlin-reflect}
+ * dependency.
  */
 @NullMarked
 package org.axonframework.common.nullability;

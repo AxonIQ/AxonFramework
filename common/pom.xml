@@ -78,6 +78,14 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- SPIKE: optional, mirroring how spring-core carries kotlin-reflect. -->
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-reflect</artifactId>
+            <version>2.4.10</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Reactive -->
         <dependency>
             <groupId>io.projectreactor</groupId>
@@ -157,6 +165,25 @@
 
     <build>
         <plugins>
+            <!-- SPIKE: needed only so common can test the Kotlin path it now owns. -->
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <version>2.4.10</version>
+                <executions>
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>process-test-sources</phase>
+                        <goals><goal>test-compile</goal></goals>
+                        <configuration>
+                            <sourceDirs>
+                                <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
+                            </sourceDirs>
+                            <jvmTarget>21</jvmTarget>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
