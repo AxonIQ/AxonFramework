@@ -19,7 +19,7 @@ package org.axonframework.modelling.annotation;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
-import org.axonframework.common.annotation.NullabilityDetector;
+import org.axonframework.common.nullability.NullabilityDetector;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;

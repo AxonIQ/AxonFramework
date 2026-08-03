@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.common.annotation;
+package org.axonframework.common.nullability;
 
 import java.lang.reflect.Parameter;
 import java.util.ServiceLoader;
@@ -29,7 +29,7 @@ import java.util.ServiceLoader;
  * such languages can contribute their own detection without the framework depending on their tooling.
  * <p>
  * Implementations are discovered through the {@link ServiceLoader} mechanism, by declaring them in a
- * {@code META-INF/services/org.axonframework.common.annotation.NullabilityDetector} file. They are consulted in
+ * {@code META-INF/services/org.axonframework.common.nullability.NullabilityDetector} file. They are consulted in
  * descending {@link #priority()} order, and the first to return something other than {@link Nullability#UNKNOWN}
  * wins. Implementations must return {@link Nullability#UNKNOWN} for parameters they know nothing about, so that
  * lower-priority detectors still get their turn.

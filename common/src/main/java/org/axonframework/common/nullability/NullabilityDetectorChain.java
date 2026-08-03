@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.common.annotation;
+package org.axonframework.common.nullability;
 
 import java.lang.reflect.Parameter;
 import java.util.Comparator;

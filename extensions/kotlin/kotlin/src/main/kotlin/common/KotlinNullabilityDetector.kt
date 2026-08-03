@@ -16,8 +16,8 @@
 
 package org.axonframework.extension.kotlin.common
 
-import org.axonframework.common.annotation.Nullability
-import org.axonframework.common.annotation.NullabilityDetector
+import org.axonframework.common.nullability.Nullability
+import org.axonframework.common.nullability.NullabilityDetector
 import java.lang.invoke.MethodType
 import java.lang.reflect.Constructor
 import java.lang.reflect.Executable

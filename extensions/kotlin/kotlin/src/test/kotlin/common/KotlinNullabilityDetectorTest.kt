@@ -17,8 +17,8 @@
 package org.axonframework.extension.kotlin.common
 
 import org.assertj.core.api.Assertions.assertThat
-import org.axonframework.common.annotation.Nullability
-import org.axonframework.common.annotation.NullabilityDetector
+import org.axonframework.common.nullability.Nullability
+import org.axonframework.common.nullability.NullabilityDetector
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Parameter
