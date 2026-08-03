@@ -17,6 +17,7 @@
 package org.axonframework.common.nullability;
 
 import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.common.annotation.Internal;
 
 import java.lang.reflect.Parameter;
 
@@ -33,14 +34,24 @@ import java.lang.reflect.Parameter;
  * <p>
  * Never reports {@link Nullability#NON_NULL}: an unannotated Java parameter says nothing about whether it accepts
  * {@code null}, so anything other than an explicit {@code Nullable} annotation yields {@link Nullability#UNKNOWN}.
+ * <p>
+ * Marked {@link Internal} as it is registered automatically and not meant to be referenced directly.
  *
  * @author Mateusz Nowak
  * @see NullabilityResolver
  * @since 5.3.0
  */
+@Internal
 public class AnnotationBasedNullabilityResolver implements NullabilityResolver {
 
     private static final String NULLABLE = "nullable";
+
+    /**
+     * Constructs the default resolver. Invoked by the {@link java.util.ServiceLoader}.
+     */
+    public AnnotationBasedNullabilityResolver() {
+        // Required by the ServiceLoader.
+    }
 
     @Override
     public Nullability resolve(Parameter parameter) {

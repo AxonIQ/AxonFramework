@@ -16,6 +16,8 @@
 
 package org.axonframework.common.nullability;
 
+import org.axonframework.common.annotation.Internal;
+
 import java.lang.reflect.Parameter;
 import java.util.ServiceLoader;
 
@@ -36,12 +38,16 @@ import java.util.ServiceLoader;
  * <p>
  * Resolution happens while message handlers are being inspected, which is during application startup rather than per
  * message. Implementations may therefore favor accuracy over speed, but must be thread-safe.
+ * <p>
+ * Marked {@link Internal} as the contract is still provisional. It is public only so that implementations shipping in
+ * separate artifacts, such as the Kotlin extension, can reach it.
  *
  * @author Mateusz Nowak
  * @see Nullability
  * @see AnnotationBasedNullabilityResolver
  * @since 5.3.0
  */
+@Internal
 public interface NullabilityResolver {
 
     /**

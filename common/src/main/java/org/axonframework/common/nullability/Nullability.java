@@ -16,6 +16,8 @@
 
 package org.axonframework.common.nullability;
 
+import org.axonframework.common.annotation.Internal;
+
 import java.lang.reflect.Parameter;
 
 /**
@@ -25,11 +27,14 @@ import java.lang.reflect.Parameter;
  * non-null, since most Java code carries no nullability annotations at all. A resolver that cannot form an opinion
  * therefore reports {@link #UNKNOWN} rather than {@link #NON_NULL}, allowing lower-priority resolvers to answer and
  * letting the caller apply its own default.
+ * <p>
+ * Marked {@link Internal} as it forms part of the {@link NullabilityResolver} contract.
  *
  * @author Mateusz Nowak
  * @see NullabilityResolver
  * @since 5.3.0
  */
+@Internal
 public enum Nullability {
 
     /**

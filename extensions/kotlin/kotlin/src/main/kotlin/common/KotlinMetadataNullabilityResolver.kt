@@ -16,6 +16,7 @@
 
 package org.axonframework.extension.kotlin.common
 
+import org.axonframework.common.annotation.Internal
 import org.axonframework.common.nullability.Nullability
 import org.axonframework.common.nullability.NullabilityResolver
 import java.lang.invoke.MethodType
@@ -52,10 +53,13 @@ import kotlin.metadata.jvm.signature
  *    functions carrying a trailing `Continuation`, and for constructors of inner classes carrying the outer
  *    instance. Rather than risk reading the nullability of the wrong parameter, no answer is given.
  *
+ * Marked [Internal] as it is registered automatically and not meant to be referenced directly.
+ *
  * @author Mateusz Nowak
  * @see NullabilityResolver
  * @since 5.3.0
  */
+@Internal
 class KotlinMetadataNullabilityResolver : NullabilityResolver {
 
     /**

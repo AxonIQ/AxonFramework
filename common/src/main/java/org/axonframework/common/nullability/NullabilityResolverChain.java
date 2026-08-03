@@ -16,6 +16,8 @@
 
 package org.axonframework.common.nullability;
 
+import org.axonframework.common.annotation.Internal;
+
 import java.lang.reflect.Parameter;
 import java.util.Comparator;
 import java.util.List;
@@ -29,10 +31,13 @@ import java.util.stream.StreamSupport;
  * Kept package-private and separate from {@link NullabilityResolver} because an interface cannot hold the private
  * static state this loading requires. Callers reach this through
  * {@link NullabilityResolver#nullabilityOf(Parameter)}.
+ * <p>
+ * Marked {@link Internal} because it exists purely to hold that state, and carries no contract of its own.
  *
  * @author Mateusz Nowak
  * @since 5.3.0
  */
+@Internal
 final class NullabilityResolverChain {
 
     private static final List<NullabilityResolver> RESOLVERS = load();
