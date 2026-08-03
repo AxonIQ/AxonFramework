@@ -18,7 +18,6 @@ package org.axonframework.modelling;
 
 import org.axonframework.common.BuilderUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
@@ -41,7 +40,7 @@ import java.util.stream.Collectors;
  * @see StateManager
  * @since 5.0.0
  */
-public class SimpleStateManager implements StateManager, DescribableComponent {
+public class SimpleStateManager implements StateManager {
 
     private final String name;
     private final List<Repository<?, ?>> repositories = new CopyOnWriteArrayList<>();

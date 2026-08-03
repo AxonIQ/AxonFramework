@@ -138,6 +138,11 @@ class TracingStateManagerTest {
         public <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
             return null;
         }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            // No-op - not required for testing
+        }
     }
 
     /**
