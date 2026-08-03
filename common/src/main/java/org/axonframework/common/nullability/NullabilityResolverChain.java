@@ -47,7 +47,12 @@ final class NullabilityResolverChain {
     }
 
     private static List<NullabilityResolver> load() {
-        return StreamSupport.stream(ServiceLoader.load(NullabilityResolver.class).spliterator(), false)
+        // Loaded with the framework's own class loader rather than the thread context one, which in a fat jar or
+        // application server may not see the service declarations at all. Silently losing them would downgrade every
+        // nullable parameter to the failing default.
+        ServiceLoader<NullabilityResolver> serviceLoader =
+                ServiceLoader.load(NullabilityResolver.class, NullabilityResolver.class.getClassLoader());
+        return StreamSupport.stream(serviceLoader.spliterator(), false)
                             .sorted(Comparator.comparingInt(NullabilityResolver::priority).reversed())
                             .toList();
     }
