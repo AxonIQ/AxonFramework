@@ -17,19 +17,17 @@
 package org.axonframework.common.nullability;
 
 import org.axonframework.common.annotation.Internal;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.ref.WeakReference;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
-import java.util.WeakHashMap;
 
 import static java.util.ServiceLoader.load;
 
@@ -37,12 +35,15 @@ import static java.util.ServiceLoader.load;
  * Locates {@link NullabilityResolver} instances on the class path using the {@link ServiceLoader} mechanism, and
  * consults them in descending {@link NullabilityResolver#priority()} order.
  * <p>
- * Resolvers are located with the class loader of the class declaring the parameter under inspection, and cached per
- * class loader, following the same approach as the other class-path-discovered services in this framework. Kept
- * package-private and separate from {@link NullabilityResolver} because an interface cannot hold the state this
+ * Resolvers are located with the class loader of the class declaring the parameter under inspection, falling back to
+ * the thread context class loader, so that a resolver shipped alongside the inspected code is found. A provider that
+ * cannot be instantiated, typically because an optional dependency is absent, is logged and skipped rather than
+ * failing the whole chain.
+ * <p>
+ * Kept package-private and separate from {@link NullabilityResolver} because an interface cannot hold the logic this
  * requires. Callers reach this through {@link NullabilityResolver#nullabilityOf(Parameter)}.
  * <p>
- * Marked {@link Internal} because it exists purely to hold that state, and carries no contract of its own.
+ * Marked {@link Internal} because it exists purely to serve that call, and carries no contract of its own.
  *
  * @author Mateusz Nowak
  * @see ServiceLoader
@@ -52,16 +53,14 @@ import static java.util.ServiceLoader.load;
 final class NullabilityResolverChain {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NullabilityResolverChain.class);
-    private static final Object MONITOR = new Object();
-    private static final Map<ClassLoader, WeakReference<List<NullabilityResolver>>> RESOLVERS = new WeakHashMap<>();
 
     private NullabilityResolverChain() {
         // not meant to be publicly instantiated
     }
 
     static Nullability resolve(Parameter parameter) {
-        List<NullabilityResolver> resolvers = forClass(parameter.getDeclaringExecutable().getDeclaringClass());
-        for (NullabilityResolver resolver : resolvers) {
+        Class<?> declaringClass = parameter.getDeclaringExecutable().getDeclaringClass();
+        for (NullabilityResolver resolver : resolversFor(declaringClass.getClassLoader())) {
             Nullability nullability = resolver.resolve(parameter);
             if (nullability != Nullability.UNKNOWN) {
                 return nullability;
@@ -71,34 +70,9 @@ final class NullabilityResolverChain {
     }
 
     /**
-     * Returns the resolvers visible to the given {@code clazz}. Effectively, the class loader of the given class is
-     * used to locate implementations, so that a resolver shipped alongside the inspected code is found.
-     *
-     * @param clazz the class declaring the parameter the resolvers are located for
-     * @return the resolvers to consult, in descending priority order
+     * @param classLoader the loader to locate resolvers with, {@code null} for a class loaded by the bootstrap loader
      */
-    private static List<NullabilityResolver> forClass(Class<?> clazz) {
-        return forClassLoader(clazz == null ? null : clazz.getClassLoader());
-    }
-
-    private static List<NullabilityResolver> forClassLoader(ClassLoader classLoader) {
-        synchronized (MONITOR) {
-            List<NullabilityResolver> resolvers;
-            if (!RESOLVERS.containsKey(classLoader)) {
-                resolvers = findDelegates(classLoader);
-                RESOLVERS.put(classLoader, new WeakReference<>(resolvers));
-                return resolvers;
-            }
-            resolvers = RESOLVERS.get(classLoader).get();
-            if (resolvers == null) {
-                resolvers = findDelegates(classLoader);
-                RESOLVERS.put(classLoader, new WeakReference<>(resolvers));
-            }
-            return resolvers;
-        }
-    }
-
-    private static List<NullabilityResolver> findDelegates(ClassLoader classLoader) {
+    private static List<NullabilityResolver> resolversFor(@Nullable ClassLoader classLoader) {
         Iterator<NullabilityResolver> iterator = load(NullabilityResolver.class, classLoader == null
                 ? Thread.currentThread().getContextClassLoader()
                 : classLoader).iterator();
@@ -117,6 +91,6 @@ final class NullabilityResolverChain {
             }
         }
         resolvers.sort(Comparator.comparingInt(NullabilityResolver::priority).reversed());
-        return List.copyOf(resolvers);
+        return resolvers;
     }
 }
