@@ -21,6 +21,7 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DecoratorDefinition;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.tracing.SpanAttributesProvider;
 import org.axonframework.messaging.tracing.SpanFactory;
 
@@ -43,7 +44,7 @@ import java.util.List;
  * @since 5.3.0
  */
 @Internal
-public interface SpanAttributesProviderRegistry {
+public interface SpanAttributesProviderRegistry extends DescribableComponent {
 
     /**
      * Registers the given {@code providerBuilder} constructing a {@link SpanAttributesProvider} to include in the

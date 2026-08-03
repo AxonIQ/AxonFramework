@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.tracing;
 
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -54,7 +55,7 @@ import org.jspecify.annotations.Nullable;
  * @author Mitchell Herrijgers
  * @since 4.6.0
  */
-public interface SpanFactory {
+public interface SpanFactory extends DescribableComponent {
 
     /**
      * Creates a {@link Span} for an outbound (dispatch / producer) operation on the given {@link Message}. The parent

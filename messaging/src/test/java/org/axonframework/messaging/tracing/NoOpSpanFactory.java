@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.tracing;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -71,6 +72,11 @@ final class NoOpSpanFactory implements SpanFactory {
     public Span createDisconnectedHandlerSpan(String operationName, Message message,
                                               @Nullable ProcessingContext context) {
         return NO_OP_SPAN;
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        // No-op - not required for testing
     }
 
     private static final class NoOpSpan implements Span {
