@@ -122,6 +122,17 @@ from the projection, and this run has none, so the log says the step is not show
 is where update isolation and completion are proven. A query is rejected the same way a command is when its
 tenant is unknown, removed, or not named at all.
 
+### Persistent streams instead of pooled streaming
+
+By default the projection processor is a pooled streaming processor reading the tenant-aware event store
+directly. Flip `demo.axon-server.persistent-streams.enabled` to `true` (alongside `demo.axon-server.enabled`)
+to run it as a subscribing processor instead, fed by an ordinary persistent stream opened in every tenant's
+own context and fanned into that single processor by the multi-tenant persistent stream support
+(`MultiTenantPersistentStreamEventSourceFactory`). The run is otherwise identical: it is still one processor
+serving every tenant, the tenant added at runtime still gets its own stream opened automatically, and step 6 of
+the log still reports one processor name. Unlike the pooled path, there is no token store and no processor
+restart when the tenant set changes: each tenant's stream opens and closes on its own as tenants come and go.
+
 ## The same demo, wired by Spring Boot
 
 The [Spring Boot demo](../university-multi-tenancy-springboot/README.md) proves the same behavior with

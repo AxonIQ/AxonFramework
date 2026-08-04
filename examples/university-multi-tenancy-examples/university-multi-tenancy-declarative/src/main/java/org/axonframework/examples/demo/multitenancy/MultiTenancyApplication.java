@@ -19,13 +19,13 @@ package org.axonframework.examples.demo.multitenancy;
 import io.axoniq.framework.messaging.multitenancy.api.TenantComponentProvider;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.examples.demo.multitenancy.shared.EventProcessingStyle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoApplication;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.DemoTenantProvider;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantComponents;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.TenantProvisioning;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.slf4j.Logger;
@@ -58,7 +58,10 @@ public class MultiTenancyApplication {
         logger.info("Two providers for one component type are rejected at configuration time: {}",
                     ProviderAmbiguityGuardrail.rejectsTwoProvidersForOneType());
         MultiTenancyApplication demo = new MultiTenancyApplication();
-        DemoOutcome outcome = properties.axonServerEnabled() ? demo.runWithAxonServer() : demo.run();
+        EventProcessingStyle streamingMode = properties.persistentStreamsEnabled()
+                ? EventProcessingStyle.PERSISTENT_STREAMS
+                : EventProcessingStyle.POOLED_STREAMING;
+        DemoOutcome outcome = properties.axonServerEnabled() ? demo.runWithAxonServer(streamingMode) : demo.run();
         logger.info("Demo finished. Outcome: {}", outcome);
     }
 
@@ -87,19 +90,33 @@ public class MultiTenancyApplication {
     }
 
     /**
+     * Runs the demo end to end against Axon Server with the projection processor run in
+     * {@link EventProcessingStyle#POOLED_STREAMING}, sourcing the tenants from Axon Server contexts rather than
+     * from an in-memory provider. The lifecycle is identical to {@link #run()}, and the backing is the only
+     * difference. This path needs a running multi-context (Enterprise Edition) Axon Server, reachable on its
+     * default {@code localhost} address.
+     *
+     * @return the observed outcome of the demo run
+     */
+    public DemoOutcome runWithAxonServer() {
+        return runWithAxonServer(EventProcessingStyle.POOLED_STREAMING);
+    }
+
+    /**
      * Runs the demo end to end against Axon Server, sourcing the tenants from Axon Server contexts
      * rather than from an in-memory provider. The lifecycle is identical to {@link #run()}, and the
      * backing is the only difference. This path needs a running multi-context (Enterprise Edition)
      * Axon Server, reachable on its default {@code localhost} address.
      *
+     * @param streamingMode how the course-statistics projection processor is fed
      * @return the observed outcome of the demo run
      */
-    public DemoOutcome runWithAxonServer() {
+    public DemoOutcome runWithAxonServer(EventProcessingStyle streamingMode) {
         TenantComponentProvider<CourseStatisticsStore> statisticsProvider = TenantComponents.courseStatisticsProvider();
         TenantComponentProvider<AuditLog> auditProvider = TenantComponents.auditLogProvider();
 
         EventSourcingConfigurer configurer = EventSourcingConfigurer.create();
-        UniversityConfiguration.configureForAxonServer(configurer, statisticsProvider, auditProvider);
+        UniversityConfiguration.configureForAxonServer(configurer, statisticsProvider, auditProvider, streamingMode);
         AxonConfiguration configuration = configurer.build();
         configuration.start();
 

@@ -27,10 +27,11 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
+import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
+import org.axonframework.examples.demo.multitenancy.shared.EventProcessingStyle;
 import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.university.UniversityModuleConfiguration;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
-import org.axonframework.examples.demo.multitenancy.shared.DemoBacking;
 
 import java.time.Duration;
 
@@ -102,9 +103,9 @@ public final class UniversityConfiguration {
      * a running multi-context (Enterprise Edition) Axon Server.
      * <p>
      * Because every tenant has its own event store here, the framework knows which tenant a streamed event
-     * came from, so this path fills the read model from a projection.
-     * One ordinary pooled streaming processor consumes every tenant's events, and no multi-tenancy wiring is
-     * needed to make it tenant-aware.
+     * came from, so this path fills the read model from a projection. One ordinary event processor consumes
+     * every tenant's events, run in the given {@code streamingMode}, and no multi-tenancy wiring is needed to
+     * make it tenant-aware.
      * <p>
      * This path also routes direct queries through the per-tenant connector rather than serving them from a
      * locally subscribed handler, so that {@code query()} dispatch is really exercised, not only made
@@ -113,14 +114,18 @@ public final class UniversityConfiguration {
      * @param configurer         the configurer to extend
      * @param statisticsProvider the provider of the per-tenant course-statistics stores
      * @param auditProvider      the provider of the per-tenant audit logs
+     * @param streamingMode      how the projection processor is fed
      */
     public static void configureForAxonServer(EventSourcingConfigurer configurer,
                                               TenantComponentProvider<CourseStatisticsStore> statisticsProvider,
-                                              TenantComponentProvider<AuditLog> auditProvider) {
-        UniversityModuleConfiguration.configure(configurer, DemoBacking.AXON_SERVER)
+                                              TenantComponentProvider<AuditLog> auditProvider,
+                                              EventProcessingStyle streamingMode) {
+        UniversityModuleConfiguration.configure(configurer, DemoBacking.AXON_SERVER, streamingMode)
                                      .componentRegistry(registry -> {
                                          registerTenantComponents(registry, statisticsProvider, auditProvider);
-                                         registerProcessorRestartTimeout(registry);
+                                         if (streamingMode == EventProcessingStyle.POOLED_STREAMING) {
+                                             registerProcessorRestartTimeout(registry);
+                                         }
                                          registerDirectQueryRouting(registry);
                                      });
     }
