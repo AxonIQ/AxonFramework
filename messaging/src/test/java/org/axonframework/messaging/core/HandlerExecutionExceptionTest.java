@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import org.assertj.core.api.Assertions;
 import org.axonframework.common.TypeReference;
 import org.axonframework.conversion.ChainingContentTypeConverter;
 import org.axonframework.conversion.ConversionException;
@@ -25,8 +24,10 @@ import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -116,8 +117,21 @@ class HandlerExecutionExceptionTest {
             StubHandlerExecutionException exception =
                     new StubHandlerExecutionException("test", null, exByteDetails);
 
-            Assertions.assertThatThrownBy(() -> exception.getDetails(Integer.class))
-                      .isInstanceOf(ConversionException.class);
+            assertThatThrownBy(() -> exception.getDetails(Integer.class))
+                    .isInstanceOf(ConversionException.class);
+        }
+
+        @Test
+        void getDetailsClassWithExplicitConverterOverridesStoredConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+            Converter explicitConverter = spy(new ChainingContentTypeConverter());
+
+            String result = exception.getDetails(String.class, explicitConverter).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(explicitConverter).convert(eq(exByteDetails), eq((Type) String.class));
+            verifyNoInteractions(converter);
         }
 
         @Test
@@ -144,9 +158,95 @@ class HandlerExecutionExceptionTest {
             StubHandlerExecutionException exception =
                     new StubHandlerExecutionException("test", null, exByteDetails);
 
-            Assertions.assertThatThrownBy(() -> exception.getDetails(new TypeReference<Integer>() {
-                      }))
-                      .isInstanceOf(ConversionException.class);
+            assertThatThrownBy(() -> exception.getDetails(new TypeReference<Integer>() {
+                    }))
+                    .isInstanceOf(ConversionException.class);
+        }
+
+        @Test
+        void getDetailsTypeReferenceWithExplicitConverterOverridesStoredConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+            Converter explicitConverter = spy(new ChainingContentTypeConverter());
+
+            String result = exception.getDetails(new TypeReference<String>() {
+            }, explicitConverter).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(explicitConverter).convert(eq(exByteDetails), eq((Type) String.class));
+            verifyNoInteractions(converter);
+        }
+
+        @Test
+        void getDetailsTypeReferenceInvokesConverterForParameterizedTypeEvenWhenRawTypeMatches() {
+            // given: details whose raw type (List) matches the requested TypeReference's raw type, but not its
+            // generic parameter
+            List<String> storedDetails = List.of("a", "b");
+            List<Integer> convertedDetails = List.of(1, 2);
+            Converter explicitConverter = mock(Converter.class);
+            when(explicitConverter.convert(eq(storedDetails), any(Type.class))).thenReturn(convertedDetails);
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, storedDetails);
+
+            // when
+            List<Integer> result = exception.getDetails(new TypeReference<List<Integer>>() {
+            }, explicitConverter).orElse(null);
+
+            // then: the converter is invoked rather than the raw-type match being (unsafely) treated as a hit
+            assertThat(result).isEqualTo(convertedDetails);
+            verify(explicitConverter).convert(eq(storedDetails), any(Type.class));
+        }
+
+        @Test
+        void getDetailsTypeInvokesConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+            Type type = String.class;
+
+            String result = exception.<String>getDetails(type).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(converter).convert(eq(exByteDetails), eq(type));
+        }
+
+        @Test
+        void getDetailsTypeFailsWithConversionExceptionWithoutConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails);
+            Type type = Integer.class;
+
+            assertThatThrownBy(() -> exception.<Integer>getDetails(type))
+                    .isInstanceOf(ConversionException.class);
+        }
+
+        @Test
+        void getDetailsTypeWithExplicitConverterOverridesStoredConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+            Converter explicitConverter = spy(new ChainingContentTypeConverter());
+            Type type = String.class;
+
+            String result = exception.<String>getDetails(type, explicitConverter).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(explicitConverter).convert(eq(exByteDetails), eq(type));
+            verifyNoInteractions(converter);
+        }
+
+        @Test
+        void getDetailsUsesConverterInheritedFromCause() {
+            // given: a cause carrying raw details alongside a Converter able to convert them
+            StubHandlerExecutionException cause =
+                    new StubHandlerExecutionException("cause", null, exByteDetails, converter, false);
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("outer", cause);
+
+            // when
+            String result = exception.getDetails(String.class).orElse(null);
+
+            // then: the outer exception inherited both the details and the converter from the cause
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(converter).convert(eq(exByteDetails), eq((Type) String.class));
         }
     }
 
