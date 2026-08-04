@@ -265,8 +265,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * Lock direction: consumer-side calls (next, peek, hasNextAvailable, setCallback, close)
      * acquire locks from outer to inner (downstream). Producer-side signals (signalProgress and
      * the callbacks they trigger) flow in the opposite direction: inner to outer (upstream).
-     * To prevent deadlock, signalProgress releases its lock before invoking the callback rather
-     * than holding it across the call.
+     * To prevent deadlock, a callback is never invoked while this stream's lock is held: two
+     * streams that notify each other would otherwise take their locks in opposite orders.
+     *
+     * Consequently, completion may not invoke the callback either, because completion is reached
+     * from consumer-side calls that hold the lock (next -> fetchNext -> complete). Instead it
+     * records that a notification is owed in callbackPending, and the consumer-side entry point
+     * flushes it after releasing the lock. Internal variants of those entry points (nextInternal,
+     * peekInternal) exist so nesting them cannot flush while an outer frame still holds the lock -
+     * the monitor is reentrant, so a nested flush would run the callback locked after all.
      *
      * Ordering requirement: signalProgress() must only be called after the state change it
      * announces is fully visible via fetchNext(). This ensures that if a signal arrives while
@@ -340,6 +347,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private boolean initialized;
 
     /**
+     * Indicates that the consumer is owed a callback invocation, recorded while this stream's lock is held so that the
+     * invocation itself can happen after the lock is released. Setting it is idempotent: the consumer is notified once,
+     * no matter how many state changes asked for a notification.
+     * <p>
+     * Only access while synchronized on this class.
+     */
+    private boolean callbackPending;
+
+    /**
      * This method can be used after the super constructor call completes in a subtype to set the initial state of the
      * stream. It may only be called during construction, and will throw an exception if the stream already has a valid
      * state.
@@ -373,24 +389,19 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         synchronized (this) {
             this.callback = callback;
 
-            boolean wasCompleted = isCompleted();
-
-            if (!hasNextAvailable() && !isCompleted()) {
-                return;
-            }
-
-            if (!wasCompleted && isCompleted()) {
+            if (peekInternal().isPresent() || completed) {
 
                 /*
-                 * complete() or completeExceptionally() was triggered by the hasNextAvailable()
-                 * probe above, which already fired the callback - don't fire again
+                 * There is something to report right away. Should the probe above have completed the
+                 * stream, complete() already recorded the notification; recording it is idempotent,
+                 * so the flush below invokes the callback exactly once either way.
                  */
 
-                return;
+                this.callbackPending = true;
             }
         }
 
-        invokeCallbackSafely();
+        flushPendingCallback();
     }
 
     /**
@@ -401,7 +412,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * a consumer of another (sub)stream they own.
      */
     @Override
-    public final synchronized void close() {
+    public final void close() {
 
         /*
          * Close is generally called by the consumer, indicating a loss of interest
@@ -410,7 +421,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * availability of further elements.
          */
 
-        complete();
+        synchronized (this) {
+            complete();
+        }
+
+        flushPendingCallback();
     }
 
     /**
@@ -485,25 +500,65 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     }
 
     @Override
-    public final synchronized boolean hasNextAvailable() {
-        return peek().isPresent();
+    public final boolean hasNextAvailable() {
+        boolean available;
+
+        synchronized (this) {
+            available = peekInternal().isPresent();
+        }
+
+        flushPendingCallback();
+
+        return available;
     }
 
     @Override
-    public final synchronized Optional<Entry<M>> peek() {
+    public final Optional<Entry<M>> peek() {
+        Optional<Entry<M>> peeked;
+
+        synchronized (this) {
+            peeked = peekInternal();
+        }
+
+        flushPendingCallback();
+
+        return peeked;
+    }
+
+    @Override
+    public final Optional<Entry<M>> next() {
+        Optional<Entry<M>> nextEntry;
+
+        synchronized (this) {
+            nextEntry = nextInternal();
+        }
+
+        flushPendingCallback();
+
+        return nextEntry;
+    }
+
+    /**
+     * Same as {@link #peek()}, but without flushing a pending callback. Callers must hold this stream's lock, and are
+     * responsible for flushing once they release it.
+     */
+    private Optional<Entry<M>> peekInternal() {
         if (completed) {
             return Optional.empty();
         }
 
         if (peekedEntry == null) {
-            peekedEntry = next().orElse(null);
+            peekedEntry = nextInternal().orElse(null);
         }
 
         return Optional.ofNullable(peekedEntry);
     }
 
-    @Override
-    public final synchronized Optional<Entry<M>> next() {
+    /**
+     * Same as {@link #next()}, but without flushing a pending callback. Callers must hold this stream's lock, and are
+     * responsible for flushing once they release it.
+     */
+    private Optional<Entry<M>> nextInternal() {
         if (!this.initialized) {
             initialize(FetchResult.notReady());
         }
@@ -636,6 +691,29 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
             this.awaitingData = false;
             this.peekedEntry = null;
 
+            /*
+             * Completion is reached from consumer-side calls that hold this lock, so the callback
+             * cannot be invoked here: doing so takes the next lock upstream while holding this one.
+             * The consumer-side entry point invokes it once it has released the lock.
+             */
+
+            this.callbackPending = true;
+        }
+    }
+
+    /**
+     * Invokes the callback if one is owed to the consumer. Must be called without holding this stream's lock, so the
+     * callback can take locks upstream freely.
+     */
+    private void flushPendingCallback() {
+        boolean owed;
+
+        synchronized (this) {
+            owed = callbackPending;
+            this.callbackPending = false;
+        }
+
+        if (owed) {
             invokeCallbackSafely();
         }
     }
@@ -652,6 +730,13 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         } catch (Throwable t) {
             synchronized (this) {
                 completeExceptionally(t);
+
+                /*
+                 * Completing here recorded another notification, but the callback that would receive it
+                 * is the one that just threw. Drop it; the failure is observable through error().
+                 */
+
+                this.callbackPending = false;
             }
         }
     }
