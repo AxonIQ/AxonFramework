@@ -17,6 +17,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   backport:
@@ -126,11 +127,11 @@ jobs:
             local milestone_title="Release $bare_version"
             echo "Target milestone: $milestone_title" >&2
             local milestone_number
-            milestone_number=$(gh api "/repos/$REPO/milestones" \
+            milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
               --jq ".[] | select(.title == \"$milestone_title\") | .number") || return 0
             if [ -z "$milestone_number" ]; then
               echo "Milestone not found, creating..." >&2
-              milestone_number=$(gh api "/repos/$REPO/milestones" \
+              milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
                 -X POST -f title="$milestone_title" \
                 --jq '.number') || return 0
             fi
