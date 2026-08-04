@@ -50,7 +50,7 @@ public class CommandExecutionException extends HandlerExecutionException {
      *
      * @param message the message describing the exception
      * @param cause   the cause of the exception
-     * @param details an object providing more error details (maybe {@code null})
+     * @param details an object providing more error details (might be {@code null})
      */
     public CommandExecutionException(String message,
                                      Throwable cause,
@@ -64,7 +64,7 @@ public class CommandExecutionException extends HandlerExecutionException {
      *
      * @param message            the message describing the exception
      * @param cause              the cause of the exception
-     * @param details            an object providing more error details (maybe {@code null})
+     * @param details            an object providing more error details (might be {@code null})
      * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
      */
     public CommandExecutionException(String message,

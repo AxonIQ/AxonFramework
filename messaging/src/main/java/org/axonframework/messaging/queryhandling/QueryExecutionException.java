@@ -47,7 +47,7 @@ public class QueryExecutionException extends HandlerExecutionException {
      *
      * @param message message explaining the context of the error
      * @param cause   the underlying cause of the invocation failure
-     * @param details an object providing more error details (maybe {@code null})
+     * @param details an object providing more error details (might be {@code null})
      */
     public QueryExecutionException(String message,
                                    Throwable cause,
@@ -61,7 +61,7 @@ public class QueryExecutionException extends HandlerExecutionException {
      *
      * @param message            message explaining the context of the error
      * @param cause              the underlying cause of the invocation failure
-     * @param details            an object providing more error details (maybe {@code null})
+     * @param details            an object providing more error details (might be {@code null})
      * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
      */
     public QueryExecutionException(String message,
@@ -82,8 +82,8 @@ public class QueryExecutionException extends HandlerExecutionException {
      *
      * @param message            message explaining the context of the error
      * @param cause              the underlying cause of the invocation failure
-     * @param details            an object providing more error details, potentially raw data awaiting conversion (maybe
-     *                           {@code null})
+     * @param details            an object providing more error details, potentially raw data awaiting conversion (may
+     *                           be {@code null})
      * @param converter          the {@link Converter} to lazily apply when {@link #getDetails(Class)} is called with a
      *                           type {@code details} does not already match, or {@code null} if no such conversion is
      *                           available
