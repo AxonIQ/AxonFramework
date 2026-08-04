@@ -113,7 +113,14 @@ fun handle(command: IssueCard, @InjectEntity card: GiftCard?, appender: EventApp
 
 A non-null `GiftCard` keeps the default behavior of failing with an `EntityNotFoundException`.
 This requires the `axon-kotlin` extension on the classpath, which teaches Axon to read Kotlin's declared nullability.
-Without it, a `GiftCard?` parameter is indistinguishable from a non-null one, because the compiler records Kotlin nullability in a form that is not visible at runtime.
+Without it, a `GiftCard?` parameter is indistinguishable from a non-null one, so the command fails with an `EntityNotFoundException` instead of the handler receiving `null`.
+
+[NOTE]
+====
+The Kotlin type wins over a `@Nullable` annotation when the two disagree.
+A parameter declared as a non-null `GiftCard` fails even when annotated `@Nullable`, because Kotlin already rejects `null` for it at the call boundary.
+Write `GiftCard?` to accept a missing entity.
+====
 
 This existence check applies regardless of how the entity's `@EntityCreator` constructs it.
 Even a no-arg or identifier-based creator, which does not need a preceding event to produce an instance, only does so once that instance actually exists; before that, both a no-arg-created and an identifier-created entity behave the same as one that requires an event to construct.

@@ -55,12 +55,8 @@ import java.lang.annotation.Target;
  * instead resolve to {@code null}, allowing the handler to deal with a missing entity itself, for example to support
  * create-or-update semantics. Declaring the parameter as {@code Optional<MyEntity>} (or
  * {@code Optional<ManagedEntity<ID, MyEntity>>}) achieves the same outcome without needing a {@code "nullable"}
- * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}.
- * <p>
- * Nullability is resolved through the {@link org.axonframework.common.nullability.NullabilityResolver} chain, so
- * languages expressing it in their type system rather than through a runtime-visible annotation are honored too.
- * With the Kotlin extension on the classpath, a Kotlin {@code MyEntity?} parameter behaves as a nullable one without
- * any annotation, while a non-null {@code MyEntity} keeps the default failing behavior.
+ * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}. Kotlin
+ * nullability, as in {@code MyEntity?}, is supported as well.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0

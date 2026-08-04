@@ -19,10 +19,17 @@ package org.axonframework.extension.kotlin.common
 import org.assertj.core.api.Assertions.assertThat
 import org.axonframework.common.nullability.Nullability
 import org.axonframework.common.nullability.NullabilityResolver
+import org.jspecify.annotations.Nullable
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Parameter
 
+/**
+ * Test class validating [KotlinReflectNullabilityResolver], which reports the nullability Kotlin declared for a
+ * parameter, and how it combines with the other resolvers on the [NullabilityResolver] chain.
+ *
+ * @author Mateusz Nowak
+ */
 class KotlinReflectNullabilityResolverTest {
 
     private val testSubject = KotlinReflectNullabilityResolver()
@@ -231,7 +238,7 @@ class KotlinReflectNullabilityResolverTest {
 
         suspend fun suspending(state: State?) {}
 
-        fun contradictorilyAnnotated(state: @org.jspecify.annotations.Nullable State) {}
+        fun contradictorilyAnnotated(state: @Nullable State) {}
     }
 
     @Suppress("unused", "UNUSED_PARAMETER")

@@ -27,7 +27,7 @@ import org.axonframework.modelling.annotation.InjectEntity
 class EnrollStudentCommandHandler {
 
     /**
-     * The nullable [EnrollStudentState]? parameter receives `null` until the student is enrolled, letting this
+     * The nullable `EnrollStudentState?` parameter receives `null` until the student is enrolled, letting this
      * handler create-or-update without an `@Nullable` annotation. Kotlin's type already carries that information.
      */
     @CommandHandler

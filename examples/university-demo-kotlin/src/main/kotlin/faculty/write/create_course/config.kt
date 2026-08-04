@@ -27,7 +27,7 @@ import org.axonframework.modelling.annotation.InjectEntity
 class CreateCourseCommandHandler {
 
     /**
-     * Declaring the injected state as the nullable [CreateCourseState]? opts into create-or-update semantics: the
+     * Declaring the injected state as the nullable `CreateCourseState?` opts into create-or-update semantics: the
      * parameter is `null` until the course exists, rather than the command failing with an
      * `EntityNotFoundException`. No `@Nullable` annotation is needed, as the Kotlin type says it already.
      */

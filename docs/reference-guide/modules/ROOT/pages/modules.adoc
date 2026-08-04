@@ -165,6 +165,7 @@ Features include, among others:
 * reified generics support to eliminate explicit type parameters
 * idiomatic extension functions for messaging gateways and metadata
 * Kotlin value class support for entity identifiers
+* Kotlin nullable types honored for injected entities, so `MyEntity?` needs no `@Nullable` annotation
 * reduced boilerplate in event sourcing handlers
 * test fixture support tailored for Kotlin (`axon-kotlin-test`)
 
