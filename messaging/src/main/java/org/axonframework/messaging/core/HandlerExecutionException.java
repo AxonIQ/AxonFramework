@@ -171,7 +171,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param type the type to return the details as
      * @param <R>  the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@link Converter} is available or the conversion fails
      */
     public <R> Optional<R> getDetails(Class<R> type) {
@@ -191,7 +191,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param converter the converter to convert the details with, or {@code null} if no conversion is available
      * @param <R>       the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@code converter} is given or the conversion fails
      */
     public <R> Optional<R> getDetails(Class<R> type, @Nullable Converter converter) {
@@ -208,7 +208,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param type the type to return the details as
      * @param <R>  the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@link Converter} is available or the conversion fails
      */
     public <R> Optional<R> getDetails(TypeReference<R> type) {
@@ -226,7 +226,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param converter the converter to convert the details with, or {@code null} if no conversion is available
      * @param <R>       the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@code converter} is given or the conversion fails
      */
     public <R> Optional<R> getDetails(TypeReference<R> type, @Nullable Converter converter) {
@@ -243,7 +243,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param type the type to return the details as
      * @param <R>  the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@link Converter} is available or the conversion fails
      */
     public <R> Optional<R> getDetails(Type type) {
@@ -263,7 +263,7 @@ public abstract class HandlerExecutionException extends AxonException {
      * @param converter the converter to convert the details with, or {@code null} if no conversion is available
      * @param <R>       the type of details expected
      * @return an {@code Optional} containing the details converted to {@code type}, if provided
-     * @throws ConversionException if the details are present, do not match {@code type}, and either no
+     * @throws ConversionException if the details are present but do not match {@code type}, and either no
      *                             {@code converter} is given or the conversion fails
      */
     public <R> Optional<R> getDetails(Type type, @Nullable Converter converter) {
