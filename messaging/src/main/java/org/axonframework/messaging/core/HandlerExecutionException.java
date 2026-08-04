@@ -59,15 +59,26 @@ public abstract class HandlerExecutionException extends AxonException {
     }
 
     /**
-     * Initializes an execution exception with given {@code message} and {@code cause}. The application-specific details
-     * are set to {@code null}.
+     * Initializes an execution exception with given {@code message} and {@code cause}. Application-specific details
+     * and their {@link Converter}, if any, are inherited from the first {@code HandlerExecutionException} in the
+     * {@code cause} chain that carries details.
      *
      * @param message a message describing the exception
      * @param cause   the cause of the execution exception
      */
     public HandlerExecutionException(String message,
                                      @Nullable Throwable cause) {
-        this(message, cause, resolveDetails(cause).orElse(null));
+        this(message, cause, findExceptionWithDetails(cause));
+    }
+
+    private HandlerExecutionException(String message,
+                                      @Nullable Throwable cause,
+                                      @Nullable HandlerExecutionException detailsSource) {
+        this(message,
+            cause,
+            detailsSource == null ? null : detailsSource.details,
+            detailsSource == null ? null : detailsSource.converter,
+            false);
     }
 
     /**
@@ -139,12 +150,26 @@ public abstract class HandlerExecutionException extends AxonException {
      * @return an {@code Optional} containing details, if present in the given {@code throwable}
      */
     public static <R> Optional<R> resolveDetails(@Nullable Throwable throwable) {
-        if (throwable instanceof HandlerExecutionException) {
-            return ((HandlerExecutionException) throwable).getDetails();
-        } else if (throwable != null && throwable.getCause() != null) {
-            return resolveDetails(throwable.getCause());
+        HandlerExecutionException detailsSource = findExceptionWithDetails(throwable);
+        return detailsSource == null ? Optional.empty() : detailsSource.getDetails();
+    }
+
+    /**
+     * Finds the first {@code HandlerExecutionException} in the {@code throwable}'s "cause" chain (including
+     * {@code throwable} itself) that carries application-specific details.
+     *
+     * @param throwable the exception to walk the "cause" chain of
+     * @return the first {@code HandlerExecutionException} carrying details, or {@code null} if none is found
+     */
+    private static @Nullable HandlerExecutionException findExceptionWithDetails(@Nullable Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof HandlerExecutionException exception && exception.details != null) {
+                return exception;
+            }
+            current = current.getCause();
         }
-        return Optional.empty();
+        return null;
     }
 
     /**
