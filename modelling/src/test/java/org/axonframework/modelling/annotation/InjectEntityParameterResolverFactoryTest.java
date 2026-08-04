@@ -326,6 +326,43 @@ class InjectEntityParameterResolverFactoryTest {
     }
 
     @Nested
+    class ContributedNullabilityResolver {
+
+        @Test
+        void anUnannotatedParameterResolvesToNullWhenAResolverReportsItNullable() throws NoSuchMethodException {
+            // given a parameter carrying no @Nullable annotation and no Optional, which a registered
+            // NullabilityResolver reports as nullable, exactly as the Kotlin extension does for 'MyEntity?'
+            Method method = Handlers.class.getDeclaredMethod(
+                    StubNullabilityResolvers.NULLABLE_MARKER, GiftCard.class
+            );
+            StateManager stateManager = stateManagerLoading(
+                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
+            );
+
+            // when
+            Object result = resolve(method, stateManager);
+
+            // then the missing entity resolves to null rather than failing the message
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void anUnannotatedParameterNoResolverAnswersForStillFails() throws NoSuchMethodException {
+            // given the same shape of parameter, on a method the stub resolver does not answer for
+            Method method = Handlers.class.getDeclaredMethod("plainEntity", GiftCard.class);
+            StateManager stateManager = stateManagerLoading(
+                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
+            );
+
+            // when & then
+            assertThatThrownBy(() -> resolve(method, stateManager))
+                    .isInstanceOf(CompletionException.class)
+                    .cause()
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+    }
+
+    @Nested
     class Misconfiguration {
 
         @Test
@@ -396,6 +433,10 @@ class InjectEntityParameterResolverFactoryTest {
 
         void plainEntity(@InjectEntity(idResolver = FixedIdResolver.class) GiftCard card) {
         }
+
+        void resolvedNullableByStubResolver(@InjectEntity(idResolver = FixedIdResolver.class) GiftCard card) {
+        }
+
 
         void plainEntityNullable(@InjectEntity(idResolver = FixedIdResolver.class) @Nullable GiftCard card) {
         }

@@ -380,15 +380,21 @@ public final class AnnotationUtils {
      * {@code annotationName}, ignoring case, is present directly on the given {@code element}.
      * <p>
      * This is useful to detect annotations that exist in several variants across different libraries -- for
-     * example, {@code Nullable} annotations provided by jspecify, JSR-305, Jakarta, or JetBrains -- without requiring
-     * a hard dependency on any specific one.
+     * example, the {@code Nullable} annotations provided by jspecify, JSR-305, and Jakarta -- without requiring a
+     * hard dependency on any specific one.
      * <p>
-     * Annotation libraries do not always agree where an annotation belongs: jspecify's {@code Nullable} is
-     * {@code TYPE_USE}-only, while JSR-305's {@code javax.annotation.Nullable} is declaration-only ({@code METHOD},
-     * {@code FIELD}, {@code PARAMETER}, {@code LOCAL_VARIABLE}). When {@code element} is a {@link
-     * java.lang.reflect.Parameter}, both positions are checked: the parameter's own (declaration-position)
-     * annotations, and the annotations on {@link java.lang.reflect.Parameter#getAnnotatedType()} (the type-use
-     * position). Callers do not need to check both positions themselves.
+     * Annotation libraries do not always agree where an annotation belongs: jspecify's {@code Nullable} targets
+     * {@code TYPE_USE}, while {@code javax.annotation.Nullable} and {@code jakarta.annotation.Nullable} land in the
+     * declaration position. When {@code element} is a {@link java.lang.reflect.Parameter}, both positions are
+     * checked: the parameter's own annotations, and those on
+     * {@link java.lang.reflect.Parameter#getAnnotatedType()}. Callers do not need to check both themselves.
+     * <p>
+     * Only annotations with {@link java.lang.annotation.RetentionPolicy#RUNTIME} retention can be found. Notably,
+     * {@code org.jetbrains.annotations.Nullable} uses {@link java.lang.annotation.RetentionPolicy#CLASS} retention
+     * and is therefore absent from the class file at runtime, in either position. Since Kotlin compiles its nullable
+     * types to exactly that annotation, a Kotlin {@code T?} cannot be recognized here either. Use a
+     * {@link org.axonframework.common.nullability.NullabilityResolver} instead, which the Kotlin extension
+     * implements by reading Kotlin's own metadata.
      *
      * @param element        the element to inspect
      * @param annotationName the simple name of the annotation to find, matched ignoring case

@@ -55,7 +55,8 @@ import java.lang.annotation.Target;
  * instead resolve to {@code null}, allowing the handler to deal with a missing entity itself, for example to support
  * create-or-update semantics. Declaring the parameter as {@code Optional<MyEntity>} (or
  * {@code Optional<ManagedEntity<ID, MyEntity>>}) achieves the same outcome without needing a {@code "nullable"}
- * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}.
+ * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}. Kotlin
+ * nullability, as in {@code MyEntity?}, is supported as well.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0

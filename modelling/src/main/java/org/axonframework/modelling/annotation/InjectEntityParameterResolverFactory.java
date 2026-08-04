@@ -19,8 +19,8 @@ package org.axonframework.modelling.annotation;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
-import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.nullability.NullabilityResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.modelling.EntityIdResolver;
@@ -80,23 +80,39 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
 
         InjectEntity annotation = parameter.getAnnotation(InjectEntity.class);
         boolean isOptional = Optional.class.equals(parameter.getType());
-        boolean isNullable = AnnotationUtils.hasAnnotationNamed(parameter, "nullable");
 
         EntityTypeInfo entityTypeInfo = getEntityTypeInfo(isOptional, parameter, executable);
         EntityIdResolver<?> entityIdResolver = getEntityIdResolver(annotation);
-        InjectEntityParameterResolver.MissingEntityStrategy missingEntityStrategy = isOptional
-                ? InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_OPTIONAL
-                : isNullable
-                        ? InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_NULL
-                        : InjectEntityParameterResolver.MissingEntityStrategy.FAIL;
 
         return new InjectEntityParameterResolver(
                 configuration,
                 entityTypeInfo.entityClass(),
                 entityIdResolver,
                 entityTypeInfo.managedEntity(),
-                missingEntityStrategy
+                missingEntityStrategyFor(isOptional, parameter)
         );
+    }
+
+    /**
+     * Decides how the resolver should react to a missing entity, based on how the {@code parameter} is declared.
+     * <p>
+     * An {@link Optional}-typed parameter resolves to {@link Optional#empty()}, a parameter declared as accepting
+     * {@code null} resolves to {@code null}, and anything else fails the message being handled. Nullability is
+     * determined through the {@link NullabilityResolver} chain, so languages that do not express it through a
+     * runtime-visible annotation, such as Kotlin, are honored as well.
+     *
+     * @param isOptional whether the parameter is declared as an {@link Optional}
+     * @param parameter  the {@link InjectEntity} annotated parameter being resolved
+     * @return the strategy to apply when the entity to inject cannot be found
+     */
+    private static InjectEntityParameterResolver.MissingEntityStrategy missingEntityStrategyFor(boolean isOptional,
+                                                                                                Parameter parameter) {
+        if (isOptional) {
+            return InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_OPTIONAL;
+        }
+        return NullabilityResolver.isNullable(parameter)
+                ? InjectEntityParameterResolver.MissingEntityStrategy.RESOLVE_NULL
+                : InjectEntityParameterResolver.MissingEntityStrategy.FAIL;
     }
 
     private static EntityTypeInfo getEntityTypeInfo(boolean isOptional, Parameter parameter, Executable executable) {
