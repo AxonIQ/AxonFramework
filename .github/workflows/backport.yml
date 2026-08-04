@@ -186,7 +186,7 @@ jobs:
 
             if [ -n "$MILESTONE_NUMBER" ]; then
               echo "Setting milestone $MILESTONE_NUMBER on PR #$pr..."
-              GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/pulls/$pr" \
+              GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/issues/$pr" \
                 -X PATCH -F milestone="$MILESTONE_NUMBER" || true
             fi
           done
