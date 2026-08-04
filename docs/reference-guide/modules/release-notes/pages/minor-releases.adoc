@@ -6,6 +6,22 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_2]
 == Release 5.2
 
+=== Release 5.2.3
+
+==== Bug fixes
+
+- Back off before reopening a stream whose source failed (link:https://github.com/AxonIQ/AxonFramework/issues/4839[#4839], link:https://github.com/AxonIQ/AxonFramework/pull/4840[PR #4840], by @laura-devriendt-lemon)
+- Fix bug where publish future could complete before events are visible (link:https://github.com/AxonIQ/AxonFramework/pull/4850[PR #4850], by @hjohn)
+- Invoke `MessageStream` callbacks outside the stream lock (link:https://github.com/AxonIQ/AxonFramework/pull/4868[PR #4868], by @CodeDrivenMitch)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon]
+
 === Release 5.2.2
 
 ==== Bug fixes
