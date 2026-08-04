@@ -25,7 +25,9 @@ import org.junit.jupiter.api.*;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -633,6 +635,126 @@ class AbstractMessageStreamTest {
             // then
             assertThat(result).isInstanceOf(FetchResult.Error.class);
             assertThat(((FetchResult.Error<?>) result).error()).isSameAs(failure);
+        }
+    }
+
+    @Nested
+    class WhenCompletionTriggersCallback {
+
+        /*
+         * The concurrency model of this class states that producer-side signals, and the callbacks they
+         * trigger, flow upstream (inner to outer), and that a callback must therefore never be invoked
+         * while this stream's lock is held. signalProgress() honors that; completion must do the same.
+         *
+         * A composed stream registers a callback that reads the stream it wraps, so a callback running
+         * while the completing stream is locked takes a second lock in the opposite direction. Two
+         * streams completing at once then deadlock, leaving an event processor with no events, no error,
+         * and no thread of its own to blame.
+         */
+
+        @Test
+        void thenCallbackDoesNotRunWhileStreamIsLocked() {
+            // given: a callback that lets another thread interact with the very stream that is completing
+            ControllableStream stream = new ControllableStream();
+            AtomicBoolean otherThreadCouldReadStream = new AtomicBoolean();
+
+            CountDownLatch probeReadStream = new CountDownLatch(1);
+
+            stream.setCallback(() -> {
+                Thread probe = new Thread(() -> {
+                    stream.isCompleted();
+
+                    probeReadStream.countDown();
+                });
+
+                probe.setDaemon(true);
+                probe.start();
+
+                try {
+                    // recorded inside the callback: whether the other thread got through while it runs
+                    otherThreadCouldReadStream.set(probeReadStream.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            stream.enqueue(FetchResult.completed());
+
+            // when: the stream completes, firing the callback
+            stream.next();
+
+            // then
+            assertThat(otherThreadCouldReadStream).isTrue();
+        }
+
+        @Test
+        void thenTwoStreamsCompletingConcurrentlyDoNotDeadlock() throws Exception {
+            // given: two streams whose callbacks read each other, as composed streams do
+            ControllableStream first = new ControllableStream();
+            ControllableStream second = new ControllableStream();
+            CyclicBarrier bothInsideCallback = new CyclicBarrier(2);
+
+            first.setCallback(() -> {
+                awaitQuietly(bothInsideCallback);
+
+                second.isCompleted();
+            });
+            second.setCallback(() -> {
+                awaitQuietly(bothInsideCallback);
+
+                first.isCompleted();
+            });
+
+            first.enqueue(FetchResult.completed());
+            second.enqueue(FetchResult.completed());
+
+            CountDownLatch bothReturned = new CountDownLatch(2);
+
+            // when: both complete at the same moment, each callback reaching into the other stream
+            startDaemon(() -> {
+                first.next();
+
+                bothReturned.countDown();
+            });
+            startDaemon(() -> {
+                second.next();
+
+                bothReturned.countDown();
+            });
+
+            // then: neither thread holds a lock the other one needs
+            assertThat(bothReturned.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        @Test
+        void thenCompletionIsVisibleToTheCallback() {
+            // given: the completion the callback announces must be observable by that callback
+            ControllableStream stream = new ControllableStream();
+            AtomicBoolean completedDuringCallback = new AtomicBoolean();
+
+            stream.setCallback(() -> completedDuringCallback.set(stream.isCompleted()));
+            stream.enqueue(FetchResult.completed());
+
+            // when
+            stream.next();
+
+            // then
+            assertThat(completedDuringCallback).isTrue();
+        }
+
+        private void awaitQuietly(CyclicBarrier barrier) {
+            try {
+                barrier.await(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to synchronize both callbacks.", e);
+            }
+        }
+
+        private void startDaemon(Runnable task) {
+            Thread thread = new Thread(task);
+
+            thread.setDaemon(true);
+            thread.start();
         }
     }
 }
