@@ -9,12 +9,12 @@ jobs:
   add-to-project:
     name: Add PR to project
     runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' || github.actor == 'github-actions[bot]' }}
+    if: ${{ github.actor == 'dependabot[bot]' }}
     steps:
       - uses: actions/add-to-project@main
         with:
           project-url: https://github.com/orgs/Axoniq/projects/25
           github-token: ${{ secrets.ADD_PROJECT_TOKEN }}
-          labeled: 'Type: Dependency Upgrade,Type: Port'
+          labeled: 'Type: Dependency Upgrade'
         # prevent failure if the PR is already added to the project
         continue-on-error: true
