@@ -16,9 +16,20 @@
 
 package org.axonframework.messaging.core;
 
+import org.assertj.core.api.Assertions;
+import org.axonframework.common.TypeReference;
+import org.axonframework.conversion.ChainingContentTypeConverter;
+import org.axonframework.conversion.ConversionException;
+import org.axonframework.conversion.Converter;
 import org.junit.jupiter.api.*;
 
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link HandlerExecutionException}.
@@ -67,6 +78,78 @@ class HandlerExecutionExceptionTest {
         assertTrue(exception.getStackTrace().length > 0);
     }
 
+    @Nested
+    class TypedDetails {
+
+        private Converter converter;
+        private final String exStringDetails = "details";
+        private final byte[] exByteDetails = exStringDetails.getBytes(StandardCharsets.UTF_8);
+
+        @BeforeEach
+        void setUp() {
+            converter = spy(new ChainingContentTypeConverter());
+        }
+
+        @Test
+        void getDetailsClassReturnsDetailsWithoutConversionOnSameType() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exStringDetails, converter, false);
+
+            String result = exception.getDetails(String.class).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+        }
+
+        @Test
+        void getDetailsClassInvokesConverterOnDifferentType() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+
+            String result = exception.getDetails(String.class).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(converter).convert(eq(exByteDetails), eq((Type) String.class));
+        }
+
+        @Test
+        void getDetailsClassFailsWithConversionExceptionWithoutConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails);
+
+            Assertions.assertThatThrownBy(() -> exception.getDetails(Integer.class))
+                      .isInstanceOf(ConversionException.class);
+        }
+
+        @Test
+        void getDetailsClassReturnsEmptyWhenNoDetailsPresent() {
+            StubHandlerExecutionException exception = new StubHandlerExecutionException("test");
+
+            assertThat(exception.getDetails(String.class)).isEmpty();
+        }
+
+        @Test
+        void getDetailsTypeReferenceInvokesConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails, converter, false);
+
+            String result = exception.getDetails(new TypeReference<String>() {
+            }).orElse(null);
+
+            assertThat(result).isEqualTo(exStringDetails);
+            verify(converter).convert(eq(exByteDetails), eq((Type) String.class));
+        }
+
+        @Test
+        void getDetailsTypeReferenceFailsWithConversionExceptionWithoutConverter() {
+            StubHandlerExecutionException exception =
+                    new StubHandlerExecutionException("test", null, exByteDetails);
+
+            Assertions.assertThatThrownBy(() -> exception.getDetails(new TypeReference<Integer>() {
+                      }))
+                      .isInstanceOf(ConversionException.class);
+        }
+    }
+
     private static class StubHandlerExecutionException extends HandlerExecutionException {
 
         public StubHandlerExecutionException(String message) {
@@ -86,6 +169,14 @@ class HandlerExecutionExceptionTest {
                                              Object details,
                                              boolean writableStackTrace) {
             super(message, cause, details, writableStackTrace);
+        }
+
+        public StubHandlerExecutionException(String message,
+                                             Throwable cause,
+                                             Object details,
+                                             Converter converter,
+                                             boolean writableStackTrace) {
+            super(message, cause, details, converter, writableStackTrace);
         }
     }
 }

@@ -17,7 +17,10 @@
 package org.axonframework.messaging.commandhandling;
 
 
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.HandlerExecutionException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Indicates that an exception has occurred while handling a command. Typically, this class is used to wrap checked
@@ -27,7 +30,7 @@ import org.axonframework.messaging.core.HandlerExecutionException;
  * explicitly via the constructor accepting the {@code writableStackTrace} parameter.
  *
  * @author Allard Buijze
- * @since 1.3
+ * @since 1.3.0
  */
 public class CommandExecutionException extends HandlerExecutionException {
 
@@ -45,11 +48,13 @@ public class CommandExecutionException extends HandlerExecutionException {
      * Initializes the exception with given {@code message}, {@code cause} and an object providing application-specific
      * {@code details}.
      *
-     * @param message The message describing the exception.
-     * @param cause   The cause of the exception.
-     * @param details An object providing more error details (maybe {@code null}).
+     * @param message the message describing the exception
+     * @param cause   the cause of the exception
+     * @param details an object providing more error details (maybe {@code null})
      */
-    public CommandExecutionException(String message, Throwable cause, Object details) {
+    public CommandExecutionException(String message,
+                                     Throwable cause,
+                                     @Nullable Object details) {
         super(message, cause, details);
     }
 
@@ -57,12 +62,42 @@ public class CommandExecutionException extends HandlerExecutionException {
      * Initializes the exception with given {@code message}, {@code cause}, an object providing application-specific
      * {@code details}, and {@code writableStackTrace}
      *
-     * @param message            The message describing the exception.
-     * @param cause              The cause of the exception.
-     * @param details            An object providing more error details (maybe {@code null}).
-     * @param writableStackTrace Whether the stack trace should be generated ({@code true}) or not ({@code false}).
+     * @param message            the message describing the exception
+     * @param cause              the cause of the exception
+     * @param details            an object providing more error details (maybe {@code null})
+     * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
      */
-    public CommandExecutionException(String message, Throwable cause, Object details, boolean writableStackTrace) {
+    public CommandExecutionException(String message,
+                                     Throwable cause,
+                                     @Nullable Object details,
+                                     boolean writableStackTrace) {
         super(message, cause, details, writableStackTrace);
+    }
+
+    /**
+     * Initializes the exception with given {@code message}, {@code cause}, an object providing application-specific
+     * {@code details}, a {@code converter}, and {@code writableStackTrace}.
+     * <p/>
+     * This constructor is used by messaging infrastructure to attach a {@link Converter} when reconstructing
+     * {@code details} from raw data received over an infrastructure boundary (for example, a command dispatched through
+     * Axon Server). It is not meant to be used directly by application code, which typically already has the details
+     * object in its final form and can use {@link #CommandExecutionException(String, Throwable, Object)} instead.
+     *
+     * @param message            the message describing the exception
+     * @param cause              the cause of the exception
+     * @param details            an object providing more error details, potentially raw data awaiting conversion (maybe
+     *                           {@code null})
+     * @param converter          the {@link Converter} to lazily apply when {@link #getDetails(Class)} is called with a
+     *                           type {@code details} does not already match, or {@code null} if no such conversion is
+     *                           available
+     * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
+     */
+    @Internal
+    public CommandExecutionException(String message,
+                                     Throwable cause,
+                                     @Nullable Object details,
+                                     @Nullable Converter converter,
+                                     boolean writableStackTrace) {
+        super(message, cause, details, converter, writableStackTrace);
     }
 }
