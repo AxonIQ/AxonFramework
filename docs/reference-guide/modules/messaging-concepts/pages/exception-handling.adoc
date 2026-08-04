@@ -77,6 +77,15 @@ include::example$messagingconcepts/exceptionhandling/details/InventoryAutomation
 
 The details map allows you to pass structured information about the exception that the receiver can use to make decisions about retry logic, error presentation, or recovery strategies. Note that any `Object` is supported as the details. Other reasonable options are failure objects and status enumerations, specific to the domain.
 
+On the receiving end, retrieve the details through `getDetails(Class)` or, for a generic type such as `Map<String, String>`, `getDetails(TypeReference)`:
+
+[source,java]
+----
+include::example$messagingconcepts/exceptionhandling/details/OrderClient.java[tag=exception-details-retrieval,indent=0]
+----
+
+Both operations return an `Optional`, converting the details into the requested type on demand when the sender and receiver do not share the same details class or version (for example, across an Axon Server boundary). Pass an explicit `Converter` to either operation to override the one attached to the exception, if any. This replaces the older, untyped `getDetails()`, which is deprecated in its favor.
+
 [TIP]
 ====
 Consider whether you really need an exception or whether a result object would serve your use case better!
