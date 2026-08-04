@@ -132,7 +132,7 @@ public abstract class HandlerExecutionException extends AxonException {
 
     /**
      * Resolve details from the given {@code throwable}, taking into account that the details may be available in any of
-     * the {@code HandlerExecutionExceptions} is the "cause" chain.
+     * the {@code HandlerExecutionExceptions} in the "cause" chain.
      *
      * @param throwable the exception to resolve the details from
      * @param <R>       the type of details expected
