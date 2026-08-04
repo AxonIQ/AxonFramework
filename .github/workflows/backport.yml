@@ -72,7 +72,7 @@ jobs:
               organization(login: $org) { projectV2(number: $number) { id } }
             }' \
             -f org="$REPO_OWNER" \
-            -F number=25 \
+            -F number=${{ vars.PROJECT_NUMBER }} \
             --jq '.data.organization.projectV2.id')
           echo "Project ID: $PROJECT_ID"
 
@@ -128,7 +128,7 @@ jobs:
             echo "Target milestone: $milestone_title" >&2
             local milestone_number
             milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
-              --jq ".[] | select(.title == \"$milestone_title\") | .number") || return 0
+              -f state=all --paginate --jq ".[] | select(.title == \"$milestone_title\") | .number") || return 0
             if [ -z "$milestone_number" ]; then
               echo "Milestone not found, creating..." >&2
               milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
