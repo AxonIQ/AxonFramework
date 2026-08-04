@@ -456,7 +456,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * <p>
      * Failing to observe this ordering may result in a lost wake-up scenario where:
      * <ul>
-     *     <li>progress is signalled, but</li>
+     *     <li>progress is signaled, but</li>
      *     <li>the consumer observes no available element and returns {@link FetchResult.NotReady}</li>
      * </ul>
      * even though data is available.
