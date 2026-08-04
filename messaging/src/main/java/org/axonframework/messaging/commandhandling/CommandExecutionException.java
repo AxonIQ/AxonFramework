@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.commandhandling;
 
-
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.HandlerExecutionException;
