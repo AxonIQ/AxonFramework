@@ -13,4 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-org.axonframework.modelling.annotation.StubNullabilityResolvers$NullableStub
+# Deliberately listed lowest priority first, so that a chain which failed to order by @Priority would consult them
+# in the wrong sequence and NullabilityResolverChainTest would fail.
+#
+org.axonframework.common.nullability.NullabilityResolverChainTest$LowPriorityStub
+org.axonframework.common.nullability.NullabilityResolverChainTest$UninstantiableStub
+org.axonframework.common.nullability.NullabilityResolverChainTest$HighPriorityStub

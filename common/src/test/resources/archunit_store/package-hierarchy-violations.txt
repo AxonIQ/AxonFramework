@@ -62,6 +62,8 @@ Class <org.axonframework.common.infra.ComponentDescriptorException> extends clas
 Class <org.axonframework.common.jdbc.JdbcException> extends class <org.axonframework.common.AxonTransientException> in (JdbcException.java:0)
 Class <org.axonframework.common.lifecycle.ShutdownInProgressException> extends class <org.axonframework.common.AxonNonTransientException> in (ShutdownInProgressException.java:0)
 Class <org.axonframework.common.lock.LockAcquisitionFailedException> extends class <org.axonframework.common.AxonTransientException> in (LockAcquisitionFailedException.java:0)
+Class <org.axonframework.common.nullability.NullabilityResolverChainTest$HighPriorityStub> is annotated with <org.axonframework.common.Priority> in (NullabilityResolverChainTest.java:0)
+Class <org.axonframework.common.nullability.NullabilityResolverChainTest$LowPriorityStub> is annotated with <org.axonframework.common.Priority> in (NullabilityResolverChainTest.java:0)
 Class <org.axonframework.common.property.PropertyAccessException> extends class <org.axonframework.common.AxonConfigurationException> in (PropertyAccessException.java:0)
 Constructor <org.axonframework.common.configuration.ApplicationConfigurerTestSuite$ComponentRegistration$1.<init>(org.axonframework.common.configuration.ApplicationConfigurerTestSuite$ComponentRegistration)> calls constructor <org.axonframework.common.TypeReference.<init>()> in (ApplicationConfigurerTestSuite.java:571)
 Constructor <org.axonframework.common.configuration.ApplicationConfigurerTestSuite$ComponentRegistration$10.<init>(org.axonframework.common.configuration.ApplicationConfigurerTestSuite$ComponentRegistration)> calls constructor <org.axonframework.common.TypeReference.<init>()> in (ApplicationConfigurerTestSuite.java:616)

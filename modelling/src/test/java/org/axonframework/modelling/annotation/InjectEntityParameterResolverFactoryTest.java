@@ -347,35 +347,6 @@ class InjectEntityParameterResolverFactoryTest {
         }
 
         @Test
-        void theHighestPriorityResolverWithAnOpinionDecides() throws NoSuchMethodException {
-            // given a parameter both stubs answer for, with conflicting answers
-            Method method = Handlers.class.getDeclaredMethod(
-                    StubNullabilityResolvers.CONTESTED_MARKER, GiftCard.class
-            );
-            StateManager stateManager = stateManagerLoading(
-                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
-            );
-
-            // when / then the @Priority(HIGH) stub wins, so the parameter is nullable rather than failing
-            assertThat(resolve(method, stateManager)).isNull();
-        }
-
-        @Test
-        void aResolverThatCannotBeInstantiatedIsSkippedRatherThanFailingTheLookup() throws NoSuchMethodException {
-            // given: StubNullabilityResolvers.UninstantiableStub is registered and throws from its constructor,
-            // standing in for a resolver whose optional dependency is absent
-            Method method = Handlers.class.getDeclaredMethod(
-                    StubNullabilityResolvers.NULLABLE_MARKER, GiftCard.class
-            );
-            StateManager stateManager = stateManagerLoading(
-                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
-            );
-
-            // when / then resolution still completes using the resolvers that did load
-            assertThat(resolve(method, stateManager)).isNull();
-        }
-
-        @Test
         void anUnannotatedParameterNoResolverAnswersForStillFails() throws NoSuchMethodException {
             // given the same shape of parameter, on a method the stub resolver does not answer for
             Method method = Handlers.class.getDeclaredMethod("plainEntity", GiftCard.class);
@@ -466,8 +437,6 @@ class InjectEntityParameterResolverFactoryTest {
         void resolvedNullableByStubResolver(@InjectEntity(idResolver = FixedIdResolver.class) GiftCard card) {
         }
 
-        void contestedByStubResolvers(@InjectEntity(idResolver = FixedIdResolver.class) GiftCard card) {
-        }
 
         void plainEntityNullable(@InjectEntity(idResolver = FixedIdResolver.class) @Nullable GiftCard card) {
         }
