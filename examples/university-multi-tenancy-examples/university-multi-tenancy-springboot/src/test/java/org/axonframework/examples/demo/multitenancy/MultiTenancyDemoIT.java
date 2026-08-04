@@ -23,19 +23,20 @@ import io.axoniq.framework.messaging.multitenancy.api.TenantProvider;
 import io.axoniq.framework.testcontainer.AxonServerContainer;
 import org.awaitility.Awaitility;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoApplication;
-import org.axonframework.examples.demo.multitenancy.shared.tenant.AxonServerTenantContextManager;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoLifecycle;
 import org.axonframework.examples.demo.multitenancy.shared.run.DemoOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.EventStorageOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.ProviderAmbiguityGuardrail;
 import org.axonframework.examples.demo.multitenancy.shared.run.SnapshottingOutcome;
 import org.axonframework.examples.demo.multitenancy.shared.run.StreamingOutcome;
-import org.axonframework.examples.demo.multitenancy.shared.audit.AuditLog;
+import org.axonframework.examples.demo.multitenancy.shared.tenant.AxonServerTenantContextManager;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.CourseStatisticsStore;
 import org.axonframework.examples.demo.multitenancy.university.read.statistics.StatisticsConfiguration;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -59,9 +60,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * shutdown. It also asserts that the {@code _admin} context is filtered out of the discovered tenants.
  * <p>
  * Being the Axon Server path, this is also where the per-tenant features the in-memory demo cannot show are
- * asserted: event-store and snapshot isolation, tenant-aware event processing, where one ordinary pooled
- * streaming processor projects every tenant's events into that tenant's own read model, and direct queries
- * actually routed through the per-tenant query connector rather than served from the local segment.
+ * asserted: event-store and snapshot isolation, tenant-aware event processing, where one ordinary event
+ * processor projects every tenant's events into that tenant's own read model, and direct queries actually
+ * routed through the per-tenant query connector rather than served from the local segment. The test runs
+ * twice, once per {@code EventProcessingStyle} the projection processor can run in: a pooled streaming
+ * processor reading the tenant-aware event store directly, and a subscribing processor fed by one persistent
+ * stream per tenant, fanned into that one processor. Both runs assert the exact same outcome; only the
+ * presence of the persistent stream itself tells them apart.
  * <p>
  * The application is booted directly rather than through {@code @SpringBootTest}, because the demo stops
  * the context as its final step and a managed test context must not be closed from within a test. The
@@ -70,7 +75,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * The test runs a licensed Enterprise Edition Axon Server in a container, so it needs Docker. The README
  * explains how the container is licensed, with a license file or an Axoniq Platform token. The test skips
- * itself when no license source is available.
+ * itself when no license source is available. The container is a fresh instance per run rather than one
+ * shared across the class, because both runs enroll the same fixed course identifiers into the same fixed
+ * tenant contexts; sharing a container would have the second run collide with events the first run left
+ * behind.
  */
 @Testcontainers
 @EnabledIf("axonServerLicensable")
@@ -140,8 +148,11 @@ class MultiTenancyDemoIT {
         return value;
     }
 
+    // a fresh container per parameterized run, so the persistent-streams run does not inherit
+    // event state the pooled-streaming run already wrote under the same fixed tenant contexts and course
+    // identifiers.
     @Container
-    private static final AxonServerContainer AXON_SERVER = licensedContainer();
+    private final AxonServerContainer axonServer = licensedContainer();
 
     // The license file wins over the token, so a repository CI run (which writes the license from a
     // secret) always boots from the license file. The token path is the local fallback for developers
@@ -163,14 +174,30 @@ class MultiTenancyDemoIT {
         return container;
     }
 
-    @Test
-    void runsTheTenantLifecycleEndToEnd() {
-        // given the autoconfigured Spring Boot application, booted against the containerized Axon Server
+    @ParameterizedTest(name = "runs the tenant lifecycle end to end (persistent streams enabled: {0})")
+    @ValueSource(booleans = {false, true})
+    void runsTheTenantLifecycleEndToEnd(boolean persistentStreamsEnabled) {
+        // given the autoconfigured Spring Boot application, booted against the containerized Axon Server,
+        // with the course-statistics projection running in the EventProcessingStyle this run tests. Passed as
+        // command-line arguments rather than SpringApplicationBuilder#properties: that method sets Spring
+        // Boot's lowest-precedence "defaultProperties", which can never override the explicit
+        // auto-persistent-streams-enabled: false already declared in application.yml
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(MultiTenancyApplication.class)
                 .web(WebApplicationType.NONE)
                 .profiles("test")
-                .properties("axon.axonserver.servers=" + AXON_SERVER.getAxonServerAddress())
-                .run()) {
+                .run("--axon.axonserver.servers=" + axonServer.getAxonServerAddress(),
+                     "--axon.axonserver.auto-persistent-streams-enabled=" + persistentStreamsEnabled)) {
+
+            // and the toggle activated the EventProcessingStyle this run tests: PersistentStreamProjectionConfiguration
+            // and PooledStreamingProjectionConfiguration are mutually exclusive @ConditionalOnProperty variants, each
+            // contributing one differently-named EventProcessorDefinition bean
+            if (persistentStreamsEnabled) {
+                assertThat(context.containsBean("courseStatisticsPersistentStreamProcessor")).isTrue();
+                assertThat(context.containsBean("courseStatisticsProcessor")).isFalse();
+            } else {
+                assertThat(context.containsBean("courseStatisticsProcessor")).isTrue();
+                assertThat(context.containsBean("courseStatisticsPersistentStreamProcessor")).isFalse();
+            }
 
             AxonConfiguration configuration = context.getBean(AxonConfiguration.class);
             TenantProvider tenantProvider = configuration.getComponent(TenantProvider.class);
@@ -237,8 +264,9 @@ class MultiTenancyDemoIT {
             assertThat(snapshotting.bothTenantsHoldOwnSnapshot()).isTrue();
             assertThat(snapshotting.snapshotsHoldTheirOwnStudents()).isTrue();
 
-            // and one ordinary pooled streaming processor projected every tenant's events, rather than one
-            // processor per tenant. Asserted by name, so a per-tenant processor would show up as an extra entry
+            // and one ordinary event processor projected every tenant's events, rather than one processor per
+            // tenant, regardless of whether it is fed by pooled streaming or a persistent stream. Asserted by
+            // name, so a per-tenant processor would show up as an extra entry
             StreamingOutcome streaming = outcome.streaming();
             assertThat(streaming.demonstrated()).isTrue();
             assertThat(streaming.processorNames()).containsExactly(StatisticsConfiguration.PROCESSOR_NAME);

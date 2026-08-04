@@ -30,7 +30,6 @@ import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 
 import java.util.List;
@@ -46,7 +45,7 @@ import java.util.Objects;
  * @param auditProvider      the provider of the per-tenant audit logs
  * @param provisioning       how this run adds and removes tenants, and what backs it
  * @param snapshots          reads a single tenant's own snapshot store
- * @param processorNames     the names of every streaming event processor the application registered
+ * @param processorNames     the names of every event processor the application registered
  * @param shutdown           shuts the started application down
  * @author Laura Devriendt
  * @since 5.3.0
@@ -124,12 +123,13 @@ public record DemoApplication(CommandGateway commandGateway,
     }
 
     /**
-     * The names of every streaming event processor the given {@code configuration} registered, sorted so a run
-     * reports them predictably. A per-tenant implementation would have registered its processors here too, so
-     * reading them shows whether one processor really served every tenant.
+     * The names of every event processor the given {@code configuration} registered, sorted so a run reports
+     * them predictably. A per-tenant implementation would have registered its processors here too, so reading
+     * them shows whether one processor really served every tenant. Looked up by {@link EventProcessor} rather
+     * than a streaming-specific subtype, since persistent streams are subscribing processors.
      */
     private static List<String> registeredProcessorNames(AxonConfiguration configuration) {
-        return configuration.getComponents(StreamingEventProcessor.class)
+        return configuration.getComponents(EventProcessor.class)
                             .values()
                             .stream()
                             .map(EventProcessor::name)

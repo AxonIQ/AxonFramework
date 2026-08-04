@@ -16,40 +16,46 @@ application and its beans:
 
 ```
 org.axonframework.examples.demo.multitenancy
-+- MultiTenancyApplication   the @SpringBootApplication, no multi-tenancy wiring of its own
-+- UniversityConfiguration   the beans: providers, handlers, modules, projection, processor, stores, knobs
-+- DemoRunner                a CommandLineRunner that runs the lifecycle, then stops
++- MultiTenancyApplication              the @SpringBootApplication, no multi-tenancy wiring of its own
++- UniversityConfiguration              providers, handlers, modules, projection, and knobs shared by both processor variants
++- PooledStreamingProjectionConfiguration   the default: token store, and the pooled streaming processor
++- PersistentStreamProjectionConfiguration  the persistent-stream backed subscribing processor, run instead when a property says so
++- DemoRunner                           a CommandLineRunner that runs the lifecycle, then stops
 ```
 
-`UniversityConfiguration` declares one `TenantComponentProvider` bean per tenant-scoped component type,
-the statistics query handler, the event-sourced course as two module beans, and the projection processor,
-and nothing else. The enrollment command handler is registered with the course, so there is no separate
-handler bean for it. The starter's multi-tenancy auto-configuration picks the provider beans up, subscribes
-them to the tenant lifecycle, installs the tenant parameter resolver and interceptor, and registers the
-default auto-discovering `AxonServerTenantProvider`. The starter also registers the course module beans, so
-the course is sourced from and appended to its tenant's own event store, and snapshotted into that tenant's
-own snapshot store. There is no manual multi-tenancy wiring at all: the tenants are discovered from Axon
-Server's contexts (with `_admin` filtered out), exactly as in the declarative demo's Axon Server path.
+`UniversityConfiguration` declares one `TenantComponentProvider` bean per tenant-scoped component type, the statistics
+query handler, the event-sourced course as two module beans, and the projection itself (`CourseStatisticsProjection`).
+The enrollment command handler is registered with the course, so there is no separate handler bean for it. The starter's
+multi-tenancy auto-configuration picks the provider beans up, subscribes them to the tenant lifecycle, installs the
+tenant parameter resolver and interceptor, and registers the default auto-discovering
+`AxonServerTenantProvider`. The starter also registers the course module beans, so the course is sourced from and
+appended to its tenant's own event store, and snapshotted into that tenant's own snapshot store. There is no manual
+multi-tenancy wiring at all: the tenants are discovered from Axon Server's contexts (with `_admin` filtered out),
+exactly as in the declarative demo's Axon Server path.
 
-The projection processor bean is worth looking at for what it does not say. It names no tenant and declares no
-processor per tenant. A single one serves every tenant, because the auto-configuration makes the event store it
-streams from tenant-aware and re-opens that stream when the set of tenants changes.
-
-One bean is there purely to show a knob: `MultiTenantStreamingProcessorRestartConfiguration` bounds how long each
+Which processor runs that projection is a separate `@Configuration` class per variant.
+`PooledStreamingProjectionConfiguration`
+is the default, active whenever `PersistentStreamProjectionConfiguration` is not (see
+[Persistent streams instead of pooled streaming](#persistent-streams-instead-of-pooled-streaming) below). Its processor
+bean is worth looking at for what it does not say: it names no tenant and declares no processor per tenant. A single one
+serves every tenant, because the auto-configuration makes the event store it streams from tenant-aware and re-opens that
+stream when the set of tenants changes. Its
+`MultiTenantStreamingProcessorRestartConfiguration` bean is there purely to show a knob: it bounds how long that
 processor gets to stop and start when the set of tenants changes. The starter defaults it, so an application only
 declares it to raise it, which a deployment with slow-starting processors would.
 
-Another bean turns off preferring a locally subscribed query handler
+Another bean, back in `UniversityConfiguration`, turns off preferring a locally subscribed query handler
 (`DistributedQueryBusConfiguration.preferLocalQueryHandler(false)`). This whole demo runs in one process,
 where a query handler is always subscribed locally, so without this a direct query never reaches the per-tenant
 query connector, leaving that routing unshown. Correctness does not depend on it: the tenant is checked before
 dispatch either way. A subscription query always routes through the connector regardless.
 
-Two Spring specifics are worth knowing, since neither applies to the declarative demo. The processor is
-declared through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently
-ignored on this path. And the token store bean has to be named exactly `tokenStore`, because Spring resolves a
-processor's token store by bean name and fails hard when that name is missing, where the declarative path
-resolves by type and falls back to an in-memory store.
+Two Spring specifics are worth knowing, since neither applies to the declarative demo. Each processor is declared
+through an `EventProcessorDefinition`, because a `Module` bean holding an event processor is silently ignored on this
+path. And the pooled streaming variant's token store bean has to be named exactly
+`tokenStore`, because Spring resolves a processor's token store by bean name and fails hard when that name is missing,
+where the declarative path resolves by type and falls back to an in-memory store. The subscribing variant needs no such
+bean: it tracks no position at all.
 
 ## Requires Axon Server
 
@@ -73,6 +79,15 @@ demo's job.
    walks the same steps as the declarative demo, so its
    [What to look for](../university-multi-tenancy-declarative/README.md#what-to-look-for) applies here
    too.
+
+## Persistent streams instead of pooled streaming
+
+Set `axon.axonserver.auto-persistent-streams-enabled=true` (see `application.yml`) to run the projection processor as a
+subscribing processor fed by a persistent stream instead of the default pooled streaming processor. This real framework
+property is reused in this demo to turn `PooledStreamingProjectionConfiguration` off and
+`PersistentStreamProjectionConfiguration` on. Because multi-tenancy is active, the starter's
+`MultiTenancyPersistentStreamAutoConfiguration` builds that stream through the multi-tenant persistent stream support,
+so it is really one ordinary stream per tenant, fanned into the single subscribing processor.
 
 ## The tests
 
