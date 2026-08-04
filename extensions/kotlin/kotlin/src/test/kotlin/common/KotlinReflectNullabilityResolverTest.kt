@@ -186,7 +186,7 @@ class KotlinReflectNullabilityResolverTest {
     inner class ThroughTheServiceLoaderChain {
 
         @Test
-        fun `resolver is discovered and outranks the annotation-based default`() {
+        fun `resolver is discovered through the chain`() {
             // given a Kotlin nullable parameter carrying no Nullable annotation whatsoever
             val parameter = parameterOf("nullableState")
 
@@ -208,10 +208,13 @@ class KotlinReflectNullabilityResolverTest {
         }
 
         @Test
-        fun `Kotlin type wins over a contradicting Nullable annotation`() {
-            // given a non-null Kotlin type carrying a jspecify @Nullable, which the annotation-based default would
+        fun `a contradicting Nullable annotation does not make a non-null Kotlin type nullable`() {
+            // given a non-null Kotlin type carrying a jspecify @Nullable, which the annotation-based resolver would
             // report as NULLABLE. Kotlin's own type is authoritative: injecting null would violate the contract the
             // compiler already enforces at the call boundary.
+            // Note this asserts the outcome, not the ordering that produces it: with only one resolver able to answer
+            // NON_NULL, the assertion holds regardless of chain order. Priority ordering itself is verified in
+            // modelling's InjectEntityParameterResolverFactoryTest, where two stubs deliberately disagree.
             val parameter = parameterOf("contradictorilyAnnotated")
 
             // when
