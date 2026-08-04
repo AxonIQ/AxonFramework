@@ -270,7 +270,7 @@ public abstract class HandlerExecutionException extends AxonException {
         if (details == null) {
             return Optional.empty();
         }
-        if (TypeReference.fromType(type).getTypeAsClass().isInstance(details)) {
+        if (type instanceof Class<?> clazz && clazz.isInstance(details)) {
             //noinspection unchecked
             return Optional.of((R) details);
         }
