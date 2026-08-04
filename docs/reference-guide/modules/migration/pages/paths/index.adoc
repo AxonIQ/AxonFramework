@@ -27,6 +27,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/distributed-tracing.adoc[Distributed Tracing migration]
 ifdef::advanced-framework[]
 * xref:migration:paths/upcasters.adoc[Upcaster Migration]
+* xref:migration:paths/multi-tenancy.adoc[Multi-Tenancy Migration]
 * xref:advanced-migration:paths/5.0-to-5.1.adoc[Axon Framework 5.0 to Axoniq Framework migration]
 endif::[]
 ifdef::data-protection[]
@@ -292,6 +293,7 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
 </dependencyManagement>
 ----
 
+[#what-is-not-yet-there]
 == What is not yet there
 
 As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
