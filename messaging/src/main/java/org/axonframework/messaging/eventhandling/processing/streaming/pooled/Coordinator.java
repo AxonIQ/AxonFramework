@@ -756,6 +756,7 @@ class Coordinator {
         private final AtomicBoolean interruptibleScheduledGate = new AtomicBoolean();
         private @Nullable MessageStream<? extends EventMessage> eventStream;
         private AtomicBoolean eventStreamDeliveredEvents = new AtomicBoolean();
+        private AtomicBoolean eventStreamClosedByCoordinator = new AtomicBoolean();
         private TrackingToken lastScheduledToken = NoToken.INSTANCE;
         private boolean availabilityCallbackSupported;
         private long unclaimedSegmentValidationThreshold;
@@ -1027,6 +1028,10 @@ class Coordinator {
          */
         private void closeStreamQuietly() {
             if (eventStream != null) {
+                // Closing a stream that has not completed yet completes it, which invokes its availability callback.
+                // Marking the close as this coordinator's own keeps that callback from reading it as a source ending
+                // the stream.
+                eventStreamClosedByCoordinator.set(true);
                 try {
                     eventStream.close();
                 } catch (Exception e) {
@@ -1224,25 +1229,30 @@ class Coordinator {
                             StreamingCondition.conditionFor(startStreamingFrom, eventCriteria), null
                     );
                     AtomicBoolean deliveredEvents = new AtomicBoolean();
+                    AtomicBoolean closedByCoordinator = new AtomicBoolean();
                     eventStream = stream;
                     eventStreamDeliveredEvents = deliveredEvents;
+                    eventStreamClosedByCoordinator = closedByCoordinator;
                     logger.debug(
                             "Processor [{}] (Coordination Task [{}]) opened stream with tracking token [{}] and criteria [{}].",
                             name, generation, startStreamingFrom, eventCriteria
                     );
                     availabilityCallbackSupported = true;
                     stream.setCallback(() -> {
-                        if (stream.isCompleted() && !deliveredEvents.get()) {
+                        if (stream.isCompleted() && !deliveredEvents.get() && !closedByCoordinator.get()) {
                             // The callback fires on completion, and at registration time on an already completed
-                            // stream. A stream that ended without ever delivering an event holds nothing to act on, so
-                            // replacing it at once would open the next one as fast as the coordinator runs at all.
-                            // Pacing it the way a failed stream is paced keeps that down to a retry.
+                            // stream. A stream a source ended without ever delivering an event holds nothing to act
+                            // on, so replacing it at once would open the next one as fast as the coordinator runs at
+                            // all. Pacing it the way a failed stream is paced keeps that down to a retry. The work
+                            // packages extend their claim on the coordination run this schedules, so it may never be
+                            // delayed past the point where those claims need extending.
+                            long delay = Math.min(errorWaitBackOff, claimExtensionThreshold);
                             logger.trace(
                                     "Processor [{}] (Coordination Task [{}]). Stream completed without delivering "
                                             + "events. Scheduling coordination task (itself) with delay of {}ms.",
-                                    name, generation, errorWaitBackOff
+                                    name, generation, delay
                             );
-                            scheduleCoordinationTask(errorWaitBackOff);
+                            scheduleCoordinationTask(delay);
                             return;
                         }
                         logger.trace(
