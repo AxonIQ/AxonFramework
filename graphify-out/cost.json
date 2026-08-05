@@ -1,0 +1,13 @@
+{
+  "runs": [
+    {
+      "date": "2026-07-27T12:23:37.055786+00:00",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "files": 3189,
+      "note": "token counts tracked in Claude session, not per-chunk"
+    }
+  ],
+  "total_input_tokens": 0,
+  "total_output_tokens": 0
+}

@@ -44,3 +44,9 @@ __pycache__/
 # just - console helper
 .justfile
 .flattened-pom.xml
+
+# graphify: graph.json is the committed artifact -- its presence lets any
+# checkout query the graph without re-extracting. Everything else is either an
+# internal cache or carries absolute paths from the machine that produced it.
+graphify-out/cache/
+graphify-out/.graphify_*
