@@ -11,7 +11,8 @@ You can switch the documentation to other major version on the right side of the
 |===
 |Release Type |Version
 
-|**Major** |xref:major-releases.adoc#release_5_2[5.2]
+|**Major** |xref:major-releases.adoc#release_5_3[5.3]
+| |xref:major-releases.adoc#release_5_2[5.2]
 | |xref:major-releases.adoc#release_5_1[5.1]
 | |xref:major-releases.adoc#release_5_0[5.0]
 |**Minor** |xref:minor-releases.adoc#release_5_2[5.2]
