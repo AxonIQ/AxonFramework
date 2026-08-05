@@ -42,6 +42,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.UnaryOperator;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -260,24 +262,90 @@ class EventSourcingRepositoryTest {
         assertEquals("test(created)", secondResult.entity());
     }
 
-    @Test
-    void loadThenLoadOrCreateReusesCachedEntityWithoutInvokingInitialize() {
-        ProcessingContext processingContext = new StubProcessingContext();
-        eventsToLoad = List.of();
+    @Nested
+    class LoadAndLoadOrCreateWithinOneProcessingContext {
 
-        // load() caches a ManagedEntity with a null entity() for "test", without ever invoking initialize(...)
-        ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
-        assertNull(loaded.entity());
+        private final ProcessingContext processingContext = new StubProcessingContext();
 
-        // loadOrCreate() for the same identifier, within the same context, reuses that cached future instead of
-        // recomputing it, so initialize(...) is never invoked for this identifier.
-        CompletableFuture<ManagedEntity<String, String>> result =
-                testSubject.loadOrCreate("test", processingContext);
+        @BeforeEach
+        void noEventsForTheIdentifier() {
+            eventsToLoad = List.of();
+        }
 
-        ExecutionException exception = assertThrows(ExecutionException.class, result::get);
-        assertInstanceOf(EntityNotFoundException.class, exception.getCause());
+        @Test
+        void loadOrCreateAfterNotFoundLoadCreatesThroughTheLifecycleHandler() {
+            // given a load reporting the entity as missing, without invoking initialize(...)
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
 
-        verify(handler, never()).initialize(eq("test"), eq(processingContext));
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+            assertThat(loaded.entity()).isNull();
+
+            // when loadOrCreate follows for the same identifier in the same context
+            ManagedEntity<String, String> created = testSubject.loadOrCreate("test", processingContext).join();
+
+            // then the entity was created, on the very same managed instance the earlier load handed out
+            assertThat(created.entity()).isEqualTo("test()");
+            assertThat(created).isSameAs(loaded);
+            assertThat(loaded.entity()).isEqualTo("test()");
+        }
+
+        @Test
+        void loadOrCreateAfterNotFoundLoadFailsWhenTheEntityRequiresAFirstEvent() {
+            // given an entity that cannot be constructed from its identifier alone
+            when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
+
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+            assertThat(loaded.entity()).isNull();
+
+            // when loadOrCreate follows for the same identifier in the same context
+            CompletableFuture<ManagedEntity<String, String>> result =
+                    testSubject.loadOrCreate("test", processingContext);
+
+            // then it fails, leaving the managed instance available for the first appended event to evolve
+            assertThatThrownBy(result::join).hasCauseInstanceOf(EntityNotFoundException.class);
+            assertThat(loaded.entity()).isNull();
+        }
+
+        @Test
+        void loadAfterLoadOrCreateObservesTheCreatedEntity() {
+            // given loadOrCreate created the entity
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
+
+            ManagedEntity<String, String> created = testSubject.loadOrCreate("test", processingContext).join();
+
+            // when load follows for the same identifier in the same context
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+
+            // then both calls describe the same managed entity
+            assertThat(loaded).isSameAs(created);
+            assertThat(loaded.entity()).isEqualTo("test()");
+        }
+
+        @Test
+        void repeatedLoadOrCreateCreatesTheEntityOnlyOnce() {
+            // given a first loadOrCreate creating the entity
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
+
+            ManagedEntity<String, String> first = testSubject.loadOrCreate("test", processingContext).join();
+
+            // when loadOrCreate is invoked again for the same identifier in the same context
+            ManagedEntity<String, String> second = testSubject.loadOrCreate("test", processingContext).join();
+
+            // then the cached entity is returned without creating a second instance
+            assertThat(second).isSameAs(first);
+            assertThat(second.entity()).isEqualTo("test()");
+            verify(handler, times(1)).initialize("test", processingContext);
+        }
+
+        @Test
+        void loadOfMissingEntityDoesNotInvokeTheLifecycleHandlerInitialization() {
+            // when loading an identifier without events
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+
+            // then the managed entity holds no state and no creation was attempted
+            assertThat(loaded.entity()).isNull();
+            verify(handler, never()).initialize(any(), any());
+        }
     }
 
     private static boolean conditionPredicate(SourcingCondition condition) {

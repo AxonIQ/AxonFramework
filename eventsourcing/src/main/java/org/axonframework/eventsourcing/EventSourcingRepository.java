@@ -38,7 +38,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.Objects.requireNonNullElseGet;
 
 /**
  * {@link Repository} implementation which manages event-sourced entities and delegates
@@ -196,11 +195,35 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
         ).thenApply(
                 entity -> {
                     if (create && entity.entity() == null) {
-                        throw requireNonNullElseGet(failureRef.get(), () -> new EntityNotFoundException(identifier));
+                        EntityNotFoundException failure = failureRef.get();
+                        if (failure != null) {
+                            throw failure;
+                        }
+                        initializeIfAbsent(identifier, context, entity);
                     }
                     return entity;
                 }
         );
+    }
+
+    /**
+     * Initializes the state of the given {@code entity} through the
+     * {@link EntityLifecycleHandler#initialize(Object, ProcessingContext) lifecycle handler}, unless it already holds
+     * state.
+     * <p>
+     * The given {@link EventSourcedEntity} instance is kept, so callers already holding a reference to it observe the
+     * initialized state as well.
+     *
+     * @param identifier the identifier of the entity to initialize
+     * @param context    the {@link ProcessingContext} to initialize the entity in
+     * @param entity     the managed entity to initialize the state of
+     * @throws EntityNotFoundException when the entity cannot be constructed from its identifier alone
+     */
+    private void initializeIfAbsent(ID identifier,
+                                    ProcessingContext context,
+                                    EventSourcedEntity<ID, E> entity) {
+        E initialized = lifecycleHandler.initialize(identifier, context);
+        entity.applyStateChange(current -> current != null ? current : initialized);
     }
 
     /**
