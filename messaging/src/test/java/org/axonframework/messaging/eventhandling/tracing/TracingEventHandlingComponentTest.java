@@ -48,6 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,8 +125,8 @@ class TracingEventHandlingComponentTest {
             EventMessage firstEvent = new GenericEventMessage(new MessageType("FirstEvent"), "first");
             EventMessage secondEvent = new GenericEventMessage(new MessageType("SecondEvent"), "second");
 
-            // when both handlers enter concurrently; the context coordinates the former check-then-put path so both
-            // observe the absent batch-span resource before either proceeds
+            // when both handlers enter concurrently; the context holds both back until each has observed the absent
+            // batch-span initializer, so they race for it
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 CompletableFuture<Void> firstHandling =
                         CompletableFuture.runAsync(() -> streamingSubject.handle(firstEvent, context), executor);
@@ -207,18 +208,17 @@ class TracingEventHandlingComponentTest {
 
         private static final class CoordinatedBatchProcessingContext extends StubProcessingContext {
 
-            private static final String BATCH_SPAN_RESOURCE_LABEL =
-                    "org.axonframework.messaging.tracing.batchSpan";
+            private static final String BATCH_SPAN_INITIALIZER_LABEL =
+                    "org.axonframework.messaging.tracing.batchSpanInitializer";
 
             private final CyclicBarrier absentBatchSpanReads = new CyclicBarrier(2);
 
             @Override
-            public <T> T getResource(Context.ResourceKey<T> key) {
-                T resource = super.getResource(key);
-                if (resource == null && BATCH_SPAN_RESOURCE_LABEL.equals(key.label())) {
+            public <T> T computeResourceIfAbsent(Context.ResourceKey<T> key, Supplier<T> resourceSupplier) {
+                if (BATCH_SPAN_INITIALIZER_LABEL.equals(key.label()) && !containsResource(key)) {
                     awaitConcurrentBatchSpanRead();
                 }
-                return resource;
+                return super.computeResourceIfAbsent(key, resourceSupplier);
             }
 
             private void awaitConcurrentBatchSpanRead() {

@@ -46,6 +46,9 @@ import java.util.function.UnaryOperator;
 
 /**
  * Stubbed implementation of the {@link ProcessingContext} used for testing purposes.
+ * <p>
+ * The {@code putResource}/{@code updateResource}/{@code removeResource} operations mutate this instance, while
+ * {@link #withResource(ResourceKey, Object)} branches: it returns a new context and leaves this one untouched.
  *
  * @author Allard Buijze
  */
@@ -151,13 +154,6 @@ public class StubProcessingContext implements ProcessingContext {
     public <T> T getResource(@NonNull ResourceKey<T> key) {
         //noinspection unchecked
         return (T) resources.get(key);
-    }
-
-    @Override
-    public <T> @NonNull ProcessingContext withResource(@NonNull ResourceKey<T> key,
-                                              @NonNull T resource) {
-        resources.put(key, resource);
-        return this;
     }
 
     @Override
