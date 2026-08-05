@@ -38,6 +38,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -202,23 +203,30 @@ public class SimpleQueryBus implements QueryBus {
         return runAfterCommitOrImmediately(context, filter, () -> emitUpdate(filter, updateSupplier));
     }
 
-    private void emitUpdate(Predicate<QueryMessage> filter,
-                            Supplier<SubscriptionQueryUpdateMessage> updateSupplier) {
+    private int emitUpdate(Predicate<QueryMessage> filter,
+                           Supplier<SubscriptionQueryUpdateMessage> updateSupplier) {
+        int deliveredCount = 0;
         Map<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> matchingHandlers =
                 updateHandlers.entrySet()
                               .stream()
                               .filter(entry -> filter.test(entry.getKey()))
                               .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         if (matchingHandlers.isEmpty()) {
-            return;
+            return deliveredCount;
         }
 
         SubscriptionQueryUpdateMessage update = updateSupplier.get();
-        matchingHandlers.forEach((query, updateHandler) -> {
+        for (Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> entry
+                : matchingHandlers.entrySet()) {
+            QueryMessage query = entry.getKey();
+            QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler = entry.getValue();
             try {
-                if (!updateHandler.offer(update, Context.empty())) {
-                    updateHandler.sealExceptionally(new QueryExecutionException("Subscription update buffer overflow",
-                                                                                null));
+                if (updateHandler.offer(update, Context.empty())) {
+                    deliveredCount++;
+                } else {
+                    updateHandler.sealExceptionally(new QueryExecutionException(
+                            "Subscription update buffer overflow", null
+                    ));
                     updateHandlers.remove(query, updateHandler);
                 }
             } catch (Exception e) {
@@ -228,7 +236,8 @@ public class SimpleQueryBus implements QueryBus {
                 updateHandler.sealExceptionally(e);
                 updateHandlers.remove(query, updateHandler);
             }
-        });
+        }
+        return deliveredCount;
     }
 
     @Override
@@ -243,19 +252,26 @@ public class SimpleQueryBus implements QueryBus {
         return runAfterCommitOrImmediately(context, filter, () -> completeSubscriptions(filter));
     }
 
-    private void completeSubscriptions(Predicate<QueryMessage> filter) {
-        updateHandlers.entrySet()
-                      .stream()
-                      .filter(entry -> filter.test(entry.getKey()))
-                      .forEach(entry -> {
-                          QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler = entry.getValue();
-                          try {
-                              updateHandler.seal();
-                          } catch (Exception e) {
-                              updateHandler.sealExceptionally(e);
-                          }
-                          updateHandlers.remove(entry.getKey(), updateHandler);
-                      });
+    private int completeSubscriptions(Predicate<QueryMessage> filter) {
+        List<Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>>> matchingHandlers =
+                updateHandlers.entrySet()
+                              .stream()
+                              .filter(entry -> filter.test(entry.getKey()))
+                              .toList();
+
+        int completedCount = 0;
+        for (Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> entry : matchingHandlers) {
+            QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler = entry.getValue();
+            try {
+                updateHandler.seal();
+                completedCount++;
+            } catch (Exception e) {
+                updateHandler.sealExceptionally(e);
+            }
+            updateHandlers.remove(entry.getKey(), updateHandler);
+        }
+
+        return completedCount;
     }
 
     @Override
@@ -276,39 +292,57 @@ public class SimpleQueryBus implements QueryBus {
         return runAfterCommitOrImmediately(context, filter, () -> completeSubscriptionsExceptionally(filter, cause));
     }
 
-    private void completeSubscriptionsExceptionally(Predicate<QueryMessage> filter, Throwable cause) {
-        updateHandlers.entrySet()
-                      .stream()
-                      .filter(entry -> filter.test(entry.getKey()))
-                      .forEach(entry -> emitError(entry.getValue(), cause, entry.getKey()));
+    private int completeSubscriptionsExceptionally(Predicate<QueryMessage> filter, Throwable cause) {
+        List<Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>>> matchingHandlers =
+                updateHandlers.entrySet()
+                              .stream()
+                              .filter(entry -> filter.test(entry.getKey()))
+                              .toList();
+
+        int completedCount = 0;
+        for (Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> entry : matchingHandlers) {
+            if (emitError(entry.getValue(), cause, entry.getKey())) {
+                completedCount++;
+            }
+        }
+
+        return completedCount;
     }
 
     /**
-     * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits, matching
-     * {@code updateTask}'s matching subscriptions to the given {@code filter}.
+     * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits,
+     * matching {@code updateTask}'s subscriptions to the given {@code filter}.
      * <p>
-     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not for an
-     * already-errored {@code context}, since the update is silently dropped in that case and the {@code filter} must
-     * not observe any side effects.
+     * When run immediately, the returned count reflects the actual outcome of the {@code updateTask} - e.g. the
+     * number of subscribers an update was successfully delivered to, as opposed to the number of subscribers merely
+     * matching the {@code filter} before delivery was attempted.
+     * <p>
+     * When deferred to after commit, the {@code updateTask} itself runs later and its outcome is not available to
+     * this method. In that case, the returned count is a match count against the given {@code filter}, computed at
+     * call time - not the outcome of the eventual {@code updateTask} run - since waiting for that outcome would
+     * require blocking until after the given {@code context} commits, which could deadlock a caller invoking this
+     * from within that same commit pipeline.
+     * <p>
+     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not
+     * for an already-errored {@code context}, since the update is silently dropped in that case and the
+     * {@code filter} must not observe any side effects.
      */
     private CompletableFuture<OptionalInt> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
                                                                        Predicate<QueryMessage> filter,
-                                                                       Runnable updateTask) {
+                                                                       IntSupplier updateTask) {
         if (context == null || context.isCommitted()) {
-            int matchCount = matchCount(filter);
-            updateTask.run();
-            return CompletableFuture.completedFuture(OptionalInt.of(matchCount));
+            return CompletableFuture.completedFuture(OptionalInt.of(updateTask.getAsInt()));
         } else if (!context.isCompleted()) {
             int matchCount = matchCount(filter);
             context.computeResourceIfAbsent(
                            UPDATE_TASKS_KEY,
                            () -> {
-                               List<Runnable> subscriptionQueryTask = new ArrayList<>();
-                               context.runOnAfterCommit(c -> subscriptionQueryTask.forEach(Runnable::run));
-                               return subscriptionQueryTask;
+                               List<Runnable> subscriptionQueryTasks = new ArrayList<>();
+                               context.runOnAfterCommit(c -> subscriptionQueryTasks.forEach(Runnable::run));
+                               return subscriptionQueryTasks;
                            }
                    )
-                   .add(updateTask);
+                   .add(updateTask::getAsInt);
             return CompletableFuture.completedFuture(OptionalInt.of(matchCount));
         }
         // else: context completed with error - drop the update
@@ -322,14 +356,16 @@ public class SimpleQueryBus implements QueryBus {
                                    .count();
     }
 
-    private void emitError(QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler,
-                           Throwable cause,
-                           QueryMessage query) {
+    private boolean emitError(QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler,
+                              Throwable cause,
+                              QueryMessage query) {
         try {
             updateHandler.sealExceptionally(cause);
+            return true;
         } catch (Exception e) {
             logger.error("An error happened while trying to inform an update handler about the error. Query: {}",
                          query);
+            return false;
         }
     }
 
