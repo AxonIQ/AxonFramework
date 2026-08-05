@@ -23,10 +23,13 @@ import java.util.Properties;
 /**
  * Runtime configuration toggles for the demo, loaded from {@code application.properties}.
  *
- * @param axonServerEnabled whether the demo should drive tenants from Axon Server contexts rather
- *                          than the bundled in-memory tenant provider
+ * @param axonServerEnabled        whether the demo should drive tenants from Axon Server contexts rather than the
+ *                                 bundled in-memory tenant provider
+ * @param persistentStreamsEnabled whether the course-statistics projection runs on a persistent stream instead of a
+ *                                 pooled streaming processor, only read while {@code axonServerEnabled} is
+ *                                 {@code true}
  */
-public record DemoProperties(boolean axonServerEnabled) {
+public record DemoProperties(boolean axonServerEnabled, boolean persistentStreamsEnabled) {
 
     /**
      * Loads the properties from the {@code application.properties} classpath resource, defaulting to
@@ -44,7 +47,8 @@ public record DemoProperties(boolean axonServerEnabled) {
             throw new IllegalStateException("Could not load application.properties", e);
         }
         return new DemoProperties(
-                Boolean.parseBoolean(properties.getProperty("demo.axon-server.enabled", "false"))
+                Boolean.parseBoolean(properties.getProperty("demo.axon-server.enabled", "false")),
+                Boolean.parseBoolean(properties.getProperty("demo.axon-server.persistent-streams.enabled", "false"))
         );
     }
 }

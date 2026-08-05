@@ -27,6 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * per-tenant isolation, subscription-query isolation, the unknown-tenant guardrail on both commands
  * and queries, destroy on tenant removal, and cleanup on shutdown. The configuration-time ambiguity
  * guardrail is asserted separately.
+ * <p>
+ * This test only runs the in-memory path, so it exercises neither of the two {@code EventProcessingStyle}
+ * kinds the course-statistics projection can run in: both need each tenant to have its own event store, which
+ * only a real Axon Server provides. {@code MultiTenancyDemoIT} in the Spring Boot module covers both styles
+ * against a containerized Axon Server.
  */
 class MultiTenancyDemoTest {
 

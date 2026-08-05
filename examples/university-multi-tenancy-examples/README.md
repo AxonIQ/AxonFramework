@@ -29,6 +29,11 @@ that code. The demo shows, at the moment:
 * **The one knob there is** (Axon Server): a tenant change restarts the running processors, and each restart is
   bounded by a timeout. The framework defaults it, and both demos show where an application would raise it for a
   deployment whose processors are slow to stop and start.
+* **Persistent streams instead of pooled streaming** (Axon Server, opt-in): a toggle in each demo swaps that one
+  processor for a subscribing processor fed by a persistent stream, opened in every tenant's own context and
+  fanned into that single processor by the multi-tenant persistent stream support. Still one processor, still no
+  configuration change when a tenant is added, but no token store and no processor restart on a tenant change,
+  since each tenant's stream opens and closes on its own.
 * **An idempotent projection**, which a streamed read model has to be. Events arrive at least once, and
   re-opening the stream on a tenant change makes a repeat more likely than usual, so the statistics are
   derived from the student identifiers in the events rather than counted. Handling the same enrollment twice

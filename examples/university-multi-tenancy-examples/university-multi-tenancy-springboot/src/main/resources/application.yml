@@ -6,6 +6,12 @@ axon:
   # one in a container.
   axonserver:
     enabled: true
+    # Set to true to run the course-statistics projection on a persistent stream, consumed from every
+    # tenant's own context and fanned into that one processor, instead of the default pooled streaming
+    # processor reading the tenant-aware event store directly. This same property is what switches
+    # PooledStreamingProjectionConfiguration off and PersistentStreamProjectionConfiguration on, so this one
+    # toggle both selects the configuration class and supplies its persistent stream.
+    auto-persistent-streams-enabled: false
 
 logging:
   level:

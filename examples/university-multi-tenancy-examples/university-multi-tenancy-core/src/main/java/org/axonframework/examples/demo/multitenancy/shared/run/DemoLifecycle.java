@@ -64,8 +64,9 @@ import java.util.stream.IntStream;
  * handler, the query handler, and the {@link CourseStatisticsProjection} alike.
  * <p>
  * Where each tenant has its own event store, the projection is where the tenants come back together: one
- * ordinary pooled streaming event processor consumes every tenant's events and writes each into the read model
- * of the tenant it came from. A read model is then eventually consistent rather than written by the command, so
+ * ordinary event processor consumes every tenant's events and writes each into the read model of the tenant it
+ * came from, whether it streams from the tenant-aware event store directly or from a persistent stream per
+ * tenant. A read model is then eventually consistent rather than written by the command, so
  * every observation of one below waits for it to catch up. On a shared event store the command handler fills it
  * instead, and those waits return at once.
  * <p>
@@ -470,7 +471,7 @@ public final class DemoLifecycle {
      * one per tenant. Springfield and Shelbyville hold the same course identifier, so a leak between them would
      * show up as a wrong count. Counts are read fresh here rather than reused from the waits above.
      *
-     * @param processorNames the names of every streaming event processor the application registered
+     * @param processorNames the names of every event processor the application registered
      * @param queryGateway the gateway the tenants' statistics are read on
      * @return the observed event-processing outcome
      */
@@ -484,7 +485,7 @@ public final class DemoLifecycle {
         int shelbyvilleProjected = StatisticsQueries.read(queryGateway, SHELBYVILLE).totalEnrollments();
         int ogdenvilleProjected = StatisticsQueries.read(queryGateway, OGDENVILLE).totalEnrollments();
         logger.info("""
-                    Three tenants were served by {} streaming event processor(s) {}. \
+                    Three tenants were served by {} event processor(s) {}. \
                     Projected enrollments per tenant: springfield={}, shelbyville={}, ogdenville={}""",
                     processorNames.size(), processorNames,
                     springfieldProjected, shelbyvilleProjected, ogdenvilleProjected);
