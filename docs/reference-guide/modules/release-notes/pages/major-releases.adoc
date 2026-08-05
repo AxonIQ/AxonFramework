@@ -3,6 +3,123 @@
 
 All the enhancements and features which have been introduced to our major releases of the Axon Framework are noted here.
 
+[#release_5_3]
+== Release 5.3
+
+This release of Axon Framework introduced a minor breaking changes as per #4609.For those using the @InjectEntity annotation parameter, expect the EntityNotFoundException to be thrown for creational command handlers.To resolve this, mark the @InjectEntity as nullable, either through an annotation, by making the type Optional, or when using Kotlin through State?.
+
+=== Features
+
+- Introduce Segment Progress seam into Streaming Event Processors (link:https://github.com/AxonIQ/AxonFramework/pull/4636[PR #4636], by link:https://github.com/abuijze[@abuijze])
+- demo + doc for axoniq split event transformation (link:https://github.com/AxonIQ/AxonFramework/pull/4711[PR #4711], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- add multi-tenancy documentation to the reference guide (link:https://github.com/AxonIQ/AxonFramework/pull/4712[PR #4712], by link:https://github.com/hatzlj[@hatzlj])
+- feat: AF5 tracing integration (link:https://github.com/AxonIQ/AxonFramework/pull/4713[PR #4713], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- Add broadcast sequence identifier for segment-spanning event delivery (link:https://github.com/AxonIQ/AxonFramework/pull/4742[PR #4742], by link:https://github.com/schananas[@schananas])
+- Initial setup multi tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4743[PR #4743], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- `UnitOfWork` now includes `ProcessingLifecycleInterceptor` (link:https://github.com/AxonIQ/AxonFramework/pull/4748[PR #4748], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- initial demo setup with declarative approach and springboot approach + command dispatching/handling (link:https://github.com/AxonIQ/AxonFramework/pull/4755[PR #4755], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Reintroduce Map-support for entity members (link:https://github.com/AxonIQ/AxonFramework/issues/4757[#4757], link:https://github.com/AxonIQ/AxonFramework/pull/4759[PR #4759], by link:https://github.com/smcvb[@smcvb])
+- Resolve Multi-Tenancy demo comments post-merge (link:https://github.com/AxonIQ/AxonFramework/pull/4774[PR #4774], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add per-tenant event storage to the multi-tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4775[PR #4775], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add per-tenant snapshotting to the multi-tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4794[PR #4794], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add tenant-aware event processing to the multi-tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4795[PR #4795], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add backport workflow (link:https://github.com/AxonIQ/AxonFramework/pull/4842[PR #4842], by link:https://github.com/hjohn[@hjohn])
+- Add backport workflow - Phase 2 (link:https://github.com/AxonIQ/AxonFramework/pull/4843[PR #4843], by link:https://github.com/hjohn[@hjohn])
+- Add backport workflow - Phase 3 (link:https://github.com/AxonIQ/AxonFramework/pull/4844[PR #4844], by link:https://github.com/hjohn[@hjohn])
+- Feature/backport action - Phase 5 (link:https://github.com/AxonIQ/AxonFramework/pull/4847[PR #4847], by link:https://github.com/hjohn[@hjohn])
+- Add project linking to backport workflow - Phase 6 (link:https://github.com/AxonIQ/AxonFramework/pull/4849[PR #4849], by link:https://github.com/hjohn[@hjohn])
+- Add tenant-aware query handling to the multi-tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4852[PR #4852], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Support Kotlin nullability for @InjectEntity annotated parameters (link:https://github.com/AxonIQ/AxonFramework/issues/4856[#4856], link:https://github.com/AxonIQ/AxonFramework/pull/4861[PR #4861], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- Add a persistent-streams option to the multi-tenancy demo (link:https://github.com/AxonIQ/AxonFramework/pull/4876[PR #4876], by link:https://github.com/hatzlj[@hatzlj])
+
+=== Enhancements
+
+- Consolidate Entity discovery for Entity-centric and Stateful-Handler-centric (link:https://github.com/AxonIQ/AxonFramework/pull/4609[PR #4609], by link:https://github.com/smcvb[@smcvb])
+- EventStorageEngine#source and SnapshotStore methods - add ProcessingContext parameter (link:https://github.com/AxonIQ/AxonFramework/pull/4723[PR #4723], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- replace joinAndUnwrap in subscribing processor (link:https://github.com/AxonIQ/AxonFramework/issues/4618[#4618], link:https://github.com/AxonIQ/AxonFramework/pull/4730[PR #4730], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add convenience overloads for declarative entity builders (link:https://github.com/AxonIQ/AxonFramework/issues/4171[#4171], link:https://github.com/AxonIQ/AxonFramework/pull/4739[PR #4739], by link:https://github.com/wadhwaroh-lang[@wadhwaroh-lang])
+- Enforce correct qualified name and version use (link:https://github.com/AxonIQ/AxonFramework/pull/4751[PR #4751], by link:https://github.com/hjohn[@hjohn])
+- Add duplicate tag and type filtering tests (link:https://github.com/AxonIQ/AxonFramework/pull/4753[PR #4753], by link:https://github.com/hjohn[@hjohn])
+- Make pooled processor source and token-store optional when unset (link:https://github.com/AxonIQ/AxonFramework/issues/4727[#4727], link:https://github.com/AxonIQ/AxonFramework/pull/4763[PR #4763], by link:https://github.com/wadhwaroh-lang[@wadhwaroh-lang])
+- `QueryBus` and `QueryUpdateEmitter` have and-count `emit`, `complete`, and `completeExceptionally` operations (link:https://github.com/AxonIQ/AxonFramework/pull/4764[PR #4764], by link:https://github.com/smcvb[@smcvb])
+- Consolidate test log4j2 config into a single shared module (link:https://github.com/AxonIQ/AxonFramework/pull/4768[PR #4768], by link:https://github.com/hjohn[@hjohn])
+- Allow EntityMetamodel to be decorated without breaking ID resolution (link:https://github.com/AxonIQ/AxonFramework/pull/4772[PR #4772], by link:https://github.com/hjohn[@hjohn])
+- Enable direct metadata on Command- and QueryGateway dispatch (link:https://github.com/AxonIQ/AxonFramework/pull/4776[PR #4776], by link:https://github.com/hatzlj[@hatzlj])
+- Extract snapshot sourcing composition into its own enhancer (link:https://github.com/AxonIQ/AxonFramework/issues/4791[#4791], link:https://github.com/AxonIQ/AxonFramework/pull/4792[PR #4792], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add `FutureUtils#allOrEmpty` (link:https://github.com/AxonIQ/AxonFramework/pull/4816[PR #4816], by link:https://github.com/hatzlj[@hatzlj])
+- Adapt the multi-tenancy examples to multi-tenancy being enabled by default (link:https://github.com/AxonIQ/AxonFramework/pull/4837[PR #4837], by link:https://github.com/hatzlj[@hatzlj])
+- Make `StateManager` and `SnapshotStore` `DescribableComponents` (link:https://github.com/AxonIQ/AxonFramework/pull/4860[PR #4860], by link:https://github.com/smcvb[@smcvb])
+- Make SpanFactory and SpanAttributesProviderRegistry DescribableComponents (link:https://github.com/AxonIQ/AxonFramework/pull/4862[PR #4862], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- Support detail conversion for `HandlerExecutionException` (link:https://github.com/AxonIQ/AxonFramework/pull/4867[PR #4867], by link:https://github.com/smcvb[@smcvb])
+- Add auto-assign, label copy and project linking to backport workflow (link:https://github.com/AxonIQ/AxonFramework/pull/4869[PR #4869], by link:https://github.com/hjohn[@hjohn])
+
+=== Bug fixes
+
+- Issue 4702 get component and get optional component consistency when working with lazy beans (link:https://github.com/AxonIQ/AxonFramework/issues/4702[#4702], link:https://github.com/AxonIQ/AxonFramework/pull/4732[PR #4732], by link:https://github.com/Ishaan453[@Ishaan453])
+- Invoke the subtype handler over a shadowed supertype handler (link:https://github.com/AxonIQ/AxonFramework/issues/4579[#4579], link:https://github.com/AxonIQ/AxonFramework/pull/4733[PR #4733], by link:https://github.com/Develop-KIM[@Develop-KIM])
+- Fix navigation item for the dataprotection-extension migration path (link:https://github.com/AxonIQ/AxonFramework/pull/4740[PR #4740], by link:https://github.com/hatzlj[@hatzlj])
+- fix(messaging): EventAppender/CommandDispatcher#forContext must not cache a context-bound wrapper (link:https://github.com/AxonIQ/AxonFramework/pull/4746[PR #4746], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- Potential fix for flakey log message verifications (link:https://github.com/AxonIQ/AxonFramework/pull/4747[PR #4747], by link:https://github.com/hjohn[@hjohn])
+- Do not report rolled-back events in AxonTestFixture (link:https://github.com/AxonIQ/AxonFramework/pull/4752[PR #4752], by link:https://github.com/smcvb[@smcvb])
+- Only resolve replay context during an active replay (link:https://github.com/AxonIQ/AxonFramework/pull/4758[PR #4758], by link:https://github.com/smcvb[@smcvb])
+- Resolve incorrect event routing in heterogeneous Sequencing Policy setup among Event Handling Components (link:https://github.com/AxonIQ/AxonFramework/pull/4769[PR #4769], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- fix(eventsourcing): Active entities should only receive tag-matching events during command handling phase (link:https://github.com/AxonIQ/AxonFramework/issues/4766[#4766], link:https://github.com/AxonIQ/AxonFramework/pull/4770[PR #4770], by link:https://github.com/MateuszNaKodach[@MateuszNaKodach])
+- Only deduplicate fluent accessors for records (link:https://github.com/AxonIQ/AxonFramework/pull/4777[PR #4777], by link:https://github.com/smcvb[@smcvb])
+- Validate return- and parameter-type in `FieldChildEntityFieldDefinition` (link:https://github.com/AxonIQ/AxonFramework/pull/4778[PR #4778], by link:https://github.com/smcvb[@smcvb])
+- Reopen the event stream when its source completed it (link:https://github.com/AxonIQ/AxonFramework/pull/4787[PR #4787], by link:https://github.com/smcvb[@smcvb])
+- Fix bug where publish future could complete before events are visible (link:https://github.com/AxonIQ/AxonFramework/pull/4838[PR #4838], by link:https://github.com/hjohn[@hjohn])
+- Back off before reopening a stream whose source failed (link:https://github.com/AxonIQ/AxonFramework/issues/4839[#4839], link:https://github.com/AxonIQ/AxonFramework/pull/4841[PR #4841], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Fix backport workflow missing checkout step - Phase 4 (link:https://github.com/AxonIQ/AxonFramework/pull/4845[PR #4845], by link:https://github.com/hjohn[@hjohn])
+- Invoke `MessageStream` callbacks outside the stream lock (link:https://github.com/AxonIQ/AxonFramework/pull/4863[PR #4863], by link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch])
+- Ensure `Message#payloadAs(TypeReference)` honors parameterized type contained in `TypeReference` (link:https://github.com/AxonIQ/AxonFramework/issues/4874[#4874], link:https://github.com/AxonIQ/AxonFramework/pull/4878[PR #4878], by link:https://github.com/smcvb[@smcvb])
+- Create intercepting event store transaction per context (link:https://github.com/AxonIQ/AxonFramework/issues/4879[#4879], link:https://github.com/AxonIQ/AxonFramework/pull/4887[PR #4887], by link:https://github.com/schananas[@schananas])
+- Pace stream reopens after empty clean completions (link:https://github.com/AxonIQ/AxonFramework/issues/4882[#4882], link:https://github.com/AxonIQ/AxonFramework/pull/4888[PR #4888], by link:https://github.com/schananas[@schananas])
+- Use `GeneralConverter` to resolve `@ReplayContext` annotated parameter (link:https://github.com/AxonIQ/AxonFramework/pull/4889[PR #4889], by link:https://github.com/smcvb[@smcvb])
+- Turn synchronous subscriber failures into failed publication results (link:https://github.com/AxonIQ/AxonFramework/issues/4883[#4883], link:https://github.com/AxonIQ/AxonFramework/pull/4890[PR #4890], by link:https://github.com/schananas[@schananas])
+- Branch StubProcessingContext resources instead of mutating the shared context (link:https://github.com/AxonIQ/AxonFramework/issues/4880[#4880], link:https://github.com/AxonIQ/AxonFramework/pull/4891[PR #4891], by link:https://github.com/schananas[@schananas])
+- Let loadOrCreate create through a cached not-found entry (link:https://github.com/AxonIQ/AxonFramework/issues/4886[#4886], link:https://github.com/AxonIQ/AxonFramework/pull/4892[PR #4892], by link:https://github.com/schananas[@schananas])
+- Judge stored progress on both bounds of a range token (link:https://github.com/AxonIQ/AxonFramework/issues/4881[#4881], link:https://github.com/AxonIQ/AxonFramework/pull/4893[PR #4893], by link:https://github.com/schananas[@schananas])
+- Fine tune emit-and-count flow of `QueryUpdateEmitter` and `QueryBus` (link:https://github.com/AxonIQ/AxonFramework/issues/4884[#4884], link:https://github.com/AxonIQ/AxonFramework/pull/4894[PR #4894], by link:https://github.com/smcvb[@smcvb])
+
+=== Documentation
+
+- Externalize reference-guide documentation code samples into compilable files (link:https://github.com/AxonIQ/AxonFramework/pull/4709[PR #4709], by link:https://github.com/abuijze[@abuijze])
+- Include AF 5.2.0 release notes (link:https://github.com/AxonIQ/AxonFramework/pull/4731[PR #4731], by link:https://github.com/smcvb[@smcvb])
+- Include connection-security documentation on the Spring Boot integration page (link:https://github.com/AxonIQ/AxonFramework/pull/4745[PR #4745], by link:https://github.com/abuijze[@abuijze])
+- Add 5.2.1 release notes (link:https://github.com/AxonIQ/AxonFramework/pull/4784[PR #4784], by link:https://github.com/smcvb[@smcvb])
+- Add 5.2.2 Release Notes (link:https://github.com/AxonIQ/AxonFramework/pull/4793[PR #4793], by link:https://github.com/smcvb[@smcvb])
+- add navigation for multi tenancy migration path (link:https://github.com/AxonIQ/AxonFramework/pull/4866[PR #4866], by link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon])
+- Add 5.2.3 release notes (link:https://github.com/AxonIQ/AxonFramework/pull/4875[PR #4875], by link:https://github.com/smcvb[@smcvb])
+
+=== Dependency upgrades
+
+- chore(deps): bump actions/setup-java from 5.4.0 to 5.5.0 in the github-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4728[PR #4728], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4729[PR #4729], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump slackapi/slack-github-action from 3.0.3 to 3.0.5 in the github-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4736[PR #4736], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump tools.jackson:jackson-bom from 3.2.0 to 3.2.1 in /examples/university-java-springboot-4 in the maven-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4737[PR #4737], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4738[PR #4738], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump the github-dependencies group with 3 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4760[PR #4760], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump the maven-dependencies group across 1 directory with 12 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4762[PR #4762], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump brace-expansion and @asciidoctor/core in /docs/_playbook (link:https://github.com/AxonIQ/AxonFramework/pull/4767[PR #4767], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump the maven-dependencies group across 1 directory with 7 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4783[PR #4783], by link:https://github.com/apps/dependabot[@app/dependabot])
+- Bump the maven-dependencies group across 1 directory with 10 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4859[PR #4859], by link:https://github.com/apps/dependabot[@app/dependabot])
+
+=== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/Develop-KIM[@Develop-KIM]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/Ishaan453[@Ishaan453]
+- link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/schananas[@schananas]
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/wadhwaroh-lang[@wadhwaroh-lang]
+
 [#release_5_2]
 == Release 5.2
 
