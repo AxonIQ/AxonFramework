@@ -157,5 +157,59 @@ class TrackingTokenUtilsTest {
             // when / then -- comparing unwrapped upper-bound positions reports the transition as an advance
             assertThat(TrackingTokenUtils.coversWhenUnwrapped(token(5), replaying)).isTrue();
         }
+
+        @Test
+        void reportsAdvanceWhenAConcludingReplayIsTheCandidate() {
+            // given -- the candidate concludes a replay at a position beyond the plain reference
+            TrackingToken concluding = ReplayToken.createReplayToken(token(5), token(4));
+
+            // when / then
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(concluding, token(3))).isTrue();
+        }
+
+        @Test
+        void reportsFalseWhenTheLowerHalfOfAMergedCandidateRegresses() {
+            // given -- a merged range whose furthest half is ahead, but which resumes from the start of the stream
+            TrackingToken rewinding = MergedTrackingToken.merged(TrackingToken.FIRST, token(7));
+
+            // when / then -- the resume position falls behind the reference, so this is not an advance
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(rewinding, token(6))).isFalse();
+        }
+
+        @Test
+        void reportsTrueWhenBothHalvesOfAMergedCandidateAreAhead() {
+            // given -- a merged range entirely beyond the reference
+            TrackingToken advancing = MergedTrackingToken.merged(token(7), token(9));
+
+            // when / then
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(advancing, token(6))).isTrue();
+        }
+
+        @Test
+        void reportsFalseWhenTheUpperHalfOfAMergedCandidateIsBehind() {
+            // given -- the furthest half of the merged range has not reached the reference
+            TrackingToken behind = MergedTrackingToken.merged(token(2), token(4));
+
+            // when / then
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(behind, token(6))).isFalse();
+        }
+
+        @Test
+        void reportsFalseWhenTheCandidateHasNoPositionYet() {
+            // given -- a freshly created reset token, which has no current position at all
+            TrackingToken freshReset = ReplayToken.createReplayToken(token(5));
+
+            // when / then -- an unset position is not an advance, and must not throw
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(freshReset, token(3))).isFalse();
+        }
+
+        @Test
+        void reportsAdvanceWhenTheReferenceHasNoPositionYet() {
+            // given -- the reference is a freshly created reset token, which has no current position at all
+            TrackingToken freshReset = ReplayToken.createReplayToken(token(5));
+
+            // when / then -- there is no progress to regress from, so the candidate advances beyond it
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(token(3), freshReset)).isTrue();
+        }
     }
 }

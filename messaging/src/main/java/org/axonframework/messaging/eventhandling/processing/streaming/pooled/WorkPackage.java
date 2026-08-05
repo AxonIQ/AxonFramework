@@ -501,11 +501,9 @@ class WorkPackage implements SegmentProgressContext {
     /**
      * Stores {@code safe}, keeping the stored {@link TrackingToken} monotonic. A {@code null} or already-stored token
      * is ignored. A token that does not
-     * {@link TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last
-     * stored token (whether a strict regression or an <em>incomparable</em> position, such as a
-     * partially-regressed multi-source token where one source advanced while another fell behind) is ignored with a
-     * warning rather than persisted, so a misbehaving component can never rewind progress on any source. A concluding
-     * replay is still recognized as an advance, as the coverage is judged on the unwrapped positions.
+     * {@link TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last stored token on both
+     * ends of its range is ignored with a warning rather than persisted, so a misbehaving component can never rewind
+     * progress on any source, nor rewind the position streaming resumes from.
      */
     private CompletableFuture<Void> storeIfAdvanced(@Nullable TrackingToken safe, ProcessingContext ctx) {
         if (safe == null || safe.equals(lastStoredToken)) {
