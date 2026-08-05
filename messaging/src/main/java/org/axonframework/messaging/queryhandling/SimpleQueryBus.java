@@ -259,17 +259,19 @@ public class SimpleQueryBus implements QueryBus {
                               .filter(entry -> filter.test(entry.getKey()))
                               .toList();
 
-        matchingHandlers.forEach(entry -> {
+        int completedCount = 0;
+        for (Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> entry : matchingHandlers) {
             QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler = entry.getValue();
             try {
                 updateHandler.seal();
+                completedCount++;
             } catch (Exception e) {
                 updateHandler.sealExceptionally(e);
             }
             updateHandlers.remove(entry.getKey(), updateHandler);
-        });
+        }
 
-        return matchingHandlers.size();
+        return completedCount;
     }
 
     @Override
@@ -297,9 +299,14 @@ public class SimpleQueryBus implements QueryBus {
                               .filter(entry -> filter.test(entry.getKey()))
                               .toList();
 
-        matchingHandlers.forEach(entry -> emitError(entry.getValue(), cause, entry.getKey()));
+        int completedCount = 0;
+        for (Map.Entry<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> entry : matchingHandlers) {
+            if (emitError(entry.getValue(), cause, entry.getKey())) {
+                completedCount++;
+            }
+        }
 
-        return matchingHandlers.size();
+        return completedCount;
     }
 
     /**
@@ -349,14 +356,16 @@ public class SimpleQueryBus implements QueryBus {
                                    .count();
     }
 
-    private void emitError(QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler,
-                           Throwable cause,
-                           QueryMessage query) {
+    private boolean emitError(QueueMessageStream<SubscriptionQueryUpdateMessage> updateHandler,
+                              Throwable cause,
+                              QueryMessage query) {
         try {
             updateHandler.sealExceptionally(cause);
+            return true;
         } catch (Exception e) {
             logger.error("An error happened while trying to inform an update handler about the error. Query: {}",
                          query);
+            return false;
         }
     }
 

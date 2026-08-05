@@ -147,6 +147,9 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * to.
      * <p>
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
+     * <p>
+     * A subscription query to which delivery of the update fails (for example due to a full update buffer) is
+     * excluded from this count, even though that failure still terminates the subscription.
      *
      * @param filter         a predicate filtering on {@link QueryMessage QueryMessages}. The {@code updateSupplier}
      *                       will only be sent to subscription queries matching this filter
@@ -186,6 +189,8 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * the given {@code filter}, returning the number of subscription queries that were completed.
      * <p>
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
+     * <p>
+     * A subscription query for which completion fails is excluded from this count.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed
@@ -224,6 +229,8 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * that were completed exceptionally.
      * <p>
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
+     * <p>
+     * A subscription query for which the exceptional completion fails to be delivered is excluded from this count.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed exceptionally

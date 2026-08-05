@@ -22,6 +22,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.QueueMessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -33,6 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 import reactor.util.concurrent.Queues;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -903,6 +906,30 @@ class SimpleQueryBusTest {
             // then...
             assertThat(matchCount).isZero();
         }
+
+        @Test
+        void completeSubscriptionsReturningCountExcludesSubscriptionsWhoseSealFailed() {
+            // given...
+            QueryMessage testQueryThatFailsToSeal = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryThatSealsFine = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryThatFailsToSeal.identifier())
+                            || query.identifier().equals(testQueryThatSealsFine.identifier());
+            testSubject.subscriptionQuery(testQueryThatFailsToSeal, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryThatSealsFine, null, Queues.SMALL_BUFFER_SIZE);
+            QueueMessageStream<SubscriptionQueryUpdateMessage> failingHandler =
+                    spyOnUpdateHandlerFor(testQueryThatFailsToSeal);
+            doThrow(new MockException("Sealing failed")).when(failingHandler).seal();
+            // when...
+            Integer completedCount = testSubject.completeSubscriptionsAndCount(queryFilter, null)
+                                                 .orTimeout(1, TimeUnit.SECONDS)
+                                                 .join()
+                                                 .orElseThrow();
+            // then only the subscription whose seal() succeeded is counted...
+            assertThat(completedCount).isEqualTo(1);
+            // and the failing subscription is still terminated, just exceptionally instead...
+            verify(failingHandler).sealExceptionally(any(MockException.class));
+        }
     }
 
     @Nested
@@ -1076,6 +1103,54 @@ class SimpleQueryBusTest {
                                .orElseThrow();
             // then...
             assertThat(matchCount).isZero();
+        }
+
+        @Test
+        void completeSubscriptionsExceptionallyReturningCountExcludesSubscriptionsWhoseSealExceptionallyFailed() {
+            // given...
+            QueryMessage testQueryThatFailsToSeal = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryThatSealsFine = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryThatFailsToSeal.identifier())
+                            || query.identifier().equals(testQueryThatSealsFine.identifier());
+            testSubject.subscriptionQuery(testQueryThatFailsToSeal, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(testQueryThatSealsFine, null, Queues.SMALL_BUFFER_SIZE);
+            QueueMessageStream<SubscriptionQueryUpdateMessage> failingHandler =
+                    spyOnUpdateHandlerFor(testQueryThatFailsToSeal);
+            doThrow(new MockException("Sealing exceptionally failed")).when(failingHandler)
+                                                                       .sealExceptionally(any(Throwable.class));
+            MockException cause = new MockException("Mock");
+            // when...
+            Integer completedCount =
+                    testSubject.completeSubscriptionsExceptionallyAndCount(queryFilter, cause, null)
+                               .orTimeout(1, TimeUnit.SECONDS)
+                               .join()
+                               .orElseThrow();
+            // then only the subscription whose sealExceptionally() succeeded is counted...
+            assertThat(completedCount).isEqualTo(1);
+        }
+    }
+
+    /**
+     * Replaces the internal update handler registered for the given {@code query} with a spy wrapping the original,
+     * so that {@link QueueMessageStream#seal()} or {@link QueueMessageStream#sealExceptionally(Throwable)} can be
+     * stubbed to fail. There is no production seam for this - the update handler is a concrete
+     * {@code QueueMessageStream} instantiated internally by {@link SimpleQueryBus} - so reflection is used to reach
+     * into the otherwise-private {@code updateHandlers} map for test purposes only.
+     */
+    @SuppressWarnings("unchecked")
+    private QueueMessageStream<SubscriptionQueryUpdateMessage> spyOnUpdateHandlerFor(QueryMessage query) {
+        try {
+            Field updateHandlersField = SimpleQueryBus.class.getDeclaredField("updateHandlers");
+            updateHandlersField.setAccessible(true);
+            ConcurrentMap<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> updateHandlers =
+                    (ConcurrentMap<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>>)
+                            updateHandlersField.get(testSubject);
+            QueueMessageStream<SubscriptionQueryUpdateMessage> spiedHandler = spy(updateHandlers.get(query));
+            updateHandlers.put(query, spiedHandler);
+            return spiedHandler;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to spy on the update handler for test purposes", e);
         }
     }
 }
