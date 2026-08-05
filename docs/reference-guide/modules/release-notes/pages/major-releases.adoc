@@ -6,7 +6,8 @@ All the enhancements and features which have been introduced to our major releas
 [#release_5_3]
 == Release 5.3
 
-This release of Axon Framework introduced a minor breaking changes as per #4609.For those using the @InjectEntity annotation parameter, expect the EntityNotFoundException to be thrown for creational command handlers.To resolve this, mark the @InjectEntity as nullable, either through an annotation, by making the type Optional, or when using Kotlin through State?.
+This release of Axon Framework introduced a minor breaking changes as per #4609.For those using the @InjectEntity annotation parameter, expect the EntityNotFoundException to be thrown for creational command handlers.
+To resolve this, mark the @InjectEntity as nullable, either through an annotation, by making the type Optional, or when using Kotlin through State?.
 
 === Features
 
@@ -93,16 +94,16 @@ This release of Axon Framework introduced a minor breaking changes as per #4609.
 
 === Dependency upgrades
 
-- chore(deps): bump actions/setup-java from 5.4.0 to 5.5.0 in the github-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4728[PR #4728], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4729[PR #4729], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump slackapi/slack-github-action from 3.0.3 to 3.0.5 in the github-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4736[PR #4736], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump tools.jackson:jackson-bom from 3.2.0 to 3.2.1 in /examples/university-java-springboot-4 in the maven-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4737[PR #4737], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4738[PR #4738], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump the github-dependencies group with 3 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4760[PR #4760], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump the maven-dependencies group across 1 directory with 12 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4762[PR #4762], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump brace-expansion and @asciidoctor/core in /docs/_playbook (link:https://github.com/AxonIQ/AxonFramework/pull/4767[PR #4767], by link:https://github.com/apps/dependabot[@app/dependabot])
-- chore(deps): bump the maven-dependencies group across 1 directory with 7 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4783[PR #4783], by link:https://github.com/apps/dependabot[@app/dependabot])
-- Bump the maven-dependencies group across 1 directory with 10 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4859[PR #4859], by link:https://github.com/apps/dependabot[@app/dependabot])
+- chore(deps): bump actions/setup-java from 5.4.0 to 5.5.0 in the GitHub dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4728[PR #4728])
+- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4729[PR #4729])
+- chore(deps): bump slackapi/slack-github-action from 3.0.3 to 3.0.5 in the GitHub dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4736[PR #4736])
+- chore(deps): bump tools.jackson:jackson-BOM from 3.2.0 to 3.2.1 in /examples/university-java-springboot-4 in the maven-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4737[PR #4737])
+- chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4738[PR #4738])
+- chore(deps): bump the github-dependencies group with 3 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4760[PR #4760])
+- chore(deps): bump the maven-dependencies group across 1 directory with 12 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4762[PR #4762])
+- chore(deps): bump brace-expansion and @asciidoctor/core in /docs/_playbook (link:https://github.com/AxonIQ/AxonFramework/pull/4767[PR #4767])
+- chore(deps): bump the maven-dependencies group across 1 directory with 7 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4783[PR #4783])
+- Bump the maven-dependencies group across 1 directory with 10 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4859[PR #4859])
 
 === Contributors
 
