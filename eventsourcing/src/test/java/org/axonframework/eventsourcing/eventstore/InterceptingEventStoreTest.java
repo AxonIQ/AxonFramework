@@ -18,10 +18,12 @@ package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.common.util.MockException;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ResourceOverridingProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -35,6 +37,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -229,6 +232,39 @@ class InterceptingEventStoreTest {
         assertThat(result).isDone();
         assertThat(result).isCompletedExceptionally();
         assertThat(result.exceptionNow()).isInstanceOf(MockException.class);
+    }
+
+    @Nested
+    class SiblingContextBranches {
+
+        @Test
+        void appendIsInterceptedWithTheContextItsTransactionWasRequestedFor() {
+            // given a batch context with two sibling branches, as an event processor creates them per message
+            when(eventStore.transaction(any())).thenReturn(eventStoreTransaction);
+            Context.ResourceKey<String> handledMessageKey = Context.ResourceKey.withLabel("handledMessage");
+            List<String> interceptedMessages = new ArrayList<>();
+            InterceptingEventStore testSubject = new InterceptingEventStore(
+                    eventStore,
+                    List.of((message, context, chain) -> {
+                        interceptedMessages.add(context.getResource(handledMessageKey));
+                        return chain.proceed(message, context);
+                    })
+            );
+            ProcessingContext batchContext = new StubProcessingContext();
+            ProcessingContext firstBranch =
+                    new ResourceOverridingProcessingContext<>(batchContext, handledMessageKey, "first");
+            ProcessingContext secondBranch =
+                    new ResourceOverridingProcessingContext<>(batchContext, handledMessageKey, "second");
+
+            // when appending an event through the transaction of each branch
+            testSubject.transaction(firstBranch)
+                       .appendEvent(new GenericEventMessage(TEST_EVENT_TYPE, "first"));
+            testSubject.transaction(secondBranch)
+                       .appendEvent(new GenericEventMessage(TEST_EVENT_TYPE, "second"));
+
+            // then each append is intercepted with the branch its transaction was requested for
+            assertThat(interceptedMessages).containsExactly("first", "second");
+        }
     }
 
     @Test
