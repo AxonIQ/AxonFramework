@@ -1134,10 +1134,17 @@ class PooledStreamingEventProcessorTest {
 
         @Test
         void doesNotSpinWhenTheSourceKeepsHandingOutCompletedStreams() throws InterruptedException {
-            // given - a source that only ever returns completed streams, so every reopen attempt is futile
+            // given - a source that only ever returns completed streams, so every reopen attempt is futile. The
+            //         coordinator gets the single thread it runs on in production, as a second one lets a reopen
+            //         scheduled from the availability callback land while the run that opened the stream still holds
+            //         the processing gate, which drops it and hides the pace the reopens are scheduled at.
+            coordinatorExecutor = new DelegateScheduledExecutorService(Executors.newSingleThreadScheduledExecutor());
+            withTestSubject(List.of(recordingComponent), c -> c.initialSegmentCount(1));
             AtomicInteger openCount = new AtomicInteger();
             doAnswer(invocation -> {
                 openCount.incrementAndGet();
+                // A completed stream invokes the availability callback the moment the coordinator registers one,
+                // which is the notification a source ending every stream it hands out keeps repeating.
                 return MessageStream.empty();
             }).when(stubMessageSource).open(any(), isNull());
 
