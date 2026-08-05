@@ -24,6 +24,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.progress.T
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -427,6 +428,43 @@ class WorkPackageTest {
                 any(ProcessingContext.class)
         );
         assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressIgnoresAMergedTokenThatRewindsTheResumePosition() {
+        // given: the stored token has advanced to position 600
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(600L));
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a merged range is persisted whose furthest half is ahead but which resumes from the start of the stream
+        TrackingToken rewinding =
+                MergedTrackingToken.merged(TrackingToken.FIRST, new GlobalSequenceTrackingToken(700L));
+        persistProgressInUnitOfWork(rewinding);
+
+        // then: the rewinding range is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(rewinding), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenWithoutAPositionInsteadOfFailing() {
+        // given: the stored token has advanced to position 600
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(600L));
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a freshly created reset token, which has no current position at all, is persisted
+        TrackingToken freshReset = ReplayToken.createReplayToken(new GlobalSequenceTrackingToken(600L));
+        persistProgressInUnitOfWork(freshReset);
+
+        // then: the token without a position is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(freshReset), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
     }
 
     private void persistProgressInUnitOfWork(TrackingToken candidate) {
