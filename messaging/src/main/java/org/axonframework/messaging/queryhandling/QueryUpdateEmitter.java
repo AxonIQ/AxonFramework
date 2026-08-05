@@ -119,7 +119,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Emits the outcome of the {@code updateSupplier} to subscription queries matching the given {@code queryType} and
      * given {@code filter}, returning the number of subscription queries the update was emitted to.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryType      the type of the {@link QueryMessage} to filter on
      * @param filter         a predicate to filter matching subscription queries based on the
@@ -179,7 +179,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Emits the outcome of the {@code updateSupplier} to subscription queries matching the given {@code queryName} and
      * given {@code filter}, returning the number of subscription queries the update was emitted to.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryName      the qualified name of the {@link QueryMessage#type()} to filter on
      * @param filter         a predicate to filter matching subscription queries based on the raw
@@ -216,7 +216,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Completes subscription queries matching the given {@code queryType} and {@code filter}, returning the number of
      * subscription queries that were completed.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryType the type of the {@link QueryMessage} to filter on.
      * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
@@ -247,7 +247,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Completes subscription queries matching the given {@code queryName} and {@code filter}, returning the number of
      * subscription queries that were completed.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
      * @param filter    a predicate testing the raw {@link QueryMessage#payload()} as is
@@ -281,7 +281,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Completes subscription queries with the given {@code cause} matching given {@code queryType} and {@code filter},
      * returning the number of subscription queries that were completed exceptionally.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryType the type of the {@link QueryMessage} to filter on
      * @param filter    a predicate to filter matching subscription queries based on the {@link QueryMessage#payload()}
@@ -319,7 +319,7 @@ public interface QueryUpdateEmitter extends DescribableComponent {
      * Completes subscription queries with the given {@code cause} matching given {@code queryName} and {@code filter},
      * returning the number of subscription queries that were completed exceptionally.
      * <p>
-     * Implementations that cannot determine this number return {@link QueryBus#UNKNOWN_MATCH_COUNT} instead.
+     * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      *
      * @param queryName the qualified name of the {@link QueryMessage#type()} to filter on
      * @param filter    a predicate to filter matching subscription queries based on the raw
