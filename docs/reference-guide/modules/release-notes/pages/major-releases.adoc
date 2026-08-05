@@ -96,10 +96,10 @@ To resolve this, mark the @InjectEntity as nullable, either through an annotatio
 
 - chore(deps): bump actions/setup-java from 5.4.0 to 5.5.0 in the GitHub dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4728[PR #4728])
 - chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4729[PR #4729])
-- chore(deps): bump slackapi/slack-github-action from 3.0.3 to 3.0.5 in the GitHub dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4736[PR #4736])
+- chore(deps): bump slackapi/slack-GitHub-action from 3.0.3 to 3.0.5 in the GitHub dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4736[PR #4736])
 - chore(deps): bump tools.jackson:jackson-BOM from 3.2.0 to 3.2.1 in /examples/university-java-springboot-4 in the maven-dependencies group (link:https://github.com/AxonIQ/AxonFramework/pull/4737[PR #4737])
 - chore(deps): bump the maven-dependencies group across 1 directory with 5 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4738[PR #4738])
-- chore(deps): bump the github-dependencies group with 3 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4760[PR #4760])
+- chore(deps): bump the GitHub dependencies group with 3 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4760[PR #4760])
 - chore(deps): bump the maven-dependencies group across 1 directory with 12 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4762[PR #4762])
 - chore(deps): bump brace-expansion and @asciidoctor/core in /docs/_playbook (link:https://github.com/AxonIQ/AxonFramework/pull/4767[PR #4767])
 - chore(deps): bump the maven-dependencies group across 1 directory with 7 updates (link:https://github.com/AxonIQ/AxonFramework/pull/4783[PR #4783])
