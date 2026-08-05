@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.snapshot.store.tracing;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.eventsourcing.eventstore.Position;
@@ -73,13 +74,16 @@ class TracingSnapshotStoreTest {
         void threadsProcessingContextToTheDelegate() {
             // given - the pc is what lets the span nest under the surrounding entity-source trace
             QualifiedName name = new QualifiedName("Booking");
-            ProcessingContext context = new StubProcessingContext();
+            Context.ResourceKey<String> marker = Context.ResourceKey.withLabel("marker");
+            StubProcessingContext context = new StubProcessingContext();
+            context.putResource(marker, "store-marker");
 
             // when
             joinAndUnwrap(testSubject.store(name, "room-42", aSnapshot(), context));
 
-            // then
-            assertThat(delegate.storeContext).isSameAs(context);
+            // then - the delegate may receive a branch of the given context, never an unrelated one
+            assertThat(delegate.storeContext).isNotNull();
+            assertThat(delegate.storeContext.getResource(marker)).isEqualTo("store-marker");
         }
     }
 
@@ -104,13 +108,16 @@ class TracingSnapshotStoreTest {
         void threadsProcessingContextToTheDelegate() {
             // given
             QualifiedName name = new QualifiedName("Booking");
-            ProcessingContext context = new StubProcessingContext();
+            Context.ResourceKey<String> marker = Context.ResourceKey.withLabel("marker");
+            StubProcessingContext context = new StubProcessingContext();
+            context.putResource(marker, "load-marker");
 
             // when
             joinAndUnwrap(testSubject.load(name, "room-42", context));
 
-            // then
-            assertThat(delegate.loadContext).isSameAs(context);
+            // then - the delegate may receive a branch of the given context, never an unrelated one
+            assertThat(delegate.loadContext).isNotNull();
+            assertThat(delegate.loadContext.getResource(marker)).isEqualTo("load-marker");
         }
     }
 
