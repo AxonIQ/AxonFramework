@@ -180,7 +180,10 @@ public interface Message {
      */
     @Nullable
     default <T> T payloadAs(TypeReference<T> type) {
-        return payloadAs(type.getTypeAsClass());
+        Type targetType = type.getType();
+        return targetType instanceof Class<?>
+                ? payloadAs(type.getTypeAsClass())
+                : payloadAs(targetType, null);
     }
 
     /**

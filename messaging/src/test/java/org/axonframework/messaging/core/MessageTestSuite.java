@@ -25,6 +25,7 @@ import org.axonframework.conversion.Converter;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Type;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,8 @@ public abstract class MessageTestSuite<M extends Message> {
     private static final TypeReference<byte[]> BYTE_ARRAY_TYPE_REF = new TypeReference<>() {
     };
     private static final TypeReference<String> STRING_TYPE_REFERENCE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<Integer>> PARAMETERIZED_LIST_TYPE_REF = new TypeReference<>() {
     };
 
     /**
@@ -239,6 +242,14 @@ public abstract class MessageTestSuite<M extends Message> {
         M testSubject = buildMessage(STRING_PAYLOAD);
 
         assertThatThrownBy(() -> testSubject.payloadAs(BYTE_ARRAY_TYPE_REF, null))
+                .isExactlyInstanceOf(ConversionException.class);
+    }
+
+    @Test
+    void payloadAsWithParameterizedTypeReferencePreservesGenericTypeInsteadOfRawClass() {
+        M testSubject = buildMessage(List.of("a", "b"));
+
+        assertThatThrownBy(() -> testSubject.payloadAs(PARAMETERIZED_LIST_TYPE_REF))
                 .isExactlyInstanceOf(ConversionException.class);
     }
 
