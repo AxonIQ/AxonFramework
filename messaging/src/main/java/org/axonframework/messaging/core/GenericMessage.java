@@ -177,6 +177,11 @@ public class GenericMessage extends AbstractMessage {
     }
 
     @Override
+    public @Nullable <T> T payloadAs(TypeReference<T> type) {
+        return payloadAs(type.getType(), this.converter);
+    }
+
+    @Override
     @Nullable
     public <T> T payloadAs(Type type, @Nullable Converter converter) {
         //noinspection rawtypes,unchecked
