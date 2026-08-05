@@ -717,6 +717,33 @@ class SimpleQueryBusTest {
             // then...
             assertThat(matchCountRef.get()).isEqualTo(1);
         }
+
+        @Test
+        void emitUpdateReturningCountExcludesSubscriptionsWhoseUpdateBufferOverflowed() {
+            // given...
+            QueryMessage testQueryWithFullBuffer = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage testQueryWithRoom = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            Predicate<QueryMessage> queryFilter = query ->
+                    query.identifier().equals(testQueryWithFullBuffer.identifier())
+                            || query.identifier().equals(testQueryWithRoom.identifier());
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            SubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(UPDATE_PAYLOAD_TYPE, UPDATE_PAYLOAD);
+            testSubject.subscriptionQuery(testQueryWithFullBuffer, null, 1);
+            testSubject.subscriptionQuery(testQueryWithRoom, null, Queues.SMALL_BUFFER_SIZE);
+            // Fill the single-slot buffer so the next update to it overflows.
+            testSubject.emitUpdate(query -> query.identifier().equals(testQueryWithFullBuffer.identifier()),
+                                   () -> updateMessage,
+                                   null)
+                       .join();
+            // when...
+            Integer deliveredCount = testSubject.emitUpdateAndCount(queryFilter, () -> updateMessage, null)
+                                                .orTimeout(1, TimeUnit.SECONDS)
+                                                .join()
+                                                .orElseThrow();
+            // then only the subscription with buffer room actually received the update...
+            assertThat(deliveredCount).isEqualTo(1);
+        }
     }
 
     @Nested
