@@ -17,6 +17,7 @@
 package org.axonframework.messaging.queryhandling;
 
 import org.axonframework.common.TypeReference;
+import org.axonframework.conversion.TestConverter;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -114,7 +115,9 @@ class FutureAsResponseTypeToQueryHandlersTest {
 
         Flux<List<String>> response = FluxUtils.of(queryBus.subscriptionQuery(testQuery, null, 50))
                                                .map(MessageStream.Entry::message)
-                                               .mapNotNull(m -> m.payloadAs(LIST_OF_STRINGS));
+                                               .mapNotNull(m -> m.payloadAs(
+                                                       LIST_OF_STRINGS, TestConverter.JACKSON.getConverter()
+                                               ));
         queryBus.completeSubscriptions(s -> true, null);
         StepVerifier.create(response)
                     .expectNext(asList("Response1", "Response2"))
