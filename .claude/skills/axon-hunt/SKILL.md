@@ -1,6 +1,6 @@
 ---
 name: axon-hunt
-description: Drive and extend the Axon Hunt bug-hunting suite for Axon Framework 5 -- the seeded simulation harness in `simulation/`, its history-based oracles, and the invariant registry, findings log, canary campaigns and TLA+ models in `formal/`. Use when hunting for engine defects, triaging a red or inconclusive hunt run, reproducing a reported customer issue as a scenario, running the smoke / fuzz / chaos / per-backend matrix tiers, replaying a recorded history offline, or reading a per-backend verdict vector. Use equally when EXTENDING the suite: mining claims from Javadoc or code, turning a failure-mode hypothesis into a scenario, writing a scenario specification, adding an invariant, checker, fault, workload, backend, canary or TLA+ model, or covering a subsystem the suite has never touched (query side, dead letter queues, sagas). Also trigger on MachineName, HistoryView, DcbStoreModel, ScenarioRunner, HuntBackend, canary, landing evidence, "green-but-broken audit", or "the determinism boundary".
+description: Drive and extend the Axon Hunt bug-hunting suite for Axon Framework 5 -- the seeded simulation harness in `simulation/`, its history-based oracles, and the invariant registry, findings log, canary campaigns and TLA+ models in `formal/`. Use when hunting for engine defects, triaging a red or inconclusive hunt run, reproducing a reported customer issue as a scenario, running the smoke / fuzz / chaos / per-backend matrix tiers, replaying a recorded history offline, or reading a per-backend verdict vector. Use equally when EXTENDING the suite: mining claims from Javadoc or code, turning a failure-mode hypothesis into a scenario, writing a scenario specification, adding an invariant, checker, fault, workload, backend, canary or TLA+ model, or covering a subsystem the suite has never touched (query side, dead letter queues, sagas). Also carries the general distributed-systems testing method in full, so use it for: designing a test plan or stability / release-validation campaign for this framework, walking a pitfall catalogue to generate falsification hypotheses, picking a technique (consistency checking, deterministic simulation, chaos, fuzzing, formal methods, property and metamorphic, crash-recovery and upgrade, performance), designing an operation-history schema or a checker, injecting a fault and proving it landed, reducing a reproducer and assigning blame (engine / harness / checker / environment), labelling a verdict beyond PASS-FAIL-INCONCLUSIVE, or testing a boundary claim -- tenant, context, namespace, routing, authorisation -- or a fairness / noisy-neighbour claim across surfaces. Also trigger on MachineName, HistoryView, DcbStoreModel, ScenarioRunner, HuntBackend, canary, landing evidence, "green-but-broken audit", weak oracle, verdict vector, surface decomposition, negative control, or "the determinism boundary".
 ---
 
 # Axon Hunt
@@ -119,8 +119,13 @@ This skill depends on **no external skill and no private repository**. Every ref
 
 | Need | In this skill / this repo |
 |---|---|
-| History discipline, checker picker, landing evidence, the green-but-broken audit, weak oracles, DST seam patterns, anti-hang design | `references/method-essentials.md` |
-| Hypothesis generation for a subsystem with no coverage | `references/pitfall-catalogue.md`, plus the walked table in `docs/testing-plans/axon-hunt.md` section 4 |
+| The load-bearing rules in short form -- history discipline, checker picker, landing evidence, the audit, weak oracles, DST seams, anti-hang design | `references/method-essentials.md` |
+| The same rules in full -- every field, every pattern, every mechanism | `references/history-discipline.md`, `references/oracle-patterns.md`, `references/fault-catalogue.md`, `references/green-but-broken-audit.md` |
+| Hypothesis generation for a subsystem with no coverage | `references/pitfall-catalogue.md` -- part 1 by claim kind, part 2 the recurring sixteen with hypothesis templates -- plus the walked table in `docs/testing-plans/axon-hunt.md` section 4 |
+| Which technique to reach for, what it misses, its tools and papers | `references/technique-catalogue.md` |
+| A claim about tenancy, context, routing or fairness | `references/boundary-and-isolation.md` |
+| Labelling a verdict, reducing a reproducer, assigning blame and kind | `references/verdicts-and-classification.md` |
+| Designing a campaign from nothing, or running one as a session | `references/plan-workflow.md`, `references/execution-workflow.md`, and the three files under `assets/` |
 | The DCB conflict semantics a checker, model rule or TLA+ operator must encode | `references/dcb-semantics.md`, and the rule table with engine `file:line` evidence in `formal/INVARIANTS.md` section 3.1 |
 | AF5 wiring for a workload, backend or probe -- verbatim, compiling, with the plain-Java traps | `formal/HUNT-NOTES.md` section 2; the published Javadoc is the fallback |
 | Contribution conventions for code in this repo | the repository's own `CLAUDE.md` and `.claude/rules/`; `build/checkstyle.xml` is the enforcement |
@@ -136,13 +141,18 @@ Two **optional** tools help when present and cost nothing when absent:
   project, so nothing here may depend on it; the verified commands in `running.md` and
   `HUNT-NOTES.md` exist precisely so it is never needed.
 
-**What this skill deliberately does not contain:** generic distributed-systems pedagogy beyond
-the distillations above (the method files carry the load-bearing rules, not the textbook); the
-design rationale of the DCB boundary concept itself (why an aggregate is the wrong unit, how to
-choose a boundary -- a modelling question; `dcb-semantics.md` is sufficient for *checking*
-work); AF5 application-building guidance beyond what the harness wires; and any copy of the
-numbers the in-repo documents own -- findings, invariants, canary results are read from
-`formal/`, never from here, because they move.
+**What this skill deliberately does not contain:** the design rationale of the DCB boundary
+concept itself (why an aggregate is the wrong unit, how to choose a boundary -- a modelling
+question; `dcb-semantics.md` is sufficient for *checking* work); AF5 application-building
+guidance beyond what the harness wires; and any copy of the numbers the in-repo documents own --
+findings, invariants and canary results are read from `formal/`, never from here, because they
+move.
+
+The general distributed-systems method **is** carried here in full, not distilled away: the
+technique catalogue with its tools and papers, the recurring pitfall families with hypothesis
+templates, every oracle pattern, every fault mechanism, the whole audit, the boundary discipline
+and the verdict labels. Each of those files says where this suite already covers the ground and,
+explicitly, where it does not -- the uncovered rows are the point.
 
 ## The bug-hunting loop
 
@@ -157,10 +167,14 @@ Detail, with the determinism boundary spelled out: **`references/hunting-loop.md
    record order, not the operation counts, not which appends were accepted. A finding is
    pinned by its **history file**, never by its seed. `SINGLE_THREADED` reproduces the write
    side exactly and nothing else.
-4. **Verify yourself.** Mutate the thing you think is the cause and check the verdict moves.
+4. **Reduce, then assign blame.** Bisect the fault schedule down to the smallest sequence that
+   still reproduces, then classify the defect as **engine, harness, checker or environment** --
+   `references/verdicts-and-classification.md` sections 2 and 3. Three of those four are our
+   work, not the framework's, and the tells that separate them are tabulated there.
+5. **Verify yourself.** Mutate the thing you think is the cause and check the verdict moves.
    A differential that has never been shown to fail is indistinguishable from one that
    compares nothing.
-5. **Pin or reject.** Pin: a `FINDINGS.adoc` entry with a candidate fix, plus an
+6. **Pin or reject.** Pin: a `FINDINGS.adoc` entry with a candidate fix, plus an
    expected-gap test that passes while the gap exists and flips red when it is closed, plus a
    pinned history for a contended run or a pinned seed for a single-threaded one. Reject: say
    what it actually was, and if it was the harness, fix the harness and pin that.
@@ -233,13 +247,26 @@ Three traps that each cost an earlier phase real time:
 
 ## Reading a failure
 
-Detail, including flake classification: **`references/hunting-loop.md`**.
+Detail, including flake classification: **`references/hunting-loop.md`**. The labels, the
+decision tree, the reduction recipe and the blame tells:
+**`references/verdicts-and-classification.md`**.
 
 The verdict is three-valued and the third value is load-bearing. `PASS`: every required
 oracle ran, every declared fault landed, the read side settled, nothing broke. `FAIL`: an
 invariant was found broken. `INCONCLUSIVE`: the run could not tell -- a fault that never
 fired, an unknown outcome, a read side that never caught up, a required oracle not
 registered, a budget overrun.
+
+Three values are what a checker channel can decide; they are not enough to write up. **A pass is
+capped by the budget tier the run actually met** -- smoke or hardening, never whichever sounds
+better. **A failure splits on whether a reproducer exists.** And **`INCONCLUSIVE` splits four
+ways, each with a different repair**: a missing capability, a fault that was not proven to land,
+an oracle too weak for what was recorded, or an arm nobody attempted. Three of those four are
+harness work. Reaching for the label first tells you what to fix.
+
+A multi-arm scenario reports **a verdict per arm plus the capped aggregate**, never the aggregate
+alone: any unrun or partial arm caps the whole scenario. That is the same rule the `n/a` column of
+a per-backend vector already encodes.
 
 A checker has four things to say and only two move a verdict: a **violation** (`FAIL`), a
 **note** (`INCONCLUSIVE`), a **measurement** (a fact the history fully accounts for; the
@@ -275,7 +302,12 @@ record what is still uncovered          ->  an accepted residual with an owner
 ```
 
 Full method: **`references/claims-and-scenarios.md`** (claims mining, confidence,
-refutation, the pitfall walk, the five-field scenario template).
+refutation, the pitfall walk, the five-field scenario template). When the task is a whole
+campaign rather than one scenario -- a new subsystem, a change under review, "what should we be
+testing" -- the ordered procedure is **`references/plan-workflow.md`** and the shape to fill is
+**`assets/plan-template.md`**. To run one as a session that somebody else will read:
+**`references/execution-workflow.md`**, with `assets/session-log-template.md` and
+`assets/findings-report-template.md`.
 
 **One chain that paid off end to end**, so the shape is concrete rather than abstract:
 
@@ -464,19 +496,39 @@ contradicted the inference, not the measurement.
 
 ## Reference index
 
+**This repository's own machinery.**
+
 | File | Read it when |
 |---|---|
 | `references/running.md` | You need a command. All of them, verified, with their traps. |
 | `references/hunting-loop.md` | Triaging, reproducing or interpreting a result. Determinism boundary and flake classification. |
 | `references/recipes.md` | Adding an invariant, fault, workload, backend, canary or model. |
 | `references/traps.md` | Before writing up any divergence as a finding. |
-| `references/method-essentials.md` | Writing a checker, a fault or a new arm. History discipline, oracles, landing evidence, audits, seams. |
-| `references/pitfall-catalogue.md` | Generating hypotheses for a subsystem with no coverage. |
 | `references/dcb-semantics.md` | Writing or reviewing anything that decides whether an append conflicts. |
 | `references/claims-and-scenarios.md` | Mining claims, or designing a scenario from a hypothesis. |
 | `references/design-commitments.md` | Making a design decision about the harness itself. |
 | `references/extending.md` | Covering a subsystem that has no coverage today. |
 | `references/honest-reporting.md` | Writing up anything anyone else will act on. |
+
+**The method, in short form and in full.** Each of the full files marks where this suite already
+covers the ground and where it does not.
+
+| File | Read it when |
+|---|---|
+| `references/method-essentials.md` | The short form of all of it. Writing a checker, a fault or a new arm. |
+| `references/technique-catalogue.md` | Choosing how to attack a hypothesis. Symptom-to-technique selector, then eight techniques with what each misses, its tools and its papers. |
+| `references/pitfall-catalogue.md` | Generating hypotheses. Part 1 by claim kind with this suite's findings as instances; part 2 the sixteen recurring families with hypothesis templates. |
+| `references/history-discipline.md` | Designing or fixing a recorder. Every field, the vantage points, weak history, ambiguous outcomes, the model-to-fields picker. |
+| `references/oracle-patterns.md` | Picking or writing a checker. The picker, then fourteen patterns with how each fails silently. |
+| `references/fault-catalogue.md` | Injecting anything. Mechanism, landing evidence and cleanup per fault, across process, network, storage, time, cluster and framework. |
+| `references/green-but-broken-audit.md` | Before declaring any pass. Ten red flags, fourteen weak oracles, and how to record which rows came back short. |
+| `references/boundary-and-isolation.md` | A claim about tenancy, context, routing, or fairness. Surfaces, the claim matrix, confusable inputs, negative controls, the per-group formula. |
+| `references/verdicts-and-classification.md` | Labelling a verdict, reducing a reproducer, assigning blame and kind. |
+| `references/plan-workflow.md` | Designing a campaign from nothing. The ordered procedure and its anti-pattern checks. |
+| `references/execution-workflow.md` | Running a campaign as a session somebody else will read. |
+
+**Assets.** Shapes to fill, not documents to read: `assets/plan-template.md`,
+`assets/session-log-template.md`, `assets/findings-report-template.md`.
 
 ## Installing this skill elsewhere
 

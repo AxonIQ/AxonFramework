@@ -2,11 +2,24 @@
 
 **This file is self-sufficient.** It carries the load-bearing rules of the distributed-systems
 testing method this suite was built with, so that adding a checker, a fault or a new arm needs
-nothing outside this repository. For hypothesis generation against a new subsystem, the
-companion is `pitfall-catalogue.md`.
+nothing outside this repository.
 
 Where this suite's own implementation already encodes a rule, the rule is stated with the
 suite's vocabulary, because that is the form you will actually need.
+
+**This is the short form. Each section has a full companion**, and the companion is where the
+uncovered ground is named:
+
+| Section here | Full form |
+|---|---|
+| 1. Operation-history discipline | `history-discipline.md` -- every field, the vantage points, the model-to-fields picker |
+| 2. The checker picker | `oracle-patterns.md` -- fourteen patterns, each with how it fails silently |
+| 3. Landing evidence | `fault-catalogue.md` -- mechanism, evidence and cleanup per fault |
+| 4. The green-but-broken audit | `green-but-broken-audit.md` -- the ten red flags and fourteen weak oracles, with how to record them |
+| 5. Deterministic simulation and seams | `technique-catalogue.md` section 2 -- and sections 1 and 3 to 8 for the techniques this suite does not use |
+
+For hypothesis generation against a new subsystem, the companion is `pitfall-catalogue.md`. For
+labelling what a run decided, `verdicts-and-classification.md`.
 
 ---
 
