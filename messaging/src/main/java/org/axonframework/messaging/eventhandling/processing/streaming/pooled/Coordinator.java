@@ -755,6 +755,7 @@ class Coordinator {
         private final AtomicBoolean scheduledGate = new AtomicBoolean();
         private final AtomicBoolean interruptibleScheduledGate = new AtomicBoolean();
         private @Nullable MessageStream<? extends EventMessage> eventStream;
+        private AtomicBoolean eventStreamDeliveredEvents = new AtomicBoolean();
         private TrackingToken lastScheduledToken = NoToken.INSTANCE;
         private boolean availabilityCallbackSupported;
         private long unclaimedSegmentValidationThreshold;
@@ -1219,15 +1220,31 @@ class Coordinator {
                         ? CompletableFuture.completedFuture(trackingToken)
                         : eventSource.firstToken(null);
                 return startPositionFuture.thenAccept(startStreamingFrom -> {
-                    eventStream = eventSource.open(
+                    MessageStream<? extends EventMessage> stream = eventSource.open(
                             StreamingCondition.conditionFor(startStreamingFrom, eventCriteria), null
                     );
+                    AtomicBoolean deliveredEvents = new AtomicBoolean();
+                    eventStream = stream;
+                    eventStreamDeliveredEvents = deliveredEvents;
                     logger.debug(
                             "Processor [{}] (Coordination Task [{}]) opened stream with tracking token [{}] and criteria [{}].",
                             name, generation, startStreamingFrom, eventCriteria
                     );
                     availabilityCallbackSupported = true;
-                    eventStream.setCallback(() -> {
+                    stream.setCallback(() -> {
+                        if (stream.isCompleted() && !deliveredEvents.get()) {
+                            // The callback fires on completion, and at registration time on an already completed
+                            // stream. A stream that ended without ever delivering an event holds nothing to act on, so
+                            // replacing it at once would open the next one as fast as the coordinator runs at all.
+                            // Pacing it the way a failed stream is paced keeps that down to a retry.
+                            logger.trace(
+                                    "Processor [{}] (Coordination Task [{}]). Stream completed without delivering "
+                                            + "events. Scheduling coordination task (itself) with delay of {}ms.",
+                                    name, generation, errorWaitBackOff
+                            );
+                            scheduleCoordinationTask(errorWaitBackOff);
+                            return;
+                        }
                         logger.trace(
                                 "Processor [{}] (Coordination Task [{}]). Events became available (callback triggered). "
                                         + "Scheduling immediate coordination task (itself).",
@@ -1277,7 +1294,11 @@ class Coordinator {
             if (eventStream == null) {
                 return null;
             }
-            return eventStream.next().orElse(null);
+            MessageStream.Entry<? extends EventMessage> entry = eventStream.next().orElse(null);
+            if (entry != null) {
+                eventStreamDeliveredEvents.set(true);
+            }
+            return entry;
         }
 
         private boolean hasNextEvent() {
