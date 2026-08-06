@@ -450,12 +450,12 @@ If you had customized the `JpaEventStorageEngine` in Axon Framework 4 to, for ex
 axon.eventstorage.jpa.batch-size=100
 # Threshold for gap cleanup (default: 250)
 axon.eventstorage.jpa.gap-cleaning-threshold=250
-# Gap timeout in milliseconds (default: 10000)
-axon.eventstorage.jpa.gap-timeout=10000
+# Gap timeout in milliseconds (default: 60000)
+axon.eventstorage.jpa.gap-timeout=60000
 # Minimum global index value (default: 1)
 axon.eventstorage.jpa.lowest-global-sequence=1
-# Max gap distance from highest index (default: 60000)
-axon.eventstorage.jpa.max-gap-offset=60000
+# Max gap distance from highest index (default: 10000)
+axon.eventstorage.jpa.max-gap-offset=10000
 # Polling interval in ms for new events (default: 1000)
 axon.eventstorage.jpa.polling-interval=1000
 ----
