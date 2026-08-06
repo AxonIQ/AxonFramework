@@ -1,0 +1,106 @@
+name: Minor/Patch Release
+
+# Performs a release of the project from a patch branch (axon-*) using the Maven release
+# plugin. Same steps as the Major Release workflow, minus branch creation. Steps:
+#   1. release:prepare  - bump to RELEASE_VERSION, tag, bump the branch to DEVELOPMENT_VERSION
+#   2. push the release commits and tag to the patch branch
+#   3. release:perform  - build the tagged release and deploy it to Maven Central
+#      (this only uploads/validates the deployment; publishing on
+#      https://central.sonatype.com/publishing/deployments is still a manual step)
+
+on:
+  workflow_dispatch:
+    inputs:
+      RELEASE_VERSION:
+        description: 'Version being released, e.g. 5.4.1'
+        required: true
+        type: string
+      DEVELOPMENT_VERSION:
+        description: 'Next development version for the patch branch, e.g. 5.4.2-SNAPSHOT'
+        required: true
+        type: string
+      DRY_RUN:
+        description: 'Simulate the release: runs release:prepare -DdryRun (no commit/tag), skips push and release:perform'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: minor-patch-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release ${{ inputs.RELEASE_VERSION }}
+    runs-on: ubuntu-latest
+    # Guard against running from any ref that isn't a patch branch, regardless of what
+    # was picked in the workflow_dispatch "Use workflow from" branch selector.
+    if: startsWith(github.ref, 'refs/heads/axon-')
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ inputs.RELEASE_VERSION }}
+      DEVELOPMENT_VERSION: ${{ inputs.DEVELOPMENT_VERSION }}
+      BRANCH_NAME: ${{ github.ref_name }}
+      RELEASE_TAG: axon-${{ inputs.RELEASE_VERSION }}
+
+    steps:
+      - name: Checkout ${{ github.ref_name }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          token: ${{ secrets.DEVBOT_GITHUB_TOKEN }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'zulu'
+          java-version: 21
+          cache: 'maven'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'AxonIQ devbot'
+          git config user.email 'devbot@axoniq.io'
+
+      - name: Release prepare
+        run: |
+          ./mvnw --batch-mode -Dtag=$RELEASE_TAG \
+                             -DreleaseVersion=$RELEASE_VERSION \
+                             -DdevelopmentVersion=$DEVELOPMENT_VERSION \
+                             -DdryRun=${{ inputs.DRY_RUN }} \
+                             -DskipTests \
+                             -Darguments=-DskipTests \
+                             release:prepare
+
+      - name: Push release commits and tag to ${{ github.ref_name }}
+        if: inputs.DRY_RUN == false
+        run: |
+          git push origin $BRANCH_NAME
+          git push origin $RELEASE_TAG
+
+      - name: Release perform (deploy to Maven Central)
+        if: inputs.DRY_RUN == false
+        env:
+          MAVEN_USERNAME: ${{ secrets.SONATYPE_TOKEN_ID }}
+          MAVEN_PASSWORD: ${{ secrets.SONATYPE_TOKEN_PASS }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          ./mvnw release:perform -Darguments="-DskipTests"
+
+      - name: Clean release plugin working files
+        run: ./mvnw --batch-mode release:clean
+
+      - name: Dry run summary
+        if: inputs.DRY_RUN == true
+        run: |
+          echo "Dry run complete - no commits, tags, pushes, or deployment were created."
+          echo "release:prepare validated: RELEASE_TAG=$RELEASE_TAG RELEASE_VERSION=$RELEASE_VERSION DEVELOPMENT_VERSION=$DEVELOPMENT_VERSION on branch $BRANCH_NAME"
