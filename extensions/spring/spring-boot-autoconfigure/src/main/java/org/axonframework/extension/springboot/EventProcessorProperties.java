@@ -26,6 +26,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.StreamingE
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -151,9 +152,14 @@ public class EventProcessorProperties {
         private int batchSize = 1;
 
         /**
-         * Name of the {@link TokenStore} bean used for this processor. Must not be null.
+         * Name of the {@link TokenStore} bean used for this processor.
+         * <p>
+         * Defaults to unset, in which case the bean named {@code tokenStore} is used, or otherwise the unique
+         * {@link TokenStore} bean of the application.
          */
-        private String tokenStore = "tokenStore";
+        @Nullable
+        private String tokenStore;
+
         /**
          * The name of the bean that represents the sequencing policy for processing events. If no name is specified,
          * the processor defaults to a {@link SequentialPerAggregatePolicy},
@@ -328,20 +334,21 @@ public class EventProcessorProperties {
         /**
          * Sets the name of the TokenStore bean.
          *
-         * @param tokenStore A name of the Spring Bean used for this processor.
+         * @param tokenStore the name of the Spring Bean used for this processor; omitting the property, rather than
+         *                   binding it to {@code null}, is what leaves the name unset
          */
         public void setTokenStore(String tokenStore) {
-            Objects.requireNonNull(tokenStore, "TokenStore cannot be null");
-            this.tokenStore = tokenStore;
+            this.tokenStore = Objects.requireNonNull(tokenStore, "TokenStore cannot be null");
         }
 
         /**
          * Retrieves the name of the TokenStore bean.
          *
-         * @return Name of the token store Spring Bean.
+         * @return name of the token store Spring Bean, or {@code null} when unset
          */
         @Override
-                public String tokenStore() {
+        @Nullable
+        public String tokenStore() {
             return tokenStore;
         }
 
