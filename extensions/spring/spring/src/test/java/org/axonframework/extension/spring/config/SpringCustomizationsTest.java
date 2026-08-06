@@ -256,6 +256,24 @@ class SpringCustomizationsTest {
         }
 
         @Test
+        void prefersTheConventionallyNamedTokenStoreOverAnAmbiguousTypeLevelLookup() {
+            // given - two token stores, one of them under the conventional bean name
+            StreamableEventSource typeLevelSource = mock(StreamableEventSource.class);
+            TokenStore conventionalTokenStore = new InMemoryTokenStore();
+            var configuration = configuration(cr -> cr
+                    .registerComponent(StreamableEventSource.class, cfg -> typeLevelSource)
+                    .registerComponent(TokenStore.class, "tokenStore", cfg -> conventionalTokenStore)
+                    .registerComponent(TokenStore.class, "other-token-store", cfg -> new InMemoryTokenStore())
+            );
+
+            // when
+            var result = customizePooled(configuration, null, null);
+
+            // then
+            assertThat(result.tokenStore()).isSameAs(conventionalTokenStore);
+        }
+
+        @Test
         void leavesSourceAndTokenStoreUnsetWhenNoTypeLevelDefaultsArePresent() {
             // given - only named components are registered
             var configuration = configuration(cr -> cr
