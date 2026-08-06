@@ -113,8 +113,9 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * <p>
      * When a {@link Segment} is attached to the {@code context} (as done by a segmented processor), a component only
      * handles an event when the component's sequence identifier hashes into that segment, ensuring each event is handled
-     * exactly once per component across all segments. Without a {@link Segment} in the {@code context}, every supporting
-     * component handles the event.
+     * exactly once per component across all segments. The one exception is a component whose sequence identifier is
+     * {@link SequencingPolicy#BROADCAST}, which handles the event in every segment. Without a {@link Segment} in the
+     * {@code context}, every supporting component handles the event.
      *
      * @param entries the batch of message stream entries to be processed
      * @param context the processing context in which the event messages are processed
@@ -173,9 +174,10 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
      * {@link org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor}), handling is
      * not segmented and the component always handles the event.
      * <p>
-     * When the component's sequence identifier equals {@link SequencingPolicy#BROADCAST}, segment
+     * When the component's sequence identifier is the {@link SequencingPolicy#BROADCAST} instance itself, segment
      * matching is skipped and the component handles the event in every segment, mirroring the admission decision made
-     * while scheduling.
+     * while scheduling. The comparison is by identity, so a sequence identifier that merely carries the same value as
+     * data is routed to a single segment like any other.
      *
      * @param segment   the {@link Segment} currently handling the event, or {@code null} when handling is not segmented
      * @param component the component that would handle the event
@@ -191,7 +193,7 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
             return true;
         }
         Object sequenceIdentifier = component.sequenceIdentifierFor(event, context);
-        if (SequencingPolicy.BROADCAST.equals(sequenceIdentifier)) {
+        if (sequenceIdentifier == SequencingPolicy.BROADCAST) {
             return true;
         }
         return new SegmentMatcher((e, ctx) -> Optional.of(sequenceIdentifier))

@@ -20,15 +20,18 @@ import org.jspecify.annotations.NonNull;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.eventhandling.*;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -192,6 +195,47 @@ class SequencingEventHandlingComponentTest {
                 .havingCause()
                 .isInstanceOf(RuntimeException.class)
                 .withMessage("Test exception");
+    }
+
+    @Test
+    void broadcastSentinelAndAnIdenticallyValuedIdentifierAreSequencedIndependently() {
+        // given a policy returning the broadcast sentinel for one event and the String "BROADCAST" for another. The
+        // two hash into the same bucket of the invocation map, so only identity equality keeps them apart as keys;
+        // were they one key, the second event's handling would be chained behind the first's.
+        EventMessage sentinelSequenced = testEvent("sentinel-sequenced");
+        EventMessage dataSequenced = testEvent("data-sequenced");
+        CompletableFuture<EventMessage> firstHandlingStillRunning = new CompletableFuture<>();
+        List<EventMessage> invocations = new CopyOnWriteArrayList<>();
+        handlerRegistry.subscribe(new QualifiedName(TestPayload.class), (event, context) -> {
+            invocations.add(event);
+            if (event.equals(sentinelSequenced)) {
+                return MessageStream.fromFuture(firstHandlingStillRunning).ignoreEntries().cast();
+            }
+            return MessageStream.empty();
+        });
+        EventHandlingComponent eventHandlingComponent = new SequencingEventHandlingComponent(
+                new SequenceOverridingEventHandlingComponent(
+                        (event, context) -> Optional.of(event.equals(sentinelSequenced)
+                                                                ? SequencingPolicy.BROADCAST
+                                                                : "BROADCAST"),
+                        handlerRegistry
+                )
+        );
+
+        // when both events are handled in one processing context, while the first one's handling has not completed
+        List<EventMessage> invokedWhileFirstStillRunning = new ArrayList<>();
+        aUnitOfWork().executeWithResult(ctx -> {
+                         var firstResult = eventHandlingComponent.handle(sentinelSequenced, ctx).asCompletableFuture();
+                         var secondResult = eventHandlingComponent.handle(dataSequenced, ctx).asCompletableFuture();
+                         invokedWhileFirstStillRunning.addAll(invocations);
+                         firstHandlingStillRunning.complete(null);
+                         return CompletableFuture.allOf(firstResult, secondResult);
+                     })
+                     .orTimeout(2, TimeUnit.SECONDS)
+                     .join();
+
+        // then the second event was handled without waiting for the first, so the two were distinct keys
+        assertThat(invokedWhileFirstStillRunning).containsExactly(sentinelSequenced, dataSequenced);
     }
 
     static @NonNull EventMessage testEvent(String payload) {
