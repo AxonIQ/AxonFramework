@@ -748,3 +748,38 @@ delivers everything everywhere.
 | The engine-side mutation for F-21 | The one-line fix was not applied and measured: the constitution forbids patching the engine outside a canary loop, and this environment's tool policy blocked the framework edit outright. The in-test control above answers the same question; a future canary phase that has the permission should still run it, because it is the only form that exercises the constructor itself. |
 | Every strategy seam except `onBatchCommit` | `contributeBatchResources`, `onSegmentClaimed`, `onSegmentReleased`, `onAbort` and `hasPendingWork` are invoked by no probe and by no scenario. Several carry reported-but-unconfirmed defects (a swallowed final-progress failure on the release path, a synchronous throw from `hasPendingWork` that never reaches the completion handler, a claim that is never extended on the pending-work branch). Owned by the phase that adds a progress-strategy dimension to `Scenario`. |
 | The broadcast path through a real segmented processor | The collision probe drives `ProcessorEventHandlingComponents` directly, which is where the decision is made, but not `DefaultWorkPackageEventFilter` -- package-private, so unreachable from the simulation module. The filter's own short-circuit is therefore established by reading only. |
+
+
+## Campaign of 2026-08-04 (tracing rework, #4713)
+
+Two mutations against the 5.3.0-RC1 tracing spans, both installed via
+`./mvnw -q -pl messaging install -DskipTests` and judged by
+`./mvnw -Phunt -pl simulation test -Dtest=TracingScopeLifecycleTest -Dsurefire.failIfNoSpecifiedTests=false`.
+Both reverted; final `git status` on `messaging/` clean.
+
+| Mutation | Oracle | Result |
+|---|---|---|
+| `SpanScopedMessageStream#fetchNext` pulls outside `scope.within` | `TracingScopeLifecycleTest$ConcurrentBranchScopes` (first version, `MessageStream.just` delegate) | **ESCAPED** -- the single ready entry is consumed by the construction-time probe pull that `Span#branchStream` runs inside `scope.within`, so `fetchNext` never carries the entry and the oracle never exercises the mutated line. |
+| Same mutation | Same test after sharpening: the entry hides behind a `CompletableFuture` completed only after construction, forcing the mapping pull through `fetchNext` | **CAUGHT** -- `TEST_EXIT=1`, violations `"pull of worker-N-K ran within no scope"` on both workers from round 0. |
+| `FluxUtils#asMessageStream` drops `.contextCapture()` | `TracingScopeLifecycleTest$ReactiveThreadLocalCapture` | **CAUGHT** -- `TEST_EXIT=1`, "the handler span active at subscription must be captured into the Reactor context". |
+
+The escape is the useful row: any oracle probing per-pull scope re-entry MUST gate its entries behind
+a future completed after stream construction, or the construction probe silently satisfies it.
+
+
+## Campaign: the snapshotting live-append criteria guard (2026-08-05)
+
+Target: `SnapshottingEntityLifecycleHandler#subscribe`, the snapshotting sibling of the
+`SimpleEntityLifecycleHandler` guard added by commit `0368916114` for #4770. Mutation: force the
+criteria match true (`if (true || criteria.matches(...))`), installed with
+`./mvnw -q -o -pl eventsourcing -am install -DskipTests`, measured, reverted with
+`git checkout -- eventsourcing`, clean artifact reinstalled, clean rerun green (exit 0).
+
+Result: **caught, by 5 of 7 tests** in `SnapshottingLiveEntityEvolutionRoutingTest` -- all three
+co-loaded routing tests, the snapshot-restored no-absorb test, and one F-33 expected-gap test whose
+routing precondition the mutation also breaks. The wiring-proof test (snapshot gets stored) stayed
+green, correctly: the guard does not participate in snapshot storage.
+
+| Planted defect | Oracle | Verdict |
+|---|---|---|
+| Live-append criteria guard removed from the snapshotting lifecycle handler | co-loaded same-type entity counts, live and reloaded | caught (5/7 red, exit 1) |

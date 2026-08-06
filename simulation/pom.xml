@@ -85,6 +85,23 @@
         </dependency>
 
         <!--
+          The tracing hunt registers a test ThreadLocalAccessor with Micrometer's ContextRegistry to probe the
+          reactive ThreadLocal capture in MonoUtils/FluxUtils. Test scope, mirroring axon-messaging's own test
+          dependency; the version is managed by build/parent.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Reactor is optional in axon-messaging, so the reactive-capture probe declares it itself. -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
           The real-backend arm. Test scope on purpose: the container-backed backend lives in src/test/java with its own
           service-registration file, so the default build of this module compiles and runs without Docker, Hibernate or
           a PostgreSQL driver anywhere on its path. ServiceLoader reads every registration file on the classpath, so the

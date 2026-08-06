@@ -2655,3 +2655,158 @@ consequences worth carrying: a hunt CI job that builds with `-am` inherits the f
 upstream modules, not through the suite -- the suite's own 200+ cases were green in all three runs -- and the flaky
 class is `PooledStreamingEventProcessorTest`, the component this suite already holds three findings against. Nobody
 should page the suite for a red that names a messaging-module test.
+
+## 7. Class-of-bug sweep of PR #4746 (context-bound wrappers cached under non-branched keys)
+
+The sweep question: for every `computeResourceIfAbsent` / `putResourceIfAbsent` / `updateResource`
+call in framework main source, does the cached value close over the context that created it, and
+can the key be read from a sibling branch created later? Twenty-three call sites; twenty-two are
+benign because the cached value is context-free (a `ConcurrentHashMap`, a queue, a task) or because
+every closure reads the context from the phase callback's own `ctx` parameter rather than from
+capture. The one survivor is `InterceptingEventStore` (F-24): the cached
+`InterceptingEventStoreTransaction` stores its creating context in a field and intercepts every
+`appendEvent` with it.
+
+Two traps worth carrying:
+
+- The three fixed `forContext` factories are clean on main, but the same PATTERN lives anywhere a
+  decorator caches a wrapper "per context". When reviewing a new decorator, look for the pair
+  (field holding `ProcessingContext`) + (`computeResourceIfAbsent` in a factory/getter). That pair
+  is the whole defect.
+- The reproduction needs no processor: `ProcessorEventHandlingComponents.handle(entries, ctx)` +
+  `InterceptingEventHandlingComponent` + `CorrelationDataInterceptor` in one
+  `SimpleUnitOfWorkFactory` unit of work is the real batch branching path (the same classes
+  `PooledStreamingEventProcessorModule` wires), fully deterministic, no Awaitility. See
+  `InterceptedTransactionBranchLeakTest`.
+
+
+### 6.8 A flake in the framework's own tracing test was the test double, not the component
+
+`TracingEventHandlingComponentTest$BatchSpan#concurrentFirstEventsCreateAndBindExactlyOneBatchSpan`
+fails intermittently (measured: 6/40 loop runs of the nested class on this machine) with
+
+    Span 'EventProcessor.process SecondEvent' expected parent 'StreamingEventProcessor.batch'
+    but had parent 'EventProcessor.process FirstEvent'
+
+and, in one of the six, the symmetric direction (FirstEvent under SecondEvent). Two traps worth
+keeping:
+
+1. **The test's coordination is dead code.** `CoordinatedBatchProcessingContext` barriers on
+   resource label `org.axonframework.messaging.tracing.batchSpan`, but the component keys its
+   initializer under `...batchSpanInitializer`, and the lookup goes through
+   `computeResourceIfAbsent` (which `StubProcessingContext` implements directly on the map), never
+   through the overridden `getResource`. The `CyclicBarrier(2)` is never awaited, so the test is an
+   uncoordinated race with a tiny window -- which is exactly the flake rate observed.
+2. **`StubProcessingContext.withResource` mutates.** It does `resources.put(key, resource); return
+   this;` where the `ProcessingContext` contract (and the production default, honored by the
+   `UnitOfWork` context) branches immutably. Under that mutation, `Span#branchStream` writes each
+   per-event handler scope onto the SHARED batch context, and any span created while that scope is
+   still open resolves it as parent. Once the scope closes, `BranchSpanScope.resolve` falls back to
+   the batch scope -- why isolation reruns nearly always pass.
+
+Canary: with `StubProcessingContext.withResource` temporarily changed to
+`new ResourceOverridingProcessingContext<>(this, key, resource)` (branching), the same 40-run loop
+produced zero failures; reverted afterwards. Deterministic single-threaded pins (no barriers, no
+sleeps -- hold the first event's delegate stream open, then handle the second):
+`simulation/src/test/java/org/axonframework/hunt/probe/tracing/BatchSpanParentScopeLeakTest.java`.
+Finding F-25; claims C47, gap M22.
+
+
+### 2.54 Wiring `@EventSourcedEntity` probes inside the simulation module
+
+Three traps, each hit once while probing PR #4770 (`LiveEntityEvolutionRoutingTest`):
+
+- The commercial connector is on the hunt classpath, so a bare `EventSourcingConfigurer.create().start()`
+  auto-enhances into a `DistributedCommandBus` dialling Axon Server and every `send` dies with
+  `AXONIQ-4003 ... UNAVAILABLE`. Disable it by FQCN, exactly as the integrationtests infrastructure does:
+  `cr.disableEnhancer("io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer")`
+  -- the String overload is a no-op when the connector is absent.
+- `@InjectEntity` on an entity with zero stored events throws `EntityNotFoundException` even when the
+  `@EntityCreator` is a no-arg constructor. Seed one tagged creation event per entity first (publish via
+  `EventGateway` in its own unit of work, the `MultiEntitySameEventHandlersIT` pattern).
+- Live evolution IS synchronous: `DefaultEventStoreTransaction.appendEvent` runs the `onAppend` callbacks
+  inline (line 176) and `applyStateChange` mutates immediately, so a command handler can observe co-loaded
+  entities' post-append in-memory state right after `EventAppender.append(...)` returns. That observation is
+  the live-path oracle; comparing it against a fresh reload catches both filter directions at once.
+
+A canary for this area: revert the live filter in `SimpleEntityLifecycleHandler.subscribe` to
+`true || criteria.matches(...)`, `./mvnw -q -pl eventsourcing install -DskipTests`, re-run the probe. Remember
+the install overwrites the artifact in `~/.m2` -- revert the source AND reinstall clean afterwards, or every
+later simulation run tests the mutant.
+
+
+### 2.14 A configurer-based test on this module's test classpath dials Axon Server
+
+`EventSourcingConfigurer.create().start()` discovers the Axon Server connector's
+`AxonServerConfigurationEnhancer` through ServiceLoader (the connector is a test-scope dependency of
+this module for the P6 arm), which silently replaces the default `EventStorageEngine` with
+`AxonServerEventStorageEngine`. The processor's token-store initialization then retries
+`firstToken()` against a server that is not there, 30 times, and start() fails with
+`ProcessRetriesExhaustedException` that names neither the connector nor the store. Fix, verbatim:
+
+```java
+registry.disableEnhancer(io.axoniq.framework.axonserver.connector.configuration
+        .AxonServerConfigurationEnhancer.class);
+registry.registerComponent(EventStorageEngine.class, c -> new InMemoryEventStorageEngine());
+```
+
+### 2.15 Probing per-pull scope re-entry needs a gated stream
+
+`Span#branchStream` runs the whole stream composition inside `scope.within(...)`, and composing the
+wrappers already pulls the operation's stream once. A delegate whose entries are ready at
+construction (`MessageStream.just`, `fromIterable`) is therefore fully consumed inside that
+construction-time window, and an oracle asserting "every pull re-enters the scope" passes even when
+`SpanScopedMessageStream#fetchNext` does not re-enter at all -- measured, as the escaped canary in
+the 2026-08-04 campaign. Hide the entry behind a `CompletableFuture` completed after construction to
+force the pull through `fetchNext`.
+
+### 2.16 Reactor and context-propagation are not on the simulation compile path
+
+`axon-messaging` marks `reactor-core` optional and `io.micrometer:context-propagation` test-scope,
+so a simulation test touching `FluxUtils`/`MonoUtils` capture declares both itself (test scope,
+versions managed by build/parent). Registering a `ThreadLocalAccessor` with
+`ContextRegistry.getInstance()` is enough for `contextCapture()` to pick it up; no
+`Hooks.enableAutomaticContextPropagation()` is needed for capture-side assertions.
+
+
+### 2.55 Wiring the snapshotting lifecycle handler costs one annotation and one component
+
+No declarative builder needed: `@Snapshotting(afterEvents = N)` on the `@EventSourcedEntity` class
+plus `cr.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore())` makes the
+annotated module take the `OptionalPhase.snapshotPolicy(...)` route and build
+`SnapshottingEntityLifecycleHandler` instead of the simple one. `afterEvents(N)` fires strictly
+above N (`eventsApplied() > N`). Prove the wiring behaviourally -- only the snapshotting handler
+stores snapshots, so await `snapshotStore.load(new QualifiedName(Entity.class), id, null)` non-null
+after a load that crosses the threshold; a silent fallback to the simple handler never writes one.
+
+Trap that produced F-33 while probing this: with a mutable entity and `InMemorySnapshotStore`, the
+stored snapshot's payload IS the live entity instance (stored by reference at
+`SnapshottingEntityLifecycleHandler.storeSnapshot`, returned by reference from
+`convertSnapshotPayload`'s `isInstance` short-circuit). Any live evolution after the store, or after
+a restore, mutates the stored snapshot in place, and the next load double-applies the post-snapshot
+events. Assert reload counts against the event history, not against the live state, or the
+corruption passes as agreement.
+
+A per-id counter inside the creation event's `@EventSourcingHandler` is the cheap proof a load came
+from a snapshot: a snapshot-restored load never replays the creation event, so the counter stays
+untouched for that id.
+
+
+### 2.55 QualifiedName renders a nested class as package.SimpleName, not Class#getName
+
+`new MessageType(SomeTest.NestedEvent.class).type().name()` is `org.example.NestedEvent`, while
+`NestedEvent.class.getName()` is `org.example.SomeTest$NestedEvent`. An evolver that gates on
+`event.type().name().equals(X.class.getName())` therefore silently skips every event whose payload record is nested in
+the test class -- the entity gets created by the factory and never evolved, which reads exactly like an engine bug
+(entity exists, state empty). Compare against `new QualifiedName(X.class).name()`, or do not gate at all when the
+criteria already narrow the stream to one event type.
+
+### 2.56 InMemoryTokenStore#storeToken defers the write to runOnAfterCommit
+
+The returned future completes at *registration*, not at the durable write: the store happens in an after-commit hook of
+the batch's ProcessingContext. Two consequences. (1) Sampling the store from inside the same persist chain reads the
+pre-commit value -- an interleaving probe built that way measures nothing and reports zero rewinds against a guard that
+admits every one. Poll the store from the test thread instead and confirm each landing before offering the next
+candidate. (2) `WorkPackage.storeToken(...).thenRun(() -> lastStoredToken = token)` runs on that registration-complete
+future too, so the in-heap guard field is updated before the write is durable; not pursued as a finding, but anyone
+probing crash windows around progress persistence should start here.

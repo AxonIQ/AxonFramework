@@ -110,7 +110,8 @@ class ConnectorCompatibilityTest {
             "AggregateBasedAxonServerEventStorageEngine -> EventStorageEngine.source(SourcingCondition, "
                     + "ProcessingContext)",
             "AxonServerSnapshotStore -> SnapshotStore.load(QualifiedName, Object, ProcessingContext)",
-            "AxonServerSnapshotStore -> SnapshotStore.store(QualifiedName, Object, Snapshot, ProcessingContext)");
+            "AxonServerSnapshotStore -> SnapshotStore.store(QualifiedName, Object, Snapshot, ProcessingContext)",
+            "AxonServerSnapshotStore -> DescribableComponent.describeTo(ComponentDescriptor)");
 
     /**
      * Returns the jar to examine: the one named by {@value #JAR_PROPERTY}, or the one the classpath's connector was

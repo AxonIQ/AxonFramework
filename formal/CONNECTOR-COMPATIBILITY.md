@@ -70,6 +70,7 @@ and SnapshotStore methods - add ProcessingContext parameter").
 | `AggregateBasedAxonServerEventStorageEngine -> EventStorageEngine.source(SourcingCondition, ProcessingContext)` | **not shimmed** | The aggregate-based engine. No scenario drives Axon Server through it: the point of this arm is the boundary protocol, and the aggregate-based protocol already has a backend. |
 | `AxonServerSnapshotStore -> SnapshotStore.load(QualifiedName, Object, ProcessingContext)` | **not shimmed** | No scenario loads a snapshot. See the note below: the connector's snapshot store is fully implemented, against the pre-context signatures. |
 | `AxonServerSnapshotStore -> SnapshotStore.store(QualifiedName, Object, Snapshot, ProcessingContext)` | **not shimmed** | No scenario stores a snapshot. Same note. |
+| `AxonServerSnapshotStore -> DescribableComponent.describeTo(ComponentDescriptor)` | **not shimmed** | Post-5.3.0-RC1 `main` made `SnapshotStore` extend `DescribableComponent` (#4860/#4862). Introspection only; no scenario describes components. First method on this list that is not from commit `d3dc55f338`. |
 
 Not shimming the three is deliberate and is enforced: `ConnectorCompatibilityTest` asserts that every
 unimplemented method is either shimmed **or** on the recorded not-driven list, so the day a scenario

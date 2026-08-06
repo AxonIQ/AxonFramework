@@ -2550,3 +2550,684 @@ grep -n 'private String tokenStore' \\
 sed -n '171,180p' \\
   extensions/spring/spring/src/main/java/org/axonframework/extension/spring/config/SpringCustomizations.java
 ----
+
+== F-24 -- InterceptingEventStore caches a context-bound transaction wrapper, so batch message 2's appends are stamped with message 1's causation
+
+*Severity:* High -- persisted business metadata is silently wrong: every event appended through the
+event store transaction while handling message 2..N of a shared batch carries message 1's
+`correlationId`/`causationId`. The exact defect class PR #4746 removed from
+`CommandDispatcher.forContext`, `EventAppender.forContext` and `QueryUpdateEmitter.forContext`,
+surviving in the one `forContext`-shaped factory that PR did not touch. +
+*Status:* Open. Confirmed by measurement; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/InterceptedTransactionBranchLeakTest.java`
+(expected-gap: the transaction arm asserts the leak and flips red when the cache goes; the publish
+arm asserts the guarantee and stays green on both sides of the fix). +
+*Claims:* C44 (the rule documented on `ProcessingContext#computeResourceIfAbsent`, REFUTED at this
+call site) +
+*Backend verdict vector:* `in-memory:AFFECTED`. No per-backend vector, and deliberately so: the
+defect sits in the `InterceptingEventStore` decorator, upstream of every storage engine, so the
+store protocol never sees an uncorrupted event to disagree about.
+
+=== What is wrong
+
+`ProcessingContext#computeResourceIfAbsent` documents the rule (added by commit `8a096f85a6`,
+PR #4746): "never use this method for a resource whose construction closes over (holds a reference
+to) this `ProcessingContext` itself ... the first branch to call this method gets its instance
+cached on the shared root, and every sibling branch that calls afterward receives that same stale
+instance back - silently operating against the wrong branch"
+(`messaging/src/main/java/org/axonframework/messaging/core/unitofwork/ProcessingContext.java:111-136`).
+
+`InterceptingEventStore.transaction(ProcessingContext)` does exactly what the rule forbids:
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/eventstore/InterceptingEventStore.java:106-113`
+  -- `processingContext.computeResourceIfAbsent(interceptingTransactionKey, () -> new
+  InterceptingEventStoreTransaction(processingContext, delegateTransaction))`.
+* `:190-195` -- the wrapper stores that context in a field.
+* `:207-209` -- `appendEvent` runs the full dispatch interceptor chain **with the captured
+  context**: `interceptingAppender.interceptAndAppend(eventMessage, context)`.
+
+`interceptingTransactionKey` is not a key any per-message branch overrides. A streaming batch is one
+root context with one `ResourceOverridingProcessingContext` branch per message (entry resources in
+`ProcessorEventHandlingComponents.withEntryResources`, plus the per-message `CORRELATION_DATA`
+branch `CorrelationDataInterceptor.interceptOnHandle` creates). The first message's handler to touch
+the transaction caches the wrapper on the shared root; every later message's
+`transaction(itsOwnBranch).appendEvent(...)` falls through to the root, gets the first message's
+wrapper back, and is intercepted with the first message's branch. `CorrelationDataInterceptor`'s
+dispatch side then reads the first message's `CORRELATION_DATA` and stamps it onto the later
+message's events.
+
+Both halves are default-on: `MessagingConfigurationDefaults` registers `MessageOriginProvider` and
+therefore the `CorrelationDataInterceptor` on both sides, and `EventSourcingConfigurationDefaults`
+wraps the `EventStore` in an `InterceptingEventStore` whenever any dispatch interceptor exists. The
+affected append route -- `EventStore.transaction(context).appendEvent(...)` -- is the one
+event-sourced entities use (`SimpleEntityLifecycleHandler`, `SnapshottingEntityLifecycleHandler`)
+and is public API.
+
+=== Evidence
+
+One batch of two events through the real batch pipeline (`ProcessorEventHandlingComponents` +
+`InterceptingEventHandlingComponent` + `CorrelationDataInterceptor`), handler appending one derived
+event through `store.transaction(ctx)`:
+
+----
+BRANCH LEAK derived-two causationId=fcaf8229-4bf2-4b4d-8b0d-84ba04afeee9
+            message-1 id=fcaf8229-4bf2-4b4d-8b0d-84ba04afeee9
+            message-2 id=6e6a973d-8de0-4cca-98f2-7dead37497bb
+----
+
+The true-form assertion (derived-two must carry message 2's causation) fails on current `main`,
+exit code 1:
+
+----
+[ERROR] InterceptedTransactionBranchLeakTest.secondEventsAppendCarriesItsOwnCausation
+  ["causationId"="1c238bcb-..." (expected: "b656c5bd-...")]
+EXIT=1
+----
+
+The control arm proves the differential: the identical batch appending through
+`EventSink.publish(ctx, events)` -- the route `EventAppender.forContext` uses since #4746 -- stamps
+every derived event with its own message's identifiers and passes. The interceptor and the batch
+pipeline are healthy; only the cached transaction wrapper mis-attributes.
+
+=== Why it matters
+
+Causation chains are business metadata: audit trails, event lineage tooling, upcasting and
+debugging all read them from the store, and there is no error, no log line and no functional
+symptom -- events append, entities work, projections update. The corruption is only visible to
+whoever later trusts the metadata. It scales with batch size: at the default batch size, every
+event but the first in each batch that appends through an entity carries the wrong parent.
+
+=== How it was found
+
+Class-of-bug sweep of PR #4746 ("forContext must not cache a context-bound wrapper"): every
+`computeResourceIfAbsent`/`putResourceIfAbsent`/`updateResource` call in framework main source was
+classified by whether the cached value closes over the creating context and whether the key is
+readable from a later sibling branch. Twenty-two sites are benign (values are context-free maps,
+lists or per-batch state read through the phase callback's own context parameter); this is the one
+survivor.
+
+=== Candidate fix
+
+The same fix #4746 applied three times already, in either of two shapes:
+
+1. Stop intercepting with the captured context: intercept with the context `appendEvent` was
+   reached through. That requires the append call to carry its context, which
+   `EventStoreTransaction.appendEvent(EventMessage)` today does not -- the wrapper captures a
+   context precisely because the signature has none.
+2. Cheaper and shape-preserving: keep caching the *delegate* transaction (it is context-free state,
+   shared per unit of work by design) but construct the `InterceptingEventStoreTransaction` wrapper
+   fresh on every `transaction(context)` call, closing over whatever context was passed in --
+   exactly what `forContext` now does. The wrapper is two fields; the cache bought nothing but a
+   same-instance convenience.
+
+Either way, the regression test is the true-form assertion of
+`InterceptedTransactionBranchLeakTest` (each appended event carries its own message's causation).
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation test -Dtest=InterceptedTransactionBranchLeakTest \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Green while the gap is open; the `AppendingThroughTheEventStoreTransaction` arm flips red when the
+wrapper cache is removed, at which point its assertion must be inverted to the guarantee (causation
+== each message's own identifier) and kept as the regression test.
+
+
+== F-25 -- The framework's own batch-span concurrency test races itself: dead barrier, contract-violating stub
+
+*Severity:* Low (test infrastructure; no production behaviour is wrong) +
+*Status:* Open. Pinned by the framework's own failing test (measured 6 failed of 40 runs) and by two
+deterministic probes in this suite. +
+*Claims:* C47, M22 +
+*Backend verdict vector:* not applicable -- the defect lives in `messaging`'s test sources, upstream
+of any store; no backend arm can express it.
+
+=== What is wrong
+
+`TracingEventHandlingComponentTest$BatchSpan#concurrentFirstEventsCreateAndBindExactlyOneBatchSpan`
+fails intermittently:
+
+----
+java.lang.AssertionError: Span 'EventProcessor.process SecondEvent' expected parent
+'StreamingEventProcessor.batch' but had parent 'EventProcessor.process FirstEvent'
+----
+
+Measured here: 6 failed of 40 runs of the nested `BatchSpan` class
+(`./mvnw -q -pl messaging surefire:test -Dtest='TracingEventHandlingComponentTest$BatchSpan'`), one
+of the failures in the symmetric direction (`FirstEvent` parented under `SecondEvent`).
+
+Two test-suite defects combine; the production component is correct on both counts.
+
+1. *The test's coordination is dead code.* `CoordinatedBatchProcessingContext`
+   (`messaging/src/test/java/org/axonframework/messaging/eventhandling/tracing/TracingEventHandlingComponentTest.java:208-234`)
+   barriers on resource label `org.axonframework.messaging.tracing.batchSpan`. The component keys
+   its initializer under `org.axonframework.messaging.tracing.batchSpanInitializer`
+   (`TracingEventHandlingComponent.java:93-94`), and the lookup goes through
+   `computeResourceIfAbsent`, which `StubProcessingContext` implements directly on its map --
+   never through the overridden `getResource`. The `CyclicBarrier(2)` is never awaited; the test
+   is an uncoordinated two-thread race with a window of one synchronous handling.
+2. *`StubProcessingContext.withResource` violates the branching contract.* It does
+   `resources.put(key, resource); return this;`
+   (`messaging/src/test/java/org/axonframework/messaging/core/unitofwork/StubProcessingContext.java:157-161`),
+   where `ProcessingContext#withResource` is specified -- and implemented by the production
+   `UnitOfWork` context via the interface default -- as "Constructs a new ProcessingContext,
+   branching off" (`ProcessingContext.java:45-58`). Under that mutation, `Span#branchStream`'s
+   `SpanScope.addToContext(context, scope)` writes each per-event handler scope onto the SHARED
+   batch context instead of a private branch.
+
+The interleaving that produces the observed failure, with threads A (`FirstEvent`) and B
+(`SecondEvent`) on the shared stub context:
+
+----
+A  ensureBatchSpan            batch span created once (atomic: computeResourceIfAbsent +
+                              synchronized initializer) and bound to the shared context
+A  createContextParentHandlerSpan(First)   parent := batch  (correct)
+A  branchStream(First)        stub withResource MUTATES shared context:
+                              RESOURCE_KEY := BranchSpanScope(firstScope, batchScope)
+B  createContextParentHandlerSpan(Second)  reads the shared context; firstScope still open
+                              => parent := 'EventProcessor.process FirstEvent'   <-- the failure
+A  First's stream terminates  firstScope closes; from now on BranchSpanScope.resolve skips the
+                              closed scope and falls back to batchScope, so any later span parents
+                              correctly -- which is why isolation reruns nearly always pass
+----
+
+The exactly-one-batch-span property the test names never breaks (its `verifySpanCount` passed in
+every failing run); only parent attribution does, and only through the stub's leak.
+
+=== Why it matters
+
+The framework's CI masks the flake with `-Dsurefire.rerunFailingTestsCount=5`; any consumer running
+the suite without reruns (as this hunt gate does) inherits a ~15% red on this nested class per run
+loop. Worse, `StubProcessingContext` is the test double the whole messaging test corpus handles
+contexts with: every test that treats `withResource` branches as isolated is silently sharing one
+mutable map, and this flake is merely the first place two threads noticed.
+
+Production is unaffected: the `UnitOfWork` context inherits the interface-default immutable branch,
+so a per-event handler scope can never leak onto the shared batch context. Every consumer of
+`SpanScope` (`TracingEventHandlingComponent`, `TracingEventStorageEngine`,
+`TracingEventTagsHandlerEnhancerDefinition`) uses it for span parentage and span attributes only,
+so even under the stub's semantics the damage is limited to tracing topology -- no routing,
+delivery, ordering or transactional decision reads the scope.
+
+=== Candidate fix
+
+Make `StubProcessingContext.withResource` honor the contract:
+`return new ResourceOverridingProcessingContext<>(this, key, resource);`. Measured under exactly
+that one-line change: 0 failed of 40 runs of the same loop (reverted afterwards). Separately, either
+fix `CoordinatedBatchProcessingContext`'s label to `...batchSpanInitializer` and hook
+`computeResourceIfAbsent`, or drop the dead coordination class.
+
+=== Reproduce
+
+----
+./mvnw -q -pl messaging test-compile
+for i in $(seq 1 40); do ./mvnw -q -pl messaging surefire:test \
+  -Dtest='TracingEventHandlingComponentTest$BatchSpan' \
+  -Dsurefire.failIfNoSpecifiedTests=false > /tmp/run-$i.log 2>&1; echo "run $i exit=$?"; done
+# measured here: 6 failed of 40 runs, every failure the wrong-parent assertion
+
+# deterministic, single-threaded pin of the same interleaving (green on a clean tree; the mutating
+# arm reproduces the wrong parent on every run, the branching arm proves production semantics safe):
+./mvnw -q -Phunt -pl simulation test -Dtest=BatchSpanParentScopeLeakTest \
+  -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+== F-26 -- The anti-rewind guard accepts a range token that rewinds the segment's resume position
+
+*Severity:* High +
+*Status:* Open. Confirmed by measurement; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/MergedTokenGuardBypassTest.java` and, at the
+comparison level, `ProgressGuardComparisonEdgesTest.WhereTheComparisonBreaksItsContract`. +
+*Claims:* C50 (**REFUTED** -- documented and false as stated), M23 +
+*Backend verdict vector:* `in-memory:AFFECTED`. Mechanism-attributed: the decision is an in-heap
+comparison in `WorkPackage.storeIfAdvanced` that runs before any store is called.
+
+=== What is wrong
+
+The guard promises that a non-advancing candidate "is ignored with a warning rather than persisted,
+so a misbehaving component can never rewind progress on any source", and that an incomparable
+position "such as a partially-regressed multi-source token" is refused
+(`WorkPackage.java:504-508`, `TrackingTokenUtils.java:74-77`). The comparison it stands on is
+
+[source,java]
+----
+WrappedToken.unwrapUpperBound(candidate).covers(WrappedToken.unwrapUpperBound(reference))
+----
+
+`MergedTrackingToken` is a range whose `upperBound()` is the FURTHEST of its two halves
+(`MergedTrackingToken.java:236-240`), while streaming resumes from its LOWER half. So
+`MergedTrackingToken.merged(TrackingToken.FIRST, advanced)` unwraps to `advanced`, covers any stored
+position behind it, and is persisted -- with the guard fully active (`lastStoredToken` set). This is
+not the F-21 first-store hole: it defeats the guard on every store.
+
+Secondary edge, same comparison: a fresh reset token (`ReplayToken.createReplayToken(t)`, current
+position unset) unwraps to `null`, and the comparison throws `NullPointerException` out of
+`persistProgress` instead of refusing with a warning.
+
+=== Evidence
+
+Measured on the in-heap token store, single node, no faults: strategy stores `GlobalSeq(600)` (guard
+armed), then offers `merged(FIRST, GlobalSeq(700))`:
+
+----
+MERGED GUARD BYPASS before=600 storedResumePosition=0
+  stored=MergedTrackingToken{lowerSegmentToken=FirstTrackingToken, upperSegmentToken=IndexTrackingToken{globalIndex=700}}
+----
+
+The durable resume position went from 600 to 0; the processor stayed healthy. Unit-level:
+`coversWhenUnwrapped(merged(FIRST, 700), GlobalSeq(500))` returns `true`;
+`coversWhenUnwrapped(createReplayToken(GlobalSeq(10)), GlobalSeq(5))` throws NPE. The gap-aware
+partial regression IS rejected, so the promise holds for gap tokens and fails only for range tokens.
+
+=== Why it matters
+
+On the next claim the merged token's covers() (lower AND upper) covers nothing below the lower half,
+so the whole stream is redelivered to the segment -- the exact outcome the guard was written to make
+impossible, reachable through the public `progressStrategyFactoryBuilder` seam by any strategy that
+reconciles wrapped participant tokens. The NPE turns a contract-legal candidate (the very token
+`resetTokens` stores) into a failed commit cycle instead of an ignored store.
+
+=== Candidate fix
+
+Judge the candidate's resume position too: require
+`unwrapLowerBound(candidate).covers(unwrapLowerBound(reference))` as well as the upper-bound check,
+and null-guard the unwrapped values (treat an unset position as a non-advance, warn, return).
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation test -Dtest='MergedTokenGuardBypassTest,ProgressGuardComparisonEdgesTest' \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Expected-gap tests: green while the gap is open, red when the guard judges lower bounds.
+
+== F-27 -- A source that keeps completing its streams cleanly is reopened in an unpaced hot loop
+
+*MachineName:* `CleanStreamCompletionReopensUnpaced` +
+*Severity:* Medium (CPU spin + token-store hammering; no data loss) +
+*Status:* Open. +
+*Backend verdict vector:* in-memory:MEASURED (direct-processor probe; not a scenario arm, no vector yet)
+
+Since the coordinator treats a completed stream as a reason to claim and reopen (#4787), and the
+back-off added afterwards applies only to streams their source *failed* (#4841), a source that
+completes every stream cleanly and immediately is reopened at full coordinator speed: the
+completed stream fires the availability callback at registration -- the `MessageStream` contract
+`AbstractMessageStream.setCallback` guarantees it -- which schedules the next coordination run
+with no delay, and every such run re-claims segments and opens a fresh stream.
+
+Measured, plain-Java source honouring the framework's own stream conventions, one segment,
+`tokenClaimInterval` 30s: *81,321 stream opens in 2,000 ms* on clean completions against
+*1 open in 2,000 ms* on the failed-stream path. Every reopen is also a token-store claim
+round trip. The framework's own regression test asserts fewer than 15 opens per 500 ms against
+a Mockito-stubbed source and passes, so the shipped guard does not see the loop it guards against.
+
+No event is lost or redelivered across the reopens: 25 events delivered exactly once, in order,
+over 26 reopens; the flap arm (fail/complete alternation) loses nothing and backs off on every
+failed run.
+
+*Candidate fix:* pace clean-completion reopens the same way #4841 paces failed ones when the
+replacement stream is again already completed and empty -- or debounce the availability callback
+for a stream that completed without ever delivering. +
+*Reproduce:* `./mvnw -q -Phunt -pl simulation test -Dtest=StreamReopenAfterCompletionTest -Dsurefire.failIfNoSpecifiedTests=false` +
+*Pinned by:* `StreamReopenAfterCompletionTest` (expected-gap: `ASourceWhoseStreamsAreBornCompleted`
+goes red when pacing lands; boundary and flap arms assert the guarantees that must stay green).
+
+
+== F-28 -- A synchronously throwing subscriber breaks the publishing thread and silences every subscriber after it
+
+*Severity:* Medium -- one misbehaving subscriber breaks delivery to every healthy subscriber
+registered after it, and on the direct path it breaks the publisher's thread with an exception the
+publisher was told to expect through a future instead. +
+*Status:* Open. Deterministic; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/EventPublicationFailurePropagationProbeTest.java`
+(the two `SynchronouslyThrowingSubscriber` tests are expected-gap tests that flip red when fixed). +
+*Claims:* C52 (documented: `EventSink#publish` returns "A CompletableFuture of Void" and
+`EventSubscribers#notifySubscribers` states "All subscriber futures are executed in parallel and
+the returned future completes when all of them complete"). +
+*Backend verdict vector:* store-independent by construction: the defect is in
+`EventSubscribers.notifySubscribers`, above every storage engine.
+
+=== What is wrong
+
+`messaging/src/main/java/org/axonframework/messaging/eventhandling/EventSubscribers.java` (~line 96):
+
+[source,java]
+----
+var consumeFutures = subscribers.stream()
+                                .map(subscriber -> subscriber.apply(events, context))
+                                .toArray(CompletableFuture[]::new);
+return CompletableFuture.allOf(consumeFutures);
+----
+
+`subscriber.apply` is unguarded. `EventBus.subscribe` accepts any
+`BiFunction<List<? extends EventMessage>, ProcessingContext, CompletableFuture<?>>`; one that
+throws instead of returning a failed future aborts the eager stream map, so:
+
+* on `publish(null, events)` the exception propagates *synchronously* out of `publish`, which the
+  #4730 rework promised to report through the returned future;
+* every subscriber after the throwing one, in registration order, is never invoked -- on both the
+  direct path and the UnitOfWork path.
+
+The framework itself treats this as a case needing a guard one layer up:
+`SubscribingEventProcessor.processAsync` catches exactly this ("a failure while synchronously
+building the processing pipeline is reported through the returned future, so it never breaks the
+publishing thread"). The guard exists for the processor's own handler and is missing for every
+other subscriber of the same bus.
+
+=== Evidence
+
+Probe run (assertions were the desired contract; both failed on clean code, exit 1):
+
+----
+[probe] direct path: publish threw synchronously: java.lang.IllegalStateException: sync boom; second subscriber invocations=0
+[probe] uow path: execute exceptional=true second subscriber invocations=0
+java.lang.AssertionError: publish(null, ...) threw synchronously instead of returning a failed future
+[ERROR] Tests run: 4, Failures: 2 ...  EXIT=1
+----
+
+The failed-future control shows the fixed behavior already works when the subscriber cooperates:
+
+----
+[probe] publishes=2000 failedFutures=667 successFutures=1333 expectedFailures=667
+        recorderInvocations=2000 completionsBeforeAllSubscribersRan=0
+----
+
+2000 concurrent publishes against one intermittently failing and one recording subscriber: every
+failure surfaced through the publish future, every publish notified both subscribers, and no
+successful future completed before all subscribers ran. The propagation contract of #4730 holds --
+but only for subscribers that fail by future.
+
+=== Candidate fix
+
+Guard each invocation in `EventSubscribers.notifySubscribers`:
+
+[source,java]
+----
+.map(subscriber -> {
+    try {
+        return subscriber.apply(events, context);
+    } catch (Exception e) {
+        return CompletableFuture.failedFuture(e);
+    }
+})
+----
+
+This makes both expected-gap tests' desired-contract forms pass: the failure reaches the publish
+future, and the remaining subscribers are still notified (matching the `allOf` semantics the class
+documents).
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation test -Dtest=EventPublicationFailurePropagationProbeTest \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+== F-29 -- emitUpdateAndCount counts a subscriber the update never reached, while killing it
+
+*Severity:* Low -- a wrong number, not a lost update; but the number is the feature. +
+*Status:* Open. Deterministic, single-threaded; pinned by
+`simulation/src/test/java/org/axonframework/hunt/scenario/QueryEmitMatchCountProbeTest.java`
+(`countOnBufferOverflowStillReportsTheSubscriberTheUpdateNeverReached` is an expected-gap test that
+flips red when the count starts reporting actual deliveries). +
+*Claims:* C53 (documented: `QueryBus#emitUpdateAndCount` returns "the number of subscription
+queries the update was emitted to"), M24 (gap: nothing states what the count means when delivery
+fails). +
+*Backend verdict vector:* store-independent: `SimpleQueryBus` holds its subscriptions in a heap
+map above any store.
+
+=== What is wrong
+
+`SimpleQueryBus.runAfterCommitOrImmediately` computes `matchCount(filter)` by scanning the
+subscription map, *then* runs the emit as a separate scan. The count is a prediction, not an
+observation. Deterministic divergence, no concurrency required: a subscription whose update buffer
+is full. `emitUpdate` then takes the `offer == false` branch, seals the stream exceptionally
+("Subscription update buffer overflow") and removes the subscription -- yet the already-computed
+count still reports that subscriber as emitted-to. The caller is told "1 subscriber got your
+update" about a subscriber that got an error and was killed by this very call.
+
+The deferred (in-context) variant of the same divergence -- count taken at emit time, delivery at
+after-commit against a possibly different subscription set -- is *pinned as intended* by the
+framework's own
+`SimpleQueryBusTest.emitUpdateReturningCountReflectsMatchCountAtCallTimeEvenWhenEmitIsDeferredToAfterCommit`,
+so only the overflow case is reported as a defect; the deferred case is recorded as a measurement
+(the Javadoc still says "emitted to", which the call-time snapshot does not deliver -- a
+documentation gap, not filable).
+
+=== Evidence
+
+Probe run (assertion was the desired contract; failed on clean code, exit 1):
+
+----
+[probe] first count=OptionalInt[1] second count=OptionalInt[1] delivered=[u1] completedExceptionally=true
+[ERROR] QueryEmitMatchCountProbeTest.countOnBufferOverflow... expected OptionalInt[0], was OptionalInt[1]  EXIT=1
+----
+
+Buffer of one, never consumed: the first emit is counted 1 and delivered; the second is counted 1,
+delivered to nobody, and terminates the subscription with an overflow error.
+
+Companion measurements from the same probe class, all green:
+
+----
+[probe] post-completion deliveries over 2000 rounds: 0          <- no update after completion (A2)
+[probe] emits=6000 countedTotal=7888 deliveredToStableSubscriber=6000   <- no silent loss under churn (A1/A3)
+[probe] deferred count=OptionalInt[1] earlyDelivered=false lateDelivered=true  <- call-time snapshot, as intended
+----
+
+=== Candidate fix
+
+Have the private `emitUpdate` return the number of successful `offer` calls and complete the
+returned future with that number in the immediate branch. The deferred branch keeps its call-time
+snapshot (the framework's tests pin it), or the Javadoc of `emitUpdateAndCount` is reworded to "the
+number of subscription queries matching the filter when the emit was accepted".
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation test -Dtest=QueryEmitMatchCountProbeTest \\
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+== F-30 -- QueryUpdateEmitter's Javadoc links a constant that does not exist
+
+*Severity:* Documentation only. Not filable upstream (the fix is documentation; no test can fail). +
+*Status:* Open, recorded for the next hunter. +
+*Claims:* M25 (gap: the emitter's documented sentinel is dangling).
+
+`messaging/src/main/java/org/axonframework/messaging/queryhandling/QueryUpdateEmitter.java` refers
+six times (lines 122, 182, 219, 250, 284, 322) to
+`{@link QueryBus#UNKNOWN_MATCH_COUNT}` -- "Implementations that cannot determine this number return
+{@link QueryBus#UNKNOWN_MATCH_COUNT} instead." No such constant exists anywhere in the repository
+(`grep -rln UNKNOWN_MATCH_COUNT` over all modules hits only these Javadoc lines). The AndCount
+rework replaced the `-1` sentinel with `OptionalInt` (the `QueryBus` Javadoc correctly says
+`OptionalInt#empty`) and left the emitter's Javadoc pointing at the removed design. Six dangling
+`@link`s; `javadoc` with doclint flags each.
+
+== The C and M numbers this phase claims
+
+C52 -- `EventSink#publish` reports publication failure through the returned `CompletableFuture`
+(documented, `EventSink.java:54-56`); falsified by a publish call that throws synchronously.
+C53 -- `QueryBus#emitUpdateAndCount` returns the number of subscription queries the update was
+emitted to (documented, `QueryBus.java:146-148`); falsified by a count that includes a
+subscription the update never reached.
+C54 -- `ReplayToken.replayContext`/`getTokenAtReset` apply only while the current event is a
+redelivery (documented, `ReplayToken.java:172-183`); falsified by a fresh event carrying the reset
+context. Verified correct on both sides of the boundary, including the wrapped-but-live gap
+position (`ReplayContextBoundaryGateTest`, green).
+M24 -- nothing documents what the AndCount value means when delivery fails (overflow, killed
+subscription).
+M25 -- the emitter's documented sentinel constant does not exist (F-30).
+
+=== F-24 addendum -- the cached transaction context also mis-parents append spans (2026-08-04)
+
+The same cached `DefaultEventStoreTransaction` context that corrupts causation metadata feeds
+`TracingEventStorageEngine`'s span parenting: in a streaming batch, events appended by handlers 2..N
+commit under message 1's branch chain, so the `appendTransaction` span parents under handler 1's span
+while that scope is open, and silently falls back to the batch span after it closes. Attribution to
+the appending handler is lost either way. Read-only confirmation
+(`StorageEngineBackedEventStore.java:79-89`, `DefaultEventStoreTransaction.java:208`); covered by the
+F-24 candidate fix, no separate test.
+
+
+== F-33 -- A stored snapshot's payload aliases the live entity, so later evolutions corrupt the snapshot and the next load applies the same event twice
+
+*Severity:* Medium -- silent event double-application (state corruption) on every reload after the
+corruption; requires snapshotting enabled, the mutable-entity handler style (void
+`@EventSourcingHandler`s evolving in place), and a `SnapshotStore` that keeps or returns payload
+references -- which the shipped `InMemorySnapshotStore` does on both sides. +
+*Status:* Open. Pinned by the two expected-gap tests in
+`simulation/src/test/java/org/axonframework/hunt/scenario/SnapshottingLiveEntityEvolutionRoutingTest.java`
+(nested class `SnapshotPayloadAliasingDoubleAppliesEvents`); they pass while the aliasing exists and
+turn red when the payload is copied or converted on store or load. +
+*Claims:* M27 +
+*Backend verdict vector:* `in-memory-snapshot-store:AFFECTED`. Store-dependent by construction: a
+snapshot store that serializes at store time and deserializes at load time breaks both alias
+directions, so persistent converting stores are expected immune. Not run against one.
+
+=== What is wrong
+
+Three reference hand-offs, none of which copies, and no contract saying who must:
+
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/handler/SnapshottingEntityLifecycleHandler.java:203`
+  -- `storeSnapshot` wraps the *live* entity reference: `new Snapshot(position, ..., entity, ...)`.
+* `eventsourcing/src/main/java/org/axonframework/eventsourcing/snapshot/inmemory/InMemorySnapshotStore.java:56-58`
+  -- stores the `Snapshot` record by reference.
+* `SnapshottingEntityLifecycleHandler.java:216-219` -- `convertSnapshotPayload` returns the stored
+  payload reference as-is when `entityType.isInstance(snapshot.payload())`, deliberately skipping the
+  converter.
+
+With a mutable entity, the annotated evolver mutates in place. Two trigger paths, both confirmed:
+
+1. *Store-then-evolve, one unit of work, no restore involved.* A command loads the entity (sourcing
+   crosses the snapshot threshold, a snapshot of the live instance is stored), then the handler's own
+   live append evolves that same instance. The stored snapshot's payload now reflects the appended
+   event while its position predates it.
+2. *Restore-then-evolve.* A later load restores the entity FROM the snapshot -- the returned entity
+   *is* the stored payload instance -- and a live append targeted at it mutates the stored snapshot
+   in place.
+
+Either way, the next load replays the post-snapshot event on top of a payload that already contains
+it: one event, applied twice, silently.
+
+A third consequence follows from the same aliasing and was not separately probed: every concurrent
+or sequential load restoring from the same in-memory snapshot receives the *same* mutable instance,
+so two units of work sharing it observe each other's uncommitted state changes.
+
+=== Evidence
+
+Both from `SnapshottingLiveEntityEvolutionRoutingTest`, in-memory event store, in-memory snapshot
+store, `@Snapshotting(afterEvents = 2)`, fully deterministic, no timing involved. Counter entity:
+creation event plus one `count++` per `Bumped` event.
+
+Path 2 (the original red, before conversion to expected-gap form):
+
+----
+expected: 3
+ but was: 4
+    at ...liveAppendTargetedAtTheSnapshotRestoredEntityEvolvesItAndOnlyIt(SnapshottingLiveEntityEvolutionRoutingTest.java:357)
+----
+
+Three `Bumped` events exist for the entity; the live in-memory count after the append was 3
+(correct, asserted); a fresh reload returned 4. The load demonstrably came from the snapshot: a
+per-id counter inside the creation `@EventSourcingHandler` shows the creation event was not
+replayed. Snapshot stored at count 2, mutated to 3 by the restored instance's live evolution, plus
+the replayed third `Bumped` = 4.
+
+Path 1 asserts the same arithmetic without any restore: snapshot stored at count 2 during the
+sourcing of the command's own unit of work, mutated to 3 by that command's append, reload = 4 where
+the true event-derived count is 3.
+
+=== Why it matters
+
+The corruption is invisible at the moment it happens -- the live state and the command result are
+correct -- and permanent afterwards: every future load of the entity starts from the corrupted
+baseline. The divergence grows with every snapshot-adjacent append, and nothing ever reports it,
+because the store's contents and the snapshot's contents are each individually plausible.
+`InMemorySnapshotStore` advertises itself for "testing or lightweight scenarios"; a test suite using
+it can therefore green-light entity logic that double-applies events.
+
+=== Candidate fix
+
+Break the alias in the handler, which fixes every store at once: in `convertSnapshotPayload`, drop
+the `entityType.isInstance` short-circuit and always round-trip the payload through the configured
+`Converter`; in `storeSnapshot`, convert the entity before wrapping it in `Snapshot`. Alternatively
+(weaker, store-local): document the copy obligation on `SnapshotStore` and make
+`InMemorySnapshotStore` copy on store and load. The handler-side fix is preferred because the
+contract gap, not the in-memory store, is the root: any future reference-keeping store re-opens it.
+
+=== Reproduce
+
+----
+./mvnw -q -Phunt -pl simulation test \
+    -Dtest=SnapshottingLiveEntityEvolutionRoutingTest \
+    -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+The two expected-gap tests assert the corrupted value (4). To see the raw defect form, change either
+`isEqualTo(4)` back to the true count `isEqualTo(3)`: red on a clean engine.
+
+== F-31 -- A not-found load poisons loadOrCreate for the same identifier in the same unit of work
+
+*Severity:* Medium +
+*Status:* Open, pinned by `NotFoundEntityFlowTest$LoadThenLoadOrCreateInOneUnitOfWork` (expected-gap). +
+*Claims:* C60 (`Repository.java:66-73`, documented: `loadOrCreate` resolves to "the ManagedEntity with
+the given identifier, or a newly constructed entity instance based on the factoryMethod" --
+**REFUTED** for this ordering), gap M26 (nothing documents the interaction of the per-context entity
+cache with mixed `load`/`loadOrCreate` ordering). +
+*Backend verdict vector:* `in-memory:AFFECTED`, mechanism-attributed -- the defect is the
+per-`ProcessingContext` `managedEntities` cache in `EventSourcingRepository#doLoad`, which runs
+before any store is consulted; no store can express it differently.
+
+=== What is wrong
+
+`doLoad` (`eventsourcing/src/main/java/org/axonframework/eventsourcing/EventSourcingRepository.java:178-205`)
+keys its cache on identifier only, not on `create`. A plain `load` of a nonexistent id caches an
+`EventSourcedEntity(id, null)` without ever invoking `EntityLifecycleHandler#initialize`. A subsequent
+`loadOrCreate` for the same id in the same context hits that cache, skips the factory entirely, finds
+`entity() == null`, and -- its per-call `failureRef` being empty -- throws a freshly minted
+`EntityNotFoundException` (`:200`). For a factory registered via
+`EventSourcedEntityFactory.fromIdentifier(...)`, a bare `loadOrCreate` of the same id creates the
+entity. Same call, same id, same state of the world -- the outcome depends on whether a `load`
+happened earlier in the unit of work.
+
+=== Why it matters
+
+`StateManager.loadEntity`/`loadManagedEntity` -- the path under every `@InjectEntity` parameter --
+route through `loadOrCreate`. Any handler or component that first probes with `Repository#load` (a
+public API; the framework's own tests use it) and then resolves an entity for the same id in the same
+context gets a spurious not-found failure for an entity type that is defined to be creatable on demand.
+
+=== Candidate fix
+
+On the `create` path, when the cached entry holds a null entity and no stash for it exists, invoke
+`catchAndAllowForEntityNotFound` against the cached entry instead of throwing -- i.e. let
+`loadOrCreate` upgrade a cached not-found entry through the factory, mirroring how the subscription
+already upgrades it through the first appended event.
+
+=== Reproduce
+
+----
+./mvnw -Phunt -pl simulation test -Dtest=NotFoundEntityFlowTest -Dsurefire.failIfNoSpecifiedTests=false
+----
+
+Meets the upstream bar: inverting the gap assertion (outcome is a created entity) fails on unfixed
+code and passes on fixed code.
+
+=== F-26 addendum -- behaviour under interleaved advancing stores (measured, 2026-08-06)
+
+The bypass is not confined to any window and needs no contention.
+`MergedTokenRewindUnderAdvancingStoresTest` alternates, on the work package's own persist chain, an
+advancing plain token (durable landing confirmed by polling before proceeding) with a
+`merged(0, ahead)` candidate, over 50 rounds against a store seeded at 500: **all 50 merged offers
+were admitted and durably rewound the segment to position 0**, each one immediately after an advancing
+store had already durably landed (`MERGED REWIND rounds=50 rewinds=50 advances=600..1090`). The
+compared field (`lastStoredToken`) was set on every offer, so this is disjoint from F-21's first-store
+hole: `TrackingTokenUtils.coversWhenUnwrapped` judges the candidate's *upper* bound (for a merged
+token the max of its halves) while the durable resume position is the token's own `position()` (the
+*min* of its halves, `MergedTrackingToken.java:139-146`). The rewind window does not narrow as
+progress advances -- every `merged(FIRST/0, ahead)` offer rewinds, deterministically. Control in the
+same class: a merged token whose upper half is behind the stored position is refused on every offer,
+so the guard does judge merged tokens -- only on their blind side.
