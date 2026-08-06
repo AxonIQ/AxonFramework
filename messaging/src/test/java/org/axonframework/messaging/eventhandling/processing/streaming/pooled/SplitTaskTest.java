@@ -26,13 +26,17 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.junit.jupiter.api.*;
 import org.mockito.InOrder;
+import org.mockito.stubbing.Answer;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
 import static org.junit.jupiter.api.Assertions.*;
@@ -187,6 +191,87 @@ class SplitTaskTest {
             .isInstanceOf(ExecutionException.class)
             .cause()
             .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Nested
+    class ReclaimBlock {
+
+        @Test
+        void runClearsTheBlockAfterASuccessfulSplit() {
+            // given
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenReturn(emptyCompletedFuture());
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(emptyCompletedFuture());
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runKeepsTheBlockInPlaceForEveryTokenStoreWriteOfTheSplit() {
+            // given - the block only prevents the Coordinator re-claiming a half-split segment if it outlives the
+            // token rewrite, so record whether it was still installed on each write the split performs
+            List<Integer> blockedSegmentsPerTokenWrite = new ArrayList<>();
+            Answer<CompletableFuture<Void>> recordBlockedSegments = invocation -> {
+                blockedSegmentsPerTokenWrite.addAll(releasesDeadlines.keySet());
+                return emptyCompletedFuture();
+            };
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenAnswer(recordBlockedSegments);
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenAnswer(recordBlockedSegments);
+
+            // when
+            testSubject.run();
+
+            // then - three writes (initialize new half, delete original, re-initialize original), block held on each
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(blockedSegmentsPerTokenWrite).containsExactly(SEGMENT_ID, SEGMENT_ID, SEGMENT_ID);
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsTheBlockWhenTheSegmentCannotBeFetched() {
+            // given - the segment is owned elsewhere, so the split fails before any token is rewritten
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("owned elsewhere")));
+
+            // when
+            testSubject.run();
+
+            // then - a split that never happened must not keep the segment unclaimable
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsTheBlockWhenAbortingTheWorkPackageFails() {
+            // given
+            workPackages.put(SEGMENT_ID, workPackage);
+            when(workPackage.segment()).thenReturn(Segment.ROOT_SEGMENT);
+            when(workPackage.abort(null))
+                    .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("abort failed")));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
     }
 
     @Test

@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
@@ -124,22 +125,31 @@ class MergeTask extends CoordinatorTask {
 
             return unitOfWorkFactory.create().executeWithResult(
                     context -> tokenStore.fetchSegment(name, thisSegment.mergeableSegmentId(), context)
-            ).thenCompose(thatSegment -> {
+            ).thenCompose(thatSegment -> FutureUtils.runFailing(() -> {
+                // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, for
+                // instance) into a failed future, so the handler below observes it too rather than being skipped along
+                // with the rest of the chain -- leaking whichever blocks tokenFor already installed.
                 CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
                 CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
                 return thisTokenFuture
                         .thenCombine(thatTokenFuture,
                                      (thisToken, thatToken) -> mergeSegments(thisSegment, thisToken, thatSegment, thatToken))
                         .thenCompose(Function.identity());
-            });
+            })
+            // Lift the block on both segments however the merge ends. Clearing it only on the paths that reach the
+            // token rewrite would leave a failed abort or a failed token fetch of either half blocking re-claim of
+            // both until the ceiling expires.
+            .whenComplete((result, throwable) -> {
+                releasesDeadlines.remove(thisSegment.getSegmentId());
+                releasesDeadlines.remove(thatSegment.getSegmentId());
+            }));
         });
     }
 
     private CompletableFuture<TrackingToken> tokenFor(int segmentId) {
         // Block the segment from being claimed by the Coordinator while we perform the merge.
         // This prevents a race condition where the Coordinator might claim a segment that's being merged.
-        releasesDeadlines.put(segmentId,
-                              clock.instant().plusSeconds(60)); // Block for 1 minute (will be cleared after merge)
+        releasesDeadlines.put(segmentId, clock.instant().plus(RECLAIM_BLOCK_TIMEOUT));
 
         // Remove WorkPackage so that the CoordinatorTask cannot find it to release its claim upon impending abortion.
         WorkPackage workPackage = workPackages.remove(segmentId);
@@ -173,9 +183,6 @@ class MergeTask extends CoordinatorTask {
                                              name, thisSegment, thatSegment, mergedSegment);
                                  return true;
                              });
-        }).whenComplete((result, throwable) -> {
-            releasesDeadlines.remove(thisSegment.getSegmentId());
-            releasesDeadlines.remove(thatSegment.getSegmentId());
         });
     }
 
