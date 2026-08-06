@@ -1,0 +1,126 @@
+name: Major Release
+
+# Performs a release of the project from main using the Maven release plugin, then creates
+# the patch branch for the released line. Steps:
+#   1. release:prepare  - bump to RELEASE_VERSION, tag, bump main to DEVELOPMENT_VERSION
+#   2. push the release commits and tag to main
+#   3. release:perform  - build the tagged release and deploy it to Maven Central
+#      (this only uploads/validates the deployment; publishing on
+#      https://central.sonatype.com/publishing/deployments is still a manual step)
+#   4. only if release:perform succeeded: branch RELEASE_BRANCH_NAME off main's new HEAD
+#      and set its version to DEVELOPMENT_PATCH_VERSION
+
+on:
+  workflow_dispatch:
+    inputs:
+      RELEASE_VERSION:
+        description: 'Version being released, e.g. 5.4.0'
+        required: true
+        type: string
+      DEVELOPMENT_VERSION:
+        description: 'Next development version for main, e.g. 5.5.0-SNAPSHOT'
+        required: true
+        type: string
+      DEVELOPMENT_PATCH_VERSION:
+        description: 'Development version for the new patch branch, e.g. 5.4.1-SNAPSHOT'
+        required: true
+        type: string
+      RELEASE_BRANCH_NAME:
+        description: 'Name of the patch branch to create, e.g. axon-5.4.x'
+        required: true
+        type: string
+      DRY_RUN:
+        description: 'Simulate the release: runs release:prepare -DdryRun (no commit/tag), skips push, release:perform, and branch creation'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: major-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release ${{ inputs.RELEASE_VERSION }}
+    runs-on: ubuntu-latest
+    # Guard against running from any ref other than main, regardless of what
+    # was picked in the workflow_dispatch "Use workflow from" branch selector.
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ inputs.RELEASE_VERSION }}
+      DEVELOPMENT_VERSION: ${{ inputs.DEVELOPMENT_VERSION }}
+      DEVELOPMENT_PATCH_VERSION: ${{ inputs.DEVELOPMENT_PATCH_VERSION }}
+      RELEASE_BRANCH_NAME: ${{ inputs.RELEASE_BRANCH_NAME }}
+      RELEASE_TAG: axon-${{ inputs.RELEASE_VERSION }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.DEVBOT_GITHUB_TOKEN }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'zulu'
+          java-version: 21
+          cache: 'maven'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'AxonIQ devbot'
+          git config user.email 'devbot@axoniq.io'
+
+      - name: Release prepare
+        run: |
+          ./mvnw --batch-mode -Dtag=$RELEASE_TAG \
+                             -DreleaseVersion=$RELEASE_VERSION \
+                             -DdevelopmentVersion=$DEVELOPMENT_VERSION \
+                             -DdryRun=${{ inputs.DRY_RUN }} \
+                             -DskipTests \
+                             -Darguments=-DskipTests \
+                             release:prepare
+
+      - name: Push release commits and tag to main
+        if: inputs.DRY_RUN == false
+        run: |
+          git push origin main
+          git push origin $RELEASE_TAG
+
+      - name: Release perform (deploy to Maven Central)
+        if: inputs.DRY_RUN == false
+        env:
+          MAVEN_USERNAME: ${{ secrets.SONATYPE_TOKEN_ID }}
+          MAVEN_PASSWORD: ${{ secrets.SONATYPE_TOKEN_PASS }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          ./mvnw release:perform -Darguments="-DskipTests"
+
+      - name: Clean release plugin working files
+        run: ./mvnw --batch-mode release:clean
+
+      - name: Create patch branch from main
+        if: inputs.DRY_RUN == false
+        run: |
+          git checkout -b $RELEASE_BRANCH_NAME
+          ./mvnw --batch-mode release:update-versions -DdevelopmentVersion=$DEVELOPMENT_PATCH_VERSION
+          git commit -am "Adjust versions after release to $DEVELOPMENT_PATCH_VERSION"
+          git push origin $RELEASE_BRANCH_NAME
+
+      - name: Dry run summary
+        if: inputs.DRY_RUN == true
+        run: |
+          echo "Dry run complete - no commits, tags, pushes, deployment, or branch were created."
+          echo "release:prepare validated: RELEASE_TAG=$RELEASE_TAG RELEASE_VERSION=$RELEASE_VERSION DEVELOPMENT_VERSION=$DEVELOPMENT_VERSION"
+          echo "Would have created branch '$RELEASE_BRANCH_NAME' set to DEVELOPMENT_PATCH_VERSION=$DEVELOPMENT_PATCH_VERSION"
