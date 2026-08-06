@@ -371,6 +371,12 @@ owns which registry invariants have a model and which do not, and why. The model
 earned their keep once by **overturning an inference** drawn from a correct measurement --
 see `traps.md`.
 
+The working reference for actually writing one -- syntax, configuration sections, the review
+checklist, and the traps that make a green TLC run mean nothing -- is
+**`tla-modelling.md`**. To point a model at a **recorded run** instead of a state space, which
+closes the gap between "the wording matches" and "the engine did what the design allows", see
+**`tla-trace-validation.md`**: the histories are already in the format the checker reads.
+
 ---
 
 ## 6. Property-based and metamorphic testing

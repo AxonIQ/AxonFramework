@@ -294,7 +294,10 @@ overwritten -- because the record of the hole is the evidence the hole existed.
 
 ## 7. Add a TLA+ model
 
-Read `formal/tla/README.md` first; it carries the bounds, the results and the bridge table.
+Read `formal/tla/README.md` first; it carries the bounds, the results and the bridge table. For
+the language and the tool -- module structure, configuration sections, the traps that make a green
+TLC run mean nothing, and how to read a counterexample -- `tla-modelling.md`. To aim a model at a
+**recorded history** rather than a state space, `tla-trace-validation.md`.
 
 1. **Check the registry before modelling anything.** Where a plan promises an invariant name,
    the registry is the authority: of five names one plan section promised, one was a registry

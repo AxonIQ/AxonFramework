@@ -1,6 +1,6 @@
 ---
 name: axon-hunt
-description: Drive and extend the Axon Hunt bug-hunting suite for Axon Framework 5 -- the seeded simulation harness in `simulation/`, its history-based oracles, and the invariant registry, findings log, canary campaigns and TLA+ models in `formal/`. Use when hunting for engine defects, triaging a red or inconclusive hunt run, reproducing a reported customer issue as a scenario, running the smoke / fuzz / chaos / per-backend matrix tiers, replaying a recorded history offline, or reading a per-backend verdict vector. Use equally when EXTENDING the suite: mining claims from Javadoc or code, turning a failure-mode hypothesis into a scenario, writing a scenario specification, adding an invariant, checker, fault, workload, backend, canary or TLA+ model, or covering a subsystem the suite has never touched (query side, dead letter queues, sagas). Also carries the general distributed-systems testing method in full, so use it for: designing a test plan or stability / release-validation campaign for this framework, walking a pitfall catalogue to generate falsification hypotheses, picking a technique (consistency checking, deterministic simulation, chaos, fuzzing, formal methods, property and metamorphic, crash-recovery and upgrade, performance), designing an operation-history schema or a checker, injecting a fault and proving it landed, reducing a reproducer and assigning blame (engine / harness / checker / environment), labelling a verdict beyond PASS-FAIL-INCONCLUSIVE, or testing a boundary claim -- tenant, context, namespace, routing, authorisation -- or a fairness / noisy-neighbour claim across surfaces. Also trigger on MachineName, HistoryView, DcbStoreModel, ScenarioRunner, HuntBackend, canary, landing evidence, "green-but-broken audit", weak oracle, verdict vector, surface decomposition, negative control, or "the determinism boundary".
+description: Drive and extend the Axon Hunt bug-hunting suite for Axon Framework 5 -- the seeded simulation harness in `simulation/`, its history-based oracles, and the invariant registry, findings log, canary campaigns and TLA+ models in `formal/`. Use when hunting for engine defects, triaging a red or inconclusive hunt run, reproducing a reported customer issue as a scenario, running the smoke / fuzz / chaos / per-backend matrix tiers, replaying a recorded history offline, or reading a per-backend verdict vector. Use equally when EXTENDING the suite: mining claims from Javadoc or code, turning a failure-mode hypothesis into a scenario, writing a scenario specification, adding an invariant, checker, fault, workload, backend, canary or TLA+ model, or covering a subsystem the suite has never touched (query side, dead letter queues, sagas). Also carries the general distributed-systems testing method in full, so use it for: designing a test plan or stability / release-validation campaign for this framework, walking a pitfall catalogue to generate falsification hypotheses, picking a technique (consistency checking, deterministic simulation, chaos, fuzzing, formal methods, property and metamorphic, crash-recovery and upgrade, performance), designing an operation-history schema or a checker, injecting a fault and proving it landed, reducing a reproducer and assigning blame (engine / harness / checker / environment), labelling a verdict beyond PASS-FAIL-INCONCLUSIVE, or testing a boundary claim -- tenant, context, namespace, routing, authorisation -- or a fairness / noisy-neighbour claim across surfaces. Carries the TLA+ working reference too, so use it when writing, checking, reviewing or debugging a TLA+ specification, choosing TLC configuration sections, bounding a state space, reading a counterexample trace, judging whether a green TLC run verified anything, or validating a recorded trace against a specification. Also trigger on MachineName, HistoryView, DcbStoreModel, ScenarioRunner, HuntBackend, canary, landing evidence, "green-but-broken audit", weak oracle, verdict vector, surface decomposition, negative control, TLC, PlusCal, TypeOK, invariant strength, trace validation, ndJsonDeserialize, or "the determinism boundary".
 ---
 
 # Axon Hunt
@@ -126,6 +126,8 @@ This skill depends on **no external skill and no private repository**. Every ref
 | A claim about tenancy, context, routing or fairness | `references/boundary-and-isolation.md` |
 | Labelling a verdict, reducing a reproducer, assigning blame and kind | `references/verdicts-and-classification.md` |
 | Designing a campaign from nothing, or running one as a session | `references/plan-workflow.md`, `references/execution-workflow.md`, and the three files under `assets/` |
+| Writing, checking or debugging a TLA+ model -- and telling a green model from a vacuous one | `references/tla-modelling.md`; `formal/tla/README.md` owns the models themselves |
+| Checking a recorded run against a model rather than exploring a state space | `references/tla-trace-validation.md` |
 | The DCB conflict semantics a checker, model rule or TLA+ operator must encode | `references/dcb-semantics.md`, and the rule table with engine `file:line` evidence in `formal/INVARIANTS.md` section 3.1 |
 | AF5 wiring for a workload, backend or probe -- verbatim, compiling, with the plain-Java traps | `formal/HUNT-NOTES.md` section 2; the published Javadoc is the fallback |
 | Contribution conventions for code in this repo | the repository's own `CLAUDE.md` and `.claude/rules/`; `build/checkstyle.xml` is the enforcement |
@@ -524,6 +526,8 @@ covers the ground and where it does not.
 | `references/green-but-broken-audit.md` | Before declaring any pass. Ten red flags, fourteen weak oracles, and how to record which rows came back short. |
 | `references/boundary-and-isolation.md` | A claim about tenancy, context, routing, or fairness. Surfaces, the claim matrix, confusable inputs, negative controls, the per-group formula. |
 | `references/verdicts-and-classification.md` | Labelling a verdict, reducing a reproducer, assigning blame and kind. |
+| `references/tla-modelling.md` | Writing or checking a TLA+ model. Syntax, configuration sections, the review checklist, the traps that make a model verify nothing, coverage, and reading a counterexample. |
+| `references/tla-trace-validation.md` | Replaying a **recorded history** through a model instead of exploring a state space. The histories are already JSON Lines, which is what the checker reads. |
 | `references/plan-workflow.md` | Designing a campaign from nothing. The ordered procedure and its anti-pattern checks. |
 | `references/execution-workflow.md` | Running a campaign as a session somebody else will read. |
 
@@ -532,14 +536,13 @@ covers the ground and where it does not.
 
 ## Installing this skill elsewhere
 
-The committed copy lives on this branch under `.claude/skills/axon-hunt/`. To use it from a
-session that is not in this worktree, copy the directory into the skills directory the
-harness reads:
+The skill ships as the `axon-hunt` plugin in the `axoniq-internal` marketplace:
 
-```bash
-cp -R .claude/skills/axon-hunt ~/.claude-work/skills/    # or ~/.claude/skills/
+```
+/plugin marketplace add AxonIQ/internal-agent-skills
+/plugin install axon-hunt@axoniq-internal
 ```
 
-Nothing in the skill is generated, so a copy is the whole installation. The skill points at
+Nothing in the skill is generated, so the install is the whole setup. The skill points at
 `formal/` and `simulation/` by relative path, so it is only fully useful next to the
 worktree it describes.
