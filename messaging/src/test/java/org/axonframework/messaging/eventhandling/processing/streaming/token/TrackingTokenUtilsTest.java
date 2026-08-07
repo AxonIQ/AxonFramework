@@ -211,5 +211,17 @@ class TrackingTokenUtilsTest {
             // when / then -- there is no progress to regress from, so the candidate advances beyond it
             assertThat(TrackingTokenUtils.coversWhenUnwrapped(token(3), freshReset)).isTrue();
         }
+
+        @Test
+        void reportsAdvanceWhenTheReferenceHasNoPositionYetForARawTypeRejectingNull() {
+            // given -- a reset that has not consumed anything yet unwraps to no raw position at all. The raw token type
+            // used here rejects a null argument to covers(..), so the comparison must not reach it.
+            TrackingToken freshReset =
+                    ReplayToken.createReplayToken(GapAwareTrackingToken.newInstance(5L, emptyList()));
+
+            // when / then -- there is no position to regress from, so the candidate covers it
+            assertThat(TrackingTokenUtils.coversWhenUnwrapped(GapAwareTrackingToken.newInstance(1L, emptyList()),
+                                                              freshReset)).isTrue();
+        }
     }
 }
