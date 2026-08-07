@@ -22,6 +22,7 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashSet;
 import java.util.Objects;
@@ -113,7 +114,7 @@ public class HierarchicalStateManager implements StateManager {
     }
 
     @Override
-    public <I, T> Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
+    public <I, T> @Nullable Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
         Repository<I, T> childRepository = child.repository(entityType, idType);
         if (childRepository != null) {
             return childRepository;

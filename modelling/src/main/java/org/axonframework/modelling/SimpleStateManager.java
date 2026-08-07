@@ -21,6 +21,7 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -31,10 +32,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
- * Simple implementation of the {@link StateManager}. Keeps a list of all registered {@link Repository repositories} and
- * delegates the loading of entities to the appropriate repository through the use of
- * {@link Repository#loadOrCreate(Object, ProcessingContext)}. Throws a {@link MissingRepositoryException} if no
- * repository is found for the given entity type and the provided id.
+ * Simple implementation of the {@link StateManager}.
+ * <p>
+ * Keeps a list of all registered {@link Repository repositories} and delegates the loading of entities to the
+ * appropriate repository through the use of {@link Repository#loadOrCreate(Object, ProcessingContext)}. Completes the
+ * returned {@link CompletableFuture} exceptionally with a {@link MissingRepositoryException} if no repository is found
+ * for the given entity type and the provided id.
  *
  * @author Mitchell Herrijgers
  * @see StateManager
@@ -60,7 +63,7 @@ public class SimpleStateManager implements StateManager {
         this.name = name;
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "DataFlowIssue", "OptionalIsPresent"})
     @Override
     public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(
             Class<T> entityType,
@@ -103,7 +106,7 @@ public class SimpleStateManager implements StateManager {
     }
 
     @Override
-    public <I, T> Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
+    public <I, T> @Nullable Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
         //noinspection unchecked
         return (Repository<I, T>) repositories.stream()
                                               .filter(r -> r.entityType().equals(entityType))
