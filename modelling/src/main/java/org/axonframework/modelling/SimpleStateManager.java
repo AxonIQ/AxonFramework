@@ -67,14 +67,18 @@ public class SimpleStateManager implements StateManager {
             I id,
             ProcessingContext context
     ) {
-        var repository = repositories
+        Optional<Repository<I, T>> repository = repositories
                 .stream()
                 .filter(r -> r.entityType().isAssignableFrom(entityType))
                 .filter(r -> r.idType().isAssignableFrom(id.getClass()))
                 .map(r -> (Repository<I, T>) r)
-                .findFirst()
-                .orElseThrow(() -> new MissingRepositoryException(id.getClass(), entityType));
-        return repository.loadOrCreate(id, context)
+                .findFirst();
+        if (repository.isEmpty()) {
+            return CompletableFuture.failedFuture(new MissingRepositoryException(id.getClass(), entityType));
+        }
+
+        return repository.get()
+                         .loadOrCreate(id, context)
                          .thenApply(me -> {
                              if (me.entity() != null && !entityType.isInstance(me.entity())) {
                                  throw new LoadedEntityNotOfExpectedTypeException(me.entity().getClass(), entityType);

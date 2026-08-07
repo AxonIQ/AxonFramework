@@ -85,12 +85,15 @@ public interface StateManager extends DescribableComponent {
      * If multiple repositories are registered for the given {@code entityType} that can handle the given {@code id}
      * (through superclass registration), the most specific repository is used.
      *
-     * @param <T>     The type of state to retrieve.
-     * @param type    The type of state to retrieve.
-     * @param id      The id of the state to retrieve.
-     * @param context The {@link ProcessingContext context} to load the entity in.
-     * @param <I>     The type of the identifier of the entity.
-     * @return a {@link CompletableFuture} which resolves to the entity instance.
+     * @param <T>     the type of state to retrieve
+     * @param type    the type of state to retrieve
+     * @param id      the id of the state to retrieve
+     * @param context the {@link ProcessingContext context} to load the entity in
+     * @param <I>     the type of the identifier of the entity
+     * @return a {@link CompletableFuture} which resolves to the entity instance
+     * @throws MissingRepositoryException contained in the resulting {@link CompletableFuture} whenever this
+     *                                    {@code StateManager} does not control the {@link Repository} to load the
+     *                                    entity from
      */
     default <I, T> CompletableFuture<T> loadEntity(
             Class<T> type,
@@ -104,12 +107,15 @@ public interface StateManager extends DescribableComponent {
      * Retrieves a {@link ManagedEntity} of the given {@code type} and {@code id}. The {@link CompletableFuture} will
      * resolve to a {@link ManagedEntity}, or complete exceptionally if it could not be resolved.
      *
-     * @param type    The type of state to retrieve.
-     * @param id      The id of the state to retrieve.
-     * @param context The {@link ProcessingContext context} to load the entity in.
-     * @param <ID>    The type of the identifier of the entity.
-     * @param <T>     The type of the entity.
-     * @return a {@link CompletableFuture} which resolves to the entity instance.
+     * @param type    the type of state to retrieve
+     * @param id      the id of the state to retrieve
+     * @param context the {@link ProcessingContext context} to load the entity in
+     * @param <ID>    the type of the identifier of the entity
+     * @param <T>     the type of the entity
+     * @return a {@link CompletableFuture} which resolves to the entity instance
+     * @throws MissingRepositoryException contained in the resulting {@link CompletableFuture} whenever this
+     *                                    {@code StateManager} does not control the {@link Repository} to load the
+     *                                    {@link ManagedEntity} from
      */
     <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(
             Class<T> type,
