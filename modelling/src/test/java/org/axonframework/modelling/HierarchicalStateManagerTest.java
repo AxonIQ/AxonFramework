@@ -24,6 +24,10 @@ import org.mockito.*;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class HierarchicalStateManagerTest {
 
@@ -58,16 +62,55 @@ class HierarchicalStateManagerTest {
     }
 
     @Test
+    void resolvesPolymorphicEntityFromChildIfRepositoryRegisteredForSupertype() {
+        StateManager parent = SimpleStateManager.named("parent");
+        StateManager child = SimpleStateManager.named("child")
+                                               .register(String.class,
+                                                         TestEntity.class,
+                                                         (id, ctx) -> CompletableFuture.completedFuture(
+                                                                 new TestSubEntity("child")),
+                                                         (id, state, ctx) -> FutureUtils.emptyCompletedFuture());
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        TestSubEntity entity = stateManager.loadEntity(TestSubEntity.class, "id", new StubProcessingContext())
+                                           .join();
+
+        assertNotNull(entity);
+        assertEquals("child", entity.value());
+    }
+
+    @Test
+    void resolvesPolymorphicEntityFromParentIfRepositoryRegisteredForSupertypeAndNotInChild() {
+        StateManager parent = SimpleStateManager.named("parent")
+                                                .register(String.class,
+                                                          TestEntity.class,
+                                                          (id, ctx) -> CompletableFuture.completedFuture(
+                                                                  new TestSubEntity("parent")),
+                                                          (id, state, ctx) -> FutureUtils.emptyCompletedFuture());
+        StateManager child = SimpleStateManager.named("child");
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        TestSubEntity entity = stateManager.loadEntity(TestSubEntity.class, "id", new StubProcessingContext())
+                                           .join();
+
+        assertNotNull(entity);
+        assertEquals("parent", entity.value());
+    }
+
+    @Test
     void throwsExceptionIfExistsInNeither() {
         StateManager parent = SimpleStateManager.named("parent");
         StateManager child = SimpleStateManager.named("child");
 
         HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
 
-        Assertions.assertThrows(MissingRepositoryException.class, () -> {
+        CompletionException exception = Assertions.assertThrows(CompletionException.class, () -> {
             stateManager.loadEntity(String.class, "id", new StubProcessingContext())
                         .join();
         });
+        assertInstanceOf(MissingRepositoryException.class, exception.getCause());
     }
 
     @Test
@@ -82,25 +125,26 @@ class HierarchicalStateManagerTest {
         HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
 
         Set<Class<?>> classes = stateManager.registeredEntities();
-        Assertions.assertEquals(3, classes.size());
+        assertEquals(3, classes.size());
         Assertions.assertTrue(classes.contains(String.class));
         Assertions.assertTrue(classes.contains(Integer.class));
         Assertions.assertTrue(classes.contains(Boolean.class));
 
         Set<Class<?>> stringIds = stateManager.registeredIdsFor(String.class);
-        Assertions.assertEquals(2, stringIds.size());
+        assertEquals(2, stringIds.size());
         Assertions.assertTrue(stringIds.contains(Integer.class));
         Assertions.assertTrue(stringIds.contains(Boolean.class));
 
         Set<Class<?>> integerIds = stateManager.registeredIdsFor(Integer.class);
-        Assertions.assertEquals(1, integerIds.size());
+        assertEquals(1, integerIds.size());
         Assertions.assertTrue(integerIds.contains(Integer.class));
 
         Set<Class<?>> booleanIds = stateManager.registeredIdsFor(Boolean.class);
-        Assertions.assertEquals(1, booleanIds.size());
+        assertEquals(1, booleanIds.size());
         Assertions.assertTrue(booleanIds.contains(Integer.class));
     }
 
+    @SuppressWarnings("rawtypes")
     private Repository<?, ?> createMockForTypes(Class<?> entityType, Class<?> idType) {
         Repository mock = Mockito.mock(Repository.LifecycleManagement.class);
         Mockito.when(mock.idType()).thenReturn(idType);
@@ -111,18 +155,24 @@ class HierarchicalStateManagerTest {
     private static void verifyHasAsResult(HierarchicalStateManager stateManager, String child) {
         stateManager.loadEntity(String.class, "id", new StubProcessingContext())
                     .thenAccept(entity -> {
-                        Assertions.assertEquals(child, entity);
+                        assertEquals(child, entity);
                     })
                     .join();
     }
 
     private static StateManager createStringSimpleStateManager(String value) {
-        return SimpleStateManager.named(value)
-                                 .register(String.class,
-                                           String.class,
-                                           (id, ctx) -> CompletableFuture.completedFuture(value),
-                                           (id, state, ctx) -> {
-                                               return FutureUtils.emptyCompletedFuture();
-                                           });
+        return SimpleStateManager.named(value).register(
+                String.class, String.class,
+                (id, ctx) -> CompletableFuture.completedFuture(value),
+                (id, state, ctx) -> FutureUtils.emptyCompletedFuture()
+        );
+    }
+
+    private interface TestEntity {
+
+    }
+
+    private record TestSubEntity(String value) implements TestEntity {
+
     }
 }
