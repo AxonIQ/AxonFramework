@@ -3,10 +3,12 @@ name: Minor/Patch Release
 # Performs a release of the project from a patch branch (axon-*) using the Maven release
 # plugin. Same steps as the Major Release workflow, minus branch creation. Steps:
 #   1. release:prepare  - bump to RELEASE_VERSION, tag, bump the branch to DEVELOPMENT_VERSION
-#   2. push the release commits and tag to the patch branch
-#   3. release:perform  - build the tagged release and deploy it to Maven Central
+#      (local commits/tag only, nothing pushed yet, thanks to pushChanges=false)
+#   2. release:perform  - build the tagged release and deploy it to Maven Central
 #      (this only uploads/validates the deployment; publishing on
 #      https://central.sonatype.com/publishing/deployments is still a manual step)
+#   3. only once release:perform succeeded: push the release commits and tag to the
+#      patch branch, so a failed deploy never leaves it with a commit/tag to revert
 
 on:
   workflow_dispatch:
@@ -81,12 +83,6 @@ jobs:
                              -Darguments=-DskipTests \
                              release:prepare
 
-      - name: Push release commits and tag to ${{ github.ref_name }}
-        if: inputs.DRY_RUN == false
-        run: |
-          git push origin $BRANCH_NAME
-          git push origin $RELEASE_TAG
-
       - name: Release perform (deploy to Maven Central)
         if: inputs.DRY_RUN == false
         env:
@@ -95,6 +91,12 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
           ./mvnw release:perform -Darguments="-DskipTests"
+
+      - name: Push release commits and tag to ${{ github.ref_name }}
+        if: inputs.DRY_RUN == false
+        run: |
+          git push origin $BRANCH_NAME
+          git push origin $RELEASE_TAG
 
       - name: Clean release plugin working files
         run: ./mvnw --batch-mode release:clean

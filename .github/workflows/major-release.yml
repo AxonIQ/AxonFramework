@@ -3,12 +3,14 @@ name: Major Release
 # Performs a release of the project from main using the Maven release plugin, then creates
 # the patch branch for the released line. Steps:
 #   1. release:prepare  - bump to RELEASE_VERSION, tag, bump main to DEVELOPMENT_VERSION
-#   2. push the release commits and tag to main
-#   3. release:perform  - build the tagged release and deploy it to Maven Central
+#      (local commits/tag only, nothing pushed yet, thanks to pushChanges=false)
+#   2. release:perform  - build the tagged release and deploy it to Maven Central
 #      (this only uploads/validates the deployment; publishing on
 #      https://central.sonatype.com/publishing/deployments is still a manual step)
-#   4. only if release:perform succeeded: branch RELEASE_BRANCH_NAME off main's new HEAD
-#      and set its version to DEVELOPMENT_PATCH_VERSION
+#   3. only once release:perform succeeded: push the release commits and tag to main,
+#      so a failed deploy never leaves main with a release commit/tag to revert
+#   4. branch RELEASE_BRANCH_NAME off main's new HEAD and set its version to
+#      DEVELOPMENT_PATCH_VERSION
 
 on:
   workflow_dispatch:
@@ -92,12 +94,6 @@ jobs:
                              -Darguments=-DskipTests \
                              release:prepare
 
-      - name: Push release commits and tag to main
-        if: inputs.DRY_RUN == false
-        run: |
-          git push origin main
-          git push origin $RELEASE_TAG
-
       - name: Release perform (deploy to Maven Central)
         if: inputs.DRY_RUN == false
         env:
@@ -106,6 +102,12 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
           ./mvnw release:perform -Darguments="-DskipTests"
+
+      - name: Push release commits and tag to main
+        if: inputs.DRY_RUN == false
+        run: |
+          git push origin main
+          git push origin $RELEASE_TAG
 
       - name: Clean release plugin working files
         run: ./mvnw --batch-mode release:clean
