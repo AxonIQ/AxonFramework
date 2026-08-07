@@ -16,24 +16,24 @@
 
 package org.axonframework.modelling.tracing;
 
-import org.axonframework.modelling.repository.tracing.TracingRepository;
-import org.axonframework.messaging.tracing.support.TestSpanFactory;
-import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.tracing.support.TestSpanFactory;
+import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.axonframework.modelling.repository.tracing.TracingRepository;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.*;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 class TracingStateManagerTest {
 
@@ -72,6 +72,7 @@ class TracingStateManagerTest {
     @Nested
     class RegisterWrapsRepositories {
 
+        @SuppressWarnings("unchecked")
         @Test
         void registeringALifecycleRepositoryWrapsItSoItsOperationsAreTraced() {
             // given a plain (untraced) repository, e.g. the one an event-sourced entity module builds in its own
@@ -84,8 +85,7 @@ class TracingStateManagerTest {
             // then the delegate received a traced wrapper, and loading through it opens the repository span
             assertThat(delegate.registered).isInstanceOf(TracingRepository.class);
             joinAndUnwrap(
-                    ((Repository<String, Booking>) delegate.registered)
-                            .load("room-42", new StubProcessingContext())
+                    ((Repository<String, Booking>) delegate.registered).load("room-42", new StubProcessingContext())
             );
             spanFactory.verifySpanCompleted("Repository.load Booking");
         }
@@ -111,36 +111,41 @@ class TracingStateManagerTest {
 
         private Repository<?, ?> registered;
 
+        @NonNull
         @Override
-        public <ID, T> StateManager register(Repository<ID, T> repository) {
+        public <ID, T> StateManager register(@NonNull Repository<ID, T> repository) {
             this.registered = repository;
             return this;
         }
 
+        @NonNull
         @Override
-        public <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(Class<T> type,
-                                                                                 ID id,
-                                                                                 ProcessingContext context) {
+        public <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(@NonNull Class<T> type,
+                                                                                 @NonNull ID id,
+                                                                                 @NonNull ProcessingContext context) {
             return CompletableFuture.completedFuture(null);
         }
 
+        @NonNull
         @Override
         public Set<Class<?>> registeredEntities() {
             return Set.of();
         }
 
+        @NonNull
         @Override
-        public Set<Class<?>> registeredIdsFor(Class<?> entityType) {
+        public Set<Class<?>> registeredIdsFor(@NonNull Class<?> entityType) {
             return Set.of();
         }
 
+        @Nullable
         @Override
-        public <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
+        public <ID, T> Repository<ID, T> repository(@NonNull Class<T> entityType, @NonNull Class<ID> idType) {
             return null;
         }
 
         @Override
-        public void describeTo(ComponentDescriptor descriptor) {
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
             // No-op - not required for testing
         }
     }
@@ -150,43 +155,50 @@ class TracingStateManagerTest {
      */
     private static final class RecordingRepository implements Repository.LifecycleManagement<String, Booking> {
 
+        @NonNull
         @Override
         public Class<Booking> entityType() {
             return Booking.class;
         }
 
+        @NonNull
         @Override
         public Class<String> idType() {
             return String.class;
         }
 
+        @NonNull
         @Override
         public CompletableFuture<ManagedEntity<String, Booking>> load(String identifier,
-                                                                      ProcessingContext processingContext) {
+                                                                      @NonNull ProcessingContext processingContext) {
             return CompletableFuture.completedFuture(null);
         }
 
+        @NonNull
         @Override
         public CompletableFuture<ManagedEntity<String, Booking>> loadOrCreate(String identifier,
-                                                                              ProcessingContext processingContext) {
+                                                                              @NonNull ProcessingContext processingContext) {
             return CompletableFuture.completedFuture(null);
         }
 
+        @SuppressWarnings("DataFlowIssue")
+        @NonNull
         @Override
         public ManagedEntity<String, Booking> persist(String identifier,
                                                       Booking entity,
-                                                      ProcessingContext processingContext) {
+                                                      @NonNull ProcessingContext processingContext) {
             return null;
         }
 
+        @NonNull
         @Override
-        public ManagedEntity<String, Booking> attach(ManagedEntity<String, Booking> entity,
-                                                     ProcessingContext processingContext) {
+        public ManagedEntity<String, Booking> attach(@NonNull ManagedEntity<String, Booking> entity,
+                                                     @NonNull ProcessingContext processingContext) {
             return entity;
         }
 
         @Override
-        public void describeTo(ComponentDescriptor descriptor) {
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
         }
     }
 

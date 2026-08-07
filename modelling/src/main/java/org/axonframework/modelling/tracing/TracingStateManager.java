@@ -19,13 +19,13 @@ package org.axonframework.modelling.tracing;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.tracing.Span;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.attributes.EntityIdSpanAttributesProvider;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
 import org.axonframework.modelling.repository.tracing.TracingRepository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.Set;
@@ -36,17 +36,17 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * The {@code loadManagedEntity} call produces a single span named {@code StateManager.loadManagedEntity <EntityType>}
  * carrying the entity type name and the entity identifier (under
- * {@link EntityIdSpanAttributesProvider#DEFAULT_ATTRIBUTE_KEY}). The default {@code loadEntity} method
- * ultimately calls {@code loadManagedEntity}, so it is naturally traced too.
+ * {@link EntityIdSpanAttributesProvider#DEFAULT_ATTRIBUTE_KEY}). The default {@code loadEntity} method ultimately calls
+ * {@code loadManagedEntity}, so it is naturally traced too.
  * <p>
  * Repositories {@link #register(Repository) registered} on this state manager are wrapped in a
- * {@link TracingRepository} (when not traced already), so their {@code load} / {@code loadOrCreate} /
- * {@code persist} / {@code attach} operations produce spans as well. This matters for entity modules (e.g.
- * event-sourced entities), which build their {@code Repository} inside the module's own component registry - out of
- * reach of the root registry's {@code Repository} decorator - and then register it on the root {@code StateManager}:
- * this wrap is what puts the {@code Repository.load <EntityType>} span inside the entity-loading trace.
+ * {@link TracingRepository} (when not traced already), so their {@code load} / {@code loadOrCreate} / {@code persist} /
+ * {@code attach} operations produce spans as well. This matters for entity modules (e.g. event-sourced entities), which
+ * build their {@code Repository} inside the module's own component registry - out of reach of the root registry's
+ * {@code Repository} decorator - and then register it on the root {@code StateManager}: this wrap is what puts the
+ * {@code Repository.load <EntityType>} span inside the entity-loading trace.
  * <p>
- * This decorator is registered by {@link ModellingTracingConfigurationEnhancer}; it is never instantiated directly by
+ * This decorator is registered by {@code ModellingTracingConfigurationEnhancer}; it is never instantiated directly by
  * applications.
  *
  * @author Mateusz Nowak
@@ -55,10 +55,14 @@ import java.util.concurrent.CompletableFuture;
 @Internal
 public final class TracingStateManager implements StateManager {
 
-    /** Prefix for the state-manager-load-managed-entity span. */
+    /**
+     * Prefix for the state-manager-load-managed-entity span.
+     */
     private static final String LOAD_MANAGED_ENTITY_SPAN = "StateManager.loadManagedEntity";
 
-    /** Attribute key for the entity type (same convention as {@link TracingRepository}). */
+    /**
+     * Attribute key for the entity type (same convention as {@link TracingRepository}).
+     */
     private static final String ENTITY_TYPE_KEY = "axoniq.entity.type";
 
     private final StateManager delegate;
@@ -80,13 +84,13 @@ public final class TracingStateManager implements StateManager {
      * {@inheritDoc}
      * <p>
      * <b>Contract:</b> the given {@code repository} is assumed to be untraced and is wrapped in a
-     * {@link TracingRepository} before registration, unless it already <em>is</em> one (e.g. on re-registration of
-     * the same instance, or when registering a component the root registry's decorator already traced). The
-     * already-traced check looks at the <em>outermost</em> wrapper only - sound for everything the component
-     * registry builds, because the tracing decorators register at near-maximal {@code TRACING_DECORATOR_ORDER} and
-     * are therefore always the outermost layer. If you register a hand-built decorator pipeline around an
-     * already-traced repository, keep the {@link TracingRepository} as the outermost wrapper - burying it under
-     * another decorator makes it undetectable here and results in duplicate {@code Repository.*} spans.
+     * {@link TracingRepository} before registration, unless it already <em>is</em> one (e.g. on re-registration of the
+     * same instance, or when registering a component the root registry's decorator already traced). The already-traced
+     * check looks at the <em>outermost</em> wrapper only - sound for everything the component registry builds, because
+     * the tracing decorators register at near-maximal {@code TRACING_DECORATOR_ORDER} and are therefore always the
+     * outermost layer. If you register a hand-built decorator pipeline around an already-traced repository, keep the
+     * {@link TracingRepository} as the outermost wrapper - burying it under another decorator makes it undetectable
+     * here and results in duplicate {@code Repository.*} spans.
      */
     @Override
     public <ID, T> StateManager register(Repository<ID, T> repository) {
@@ -112,13 +116,10 @@ public final class TracingStateManager implements StateManager {
     public <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(Class<T> type,
                                                                              ID id,
                                                                              ProcessingContext context) {
-        Span span = spanFactory.createInternalSpan(
-                                       LOAD_MANAGED_ENTITY_SPAN + " " + type.getSimpleName(), context)
-                               .addAttribute(ENTITY_TYPE_KEY, type.getSimpleName());
-        if (id != null) {
-            span.addAttribute(EntityIdSpanAttributesProvider.DEFAULT_ATTRIBUTE_KEY, id.toString());
-        }
-        return span.branchAsync(context, scoped -> delegate.loadManagedEntity(type, id, scoped));
+        return spanFactory.createInternalSpan(LOAD_MANAGED_ENTITY_SPAN + " " + type.getSimpleName(), context)
+                          .addAttribute(ENTITY_TYPE_KEY, type.getSimpleName())
+                          .addAttribute(EntityIdSpanAttributesProvider.DEFAULT_ATTRIBUTE_KEY, id.toString())
+                          .branchAsync(context, scoped -> delegate.loadManagedEntity(type, id, scoped));
     }
 
     @Override
@@ -132,7 +133,7 @@ public final class TracingStateManager implements StateManager {
     }
 
     @Override
-    public <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
+    public <ID, T> @Nullable Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
         return delegate.repository(entityType, idType);
     }
 
