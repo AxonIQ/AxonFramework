@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.messaging.core.Context;
@@ -27,15 +28,22 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.StreamingCondition;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.entity.EntityMetamodel;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -334,6 +342,135 @@ class DefaultEventStoreTransactionTest {
                     GlobalIndexConsistencyMarker.position(new GlobalIndexConsistencyMarker(4)),
                     GlobalIndexConsistencyMarker.position(result.get())
             );
+        }
+    }
+
+    @Nested
+    class SourcingMultipleAggregates {
+
+        private static final String FIRST_AGGREGATE_ID = "aggregate-one";
+        private static final String SECOND_AGGREGATE_ID = "aggregate-two";
+
+        private final AggregateBasedStorageEngine aggregateStorageEngine = new AggregateBasedStorageEngine(
+                Map.of(FIRST_AGGREGATE_ID, 2L, SECOND_AGGREGATE_ID, 6L)
+        );
+
+        @Test
+        void appendsEachAggregateAtItsOwnNextSequenceNumberWhenTwoAggregatesAreSourced() {
+            // given two aggregates whose last events are at sequence number 2 and 6 respectively
+
+            // when both are sourced in one processing context, and an event is appended for each
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = aggregateBasedTransactionFor(context);
+                FluxUtils.of(transaction.source(sourcingConditionFor(FIRST_AGGREGATE_ID))).blockLast();
+                FluxUtils.of(transaction.source(sourcingConditionFor(SECOND_AGGREGATE_ID))).blockLast();
+                transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
+                transaction.appendEvent(eventFor(SECOND_AGGREGATE_ID));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then the condition reaching the storage engine still holds a position for both aggregates, so each
+            // event continues the event stream of its own aggregate
+            assertThat(aggregateStorageEngine.assignedSequenceNumbers)
+                    .as("A sequence number of 0 means the aggregate lost its position while the sourcing markers "
+                                + "were combined, restarting its event stream and colliding with its existing events")
+                    .containsExactlyInAnyOrderEntriesOf(Map.of(FIRST_AGGREGATE_ID, 3L, SECOND_AGGREGATE_ID, 7L));
+        }
+
+        private EventStoreTransaction aggregateBasedTransactionFor(ProcessingContext context) {
+            return context.computeResourceIfAbsent(
+                    testEventStoreTransactionKey,
+                    () -> new DefaultEventStoreTransaction(
+                            aggregateStorageEngine,
+                            context,
+                            // The payload of an event carries the identifier of the aggregate it belongs to.
+                            event -> new GenericTaggedEventMessage<>(
+                                    event, Set.of(new Tag("aggregateIdentifier", (String) event.payload()))
+                            )
+                    )
+            );
+        }
+
+        private static SourcingCondition sourcingConditionFor(String aggregateIdentifier) {
+            return SourcingCondition.conditionFor(
+                    EventCriteria.havingTags(new Tag("aggregateIdentifier", aggregateIdentifier))
+            );
+        }
+
+        private static EventMessage eventFor(String aggregateIdentifier) {
+            return new GenericEventMessage(new MessageType("test", "event", "0.0.1"), aggregateIdentifier);
+        }
+
+        /**
+         * Minimal aggregate-based {@link EventStorageEngine}. It reports an {@link AggregateBasedConsistencyMarker} for
+         * every sourced aggregate, and derives the sequence number of each appended event from the marker of the
+         * {@link AppendCondition} it receives, which is how an aggregate-based storage engine numbers its events.
+         */
+        private static class AggregateBasedStorageEngine implements EventStorageEngine {
+
+            private final Map<String, Long> lastSequenceNumbers;
+            private final Map<String, Long> assignedSequenceNumbers = new HashMap<>();
+
+            private AggregateBasedStorageEngine(Map<String, Long> lastSequenceNumbers) {
+                this.lastSequenceNumbers = lastSequenceNumbers;
+            }
+
+            @Override
+            public MessageStream<EventMessage> source(SourcingCondition condition,
+                                                      @Nullable ProcessingContext context) {
+                String aggregateIdentifier = AggregateBasedEventStorageEngineUtils.resolveAggregateIdentifier(
+                        condition.criteria().flatten().iterator().next().tags()
+                );
+                ConsistencyMarker marker = new AggregateBasedConsistencyMarker(
+                        aggregateIdentifier, lastSequenceNumbers.get(aggregateIdentifier)
+                );
+                return MessageStream.<EventMessage>empty()
+                                    .concatWith(MessageStream.fromFuture(
+                                            CompletableFuture.completedFuture(TerminalEventMessage.INSTANCE),
+                                            unused -> Context.with(ConsistencyMarker.RESOURCE_KEY, marker)
+                                    ));
+            }
+
+            @Override
+            public CompletableFuture<AppendTransaction<?>> appendEvents(AppendCondition condition,
+                                                                        @Nullable ProcessingContext context,
+                                                                        List<TaggedEventMessage<?>> events) {
+                var sequencer = AggregateBasedConsistencyMarker.from(condition).createSequencer();
+                for (TaggedEventMessage<?> taggedEvent : events) {
+                    String aggregateIdentifier =
+                            AggregateBasedEventStorageEngineUtils.resolveAggregateIdentifier(taggedEvent.tags());
+                    assignedSequenceNumbers.put(aggregateIdentifier,
+                                                sequencer.incrementAndGetSequenceOf(aggregateIdentifier));
+                }
+                // Nothing is persisted, so there is no transactional work to perform on commit.
+                return CompletableFuture.completedFuture(EmptyAppendTransaction.INSTANCE);
+            }
+
+            @Override
+            public MessageStream<EventMessage> stream(StreamingCondition condition) {
+                throw new UnsupportedOperationException("Not used by this test");
+            }
+
+            @Override
+            public CompletableFuture<TrackingToken> firstToken() {
+                throw new UnsupportedOperationException("Not used by this test");
+            }
+
+            @Override
+            public CompletableFuture<TrackingToken> latestToken() {
+                throw new UnsupportedOperationException("Not used by this test");
+            }
+
+            @Override
+            public CompletableFuture<TrackingToken> tokenAt(Instant at) {
+                throw new UnsupportedOperationException("Not used by this test");
+            }
+
+            @Override
+            public void describeTo(ComponentDescriptor descriptor) {
+                descriptor.describeProperty("lastSequenceNumbers", lastSequenceNumbers);
+            }
         }
     }
 
