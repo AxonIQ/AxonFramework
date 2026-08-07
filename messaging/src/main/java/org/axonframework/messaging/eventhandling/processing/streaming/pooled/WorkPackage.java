@@ -139,6 +139,10 @@ class WorkPackage implements SegmentProgressContext {
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
         this.clock = builder.clock;
         this.lastConsumedToken = builder.initialToken;
+        // The claimed token is by definition the last position the token store accepted for this segment, so it is the
+        // reference the monotonicity guard in storeIfAdvanced must start from. Leaving it null would skip the guard on
+        // the first store of every claim cycle.
+        this.lastStoredToken = builder.initialToken;
         this.nextClaimExtension = new AtomicLong(now() + claimExtensionThreshold);
         this.processingEvents = new AtomicBoolean(false);
         this.schedulingProcessingContextProvider = builder.schedulingProcessingContextProvider;
