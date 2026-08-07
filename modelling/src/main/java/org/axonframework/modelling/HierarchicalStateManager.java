@@ -16,11 +16,13 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.Module;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashSet;
 import java.util.Objects;
@@ -67,17 +69,32 @@ public class HierarchicalStateManager implements StateManager {
         return this;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Delegates directly to {@code StateManager#loadManagedEntity(Class, Object, ProcessingContext)} of the
+     * {@link #getChild() child}, falling back to the {@link #getParent() parent} when the child completes exceptionally
+     * with a {@link MissingRepositoryException}. Delegating the load itself, rather than first locating a
+     * {@link Repository} through {@link #repository(Class, Class)} and invoking it here, ensures each delegate applies
+     * its own resolution semantics for {@code type}. {@link SimpleStateManager}, for instance, resolves a
+     * {@link Repository} registered for a supertype when asked for a subtype, whereas {@link #repository(Class, Class)}
+     * only matches the exact registered type. Re-implementing that resolution here would either duplicate or diverge
+     * from the delegate's own behavior; calling {@code loadManagedEntity} avoids that entirely, and still composes
+     * correctly when the delegate is itself a {@code HierarchicalStateManager}.
+     * <p>
+     * Delegates such as {@link SimpleStateManager} complete their {@link CompletableFuture} exceptionally rather than
+     * throwing {@link MissingRepositoryException} synchronously, so the parent fallback is expressed with
+     * {@link CompletableFuture#exceptionallyCompose(java.util.function.Function)} rather than a
+     * {@code try}/{@code catch}. Any other exception is propagated to the caller unchanged.
+     */
     @Override
     public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(Class<T> type,
                                                                            I id,
                                                                            ProcessingContext context) {
-        //noinspection unchecked
-        Class<I> idClass = (Class<I>) id.getClass();
-        Repository<I, T> repository = repository(type, idClass);
-        if (repository != null) {
-            return repository.loadOrCreate(id, context);
-        }
-        throw new MissingRepositoryException(id.getClass(), type);
+        return child.loadManagedEntity(type, id, context)
+                    .exceptionallyCompose(ex -> FutureUtils.unwrap(ex) instanceof MissingRepositoryException
+                            ? parent.loadManagedEntity(type, id, context)
+                            : CompletableFuture.failedFuture(ex));
     }
 
     @Override
@@ -97,7 +114,7 @@ public class HierarchicalStateManager implements StateManager {
     }
 
     @Override
-    public <I, T> Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
+    public <I, T> @Nullable Repository<I, T> repository(Class<T> entityType, Class<I> idType) {
         Repository<I, T> childRepository = child.repository(entityType, idType);
         if (childRepository != null) {
             return childRepository;
