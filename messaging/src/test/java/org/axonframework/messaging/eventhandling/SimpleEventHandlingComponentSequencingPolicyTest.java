@@ -21,7 +21,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.test.appender.ListAppender;
-import org.jspecify.annotations.NonNull;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.LegacyResources;
@@ -39,6 +38,7 @@ import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 import java.util.Optional;
@@ -63,7 +63,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
     class DefaultSequencingPolicy {
 
         @Test
-        void should_use_default_hierarchical_sequencing_when_no_policy_specified() {
+        void shouldUseDefaultHierarchicalSequencingWhenNoPolicySpecified() {
             // given
             var component = SimpleEventHandlingComponent.create("test");
             var event = EventTestUtils.asEventMessage("test-event");
@@ -81,7 +81,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
     class ComponentLevelSequencingPolicy {
 
         @Test
-        void should_use_sequential_policy_when_set_on_component() {
+        void shouldUseSequentialPolicyWhenSetOnComponent() {
             // given
             var component = SimpleEventHandlingComponent.create("test", SequentialPolicy.INSTANCE);
             var event = EventTestUtils.asEventMessage("test-event");
@@ -95,7 +95,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_full_concurrency_policy_when_set_on_component() {
+        void shouldUseFullConcurrencyPolicyWhenSetOnComponent() {
             // given
             var component = SimpleEventHandlingComponent.create("test", FullConcurrencyPolicy.INSTANCE);
             var event = EventTestUtils.asEventMessage("test-event");
@@ -109,7 +109,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_metadata_sequencing_policy_when_set_on_component() {
+        void shouldUseMetadataSequencingPolicyWhenSetOnComponent() {
             // given
             var component = SimpleEventHandlingComponent.create("test", new MetadataSequencingPolicy("userId"));
             var metadata = Metadata.with("userId", "user123");
@@ -124,7 +124,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_metadata_sequencing_policy_fallback_to_event_identifier() {
+        void shouldUseMetadataSequencingPolicyFallbackToEventIdentifier() {
             // given
             var component = SimpleEventHandlingComponent.create(
                     "test",
@@ -144,7 +144,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_property_sequencing_policy_when_set_on_component() {
+        void shouldUsePropertySequencingPolicyWhenSetOnComponent() {
             // given
             var component = SimpleEventHandlingComponent.create(
                     "test",
@@ -162,7 +162,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_sequential_per_aggregate_policy_when_set_on_component() {
+        void shouldUseSequentialPerAggregatePolicyWhenSetOnComponent() {
             // given
             var component = SimpleEventHandlingComponent.create("test", SequentialPerAggregatePolicy.INSTANCE);
             var event = EventTestUtils.asEventMessage("test-event");
@@ -180,7 +180,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
     class NestedComponentOverridesPolicy {
 
         @Test
-        void should_use_nested_component_over_main_component_policy() {
+        void shouldUseNestedComponentOverMainComponentPolicy() {
             // given
             var mainComponent = SimpleEventHandlingComponent.create("test", FullConcurrencyPolicy.INSTANCE);
 
@@ -206,7 +206,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
     class MainComponentPolicyWhenNoNestedComponent {
 
         @Test
-        void should_use_main_component_policy_when_no_nested_component() {
+        void shouldUseMainComponentPolicyWhenNoNestedComponent() {
             // given
             var mainComponent = SimpleEventHandlingComponent.create("main", SequentialPolicy.INSTANCE);
             var plainEventHandler = new PlainEventHandler();
@@ -224,7 +224,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_use_main_component_policy_when_mixed_handlers() {
+        void shouldUseMainComponentPolicyWhenMixedHandlers() {
             // given
             var mainComponent = SimpleEventHandlingComponent.create(
                     "main", new PropertySequencingPolicy<>(OrderEvent.class, "orderId")
@@ -252,7 +252,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
     class PolicyCannotDetermineAnIdentifier {
 
         @Test
-        void should_fall_back_to_event_identifier_for_no_op_policy() {
+        void shouldFallBackToEventIdentifierForNoOpPolicy() {
             // given a policy that imposes no sequencing at all, so it never resolves an identifier
             var component = SimpleEventHandlingComponent.create("test", NoOpSequencingPolicy.INSTANCE);
             var event = EventTestUtils.asEventMessage("test-event");
@@ -266,7 +266,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_fall_back_to_event_identifier_when_no_aggregate_identifier_is_present() {
+        void shouldFallBackToEventIdentifierWhenNoAggregateIdentifierIsPresent() {
             // given a per-aggregate policy on a store that populates no aggregate identifier resource
             var component = SimpleEventHandlingComponent.create("test", SequentialPerAggregatePolicy.INSTANCE);
             var event = EventTestUtils.asEventMessage("test-event");
@@ -280,7 +280,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_fall_back_to_event_identifier_when_only_plain_handlers_are_subscribed() {
+        void shouldFallBackToEventIdentifierWhenOnlyPlainHandlersAreSubscribed() {
             // given the shape of an annotated projection: plain handlers, no nested component, no sequencing
             var component = SimpleEventHandlingComponent.create("test", NoOpSequencingPolicy.INSTANCE);
             component.subscribe(new QualifiedName("java.lang", "String"), new PlainEventHandler());
@@ -295,7 +295,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_not_consult_the_component_policy_when_a_nested_component_resolved_an_identifier() {
+        void shouldNotConsultTheComponentPolicyWhenANestedComponentResolvedAnIdentifier() {
             // given a main component whose own policy never resolves an identifier
             var mainComponent = SimpleEventHandlingComponent.create("main", NoOpSequencingPolicy.INSTANCE);
             mainComponent.subscribe(
@@ -341,7 +341,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_warn_once_naming_the_policy_however_many_events_fall_back() {
+        void shouldWarnOnceNamingThePolicyHoweverManyEventsFallBack() {
             // given a per-aggregate policy on a store that populates no aggregate identifier resource, so the
             // per-aggregate ordering that was asked for is silently not delivered
             var component = SimpleEventHandlingComponent.create("projection", SequentialPerAggregatePolicy.INSTANCE);
@@ -363,7 +363,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_not_warn_for_the_no_op_sequencing_policy() {
+        void shouldNotWarnForTheNoOpSequencingPolicy() {
             // given a policy whose empty result is the configured intent rather than a downgrade
             var component = SimpleEventHandlingComponent.create("projection", NoOpSequencingPolicy.INSTANCE);
             component.subscribe(new QualifiedName("java.lang", "String"), new PlainEventHandler());
@@ -379,7 +379,7 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
         }
 
         @Test
-        void should_not_warn_for_the_default_sequencing_policy() {
+        void shouldNotWarnForTheDefaultSequencingPolicy() {
             // given the default hierarchical policy, which always resolves an identifier
             var component = SimpleEventHandlingComponent.create("test");
             var aggregateEvent = EventTestUtils.asEventMessage("test-event");
