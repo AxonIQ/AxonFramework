@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core.configuration;
 
+import org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfigurer;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.FutureUtils;
@@ -56,8 +57,10 @@ import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryBusTestUtils;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
+import org.axonframework.messaging.queryhandling.QueryShutdownManager;
 import org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway;
 import org.axonframework.messaging.queryhandling.interception.InterceptingQueryBus;
 import org.junit.jupiter.api.*;
 
@@ -438,6 +441,66 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
                            .getComponent(TestComponent.class);
 
         assertEquals(tc, result);
+    }
+
+    @Nested
+    class QueryGatewayMethod {
+
+        @Test
+        void queryGateway_registersNamedGatewayAsComponent() {
+            // given / when
+            Configuration result = testSubject.queryGateway("reporting", QueryGatewayConfigurer::withDefaults)
+                                              .build();
+
+            // then: named gateway is present and is a plain DefaultQueryGateway
+            assertThat(result.getOptionalComponent(QueryGateway.class, "reporting")).isPresent();
+            assertThat(result.getComponent(QueryGateway.class, "reporting"))
+                    .isInstanceOf(DefaultQueryGateway.class);
+        }
+
+        @Test
+        void queryGateway_withShutdownSpec_wrapsInShutdownTrackingGateway() {
+            // given / when
+            Configuration result = testSubject.queryGateway("reporting", g ->
+                    g.cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately)
+            ).build();
+
+            // then: gateway is wrapped with shutdown tracking
+            assertThat(result.getComponent(QueryGateway.class, "reporting"))
+                    .isInstanceOf(ShutdownTrackingQueryGateway.class);
+        }
+
+        @Test
+        void queryGateway_namedGatewayDoesNotAppearAsUnnamedDefault() {
+            // given / when: a named gateway is registered; no unnamed default is registered
+            // because MessagingConfigurationDefaults.registerIfNotPresent skips registration
+            // when any QueryGateway (including named) is already present
+            Configuration result = testSubject.queryGateway("reporting", g -> {
+            }).build();
+
+            // then: named gateway is accessible by name
+            assertThat(result.getOptionalComponent(QueryGateway.class, "reporting")).isPresent();
+            // then: unnamed lookup returns nothing (the named gateway does not register as unnamed)
+            assertThat(result.getOptionalComponent(QueryGateway.class)).isEmpty();
+        }
+
+        @Test
+        void queryGateway_multipleCallsRegisterMultipleDistinctComponents() {
+            // given / when: two separate named gateways registered
+            Configuration result = testSubject
+                    .queryGateway("reporting", g -> {
+                    })
+                    .queryGateway("internal", g -> {
+                    })
+                    .build();
+
+            // then: both are present and are distinct instances
+            QueryGateway reporting = result.getComponent(QueryGateway.class, "reporting");
+            QueryGateway internal = result.getComponent(QueryGateway.class, "internal");
+            assertThat(reporting).isNotNull();
+            assertThat(internal).isNotNull();
+            assertThat(reporting).isNotSameAs(internal);
+        }
     }
 
     private static class TestComponent {
