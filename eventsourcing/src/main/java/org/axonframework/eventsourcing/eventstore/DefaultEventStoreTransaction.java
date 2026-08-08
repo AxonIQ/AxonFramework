@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -208,10 +209,21 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                     return eventStorageEngine.appendEvents(appendCondition, processingContext, eventQueue)
                                              .thenApply(DefaultEventStoreTransaction::castTransaction)
                                              .thenAccept(tx -> {
+                                                 AtomicBoolean committed = new AtomicBoolean(false);
                                                  processingContext.onCommit(c -> tx.commit()
-                                                     .thenAccept(v -> processingContext.onAfterCommit(c2 -> doAfterCommit(c2, tx, v)))
+                                                     .thenAccept(v -> {
+                                                         committed.set(true);
+                                                         processingContext.onAfterCommit(
+                                                             c2 -> doAfterCommit(c2, tx, v));
+                                                     })
                                                  );
-                                                 processingContext.onError((c, p, e) -> tx.rollback());
+                                                 // Once the commit succeeded the events are visible to consumers and no
+                                                 // rollback can take them back, so later failures must not request one.
+                                                 processingContext.onError((c, p, e) -> {
+                                                     if (!committed.get()) {
+                                                         tx.rollback();
+                                                     }
+                                                 });
                                              });
                 }
         );
