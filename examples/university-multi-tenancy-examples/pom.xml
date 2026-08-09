@@ -41,7 +41,7 @@
         yet, so these demos resolve against 5.3.0-SNAPSHOT rather than the released BOM the examples
         parent manages. Managed here once, so all three modules stay on the same line.
         -->
-        <axoniq-framework.version>5.3.0-SNAPSHOT</axoniq-framework.version>
+        <axoniq-framework.version>5.3.0</axoniq-framework.version>
 
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
