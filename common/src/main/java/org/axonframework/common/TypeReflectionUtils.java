@@ -94,9 +94,18 @@ public final class TypeReflectionUtils {
     }
 
     /**
-     * Returns the erasure of the given type.
+     * Returns the erasure of the given {@code type}, following the erasure rules of the Java Language Specification.
+     * <p>
+     * A {@link Class} erases to itself, a {@link ParameterizedType} to its raw type, a {@link TypeVariable} to the
+     * erasure of its first bound, and a {@link GenericArrayType} to an array of the erasure of its component type. Any
+     * other {@link Type} erases to {@link Object}.
+     * <p>
+     * This method is package-private because it exposes the framework's implementation-specific type-erasure handling.
+     *
+     * @param type the type to return the erasure for
+     * @return the erasure of the given {@code type}
      */
-    private static Class<?> erase(Type type) {
+    static Class<?> erase(Type type) {
         if (type instanceof Class) {
             return (Class<?>) type;
         } else if (type instanceof ParameterizedType) {
