@@ -29,15 +29,19 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Trac
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.entity.EntityMetamodel;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -405,6 +409,124 @@ class DefaultEventStoreTransactionTest {
             assertFalse(onAfterCommitExecuted.get(), "After commit step should not execute after an error");
             assertTrue(onPostInvocationExecuted.get(), "Post invocation step should be executed after an error");
         }
+
+        @Test
+        void rollbackIsNotRequestedWhenTheFailureArrivesAfterASuccessfulCommit() {
+            // given an engine recording commits and rollbacks, and a failure strictly after the commit succeeded
+            var recordingEngine = new RollbackRecordingEventStorageEngine(false);
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
+                   transaction.appendEvent(eventMessage(0));
+               })
+               .runOnAfterCommit(context -> {
+                   throw new IllegalStateException("Simulated failure after commit");
+               });
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+
+            // then the batch committed, and a committed batch cannot be taken back by a rollback
+            assertThat(recordingEngine.successfulCommits()).isOne();
+            assertThat(recordingEngine.rollbacks()).isZero();
+        }
+
+        @Test
+        void rollbackIsNotRequestedWhenAnotherCommitPhaseHandlerFails() {
+            // given an unrelated COMMIT phase handler that fails, registered before the append attaches its own
+            var recordingEngine = new RollbackRecordingEventStorageEngine(false);
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnCommit(context -> {
+                   throw new IllegalStateException("Simulated failure of an unrelated commit handler");
+               })
+               .runOnPreInvocation(context -> {
+                   EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
+                   transaction.appendEvent(eventMessage(0));
+               });
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+
+            // then all handlers of a phase run, so this batch committed as well and must not be rolled back
+            assertThat(recordingEngine.successfulCommits()).isOne();
+            assertThat(recordingEngine.rollbacks()).isZero();
+        }
+
+        @Test
+        void rollbackIsStillRequestedWhenTheCommitItselfFails() {
+            // given an engine whose commit refuses the batch
+            var recordingEngine = new RollbackRecordingEventStorageEngine(true);
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context, recordingEngine);
+                transaction.appendEvent(eventMessage(0));
+            });
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+
+            // then the batch was never made visible, so it must be rolled back
+            assertThat(recordingEngine.rollbacks()).isOne();
+        }
+    }
+
+    /**
+     * Counts the successful {@link AppendTransaction#commit() commits} and the
+     * {@link AppendTransaction#rollback() rollbacks} the framework requests, and optionally refuses the commit so a
+     * rollback is warranted.
+     */
+    private static class RollbackRecordingEventStorageEngine extends InMemoryEventStorageEngine {
+
+        private final AtomicInteger successfulCommits = new AtomicInteger();
+        private final AtomicInteger rollbacks = new AtomicInteger();
+        private final boolean failCommit;
+
+        private RollbackRecordingEventStorageEngine(boolean failCommit) {
+            this.failCommit = failCommit;
+        }
+
+        private int successfulCommits() {
+            return successfulCommits.get();
+        }
+
+        private int rollbacks() {
+            return rollbacks.get();
+        }
+
+        @Override
+        public CompletableFuture<AppendTransaction<?>> appendEvents(AppendCondition condition,
+                                                                    @Nullable ProcessingContext processingContext,
+                                                                    List<TaggedEventMessage<?>> events) {
+            return super.appendEvents(condition, processingContext, events).thenApply(this::recording);
+        }
+
+        @SuppressWarnings("unchecked")
+        private AppendTransaction<?> recording(AppendTransaction<?> delegate) {
+            AppendTransaction<Object> typed = (AppendTransaction<Object>) delegate;
+            return new AppendTransaction<Object>() {
+
+                @Override
+                public CompletableFuture<Object> commit() {
+                    return failCommit
+                            ? CompletableFuture.failedFuture(new IllegalStateException("Simulated commit failure"))
+                            : typed.commit().thenApply(result -> {
+                                successfulCommits.incrementAndGet();
+                                return result;
+                            });
+                }
+
+                @Override
+                public void rollback() {
+                    rollbacks.incrementAndGet();
+                    typed.rollback();
+                }
+
+                @Override
+                public CompletableFuture<ConsistencyMarker> afterCommit(Object commitResult) {
+                    return typed.afterCommit(commitResult);
+                }
+            };
+        }
     }
 
     @Nested
@@ -614,6 +736,18 @@ class DefaultEventStoreTransactionTest {
 
     private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext) {
         return defaultEventStoreTransactionFor(processingContext, m -> Set.of(AGGREGATE_ID_TAG));
+    }
+
+    private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext,
+                                                                  EventStorageEngine engine) {
+        return processingContext.computeResourceIfAbsent(
+                testEventStoreTransactionKey,
+                () -> new DefaultEventStoreTransaction(
+                        engine,
+                        processingContext,
+                        event -> new GenericTaggedEventMessage<>(event, Set.of(AGGREGATE_ID_TAG))
+                )
+        );
     }
 
     private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext,
