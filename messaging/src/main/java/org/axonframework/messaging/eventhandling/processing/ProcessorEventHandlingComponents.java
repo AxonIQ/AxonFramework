@@ -196,8 +196,7 @@ public class ProcessorEventHandlingComponents implements DescribableComponent {
         if (sequenceIdentifier == SequencingPolicy.BROADCAST) {
             return true;
         }
-        return new SegmentMatcher((e, ctx) -> Optional.of(sequenceIdentifier))
-                .matches(segment, event, context);
+        return SegmentMatcher.matches(segment, sequenceIdentifier);
     }
 
     /**
