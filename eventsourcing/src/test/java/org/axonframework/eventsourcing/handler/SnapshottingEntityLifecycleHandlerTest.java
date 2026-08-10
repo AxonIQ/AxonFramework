@@ -23,8 +23,11 @@ import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.apache.logging.log4j.message.Message;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
+import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPositions;
 import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
@@ -53,6 +56,7 @@ import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
@@ -340,6 +344,70 @@ class SnapshottingEntityLifecycleHandlerTest {
         }
     }
 
+    @Nested
+    class AsymmetricAppendCriteria {
+
+        @Test
+        void appendCriteriaResolverNarrowsResultingAppendConditionWhenSourcedFromEvents() {
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
+
+            EventCriteria appendCriteria = EventCriteria.havingTags(Tag.of("narrow", ACCOUNT_ID));
+            SnapshottingEntityLifecycleHandler<String, Account> asymmetricHandler = handlerWithResolvers(
+                    (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+                    (id, ctx) -> appendCriteria
+            );
+
+            AppendCondition resolvedCondition = sourceAndCaptureAppendCondition(asymmetricHandler);
+
+            assertThat(resolvedCondition.criteria()).isEqualTo(appendCriteria);
+        }
+
+        @Test
+        void snapshotFallbackReusesBothResolvedCriteriaWithoutReResolution() {
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
+            storeSnapshot(new Account(ACCOUNT_ID, "Alice", 999), GlobalIndexPositions.of(2), "42.0"); // incompatible version
+
+            AtomicInteger sourcingCalls = new AtomicInteger();
+            AtomicInteger appendCalls = new AtomicInteger();
+            EventCriteria appendCriteria = EventCriteria.havingTags(Tag.of("narrow", ACCOUNT_ID));
+            SnapshottingEntityLifecycleHandler<String, Account> asymmetricHandler = handlerWithResolvers(
+                    (id, ctx) -> {
+                        sourcingCalls.incrementAndGet();
+                        return EventCriteria.havingTags(Tag.of("account", id));
+                    },
+                    (id, ctx) -> {
+                        appendCalls.incrementAndGet();
+                        return appendCriteria;
+                    }
+            );
+
+            AppendCondition resolvedCondition = sourceAndCaptureAppendCondition(asymmetricHandler);
+
+            // Both resolvers are invoked exactly once, even though the snapshot-incompatible fallback re-sources:
+            assertThat(sourcingCalls.get()).isEqualTo(1);
+            assertThat(appendCalls.get()).isEqualTo(1);
+            assertThat(resolvedCondition.criteria()).isEqualTo(appendCriteria);
+        }
+
+        private AppendCondition sourceAndCaptureAppendCondition(SnapshottingEntityLifecycleHandler<String, Account> handler) {
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+            UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+            uow.executeWithResult(pc -> {
+                handler.source(ACCOUNT_ID, pc).join();
+                EventStoreTransaction transaction = eventStore.transaction(pc);
+                transaction.overrideAppendCondition(condition -> {
+                    resolvedCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(
+                        new GenericEventMessage(new MessageType(FundsDeposited.class), new FundsDeposited(ACCOUNT_ID, 1))
+                );
+                return CompletableFuture.completedFuture(null);
+            }).join();
+            return resolvedCondition.get();
+        }
+    }
+
     private void publish(Object... events) {
         eventStore.publish(
             null,
@@ -370,6 +438,32 @@ class SnapshottingEntityLifecycleHandlerTest {
             new Snapshot(position, version, payload, Instant.now(), Map.of()),
             null
         ).join();
+    }
+
+    private SnapshottingEntityLifecycleHandler<String, Account> handlerWithResolvers(
+            CriteriaResolver<String> sourcingCriteriaResolver,
+            CriteriaResolver<String> appendCriteriaResolver
+    ) {
+        return new SnapshottingEntityLifecycleHandler<>(
+            eventStore,
+            sourcingCriteriaResolver,
+            appendCriteriaResolver,
+            new AnnotationBasedTagResolver(),
+            new InitializingEntityEvolver<>(
+                (id, msg, ctx) -> {
+                    AccountCreated ac = (AccountCreated) msg.payload();
+                    return new Account(ac.id(), ac.name(), 0);
+                },
+                (entity, event, ctx) -> event.payload() instanceof FundsDeposited fd
+                    ? new Account(entity.id(), entity.name(), entity.balance() + fd.amount())
+                    : entity
+            ),
+            SnapshotPolicy.afterEvents(Integer.MAX_VALUE),
+            ACCOUNT_TYPE,
+            CONVERTER,
+            Account.class,
+            snapshotStore
+        );
     }
 
     private SnapshottingEntityLifecycleHandler<String, Account> handlerWithPolicy(SnapshotPolicy policy) {

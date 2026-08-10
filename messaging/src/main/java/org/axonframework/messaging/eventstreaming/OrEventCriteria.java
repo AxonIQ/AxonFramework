@@ -69,6 +69,9 @@ sealed class OrEventCriteria implements EventCriteria permits EventTypeRestricta
         if (criteria instanceof AnyEvent) {
             return criteria;
         }
+        if (criteria.equals(this)) {
+            return this;
+        }
         return new OrEventCriteria(Set.of(this, criteria));
     }
 

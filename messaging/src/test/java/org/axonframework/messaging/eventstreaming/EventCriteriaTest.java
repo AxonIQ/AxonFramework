@@ -285,6 +285,33 @@ class EventCriteriaTest {
     }
 
     @Nested
+    class DuplicateOperandTest {
+
+        @Test
+        void orOfOrCriteriaWithItselfReturnsSameCriteria() {
+            EventCriteria testSubject1 = havingTags("key1", "value1").andBeingOneOfTypes("OneType");
+            EventCriteria testSubject2 = havingTags("key2", "value2").andBeingOneOfTypes("OneType");
+            EventCriteria combined = testSubject1.or(testSubject2);
+
+            EventCriteria result = combined.or(combined);
+
+            assertEquals(combined, result);
+        }
+
+        @Test
+        void orOfOrCriteriaWithEqualOrCriteriaReturnsSameCriteria() {
+            EventCriteria testSubject1 = havingTags("key1", "value1").andBeingOneOfTypes("OneType");
+            EventCriteria testSubject2 = havingTags("key2", "value2").andBeingOneOfTypes("OneType");
+            EventCriteria combined = testSubject1.or(testSubject2);
+            EventCriteria equalCombined = testSubject1.or(testSubject2);
+
+            EventCriteria result = combined.or(equalCombined);
+
+            assertEquals(combined, result);
+        }
+    }
+
+    @Nested
     class HasCriteriaTest {
 
         @Test

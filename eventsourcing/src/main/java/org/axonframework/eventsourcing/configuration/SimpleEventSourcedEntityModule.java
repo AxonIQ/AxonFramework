@@ -70,7 +70,8 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
     private final Class<E> entityType;
 
     private ComponentBuilder<EventSourcedEntityFactory<ID, E>> entityFactory;
-    private ComponentBuilder<CriteriaResolver<ID>> criteriaResolver;
+    private ComponentBuilder<CriteriaResolver<ID>> sourcingCriteriaResolver;
+    private ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver;
     private ComponentBuilder<EntityMetamodel<E>> entityModel;
     private ComponentBuilder<EntityIdResolver<ID>> entityIdResolver;
     private ComponentBuilder<SnapshotPolicy> snapshotPolicy;
@@ -100,7 +101,18 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
     @Override
     public OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver) {
-        this.criteriaResolver = requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
+        this.sourcingCriteriaResolver = requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
+        this.appendCriteriaResolver = null;
+        return this;
+    }
+
+    @Override
+    public OptionalPhase<ID, E> criteriaResolvers(ComponentBuilder<CriteriaResolver<ID>> sourcingCriteriaResolver,
+                                                   ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver) {
+        this.sourcingCriteriaResolver =
+                requireNonNull(sourcingCriteriaResolver, "The sourcing criteria resolver cannot be null.");
+        this.appendCriteriaResolver =
+                requireNonNull(appendCriteriaResolver, "The append criteria resolver cannot be null.");
         return this;
     }
 
@@ -135,14 +147,18 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
     private void validate() {
         requireNonNull(entityFactory, "The EntityFactory must be provided to module [%s].".formatted(name()));
-        requireNonNull(criteriaResolver, "The CriteriaResolver must be provided to module [%s].".formatted(name()));
+        requireNonNull(sourcingCriteriaResolver,
+                       "The CriteriaResolver must be provided to module [%s].".formatted(name()));
         requireNonNull(entityModel, "The EntityModel must be provided to module [%s].".formatted(name()));
     }
 
     private void registerComponents() {
         componentRegistry(cr -> {
             cr.registerComponent(entityFactory());
-            cr.registerComponent(criteriaResolver());
+            cr.registerComponent(sourcingCriteriaResolver());
+            if (appendCriteriaResolver != null) {
+                cr.registerComponent(appendCriteriaResolver());
+            }
             cr.registerComponent(entityModel());
             cr.registerComponent(repository());
 
@@ -183,7 +199,12 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                 .ofTypeAndName(type, entityName())
                 .withBuilder(config -> {
                     @SuppressWarnings("unchecked")
-                    CriteriaResolver<ID> criteriaResolver = config.getComponent(CriteriaResolver.class, entityName());
+                    CriteriaResolver<ID> sourcingCriteriaResolver =
+                            config.getComponent(CriteriaResolver.class, entityName());
+                    @SuppressWarnings("unchecked")
+                    CriteriaResolver<ID> appendCriteriaResolver = this.appendCriteriaResolver == null
+                            ? sourcingCriteriaResolver
+                            : config.getComponent(CriteriaResolver.class, appendCriteriaResolverName());
                     EventStore eventStore = config.getComponent(EventStore.class);
                     TagResolver tagResolver = config.getComponent(TagResolver.class);
                     SnapshotPolicy snapshotPolicy = config.getOptionalComponent(SnapshotPolicy.class, entityName()).orElse(null);
@@ -196,7 +217,9 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                     );
 
                     if (snapshotPolicy == null) {
-                        entityLifecycleHandler = new SimpleEntityLifecycleHandler<>(eventStore, criteriaResolver, tagResolver, evolver);
+                        entityLifecycleHandler = new SimpleEntityLifecycleHandler<>(
+                                eventStore, sourcingCriteriaResolver, appendCriteriaResolver, tagResolver, evolver
+                        );
                     }
                     else {
                         Converter converter = config.getOptionalComponent(GeneralConverter.class)
@@ -209,7 +232,8 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
                         entityLifecycleHandler = new SnapshottingEntityLifecycleHandler<>(
                             eventStore,
-                            criteriaResolver,
+                            sourcingCriteriaResolver,
+                            appendCriteriaResolver,
                             tagResolver,
                             evolver,
                             snapshotPolicy,
@@ -260,12 +284,24 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                 .withBuilder(entityFactory);
     }
 
-    private ComponentDefinition<CriteriaResolver<ID>> criteriaResolver() {
+    private ComponentDefinition<CriteriaResolver<ID>> sourcingCriteriaResolver() {
         TypeReference<CriteriaResolver<ID>> type = new TypeReference<>() {
         };
         return ComponentDefinition
                 .ofTypeAndName(type, entityName())
-                .withBuilder(criteriaResolver);
+                .withBuilder(sourcingCriteriaResolver);
+    }
+
+    private ComponentDefinition<CriteriaResolver<ID>> appendCriteriaResolver() {
+        TypeReference<CriteriaResolver<ID>> type = new TypeReference<>() {
+        };
+        return ComponentDefinition
+                .ofTypeAndName(type, appendCriteriaResolverName())
+                .withBuilder(appendCriteriaResolver);
+    }
+
+    private String appendCriteriaResolverName() {
+        return entityName() + "#appendCriteriaResolver";
     }
 
     @Override

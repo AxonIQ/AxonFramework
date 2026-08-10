@@ -21,6 +21,7 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.CriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.AppendCriteriaCoordinator;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.eventstore.Position;
@@ -79,7 +80,8 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     private static final Logger logger = LoggerFactory.getLogger(SnapshottingEntityLifecycleHandler.class);
 
     private final EventStore eventStore;
-    private final CriteriaResolver<I> criteriaResolver;
+    private final CriteriaResolver<I> sourcingCriteriaResolver;
+    private final CriteriaResolver<I> appendCriteriaResolver;
     private final TagResolver tagResolver;
     private final MessageType messageType;
     private final SnapshotPolicy snapshotPolicy;
@@ -89,10 +91,10 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     private final SnapshotStore snapshotStore;
 
     /**
-     * Constructs a new instance.
+     * Constructs a new instance, using the given {@code criteriaResolver} for both sourcing and appending.
      *
      * @param eventStore the {@link EventStore} used to source events, cannot be {@code null}
-     * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for both sourcing and appending, cannot be {@code null}
      * @param tagResolver the {@link TagResolver} used to resolve the tags of events appended during the entity's
      *                    lifetime, so live updates can be filtered by the entity's {@link EventCriteria}, cannot be
      *                    {@code null}
@@ -115,8 +117,45 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         Class<?> entityType,
         SnapshotStore snapshotStore
     ) {
+        this(eventStore, criteriaResolver, criteriaResolver, tagResolver, evolver, snapshotPolicy, messageType,
+             converter, entityType, snapshotStore);
+    }
+
+    /**
+     * Constructs a new instance, using separate resolvers for sourcing and appending.
+     *
+     * @param eventStore the {@link EventStore} used to source events, cannot be {@code null}
+     * @param sourcingCriteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param appendCriteriaResolver the resolver to use to create the {@link EventCriteria} guarding the resulting
+     *                               append, cannot be {@code null}
+     * @param tagResolver the {@link TagResolver} used to resolve the tags of events appended during the entity's
+     *                    lifetime, so live updates can be filtered by the entity's {@link EventCriteria}, cannot be
+     *                    {@code null}
+     * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
+     * @param snapshotPolicy the {@link SnapshotPolicy}, cannot be {@code null}
+     * @param messageType the {@link MessageType}, cannot be {@code null}
+     * @param converter the {@link Converter} to use to decode snapshots, cannot be {@code null}
+     * @param entityType the type a snapshot should decode to, cannot be {@code null}
+     * @param snapshotStore the {@link SnapshotStore} to use for storing snapshots, cannot be {@code null}
+     * @throws NullPointerException when a non-null argument was {@code null}
+     */
+    public SnapshottingEntityLifecycleHandler(
+        EventStore eventStore,
+        CriteriaResolver<I> sourcingCriteriaResolver,
+        CriteriaResolver<I> appendCriteriaResolver,
+        TagResolver tagResolver,
+        InitializingEntityEvolver<I, E> evolver,
+        SnapshotPolicy snapshotPolicy,
+        MessageType messageType,
+        Converter converter,
+        Class<?> entityType,
+        SnapshotStore snapshotStore
+    ) {
         this.eventStore = Objects.requireNonNull(eventStore, "The eventStore parameter must not be null.");
-        this.criteriaResolver = Objects.requireNonNull(criteriaResolver, "The criteriaResolver parameter must not be null.");
+        this.sourcingCriteriaResolver =
+                Objects.requireNonNull(sourcingCriteriaResolver, "The sourcingCriteriaResolver parameter must not be null.");
+        this.appendCriteriaResolver =
+                Objects.requireNonNull(appendCriteriaResolver, "The appendCriteriaResolver parameter must not be null.");
         this.tagResolver = Objects.requireNonNull(tagResolver, "The tagResolver parameter must not be null.");
         this.evolver = Objects.requireNonNull(evolver, "The evolver parameter must not be null.");
         this.snapshotPolicy = Objects.requireNonNull(snapshotPolicy, "The snapshotPolicy parameter must not be null.");
@@ -133,7 +172,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
     @Override
     public void subscribe(ManagedEntity<I, E> entity, ProcessingContext context) {
-        EventCriteria criteria = criteriaResolver.resolve(entity.identifier(), context);
+        EventCriteria criteria = sourcingCriteriaResolver.resolve(entity.identifier(), context);
         eventStore.transaction(context)
             .onAppend(event -> {
                 if (criteria.matches(event.type().qualifiedName(), tagResolver.resolve(event, context))) {
@@ -150,12 +189,16 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     @Override
     public CompletableFuture<E> source(I identifier, ProcessingContext pc) {
         long startTime = System.currentTimeMillis();
-        EventCriteria criteria = criteriaResolver.resolve(identifier, pc);
+        EventCriteria sourcingCriteria = sourcingCriteriaResolver.resolve(identifier, pc);
+        EventCriteria appendCriteria = appendCriteriaResolver == sourcingCriteriaResolver
+                ? sourcingCriteria
+                : appendCriteriaResolver.resolve(identifier, pc);
         EventStoreTransaction transaction = eventStore.transaction(pc);
         SourcingCondition condition = SourcingCondition.conditionFor(
             new SourcingStrategy.Snapshot(messageType.qualifiedName(), identifier, null),
-            criteria
+            sourcingCriteria
         );
+        AppendCriteriaCoordinator.associateAppendCriteria(pc, condition, appendCriteria);
         AtomicReference<Position> positionRef = new AtomicReference<>();
         AtomicInteger evolutionCount = new AtomicInteger();
         AtomicBoolean snapshotTriggered = new AtomicBoolean();
@@ -180,9 +223,12 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         return source
             .reduce(null, accumulator)
             .exceptionallyCompose(e -> switch (e) {
-                case SnapshotIncompatibleException sce ->
-                    transaction.source(SourcingCondition.conditionFor(Position.START, criteria), positionRef::set)
-                        .reduce(null, accumulator);
+                case SnapshotIncompatibleException sce -> {
+                    SourcingCondition fallbackCondition =
+                            SourcingCondition.conditionFor(Position.START, sourcingCriteria);
+                    AppendCriteriaCoordinator.associateAppendCriteria(pc, fallbackCondition, appendCriteria);
+                    yield transaction.source(fallbackCondition, positionRef::set).reduce(null, accumulator);
+                }
                 default -> CompletableFuture.failedFuture(e);
             })
             .thenApply(entity -> {
@@ -241,7 +287,8 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("eventStore", eventStore);
-        descriptor.describeProperty("criteriaResolver", criteriaResolver);
+        descriptor.describeProperty("sourcingCriteriaResolver", sourcingCriteriaResolver);
+        descriptor.describeProperty("appendCriteriaResolver", appendCriteriaResolver);
         descriptor.describeProperty("tagResolver", tagResolver);
         descriptor.describeProperty("evolver", evolver);
         descriptor.describeProperty("messageType", messageType);

@@ -37,6 +37,11 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -609,6 +614,413 @@ class DefaultEventStoreTransactionTest {
                         .isInstanceOf(NullPointerException.class);
             });
             awaitSuccessfulCompletion(uow.execute());
+        }
+    }
+
+    @Nested
+    class AsymmetricAppendCriteria {
+
+        @Test
+        void narrowerAppendCriteriaReplacesSourcingCriteriaAtCommit() {
+            // given
+            EventCriteria sourcingCriteria = EventCriteria.havingTags(new Tag("scope", "broad"));
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("scope", "narrow"));
+            SourcingCondition condition = SourcingCondition.conditionFor(sourcingCriteria);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(resolvedCondition.get().criteria()).isEqualTo(appendCriteria);
+        }
+
+        @Test
+        void broaderAppendCriteriaReplacesSourcingCriteriaAtCommit() {
+            // given
+            EventCriteria sourcingCriteria = EventCriteria.havingTags(new Tag("scope", "narrow"));
+            EventCriteria appendCriteria = sourcingCriteria.or(EventCriteria.havingTags(new Tag("scope", "extra")));
+            SourcingCondition condition = SourcingCondition.conditionFor(sourcingCriteria);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(resolvedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(appendCriteria.flatten());
+        }
+
+        @Test
+        void symmetricAssociationIsNoOpAndLeavesSourcingCriteriaUnchanged() {
+            // given
+            EventCriteria criteria = TEST_AGGREGATE_CRITERIA;
+            SourcingCondition condition = SourcingCondition.conditionFor(criteria);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, criteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(resolvedCondition.get().criteria()).isEqualTo(criteria);
+        }
+
+        @Test
+        void multipleAsymmetricEntityLoadsUnionAppendCriteria() {
+            // given
+            EventCriteria sourcingA = EventCriteria.havingTags(new Tag("entity", "a"));
+            EventCriteria sourcingB = EventCriteria.havingTags(new Tag("entity", "b"));
+            EventCriteria appendA = EventCriteria.havingTags(new Tag("append", "a"));
+            EventCriteria appendB = EventCriteria.havingTags(new Tag("append", "b"));
+            SourcingCondition conditionA = SourcingCondition.conditionFor(sourcingA);
+            SourcingCondition conditionB = SourcingCondition.conditionFor(sourcingB);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when - load A before B
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, conditionA, appendA);
+                FluxUtils.of(transaction.source(conditionA)).blockLast();
+                AppendCriteriaCoordinator.associateAppendCriteria(context, conditionB, appendB);
+                FluxUtils.of(transaction.source(conditionB)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(resolvedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(appendA.or(appendB).flatten());
+        }
+
+        @Test
+        void multipleAsymmetricEntityLoadsUnionAppendCriteriaReverseOrder() {
+            // given
+            EventCriteria sourcingA = EventCriteria.havingTags(new Tag("entity", "a"));
+            EventCriteria sourcingB = EventCriteria.havingTags(new Tag("entity", "b"));
+            EventCriteria appendA = EventCriteria.havingTags(new Tag("append", "a"));
+            EventCriteria appendB = EventCriteria.havingTags(new Tag("append", "b"));
+            SourcingCondition conditionA = SourcingCondition.conditionFor(sourcingA);
+            SourcingCondition conditionB = SourcingCondition.conditionFor(sourcingB);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when - load B before A (reverse order)
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, conditionB, appendB);
+                FluxUtils.of(transaction.source(conditionB)).blockLast();
+                AppendCriteriaCoordinator.associateAppendCriteria(context, conditionA, appendA);
+                FluxUtils.of(transaction.source(conditionA)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - same union regardless of load order
+            assertThat(resolvedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(appendA.or(appendB).flatten());
+        }
+
+        @Test
+        void directLowLevelSourceContributesSymmetricallyOnceOverrideIsActive() {
+            // given
+            EventCriteria sourcingA = EventCriteria.havingTags(new Tag("entity", "a"));
+            EventCriteria appendA = EventCriteria.havingTags(new Tag("append", "a"));
+            EventCriteria directCriteria = EventCriteria.havingTags(new Tag("direct", "low-level"));
+            SourcingCondition conditionA = SourcingCondition.conditionFor(sourcingA);
+            SourcingCondition directCondition = SourcingCondition.conditionFor(directCriteria);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, conditionA, appendA);
+                FluxUtils.of(transaction.source(conditionA)).blockLast();
+                // Direct, low-level source without any association:
+                FluxUtils.of(transaction.source(directCondition)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - the direct source's own criteria is included symmetrically
+            assertThat(resolvedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(appendA.or(directCriteria).flatten());
+        }
+
+        @Test
+        void asymmetricOverridePreservesSourcedConsistencyMarker() {
+            // given - pre-populate an event so sourcing produces a non-ORIGIN marker
+            var setupUow = aUnitOfWork();
+            setupUow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(setupUow.execute());
+
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("narrow", "criteria"));
+            SourcingCondition condition = SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA);
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(1));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - marker preserved from sourcing, criteria replaced
+            assertThat(resolvedCondition.get().criteria()).isEqualTo(appendCriteria);
+            assertThat(resolvedCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void explicitUserOverrideRegisteredAfterReceivesCoordinatorOutput() {
+            // given
+            EventCriteria sourcingCriteria = EventCriteria.havingTags(new Tag("scope", "broad"));
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("scope", "narrow"));
+            EventCriteria userOverrideCriteria = EventCriteria.havingTags(new Tag("scope", "user-override"));
+            SourcingCondition condition = SourcingCondition.conditionFor(sourcingCriteria);
+            var receivedByUserOverride = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                // User override registered after the coordinator's own override was installed:
+                transaction.overrideAppendCondition(c -> {
+                    receivedByUserOverride.set(c);
+                    return c.replaceCriteria(userOverrideCriteria);
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - the user override received the coordinator's output as input
+            assertThat(receivedByUserOverride.get().criteria()).isEqualTo(appendCriteria);
+        }
+
+        @Test
+        void unconsumedAssociationFailsAtCommitInsteadOfSilentlyRestoringSymmetry() {
+            // given - an association is declared but its matching source(...) call never happens
+            SourcingCondition condition =
+                    SourcingCondition.conditionFor(EventCriteria.havingTags(new Tag("never", "sourced")));
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("append", "criteria"));
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                transaction.appendEvent(eventMessage(0));
+            });
+
+            // then
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+        }
+
+        @Test
+        void reassociatingSameUnconsumedConditionThrowsImmediately() {
+            // given
+            SourcingCondition condition =
+                    SourcingCondition.conditionFor(EventCriteria.havingTags(new Tag("scope", "x")));
+            EventCriteria firstAppendCriteria = EventCriteria.havingTags(new Tag("append", "first"));
+            EventCriteria secondAppendCriteria = EventCriteria.havingTags(new Tag("append", "second"));
+
+            // when / then
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, firstAppendCriteria);
+
+                assertThatThrownBy(() ->
+                        AppendCriteriaCoordinator.associateAppendCriteria(context, condition, secondAppendCriteria)
+                ).isInstanceOf(IllegalStateException.class);
+            });
+            awaitSuccessfulCompletion(uow.execute());
+        }
+
+        @Test
+        void transferAssociationMovesPendingAssociationToNewSourcingConditionInstance() {
+            // given - simulates a transaction wrapper that widens the SourcingCondition before delegating
+            EventCriteria originalCriteria = EventCriteria.havingTags(new Tag("scope", "original"));
+            EventCriteria widenedCriteria = originalCriteria.or(EventCriteria.havingTags(new Tag("scope", "extra")));
+            SourcingCondition original = SourcingCondition.conditionFor(originalCriteria);
+            SourcingCondition widened = SourcingCondition.conditionFor(widenedCriteria);
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("append", "criteria"));
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, original, appendCriteria);
+                SourcingCondition transferred = AppendCriteriaCoordinator.transferAssociation(context, original, widened);
+                FluxUtils.of(transaction.source(transferred)).blockLast();
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - the association survived the SourcingCondition instance swap
+            assertThat(resolvedCondition.get().criteria()).isEqualTo(appendCriteria);
+        }
+
+        @Test
+        void sourcingWithUntransferredReplacementConditionIsTreatedAsUnsupportedWrapperAndFailsAtCommit() {
+            // given - a new, equal-by-value but distinct SourcingCondition instance is sourced instead of the
+            // associated one, without transferAssociation(...) being called: the original association is
+            // orphaned and must be detected rather than silently treated as symmetric.
+            EventCriteria criteria = EventCriteria.havingTags(new Tag("scope", "x"));
+            SourcingCondition original = SourcingCondition.conditionFor(criteria);
+            SourcingCondition untransferred = SourcingCondition.conditionFor(criteria);
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("append", "criteria"));
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                AppendCriteriaCoordinator.associateAppendCriteria(context, original, appendCriteria);
+                FluxUtils.of(transaction.source(untransferred)).blockLast();
+                transaction.appendEvent(eventMessage(0));
+            });
+
+            // then
+            assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+        }
+
+        @Test
+        void asymmetricAppendCriteriaWithAggregateBasedMarkerFailsExplicitlyInsteadOfSilentlyMisbehaving() {
+            // given - a user override simulates an aggregate-based storage engine having produced an
+            // AggregateBasedConsistencyMarker from sourcing, registered before the coordinator's own override
+            SourcingCondition condition =
+                    SourcingCondition.conditionFor(EventCriteria.havingTags(new Tag("scope", "x")));
+            EventCriteria appendCriteria = EventCriteria.havingTags(new Tag("append", "y"));
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.overrideAppendCondition(
+                        c -> c.withMarker(new AggregateBasedConsistencyMarker("agg-1", 0))
+                );
+                AppendCriteriaCoordinator.associateAppendCriteria(context, condition, appendCriteria);
+                FluxUtils.of(transaction.source(condition)).blockLast();
+                transaction.appendEvent(eventMessage(0));
+            });
+
+            // then
+            CompletionException exception =
+                    assertThrows(CompletionException.class, () -> awaitExceptionalCompletion(uow.execute()));
+            assertThat(exception)
+                    .rootCause()
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("AggregateBasedConsistencyMarker");
+        }
+
+        @Test
+        void concurrentAssociationsForDistinctEntitiesAreThreadSafe() {
+            // given
+            int entityCount = 8;
+            var resolvedCondition = new AtomicReference<AppendCondition>();
+            var expectedAppendCriteria = new ConcurrentLinkedQueue<EventCriteria>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                ExecutorService executor = Executors.newFixedThreadPool(entityCount);
+                var latch = new CountDownLatch(entityCount);
+                for (int i = 0; i < entityCount; i++) {
+                    int idx = i;
+                    executor.submit(() -> {
+                        try {
+                            EventCriteria sourcing = EventCriteria.havingTags(new Tag("entity", "id-" + idx));
+                            EventCriteria append = EventCriteria.havingTags(new Tag("append", "id-" + idx));
+                            expectedAppendCriteria.add(append);
+                            SourcingCondition condition = SourcingCondition.conditionFor(sourcing);
+                            AppendCriteriaCoordinator.associateAppendCriteria(context, condition, append);
+                            FluxUtils.of(transaction.source(condition)).blockLast();
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
+                try {
+                    assertTrue(latch.await(10, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                executor.shutdown();
+
+                transaction.overrideAppendCondition(c -> {
+                    resolvedCondition.set(c);
+                    return c;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then - every concurrently declared append criterion made it into the union, none lost or corrupted
+            EventCriteria expectedUnion = expectedAppendCriteria.stream().reduce(EventCriteria::or).orElseThrow();
+            assertThat(resolvedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(expectedUnion.flatten());
         }
     }
 

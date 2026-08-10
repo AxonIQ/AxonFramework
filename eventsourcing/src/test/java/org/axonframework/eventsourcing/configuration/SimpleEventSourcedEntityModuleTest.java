@@ -33,6 +33,7 @@ import org.axonframework.messaging.core.correlation.CorrelationDataProviderRegis
 import org.axonframework.messaging.core.correlation.DefaultCorrelationDataProviderRegistry;
 import org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
@@ -47,6 +48,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -155,6 +157,75 @@ class SimpleEventSourcedEntityModuleTest {
                                                    .messagingModel((c, m) -> testEntityModel)
                                                    .entityFactory(c -> testEntityFactory)
                                                    .criteriaResolver((ComponentBuilder<CriteriaResolver<CourseId>>) null));
+    }
+
+    @Test
+    void criteriaResolversThrowsNullPointerExceptionForNullSourcingCriteriaResolver() {
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class,
+                     () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                   .messagingModel((c, m) -> testEntityModel)
+                                                   .entityFactory(c -> testEntityFactory)
+                                                   .criteriaResolvers((ComponentBuilder<CriteriaResolver<CourseId>>) null,
+                                                                       c -> testCriteriaResolver));
+    }
+
+    @Test
+    void criteriaResolversThrowsNullPointerExceptionForNullAppendCriteriaResolver() {
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class,
+                     () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                   .messagingModel((c, m) -> testEntityModel)
+                                                   .entityFactory(c -> testEntityFactory)
+                                                   .criteriaResolvers(c -> testCriteriaResolver,
+                                                                       (ComponentBuilder<CriteriaResolver<CourseId>>) null));
+    }
+
+    @Test
+    void criteriaResolversInvokesEachResolverTheExpectedNumberOfTimesWhenLoadingAnEntity() {
+        AtomicBoolean constructedSourcingResolver = new AtomicBoolean(false);
+        AtomicBoolean constructedAppendResolver = new AtomicBoolean(false);
+        AtomicInteger sourcingInvocations = new AtomicInteger();
+        AtomicInteger appendInvocations = new AtomicInteger();
+        CriteriaResolver<CourseId> sourcingResolver = (id, ctx) -> {
+            sourcingInvocations.incrementAndGet();
+            return EventCriteria.havingAnyTag();
+        };
+        CriteriaResolver<CourseId> appendResolver = (id, ctx) -> {
+            appendInvocations.incrementAndGet();
+            return EventCriteria.havingAnyTag();
+        };
+
+        EventSourcedEntityModule<CourseId, Course> module =
+                EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                        .messagingModel((c, b) -> testEntityModel)
+                                        .entityFactory(c -> testEntityFactory)
+                                        .criteriaResolvers(
+                                                c -> {
+                                                    constructedSourcingResolver.set(true);
+                                                    return sourcingResolver;
+                                                },
+                                                c -> {
+                                                    constructedAppendResolver.set(true);
+                                                    return appendResolver;
+                                                }
+                                        )
+                                        .build();
+
+        AxonConfiguration configuration = EventSourcingConfigurer.create()
+                .componentRegistry(cr -> cr.registerModule(module))
+                .start();
+        Repository<CourseId, Course> repository = configuration.getComponent(StateManager.class)
+                                                                .repository(Course.class, CourseId.class);
+        repository.load(new CourseId(), new StubProcessingContext()).join();
+
+        assertTrue(constructedSourcingResolver.get());
+        assertTrue(constructedAppendResolver.get());
+        // The sourcing resolver is invoked twice: once to source the entity, once to determine which live-appended
+        // events should be filtered in while subscribed. The append resolver only narrows the append condition
+        // computed during sourcing, so it plays no role in live filtering and is invoked exactly once.
+        assertEquals(2, sourcingInvocations.get());
+        assertEquals(1, appendInvocations.get());
     }
 
     @Test
@@ -300,6 +371,26 @@ class SimpleEventSourcedEntityModuleTest {
                                                        .messagingModel(builder -> testEntityModel)
                                                        .entityFactory(testEntityFactory)
                                                        .criteriaResolver((CriteriaResolver<CourseId>) null));
+        }
+
+        @Test
+        void convenienceCriteriaResolversThrowsNullPointerExceptionForNullSourcingResolver() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory(testEntityFactory)
+                                                       .criteriaResolvers((CriteriaResolver<CourseId>) null, testCriteriaResolver));
+        }
+
+        @Test
+        void convenienceCriteriaResolversThrowsNullPointerExceptionForNullAppendResolver() {
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                                       .messagingModel(builder -> testEntityModel)
+                                                       .entityFactory(testEntityFactory)
+                                                       .criteriaResolvers(testCriteriaResolver, (CriteriaResolver<CourseId>) null));
         }
 
         @Test

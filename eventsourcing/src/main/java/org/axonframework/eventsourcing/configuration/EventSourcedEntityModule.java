@@ -232,6 +232,47 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
             Objects.requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
             return criteriaResolver(configuration -> criteriaResolver);
         }
+
+        /**
+         * Registers separate {@link ComponentBuilder ComponentBuilders} of a {@link CriteriaResolver} for sourcing and
+         * for appending, for the event-sourced entity being built.
+         * <p>
+         * Use this when the events that build the entity's decision model (the {@code sourcingCriteriaResolver}) are
+         * not necessarily the same events whose concurrent arrival should invalidate that decision (the
+         * {@code appendCriteriaResolver}). The {@code appendCriteriaResolver} is invoked once per entity load, exactly
+         * like the {@code sourcingCriteriaResolver}; it does not replace the sourced marker, only the criteria the
+         * marker is checked against.
+         *
+         * @param sourcingCriteriaResolver A {@link ComponentBuilder} constructing the {@link CriteriaResolver} used to
+         *                                 {@link org.axonframework.eventsourcing.eventstore.EventStoreTransaction#source(SourcingCondition)
+         *                                 source} the entity from the
+         *                                 {@link org.axonframework.eventsourcing.eventstore.EventStore}.
+         * @param appendCriteriaResolver   A {@link ComponentBuilder} constructing the {@link CriteriaResolver} used to
+         *                                 guard the entity's resulting append against concurrent conflicts.
+         * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
+         * @since 5.3.0
+         */
+        OptionalPhase<ID, E> criteriaResolvers(ComponentBuilder<CriteriaResolver<ID>> sourcingCriteriaResolver,
+                                               ComponentBuilder<CriteriaResolver<ID>> appendCriteriaResolver);
+
+        /**
+         * Registers separate {@link CriteriaResolver CriteriaResolvers} for sourcing and for appending, for the
+         * event-sourced entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct either resolver.
+         *
+         * @param sourcingCriteriaResolver the {@link CriteriaResolver} used to source the entity
+         * @param appendCriteriaResolver   the {@link CriteriaResolver} used to guard the entity's resulting append
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         * @since 5.3.0
+         */
+        default OptionalPhase<ID, E> criteriaResolvers(CriteriaResolver<ID> sourcingCriteriaResolver,
+                                                       CriteriaResolver<ID> appendCriteriaResolver) {
+            Objects.requireNonNull(sourcingCriteriaResolver, "The sourcing criteria resolver cannot be null.");
+            Objects.requireNonNull(appendCriteriaResolver, "The append criteria resolver cannot be null.");
+            return criteriaResolvers(configuration -> sourcingCriteriaResolver, configuration -> appendCriteriaResolver);
+        }
     }
 
     /**

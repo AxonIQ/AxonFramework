@@ -110,6 +110,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
                         ? AppendCondition.withCriteria(condition.criteria())
                         : ac.orCriteria(condition.criteria())
         );
+        AppendCriteriaCoordinator.consume(processingContext, this, condition);
 
         MessageStream<EventMessage> source = eventStorageEngine.source(condition, processingContext);
         AtomicReference<ConsistencyMarker> markerReference = new AtomicReference<>(appendCondition.consistencyMarker());
@@ -198,6 +199,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
     private void attachAppendEventsStep() {
         processingContext.onPrepareCommit(
                 context -> {
+                    AppendCriteriaCoordinator.failIfUnconsumed(context);
                     AppendCondition appendCondition = resolveAppendCondition(context);
 
                     context.putResource(prepareCommitExecuted, true);

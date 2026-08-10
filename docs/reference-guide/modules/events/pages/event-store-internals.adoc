@@ -7,6 +7,7 @@ Furthermore, if you do need to customize these parts, it's good to know that the
 
 It explains Dynamic Consistency Boundaries (DCB), a flexible approach to organizing events beyond traditional aggregate-based storage.
 You will learn about event tags and the `TagResolver` for attaching metadata to events, as well as `EventCriteria` and the `CriteriaResolver` for querying events based on those tags.
+It also covers resolving a separate criteria for sourcing an entity's decision model versus guarding its resulting append against concurrent conflicts.
 Finally, the chapter covers consistency markers, which ensure write conflict detection when working with tag-based event groupings.
 
 [#dynamic_consistency_boundaries_dcb]
@@ -108,6 +109,118 @@ For more complex scenarios or when taking a declarative configuration approach, 
 include::example$events/eventstoreinternals/criteria/CustomCriteriaResolver.java[tag=custom-criteria-resolver,indent=0]
 ----
 
+[#asymmetric_criteria]
+== Asymmetric sourcing and append criteria
+
+Sourcing and appending answer two different questions, and Axon lets you answer each with its own `EventCriteria`:
+
+* Sourcing asks: which facts build the decision model?
+* Appending asks: which concurrent facts can invalidate that decision?
+
+By default these two questions share one answer: the `CriteriaResolver` (or `@EventCriteriaBuilder` method) you configure is reused for both sourcing and appending, resolved once per entity load.
+Most entities never need more than that.
+Some invariants, however, are naturally asymmetric, and Axon lets the append criteria diverge from the sourcing criteria to match.
+
+=== Narrower append criteria
+
+An append criteria is narrower when it only needs to guard against a subset of what was sourced.
+An account's balance depends on every credit and debit, but only a concurrent debit, never a credit, can invalidate a decision that assumed a certain balance:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/criteria/asymmetric/AccountAsymmetricState.java[tags=account-asymmetric-criteria-imports;narrower-append-criteria,indent=0]
+----
+
+=== Narrowing across multiple tag branches
+
+Narrowing works the same way when the sourcing criteria spans more than one tag.
+Take a course subscription: to decide whether a student may subscribe, the entity sources both the course's own history (its capacity changes and every subscription and unsubscription) and the student's own history (faculty enrollment and their own subscriptions and unsubscriptions).
+Once that decision is made, only a subset of those same facts can still invalidate it before the append commits: another concurrent subscription or capacity change on the course side, and only a concurrent subscription (not an unsubscription, which only frees up a spot and strengthens the invariant) on the student side.
+Faculty enrollment and course creation are one-time eligibility gates already resolved by sourcing, so neither needs to be guarded again at append time:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/criteria/asymmetric/StudentSubscribedToCourseAsymmetricState.java[tags=asymmetric-criteria-imports;asymmetric-criteria,indent=0]
+----
+
+Independent `@SourcingCriteriaBuilder` and `@AppendCriteriaBuilder` methods resolve each role with its own precedence, falling back to the shared `@EventCriteriaBuilder` and, ultimately, the entity's tag-based default when a role-specific method is absent:
+
+* Sourcing: `@SourcingCriteriaBuilder`, then `@EventCriteriaBuilder`, then the tag-based fallback.
+* Appending: `@AppendCriteriaBuilder`, then `@EventCriteriaBuilder`, then the tag-based fallback.
+
+Note that the append criteria above retains every `CourseCapacityChanged` event, regardless of whether capacity went up or down.
+Criteria match on event tags and types, not on payload content, so there is no way to select only capacity *decreases* at this level; that distinction belongs in the decision logic that runs after sourcing.
+
+=== Injecting the exact sourcing criteria
+
+An `@AppendCriteriaBuilder` method may declare one additional `EventCriteria` parameter to receive the exact criteria this entity resolves for sourcing the same identifier, so a narrower (or otherwise related) append criteria can build on it instead of repeating its tags from scratch.
+This pays off once the sourcing criteria has more than one tag or branch to reconstruct:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/criteria/asymmetric/AccountAsymmetricState.java[tags=account-asymmetric-criteria-imports;sourcing-criteria-injection,indent=0]
+----
+
+[IMPORTANT]
+====
+Resist the urge to use a broader append criteria to guard against an event type your decision logic never sourced or inspected.
+If a concurrent fact must invalidate a decision, that fact is relevant to the decision, so the entity should source it and let its decide method act on it explicitly.
+Once sourced, that event type is already covered by the default, symmetric append criteria; asymmetric criteria exist for cases where sourcing and appending genuinely need a different *scope of the same concern* (like guarding a subset of what you source, or extending a concern across tags the entity already reasons about), not for smuggling in a fact the entity's own decision logic never sees.
+====
+
+=== Declarative configuration
+
+When you construct an event-sourced entity module yourself rather than relying on `@EventSourcedEntity` autodetection, provide two resolvers with `criteriaResolvers(sourcing, append)` in place of the single-resolver `criteriaResolver(...)`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/criteria/asymmetric/CustomSourcingAndAppendCriteriaResolvers.java[tag=custom-sourcing-and-append-criteria-resolvers,indent=0]
+----
+
+Wire the pair with `EventSourcedEntityModule.declarative(...).messagingModel(...).entityFactory(...).criteriaResolvers(new SourcingCriteriaResolver(), new AppendCriteriaResolver())`.
+The singular `criteriaResolver(...)` method still resolves once and reuses the exact result for both roles; the plural method invokes each resolver exactly once per entity load.
+
+Both configuration styles resolve one append criteria per entity load, shared by every command that entity handles.
+When different commands need different append criteria, model each command with its own entity rather than sharing one entity across commands with different consistency needs; each entity's `@SourcingCriteriaBuilder`/`@AppendCriteriaBuilder` pair then only ever has to express what that one command needs.
+
+=== What an append criteria does and does not prove
+
+An append criteria, whatever its width, only guards concurrency from the sourced <<consistency_marker,consistency marker>> onward.
+If the append criteria matches an event that already existed before that marker, sourcing would have retrieved it in the first place, so the append itself never re-checks history that predates the marker.
+In other words, an append criteria is a concurrency guard, not a proof that no matching event ever existed.
+Asserting a historical invariant (for example, a globally unique value) without first sourcing any events is a valid pattern, but it needs a dedicated handler-facing API that is not part of this capability; for now, express it through a `CriteriaResolver` you configure directly.
+
+=== A narrower criteria can leave a rejection event referencing stale state
+
+A narrower append criteria only changes which concurrent events can conflict; it does not change what a rejected command's own event records about the state its decision was based on.
+When a handler persists a rejection as an event, that event still carries whatever state was true when the decision was made, not the state at the position where it ends up appended.
+
+Take a credits balance with a `TopUpCredits` and a `UseCredits` command, where a rejected usage is recorded as a `CreditsUsageFailed` event carrying the balance the rejection was based on.
+`UseCredits(2)` sources balance=1, decides the requested amount exceeds it, and prepares a `CreditsUsageFailed` event citing "balance was 1".
+Concurrently, `TopUpCredits(1)` sources that same balance=1, raises it, and commits a `CreditsToppedUp` event first, landing at position 4 and raising the balance to 2.
+Because the append criteria for `UseCredits` only guards against a concurrent *usage*, never a *top-up*, that top-up does not conflict, and the `CreditsUsageFailed` event lands right after it, at position 5, still citing "balance was 1".
+
+Reading the stream in order, position 5 looks inconsistent with position 4: the balance was already 2 by the time the rejection was appended, yet the rejection cites 1.
+No business rule was violated (the balance genuinely was 1 at the moment `UseCredits` made its decision), and the account's true balance is still correct; only the rejection event's own payload looks momentarily out of step with the position it landed at.
+
+This matters only if a rejection or failure event's payload carries business meaning a reader expects to line up with the state at its position, such as a compliance record, a customer-facing statement line, or anything replayed for fraud detection.
+Most systems never persist rejections as events at all: they simply reject the command and move on, in which case this does not apply.
+If an accurate-looking history of rejections matters more than the extra concurrency a narrower criteria buys, keep the append criteria symmetric with what was sourced instead: a symmetric criteria always guards against every event a rejection's decision depended on, so it can never leave a rejection referencing state a concurrent event already changed.
+
+Choosing how narrow to make an append criteria is a trade-off.
+A narrower criteria accepts more concurrent writes but only protects the exact facts it names; keeping it as wide as the sourcing criteria (the default) trades a few avoidable retries for a stronger guarantee that no sourced fact's concurrent change slips through.
+Pick the width that matches how costly a missed conflict would be for the invariant you are protecting.
+
+The append criteria can also end up wider than any single entity's own criteria when a command handler loads more than one entity in the same transaction: Axon unions every effective append criteria across all of them, so the final append is guarded against concurrent changes relevant to *any* of the loaded entities, not just the last one loaded.
+
+[NOTE]
+====
+Asymmetric append criteria require a `ConsistencyMarker` that can represent an arbitrary criteria, such as the `GlobalIndexConsistencyMarker` used by Axon Server's dynamic consistency boundary store.
+An aggregate-based consistency marker tracks per-aggregate sequence numbers rather than a criteria-matched position, so it cannot represent an append condition whose criteria differ from what was sourced; configuring asymmetric criteria against an aggregate-based store fails explicitly rather than silently checking the wrong events.
+====
+
+See the link:https://dcb.events/specification/[DCB specification,role=external,window=_blank] and link:https://dcb.events/topics/tags/[DCB tags guidance,role=external,window=_blank] for the underlying model, and link:https://www.linkedin.com/pulse/dynamic-consistency-boundary-why-your-sourcecriteria-dont-nowak-ubief[this article,role=external,window=_blank] for a worked-through discussion of why sourcing and append criteria do not always coincide.
+
 [#conditions]
 == Append, source, and stream conditions
 
@@ -117,7 +230,7 @@ Axon provides three condition types, each tailored for a different operation:
 **AppendCondition**::
 Used when appending events to the event store.
 It combines an `EventCriteria` with a `ConsistencyMarker` to enforce write conflict detection.
-The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated—if events matching the criteria were appended after this position, the append operation fails.
+The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated: if events matching the criteria were appended after this position, the append operation fails.
 This ensures that concurrent writes to the same logical boundary are detected.
 +
 For events that don't participate in any consistency boundary (such as standalone events), use `AppendCondition.none()`.
@@ -139,7 +252,7 @@ The criteria defaults to matching any tag, making it suitable for processors tha
 In practice, most users won't construct these conditions directly, as you do not have to interact with the `EventStore` directly.
 Axon builds the appropriate condition based on the operation:
 
-* When **appending**, the framework combines the sourcing condition with tags from newly appended events.
+* When **appending**, the framework combines the sourcing condition with tags from newly appended events, unless <<asymmetric_criteria,an entity resolves a separate append criteria>>.
 * When **sourcing**, the `CriteriaResolver` constructs the condition from the entity identifier.
 * When **streaming**, event processors construct the condition from their subscribed event handler names.
 

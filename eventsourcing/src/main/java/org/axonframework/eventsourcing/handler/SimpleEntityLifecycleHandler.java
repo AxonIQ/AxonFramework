@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.handler;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.CriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.AppendCriteriaCoordinator;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
@@ -52,15 +53,16 @@ import java.util.concurrent.CompletableFuture;
 public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandler<I, E> {
 
     private final EventStore eventStore;
-    private final CriteriaResolver<I> criteriaResolver;
+    private final CriteriaResolver<I> sourcingCriteriaResolver;
+    private final CriteriaResolver<I> appendCriteriaResolver;
     private final TagResolver tagResolver;
     private final InitializingEntityEvolver<I, E> evolver;
 
     /**
-     * Constructs a new instance.
+     * Constructs a new instance, using the given {@code criteriaResolver} for both sourcing and appending.
      *
      * @param eventStore the {@link EventStore} from which events are sourced, cannot be {@code null}
-     * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param criteriaResolver the resolver to use to create the {@link EventCriteria} for both sourcing and appending, cannot be {@code null}
      * @param tagResolver the {@link TagResolver} used to resolve the tags of events appended during the entity's
      *                    lifetime, so live updates can be filtered by the entity's {@link EventCriteria}, cannot be
      *                    {@code null}
@@ -68,8 +70,32 @@ public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandle
      * @throws NullPointerException when any argument is {@code null}
      */
     public SimpleEntityLifecycleHandler(EventStore eventStore, CriteriaResolver<I> criteriaResolver, TagResolver tagResolver, InitializingEntityEvolver<I, E> evolver) {
+        this(eventStore, criteriaResolver, criteriaResolver, tagResolver, evolver);
+    }
+
+    /**
+     * Constructs a new instance, using separate resolvers for sourcing and appending.
+     *
+     * @param eventStore the {@link EventStore} from which events are sourced, cannot be {@code null}
+     * @param sourcingCriteriaResolver the resolver to use to create the {@link EventCriteria} for sourcing, cannot be {@code null}
+     * @param appendCriteriaResolver the resolver to use to create the {@link EventCriteria} guarding the resulting
+     *                               append, cannot be {@code null}
+     * @param tagResolver the {@link TagResolver} used to resolve the tags of events appended during the entity's
+     *                    lifetime, so live updates can be filtered by the entity's {@link EventCriteria}, cannot be
+     *                    {@code null}
+     * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
+     * @throws NullPointerException when any argument is {@code null}
+     */
+    public SimpleEntityLifecycleHandler(EventStore eventStore,
+                                        CriteriaResolver<I> sourcingCriteriaResolver,
+                                        CriteriaResolver<I> appendCriteriaResolver,
+                                        TagResolver tagResolver,
+                                        InitializingEntityEvolver<I, E> evolver) {
         this.eventStore = Objects.requireNonNull(eventStore, "The eventStore parameter must not be null.");
-        this.criteriaResolver = Objects.requireNonNull(criteriaResolver, "The criteriaResolver parameter must not be null.");
+        this.sourcingCriteriaResolver =
+                Objects.requireNonNull(sourcingCriteriaResolver, "The sourcingCriteriaResolver parameter must not be null.");
+        this.appendCriteriaResolver =
+                Objects.requireNonNull(appendCriteriaResolver, "The appendCriteriaResolver parameter must not be null.");
         this.tagResolver = Objects.requireNonNull(tagResolver, "The tagResolver parameter must not be null.");
         this.evolver = Objects.requireNonNull(evolver, "The evolver parameter must not be null.");
     }
@@ -81,7 +107,7 @@ public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandle
 
     @Override
     public void subscribe(ManagedEntity<I, E> entity, ProcessingContext context) {
-        EventCriteria criteria = criteriaResolver.resolve(entity.identifier(), context);
+        EventCriteria criteria = sourcingCriteriaResolver.resolve(entity.identifier(), context);
         eventStore.transaction(context)
             .onAppend(event -> {
                 if (criteria.matches(event.type().qualifiedName(), tagResolver.resolve(event, context))) {
@@ -97,9 +123,14 @@ public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandle
 
     @Override
     public CompletableFuture<E> source(I identifier, ProcessingContext pc) {
-        EventCriteria criteria = criteriaResolver.resolve(identifier, pc);
+        EventCriteria sourcingCriteria = sourcingCriteriaResolver.resolve(identifier, pc);
+        SourcingCondition condition = SourcingCondition.conditionFor(sourcingCriteria);
+        if (appendCriteriaResolver != sourcingCriteriaResolver) {
+            EventCriteria appendCriteria = appendCriteriaResolver.resolve(identifier, pc);
+            AppendCriteriaCoordinator.associateAppendCriteria(pc, condition, appendCriteria);
+        }
         EventStoreTransaction transaction = eventStore.transaction(pc);
-        MessageStream<? extends EventMessage> source = transaction.source(SourcingCondition.conditionFor(criteria));
+        MessageStream<? extends EventMessage> source = transaction.source(condition);
 
         return source.reduce(
             (E) null,
@@ -110,7 +141,8 @@ public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandle
     @Override
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("eventStore", eventStore);
-        descriptor.describeProperty("criteriaResolver", criteriaResolver);
+        descriptor.describeProperty("sourcingCriteriaResolver", sourcingCriteriaResolver);
+        descriptor.describeProperty("appendCriteriaResolver", appendCriteriaResolver);
         descriptor.describeProperty("tagResolver", tagResolver);
         descriptor.describeProperty("evolver", evolver);
     }

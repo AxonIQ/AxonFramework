@@ -25,6 +25,9 @@ import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
+import org.axonframework.eventsourcing.annotation.AnnotationBasedAppendCriteriaResolver;
+import org.axonframework.eventsourcing.annotation.AnnotationBasedEventCriteriaResolverDefinition;
+import org.axonframework.eventsourcing.annotation.AnnotationBasedSourcingCriteriaResolver;
 import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
@@ -84,11 +87,11 @@ class AnnotatedEventSourcedEntityModule<I, E>
                 .orElseThrow(() -> new IllegalArgumentException("The given class is not an @EventSourcedEntity."));
         this.concreteTypes = getConcreteEntityTypes(annotationAttributes);
 
-        OptionalPhase<I, E> phase = EventSourcedEntityModule
+        CriteriaResolverPhase<I, E> criteriaResolverPhase = EventSourcedEntityModule
                 .declarative(idType, entityType)
-                .messagingModel((c, b) -> this.getOrBuildMetamodel(c))
-                .entityFactory(entityFactory(annotationAttributes, concreteTypes))
-                .criteriaResolver(criteriaResolver(annotationAttributes))
+                .messagingModel((c, b) -> this.buildMetaModel(c))
+                .entityFactory(entityFactory(annotationAttributes, concreteTypes));
+        OptionalPhase<I, E> phase = wireCriteriaResolvers(criteriaResolverPhase, annotationAttributes)
                 .entityIdResolver(entityIdResolver(annotationAttributes));
 
         boolean hasSnapshottingAnnotation = AnnotationUtils
@@ -138,12 +141,29 @@ class AnnotatedEventSourcedEntityModule<I, E>
         );
     }
 
+    /**
+     * Wires the {@link CriteriaResolver} builder(s) for the entity being built.
+     * <p>
+     * When the {@link EventSourcedEntity#criteriaResolverDefinition()} is left at its default
+     * {@link AnnotationBasedEventCriteriaResolverDefinition}, this scans for the independent
+     * {@code @SourcingCriteriaBuilder}/{@code @AppendCriteriaBuilder} annotations and registers two resolvers via
+     * {@link CriteriaResolverPhase#criteriaResolvers(ComponentBuilder, ComponentBuilder)}. A custom
+     * {@link CriteriaResolverDefinition} can only ever produce a single, symmetric {@link CriteriaResolver}, so it is
+     * registered via {@link CriteriaResolverPhase#criteriaResolver(ComponentBuilder)} instead.
+     */
     @SuppressWarnings("unchecked")
-    private ComponentBuilder<CriteriaResolver<I>> criteriaResolver(Map<String, Object> attributes) {
+    private OptionalPhase<I, E> wireCriteriaResolvers(CriteriaResolverPhase<I, E> phase,
+                                                       Map<String, Object> attributes) {
         var criteriaResolverType = (Class<CriteriaResolverDefinition>) attributes.get("criteriaResolverDefinition");
+        if (AnnotationBasedEventCriteriaResolverDefinition.class.equals(criteriaResolverType)) {
+            return phase.criteriaResolvers(
+                    c -> new AnnotationBasedSourcingCriteriaResolver<>(entityType, idType, c),
+                    c -> new AnnotationBasedAppendCriteriaResolver<>(entityType, idType, c)
+            );
+        }
         var criteriaResolverDefinition = ConstructorUtils.getConstructorFunctionWithZeroArguments(criteriaResolverType)
                                                          .get();
-        return c -> criteriaResolverDefinition.createEventCriteriaResolver(entityType, idType, c);
+        return phase.criteriaResolver(c -> criteriaResolverDefinition.createEventCriteriaResolver(entityType, idType, c));
     }
 
     @SuppressWarnings("unchecked")

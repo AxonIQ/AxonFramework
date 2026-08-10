@@ -152,7 +152,36 @@ class AnnotatedEventSourcedEntityModuleTest {
 
         handlerCaptor.getValue().describeTo(componentDescriptor);
 
-        verify(componentDescriptor).describeProperty(eq("criteriaResolver"), isA(CustomCriteriaResolver.class));
+        verify(componentDescriptor).describeProperty(eq("sourcingCriteriaResolver"), isA(CustomCriteriaResolver.class));
+        verify(componentDescriptor).describeProperty(eq("appendCriteriaResolver"), isA(CustomCriteriaResolver.class));
+    }
+
+    @Test
+    void defaultAnnotationBasedResolversAreWiredAsIndependentSourcingAndAppendComponents(
+        @Captor ArgumentCaptor<EntityLifecycleHandler<CourseId, Course>> handlerCaptor
+    ) {
+        componentRegistry.registerModule(EventSourcedEntityModule.autodetected(CourseId.class, Course.class));
+        ComponentDescriptor componentDescriptor = mock(ComponentDescriptor.class);
+
+        var parentConfiguration = componentRegistry.build(lifecycleRegistry);
+        lifecycleRegistry.start(parentConfiguration);
+
+        StateManager stateManager = parentConfiguration.getComponent(StateManager.class);
+        Repository<CourseId, Course> result = stateManager.repository(Course.class, CourseId.class);
+
+        result.describeTo(componentDescriptor);
+        verify(componentDescriptor).describeProperty(eq("entityLifecycleHandler"), handlerCaptor.capture());
+
+        handlerCaptor.getValue().describeTo(componentDescriptor);
+
+        verify(componentDescriptor).describeProperty(
+                eq("sourcingCriteriaResolver"),
+                isA(org.axonframework.eventsourcing.annotation.AnnotationBasedSourcingCriteriaResolver.class)
+        );
+        verify(componentDescriptor).describeProperty(
+                eq("appendCriteriaResolver"),
+                isA(org.axonframework.eventsourcing.annotation.AnnotationBasedAppendCriteriaResolver.class)
+        );
     }
 
     @Test
