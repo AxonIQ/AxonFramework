@@ -14,40 +14,45 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.eventhandling.annotation;
+package org.axonframework.eventsourcing.annotation;
 
-import org.jspecify.annotations.Nullable;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.eventsourcing.eventstore.EventStoreAppender;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * {@link ParameterResolverFactory} that ensures the {@link EventAppender} is resolved in the context of the current
- * {@link ProcessingContext}.
+ * {@link ParameterResolverFactory} that ensures the {@link EventStoreAppender} is resolved in the context of the
+ * current {@link ProcessingContext}.
  * <p>
  * For any message handler that declares this parameter, it will call
- * {@link EventAppender#forContext(ProcessingContext)} to create the appender.
+ * {@link EventStoreAppender#forContext(ProcessingContext)} to create the appender. Only matches the exact
+ * {@link EventStoreAppender} type, leaving the resolution of its supertype
+ * {@link org.axonframework.messaging.eventhandling.gateway.EventAppender} to
+ * {@link org.axonframework.messaging.eventhandling.annotation.EventAppenderParameterResolverFactory}.
  *
- * @author Mitchell Herrijgers
- * @since 5.0.0
+ * @author Mateusz Nowak
+ * @since 5.3.0
  */
-public class EventAppenderParameterResolverFactory implements ParameterResolverFactory {
+public class EventStoreAppenderParameterResolverFactory implements ParameterResolverFactory {
 
     @Nullable
     @Override
-    public ParameterResolver<EventAppender> createInstance(Executable executable,
-                                                           Parameter[] parameters,
-                                                           int parameterIndex) {
-        if (parameters[parameterIndex].getType() == EventAppender.class) {
+    public ParameterResolver<EventStoreAppender> createInstance(
+            Executable executable,
+            Parameter[] parameters,
+            int parameterIndex
+    ) {
+        if (parameters[parameterIndex].getType() == EventStoreAppender.class) {
             return new ParameterResolver<>() {
                 @Override
-                public CompletableFuture<EventAppender> resolveParameterValue(ProcessingContext context) {
-                    return CompletableFuture.completedFuture(EventAppender.forContext(context));
+                public CompletableFuture<EventStoreAppender> resolveParameterValue(ProcessingContext context) {
+                    return CompletableFuture.completedFuture(EventStoreAppender.forContext(context));
                 }
 
                 @Override

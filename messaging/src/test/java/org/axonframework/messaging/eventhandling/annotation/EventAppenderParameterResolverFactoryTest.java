@@ -71,6 +71,12 @@ class EventAppenderParameterResolverFactoryTest {
         assertNull(instance);
     }
 
+    @Test
+    void doesNotInjectIntoASubtypeOfEventAppender() throws Exception {
+        Method method = getClass().getMethod("methodWithEventAppenderSubtypeParameter", CustomEventAppender.class);
+        ParameterResolver<?> instance = testSubject.createInstance(method, method.getParameters(), 0);
+        assertNull(instance);
+    }
 
     public void methodWithEventAppenderParameter(
             EventAppender eventAppender
@@ -82,5 +88,20 @@ class EventAppenderParameterResolverFactoryTest {
             Object otherParameter
     ) {
         // This method is used to test the EventAppenderParameterResolverFactory
+    }
+
+    public void methodWithEventAppenderSubtypeParameter(
+            CustomEventAppender customEventAppender
+    ) {
+        // This method is used to test the EventAppenderParameterResolverFactory
+    }
+
+    /**
+     * A subtype of {@link EventAppender} that this factory cannot instantiate, mirroring
+     * {@code EventStoreAppender} from the eventsourcing module: only its own dedicated resolver should claim
+     * parameters of this type.
+     */
+    private interface CustomEventAppender extends EventAppender {
+
     }
 }

@@ -84,6 +84,37 @@ Provided values take precedence on conflict, so any key present in both sets res
 When the event is a plain object (not a `Message`), the provided `Metadata` is set directly on the resulting `EventMessage`.
 ====
 
+[#event_store_appender]
+=== Asserting a fact without sourcing with `EventStoreAppender`
+
+`EventStoreAppender` is an `EventAppender` that also lets a handler assert or replace the append condition for the transaction it runs in, right before appending.
+Unlike an entity's `@SourcingCriteriaBuilder`/`@AppendCriteriaBuilder`, it needs no prior sourcing at all, which makes it the tool for a stateless command handler that must still guard against a historical fact.
+
+Take a `CreateCourse` command that must reject a duplicate course id.
+There is no entity to load, no state to source, so the handler cannot ask "does this course already exist?" by replaying events; it can only assert it directly against the store's history:
+
+[source,java]
+----
+include::example$events/eventpublishing/eventstoreappender/EventStoreAppenderExamples.java[tags=event-store-appender-imports;conditional-append-without-sourcing,indent=0]
+----
+
+Because this handler never sources anything, `conditional(EventCriteria)` checks the given criteria from `ConsistencyMarker.ORIGIN`, that is, against every event ever appended, not only events concurrent with this transaction.
+If a `CourseCreated` for that course id already exists anywhere in the store's history, the append is rejected.
+
+`EventStoreAppender` also accepts a complete `AppendCondition` (for full control over both criteria and marker) and a transformation function for compositions the other two overloads cannot express.
+The registered condition governs every event appended in the same `ProcessingContext`, not only the event passed to the same `append` call.
+
+==== Overriding an already-sourced condition
+
+The same `conditional(EventCriteria)` call behaves differently once an entity has already sourced something in the same transaction: instead of checking from `ORIGIN`, it replaces the sourced append criteria while keeping the sourced consistency marker.
+For append criteria that vary by *which command* is running on an entity, prefer xref:event-store-internals.adoc#asymmetric_criteria[one entity per command] over this: a `@SourcingCriteriaBuilder`/`@AppendCriteriaBuilder` pair scoped to a single command's own entity expresses that without a handler-facing override.
+Reach for `EventStoreAppender` on an already-sourced entity only when the condition depends on something a builder cannot see, since a `CriteriaResolver` only ever receives the entity identifier, never the command itself.
+
+[NOTE]
+====
+An aggregate-based consistency marker cannot represent a condition whose criteria differ from what was sourced, so replacing the criteria of an already-sourced condition this way fails explicitly rather than silently checking the wrong events.
+====
+
 [#event_gateway]
 == Event Gateway: Publishing events from a non-entity
 

@@ -182,13 +182,14 @@ The singular `criteriaResolver(...)` method still resolves once and reuses the e
 
 Both configuration styles resolve one append criteria per entity load, shared by every command that entity handles.
 When different commands need different append criteria, model each command with its own entity rather than sharing one entity across commands with different consistency needs; each entity's `@SourcingCriteriaBuilder`/`@AppendCriteriaBuilder` pair then only ever has to express what that one command needs.
+For the rarer case where the condition depends on something a builder cannot see, such as the command's own payload, see xref:event-publishing.adoc#event_store_appender[Asserting a fact without sourcing with `EventStoreAppender`].
 
 === What an append criteria does and does not prove
 
 An append criteria, whatever its width, only guards concurrency from the sourced <<consistency_marker,consistency marker>> onward.
 If the append criteria matches an event that already existed before that marker, sourcing would have retrieved it in the first place, so the append itself never re-checks history that predates the marker.
 In other words, an append criteria is a concurrency guard, not a proof that no matching event ever existed.
-Asserting a historical invariant (for example, a globally unique value) without first sourcing any events is a valid pattern, but it needs a dedicated handler-facing API that is not part of this capability; for now, express it through a `CriteriaResolver` you configure directly.
+Asserting a historical invariant (for example, a globally unique value) without first sourcing any events is a valid pattern; see xref:event-publishing.adoc#event_store_appender[Asserting a fact without sourcing with `EventStoreAppender`] for the dedicated handler-facing API.
 
 === A narrower criteria can leave a rejection event referencing stale state
 
