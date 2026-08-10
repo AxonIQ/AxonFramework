@@ -17,64 +17,39 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.segmenting;
 
 import org.axonframework.common.annotation.Internal;
-import org.axonframework.messaging.core.sequencing.SequencingPolicy;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.util.Objects;
 
 /**
- * Utility class that matches {@link EventMessage EventMessages} against a {@link Segment} based on a
- * {@link SequencingPolicy}.
+ * Utility class that matches a resolved sequence identifier against a {@link Segment}.
  * <p>
- * This class uses the sequencing policy to determine the sequence identifier for a message, and then checks if that
- * identifier matches the given segment.
+ * The sequence identifier is expected to be resolved through
+ * {@link org.axonframework.messaging.eventhandling.EventHandlingComponent#sequenceIdentifierFor(org.axonframework.messaging.eventhandling.EventMessage,
+ * org.axonframework.messaging.core.unitofwork.ProcessingContext)} before matching, so any fallback for a
+ * {@link org.axonframework.messaging.core.sequencing.SequencingPolicy} that resolves no identifier is applied in a
+ * single place. This guarantees that scheduling and handling route an event to the same segment.
  *
  * @author Mateusz Nowak
  * @since 5.0.0
  */
 @Internal
-public class SegmentMatcher {
+public final class SegmentMatcher {
 
-    private final SequencingPolicy<? super EventMessage> sequencingPolicy;
-
-    /**
-     * Initialize a SegmentMatcher with the given {@code sequencingPolicy}. This policy is used to extract the sequence
-     * identifier from messages, which is then used to match against segments.
-     *
-     * @param sequencingPolicy A policy that provides the sequence identifier for a given event message.
-     */
-    public SegmentMatcher(SequencingPolicy<? super EventMessage> sequencingPolicy) {
-        Objects.requireNonNull(sequencingPolicy, "SequencingPolicy may not be null");
-        this.sequencingPolicy = sequencingPolicy;
+    private SegmentMatcher() {
+        // Utility class
     }
 
     /**
-     * Checks whether the given {@code segment} matches the given {@code event}, based on the configured sequencing
-     * policy.
+     * Checks whether the given {@code segment} matches the given {@code sequenceIdentifier}, based on the
+     * {@link Objects#hashCode(Object) hash code} of the identifier.
      *
-     * @param segment The segment to match against.
-     * @param event The event to check.
-     * @param context The processing context in which the event is being handled.
-
-     * @return {@code true} if the event matches the segment, {@code false} otherwise.
+     * @param segment            the segment to match against
+     * @param sequenceIdentifier the resolved sequence identifier of the event to match
+     * @return {@code true} if the sequence identifier matches the segment, {@code false} otherwise
      */
-    public boolean matches(Segment segment, EventMessage event, ProcessingContext context) {
+    public static boolean matches(Segment segment, Object sequenceIdentifier) {
         Objects.requireNonNull(segment, "Segment may not be null");
-        Objects.requireNonNull(event, "EventMessage may not be null");
-        return segment.matches(Objects.hashCode(sequenceIdentifier(event, context)));
-    }
-
-    /**
-     * Returns the sequence identifier for the given {@code event}, as defined by the configured sequencing policy. If
-     * the policy returns {@code null}, the event's identifier is used as a fallback.
-     *
-     * @param event The event to get the sequence identifier for.
-     * @param context The processing context in which the event is being handled.
-     * @return The sequence identifier for the event, never {@code null}.
-     */
-    public Object sequenceIdentifier(EventMessage event, ProcessingContext context) {
-        Objects.requireNonNull(event, "EventMessage may not be null");
-        return sequencingPolicy.sequenceIdentifierFor(event, context).orElseGet(event::identifier);
+        Objects.requireNonNull(sequenceIdentifier, "Sequence identifier may not be null");
+        return segment.matches(Objects.hashCode(sequenceIdentifier));
     }
 }
