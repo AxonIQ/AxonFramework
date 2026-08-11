@@ -31,6 +31,9 @@ import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -52,7 +55,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
-    private final MessageTypeResolver messageTypeResolver;
+    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEventName;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -88,7 +91,9 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");
-        this.messageTypeResolver = requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.");
+        this.handlersByEventName = indexHandlersByEventName(
+                requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
+        );
     }
 
     @Override
@@ -98,11 +103,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         try {
             var listenerType = entity.getClass();
 
-            var eventTypeName = event.type().name();
-            var handlers = inspector.getHandlers(listenerType).stream()
-                                    .filter(h -> messageTypeResolver.resolveOrThrow(h.payloadType())
-                                                                    .name().equals(eventTypeName))
-                                    .toList();
+            var handlers = handlersByEventName.getOrDefault(listenerType, Map.of())
+                                              .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
             for (var handler : handlers) {
@@ -125,6 +127,32 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                     e
             );
         }
+    }
+
+    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEventName(
+            MessageTypeResolver messageTypeResolver
+    ) {
+        return inspector.getAllHandlers().entrySet().stream()
+                        .collect(Collectors.toUnmodifiableMap(
+                                Map.Entry::getKey,
+                                entry -> indexHandlers(entry.getValue(), messageTypeResolver)
+                        ));
+    }
+
+    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlers(
+            Collection<MessageHandlingMember<? super E>> handlers,
+            MessageTypeResolver messageTypeResolver
+    ) {
+        return handlers.stream()
+                       .filter(handler -> handler.canHandleMessageType(EventMessage.class))
+                       .collect(Collectors.collectingAndThen(
+                               Collectors.groupingBy(
+                                       handler -> messageTypeResolver.resolveOrThrow(handler.payloadType())
+                                                                             .qualifiedName(),
+                                       Collectors.toUnmodifiableList()
+                               ),
+                               Map::copyOf
+                       ));
     }
 
     private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {

@@ -41,10 +41,15 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector.inspectType;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * Test class validating the {@link AnnotationBasedEntityEvolvingComponent}.
@@ -362,6 +367,32 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @EventHandler
         void handle(String event) {
             this.handledCount++;
+        }
+    }
+
+    @Nested
+    class MessageTypeResolutionCaching {
+
+        @Test
+        void resolvesHandlerPayloadTypesOnlyDuringInitialization() {
+            // given - TestState declares two handlers (Object and Integer payloads)
+            var resolver = spy(new ClassBasedMessageTypeResolver());
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(TestState.class, converter, resolver);
+            var state = new TestState();
+            verify(resolver).resolveOrThrow(Object.class);
+            verify(resolver).resolveOrThrow(Integer.class);
+            clearInvocations(resolver);
+
+            // when - evolving multiple events of the same type
+            for (int sequence = 0; sequence < 3; sequence++) {
+                var event = createEvent(sequence);
+                var context = StubProcessingContext.forMessage(event, "id", sequence, "test");
+                state = evolver.evolve(state, event, context);
+            }
+
+            // then - all events are handled, while message types were resolved only when building the handler index
+            assertThat(state.handledCount).isEqualTo(3);
+            verifyNoInteractions(resolver);
         }
     }
 
