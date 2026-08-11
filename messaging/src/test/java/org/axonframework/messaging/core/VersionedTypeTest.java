@@ -22,9 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test class validating the {@link VersionedType} interface and that {@link MessageType} correctly implements it.
- *
- * @author Josh
- */
+*/
 class VersionedTypeTest {
 
     private static final String NAME = "org.axonframework.test.SomeEntity";
