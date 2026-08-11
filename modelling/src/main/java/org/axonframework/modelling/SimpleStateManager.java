@@ -63,31 +63,29 @@ public class SimpleStateManager implements StateManager {
         this.name = name;
     }
 
-    @SuppressWarnings({"unchecked", "DataFlowIssue", "OptionalIsPresent"})
+    @SuppressWarnings("unchecked")
     @Override
-    public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(
-            Class<T> entityType,
-            I id,
-            ProcessingContext context
-    ) {
-        Optional<Repository<I, T>> repository = repositories
+    public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(Class<T> entityType,
+                                                                           I id,
+                                                                           ProcessingContext context) {
+        return repositories
                 .stream()
                 .filter(r -> r.entityType().isAssignableFrom(entityType))
                 .filter(r -> r.idType().isAssignableFrom(id.getClass()))
                 .map(r -> (Repository<I, T>) r)
-                .findFirst();
-        if (repository.isEmpty()) {
-            return CompletableFuture.failedFuture(new MissingRepositoryException(id.getClass(), entityType));
-        }
-
-        return repository.get()
-                         .loadOrCreate(id, context)
-                         .thenApply(me -> {
-                             if (me.entity() != null && !entityType.isInstance(me.entity())) {
-                                 throw new LoadedEntityNotOfExpectedTypeException(me.entity().getClass(), entityType);
-                             }
-                             return me;
-                         });
+                .findFirst()
+                .map(repository -> repository.loadOrCreate(id, context)
+                                             .thenApply(me -> {
+                                                 if (me.entity() != null && !entityType.isInstance(me.entity())) {
+                                                     throw new LoadedEntityNotOfExpectedTypeException(
+                                                             me.entity().getClass(), entityType
+                                                     );
+                                                 }
+                                                 return me;
+                                             }))
+                .orElseGet(() -> CompletableFuture.failedFuture(
+                        new MissingRepositoryException(id.getClass(), entityType)
+                ));
     }
 
     @Override
