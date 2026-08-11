@@ -54,7 +54,9 @@ import java.util.stream.StreamSupport;
  * {@link EntityCreator}-annotated constructors and static methods on the entity type and its supertypes to find a
  * suitable constructor or static method to create an entity instance.
  * <p>
- * This class implements the requirements as per the {@link EntityCreator} annotation. This class is thread-safe.
+ * This class implements the requirements as per the {@link EntityCreator} annotation. It also honors
+ * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
+ * event is present, as described on {@link ForcedEntityCreator}. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -176,6 +178,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     }
 
     private void addEntityCreatorExecutable(Executable executable) {
+        boolean forced = AnnotationUtils.isAnnotationPresent(executable, ForcedEntityCreator.class);
         String[] payloadQualifiedNamesAttribute = AnnotationUtils
                 .findAnnotationAttribute(executable, EntityCreator.class, "payloadQualifiedNames")
                 .map(o -> (String[]) o)
@@ -239,7 +242,8 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                                               payloadQualifiedNames,
                                               concreteIdType,
                                               expectedPayloadRepresentation,
-                                              hasMessageParameter));
+                                              hasMessageParameter,
+                                              forced));
     }
 
     private Set<ScannedEntityCreator> getMethodsCompatibleWithIdAndNoMessage(ID id) {
@@ -332,6 +336,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         private final @Nullable Class<?> concreteIdType;
         private final @Nullable Class<?> expectedPayloadRepresentation;
         private final boolean hasMessageParameter;
+        private final boolean forced;
         private final boolean noOp;
 
         /**
@@ -346,6 +351,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = null;
             this.expectedPayloadRepresentation = null;
             this.hasMessageParameter = false;
+            this.forced = false;
             this.noOp = true;
         }
 
@@ -355,7 +361,8 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                 List<QualifiedName> payloadQualifiedNames,
                 @Nullable Class<?> concreteIdType,
                 @Nullable Class<?> expectedPayloadRepresentation,
-                boolean hasMessageParameter
+                boolean hasMessageParameter,
+                boolean forced
         ) {
             ReflectionUtils.ensureAccessible(executable);
             this.executable = executable;
@@ -364,11 +371,12 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = concreteIdType;
             this.expectedPayloadRepresentation = expectedPayloadRepresentation;
             this.hasMessageParameter = hasMessageParameter;
+            this.forced = forced;
             this.noOp = false;
         }
 
         private @Nullable E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
-            if (noOp || isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage)) {
+            if (noOp || (!forced && isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage))) {
                 return null;
             }
 
@@ -411,6 +419,10 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
          *       creators whose only parameters are {@link InjectEntityId}-annotated)</li>
          *   <li>{@code firstEventMessage} is {@code null}</li>
          * </ul>
+         * <p>
+         * The {@link #invoke(Object, EventMessage, ProcessingContext)} operation ignores this outcome for
+         * {@link ForcedEntityCreator}-annotated creators, since those are invoked regardless of whether a first event
+         * is present.
          *
          * @param firstEventMessage the first {@link EventMessage}, if any, for the entity that is about to be
          *                          constructed
