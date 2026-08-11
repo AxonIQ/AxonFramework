@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.annotation;
 
+import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
@@ -26,6 +27,7 @@ import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
@@ -34,7 +36,6 @@ import org.axonframework.modelling.StateEvolvingException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -147,12 +148,20 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
                        .collect(Collectors.collectingAndThen(
                                Collectors.groupingBy(
-                                       handler -> messageTypeResolver.resolveOrThrow(handler.payloadType())
-                                                                             .qualifiedName(),
+                                       handler -> eventName(handler, messageTypeResolver),
                                        Collectors.toUnmodifiableList()
                                ),
                                Map::copyOf
                        ));
+    }
+
+    private QualifiedName eventName(MessageHandlingMember<? super E> handler,
+                                    MessageTypeResolver messageTypeResolver) {
+        return handler.unwrap(EventHandlingMember.class)
+                      .map(EventHandlingMember::eventName)
+                      .filter(StringUtils::nonEmpty)
+                      .map(QualifiedName::new)
+                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
     private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {
@@ -168,10 +177,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
 
     @Override
     public Set<QualifiedName> supportedEvents() {
-        return inspector.getHandlers(entityType).stream()
-                        .filter(Objects::nonNull)
-                        .map(MessageHandlingMember::payloadType)
-                        .map(QualifiedName::new)
-                        .collect(Collectors.toSet());
+        return handlersByEventName.values().stream()
+                                  .flatMap(handlers -> handlers.keySet().stream())
+                                  .collect(Collectors.toUnmodifiableSet());
     }
 }
