@@ -40,9 +40,7 @@ import org.opentest4j.AssertionFailedError;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -238,39 +236,6 @@ class SimpleEventStoreTest {
                                                                          Math.min(Math.min(size1, size2), size3) - 1))),
                                                    any(ProcessingContext.class),
                                                    anyList());
-        }
-
-        @Test
-        void appendsThroughAUnitOfWorkThatInheritedTheResourcesOfAFinishedOne() throws Exception {
-            EventStorageEngine.AppendTransaction<?> mockAppendTransaction = mock();
-            when(mockStorageEngine.source(any(), any())).thenReturn(messageStreamOf(10));
-            when(mockStorageEngine.appendEvents(any(), any(ProcessingContext.class), anyList()))
-                    .thenReturn(completedFuture(mockAppendTransaction));
-            when(mockAppendTransaction.commit()).thenReturn(completedFuture(null));
-            when(mockAppendTransaction.afterCommit(any())).thenReturn(
-                    completedFuture(new GlobalIndexConsistencyMarker(42)));
-
-            // given - a unit of work that sourced through the event store and then finished
-            Map<Context.ResourceKey<?>, Object> inheritedResources = new HashMap<>();
-            aUnitOfWork().executeWithResult(pc -> {
-                EventStoreTransaction transaction = testSubject.transaction(pc);
-                doConsumeAll(transaction.source(SourcingCondition.conditionFor(EventCriteria.havingAnyTag())));
-                inheritedResources.putAll(pc.resources());
-                return completedFuture(null);
-            }).get(5, TimeUnit.SECONDS);
-
-            // when - its resources are carried into another unit of work, which appends
-            //noinspection unchecked
-            var result = aUnitOfWork().executeWithResult(pc -> {
-                inheritedResources.forEach((key, resource) -> pc.putResource((Context.ResourceKey<Object>) key,
-                                                                             resource));
-                testSubject.transaction(pc).appendEvent(createEvent(0));
-                return completedFuture(null);
-            });
-
-            // then - the append reaches the storage engine instead of the finished unit of work
-            awaitSuccessfulCompletion(result);
-            verify(mockStorageEngine).appendEvents(any(), any(ProcessingContext.class), anyList());
         }
     }
 

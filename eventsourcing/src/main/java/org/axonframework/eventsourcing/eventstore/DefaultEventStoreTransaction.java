@@ -94,16 +94,6 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
         this.eventTagger = eventTagger;
     }
 
-    /**
-     * Returns the {@link ProcessingContext} this transaction appends from and attaches its resources and commit steps
-     * to.
-     *
-     * @return the {@code ProcessingContext} this transaction is bound to
-     */
-    ProcessingContext processingContext() {
-        return processingContext;
-    }
-
     @Override
     public MessageStream<? extends EventMessage> source(SourcingCondition condition) {
         return source(condition, null);
