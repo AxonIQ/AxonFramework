@@ -85,7 +85,13 @@ public class HierarchicalStateManager implements StateManager {
      * Delegates such as {@link SimpleStateManager} complete their {@link CompletableFuture} exceptionally rather than
      * throwing {@link MissingRepositoryException} synchronously, so the parent fallback is expressed with
      * {@link CompletableFuture#exceptionallyCompose(java.util.function.Function)} rather than a
-     * {@code try}/{@code catch}. Any other exception is propagated to the caller unchanged.
+     * {@code try}/{@code catch}. The child call is nonetheless wrapped in
+     * {@link FutureUtils#runFailing(java.util.function.Supplier)} so a delegate that still throws
+     * {@link MissingRepositoryException} synchronously also triggers the fallback. Any other exception is propagated to
+     * the caller unchanged. Only {@link MissingRepositoryException} triggers the fallback; a
+     * {@link LoadedEntityNotOfExpectedTypeException}, for instance, does not, since by the time it surfaces the child's
+     * {@code loadOrCreate} may already have attached state to the {@link ProcessingContext}, making a retry against the
+     * parent unsound.
      */
     @Override
     public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(Class<T> type,
