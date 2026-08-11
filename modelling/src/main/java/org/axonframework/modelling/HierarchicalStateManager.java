@@ -91,10 +91,10 @@ public class HierarchicalStateManager implements StateManager {
     public <I, T> CompletableFuture<ManagedEntity<I, T>> loadManagedEntity(Class<T> type,
                                                                            I id,
                                                                            ProcessingContext context) {
-        return child.loadManagedEntity(type, id, context)
-                    .exceptionallyCompose(ex -> FutureUtils.unwrap(ex) instanceof MissingRepositoryException
-                            ? parent.loadManagedEntity(type, id, context)
-                            : CompletableFuture.failedFuture(ex));
+        return FutureUtils.runFailing(() -> child.loadManagedEntity(type, id, context))
+                          .exceptionallyCompose(ex -> FutureUtils.unwrap(ex) instanceof MissingRepositoryException
+                                  ? parent.loadManagedEntity(type, id, context)
+                                  : CompletableFuture.failedFuture(ex));
     }
 
     @Override
