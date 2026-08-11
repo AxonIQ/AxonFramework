@@ -160,7 +160,7 @@ import java.lang.annotation.Target;
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
-@Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+@Target({ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface EntityCreator {
 
