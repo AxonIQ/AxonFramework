@@ -21,6 +21,7 @@ import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
@@ -28,6 +29,7 @@ import org.axonframework.messaging.core.annotation.SourceId;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.annotation.Event;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.annotation.SequenceNumber;
 import org.axonframework.messaging.eventhandling.annotation.Timestamp;
@@ -393,6 +395,69 @@ class AnnotationBasedEntityEvolvingComponentTest {
             // then - all events are handled, while message types were resolved only when building the handler index
             assertThat(state.handledCount).isEqualTo(3);
             verifyNoInteractions(resolver);
+        }
+    }
+
+    @Nested
+    class EventNameResolution {
+
+        @Test
+        void usesResolvedMessageTypeForHandlingAndSupportedEvents() {
+            // given
+            var resolver = new AnnotationMessageTypeResolver();
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(RenamedEventState.class, converter, resolver);
+            var state = new RenamedEventState();
+            var eventType = resolver.resolveOrThrow(RenamedEvent.class);
+            var event = new GenericEventMessage(eventType, new RenamedEvent());
+
+            // when
+            evolver.evolve(state, event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(state.handledCount).isEqualTo(1);
+            assertThat(evolver.supportedEvents()).containsExactly(eventType.qualifiedName());
+        }
+
+        @Test
+        void explicitHandlerEventNameTakesPrecedenceOverPayloadType() {
+            // given
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(ExplicitNameState.class,
+                                                                        converter,
+                                                                        messageTypeResolver);
+            var state = new ExplicitNameState();
+            var event = new GenericEventMessage(new MessageType("explicit-event"), "payload");
+
+            // when
+            evolver.evolve(state, event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(state.handledCount).isEqualTo(1);
+            assertThat(evolver.supportedEvents()).containsExactly(event.type().qualifiedName());
+        }
+
+        @Event(name = "renamed-event", version = "1")
+        private record RenamedEvent() {
+
+        }
+
+        private static class RenamedEventState {
+
+            private int handledCount;
+
+            @EventHandler
+            void handle(RenamedEvent event) {
+                handledCount++;
+            }
+        }
+
+        private static class ExplicitNameState {
+
+            private int handledCount;
+
+            @EventHandler(eventName = "explicit-event")
+            void handle(String event) {
+                handledCount++;
+            }
         }
     }
 
