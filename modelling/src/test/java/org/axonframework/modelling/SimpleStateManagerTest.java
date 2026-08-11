@@ -49,7 +49,7 @@ class SimpleStateManagerTest {
     }
 
     @Test
-    void throwsExceptionOnMissingModelDefinition() {
+    void completesExceptionallyOnMissingModelDefinition() {
         // given
         StateManager testSubject = SimpleStateManager.named("test");
 
