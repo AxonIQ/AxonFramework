@@ -137,5 +137,40 @@ class AggregateBasedConsistencyMarkerTest {
             assertThat(nextSequenceOf(result, AGGREGATE_ID)).isEqualTo(3);
             assertThat(nextSequenceOf(result, OTHER_AGGREGATE_ID)).isEqualTo(8);
         }
+
+        @Test
+        void isSymmetric() {
+            // given
+            ConsistencyMarker earlier = new AggregateBasedConsistencyMarker(AGGREGATE_ID, 2);
+            ConsistencyMarker later = new AggregateBasedConsistencyMarker(AGGREGATE_ID, 7);
+
+            // when / then
+            assertThat(earlier.upperBound(later)).isEqualTo(later.upperBound(earlier));
+        }
+
+        @Test
+        void combinesPerAggregateWhenMarkersPartiallyOverlap() {
+            // given a marker of two aggregates, and a later marker of only the second aggregate
+            ConsistencyMarker combined = new AggregateBasedConsistencyMarker(AGGREGATE_ID, 2)
+                    .upperBound(new AggregateBasedConsistencyMarker(OTHER_AGGREGATE_ID, 7));
+            ConsistencyMarker laterOther = new AggregateBasedConsistencyMarker(OTHER_AGGREGATE_ID, 9);
+
+            // when
+            ConsistencyMarker result = combined.upperBound(laterOther);
+
+            // then only the overlapping aggregate is raised
+            assertThat(nextSequenceOf(result, AGGREGATE_ID)).isEqualTo(3);
+            assertThat(nextSequenceOf(result, OTHER_AGGREGATE_ID)).isEqualTo(10);
+        }
+
+        @Test
+        void resolvesOriginAndInfinityWithoutConsultingTheAggregatePositions() {
+            // given
+            ConsistencyMarker testSubject = new AggregateBasedConsistencyMarker(AGGREGATE_ID, 2);
+
+            // when / then
+            assertThat(testSubject.upperBound(ConsistencyMarker.ORIGIN)).isEqualTo(testSubject);
+            assertThat(testSubject.upperBound(ConsistencyMarker.INFINITY)).isEqualTo(ConsistencyMarker.INFINITY);
+        }
     }
 }
