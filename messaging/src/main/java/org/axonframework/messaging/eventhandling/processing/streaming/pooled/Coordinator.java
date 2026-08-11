@@ -1049,7 +1049,7 @@ class Coordinator {
                 // A participant rejected the claim; release it so the token store claim is not leaked.
                 return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
             }
-            return segmentChangeListener.onSegmentClaimed(segment)
+            return segmentChangeListener.onSegmentClaimed(segment, token)
                                         .handle((ignored, e) -> {
                                             if (e != null) {
                                                 logger.info(

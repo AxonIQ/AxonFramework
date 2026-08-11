@@ -1983,6 +1983,45 @@ class PooledStreamingEventProcessorTest {
         }
 
         @Test
+        void segmentChangeListenerIsGivenTheStoredTokenOnClaim() {
+            // given - a segment whose stored token sits behind the head of the stream
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(42);
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             1,
+                                                             storedToken,
+                                                             createProcessingContext()));
+
+            AtomicReference<TrackingToken> claimedFrom = new AtomicReference<>();
+            SegmentChangeListener listener = new SegmentChangeListener() {
+
+                @Override
+                public CompletableFuture<Void> onSegmentClaimed(Segment segment) {
+                    return FutureUtils.emptyCompletedFuture();
+                }
+
+                @Override
+                public CompletableFuture<Void> onSegmentClaimed(Segment segment, TrackingToken from) {
+                    claimedFrom.set(from);
+                    return FutureUtils.emptyCompletedFuture();
+                }
+
+                @Override
+                public CompletableFuture<Void> onSegmentReleased(Segment segment) {
+                    return FutureUtils.emptyCompletedFuture();
+                }
+            };
+
+            withTestSubject(List.of(), c -> c.initialSegmentCount(1).addSegmentChangeListener(listener));
+
+            // when
+            startEventProcessor();
+
+            // then
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(claimedFrom.get()).isEqualTo(storedToken));
+        }
+
+        @Test
         void splitSegment() {
             // given
             int testSegmentId = 0;
