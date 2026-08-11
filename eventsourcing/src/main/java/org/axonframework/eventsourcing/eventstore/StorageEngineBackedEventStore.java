@@ -77,15 +77,31 @@ public class StorageEngineBackedEventStore implements EventStore {
 
     @Override
     public EventStoreTransaction transaction(ProcessingContext processingContext) {
-        return processingContext.computeResourceIfAbsent(
+        return processingContext.updateResource(
                 eventStoreTransactionKey,
-                () -> {
-                    var eventStoreTransaction = new DefaultEventStoreTransaction(
-                            eventStorageEngine, processingContext, event -> tagEvents(event, processingContext));
-                    eventStoreTransaction.onAppend(events -> eventBus.publish(processingContext, events).join());
-                    return eventStoreTransaction;
-                }
+                current -> current == null || isFinished(current) ? newTransaction(processingContext) : current
         );
+    }
+
+    /**
+     * Indicates whether the given {@code transaction} belongs to a unit of work that already finished.
+     * <p>
+     * A {@code DefaultEventStoreTransaction} attaches its append step to the {@link ProcessingContext} it was created
+     * for. Copying {@link org.axonframework.messaging.core.Context#resources() resources} into another unit of work
+     * carries the transaction along, still pointing at the one that created it. Appending through it would attach to
+     * that finished context, which fails at the first append, far from the copy that caused it. Such a transaction is
+     * replaced by one bound to the context it is requested for.
+     */
+    private static boolean isFinished(EventStoreTransaction transaction) {
+        return transaction instanceof DefaultEventStoreTransaction defaultTransaction
+                && defaultTransaction.processingContext().isCompleted();
+    }
+
+    private DefaultEventStoreTransaction newTransaction(ProcessingContext processingContext) {
+        var eventStoreTransaction = new DefaultEventStoreTransaction(
+                eventStorageEngine, processingContext, event -> tagEvents(event, processingContext));
+        eventStoreTransaction.onAppend(events -> eventBus.publish(processingContext, events).join());
+        return eventStoreTransaction;
     }
 
     @Override
