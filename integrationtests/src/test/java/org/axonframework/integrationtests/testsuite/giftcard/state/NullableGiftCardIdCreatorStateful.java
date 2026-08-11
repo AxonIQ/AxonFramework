@@ -21,6 +21,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.IssueCardCommand;
+import org.axonframework.integrationtests.testsuite.giftcard.commands.IssueCardWithInitialRedemptionCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.RedeemCardCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.events.CardIssuedEvent;
 import org.axonframework.integrationtests.testsuite.giftcard.events.CardRedeemedEvent;
@@ -32,12 +33,14 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A stateful command handler for which the entity is created based on the identifier, will succeed for instance command
- * handlers because the handler lives outside the entity and receives a {@code null} entity when it does not exist yet.
- * The type is deliberately wrapped in a {@link ManagedEntity} to validate nullability support for those as well.
+ * handlers because the handler lives outside the entity and receives an entity with a {@code null} state when it does
+ * not exist yet. The type is deliberately wrapped in a {@link ManagedEntity} to validate nullability support on said
+ * {@code ManagedEntity} as well.
  * <p>
- * Although the command defines the identifier and the constructor could produce an entity without any preceding event,
- * the {@code @InjectEntity} parameter is annotated {@code @Nullable} here, so it consistently resolves to {@code null}
- * when there is no event to source the entity from, just as the no-arg and event-based creator styles do.
+ * {@link #handle(IssueCardWithInitialRedemptionCommand, ManagedEntity, EventAppender)} additionally validates a
+ * create-if-missing flow: it appends a creation event, then relies on the injected {@link ManagedEntity} having
+ * observed that same event's effect - through its live subscription - before deciding on and appending a second,
+ * dependent event within the same command handling.
  *
  * @author Steven van Beelen
  */
@@ -45,9 +48,9 @@ public class NullableGiftCardIdCreatorStateful {
 
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity @Nullable ManagedEntity<String, GiftCard> entity,
+                       @InjectEntity ManagedEntity<String, GiftCard> entity,
                        EventAppender appender) {
-        if (entity == null) {
+        if (entity.entity() == null) {
             appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
         } else {
             throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
@@ -65,6 +68,36 @@ public class NullableGiftCardIdCreatorStateful {
             throw new IllegalStateException("Insufficient funds");
         }
         appender.append(new CardRedeemedEvent(command.cardId(), command.amount()));
+    }
+
+    /**
+     * Create-if-missing in a single command handler invocation: issues the card, then redeems part of it right away.
+     * <p>
+     * The insufficient-funds check for the redemption reads {@code entity.entity()} again after appending the
+     * {@link CardIssuedEvent}. This only works because the injected {@code entity} is subscribed to live updates: the
+     * first {@code appender.append(...)} call evolves this very {@link ManagedEntity} in place before this method
+     * continues, so the second event's decision is based on the state the first event just established, rather than on
+     * the (already stale) {@code null} the parameter was originally resolved with.
+     */
+    @CommandHandler
+    public void handle(IssueCardWithInitialRedemptionCommand command,
+                       @InjectEntity ManagedEntity<String, GiftCard> entity,
+                       EventAppender appender) {
+        if (entity.entity() != null) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+        }
+        appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
+
+        GiftCard issued = entity.entity();
+        if (issued == null) {
+            throw new IllegalStateException(
+                    "GiftCard for id [" + command.cardId() + "] was not created as expected"
+            );
+        }
+        if (issued.amount - command.initialRedemption() < 0) {
+            throw new IllegalStateException("Insufficient funds");
+        }
+        appender.append(new CardRedeemedEvent(command.cardId(), command.initialRedemption()));
     }
 
     @EventSourcedEntity(tagKey = "cardId")

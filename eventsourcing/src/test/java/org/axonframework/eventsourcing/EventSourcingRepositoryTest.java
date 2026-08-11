@@ -32,18 +32,16 @@ import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
-import org.mockito.*;
 import org.mockito.junit.jupiter.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -240,25 +238,23 @@ class EventSourcingRepositoryTest {
 
         when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
 
-        CompletableFuture<ManagedEntity<String, String>> firstResult =
-                testSubject.loadOrCreate("test", processingContext);
+        // Even though initialize() failed, loadOrCreate resolves normally to a ManagedEntity wrapping a null
+        // entity - the wrapper itself is still subscribed for live updates, which is what allows a
+        // same-unit-of-work creation to be observed by a later resolution instead of a poisoned result.
+        ManagedEntity<String, String> firstResult = testSubject.loadOrCreate("test", processingContext)
+                                                               .orTimeout(2, TimeUnit.SECONDS)
+                                                               .join();
 
-        ExecutionException firstException = assertThrows(ExecutionException.class, firstResult::get);
-        assertInstanceOf(EntityNotFoundException.class, firstException.getCause());
-
-        // Even though initialize() failed, the entity must still be subscribed for live updates - this is what
-        // allows a same-unit-of-work creation to be observed by a later resolution instead of a poisoned result.
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<ManagedEntity<String, String>> entityCaptor = ArgumentCaptor.forClass(ManagedEntity.class);
-        verify(handler).subscribe(entityCaptor.capture(), eq(processingContext));
-        ManagedEntity<String, String> subscribedEntity = entityCaptor.getValue();
+        assertNull(firstResult.entity());
+        verify(handler).subscribe(firstResult, processingContext);
 
         // Simulate a creation event being appended and applied via the onAppend callback a real
         // EntityLifecycleHandler would have registered through subscribe(...).
-        subscribedEntity.applyStateChange(current -> "test(created)");
+        firstResult.applyStateChange(current -> "test(created)");
 
         ManagedEntity<String, String> secondResult = testSubject.loadOrCreate("test", processingContext).join();
 
+        assertSame(firstResult, secondResult);
         assertEquals("test(created)", secondResult.entity());
     }
 
@@ -290,7 +286,7 @@ class EventSourcingRepositoryTest {
         }
 
         @Test
-        void loadOrCreateAfterNotFoundLoadFailsWhenTheEntityRequiresAFirstEvent() {
+        void loadOrCreateAfterNotFoundLoadReturnsSameInstanceWithNullStateWhenEntityRequiresAFirstEvent() {
             // given an entity that cannot be constructed from its identifier alone
             when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
 
@@ -298,12 +294,14 @@ class EventSourcingRepositoryTest {
             assertThat(loaded.entity()).isNull();
 
             // when loadOrCreate follows for the same identifier in the same context
-            CompletableFuture<ManagedEntity<String, String>> result =
-                    testSubject.loadOrCreate("test", processingContext);
+            ManagedEntity<String, String> result = testSubject.loadOrCreate("test", processingContext)
+                                                              .orTimeout(2, TimeUnit.SECONDS)
+                                                              .join();
 
-            // then it fails, leaving the managed instance available for the first appended event to evolve
-            assertThatThrownBy(result::join).hasCauseInstanceOf(EntityNotFoundException.class);
-            assertThat(loaded.entity()).isNull();
+            // then it resolves normally, on the same managed instance, still available for the first appended
+            // event to evolve
+            assertThat(result).isSameAs(loaded);
+            assertThat(result.entity()).isNull();
         }
 
         @Test
