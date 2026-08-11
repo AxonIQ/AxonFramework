@@ -91,10 +91,9 @@ public interface StateManager extends DescribableComponent {
      * @param id      the id of the state to retrieve
      * @param context the {@link ProcessingContext context} to load the entity in
      * @param <I>     the type of the identifier of the entity
-     * @return a {@link CompletableFuture} which resolves to the entity instance
-     * @throws MissingRepositoryException contained in the resulting {@link CompletableFuture} whenever this
-     *                                    {@code StateManager} does not control the {@link Repository} to load the
-     *                                    entity from
+     * @return a {@link CompletableFuture} which resolves to the entity instance, or completes exceptionally with a
+     * {@link MissingRepositoryException} when this {@code StateManager} does not control the {@link Repository} to
+     * load the entity from
      */
     default <I, T> CompletableFuture<@Nullable T> loadEntity(Class<T> type,
                                                              I id,
@@ -111,10 +110,9 @@ public interface StateManager extends DescribableComponent {
      * @param context the {@link ProcessingContext context} to load the entity in
      * @param <ID>    the type of the identifier of the entity
      * @param <T>     the type of the entity
-     * @return a {@link CompletableFuture} which resolves to the entity instance
-     * @throws MissingRepositoryException contained in the resulting {@link CompletableFuture} whenever this
-     *                                    {@code StateManager} does not control the {@link Repository} to load the
-     *                                    {@link ManagedEntity} from
+     * @return a {@link CompletableFuture} which resolves to the entity instance, or completes exceptionally with a
+     * {@link MissingRepositoryException} when this {@code StateManager} does not control the {@link Repository} to
+     * load the {@link ManagedEntity} from
      */
     <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(Class<T> type,
                                                                       ID id,
@@ -140,6 +138,10 @@ public interface StateManager extends DescribableComponent {
      * Returns the {@link Repository} for the given {@code type}.
      * <p>
      * Returns {@code null} if no repository is registered for the given type and id.
+     * <p>
+     * Unlike {@link #loadManagedEntity(Class, Object, ProcessingContext)}, which resolves a {@link Repository}
+     * registered for a supertype when asked for a subtype, this method only matches an exactly registered
+     * {@code (entityType, idType)} pair. Hence, there is no supertype or subtype resolution.
      *
      * @param <ID>       the type of the identifier of the entity
      * @param <T>        the type of the entity
