@@ -17,7 +17,10 @@
 package org.axonframework.modelling;
 
 import org.axonframework.common.FutureUtils;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.modelling.repository.ManagedEntity;
 import org.axonframework.modelling.repository.Repository;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -100,7 +103,71 @@ class HierarchicalStateManagerTest {
     }
 
     @Test
-    void throwsExceptionIfExistsInNeither() {
+    void resolvesPolymorphicEntityFromChildWhenBothChildAndParentHaveMatchingSupertype() {
+        StateManager parent = SimpleStateManager.named("parent")
+                                                .register(String.class,
+                                                          TestEntity.class,
+                                                          (id, ctx) -> CompletableFuture.completedFuture(
+                                                                  new TestSubEntity("parent")),
+                                                          (id, state, ctx) -> FutureUtils.emptyCompletedFuture());
+        StateManager child = SimpleStateManager.named("child")
+                                               .register(String.class,
+                                                         TestEntity.class,
+                                                         (id, ctx) -> CompletableFuture.completedFuture(
+                                                                 new TestSubEntity("child")),
+                                                         (id, state, ctx) -> FutureUtils.emptyCompletedFuture());
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        ManagedEntity<String, TestSubEntity> managedEntity =
+                stateManager.loadManagedEntity(TestSubEntity.class, "id", new StubProcessingContext()).join();
+
+        assertNotNull(managedEntity.entity());
+        assertEquals("child", managedEntity.entity().value());
+    }
+
+    @Test
+    void nonMissingRepositoryExceptionFromChildPropagatesUnchangedWithoutParentFallback() {
+        RuntimeException childFailure = new RuntimeException("child loader failure");
+        StateManager parent = createStringSimpleStateManager("parent");
+        StateManager child = SimpleStateManager.named("child")
+                                               .register(String.class,
+                                                         String.class,
+                                                         (id, ctx) -> CompletableFuture.failedFuture(childFailure),
+                                                         (id, state, ctx) -> FutureUtils.emptyCompletedFuture());
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        CompletionException exception = assertThrows(CompletionException.class, () -> {
+            stateManager.loadEntity(String.class, "id", new StubProcessingContext())
+                        .join();
+        });
+        assertSame(childFailure, exception.getCause());
+    }
+
+    @Test
+    void synchronousMissingRepositoryExceptionThrowFromChildStillTriggersParentFallback() {
+        StateManager parent = createStringSimpleStateManager("parent");
+        StateManager child = new SynchronouslyThrowingStateManager();
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        verifyHasAsResult(stateManager, "parent");
+    }
+
+    @Test
+    void resolvesEntityThroughNestedHierarchicalStateManagerComposition() {
+        StateManager grandparent = createStringSimpleStateManager("grandparent");
+        StateManager parent = HierarchicalStateManager.create(grandparent, SimpleStateManager.named("intermediate"));
+        StateManager child = SimpleStateManager.named("child");
+
+        HierarchicalStateManager stateManager = HierarchicalStateManager.create(parent, child);
+
+        verifyHasAsResult(stateManager, "grandparent");
+    }
+
+    @Test
+    void completesExceptionallyIfExistsInNeither() {
         StateManager parent = SimpleStateManager.named("parent");
         StateManager child = SimpleStateManager.named("child");
 
@@ -174,5 +241,45 @@ class HierarchicalStateManagerTest {
 
     private record TestSubEntity(String value) implements TestEntity {
 
+    }
+
+    /**
+     * {@link StateManager} stub that throws {@link MissingRepositoryException} synchronously rather than completing
+     * a {@link CompletableFuture} exceptionally, exercising the {@code FutureUtils#runFailing} wrapping in
+     * {@link HierarchicalStateManager#loadManagedEntity(Class, Object, ProcessingContext)}.
+     */
+    private static final class SynchronouslyThrowingStateManager implements StateManager {
+
+        @Override
+        public <ID, T> StateManager register(Repository<ID, T> repository) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(Class<T> type,
+                                                                                  ID id,
+                                                                                  ProcessingContext context) {
+            throw new MissingRepositoryException(id.getClass(), type);
+        }
+
+        @Override
+        public Set<Class<?>> registeredEntities() {
+            return Set.of();
+        }
+
+        @Override
+        public Set<Class<?>> registeredIdsFor(Class<?> entityType) {
+            return Set.of();
+        }
+
+        @Override
+        public <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType) {
+            return null;
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            // No-op - not required for testing
+        }
     }
 }
