@@ -18,6 +18,7 @@ package org.axonframework.messaging.eventhandling.processing.streaming.token.sto
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceException;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
@@ -120,7 +121,15 @@ public class JpaTokenStore implements TokenStore {
                 em.persist(new TokenEntry(processorName, segment, initialToken, converter));
             }
 
-            em.flush();
+            try {
+                em.flush();
+            } catch (PersistenceException e) {
+                // Another node initialized the same segments between the check above and this insert, so the insert
+                // violates the primary key. Report that as losing the check above does, rather than leaking the
+                // persistence provider's own exception type through the TokenStore contract.
+                throw new UnableToClaimTokenException(
+                        "Could not initialize segments. Some segments were already present.", e);
+            }
             return segments;
         });
     }
