@@ -28,6 +28,9 @@ import static java.util.Objects.requireNonNull;
  * The {@code QualifiedName} is useful to provide clear names to {@link Message Messages},
  * {@link MessageHandler MessageHandlers}, and other components that require naming.
  * <p>
+ * Implements {@link VersionedType} to allow non-message components (such as snapshot stores) to reference
+ * versioned type information without implying the component is a message.
+ * <p>
  * When you do not require a version for typing, consider using the {@code QualifiedName} directly instead.
  *
  * @param qualifiedName The {@code QualifiedName} of this {@code MessageType}.
@@ -39,7 +42,7 @@ import static java.util.Objects.requireNonNull;
  * @author John Hendrikx
  * @since 5.0.0
  */
-public record MessageType(QualifiedName qualifiedName, String version) {
+public record MessageType(QualifiedName qualifiedName, String version) implements VersionedType {
 
     /**
      * The default version of a {@code MessageType} when none is given. Set to {@code 0.0.1}.

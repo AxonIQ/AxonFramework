@@ -33,7 +33,7 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.VersionedType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -81,7 +81,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     private final EventStore eventStore;
     private final CriteriaResolver<I> criteriaResolver;
     private final TagResolver tagResolver;
-    private final MessageType messageType;
+    private final VersionedType versionedType;
     private final SnapshotPolicy snapshotPolicy;
     private final Class<?> entityType;
     private final Converter converter;
@@ -98,7 +98,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
      *                    {@code null}
      * @param evolver the {@link InitializingEntityEvolver} used to initialize and evolve the entity, cannot be {@code null}
      * @param snapshotPolicy the {@link SnapshotPolicy}, cannot be {@code null}
-     * @param messageType the {@link MessageType}, cannot be {@code null}
+     * @param versionedType the {@link VersionedType} describing the type and version of the entity, cannot be {@code null}
      * @param converter the {@link Converter} to use to decode snapshots, cannot be {@code null}
      * @param entityType the type a snapshot should decode to, cannot be {@code null}
      * @param snapshotStore the {@link SnapshotStore} to use for storing snapshots, cannot be {@code null}
@@ -110,7 +110,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         TagResolver tagResolver,
         InitializingEntityEvolver<I, E> evolver,
         SnapshotPolicy snapshotPolicy,
-        MessageType messageType,
+        VersionedType versionedType,
         Converter converter,
         Class<?> entityType,
         SnapshotStore snapshotStore
@@ -120,7 +120,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         this.tagResolver = Objects.requireNonNull(tagResolver, "The tagResolver parameter must not be null.");
         this.evolver = Objects.requireNonNull(evolver, "The evolver parameter must not be null.");
         this.snapshotPolicy = Objects.requireNonNull(snapshotPolicy, "The snapshotPolicy parameter must not be null.");
-        this.messageType = Objects.requireNonNull(messageType, "The messageType parameter must not be null.");
+        this.versionedType = Objects.requireNonNull(versionedType, "The versionedType parameter must not be null.");
         this.converter = Objects.requireNonNull(converter, "The converter parameter must not be null.");
         this.entityType = Objects.requireNonNull(entityType, "The entityType parameter must not be null.");
         this.snapshotStore = Objects.requireNonNull(snapshotStore, "The snapshotStore parameter must not be null.");
@@ -153,7 +153,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         EventCriteria criteria = criteriaResolver.resolve(identifier, pc);
         EventStoreTransaction transaction = eventStore.transaction(pc);
         SourcingCondition condition = SourcingCondition.conditionFor(
-            new SourcingStrategy.Snapshot(messageType.qualifiedName(), identifier, null),
+            new SourcingStrategy.Snapshot(versionedType.qualifiedName(), identifier, null),
             criteria
         );
         AtomicReference<Position> positionRef = new AtomicReference<>();
@@ -200,19 +200,19 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
     }
 
     private void storeSnapshot(I identifier, E entity, Position position, ProcessingContext context) {
-        Snapshot newSnapshot = new Snapshot(position, messageType.version(), entity, ClockUtils.instant(), Map.of());
+        Snapshot newSnapshot = new Snapshot(position, versionedType.version(), entity, ClockUtils.instant(), Map.of());
 
-        snapshotStore.store(messageType.qualifiedName(), identifier, newSnapshot, context)
+        snapshotStore.store(versionedType.qualifiedName(), identifier, newSnapshot, context)
             .whenComplete((voidResult, ex) -> {
                 if (ex != null) {
-                    logger.warn("Snapshotting failed for {} with identifier {}", messageType, identifier, ex);
+                    logger.warn("Snapshotting failed for {} with identifier {}", versionedType, identifier, ex);
                 }
             });
     }
 
     private E convertSnapshotPayload(I identifier, Snapshot snapshot) {
         try {
-            if (snapshot.version().equals(messageType.version())) {
+            if (snapshot.version().equals(versionedType.version())) {
                 @SuppressWarnings("unchecked")
                 E entity = (E) (entityType.isInstance(snapshot.payload())
                     ? snapshot.payload()
@@ -223,10 +223,10 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
             }
 
             // Version mismatched, ignore this snapshot (until there is version handling support)
-            logger.info("Unsupported snapshot version. Snapshot of {} for identifier {} had unsupported version: {}", messageType, identifier, snapshot.version());
+            logger.info("Unsupported snapshot version. Snapshot of {} for identifier {} had unsupported version: {}", versionedType, identifier, snapshot.version());
         }
         catch (Exception e) {
-            logger.warn("Snapshot incompatible, falling back to full reconstruction for: {} ({})", messageType, identifier, e);
+            logger.warn("Snapshot incompatible, falling back to full reconstruction for: {} ({})", versionedType, identifier, e);
         }
 
         throw new SnapshotIncompatibleException();
@@ -244,7 +244,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         descriptor.describeProperty("criteriaResolver", criteriaResolver);
         descriptor.describeProperty("tagResolver", tagResolver);
         descriptor.describeProperty("evolver", evolver);
-        descriptor.describeProperty("messageType", messageType);
+        descriptor.describeProperty("versionedType", versionedType);
         descriptor.describeProperty("entityType", entityType);
         descriptor.describeProperty("converter", converter);
         descriptor.describeProperty("snapshotPolicy", snapshotPolicy);
