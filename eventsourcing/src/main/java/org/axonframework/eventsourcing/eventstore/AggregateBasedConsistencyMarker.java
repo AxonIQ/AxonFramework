@@ -95,6 +95,10 @@ public class AggregateBasedConsistencyMarker extends AbstractConsistencyMarker<A
     /**
      * Returns a marker containing the aggregates of both {@code this} and the given {@code other} marker, keeping the
      * <em>highest</em> position for any aggregate both markers know about.
+     * <p>
+     * Positions of distinct aggregates are independent of one another, so an aggregate that only one of the two markers
+     * knows about keeps its position in the result. Dropping it would reset that aggregate to the start of its event
+     * stream, which both loses conflict detection for the aggregate and restarts its sequence numbers at zero.
      *
      * @param other the other marker to combine with
      * @return a marker holding the highest known position per aggregate of both markers
