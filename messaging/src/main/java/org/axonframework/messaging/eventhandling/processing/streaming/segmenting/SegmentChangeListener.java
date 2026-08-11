@@ -16,6 +16,9 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.segmenting;
 
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.jspecify.annotations.Nullable;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -98,6 +101,23 @@ public interface SegmentChangeListener {
     CompletableFuture<Void> onSegmentClaimed(Segment segment);
 
     /**
+     * Invoked when a segment has been claimed, providing the position the segment resumes from.
+     * <p>
+     * The counterpart of {@link #onSegmentReleased(Segment)}, which is preceded by the same position being stored.
+     * Without {@code from}, a listener cannot tell a segment that sits at the head of the stream from one that is far
+     * behind and about to replay. Defaults to {@link #onSegmentClaimed(Segment)}, ignoring the position.
+     *
+     * @param segment claimed {@link Segment}
+     * @param from    the {@link TrackingToken} stored for the {@code segment}, or {@code null} when no token is stored
+     *                yet and processing starts at the beginning of the stream
+     * @return {@link CompletableFuture} that completes when handling has finished
+     * @since 5.4.0
+     */
+    default CompletableFuture<Void> onSegmentClaimed(Segment segment, @Nullable TrackingToken from) {
+        return onSegmentClaimed(segment);
+    }
+
+    /**
      * Invoked when a segment has been released.
      * <p>
      * Invoked while the claim on the {@code segment} is still held, so a listener can wind down the work it runs for
@@ -118,9 +138,24 @@ public interface SegmentChangeListener {
      */
         default SegmentChangeListener andThen(SegmentChangeListener next) {
         Objects.requireNonNull(next, "Next listener may not be null");
-        return new SimpleSegmentChangeListener(
-                segment -> onSegmentClaimed(segment).thenCompose(unused -> next.onSegmentClaimed(segment)),
-                segment -> onSegmentReleased(segment).thenCompose(unused -> next.onSegmentReleased(segment))
-        );
+        SegmentChangeListener first = this;
+        return new SegmentChangeListener() {
+
+            @Override
+            public CompletableFuture<Void> onSegmentClaimed(Segment segment) {
+                return first.onSegmentClaimed(segment).thenCompose(unused -> next.onSegmentClaimed(segment));
+            }
+
+            @Override
+            public CompletableFuture<Void> onSegmentClaimed(Segment segment, @Nullable TrackingToken from) {
+                return first.onSegmentClaimed(segment, from)
+                            .thenCompose(unused -> next.onSegmentClaimed(segment, from));
+            }
+
+            @Override
+            public CompletableFuture<Void> onSegmentReleased(Segment segment) {
+                return first.onSegmentReleased(segment).thenCompose(unused -> next.onSegmentReleased(segment));
+            }
+        };
     }
 }
