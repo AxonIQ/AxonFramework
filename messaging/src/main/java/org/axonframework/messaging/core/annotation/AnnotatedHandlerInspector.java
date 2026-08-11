@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.interception.annotation.MessageInterceptingMember;
@@ -205,12 +206,13 @@ public class AnnotatedHandlerInspector<T> {
     @SuppressWarnings("unchecked")
     private void initializeMessageHandlers(ParameterResolverFactory parameterResolverFactory,
                                            HandlerDefinition handlerDefinition) {
+        MessageTypeResolver resultMessageTypeResolver = new AnnotationMessageTypeResolver();
         handlers.put(inspectedType, new TreeSet<>(HandlerComparator.instance()));
         for (Method method : inspectedType.getDeclaredMethods()) {
             handlerDefinition.createHandler(inspectedType,
                                             method,
                                             parameterResolverFactory,
-                                            result -> resolveToStream(result, new AnnotationMessageTypeResolver()))
+                                            result -> resolveToStream(result, resultMessageTypeResolver))
                              .ifPresent(h -> registerHandler(inspectedType, h));
         }
 
