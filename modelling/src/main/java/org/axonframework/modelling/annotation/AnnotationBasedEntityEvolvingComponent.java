@@ -45,6 +45,12 @@ import static java.util.Objects.requireNonNull;
  * Implementation of the {@link EntityEvolvingComponent} that applies state changes through
  * {@link EventHandler}(-meta)-annotated methods using the
  * {@link AnnotatedHandlerInspector}.
+ * <p>
+ * During construction, this component eagerly resolves the event names of all inspected handlers and builds an
+ * immutable routing index. This shifts annotation inspection and message type resolution to initialization, increasing
+ * startup work and memory usage in proportion to the number of handlers. In return, event evolution performs direct
+ * lookups without reflection, message type resolution, cache mutation, or a scan of all handlers. Resolution failures
+ * are also reported during initialization instead of on the first matching event.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -56,7 +62,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
-    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEventName;
+    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -95,7 +101,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");
-        this.handlersByEventName = indexHandlersByEventName(
+        this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
     }
@@ -107,8 +113,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         try {
             var listenerType = entity.getClass();
 
-            var handlers = handlersByEventName.getOrDefault(listenerType, Map.of())
-                                              .getOrDefault(event.type().qualifiedName(), List.of());
+            var handlers = handlersByEntityType.getOrDefault(listenerType, Map.of())
+                                               .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
             for (var handler : handlers) {
@@ -133,17 +139,17 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         }
     }
 
-    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEventName(
+    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEntityType(
             MessageTypeResolver messageTypeResolver
     ) {
         return inspector.getAllHandlers().entrySet().stream()
                         .collect(Collectors.toUnmodifiableMap(
                                 Map.Entry::getKey,
-                                entry -> indexHandlers(entry.getValue(), messageTypeResolver)
+                                entry -> indexHandlersByEventName(entry.getValue(), messageTypeResolver)
                         ));
     }
 
-    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlers(
+    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlersByEventName(
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
     ) {
@@ -180,7 +186,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
 
     @Override
     public Set<QualifiedName> supportedEvents() {
-        return handlersByEventName.values().stream()
+        return handlersByEntityType.values().stream()
                                   .flatMap(handlers -> handlers.keySet().stream())
                                   .collect(Collectors.toUnmodifiableSet());
     }
