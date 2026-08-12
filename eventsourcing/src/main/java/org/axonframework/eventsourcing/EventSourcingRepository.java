@@ -215,7 +215,8 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     private void initializeIfAbsent(ID identifier,
                                     ProcessingContext context,
                                     EventSourcedEntity<ID, E> entity) {
-        entity.applyStateChange(current -> current != null ? current : initializeQuietly(identifier, context));
+        E initialized = initializeQuietly(identifier, context);
+        entity.applyStateChange(current -> current != null ? current : initialized);
     }
 
     /**
@@ -235,7 +236,8 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * @return the initialized entity, or {@code null} when the {@code lifecycleHandler} reports the entity does not
      * exist yet
      */
-    private @Nullable E initializeQuietly(ID identifier, ProcessingContext context) {
+    @Nullable
+    private E initializeQuietly(ID identifier, ProcessingContext context) {
         try {
             return lifecycleHandler.initialize(identifier, context);
         } catch (EntityNotFoundException e) {
@@ -259,7 +261,8 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     private void updateActiveEntity(EventSourcedEntity<ID, E> entity, ProcessingContext processingContext,
                                     Throwable exception) {
         if (exception == null) {
-            updateActiveEntity(entity, processingContext);}
+            updateActiveEntity(entity, processingContext);
+        }
     }
 
     /**
