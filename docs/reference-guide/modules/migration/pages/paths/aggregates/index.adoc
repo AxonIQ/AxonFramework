@@ -233,6 +233,13 @@ If you need "only create if missing" logic, you can implement it within the stat
 ----
 include::example$migration/paths/aggregates/index/creationpolicycreateifmissing/GiftCard.java[tag=creation-policy-create-if-missing,indent=0]
 ----
++
+Alternatively, if you want to keep the create-if-missing logic on an **instance** command handler, closer to how `@CreationPolicy(CREATE_IF_MISSING)` worked in Axon Framework 4, annotate a no-argument or identifier-based `@EntityCreator` with `@ForcedEntityCreator`. Axon then always constructs the entity, even when it does not yet exist, so the instance handler receives a non-null entity and can decide for itself whether to append the event that establishes its existence.
++
+[source,java]
+----
+include::example$migration/paths/aggregates/index/forcedentitycreator/GiftCard.java[tag=forced-entity-creator-create-if-missing,indent=0]
+----
 
 * *`CreationPolicy.NEVER`*
 +
