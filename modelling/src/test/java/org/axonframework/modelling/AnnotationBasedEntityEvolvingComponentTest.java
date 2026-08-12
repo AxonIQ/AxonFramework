@@ -20,6 +20,7 @@ import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.*;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -192,6 +194,28 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
     @Nested
     class HandlerInvocationRules {
+
+        @Test
+        void invokesAllEventHandlersResolvingToTheSameEventName() {
+            // given
+            var sharedEventType = new MessageType("shared-event");
+            MessageTypeResolver sharedTypeResolver = payloadType -> Optional.of(sharedEventType);
+            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(TestState.class,
+                                                                                     converter,
+                                                                                     sharedTypeResolver);
+            var state = new TestState();
+            var event = new GenericEventMessage(sharedEventType,
+                                                0,
+                                                Metadata.with("sampleKey", "sampleValue"));
+            var context = StubProcessingContext.forMessage(event, "id", 0, "test");
+
+            // when
+            state = eventSourcedComponent.evolve(state, event, context);
+
+            // then
+            assertTrue(state.objectHandlerInvoked);
+            assertEquals(2, state.handledCount);
+        }
 
         @Test
         void doNotHandleNotDeclaredEventType() {
