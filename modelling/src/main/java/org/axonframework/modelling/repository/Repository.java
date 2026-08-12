@@ -54,22 +54,31 @@ public sealed interface Repository<ID, E>
     /**
      * Load the entity with the given unique identifier. No version checks are done when loading an entity, meaning that
      * concurrent access will not be checked for.
+     * <p>
+     * The returned {@link CompletableFuture} always resolves to a {@link ManagedEntity} for the given
+     * {@code identifier}. The {@link ManagedEntity#entity() entity} managed by it may be {@code null} when none
+     * could be found. Implementations without an autonomous construction step (e.g. one driven entirely by a
+     * user-supplied loader) remain free to let the future complete exceptionally instead, if that loader does so.
      *
-     * @param identifier        The identifier of the entity to load.
-     * @param processingContext The processing context in which to manage the lifecycle of the entity.
-     * @return A {@link CompletableFuture} resolving to the {@link ManagedEntity} with the given identifier, or
-     * {@code null} if it can't be found.
+     * @param identifier        the identifier of the entity to load
+     * @param processingContext the processing context in which to manage the lifecycle of the entity
+     * @return a {@link CompletableFuture} resolving to the {@link ManagedEntity} with the given identifier
      */
     CompletableFuture<ManagedEntity<ID, E>> load(ID identifier,
                                                  ProcessingContext processingContext);
 
     /**
-     * Loads an entity from the repository.
+     * Loads an entity from the repository, constructing a new instance when none exists yet.
+     * <p>
+     * The returned {@link CompletableFuture} always resolves to a {@link ManagedEntity} for the given
+     * {@code identifier}. The {@link ManagedEntity#entity() entity} managed by it may be {@code null} when none
+     * could be found. Implementations without an autonomous construction step (e.g. one driven entirely by a
+     * user-supplied loader) remain free to let the future complete exceptionally instead, if that loader does so.
      *
-     * @param identifier        The identifier of the entity to load.
-     * @param processingContext The processing context in which to manage the lifecycle of the entity.
-     * @return A {@link CompletableFuture} resolving to the {@link ManagedEntity} with the given identifier, or a newly
-     * constructed entity instance based on the {@code factoryMethod}.
+     * @param identifier        the identifier of the entity to load
+     * @param processingContext the processing context in which to manage the lifecycle of the entity
+     * @return a {@link CompletableFuture} resolving to the {@link ManagedEntity} with the given identifier, backed by
+     * a newly constructed entity instance when none existed yet
      */
     CompletableFuture<ManagedEntity<ID, E>> loadOrCreate(ID identifier,
                                                          ProcessingContext processingContext);
