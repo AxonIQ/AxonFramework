@@ -312,8 +312,9 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
             return currentState.get();
         }
 
+        @Nullable
         @Override
-        public M applyStateChange(UnaryOperator<M> change) {
+        public M applyStateChange(UnaryOperator<@Nullable M> change) {
             return currentState.updateAndGet(change);
         }
     }
