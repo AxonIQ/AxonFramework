@@ -48,10 +48,7 @@ import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspec
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link AnnotationBasedEntityEvolvingComponent}.
@@ -496,9 +493,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         private static final EntityEvolver<Course> COURSE_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
                 Course.class,
-                inspectType(Course.class, ClasspathParameterResolverFactory.forClass(Course.class),
-                            ClasspathHandlerDefinition.forClass(Course.class),
-                            Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)),
+                inspectType(
+                        Course.class,
+                        new AnnotationMessageTypeResolver(),
+                        ClasspathParameterResolverFactory.forClass(Course.class),
+                        ClasspathHandlerDefinition.forClass(Course.class),
+                        Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
+                ),
                 converter,
                 messageTypeResolver
         );
