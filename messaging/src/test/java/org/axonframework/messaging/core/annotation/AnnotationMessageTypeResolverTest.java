@@ -361,6 +361,43 @@ class AnnotationMessageTypeResolverTest {
     }
 
     @Nested
+    class Caching {
+
+        @Test
+        void repeatedResolutionReturnsCachedMessageTypeWithoutConsultingFallback() {
+            // given / when - resolving the same annotated payload type twice
+            Optional<MessageType> first = testSubject.resolve(CachedEvent.class);
+            Optional<MessageType> second = testSubject.resolve(CachedEvent.class);
+
+            // then - the annotation-derived result is cached, so the exact same instance is returned
+            assertThat(first).isPresent();
+            assertThat(second).isPresent();
+            assertThat(second.get()).isSameAs(first.get());
+            verifyNoInteractions(fallback);
+        }
+
+        @Test
+        void fallbackIsConsultedOnEveryResolutionForNonAnnotatedPayloadType() {
+            MessageType fallbackType = new MessageType("fallback", "2025");
+            when(fallback.resolve(any())).thenReturn(Optional.of(fallbackType));
+
+            // when - resolving a payload type without annotations twice
+            Optional<MessageType> first = testSubject.resolve(Object.class);
+            Optional<MessageType> second = testSubject.resolve(Object.class);
+
+            // then - only the annotation miss is cached, the fallback resolves on each invocation
+            assertThat(first).contains(fallbackType);
+            assertThat(second).contains(fallbackType);
+            verify(fallback, times(2)).resolve(Object.class);
+        }
+
+        @Event(name = "cached-event", version = "7")
+        private record CachedEvent(String id) {
+
+        }
+    }
+
+    @Nested
     class NamespaceResolution {
 
         @Test
