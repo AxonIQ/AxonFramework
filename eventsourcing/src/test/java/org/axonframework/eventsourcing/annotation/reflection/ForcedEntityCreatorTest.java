@@ -16,27 +16,30 @@
 
 package org.axonframework.eventsourcing.annotation.reflection;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.junit.jupiter.api.*;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * Tests the behavior described on {@link ForcedEntityCreator}.
  * <p>
- * Ano-arguments (or {@link InjectEntityId}-only) factory constructor or method annotated with
+ * A no-arguments (or {@link InjectEntityId}-only) factory constructor or method annotated with
  * {@link ForcedEntityCreator} is invoked by {@link AnnotationBasedEventSourcedEntityFactory} even when no first event
- * is present, unlike a plain {@link EntityCreator}. This lets a create-if-missing instance command handler run directly
- * on the entity, append the event that establishes its existence, and let subsequent decisions rely on the resulting
- * state.
+ * is present, unlike a plain {@link EntityCreator}. This is what allows a create-if-missing instance command handler
+ * to run directly on the entity: the entity is never {@code null}, so it can decide for itself whether to append the
+ * event that establishes its existence.
  *
  * @author Steven van Beelen
  */
@@ -48,145 +51,267 @@ class ForcedEntityCreatorTest {
     private final EventConverter converter = new DelegatingEventConverter(PassThroughConverter.INSTANCE);
 
     @Nested
-    class ContrastWithPlainEntityCreator {
+    class NoArgumentCreators {
 
         @Test
-        void forcedNoArgConstructorCreatesEntityWithoutFirstEvent() {
+        void forcedConstructorCreatesEntityWithoutFirstEvent() {
+            // given
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
-                    ForcedNoArgEntity.class,
-                    String.class,
-                    parameterResolverFactory,
-                    messageTypeResolver,
-                    converter
+                    ForcedEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
 
-            ForcedNoArgEntity entity = factory.create("entity-id", null, new StubProcessingContext());
+            // when
+            ForcedEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
+            // then
             assertThat(entity).isNotNull();
-            assertThat(entity.id).isEqualTo("entity-id");
         }
 
         @Test
-        void plainNoArgConstructorReturnsNullWithoutFirstEvent() {
+        void plainConstructorReturnsNullWithoutFirstEvent() {
+            // given
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
-                    PlainNoArgEntity.class,
-                    String.class,
-                    parameterResolverFactory,
-                    messageTypeResolver,
-                    converter
+                    PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
 
-            PlainNoArgEntity entity = factory.create("entity-id", null, new StubProcessingContext());
+            // when
+            PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
+            // then
             assertThat(entity).isNull();
         }
 
-        public static class ForcedNoArgEntity {
-
-            private final String id;
+        public static class ForcedEntity {
 
             @ForcedEntityCreator
-            public ForcedNoArgEntity(@InjectEntityId String id) {
-                this.id = id;
+            public ForcedEntity() {
             }
         }
 
-        public static class PlainNoArgEntity {
+        public static class PlainEntity {
 
             @EntityCreator
-            public PlainNoArgEntity(@InjectEntityId String id) {
+            public PlainEntity() {
             }
         }
     }
 
     @Nested
-    class CreateIfMissingInstanceCommandHandler {
+    class IdentifierBasedCreators {
 
-        private AnnotationBasedEventSourcedEntityFactory<Account, String> factory;
-
-        @BeforeEach
-        void setUp() {
-            factory = new AnnotationBasedEventSourcedEntityFactory<>(
-                    Account.class,
-                    String.class,
-                    parameterResolverFactory,
-                    messageTypeResolver,
-                    converter
+        @Test
+        void forcedConstructorCreatesEntityWithoutFirstEvent() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    ForcedEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
+
+            // when
+            ForcedEntity entity = factory.create("entity-id", null, new StubProcessingContext());
+
+            // then
+            assertThat(entity).isNotNull();
+            assertThat(entity.id).isEqualTo("entity-id");
         }
 
         @Test
-        void instanceHandlerCanDecideBasedOnStateEstablishedByItsOwnForcedCreation() {
-            // A repository sourcing a never-existing entity would invoke the factory with no first event.
-            Account account = factory.create("account-id", null, new StubProcessingContext());
-            assertThat(account).isNotNull();
-            assertThat(account.exists()).isFalse();
+        void plainConstructorReturnsNullWithoutFirstEvent() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
 
-            // The create-if-missing instance handler appends the creation event itself, since it received a
-            // non-null entity thanks to the @ForcedEntityCreator constructor.
-            String firstOutcome = account.handleOpenAccount(100);
-            assertThat(firstOutcome).isEqualTo("opened");
-            assertThat(account.exists()).isTrue();
-            assertThat(account.balance()).isEqualTo(100);
+            // when
+            PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
-            // A subsequent decision on the very same instance relies on the state the creation event established.
-            String secondOutcome = account.handleWithdraw(40);
-            assertThat(secondOutcome).isEqualTo("withdrawn");
-            assertThat(account.balance()).isEqualTo(60);
+            // then
+            assertThat(entity).isNull();
         }
 
-        @Test
-        void subsequentDecisionThrowsWithoutPriorCreationEvent() {
-            Account account = factory.create("account-id", null, new StubProcessingContext());
-            assertThat(account).isNotNull();
-
-            assertThatThrownBy(() -> account.handleWithdraw(10))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("does not exist");
-        }
-
-        /**
-         * Simulates an event-sourced entity with a create-if-missing instance command handler. In real usage,
-         * {@code handleOpenAccount} and {@code handleWithdraw} would be {@code @CommandHandler}-annotated methods, and
-         * {@code apply} would delegate to an {@code EventAppender} whose emitted events are routed back into
-         * {@code @EventSourcingHandler}-annotated methods. Here the state transitions are applied directly to keep the
-         * test focused on the entity-creation behavior under test.
-         */
-        public static class Account {
+        public static class ForcedEntity {
 
             private final String id;
-            private boolean exists;
-            private int balance;
 
             @ForcedEntityCreator
-            public Account(@InjectEntityId String id) {
+            public ForcedEntity(@InjectEntityId String id) {
                 this.id = id;
-                this.exists = false;
+            }
+        }
+
+        public static class PlainEntity {
+
+            @EntityCreator
+            public PlainEntity(@InjectEntityId String id) {
+            }
+        }
+    }
+
+    @Nested
+    class StaticFactoryMethodCreators {
+
+        @Test
+        void forcedFactoryMethodCreatesEntityWithoutFirstEvent() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    ForcedEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+
+            // when
+            ForcedEntity entity = factory.create("entity-id", null, new StubProcessingContext());
+
+            // then
+            assertThat(entity).isNotNull();
+            assertThat(entity.id).isEqualTo("entity-id");
+        }
+
+        @Test
+        void plainFactoryMethodReturnsNullWithoutFirstEvent() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+
+            // when
+            PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
+
+            // then
+            assertThat(entity).isNull();
+        }
+
+        public static class ForcedEntity {
+
+            private final String id;
+
+            private ForcedEntity(String id) {
+                this.id = id;
             }
 
-            public String handleOpenAccount(int initialBalance) {
-                if (exists) {
-                    return "already-open";
-                }
-                exists = true;
-                balance = initialBalance;
-                return "opened";
+            @ForcedEntityCreator
+            public static ForcedEntity create(@InjectEntityId String id) {
+                return new ForcedEntity(id);
+            }
+        }
+
+        public static class PlainEntity {
+
+            @EntityCreator
+            public static PlainEntity create(@InjectEntityId String id) {
+                return new PlainEntity();
+            }
+        }
+    }
+
+    @Nested
+    class EventBasedPrecedence {
+
+        @Test
+        void eventBasedCreatorTakesPrecedenceOverForcedIdBasedCreatorWhenFirstEventPresent() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    MixedEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage firstEvent = new GenericEventMessage(
+                    new MessageType(CreationPayload.class), new CreationPayload("payload-value")
+            );
+
+            // when
+            MixedEntity entity =
+                    factory.create("entity-id", firstEvent, StubProcessingContext.forMessage(firstEvent));
+
+            // then
+            assertThat(entity).isNotNull();
+            assertThat(entity.source).isEqualTo("event");
+            assertThat(entity.value).isEqualTo("payload-value");
+        }
+
+        @Test
+        void forcedIdBasedCreatorStillAppliesWhenFirstEventPresentButNoEventBasedCreatorMatches() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    IdOnlyForcedEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage firstEvent = new GenericEventMessage(new MessageType("unrelated-type"), "irrelevant");
+
+            // when
+            IdOnlyForcedEntity entity =
+                    factory.create("entity-id", firstEvent, StubProcessingContext.forMessage(firstEvent));
+
+            // then
+            assertThat(entity).isNotNull();
+            assertThat(entity.id).isEqualTo("entity-id");
+        }
+
+        public record CreationPayload(String value) {
+
+        }
+
+        public static class MixedEntity {
+
+            private final String source;
+            private final String value;
+
+            @ForcedEntityCreator
+            public MixedEntity(@InjectEntityId String id) {
+                this.source = "id";
+                this.value = null;
             }
 
-            public String handleWithdraw(int amount) {
-                if (!exists) {
-                    throw new IllegalStateException("Account [%s] does not exist".formatted(id));
-                }
-                balance -= amount;
-                return "withdrawn";
+            @EntityCreator
+            public MixedEntity(CreationPayload payload) {
+                this.source = "event";
+                this.value = payload.value();
             }
+        }
 
-            public boolean exists() {
-                return exists;
+        public static class IdOnlyForcedEntity {
+
+            private final String id;
+
+            @ForcedEntityCreator
+            public IdOnlyForcedEntity(@InjectEntityId String id) {
+                this.id = id;
             }
+        }
+    }
 
-            public int balance() {
-                return balance;
+    @Nested
+    class PayloadQualifiedNamesOverride {
+
+        @Test
+        void forcedCreatorHonorsExplicitPayloadQualifiedNamesOverride() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    Entity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage matchingEvent = new GenericEventMessage(new MessageType("custom-creation-type"), "payload");
+
+            // when
+            Entity entity =
+                    factory.create("entity-id", matchingEvent, StubProcessingContext.forMessage(matchingEvent));
+
+            // then
+            assertThat(entity).isNotNull();
+        }
+
+        @Test
+        void forcedCreatorRejectsNonMatchingPayloadQualifiedName() {
+            // given
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    Entity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage nonMatchingEvent = new GenericEventMessage(new MessageType("other-type"), "payload");
+
+            // when / then
+            assertThatThrownBy(() -> factory.create(
+                    "entity-id", nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent)
+            )).isInstanceOf(AxonConfigurationException.class)
+              .hasMessageContaining("No suitable @EntityCreator found for id");
+        }
+
+        public static class Entity {
+
+            @ForcedEntityCreator(payloadQualifiedNames = "custom-creation-type")
+            public Entity(String payload) {
             }
         }
     }
