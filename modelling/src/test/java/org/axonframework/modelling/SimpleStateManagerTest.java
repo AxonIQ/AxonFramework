@@ -49,13 +49,15 @@ class SimpleStateManagerTest {
     }
 
     @Test
-    void throwsExceptionOnMissingModelDefinition() {
+    void completesExceptionallyOnMissingModelDefinition() {
         // given
         StateManager testSubject = SimpleStateManager.named("test");
 
         // when & then
-        assertThrows(MissingRepositoryException.class,
-                     () -> testSubject.loadEntity(Integer.class, "42", new StubProcessingContext()).join());
+        var exception = assertThrows(CompletionException.class,
+                                     () -> testSubject.loadEntity(Integer.class, "42", new StubProcessingContext())
+                                                      .join());
+        assertInstanceOf(MissingRepositoryException.class, exception.getCause());
     }
 
     @Test
@@ -173,9 +175,11 @@ class SimpleStateManagerTest {
                                                           .register(repository);
 
             // when & then
-            assertThrows(MissingRepositoryException.class,
-                         () -> stateManager.loadManagedEntity(MySuperEntity.class, "42", new StubProcessingContext())
-                                           .join());
+            var exception = assertThrows(CompletionException.class,
+                                         () -> stateManager.loadManagedEntity(MySuperEntity.class,
+                                                                              "42",
+                                                                              new StubProcessingContext()).join());
+            assertInstanceOf(MissingRepositoryException.class, exception.getCause());
         }
 
         @Test
@@ -211,10 +215,11 @@ class SimpleStateManagerTest {
                                                           .register(repository);
 
             // when & then
-            assertThrows(MissingRepositoryException.class,
-                         () -> stateManager.loadManagedEntity(MySuperEntity.class,
-                                                              new MySuperId(),
-                                                              new StubProcessingContext()).join());
+            var exception = assertThrows(CompletionException.class,
+                                         () -> stateManager.loadManagedEntity(MySuperEntity.class,
+                                                                              new MySuperId(),
+                                                                              new StubProcessingContext()).join());
+            assertInstanceOf(MissingRepositoryException.class, exception.getCause());
         }
 
         @Test

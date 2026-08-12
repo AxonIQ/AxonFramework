@@ -23,6 +23,7 @@ import org.axonframework.modelling.repository.Repository;
 import org.axonframework.modelling.repository.SimpleRepository;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityLoader;
 import org.axonframework.modelling.repository.SimpleRepositoryEntityPersister;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -47,12 +48,12 @@ public interface StateManager extends DescribableComponent {
      * Registers an {@link Repository} for use with this {@code StateManager}. The combination of
      * {@link Repository#entityType()} and {@link Repository#idType()} must be unique for all registered repositories.
      *
-     * @param repository The {@link Repository} to use for loading state.
-     * @param <ID>       The type of id.
-     * @param <T>        The type of the entity.
-     * @return This {@code StateManager} for fluent interfacing.
+     * @param repository the {@link Repository} to use for loading state
+     * @param <ID>       the type of id
+     * @param <T>        the type of the entity
+     * @return this {@code StateManager} for fluent interfacing
      * @throws RepositoryAlreadyRegisteredException if a repository with the same entity type and id type is already
-     *                                              registered.
+     *                                              registered
      */
     <ID, T> StateManager register(Repository<ID, T> repository);
 
@@ -60,15 +61,15 @@ public interface StateManager extends DescribableComponent {
      * Registers a load and save function for state type {@code T} with id of type {@code ID}. Creates a
      * {@link SimpleRepository} for the given type with the given load and save functions.
      *
-     * @param idType     The type of the identifier.
-     * @param entityType The type of the state.
-     * @param loader     The function to load state.
-     * @param persister  The function to persist state.
-     * @param <ID>       The type of id.
-     * @param <T>        The type of state.
-     * @return This {@code StateManager} for fluent interfacing.
+     * @param idType     the type of the identifier
+     * @param entityType the type of the state
+     * @param loader     the function to load state
+     * @param persister  the function to persist state
+     * @param <ID>       the type of id
+     * @param <T>        the type of state
+     * @return this {@code StateManager} for fluent interfacing
      * @throws RepositoryAlreadyRegisteredException if a repository with the same entity type and id type is already
-     *                                              registered.
+     *                                              registered
      */
     default <ID, T> StateManager register(Class<ID> idType,
                                           Class<T> entityType,
@@ -85,18 +86,18 @@ public interface StateManager extends DescribableComponent {
      * If multiple repositories are registered for the given {@code entityType} that can handle the given {@code id}
      * (through superclass registration), the most specific repository is used.
      *
-     * @param <T>     The type of state to retrieve.
-     * @param type    The type of state to retrieve.
-     * @param id      The id of the state to retrieve.
-     * @param context The {@link ProcessingContext context} to load the entity in.
-     * @param <I>     The type of the identifier of the entity.
-     * @return a {@link CompletableFuture} which resolves to the entity instance.
+     * @param <T>     the type of state to retrieve
+     * @param type    the type of state to retrieve
+     * @param id      the id of the state to retrieve
+     * @param context the {@link ProcessingContext context} to load the entity in
+     * @param <I>     the type of the identifier of the entity
+     * @return a {@link CompletableFuture} which resolves to the entity instance, or completes exceptionally with a
+     * {@link MissingRepositoryException} when this {@code StateManager} does not control the {@link Repository} to
+     * load the entity from
      */
-    default <I, T> CompletableFuture<T> loadEntity(
-            Class<T> type,
-            I id,
-            ProcessingContext context
-    ) {
+    default <I, T> CompletableFuture<@Nullable T> loadEntity(Class<T> type,
+                                                             I id,
+                                                             ProcessingContext context) {
         return loadManagedEntity(type, id, context).thenApply(ManagedEntity::entity);
     }
 
@@ -104,43 +105,49 @@ public interface StateManager extends DescribableComponent {
      * Retrieves a {@link ManagedEntity} of the given {@code type} and {@code id}. The {@link CompletableFuture} will
      * resolve to a {@link ManagedEntity}, or complete exceptionally if it could not be resolved.
      *
-     * @param type    The type of state to retrieve.
-     * @param id      The id of the state to retrieve.
-     * @param context The {@link ProcessingContext context} to load the entity in.
-     * @param <ID>    The type of the identifier of the entity.
-     * @param <T>     The type of the entity.
-     * @return a {@link CompletableFuture} which resolves to the entity instance.
+     * @param type    the type of state to retrieve
+     * @param id      the id of the state to retrieve
+     * @param context the {@link ProcessingContext context} to load the entity in
+     * @param <ID>    the type of the identifier of the entity
+     * @param <T>     the type of the entity
+     * @return a {@link CompletableFuture} which resolves to the entity instance, or completes exceptionally with a
+     * {@link MissingRepositoryException} when this {@code StateManager} does not control the {@link Repository} to
+     * load the {@link ManagedEntity} from
      */
-    <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(
-            Class<T> type,
-            ID id,
-            ProcessingContext context);
+    <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(Class<T> type,
+                                                                      ID id,
+                                                                      ProcessingContext context);
 
     /**
      * The types of entities that are registered with this {@code StateManager}.
      *
-     * @return the types of entities that are registered with this {@code StateManager}.
+     * @return the types of entities that are registered with this {@code StateManager}
      */
     Set<Class<?>> registeredEntities();
 
     /**
      * The types of identifiers that are registered with this {@code StateManager} for the given {@code entityType}.
      *
-     * @param entityType The type of the entity.
+     * @param entityType the type of the entity
      * @return the types of identifiers that are registered with this {@code StateManager} for the given
-     * {@code entityType}.
+     * {@code entityType}
      */
     Set<Class<?>> registeredIdsFor(Class<?> entityType);
 
     /**
-     * Returns the {@link Repository} for the given {@code type}. Returns {@code null} if no repository is registered
-     * for the given type and id.
+     * Returns the {@link Repository} for the given {@code type}.
+     * <p>
+     * Returns {@code null} if no repository is registered for the given type and id.
+     * <p>
+     * Unlike {@link #loadManagedEntity(Class, Object, ProcessingContext)}, which resolves a {@link Repository}
+     * registered for a supertype when asked for a subtype, this method only matches an exactly registered
+     * {@code (entityType, idType)} pair. Hence, there is no supertype or subtype resolution.
      *
-     * @param <ID>        The type of the identifier of the entity.
-     * @param <T>        The type of the entity.
-     * @param entityType The type of the entity.
-     * @param idType     The type of the identifier of the entity.
-     * @return The {@link Repository} for the given {@code idType} and {@code entityType}.
+     * @param <ID>       the type of the identifier of the entity
+     * @param <T>        the type of the entity
+     * @param entityType the type of the entity
+     * @param idType     the type of the identifier of the entity
+     * @return the {@link Repository} for the given {@code idType} and {@code entityType}
      */
-    <ID, T> Repository<ID, T> repository(Class<T> entityType, Class<ID> idType);
+    <ID, T> @Nullable Repository<ID, T> repository(Class<T> entityType, Class<ID> idType);
 }
