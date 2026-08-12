@@ -491,18 +491,28 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         }
 
-        private static final EntityEvolver<Course> COURSE_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-                Course.class,
-                inspectType(
+        private static final EntityEvolvingComponent<Course> COURSE_EVOLVER =
+                new AnnotationBasedEntityEvolvingComponent<>(
                         Course.class,
-                        new AnnotationMessageTypeResolver(),
-                        ClasspathParameterResolverFactory.forClass(Course.class),
-                        ClasspathHandlerDefinition.forClass(Course.class),
-                        Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
-                ),
-                converter,
-                messageTypeResolver
-        );
+                        inspectType(
+                                Course.class,
+                                new AnnotationMessageTypeResolver(),
+                                ClasspathParameterResolverFactory.forClass(Course.class),
+                                ClasspathHandlerDefinition.forClass(Course.class),
+                                Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
+                        ),
+                        converter,
+                        messageTypeResolver
+                );
+
+        @Test
+        void supportedEventsIncludesHandlersFromAllPolymorphicEntityTypes() {
+            assertThat(COURSE_EVOLVER.supportedEvents())
+                    .containsExactlyInAnyOrder(
+                            messageTypeResolver.resolveOrThrow(String.class).qualifiedName(),
+                            messageTypeResolver.resolveOrThrow(Integer.class).qualifiedName()
+                    );
+        }
 
         @Test
         void evolvesPolymorphicEntityFromInitialToCreatedType() {
