@@ -227,7 +227,7 @@ include::example$migration/paths/aggregates/index/creationpolicyalways/GiftCard.
 
 * *`CreationPolicy.CREATE_IF_MISSING`*
 +
-If you need "only create if missing" logic, you can implement it within the static handler by checking for the existence of an optional state parameter.
+If you need "only create if missing" logic, you can implement it within the static handler by checking for the existence of an optional state parameter. The renewed support is documented in more detail xref:commands:entities/stateful-command-handler.adoc#missing_injected_entity[here]. For convenience-sake, here's an immediate sample showing the injection of a nullable `GiftCard`:
 +
 [source,java]
 ----
