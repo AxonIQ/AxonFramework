@@ -34,7 +34,7 @@ include::example$commands/entities/statefulcommandhandler/CourseCommandHandler.j
 <1> Creational handlers do not receive an entity parameter; the course does not yet exist and is created when `CourseCreated` is published.
 
 <2> `@InjectEntity` tells Axon to load the `Course` entity before invoking this handler.
-By default, the entity ID is read from the `@TargetEntityId`-annotated field on the command payload; see <<_resolving_the_entity_identifier>> for the other options.
+By default, the entity ID is read from the `@TargetEntityId`-annotated field on the command payload; see <<resolve_entity_id>> for the other options.
 
 <3> The handler reads entity state to make a decision.
 No event is appended if the name has not changed; an idempotent pattern common in this style.
@@ -48,19 +48,19 @@ include::example$commands/entities/statefulcommandhandler/CourseCommands.java[ta
 
 For how to define the entity itself (state fields, event sourcing handlers, and configuration), see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities].
 
-[#_resolving_the_entity_identifier]
+[#resolve_entity_id]
 == Resolving the entity identifier
 
 `@InjectEntity` needs an identifier to look up the entity.
 The annotation offers two attributes for controlling how that identifier is resolved from the incoming command:
 
 * **`idProperty`**: name a field on the command payload directly: `@InjectEntity(idProperty = "courseId")`.
-Useful when the command targets multiple entities (see <<_injecting_multiple_entities>>) or when the relevant field is not marked with `@TargetEntityId`.
+Useful when the command targets multiple entities (see <<inject_multiple_entities>>) or when the relevant field is not marked with `@TargetEntityId`.
 * **`idResolver`**: supply a class implementing `EntityIdResolver` for custom extraction logic, useful when the identifier is computed from multiple fields or requires lookup logic.
 
 Without either attribute set, Axon falls back to the default resolver, which reads the field marked with `@TargetEntityId` on the command payload (the form used in the example above).
 
-[#_handling_a_missing_entity]
+[#missing_injected_entity]
 == Handling a missing entity
 
 By default, an `@InjectEntity` parameter requires the entity to exist.
@@ -68,7 +68,7 @@ If no entity can be found for the resolved identifier, Axon throws an `EntityNot
 
 Note that this existence check applies regardless of how the entity's `@EntityCreator` (applicable to event-sourced entities **only**, as detailed further link:entity-creator.adoc[here]) constructs it.
 Even a no-arg or identifier-based creator, which do not need a preceding event to produce an instance, only create said entity if that instance actually exists.
-The same holds for `ManagedEntity.entity()`, for which the behavior is further explained xref:inject_a_managed_entity[here].
+The same holds for `ManagedEntity.entity()`, for which the behavior is further explained xref:inject_managed_entity[here].
 
 Annotate the parameter with **any** annotation matching `@Nullable` to opt out having the `EntityNotFoundException` thrown whenever the entity does not exist.
 In doing so, you can effectively opt **into** create-or-update semantics instead.
@@ -113,7 +113,7 @@ A parameter declared as a non-null `GiftCard` fails even when annotated `@Nullab
 Write `GiftCard?` to accept a missing entity.
 ====
 
-[#inject_a_managed_entity]
+[#inject_managed_entity]
 === Working with a ManagedEntity instead
 
 Everything above concerns the entity type itself.
@@ -136,7 +136,7 @@ include::example$commands/entities/statefulcommandhandler/GiftCardCreateIfMissin
 
 `Optional<ManagedEntity<ID, GiftCard>>` is not a valid parameter type: since the wrapper is never `null`, wrapping it in an `Optional` would never be empty, so Axon rejects such a parameter when configuring the handler.
 
-[#_injecting_multiple_entities]
+[#inject_multiple_entities]
 == Injecting multiple entities
 
 A single handler method can receive more than one entity.
