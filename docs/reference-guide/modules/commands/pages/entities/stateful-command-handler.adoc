@@ -66,43 +66,34 @@ Without either attribute set, Axon falls back to the default resolver, which rea
 By default, an `@InjectEntity` parameter requires the entity to exist.
 If no entity can be found for the resolved identifier, Axon throws an `EntityNotFoundException`, failing the command instead of invoking the handler.
 
-Annotate the parameter with **any** annotation matching `@Nullable` to opt into create-or-update semantics instead.
+Note that this existence check applies regardless of how the entity's `@EntityCreator` (applicable to event-sourced entities **only**, as detailed further link:entity-creator.adoc[here]) constructs it.
+Even a no-arg or identifier-based creator, which do not need a preceding event to produce an instance, only create said entity if that instance actually exists.
+The same holds for `ManagedEntity.entity()`, for which the behavior is further explained xref:inject_a_managed_entity[here].
+
+Annotate the parameter with **any** annotation matching `@Nullable` to opt out having the `EntityNotFoundException` thrown whenever the entity does not exist.
+In doing so, you can effectively opt **into** create-or-update semantics instead.
 A `@Nullable @InjectEntity` parameter resolves to `null` when the entity does not exist yet, allowing the handler to decide whether to create it:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(IssueCard command, @InjectEntity @Nullable GiftCard card, EventAppender appender) {
-    if (card == null) {
-        appender.append(new CardIssued(command.cardId(), command.amount()));
-    } else {
-        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
-    }
-}
+include::example$commands/entities/statefulcommandhandler/NullableGiftCardHandler.java[tag=nullable-entity-handler,indent=0]
 ----
 
 Declaring the parameter as `Optional<GiftCard>` achieves the same outcome without needing a `@Nullable` annotation:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(IssueCard command, @InjectEntity Optional<GiftCard> card, EventAppender appender) {
-    if (card.isEmpty()) {
-        appender.append(new CardIssued(command.cardId(), command.amount()));
-    } else {
-        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
-    }
-}
+include::example$commands/entities/statefulcommandhandler/OptionalGiftCardHandler.java[tag=optional-entity-handler,indent=0]
 ----
-
-The same works for a `ManagedEntity` parameter which can be injected with the `@InjectEntity` annotation. Either mark it `@Nullable` to allow receiving it as a `null`, or declare it as `Optional<ManagedEntity<ID, GiftCard>>` instead.
 
 In Kotlin, the nullable type carries this information on its own, so no annotation is required:
 
 [source,kotlin]
 ----
 @CommandHandler
-fun handle(command: IssueCard, @InjectEntity card: GiftCard?, appender: EventAppender) {
+fun handle(command: IssueCard,
+           @InjectEntity card: GiftCard?,
+           appender: EventAppender) {
     if (card == null) {
         appender.append(CardIssued(command.cardId, command.amount))
     } else {
@@ -122,8 +113,28 @@ A parameter declared as a non-null `GiftCard` fails even when annotated `@Nullab
 Write `GiftCard?` to accept a missing entity.
 ====
 
-This existence check applies regardless of how the entity's `@EntityCreator` constructs it.
-Even a no-arg or identifier-based creator, which does not need a preceding event to produce an instance, only does so once that instance actually exists; before that, both a no-arg-created and an identifier-created entity behave the same as one that requires an event to construct.
+[#inject_a_managed_entity]
+=== Working with a ManagedEntity instead
+
+Everything above concerns the entity type itself.
+Declare the parameter as `ManagedEntity<ID, GiftCard>` instead, and none of it applies: Axon always gives you the wrapper exactly as resolved, whether or not it carries a `@Nullable` annotation.
+Only `ManagedEntity.entity()` can be `null`.The wrapper itself never is:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/ManagedEntityGiftCardHandler.java[tag=managed-entity-handler,indent=0]
+----
+
+Because the wrapper itself is never replaced, it keeps working after the handler appends an event.
+An event-sourced entity stays subscribed to live updates, so appending an event evolves that same `ManagedEntity` in place.
+That lets a handler make a second decision, later in the same method, based on state an event earlier in that method just established:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/GiftCardCreateIfMissingHandler.java[tag=managed-entity-create-if-missing-handler,indent=0]
+----
+
+`Optional<ManagedEntity<ID, GiftCard>>` is not a valid parameter type: since the wrapper is never `null`, wrapping it in an `Optional` would never be empty, so Axon rejects such a parameter when configuring the handler.
 
 [#_injecting_multiple_entities]
 == Injecting multiple entities
