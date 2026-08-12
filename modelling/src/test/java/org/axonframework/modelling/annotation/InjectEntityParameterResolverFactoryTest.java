@@ -131,6 +131,20 @@ class InjectEntityParameterResolverFactoryTest {
             // then
             assertThat(result).isNull();
         }
+
+        @Test
+        void propagatesExceptionWhenLoaderReturnsNullAndNotNullable() throws NoSuchMethodException {
+            // given: a repository resolving successfully to a null entity is treated the same as one whose future
+            // fails with an EntityNotFoundException - both are "missing" for a non-nullable parameter
+            Method method = Handlers.class.getDeclaredMethod("plainEntity", GiftCard.class);
+            StateManager stateManager = stateManagerLoading((id, context) -> CompletableFuture.completedFuture(null));
+
+            // when & then
+            assertThatThrownBy(() -> resolve(method, stateManager))
+                    .isInstanceOf(CompletionException.class)
+                    .cause()
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
     }
 
     @Nested
@@ -153,8 +167,9 @@ class InjectEntityParameterResolverFactoryTest {
         }
 
         @Test
-        void propagatesExceptionWhenMissingAndNotNullable() throws NoSuchMethodException {
-            // given
+        void propagatesExceptionWhenLoaderFailsAndNotNullable() throws NoSuchMethodException {
+            // given: a ManagedEntity-typed parameter is always passed through exactly as the Repository resolved
+            // it - a failure is never swallowed
             Method method = Handlers.class.getDeclaredMethod("managedEntity", ManagedEntity.class);
             StateManager stateManager = stateManagerLoading(
                     (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
@@ -168,19 +183,49 @@ class InjectEntityParameterResolverFactoryTest {
         }
 
         @Test
-        void resolvesToNullWhenMissingAndNullable() throws NoSuchMethodException {
-            // given: this used to be ignored entirely - a @Nullable ManagedEntity parameter always propagated the
-            // EntityNotFoundException regardless of nullability
+        void propagatesExceptionWhenLoaderFailsEvenWhenNullable() throws NoSuchMethodException {
+            // given: nullability is a plain-entity concern; a ManagedEntity-typed parameter is passed through
+            // unfiltered regardless of @Nullable
             Method method = Handlers.class.getDeclaredMethod("managedEntityNullable", ManagedEntity.class);
             StateManager stateManager = stateManagerLoading(
                     (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
             );
 
+            // when & then
+            assertThatThrownBy(() -> resolve(method, stateManager))
+                    .isInstanceOf(CompletionException.class)
+                    .cause()
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        void resolvesToManagedEntityWithNullStateWhenLoaderReturnsNullAndNotNullable() throws NoSuchMethodException {
+            // given: the create-or-update pattern relies on the ManagedEntity wrapper itself never being null, only
+            // its wrapped state, so the handler can still call applyStateChange(...) on it - this holds regardless
+            // of @Nullable, since nullability no longer affects a ManagedEntity-typed parameter
+            Method method = Handlers.class.getDeclaredMethod("managedEntity", ManagedEntity.class);
+            StateManager stateManager = stateManagerLoading((id, context) -> CompletableFuture.completedFuture(null));
+
             // when
-            Object result = resolve(method, stateManager);
+            ManagedEntity<?, ?> result = (ManagedEntity<?, ?>) resolve(method, stateManager);
 
             // then
-            assertThat(result).isNull();
+            assertThat(result).isNotNull();
+            assertThat(result.entity()).isNull();
+        }
+
+        @Test
+        void resolvesToManagedEntityWithNullStateWhenLoaderReturnsNullAndNullable() throws NoSuchMethodException {
+            // given
+            Method method = Handlers.class.getDeclaredMethod("managedEntityNullable", ManagedEntity.class);
+            StateManager stateManager = stateManagerLoading((id, context) -> CompletableFuture.completedFuture(null));
+
+            // when
+            ManagedEntity<?, ?> result = (ManagedEntity<?, ?>) resolve(method, stateManager);
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.entity()).isNull();
         }
     }
 
@@ -229,59 +274,6 @@ class InjectEntityParameterResolverFactoryTest {
 
             // then
             assertThat(result).isEqualTo(Optional.empty());
-        }
-    }
-
-    @Nested
-    class OptionalManagedEntityParameter {
-
-        @Test
-        void resolvesToOptionalOfManagedEntityWhenFound() throws NoSuchMethodException {
-            // given
-            GiftCard entity = new GiftCard();
-            Method method = Handlers.class.getDeclaredMethod("optionalManagedEntity", Optional.class);
-            StateManager stateManager = stateManagerLoading(
-                    (id, context) -> CompletableFuture.completedFuture(entity)
-            );
-
-            // when
-            @SuppressWarnings("unchecked")
-            Optional<ManagedEntity<?, ?>> result = (Optional<ManagedEntity<?, ?>>) resolve(method, stateManager);
-
-            // then
-            assertThat(result).isPresent();
-            assertThat(result.get().entity()).isSameAs(entity);
-        }
-
-        @Test
-        void resolvesToEmptyOptionalWhenNotFound() throws NoSuchMethodException {
-            // given
-            Method method = Handlers.class.getDeclaredMethod("optionalManagedEntity", Optional.class);
-            StateManager stateManager = stateManagerLoading(
-                    (id, context) -> CompletableFuture.failedFuture(new EntityNotFoundException(id))
-            );
-
-            // when
-            Object result = resolve(method, stateManager);
-
-            // then
-            assertThat(result).isEqualTo(Optional.empty());
-        }
-
-        @Test
-        void resolvesToOptionalOfManagedEntityWithNullStateWhenLoaderReturnsNull() throws NoSuchMethodException {
-            // given: the create-or-update pattern relies on the ManagedEntity wrapper itself never being empty, only
-            // its wrapped state, so the handler can still call applyStateChange(...) on it
-            Method method = Handlers.class.getDeclaredMethod("optionalManagedEntity", Optional.class);
-            StateManager stateManager = stateManagerLoading((id, context) -> CompletableFuture.completedFuture(null));
-
-            // when
-            @SuppressWarnings("unchecked")
-            Optional<ManagedEntity<?, ?>> result = (Optional<ManagedEntity<?, ?>>) resolve(method, stateManager);
-
-            // then
-            assertThat(result).isPresent();
-            assertThat(result.get().entity()).isNull();
         }
     }
 
@@ -381,6 +373,19 @@ class InjectEntityParameterResolverFactoryTest {
         void rejectsRawManagedEntityParameter() throws NoSuchMethodException {
             // given
             Method method = Handlers.class.getDeclaredMethod("rawManagedEntity", ManagedEntity.class);
+            Configuration configuration = configurationWithStateManager(SimpleStateManager.named("unused"));
+
+            // when & then
+            assertThatThrownBy(() -> new InjectEntityParameterResolverFactory(configuration)
+                    .createInstance(method, method.getParameters(), 0))
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
+
+        @Test
+        void rejectsOptionalManagedEntityParameter() throws NoSuchMethodException {
+            // given: a ManagedEntity is always passed through as-is and never null, so wrapping it in an Optional
+            // would never be empty, making it pointless
+            Method method = Handlers.class.getDeclaredMethod("optionalManagedEntity", Optional.class);
             Configuration configuration = configurationWithStateManager(SimpleStateManager.named("unused"));
 
             // when & then

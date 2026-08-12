@@ -29,6 +29,7 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.repository.ManagedEntity;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -143,7 +144,7 @@ class SimpleEntityLifecycleHandlerTest {
             }
 
             @Override
-            public Bike applyStateChange(UnaryOperator<Bike> change) {
+            public Bike applyStateChange(UnaryOperator<@Nullable Bike> change) {
                 return stateRef.updateAndGet(change);
             }
         };

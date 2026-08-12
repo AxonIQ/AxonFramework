@@ -19,6 +19,7 @@ package org.axonframework.modelling.repository;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -184,8 +185,9 @@ public class SimpleRepository<ID, E> implements Repository.LifecycleManagement<I
             return state.get();
         }
 
+        @Nullable
         @Override
-        public T applyStateChange(UnaryOperator<T> change) {
+        public T applyStateChange(UnaryOperator<@Nullable T> change) {
             return state.updateAndGet(change);
         }
     }

@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.configuration.Configuration;
@@ -27,6 +26,7 @@ import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.PropertyBasedEntityIdResolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.ManagedEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Parameter;
@@ -41,11 +41,12 @@ import static org.axonframework.common.ConstructorUtils.getConstructorFunctionWi
  * {@link ParameterResolverFactory} implementation that provides {@link ParameterResolver ParameterResolvers} for
  * parameters annotated with {@link InjectEntity}.
  * <p>
- * The parameter can either be a {@link ManagedEntity} or the entity itself, optionally wrapped in an
- * {@link Optional} (for example {@code Optional<MyEntity>} or {@code Optional<ManagedEntity<ID, MyEntity>>}). The
- * order of resolving the identity id is as specified on the {@link InjectEntity} annotation.
+ * The parameter can either be a {@link ManagedEntity} or the entity itself, and the latter may optionally be wrapped in
+ * an {@link Optional} (for example {@code Optional<MyEntity>}). The order of resolving the identity id is as specified
+ * on the {@link InjectEntity} annotation.
  *
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @see InjectEntity
  * @since 5.0.0
  */
@@ -100,6 +101,10 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
      * {@code null} resolves to {@code null}, and anything else fails the message being handled. Nullability is
      * determined through the {@link NullabilityResolver} chain, so languages that do not express it through a
      * runtime-visible annotation, such as Kotlin, are honored as well.
+     * <p>
+     * This only applies when resolving the entity itself. For a {@link ManagedEntity}-typed parameter,
+     * {@link InjectEntityParameterResolver} always passes the wrapper through exactly as resolved, regardless of
+     * nullability.
      *
      * @param isOptional whether the parameter is declared as an {@link Optional}
      * @param parameter  the {@link InjectEntity} annotated parameter being resolved
@@ -120,6 +125,14 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
         if (entityType instanceof ParameterizedType parameterizedType
                 && parameterizedType.getRawType() instanceof Class<?> rawType
                 && ManagedEntity.class.isAssignableFrom(rawType)) {
+            if (isOptional) {
+                throw new AxonConfigurationException(
+                        ("Cannot inject entity for parameter [%s] of [%s]: Optional<ManagedEntity<ID, MyEntity>> is "
+                                + "not supported, since a ManagedEntity is always passed through as-is and never "
+                                + "null. Use ManagedEntity<ID, MyEntity> instead.")
+                                .formatted(parameter.getName(), executable)
+                );
+            }
             return new EntityTypeInfo((Class<?>) parameterizedType.getActualTypeArguments()[1], true);
         }
         if (entityType instanceof Class<?> entityClass) {
@@ -145,8 +158,8 @@ public class InjectEntityParameterResolverFactory implements ParameterResolverFa
             if (!(parameterizedType instanceof ParameterizedType)) {
                 throw new AxonConfigurationException(
                         ("Cannot inject entity for parameter [%s] of [%s]: a raw Optional does not specify the "
-                                + "entity type. Use Optional<MyEntity> or Optional<ManagedEntity<ID, MyEntity>> "
-                                + "instead.").formatted(parameter.getName(), executable)
+                                + "entity type. Use Optional<MyEntity> instead.")
+                                .formatted(parameter.getName(), executable)
                 );
             }
             type = ReflectionUtils.unwrapIfType(parameterizedType, Optional.class);

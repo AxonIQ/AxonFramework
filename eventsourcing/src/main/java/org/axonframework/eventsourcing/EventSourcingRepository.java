@@ -177,7 +177,6 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     private CompletableFuture<ManagedEntity<ID, E>> doLoad(ID identifier,
                                                            boolean create,
                                                            ProcessingContext context) {
-        AtomicReference<EntityNotFoundException> failureRef = new AtomicReference<>();
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
 
         return managedEntities.computeIfAbsent(
@@ -185,7 +184,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
                 id -> lifecycleHandler.source(identifier, context)
                                       .thenApply(
                                               entity -> create && entity == null
-                                                      ? catchAndAllowForEntityNotFound(identifier, context, failureRef)
+                                                      ? initializeQuietly(identifier, context)
                                                       : entity
                                       )
                                       .thenApply(e -> new EventSourcedEntity<>(identifier, e))
@@ -195,10 +194,6 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
         ).thenApply(
                 entity -> {
                     if (create && entity.entity() == null) {
-                        EntityNotFoundException failure = failureRef.get();
-                        if (failure != null) {
-                            throw failure;
-                        }
                         initializeIfAbsent(identifier, context, entity);
                     }
                     return entity;
@@ -207,8 +202,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     }
 
     /**
-     * Initializes the state of the given {@code entity} through the
-     * {@link EntityLifecycleHandler#initialize(Object, ProcessingContext) lifecycle handler}, unless it already holds
+     * Initializes the state of the given {@code entity} through {@link #initializeQuietly}, unless it already holds
      * state.
      * <p>
      * The given {@link EventSourcedEntity} instance is kept, so callers already holding a reference to it observe the
@@ -217,12 +211,11 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * @param identifier the identifier of the entity to initialize
      * @param context    the {@link ProcessingContext} to initialize the entity in
      * @param entity     the managed entity to initialize the state of
-     * @throws EntityNotFoundException when the entity cannot be constructed from its identifier alone
      */
     private void initializeIfAbsent(ID identifier,
                                     ProcessingContext context,
                                     EventSourcedEntity<ID, E> entity) {
-        E initialized = lifecycleHandler.initialize(identifier, context);
+        E initialized = initializeQuietly(identifier, context);
         entity.applyStateChange(current -> current != null ? current : initialized);
     }
 
@@ -234,25 +227,20 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
      * subscribed} for live updates even though the entity does not exist yet: if the caller (e.g. a command handler
      * resolving an {@code @InjectEntity} parameter with create-or-update semantics) subsequently appends creation
      * events for the same identifier within the same {@link ProcessingContext}, those events are applied to this
-     * entity via its subscription, so a later {@link #doLoad} call for the same identifier observes the created
-     * entity instead of a permanently poisoned not-found result. The caught exception is captured in
-     * {@code failureRef} so the caller whose invocation actually triggered it can still see the original
-     * exception instance.
+     * entity via its subscription. Since {@link #doLoad} never lets this exception escape, the caller always
+     * receives the {@link ManagedEntity} wrapper itself - whether the entity could be constructed or not is
+     * reflected solely by {@link ManagedEntity#entity()} being {@code null}.
      *
-     * @param identifier    the identifier of the entity to initialize
-     * @param context       the {@link ProcessingContext} to initialize the entity in
-     * @param failureRef captures the original {@link EntityNotFoundException}, if any, thrown by the
-     *                      {@code lifecycleHandler}
+     * @param identifier the identifier of the entity to initialize
+     * @param context    the {@link ProcessingContext} to initialize the entity in
      * @return the initialized entity, or {@code null} when the {@code lifecycleHandler} reports the entity does not
      * exist yet
      */
-    private @Nullable E catchAndAllowForEntityNotFound(ID identifier,
-                                                       ProcessingContext context,
-                                                       AtomicReference<EntityNotFoundException> failureRef) {
+    @Nullable
+    private E initializeQuietly(ID identifier, ProcessingContext context) {
         try {
             return lifecycleHandler.initialize(identifier, context);
         } catch (EntityNotFoundException e) {
-            failureRef.set(e);
             return null;
         }
     }
@@ -304,7 +292,7 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
     private static class EventSourcedEntity<ID, M> implements ManagedEntity<ID, M> {
 
         private final ID identifier;
-        private final AtomicReference<M> currentState;
+        private final AtomicReference<@Nullable M> currentState;
 
         private EventSourcedEntity(ID identifier, @Nullable M currentState) {
             this.identifier = identifier;
@@ -327,8 +315,9 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
             return currentState.get();
         }
 
+        @Nullable
         @Override
-        public M applyStateChange(UnaryOperator<M> change) {
+        public M applyStateChange(UnaryOperator<@Nullable M> change) {
             return currentState.updateAndGet(change);
         }
     }
