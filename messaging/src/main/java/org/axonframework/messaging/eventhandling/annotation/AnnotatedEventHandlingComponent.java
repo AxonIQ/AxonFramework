@@ -91,7 +91,9 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
         );
         @SuppressWarnings("unchecked")
         Class<T> clazz = (Class<T>) annotatedEventHandler.getClass();
-        this.model = AnnotatedHandlerInspector.inspectType(clazz, parameterResolverFactory, handlerDefinition);
+        this.model = AnnotatedHandlerInspector.inspectType(
+                clazz, messageTypeResolver, parameterResolverFactory, handlerDefinition
+        );
         this.messageTypeResolver = requireNonNull(messageTypeResolver, "The MessageTypeResolver may not be null.");
         this.converter = requireNonNull(converter, "The EventConverter may not be null.");
 

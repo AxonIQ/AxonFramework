@@ -27,14 +27,12 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
-import org.mockito.internal.util.collections.*;
 
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.SortedSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -62,10 +60,13 @@ class AnnotatedHandlerInspectorTest {
 
     @BeforeEach
     void setUp() {
-        inspector = AnnotatedHandlerInspector.inspectType(A.class,
-                                                          parameterResolverFactory,
-                                                          ClasspathHandlerDefinition.forClass(A.class),
-                                                          new HashSet<>(asList(D.class, C.class)));
+        inspector = AnnotatedHandlerInspector.inspectType(
+                A.class,
+                new AnnotationMessageTypeResolver(),
+                parameterResolverFactory,
+                ClasspathHandlerDefinition.forClass(A.class),
+                new HashSet<>(asList(D.class, C.class))
+        );
     }
 
     @Test
@@ -142,8 +143,9 @@ class AnnotatedHandlerInspectorTest {
 
     @Test
     void doesNotRegisterAbstractHandlersTwice() {
-        AnnotatedHandlerInspector<AB> aaInspector = AnnotatedHandlerInspector.inspectType(AB.class,
-                                                                                          parameterResolverFactory);
+        AnnotatedHandlerInspector<AB> aaInspector = AnnotatedHandlerInspector.inspectType(
+                AB.class, new AnnotationMessageTypeResolver(), parameterResolverFactory
+        );
 
         assertEquals(1, aaInspector.getAllHandlers().size());
         assertEquals(1, (int) aaInspector.getAllHandlers().values().stream().mapToLong(Collection::size).sum());
