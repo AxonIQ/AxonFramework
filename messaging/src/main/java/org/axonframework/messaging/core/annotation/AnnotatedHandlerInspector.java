@@ -17,12 +17,15 @@
 package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.interception.annotation.MessageInterceptingMember;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -43,6 +46,7 @@ import java.util.stream.Collectors;
 
 import static java.util.Collections.emptySet;
 import static java.util.Collections.emptySortedSet;
+import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToSingleStream;
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
 
 /**
@@ -238,12 +242,13 @@ public class AnnotatedHandlerInspector<T> {
     private void initializeMessageHandlers(ParameterResolverFactory parameterResolverFactory,
                                            HandlerDefinition handlerDefinition) {
         handlers.put(inspectedType, new TreeSet<>(HandlerComparator.instance()));
+        MessageStreamResolver messageStreamResolver = this::resolveResultToStream;
         for (Method method : inspectedType.getDeclaredMethods()) {
             handlerDefinition.createHandler(
                     inspectedType,
                     method,
                     parameterResolverFactory,
-                    result -> resolveToStream(result, messageTypeResolver)
+                    messageStreamResolver
             ).ifPresent(h -> registerHandler(inspectedType, h));
         }
 
@@ -273,6 +278,22 @@ public class AnnotatedHandlerInspector<T> {
                                                    registerHandler(key, h);
                                                    registerHandler(inspectedType, h);
                                                })));
+    }
+
+    /**
+     * Resolves a handler's return value into a {@link MessageStream}, taking the {@code messageType} the handler is
+     * subscribed for into account to decide how many {@link Message Messages} it may produce.
+     * <p>
+     * Handlers of {@link CommandMessage CommandMessages} produce exactly one result, as expressed by
+     * {@link org.axonframework.messaging.commandhandling.CommandHandler} returning a {@link MessageStream.Single}. A
+     * collection returned by such a handler is therefore carried as the payload of a single {@link Message}, since
+     * spreading it over one {@code Message} per element would silently discard all elements but the first. Handlers of
+     * other message types may produce several results, and thus do spread a returned collection.
+     */
+    private MessageStream<?> resolveResultToStream(@Nullable Object result, Class<? extends Message> messageType) {
+        return CommandMessage.class.isAssignableFrom(messageType)
+                ? resolveToSingleStream(result, messageTypeResolver)
+                : resolveToStream(result, messageTypeResolver);
     }
 
     private void registerHandler(Class<?> type, MessageHandlingMember<? super T> handler) {
