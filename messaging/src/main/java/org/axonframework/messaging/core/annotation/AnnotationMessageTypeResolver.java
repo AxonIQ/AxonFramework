@@ -47,7 +47,7 @@ import java.util.Optional;
  * <p>
  * As annotations are static class metadata, the annotation-based resolution result is cached per payload type without
  * preventing that type from being unloaded. Only when the configured annotations do not yield a {@link MessageType}
- * is the fallback consulted, on every invocation.
+ * is the fallback consulted.
  *
  * @author Steven van Beelen
  * @since 5.0.0
