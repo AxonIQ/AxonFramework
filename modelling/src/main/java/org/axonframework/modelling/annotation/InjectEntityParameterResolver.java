@@ -25,6 +25,7 @@ import org.axonframework.modelling.EntityIdResolutionException;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.repository.EntityNotFoundException;
+import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
@@ -39,11 +40,19 @@ import static java.util.Objects.requireNonNullElseGet;
  * {@link Configuration}.
  * <p>
  * The entity is loaded based on the identifier resolved from the message using the given {@link EntityIdResolver}. Can
- * either load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself. The given
- * {@link MissingEntityStrategy} determines what happens when the entity could not be found: it either propagates the
- * {@link EntityNotFoundException}, resolves to {@code null}, or resolves to an {@link Optional}.
+ * either load the {@link org.axonframework.modelling.repository.ManagedEntity} or just the entity itself.
+ * <p>
+ * For the entity itself, the {@link MissingEntityStrategy} determines what happens when it could not be found. It
+ * either propagates an {@link EntityNotFoundException}, resolves to {@code null}, or resolves to an {@link Optional},
+ * depending on whether the {@code MissingEntityStrategy} equals {@link MissingEntityStrategy#FAIL},
+ * {@link MissingEntityStrategy#RESOLVE_NULL}, or {@link MissingEntityStrategy#RESOLVE_OPTIONAL} respectively.
+ * <p>
+ * A {@link org.axonframework.modelling.repository.ManagedEntity}-typed parameter is unaffected by this. It is always
+ * passed through exactly as the {@link StateManager} resolved it leaving the interpretation entirely up to the
+ * handler.
  *
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @since 5.0.0
  */
 class InjectEntityParameterResolver implements ParameterResolver<Object> {
@@ -63,8 +72,8 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
      * state applier, it would construct methods, which would then require the {@link StateManager} to be created during
      * the construction of the parameter resolvers. This would lead to a circular dependency.
      *
-     * @param configuration         the {@link Configuration} from which a {@link StateManager} can be retrieved to
-     *                              load the entity
+     * @param configuration         the {@link Configuration} from which a {@link StateManager} can be retrieved to load
+     *                              the entity
      * @param type                  the type of the entity to load
      * @param identifierResolver    the {@link EntityIdResolver} to resolve the id of the entity
      * @param managedEntity         whether the parameter is a
@@ -94,41 +103,49 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
             Object resolvedId = identifierResolver.resolve(message, context);
             StateManager stateManager = configuration.getComponent(StateManager.class);
 
-            CompletableFuture<Object> entityFuture;
-            if (managedEntity) {
-                // Safe cast: widening from CompletableFuture<T> to CompletableFuture<Object>
-                // Double cast through wildcard avoids unchecked cast warnings
-                @SuppressWarnings("unchecked")
-                CompletableFuture<Object> castCompletableFuture =
-                        (CompletableFuture<Object>) (CompletableFuture<?>) stateManager.loadManagedEntity(
-                                type, resolvedId, context
-                        );
-                entityFuture = castCompletableFuture;
-            } else {
-                @SuppressWarnings("unchecked")
-                CompletableFuture<Object> castCompletableFuture =
-                        (CompletableFuture<Object>) stateManager.loadEntity(type, resolvedId, context);
-                entityFuture = castCompletableFuture;
-            }
-
-            return switch (missingEntityStrategy) {
-                case FAIL -> entityFuture;
-                case RESOLVE_NULL -> entityFuture.exceptionally(e -> resolveOnEntityNotFound(e, null));
-                // The ManagedEntity wrapper itself is never null on a successful load (only its wrapped entity may
-                // be), so Optional.of is used there instead of Optional.ofNullable.
-                case RESOLVE_OPTIONAL -> entityFuture.handle((value, e) -> e != null
-                        ? resolveOnEntityNotFound(e, Optional.empty())
-                        : (managedEntity ? Optional.of(value) : Optional.ofNullable(value)));
-            };
+            return managedEntity
+                    ? resolveManagedEntity(stateManager, resolvedId, context)
+                    : resolveEntity(stateManager, resolvedId, context);
         } catch (EntityIdResolutionException e) {
-            return CompletableFuture.failedFuture(
-                    new IllegalStateException(
-                            "Unable to inject entity parameter of type [%s] because [%s] was unable to resolve an entity id from [%s]"
-                                    .formatted(type, identifierResolver, message),
-                            e
-                    )
-            );
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "Unable to inject entity parameter of type [%s] because [%s] was unable to resolve an entity id from [%s]"
+                            .formatted(type, identifierResolver, message),
+                    e
+            ));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private CompletableFuture<Object> resolveManagedEntity(StateManager stateManager, Object resolvedId,
+                                                           ProcessingContext context) {
+        // Safe cast: widening from CompletableFuture<T> to CompletableFuture<Object>
+        // Double cast through wildcard avoids unchecked cast warnings
+        return (CompletableFuture<Object>) (CompletableFuture<?>) stateManager.loadManagedEntity(
+                type, resolvedId, context
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private CompletableFuture<Object> resolveEntity(StateManager stateManager,
+                                                    Object entityId,
+                                                    ProcessingContext context) {
+        CompletableFuture<Object> entityFuture =
+                (CompletableFuture<Object>) stateManager.loadEntity(type, entityId, context);
+
+        return switch (missingEntityStrategy) {
+            case FAIL -> entityFuture.thenApply(value -> requireEntityFound(value, entityId));
+            case RESOLVE_NULL -> entityFuture.exceptionally(e -> resolveOnEntityNotFound(e, null));
+            case RESOLVE_OPTIONAL -> entityFuture.handle((value, e) -> e != null
+                    ? resolveOnEntityNotFound(e, Optional.empty())
+                    : Optional.ofNullable(value));
+        };
+    }
+
+    private Object requireEntityFound(@Nullable Object entity, Object entityId) {
+        if (entity == null) {
+            throw new EntityNotFoundException(entityId);
+        }
+        return entity;
     }
 
     @Nullable
@@ -149,13 +166,18 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
     }
 
     /**
-     * Determines how {@link #resolveParameterValue(ProcessingContext)} reacts when the entity to inject cannot be
-     * found.
+     * Determines how {@link #resolveEntity(StateManager, Object, ProcessingContext)} reacts when the entity to inject
+     * cannot be found.
+     * <p>
+     * This strategy only applies to resolving the entity itself. A {@link ManagedEntity}-typed parameter is always
+     * passed through unconditionally by {@link #resolveManagedEntity(StateManager, Object, ProcessingContext)},
+     * regardless of this strategy.
      */
     enum MissingEntityStrategy {
 
         /**
-         * Propagate the {@link EntityNotFoundException}, failing the message being handled.
+         * Propagate the {@link EntityNotFoundException} raised while resolving the entity, failing the message being
+         * handled.
          */
         FAIL,
 
@@ -165,8 +187,8 @@ class InjectEntityParameterResolver implements ParameterResolver<Object> {
         RESOLVE_NULL,
 
         /**
-         * Resolve the parameter to {@link Optional#empty()}, or to {@link Optional#of(Object)} of the loaded value
-         * when the entity is found.
+         * Resolve the parameter to {@link Optional#empty()}, or to {@link Optional#of(Object)} of the loaded value when
+         * the entity is found.
          */
         RESOLVE_OPTIONAL
     }
