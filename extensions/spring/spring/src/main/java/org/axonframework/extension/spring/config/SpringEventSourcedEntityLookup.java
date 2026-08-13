@@ -246,6 +246,10 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
         for (String basePackage : basePackages) {
             for (BeanDefinition candidate : scanner.findCandidateComponents(basePackage)) {
                 String beanClassName = candidate.getBeanClassName();
+                if (beanClassName == null) {
+                    logger.warn("Cannot determine bean class name for candidate [{}], hence ignoring.", candidate);
+                    continue;
+                }
                 try {
                     Class<?> candidateType = Class.forName(beanClassName);
                     if (Modifier.isAbstract(candidateType.getModifiers())) {
