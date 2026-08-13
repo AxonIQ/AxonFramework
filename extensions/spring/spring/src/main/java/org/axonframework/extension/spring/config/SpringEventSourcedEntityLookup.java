@@ -32,6 +32,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
@@ -194,7 +195,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             }
         }
 
-        for (Class<?> abstractRoot : findAbstractEntityRoots()) {
+        for (Class<?> abstractRoot : findAbstractEntityRoots(beanFactory.getBeanClassLoader())) {
             if (registeredEntityTypes.contains(abstractRoot)) {
                 continue;
             }
@@ -227,9 +228,10 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
      * it finds those roots regardless. Concrete classes are deliberately excluded here, since those are already
      * discoverable as beans and handled by the {@link #buildEntityHierarchy(ListableBeanFactory, String[])} path.
      *
-     * @return the abstract or interface types annotated with {@link EventSourced}, found in {@link #basePackages}
+     * @param classLoader the class loader to resolve scanned candidate class names with
+     * @return the abstract types annotated with {@link EventSourced}, found in {@link #basePackages}
      */
-    private Set<Class<?>> findAbstractEntityRoots() {
+    private Set<Class<?>> findAbstractEntityRoots(ClassLoader classLoader) {
         if (basePackages.isEmpty()) {
             return Set.of();
         }
@@ -251,7 +253,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
                     continue;
                 }
                 try {
-                    Class<?> candidateType = Class.forName(beanClassName);
+                    Class<?> candidateType = ClassUtils.forName(beanClassName, classLoader);
                     if (Modifier.isAbstract(candidateType.getModifiers())) {
                         abstractRoots.add(candidateType);
                     }
