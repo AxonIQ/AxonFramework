@@ -108,6 +108,88 @@ For more complex scenarios or when taking a declarative configuration approach, 
 include::example$events/eventstoreinternals/criteria/CustomCriteriaResolver.java[tag=custom-criteria-resolver,indent=0]
 ----
 
+[#command_append_criteria]
+== Command append criteria
+
+Sourcing criteria and append criteria serve different purposes.
+Sourcing criteria select the events needed to reconstruct state.
+Append criteria describe the consistency boundary of a command decision by selecting concurrent events that could invalidate that decision.
+
+By default, Axon uses the complete sourcing criteria as the append criteria.
+Every sourcing operation in the command transaction contributes with OR semantics.
+This symmetric default is safe and requires no configuration.
+
+An external command-handling class can declare one `@AppendCriteriaBuilder` when a command needs a different boundary:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/annotation/CreditCommandHandler.java[tag=annotated-append-criteria,indent=0]
+----
+
+The builder is declared once for the command-handling class and applies to every `@CommandHandler` on that class.
+Axon invokes it separately for every command.
+Its command parameter must accept every command handled by the class, so a shared supertype supports an exhaustive switch.
+For unrelated payload types, accept `CommandMessage` and switch on `command.payload()` or the qualified command name.
+For a single-command class, the builder can accept that concrete command type.
+
+The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
+This includes one or several injected entities and other sourcing performed during command handling.
+Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` branch does above.
+`restrictToEventTypes` preserves each branch's tags, restricts every OR branch, and intersects existing type restrictions.
+The builder returns the complete append criteria; it does not add a contribution for one entity.
+
+Annotations adapt the same component-level declarative API:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
+----
+
+`CommandAppendCriteriaHandler.withAppendCriteria` decorates one external command-handling component with one synchronous resolver.
+The resolver handles every qualified command name supported by that component and runs once per invocation.
+It receives the complete `CommandMessage`, `ProcessingContext`, and accumulated sourcing criteria.
+Configuring append criteria both declaratively and through an annotation for the same component is invalid.
+
+=== Commands without sourcing
+
+An append-criteria builder does not determine whether sourcing occurred.
+For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from the command or metadata:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCommandHandler.java[tag=metadata-append-criteria,indent=0]
+----
+
+The event-store transaction retains responsibility for the distinction.
+It preserves the marker established by sourcing, or checks explicit command append criteria from `ConsistencyMarker.ORIGIN` when no sourcing occurred.
+Missing required metadata prevents the transaction from committing.
+
+When metadata contributes tags to append criteria, append events with tags derived from the same trusted value.
+The example uses the required `tenantId` metadata both for the criterion and the `UsernameRegistered` event tag.
+This keeps the consistency boundary aligned with stored events.
+
+=== Multi-entity decisions
+
+Loading several entities produces one OR-union of their sourcing criteria.
+The append-criteria builder receives that complete union, without information about which entity contributed a branch.
+Its result must describe the complete consistency boundary for the command decision.
+Apply a positive type restriction to the union when the same event-type rule applies to every branch, or construct the complete criteria explicitly when the decision needs a different boundary.
+
+=== Choosing a narrower boundary
+
+Narrower append criteria can avoid retries for concurrent events that cannot invalidate a command decision.
+They can also change the explanatory ordering of stored events.
+For example, a rejected payment or fraud decision may describe the state observed before a concurrent event that was intentionally excluded from the append criteria.
+The invariant can remain protected even though the audit trail contains an explanation based on an older view.
+
+Prefer symmetric criteria when the exact explanatory ordering of rejection events, audit records, or other business-meaningful failure events matters more than avoiding retries.
+
+[IMPORTANT]
+====
+Custom command append criteria require an event store that supports criteria-aware consistency checks.
+Aggregate-based storage keeps its existing default behavior, but replacing an aggregate consistency boundary with unrelated criteria is not supported and fails explicitly.
+====
+
 [#conditions]
 == Append, source, and stream conditions
 
@@ -117,7 +199,8 @@ Axon provides three condition types, each tailored for a different operation:
 **AppendCondition**::
 Used when appending events to the event store.
 It combines an `EventCriteria` with a `ConsistencyMarker` to enforce write conflict detection.
-The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated—if events matching the criteria were appended after this position, the append operation fails.
+The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated.
+If events matching the criteria were appended after this position, the append operation fails.
 This ensures that concurrent writes to the same logical boundary are detected.
 +
 For events that don't participate in any consistency boundary (such as standalone events), use `AppendCondition.none()`.
