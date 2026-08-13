@@ -51,6 +51,7 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorC
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SimpleSegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -1981,6 +1982,34 @@ class PooledStreamingEventProcessorTest {
                    .untilAsserted(() -> assertThat(claimedSegments.stream()
                                                                   .filter(id -> id == testSegmentId)
                                                                   .count()).isGreaterThanOrEqualTo(2));
+        }
+
+        @Test
+        void segmentChangeListenerIsGivenTheStoredTokenOnClaim() {
+            // given - a segment whose stored token sits behind the head of the stream
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(42);
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             1,
+                                                             storedToken,
+                                                             createProcessingContext()));
+
+            AtomicReference<TrackingToken> claimedFrom = new AtomicReference<>();
+            SegmentChangeListener listener = new SimpleSegmentChangeListener(
+                    (segment, from) -> {
+                        claimedFrom.set(from);
+                        return FutureUtils.emptyCompletedFuture();
+                    },
+                    segment -> FutureUtils.emptyCompletedFuture()
+            );
+
+            withTestSubject(List.of(), c -> c.initialSegmentCount(1).addSegmentChangeListener(listener));
+
+            // when
+            startEventProcessor();
+
+            // then
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(claimedFrom.get()).isEqualTo(storedToken));
         }
 
         @Test
