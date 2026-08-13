@@ -219,7 +219,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
     }
 
     /**
-     * Scans {@link #basePackages} for abstract classes (or interfaces) annotated with {@link EventSourced}.
+     * Scans {@link #basePackages} for abstract classes annotated with {@link EventSourced}.
      * <p>
      * Spring's own component scan never registers a {@link BeanDefinition} for an abstract type, so a polymorphic
      * entity hierarchy whose parent lists its subtypes through {@link EventSourced#concreteTypes()} (rather than having
@@ -227,6 +227,10 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
      * {@link ListableBeanFactory#getBeanNamesForAnnotation(Class)}. This scan is independent of the bean registry, so
      * it finds those roots regardless. Concrete classes are deliberately excluded here, since those are already
      * discoverable as beans and handled by the {@link #buildEntityHierarchy(ListableBeanFactory, String[])} path.
+     * <p>
+     * The resulting registrar bean name is derived from the root's simple class name, so two abstract roots sharing a
+     * simple name in different packages would collide on a single registrar. This is a known limitation of this
+     * scan-based path, unlike the bean-registry-based path where Spring's own bean naming already guards against it.
      *
      * @param classLoader the class loader to resolve scanned candidate class names with
      * @return the abstract types annotated with {@link EventSourced}, found in {@link #basePackages}
