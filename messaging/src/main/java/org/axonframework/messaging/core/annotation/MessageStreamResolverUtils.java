@@ -96,10 +96,10 @@ public class MessageStreamResolverUtils {
      * {@link org.axonframework.messaging.commandhandling.CommandHandler command handlers}, for which spreading would
      * mean silently discarding all but the first element.
      *
-     * @param result       The result to map into a {@link MessageStream}.
-     * @param typeResolver The {@code MessageTypeResolver} used to resolve the {@link MessageType} for the
-     *                     {@link Message} that is held in the returned {@link MessageStream}.
-     * @return A {@code MessageStream} based on the given {@code result}.
+     * @param result       the result to map into a {@link MessageStream}
+     * @param typeResolver the {@code MessageTypeResolver} used to resolve the {@link MessageType} for the
+     *                     {@link Message} that is held in the returned {@link MessageStream}
+     * @return a {@code MessageStream} based on the given {@code result}
      */
     public static MessageStream<?> resolveToSingleStream(@Nullable Object result,
                                                          MessageTypeResolver typeResolver) {
