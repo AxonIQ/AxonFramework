@@ -105,7 +105,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             Class<E> entityType = (Class<E>) beanFactory.getType(prototype);
             if (entityType == null) {
                 logger.info("Cannot find Entity class for type [{}], hence ignoring.", prototype);
-                break;
+                continue;
             }
 
             SpringEntity<E> springEntity = new SpringEntity<>(prototype, entityType);
@@ -175,9 +175,8 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
 
             String registrarBeanName = entityPrototype + REGISTRAR_BEAN_NAME_SUFFIX;
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
-                logger.info("Registrar for {} already available. Skipping configuration", entityPrototype);
-                break;
                 logger.info("Registrar bean [{}] already available. Skipping configuration", registrarBeanName);
+                continue;
             }
 
             if (hasSubtypesOrIsPrototype(entitySubtypes, beanFactory, entityPrototype) && entityType != null) {
