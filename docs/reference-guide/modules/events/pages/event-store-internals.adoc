@@ -153,8 +153,18 @@ Configuring append criteria both declaratively and through an annotation for the
 
 === Commands without sourcing
 
+For an external command handler that performs no sourcing and has no append-criteria builder, calling
+`EventAppender.append` does not establish a consistency boundary.
+The event-store transaction uses `AppendCondition.none()`, so the append is unconditional and no concurrent events are
+checked for conflicts.
+This is appropriate only when storing the event is safe regardless of events already present or appended concurrently.
+Tags on the appended event do not by themselves define append criteria for an external handler.
+
 An append-criteria builder does not determine whether sourcing occurred.
-For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from the command or metadata:
+For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from
+the command or metadata.
+This is particularly useful for creational commands that must atomically reserve a unique business key without first
+loading an entity:
 
 [source,java]
 ----
@@ -163,6 +173,10 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 
 The event-store transaction retains responsibility for the distinction.
 It preserves the marker established by sourcing, or checks explicit command append criteria from `ConsistencyMarker.ORIGIN` when no sourcing occurred.
+In the example, this checks the `tenantId` and `username` combination against the complete event history.
+The append is rejected if a matching registration already exists or is appended concurrently, making the creation
+decision safe without a preliminary sourcing query.
+The builder does not need a source-state flag and should not infer whether sourcing occurred from the supplied criteria.
 Missing required metadata prevents the transaction from committing.
 
 When metadata contributes tags to append criteria, append events with tags derived from the same trusted value.
