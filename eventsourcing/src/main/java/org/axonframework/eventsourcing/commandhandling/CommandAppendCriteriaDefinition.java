@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.eventsourcing.commandhandling;
+
+import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.Context.ResourceKey;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+
+import java.util.Objects;
+
+/**
+ * Installs one command append-criteria definition in a command-handling transaction.
+ */
+final class CommandAppendCriteriaDefinition {
+
+    private static final ResourceKey<CommandAppendCriteriaDefinition> DEFINITION_KEY =
+            ResourceKey.withLabel("commandAppendCriteriaDefinition");
+    private static final CommandAppendCriteriaDefinition INSTANCE = new CommandAppendCriteriaDefinition();
+
+    private CommandAppendCriteriaDefinition() {
+    }
+
+    static void apply(CommandMessage command,
+                      ProcessingContext context,
+                      EventStore eventStore,
+                      CommandAppendCriteriaResolver resolver) {
+        CommandAppendCriteriaDefinition existing = context.putResourceIfAbsent(DEFINITION_KEY, INSTANCE);
+        if (existing != null) {
+            throw new IllegalStateException(
+                    ("Cannot apply append criteria for command [%s]. Append criteria have already been defined for "
+                            + "this command-handling transaction.")
+                            .formatted(command.type().qualifiedName())
+            );
+        }
+        eventStore.transaction(context).transformAppendCriteria(sourcingCriteria -> Objects.requireNonNull(
+                resolver.resolve(command, context, sourcingCriteria),
+                "The command append criteria resolver returned null."
+        ));
+    }
+}
