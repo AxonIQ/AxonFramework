@@ -25,6 +25,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * Interface describing the actions that can be taken on a transaction to source a model from the {@link EventStore}
  * based on the resulting {@link MessageStream}.
@@ -142,6 +144,45 @@ public interface EventStoreTransaction {
      */
     default void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Transforms the complete append criteria when this transaction is committed. The {@code criteriaTransformer}
+     * receives all criteria accumulated through {@link #source(SourcingCondition) sourcing}, after every sourcing
+     * operation has completed.
+     * <p>
+     * When sourcing occurred, the transformed criteria replace only the criteria and retain the consistency marker
+     * established through sourcing. When no sourcing occurred, the transformed criteria are checked from
+     * {@link ConsistencyMarker#ORIGIN}. This distinction remains owned by the transaction; the transformer receives
+     * only an {@link EventCriteria}.
+     * <p>
+     * Aggregate-based consistency markers only support the criteria that established their aggregate positions.
+     * Replacing those criteria with an unrelated consistency boundary is rejected.
+     *
+     * @param criteriaTransformer the synchronous transformation of the complete sourcing-derived criteria
+     * @throws NullPointerException if the transformer or its result is {@code null}
+     * @throws IllegalStateException if changed criteria are incompatible with an aggregate-based consistency marker
+     * @since 5.4.0
+     */
+    default void transformAppendCriteria(UnaryOperator<EventCriteria> criteriaTransformer) {
+        requireNonNull(criteriaTransformer, "The append criteria transformer cannot be null.");
+        overrideAppendCondition(current -> {
+            EventCriteria transformed = requireNonNull(
+                    criteriaTransformer.apply(current.criteria()),
+                    "The append criteria transformer returned null."
+            );
+            if (AppendCondition.none().equals(current)) {
+                return AppendCondition.withCriteria(transformed);
+            }
+            if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
+                    && !current.criteria().equals(transformed)) {
+                throw new IllegalStateException(
+                        "Command append criteria are not supported with aggregate-based consistency markers unless "
+                                + "they equal the sourcing criteria."
+                );
+            }
+            return current.replaceCriteria(transformed);
+        });
     }
 
     /**

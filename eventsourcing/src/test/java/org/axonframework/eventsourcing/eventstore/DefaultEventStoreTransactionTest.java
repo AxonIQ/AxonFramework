@@ -378,6 +378,27 @@ class DefaultEventStoreTransactionTest {
                     .containsExactlyInAnyOrderEntriesOf(Map.of(FIRST_AGGREGATE_ID, 3L, SECOND_AGGREGATE_ID, 7L));
         }
 
+        @Test
+        void rejectsChangedAppendCriteriaForAnAggregateBasedConsistencyMarker() {
+            // given
+            EventCriteria unrelatedCriteria = EventCriteria.havingTags(new Tag("other", "boundary"));
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = aggregateBasedTransactionFor(context);
+                transaction.transformAppendCriteria(sourcingCriteria -> unrelatedCriteria);
+                FluxUtils.of(transaction.source(sourcingConditionFor(FIRST_AGGREGATE_ID))).blockLast();
+                transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
+            });
+
+            // then
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasStackTraceContaining("aggregate-based consistency markers");
+        }
+
         private EventStoreTransaction aggregateBasedTransactionFor(ProcessingContext context) {
             return context.computeResourceIfAbsent(
                     testEventStoreTransactionKey,
@@ -826,6 +847,108 @@ class DefaultEventStoreTransactionTest {
                         .isInstanceOf(NullPointerException.class);
             });
             awaitSuccessfulCompletion(uow.execute());
+        }
+    }
+
+    @Nested
+    class TransformAppendCriteria {
+
+        @Test
+        void transformationReceivesCriteriaFromEverySourcingOperationAtCommitTime() {
+            // given
+            EventCriteria firstCriteria = EventCriteria.havingTags(new Tag("account", "one"));
+            EventCriteria secondCriteria = EventCriteria.havingTags(new Tag("customer", "two"));
+            var receivedCriteria = new AtomicReference<EventCriteria>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.transformAppendCriteria(criteria -> {
+                    receivedCriteria.set(criteria);
+                    return criteria;
+                });
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(firstCriteria))).blockLast();
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(secondCriteria))).blockLast();
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCriteria.get().flatten())
+                    .containsExactlyInAnyOrderElementsOf(firstCriteria.or(secondCriteria).flatten());
+        }
+
+        @Test
+        void transformedCriteriaRetainTheMarkerEstablishedBySourcing() {
+            // given
+            appendTaggedEvent(AGGREGATE_ID_TAG);
+            EventCriteria commandCriteria = EventCriteria.havingTags(new Tag("command", "boundary"));
+            var finalCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.transformAppendCriteria(sourcingCriteria -> commandCriteria);
+                transaction.overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))).blockLast();
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            assertThat(finalCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void transformedCriteriaUseOriginWhenNothingWasSourced() {
+            // given
+            EventCriteria commandCriteria = EventCriteria.havingTags(new Tag("username", "unique"));
+            var receivedCriteria = new AtomicReference<EventCriteria>();
+            var finalCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.transformAppendCriteria(sourcingCriteria -> {
+                    receivedCriteria.set(sourcingCriteria);
+                    return commandCriteria;
+                });
+                transaction.overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCriteria.get()).isEqualTo(AppendCondition.none().criteria());
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            assertThat(finalCondition.get().consistencyMarker()).isEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void nullTransformationResultPreventsCommit() {
+            // given
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                transaction.transformAppendCriteria(sourcingCriteria -> null);
+                transaction.appendEvent(eventMessage(0));
+            });
+
+            // when / then
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(NullPointerException.class)
+                    .hasStackTraceContaining("append criteria transformer returned null");
         }
     }
 
