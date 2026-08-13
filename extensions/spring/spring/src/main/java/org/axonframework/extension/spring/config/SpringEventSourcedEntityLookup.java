@@ -65,6 +65,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
     private static final Logger logger = LoggerFactory.getLogger(SpringEventSourcedEntityLookup.class);
 
     private static final String ID_TYPE_CLASS = "idType";
+    private static final String REGISTRAR_BEAN_NAME_SUFFIX = "$$Registrar";
 
     private final List<String> basePackages;
 
@@ -172,7 +173,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             Map<Class<?>, String> entitySubtypes = entity.getValue();
             String entityPrototype = entity.getKey().getBeanName();
 
-            String registrarBeanName = entityPrototype + "$$Registrar";
+            String registrarBeanName = entityPrototype + REGISTRAR_BEAN_NAME_SUFFIX;
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
                 logger.info("Registrar for {} already available. Skipping configuration", entityPrototype);
                 break;
@@ -197,7 +198,8 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             if (registeredEntityTypes.contains(abstractRoot)) {
                 continue;
             }
-            String registrarBeanName = lowerCaseFirstCharacterOf(abstractRoot.getSimpleName()) + "$$Registrar";
+            String registrarBeanName =
+                    lowerCaseFirstCharacterOf(abstractRoot.getSimpleName()) + REGISTRAR_BEAN_NAME_SUFFIX;
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
                 logger.info("Registrar for {} already available. Skipping configuration", abstractRoot.getName());
                 continue;
