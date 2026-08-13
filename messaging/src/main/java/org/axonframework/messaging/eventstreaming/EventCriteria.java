@@ -292,54 +292,60 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Intersects this criteria with the given event {@code types}. Logically, the result matches this criteria
-     * <b>and</b> an event type in the requested set. Existing type restrictions are intersected with the requested
-     * types, while criteria without a type restriction receive the requested restriction.
+     * Replaces the event types on every branch of this criteria with the given {@code types}. Each branch's tags and
+     * the criteria's OR semantics are preserved. Existing type restrictions are replaced, so the resulting type set
+     * may be either narrower or broader than the original set.
      * <p>
-     * For an OR-union, the intersection is distributed over every branch, preserving each branch's tags and the
-     * union's OR semantics. Unlike the builder-style
+     * Unlike the builder-style
      * {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, this operation applies to an already complete
-     * criteria rather than only the branch currently being built. When an intersection contains no types, that branch
-     * matches no events; it never becomes an unrestricted branch.
+     * criteria rather than only the branch currently being built. An empty set clears existing type restrictions,
+     * allowing any event type that matches a branch's tags.
      *
-     * @param types the event types retained by the resulting criteria
-     * @return criteria retaining only the given event types
+     * @param types the event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
      * @since 5.4.0
      */
-    default EventCriteria intersectEventTypes(Set<QualifiedName> types) {
+    default EventCriteria withEventTypes(Set<QualifiedName> types) {
         Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
-        if (requestedTypes.isEmpty()) {
-            return either(Set.of());
-        }
         if (!hasCriteria()) {
             return havingAnyTag().andBeingOneOfTypes(requestedTypes);
         }
-        return mapEachCriterion(criterion -> {
-            Set<QualifiedName> existingTypes = criterion.types();
-            if (existingTypes.isEmpty()) {
-                return havingTags(criterion.tags()).andBeingOneOfTypes(requestedTypes);
-            }
-            Set<QualifiedName> retainedTypes = new HashSet<>(existingTypes);
-            retainedTypes.retainAll(requestedTypes);
-            return retainedTypes.isEmpty()
-                    ? either(Set.of())
-                    : havingTags(criterion.tags()).andBeingOneOfTypes(retainedTypes);
-        });
+        return mapEachCriterion(criterion -> havingTags(criterion.tags()).andBeingOneOfTypes(requestedTypes));
     }
 
     /**
-     * Intersects this criteria with event types identified by the given fully qualified names.
+     * Replaces the event types on every branch of this criteria with the given fully qualified names.
      *
-     * @param types the fully qualified event type names retained by the resulting criteria
-     * @return criteria retaining only the given event types
-     * @see #intersectEventTypes(Set)
+     * @param types the fully qualified event type names used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #withEventTypes(Set)
      * @since 5.4.0
      */
-    default EventCriteria intersectEventTypes(String... types) {
+    default EventCriteria withEventTypes(String... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return intersectEventTypes(Arrays.stream(types)
+        return withEventTypes(Arrays.stream(types)
+                                    .map(QualifiedName::new)
+                                    .collect(Collectors.toSet()));
+    }
+
+    /**
+     * Replaces the event types on every branch of this criteria with qualified names derived from the given Java event
+     * {@code type} and any {@code additionalTypes}.
+     *
+     * @param type the first Java event type used by every branch of the resulting criteria
+     * @param additionalTypes any additional Java event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #withEventTypes(Set)
+     * @since 5.4.0
+     */
+    default EventCriteria withEventTypes(Class<?> type, Class<?>... additionalTypes) {
+        Objects.requireNonNull(type, "The type cannot be null.");
+        Objects.requireNonNull(additionalTypes, "The additional types cannot be null.");
+        Set<QualifiedName> types = Arrays.stream(additionalTypes)
                                          .map(QualifiedName::new)
-                                         .collect(Collectors.toSet()));
+                                         .collect(Collectors.toCollection(HashSet::new));
+        types.add(new QualifiedName(type));
+        return withEventTypes(types);
     }
 
     /**

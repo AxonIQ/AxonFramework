@@ -26,8 +26,8 @@ public class DeclarativeEntityAppendCriteria {
         return entityModule
                 .appendCriteriaResolver((command, context, sourcingCriteria) ->
                         switch (command.type().qualifiedName().fullName()) {
-                            case "credits.UseCredits" -> sourcingCriteria.intersectEventTypes(
-                                    CreditsUsed.class.getName()
+                            case "credits.UseCredits" -> sourcingCriteria.withEventTypes(
+                                    CreditsUsed.class
                             );
                             case "credits.TopUpCredits" -> sourcingCriteria;
                             default -> throw new IllegalArgumentException(

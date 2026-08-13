@@ -25,9 +25,9 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating type restriction of complete {@link EventCriteria} instances.
+ * Test class validating type replacement on complete {@link EventCriteria} instances.
  */
-class EventCriteriaTypeRestrictionTest {
+class EventCriteriaWithEventTypesTest {
 
     private static final QualifiedName TOPPED_UP = new QualifiedName("credits.CreditsToppedUp");
     private static final QualifiedName USED = new QualifiedName("credits.CreditsUsed");
@@ -36,15 +36,15 @@ class EventCriteriaTypeRestrictionTest {
     private static final Tag SECOND_ACCOUNT = Tag.of("accountId", "two");
 
     @Nested
-    class IntersectEventTypes {
+    class WithEventTypes {
 
         @Test
-        void addsTheRestrictionToAnUntypedTaggedCriterion() {
+        void addsTypesToAnUntypedTaggedCriterion() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT);
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(Set.of(USED));
+            EventCriteria result = criteria.withEventTypes(Set.of(USED));
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion -> {
@@ -54,7 +54,7 @@ class EventCriteriaTypeRestrictionTest {
         }
 
         @Test
-        void appliesTheRestrictionToEveryBranchOfAnOrUnion() {
+        void replacesTypesOnEveryBranchOfAnOrUnion() {
             // given
             EventCriteria criteria = EventCriteria
                     .havingTags(FIRST_ACCOUNT)
@@ -62,7 +62,7 @@ class EventCriteriaTypeRestrictionTest {
                     .or(EventCriteria.havingTags(SECOND_ACCOUNT));
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(USED.fullName());
+            EventCriteria result = criteria.withEventTypes(USED.fullName());
 
             // then
             assertThat(result.flatten()).allSatisfy(criterion -> assertThat(criterion.types()).containsExactly(USED));
@@ -72,7 +72,7 @@ class EventCriteriaTypeRestrictionTest {
         }
 
         @Test
-        void intersectsEveryDifferentlyTypedBranchOfAnOrUnion() {
+        void replacesDifferingTypesOnEveryBranchWithTheCompleteRequestedSet() {
             // given
             EventCriteria criteria = EventCriteria
                     .havingTags(FIRST_ACCOUNT)
@@ -81,44 +81,61 @@ class EventCriteriaTypeRestrictionTest {
                                      .andBeingOneOfTypes(TOPPED_UP, CLOSED));
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(Set.of(USED, CLOSED));
+            EventCriteria result = criteria.withEventTypes(Set.of(USED, CLOSED));
 
             // then
             assertThat(result.matches(USED, Set.of(FIRST_ACCOUNT))).isTrue();
-            assertThat(result.matches(CLOSED, Set.of(FIRST_ACCOUNT))).isFalse();
+            assertThat(result.matches(CLOSED, Set.of(FIRST_ACCOUNT))).isTrue();
             assertThat(result.matches(CLOSED, Set.of(SECOND_ACCOUNT))).isTrue();
-            assertThat(result.matches(USED, Set.of(SECOND_ACCOUNT))).isFalse();
+            assertThat(result.matches(USED, Set.of(SECOND_ACCOUNT))).isTrue();
             assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isFalse();
             assertThat(result.matches(TOPPED_UP, Set.of(SECOND_ACCOUNT))).isFalse();
         }
 
         @Test
-        void intersectsAnExistingTypeRestriction() {
+        void replacesAnExistingTypeRestrictionWithABroaderSet() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT)
                                                     .andBeingOneOfTypes(TOPPED_UP, USED);
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(Set.of(USED, CLOSED));
+            EventCriteria result = criteria.withEventTypes(Set.of(USED, CLOSED));
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion -> {
                 assertThat(criterion.tags()).containsExactly(FIRST_ACCOUNT);
-                assertThat(criterion.types()).containsExactly(USED);
+                assertThat(criterion.types()).containsExactlyInAnyOrder(USED, CLOSED);
             });
         }
 
         @Test
-        void emptyIntersectionNeverMatchesEveryEvent() {
+        void acceptsClassesForTheReplacementTypes() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(Set.of(USED));
+            EventCriteria result = criteria.withEventTypes(CreditsUsed.class, CreditsExpired.class);
 
             // then
-            assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isFalse();
-            assertThat(result.matches(USED, Set.of(FIRST_ACCOUNT))).isFalse();
+            assertThat(result.flatten()).singleElement().satisfies(criterion ->
+                    assertThat(criterion.types()).containsExactlyInAnyOrder(
+                            new QualifiedName(CreditsUsed.class),
+                            new QualifiedName(CreditsExpired.class)
+                    )
+            );
+        }
+
+        @Test
+        void emptyReplacementClearsTheTypeRestrictionButPreservesTags() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
+
+            // when
+            EventCriteria result = criteria.withEventTypes(Set.of());
+
+            // then
+            assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isTrue();
+            assertThat(result.matches(USED, Set.of(FIRST_ACCOUNT))).isTrue();
             assertThat(result.matches(CLOSED, Set.of())).isFalse();
         }
 
@@ -128,11 +145,17 @@ class EventCriteriaTypeRestrictionTest {
             EventCriteria criteria = EventCriteria.havingAnyTag();
 
             // when
-            EventCriteria result = criteria.intersectEventTypes(Set.of(USED));
+            EventCriteria result = criteria.withEventTypes(Set.of(USED));
 
             // then
             assertThat(result.matches(USED, Set.of())).isTrue();
             assertThat(result.matches(TOPPED_UP, Set.of())).isFalse();
         }
+    }
+
+    private static class CreditsUsed {
+    }
+
+    private static class CreditsExpired {
     }
 }

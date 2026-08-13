@@ -50,8 +50,8 @@ public class CreditCommandConfiguration {
                                                                                .fullName()) {
                                                              case "credits.UseCredits" -> {
                                                                  command.payloadAs(UseCredits.class, converter);
-                                                                 yield sourcingCriteria.intersectEventTypes(
-                                                                         CreditsUsed.class.getName()
+                                                                 yield sourcingCriteria.withEventTypes(
+                                                                         CreditsUsed.class
                                                                  );
                                                              }
                                                              case "credits.TopUpCredits" -> sourcingCriteria;
