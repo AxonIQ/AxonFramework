@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Test class validating type replacement on complete {@link EventCriteria} instances.
  */
-class EventCriteriaWithEventTypesTest {
+class EventCriteriaReplaceEventTypesTest {
 
     private static final QualifiedName TOPPED_UP = new QualifiedName("credits.CreditsToppedUp");
     private static final QualifiedName USED = new QualifiedName("credits.CreditsUsed");
@@ -36,7 +36,7 @@ class EventCriteriaWithEventTypesTest {
     private static final Tag SECOND_ACCOUNT = Tag.of("accountId", "two");
 
     @Nested
-    class WithEventTypes {
+    class ReplaceEventTypes {
 
         @Test
         void addsTypesToAnUntypedTaggedCriterion() {
@@ -44,7 +44,7 @@ class EventCriteriaWithEventTypesTest {
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT);
 
             // when
-            EventCriteria result = criteria.withEventTypes(Set.of(USED));
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED));
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion -> {
@@ -62,7 +62,7 @@ class EventCriteriaWithEventTypesTest {
                     .or(EventCriteria.havingTags(SECOND_ACCOUNT));
 
             // when
-            EventCriteria result = criteria.withEventTypes(USED.fullName());
+            EventCriteria result = criteria.replaceEventTypes(USED.fullName());
 
             // then
             assertThat(result.flatten()).allSatisfy(criterion -> assertThat(criterion.types()).containsExactly(USED));
@@ -81,7 +81,7 @@ class EventCriteriaWithEventTypesTest {
                                      .andBeingOneOfTypes(TOPPED_UP, CLOSED));
 
             // when
-            EventCriteria result = criteria.withEventTypes(Set.of(USED, CLOSED));
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED, CLOSED));
 
             // then
             assertThat(result.matches(USED, Set.of(FIRST_ACCOUNT))).isTrue();
@@ -99,7 +99,7 @@ class EventCriteriaWithEventTypesTest {
                                                     .andBeingOneOfTypes(TOPPED_UP, USED);
 
             // when
-            EventCriteria result = criteria.withEventTypes(Set.of(USED, CLOSED));
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED, CLOSED));
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion -> {
@@ -114,7 +114,7 @@ class EventCriteriaWithEventTypesTest {
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
 
             // when
-            EventCriteria result = criteria.withEventTypes(CreditsUsed.class, CreditsExpired.class);
+            EventCriteria result = criteria.replaceEventTypes(CreditsUsed.class, CreditsExpired.class);
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion ->
@@ -131,7 +131,7 @@ class EventCriteriaWithEventTypesTest {
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
 
             // when
-            EventCriteria result = criteria.withEventTypes(Set.of());
+            EventCriteria result = criteria.replaceEventTypes(Set.of());
 
             // then
             assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isTrue();
@@ -145,7 +145,7 @@ class EventCriteriaWithEventTypesTest {
             EventCriteria criteria = EventCriteria.havingAnyTag();
 
             // when
-            EventCriteria result = criteria.withEventTypes(Set.of(USED));
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED));
 
             // then
             assertThat(result.matches(USED, Set.of())).isTrue();

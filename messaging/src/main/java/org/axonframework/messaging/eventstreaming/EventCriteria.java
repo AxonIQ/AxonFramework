@@ -305,7 +305,7 @@ public sealed interface EventCriteria
      * @return criteria with the given event types on every branch
      * @since 5.4.0
      */
-    default EventCriteria withEventTypes(Set<QualifiedName> types) {
+    default EventCriteria replaceEventTypes(Set<QualifiedName> types) {
         Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
         if (!hasCriteria()) {
             return havingAnyTag().andBeingOneOfTypes(requestedTypes);
@@ -318,14 +318,14 @@ public sealed interface EventCriteria
      *
      * @param types the fully qualified event type names used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
-     * @see #withEventTypes(Set)
+     * @see #replaceEventTypes(Set)
      * @since 5.4.0
      */
-    default EventCriteria withEventTypes(String... types) {
+    default EventCriteria replaceEventTypes(String... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return withEventTypes(Arrays.stream(types)
-                                    .map(QualifiedName::new)
-                                    .collect(Collectors.toSet()));
+        return replaceEventTypes(Arrays.stream(types)
+                                       .map(QualifiedName::new)
+                                       .collect(Collectors.toSet()));
     }
 
     /**
@@ -335,17 +335,17 @@ public sealed interface EventCriteria
      * @param type the first Java event type used by every branch of the resulting criteria
      * @param additionalTypes any additional Java event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
-     * @see #withEventTypes(Set)
+     * @see #replaceEventTypes(Set)
      * @since 5.4.0
      */
-    default EventCriteria withEventTypes(Class<?> type, Class<?>... additionalTypes) {
+    default EventCriteria replaceEventTypes(Class<?> type, Class<?>... additionalTypes) {
         Objects.requireNonNull(type, "The type cannot be null.");
         Objects.requireNonNull(additionalTypes, "The additional types cannot be null.");
         Set<QualifiedName> types = Arrays.stream(additionalTypes)
                                          .map(QualifiedName::new)
                                          .collect(Collectors.toCollection(HashSet::new));
         types.add(new QualifiedName(type));
-        return withEventTypes(types);
+        return replaceEventTypes(types);
     }
 
     /**

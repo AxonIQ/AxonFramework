@@ -39,7 +39,7 @@ public class Account {
 
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(WithdrawMoney command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.withEventTypes(MoneyWithdrawn.class);
+        return sourcingCriteria.replaceEventTypes(MoneyWithdrawn.class);
     }
 
     static class Card {
@@ -51,7 +51,7 @@ public class Account {
 
         @AppendCriteriaBuilder
         static EventCriteria appendCriteria(ReplaceCard command, EventCriteria sourcingCriteria) {
-            return sourcingCriteria.withEventTypes(CardReplaced.class);
+            return sourcingCriteria.replaceEventTypes(CardReplaced.class);
         }
     }
 }

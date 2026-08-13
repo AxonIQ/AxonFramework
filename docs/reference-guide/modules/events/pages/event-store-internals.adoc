@@ -135,7 +135,7 @@ For a single-command class, the builder can accept that concrete command type.
 The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
 This includes one or several injected entities and other sourcing performed during command handling.
 Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` branch does above.
-`withEventTypes` preserves each branch's tags and replaces the event types on every OR branch.
+`replaceEventTypes` preserves each branch's tags and replaces the event types on every OR branch.
 The replacement may narrow or broaden the events considered conflicting without reconstructing the sourcing tags.
 The builder returns the complete append criteria; it does not add a contribution for one entity.
 
