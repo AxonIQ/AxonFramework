@@ -292,6 +292,56 @@ public sealed interface EventCriteria
     }
 
     /**
+     * Restricts every branch of this criteria to the given event {@code types}. Existing type restrictions are
+     * intersected with the requested types, while branches without a type restriction receive the requested
+     * restriction. Tags and OR semantics are preserved.
+     * <p>
+     * Unlike the builder-style
+     * {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, this operation applies to an already complete
+     * criteria, including every branch of an OR-union. When an intersection contains no types, that branch matches no
+     * events; it never becomes an unrestricted branch.
+     *
+     * @param types the event types retained by the resulting criteria
+     * @return criteria retaining only the given event types
+     * @since 5.4.0
+     */
+    default EventCriteria restrictToEventTypes(Set<QualifiedName> types) {
+        Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
+        if (requestedTypes.isEmpty()) {
+            return either(Set.of());
+        }
+        if (!hasCriteria()) {
+            return havingAnyTag().andBeingOneOfTypes(requestedTypes);
+        }
+        return mapEachCriterion(criterion -> {
+            Set<QualifiedName> existingTypes = criterion.types();
+            if (existingTypes.isEmpty()) {
+                return havingTags(criterion.tags()).andBeingOneOfTypes(requestedTypes);
+            }
+            Set<QualifiedName> retainedTypes = new HashSet<>(existingTypes);
+            retainedTypes.retainAll(requestedTypes);
+            return retainedTypes.isEmpty()
+                    ? either(Set.of())
+                    : havingTags(criterion.tags()).andBeingOneOfTypes(retainedTypes);
+        });
+    }
+
+    /**
+     * Restricts every branch of this criteria to event types identified by the given fully qualified names.
+     *
+     * @param types the fully qualified event type names retained by the resulting criteria
+     * @return criteria retaining only the given event types
+     * @see #restrictToEventTypes(Set)
+     * @since 5.4.0
+     */
+    default EventCriteria restrictToEventTypes(String... types) {
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return restrictToEventTypes(Arrays.stream(types)
+                                          .map(QualifiedName::new)
+                                          .collect(Collectors.toSet()));
+    }
+
+    /**
      * Indicates whether the given {@code type} and {@code tags} matches the types and tags defined in this or these
      * criteria. If no types are defined, any given {@code type} will be considered a match.
      *
