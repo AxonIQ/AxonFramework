@@ -292,20 +292,21 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Restricts every branch of this criteria to the given event {@code types}. Existing type restrictions are
-     * intersected with the requested types, while branches without a type restriction receive the requested
-     * restriction. Tags and OR semantics are preserved.
+     * Intersects this criteria with the given event {@code types}. Logically, the result matches this criteria
+     * <b>and</b> an event type in the requested set. Existing type restrictions are intersected with the requested
+     * types, while criteria without a type restriction receive the requested restriction.
      * <p>
-     * Unlike the builder-style
+     * For an OR-union, the intersection is distributed over every branch, preserving each branch's tags and the
+     * union's OR semantics. Unlike the builder-style
      * {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, this operation applies to an already complete
-     * criteria, including every branch of an OR-union. When an intersection contains no types, that branch matches no
-     * events; it never becomes an unrestricted branch.
+     * criteria rather than only the branch currently being built. When an intersection contains no types, that branch
+     * matches no events; it never becomes an unrestricted branch.
      *
      * @param types the event types retained by the resulting criteria
      * @return criteria retaining only the given event types
      * @since 5.4.0
      */
-    default EventCriteria restrictToEventTypes(Set<QualifiedName> types) {
+    default EventCriteria intersectEventTypes(Set<QualifiedName> types) {
         Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
         if (requestedTypes.isEmpty()) {
             return either(Set.of());
@@ -327,18 +328,18 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Restricts every branch of this criteria to event types identified by the given fully qualified names.
+     * Intersects this criteria with event types identified by the given fully qualified names.
      *
      * @param types the fully qualified event type names retained by the resulting criteria
      * @return criteria retaining only the given event types
-     * @see #restrictToEventTypes(Set)
+     * @see #intersectEventTypes(Set)
      * @since 5.4.0
      */
-    default EventCriteria restrictToEventTypes(String... types) {
+    default EventCriteria intersectEventTypes(String... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return restrictToEventTypes(Arrays.stream(types)
-                                          .map(QualifiedName::new)
-                                          .collect(Collectors.toSet()));
+        return intersectEventTypes(Arrays.stream(types)
+                                         .map(QualifiedName::new)
+                                         .collect(Collectors.toSet()));
     }
 
     /**

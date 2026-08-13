@@ -342,7 +342,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
             receivedCommands.add(command);
             receivedSourcingCriteria.add(sourcingCriteria);
             return command instanceof UseCredits
-                    ? sourcingCriteria.restrictToEventTypes(CreditsChanged.class.getName())
+                    ? sourcingCriteria.intersectEventTypes(CreditsChanged.class.getName())
                     : sourcingCriteria;
         }
     }

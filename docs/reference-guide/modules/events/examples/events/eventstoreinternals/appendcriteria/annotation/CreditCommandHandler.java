@@ -46,7 +46,7 @@ public class CreditCommandHandler {
     static EventCriteria appendCriteria(AccountCommand command, EventCriteria sourcingCriteria) {
         return switch (command) {
             case UseCredits ignored ->
-                    sourcingCriteria.restrictToEventTypes(CreditsUsed.class.getName());
+                    sourcingCriteria.intersectEventTypes(CreditsUsed.class.getName());
             case TopUpCredits ignored -> sourcingCriteria;
         };
     }

@@ -50,7 +50,7 @@ public class CreditCommandConfiguration {
                                                                                .fullName()) {
                                                              case "credits.UseCredits" -> {
                                                                  command.payloadAs(UseCredits.class, converter);
-                                                                 yield sourcingCriteria.restrictToEventTypes(
+                                                                 yield sourcingCriteria.intersectEventTypes(
                                                                          CreditsUsed.class.getName()
                                                                  );
                                                              }

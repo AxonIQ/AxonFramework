@@ -157,7 +157,7 @@ class CommandAppendCriteriaConcurrencyTest {
                 delegate,
                 eventStore,
                 (command, context, accumulatedCriteria) -> restrictToUsed
-                        ? accumulatedCriteria.restrictToEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                        ? accumulatedCriteria.intersectEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                         : accumulatedCriteria
         );
         return execute(component, command(Map.of()));
@@ -180,7 +180,7 @@ class CommandAppendCriteriaConcurrencyTest {
                 delegate,
                 eventStore,
                 (command, context, accumulatedCriteria) ->
-                        accumulatedCriteria.restrictToEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                        accumulatedCriteria.intersectEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
         );
         return execute(component, command(Map.of()));
     }

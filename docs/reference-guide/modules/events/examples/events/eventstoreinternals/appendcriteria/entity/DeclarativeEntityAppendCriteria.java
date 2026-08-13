@@ -26,7 +26,7 @@ public class DeclarativeEntityAppendCriteria {
         return entityModule
                 .appendCriteriaResolver((command, context, sourcingCriteria) ->
                         switch (command.type().qualifiedName().fullName()) {
-                            case "credits.UseCredits" -> sourcingCriteria.restrictToEventTypes(
+                            case "credits.UseCredits" -> sourcingCriteria.intersectEventTypes(
                                     CreditsUsed.class.getName()
                             );
                             case "credits.TopUpCredits" -> sourcingCriteria;
