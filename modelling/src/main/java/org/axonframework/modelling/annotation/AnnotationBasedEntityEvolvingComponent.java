@@ -24,6 +24,7 @@ import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -32,7 +33,10 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
+import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -78,7 +82,10 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
              AnnotatedHandlerInspector.inspectType(
                      entityType,
                      messageTypeResolver,
-                     ClasspathParameterResolverFactory.forClass(entityType),
+                     MultiParameterResolverFactory.ordered(
+                             new StaticEventSourcingHandlerParameterResolverFactory(),
+                             ClasspathParameterResolverFactory.forClass(entityType)
+                     ),
                      ClasspathHandlerDefinition.forClass(entityType)
              ),
              converter,
@@ -106,34 +113,42 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         );
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity,
+    public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
+        // With a null entity the concrete type is unknown, so static (create-from-null) handlers are routed by the
+        // declared entity type, mirroring how creational command handlers are registered on the super type.
+        Class<?> listenerType = entity != null ? entity.getClass() : entityType;
         try {
-            var listenerType = entity.getClass();
-
             var handlers = handlersByEntityType.getOrDefault(listenerType, Map.of())
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
             for (var handler : handlers) {
+                boolean staticHandler = isStaticHandler(handler);
+                if (evolvedEntity == null && !staticHandler) {
+                    // An instance handler cannot run without an instance to invoke it on.
+                    continue;
+                }
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
-                if (!handler.canHandle(convertedEvent, context)) {
+                var contextWithEntity = ActiveEntity.set(context, evolvedEntity);
+                if (!handler.canHandle(convertedEvent, contextWithEntity)) {
                     continue;
                 }
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, context, entity, handler)
+                var result = interceptor.handle(convertedEvent, contextWithEntity, evolvedEntity, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, entity);
+                evolvedEntity = nextState(result, evolvedEntity, handler, staticHandler);
             }
 
             return evolvedEntity;
         } catch (Exception e) {
             throw new StateEvolvingException(
-                    "Failed to apply event [" + event.type() + "] in order to evolve [" + entity.getClass() + "] state",
+                    "Failed to apply event [" + event.type() + "] in order to evolve [" + listenerType + "] state",
                     e
             );
         }
@@ -173,7 +188,11 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                       .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
-    private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {
+    @Nullable
+    private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
+                        @Nullable E existing,
+                        MessageHandlingMember<? super E> handler,
+                        boolean staticHandler) {
         if (potentialEntityFromStream != null) {
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
@@ -181,7 +200,25 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 return (E) entityType.cast(resultPayload);
             }
         }
+        // A static handler declaring the entity as its return type may deliberately return null to decline creation
+        // or to remove (tombstone) the entity. A null return surfaces as an empty stream, so we rely on the return
+        // type to distinguish it from a void (mutating) instance handler.
+        if (staticHandler && handlerReturnsEntity(handler)) {
+            return null;
+        }
         return existing;
+    }
+
+    private boolean isStaticHandler(MessageHandlingMember<? super E> handler) {
+        return handler.unwrap(Method.class)
+                      .map(method -> Modifier.isStatic(method.getModifiers()))
+                      .orElse(false);
+    }
+
+    private boolean handlerReturnsEntity(MessageHandlingMember<? super E> handler) {
+        return handler.unwrap(Method.class)
+                      .map(method -> entityType.isAssignableFrom(method.getReturnType()))
+                      .orElse(false);
     }
 
     @Override
