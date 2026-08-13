@@ -50,14 +50,14 @@ public class InfrastructureAutoConfiguration {
     }
 
     /**
-     * Provides a Spring aggregate lookup.
+     * Provides a Spring entity lookup.
      * <p>
      * Besides the regular bean-registry-based entity discovery, this scans the auto-configuration base packages (see
      * {@link AutoConfigurationPackages}) for abstract polymorphic entity roots, since those are never registered as a
      * bean by Spring's own component scan.
      *
-     * @param beanFactory The bean factory to resolve the auto-configuration base packages from.
-     * @return The lookup scanning for annotations for later entity registrations.
+     * @param beanFactory the bean factory to resolve the auto-configuration base packages from
+     * @return the lookup scanning for annotations for later entity registrations
      */
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     @Bean
