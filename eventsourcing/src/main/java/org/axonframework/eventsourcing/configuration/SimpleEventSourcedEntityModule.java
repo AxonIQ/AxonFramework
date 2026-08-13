@@ -27,8 +27,10 @@ import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.eventsourcing.CriteriaResolver;
+import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
+import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandler;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
@@ -73,6 +75,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
     private ComponentBuilder<CriteriaResolver<ID>> criteriaResolver;
     private ComponentBuilder<EntityMetamodel<E>> entityModel;
     private ComponentBuilder<EntityIdResolver<ID>> entityIdResolver;
+    private ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver;
     private ComponentBuilder<SnapshotPolicy> snapshotPolicy;
 
     SimpleEventSourcedEntityModule(Class<ID> idType,
@@ -107,6 +110,20 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
     @Override
     public OptionalPhase<ID, E> entityIdResolver(ComponentBuilder<EntityIdResolver<ID>> entityIdResolver) {
         this.entityIdResolver = requireNonNull(entityIdResolver, "The entity ID resolver cannot be null.");
+        return this;
+    }
+
+    @Override
+    public OptionalPhase<ID, E> appendCriteriaResolver(
+            ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver
+    ) {
+        requireNonNull(appendCriteriaResolver, "The command append criteria resolver cannot be null.");
+        if (this.appendCriteriaResolver != null) {
+            throw new IllegalStateException(
+                    "Append criteria have already been configured for this event-sourced entity module."
+            );
+        }
+        this.appendCriteriaResolver = appendCriteriaResolver;
         return this;
     }
 
@@ -238,11 +255,21 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
         //noinspection unchecked
         return ComponentDefinition
                 .ofTypeAndName(CommandHandlingComponent.class, entityName())
-                .withBuilder(c -> new EntityCommandHandlingComponent<ID, E>(
-                        c.getComponent(Repository.class, entityName()),
-                        c.getComponent(EntityMetamodel.class, entityName()),
-                        c.getComponent(EntityIdResolver.class, entityName())
-                ))
+                .withBuilder(c -> {
+                    CommandHandlingComponent component = new EntityCommandHandlingComponent<ID, E>(
+                            c.getComponent(Repository.class, entityName()),
+                            c.getComponent(EntityMetamodel.class, entityName()),
+                            c.getComponent(EntityIdResolver.class, entityName())
+                    );
+                    if (appendCriteriaResolver == null) {
+                        return component;
+                    }
+                    return new CommandAppendCriteriaHandler(
+                            component,
+                            c.getComponent(EventStore.class),
+                            appendCriteriaResolver.build(c)
+                    );
+                })
                 .onStart(Phase.LOCAL_MESSAGE_HANDLER_REGISTRATIONS,
                          (config, component) -> {
                              config.getComponent(CommandBus.class).subscribe(component);

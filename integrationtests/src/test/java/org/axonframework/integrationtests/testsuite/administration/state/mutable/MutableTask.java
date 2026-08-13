@@ -17,12 +17,20 @@
 package org.axonframework.integrationtests.testsuite.administration.state.mutable;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MutableTask {
+
+    private static final List<Class<?>> appendCriteriaCommands = new CopyOnWriteArrayList<>();
 
     private final String taskId;
     private Boolean completed;
@@ -52,5 +60,19 @@ public class MutableTask {
 
     public Boolean isCompleted() {
         return completed;
+    }
+
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(CommandMessage command, EventCriteria sourcingCriteria) {
+        appendCriteriaCommands.add(command.payloadType());
+        return sourcingCriteria;
+    }
+
+    public static void resetAppendCriteriaCommands() {
+        appendCriteriaCommands.clear();
+    }
+
+    public static List<Class<?>> appendCriteriaCommands() {
+        return List.copyOf(appendCriteriaCommands);
     }
 }

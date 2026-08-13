@@ -18,15 +18,50 @@ package org.axonframework.integrationtests.testsuite.administration;
 
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
+import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
+import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
+import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableEmployee;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutablePerson;
+import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableTask;
 import org.axonframework.modelling.entity.EntityMetamodel;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Runs the administration test suite using as many reflection components of the {@link EntityMetamodel} and related
  * classes as possible. As reflection-based components are added, this test may change to use more of them.
  */
 public abstract class MutableReflectionEntityModelAdministrationIT extends AbstractAdministrationIT {
+
+    @Test
+    void appendCriteriaBuilderBelongsToTheClassThatOwnsTheEffectiveHandler() {
+        // given
+        PersonIdentifier identifier = new PersonIdentifier(PersonType.EMPLOYEE, createId("builder-employee"));
+        MutablePerson.resetAppendCriteriaCommands();
+        MutableEmployee.resetAppendCriteriaCommands();
+        MutableTask.resetAppendCriteriaCommands();
+
+        // when
+        commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
+                      .getResultMessage().join();
+        commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
+                      .getResultMessage().join();
+        commandGateway.send(new AssignTaskCommand(identifier, "task", "Verify ownership"))
+                      .getResultMessage().join();
+        commandGateway.send(new CompleteTaskCommand(identifier, "task"))
+                      .getResultMessage().join();
+
+        // then
+        assertThat(MutablePerson.appendCriteriaCommands()).containsExactly(ChangeEmailAddress.class);
+        assertThat(MutableEmployee.appendCriteriaCommands())
+                .containsExactly(CreateEmployee.class, AssignTaskCommand.class);
+        assertThat(MutableTask.appendCriteriaCommands()).containsExactly(CompleteTaskCommand.class);
+    }
 
     @Override
     protected EventSourcingConfigurer testSuiteConfigurer(EventSourcingConfigurer configurer) {

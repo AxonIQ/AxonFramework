@@ -406,8 +406,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, messageTypeResolver,
-                    messageConverter, eventConverter, ClasspathHandlerDefinition.forClass(concreteType),
-                    registeredCommands
+                    messageConverter, eventConverter, handlerDefinition, registeredCommands
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);
@@ -564,7 +563,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                               messageTypeResolver,
                                               messageConverter,
                                               eventConverter,
-                                              ClasspathHandlerDefinition.forClass(clazz),
+                                              handlerDefinition,
                                               List.of());
     }
 

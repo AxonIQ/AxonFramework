@@ -17,6 +17,7 @@
 package org.axonframework.integrationtests.testsuite.administration.state.mutable;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
@@ -24,7 +25,9 @@ import org.axonframework.integrationtests.testsuite.administration.events.Certif
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskAssigned;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.entity.annotation.EntityMember;
 
 import java.util.ArrayList;
@@ -32,8 +35,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MutableEmployee extends MutablePerson {
+
+    private static final List<Class<?>> appendCriteriaCommands = new CopyOnWriteArrayList<>();
 
     @EntityMember
     private MutableSalaryInformation salary;
@@ -110,5 +116,19 @@ public class MutableEmployee extends MutablePerson {
 
     public void setCertifications(Map<String, MutableCertification> certifications) {
         this.certifications = certifications;
+    }
+
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(CommandMessage command, EventCriteria sourcingCriteria) {
+        appendCriteriaCommands.add(command.payloadType());
+        return sourcingCriteria;
+    }
+
+    public static void resetAppendCriteriaCommands() {
+        appendCriteriaCommands.clear();
+    }
+
+    public static List<Class<?>> appendCriteriaCommands() {
+        return List.copyOf(appendCriteriaCommands);
     }
 }

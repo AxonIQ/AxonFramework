@@ -49,13 +49,36 @@ import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.child.ChildEntityFieldDefinition;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
+import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Runs the administration test suite using the builders of {@link EntityMetamodel} and related classes.
  */
 public abstract class MutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
+
+    private static final List<Class<?>> appendCriteriaCommands = new CopyOnWriteArrayList<>();
+
+    @Test
+    void declarativeAppendCriteriaResolverAppliesToEveryEntityOwnedHandler() {
+        // given
+        PersonIdentifier identifier = new PersonIdentifier(PersonType.EMPLOYEE, createId("declarative-builder"));
+        appendCriteriaCommands.clear();
+
+        // when
+        commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
+                      .getResultMessage().join();
+        commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
+                      .getResultMessage().join();
+
+        // then
+        assertThat(appendCriteriaCommands).containsExactly(CreateEmployee.class, ChangeEmailAddress.class);
+    }
 
     EntityMetamodel<MutablePerson> buildEntityMetamodel(Configuration configuration,
                                                         EntityMetamodelBuilder<MutablePerson> builder) {
@@ -267,6 +290,10 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                 }))
                 .criteriaResolver(c -> (s, ctx) -> EventCriteria.havingTags("Person", s.key()))
                 .entityIdResolver(config -> new PersonIdentifierEntityIdResolver())
+                .appendCriteriaResolver((command, context, sourcingCriteria) -> {
+                    appendCriteriaCommands.add(command.payloadType());
+                    return sourcingCriteria;
+                })
                 .build();
         return configurer.componentRegistry(cr -> cr.registerModule(personEntityModule));
     }

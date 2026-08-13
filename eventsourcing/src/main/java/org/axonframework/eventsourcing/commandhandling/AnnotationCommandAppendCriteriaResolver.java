@@ -61,7 +61,7 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
     static Optional<AnnotationCommandAppendCriteriaResolver> inspect(Class<?> declaringType,
                                                                      Configuration configuration) {
         List<Method> builders = new ArrayList<>();
-        for (Method method : ReflectionUtils.methodsOf(declaringType)) {
+        for (Method method : declaringType.getDeclaredMethods()) {
             if (method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
                 builders.add(method);
             }
