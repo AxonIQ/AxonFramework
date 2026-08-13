@@ -41,7 +41,7 @@ import java.util.function.Function;
  *
  * @author Mitchell Herrijgers
  * @see MessageStreamResolverUtils
- * @since 5.3.0
+ * @since 5.3.1
  */
 @FunctionalInterface
 public interface MessageStreamResolver extends Function<Object, MessageStream<?>> {
