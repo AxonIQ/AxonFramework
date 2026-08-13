@@ -45,8 +45,8 @@ import static java.lang.String.format;
 import static org.axonframework.common.StringUtils.lowerCaseFirstCharacterOf;
 
 /**
- * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Aggregate types and registers a
- * {@link SpringEventSourcedEntityConfigurer configurer} for each Aggregate found.
+ * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Entity types and registers a
+ * {@link SpringEventSourcedEntityConfigurer configurer} for each Entity found.
  * <p>
  * Polymorphic entity hierarchies whose abstract parent lists its subtypes through {@link EventSourced#concreteTypes()}
  * are never registered as a {@link BeanDefinition} by Spring's own component scan (abstract classes are not candidate
