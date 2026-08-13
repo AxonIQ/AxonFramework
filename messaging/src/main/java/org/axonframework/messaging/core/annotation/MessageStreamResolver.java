@@ -66,9 +66,9 @@ public interface MessageStreamResolver extends Function<Object, MessageStream<?>
      * {@link #resolve(Object, Class)}. Resolves as if the handler may produce several results, matching the behaviour
      * of those callers. Prefer {@code resolve(Object, Class)} whenever the message type is known.
      *
-     * @param result The value returned by {@link MessageHandlingMember#handle(Message, ProcessingContext, Object)},
-     *               possibly {@code null}.
-     * @return A {@code MessageStream} carrying the given {@code result}.
+     * @param result the value returned by {@link MessageHandlingMember#handle(Message, ProcessingContext, Object)},
+     *               possibly {@code null}
+     * @return a {@code MessageStream} carrying the given {@code result}
      */
     @Override
     default MessageStream<?> apply(@Nullable Object result) {
