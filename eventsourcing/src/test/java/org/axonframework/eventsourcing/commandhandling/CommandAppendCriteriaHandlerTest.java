@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
@@ -40,6 +42,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +132,78 @@ class CommandAppendCriteriaHandlerTest {
         }
 
         @Test
+        void resolvedCriteriaRetainTheConsistencyMarkerEstablishedBySourcing() {
+            // given
+            var seed = aUnitOfWork();
+            seed.runOnPreInvocation(context -> eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                    new MessageType(CreditsChanged.class), new CreditsChanged("one")
+            )));
+            awaitSuccessfulCompletion(seed.execute());
+            EventCriteria sourcingCriteria = EventCriteria.havingTags(ACCOUNT_ONE);
+            EventCriteria commandCriteria = EventCriteria.havingTags("decision", "use-credits");
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("sourced-marker");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                FluxUtils.of(eventStore.transaction(context).source(
+                        SourcingCondition.conditionFor(sourcingCriteria)
+                )).blockLast();
+                eventStore.transaction(context).overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
+                ));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+                    delegate, eventStore, (command, context, criteria) -> commandCriteria
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "one"));
+
+            // then
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            assertThat(finalCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void resolvedCriteriaUseOriginWhenTheCommandDidNotSourceEvents() {
+            // given
+            EventCriteria commandCriteria = EventCriteria.havingTags("username", "unique");
+            AtomicReference<EventCriteria> receivedSourcingCriteria = new AtomicReference<>();
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("no-source-marker");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                eventStore.transaction(context).overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
+                ));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+                    delegate,
+                    eventStore,
+                    (command, context, sourcingCriteria) -> {
+                        receivedSourcingCriteria.set(sourcingCriteria);
+                        return commandCriteria;
+                    }
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "one"));
+
+            // then
+            assertThat(receivedSourcingCriteria.get()).isEqualTo(AppendCondition.none().criteria());
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            assertThat(finalCondition.get().consistencyMarker()).isEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
         void resolverFailurePreventsTheQueuedEventFromCommitting() {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("failing-resolver");
@@ -153,6 +228,32 @@ class CommandAppendCriteriaHandlerTest {
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("Cannot resolve append criteria");
+
+            // then
+            assertThat(storageEngine.latestToken().join().position()).hasValue(-1);
+        }
+
+        @Test
+        void nullResolverResultPreventsTheQueuedEventFromCommitting() {
+            // given
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("null-resolver");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
+                ));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+                    delegate, eventStore, (command, context, sourcingCriteria) -> null
+            );
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> component.handle(command(USE_CREDITS, "one"), context));
+
+            // when
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(NullPointerException.class)
+                    .hasStackTraceContaining("command append criteria resolver returned null");
 
             // then
             assertThat(storageEngine.latestToken().join().position()).hasValue(-1);

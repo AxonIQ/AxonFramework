@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
@@ -48,9 +50,22 @@ final class CommandAppendCriteriaDefinition {
                             .formatted(command.type().qualifiedName())
             );
         }
-        eventStore.transaction(context).transformAppendCriteria(sourcingCriteria -> Objects.requireNonNull(
-                resolver.resolve(command, context, sourcingCriteria),
-                "The command append criteria resolver returned null."
-        ));
+        eventStore.transaction(context).overrideAppendCondition(current -> {
+            var commandCriteria = Objects.requireNonNull(
+                    resolver.resolve(command, context, current.criteria()),
+                    "The command append criteria resolver returned null."
+            );
+            if (AppendCondition.none().equals(current)) {
+                return AppendCondition.withCriteria(commandCriteria);
+            }
+            if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
+                    && !current.criteria().equals(commandCriteria)) {
+                throw new IllegalStateException(
+                        "Command append criteria are not supported with aggregate-based consistency markers unless "
+                                + "they equal the sourcing criteria."
+                );
+            }
+            return current.replaceCriteria(commandCriteria);
+        });
     }
 }
