@@ -41,14 +41,14 @@ jobs:
       - name: Regular Build
         if: ${{ !matrix.sonar-enabled }}
         run: |
-          ./mvnw -B -U -ntp -Dstyle.color=always -Possrh -Pintegration-test -Djacoco.skip=true clean verify \
+          ./mvnw -B -U -ntp -Dstyle.color=always -Pintegration-test -Djacoco.skip=true clean verify \
           -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
           -Dparallel=classes -DthreadCount=1 -DforkCount=2
 
       - name: Build with Coverage reports
         if: matrix.sonar-enabled
         run: |
-          ./mvnw -B -U -ntp -Dstyle.color=always -Possrh -Dcoverage clean verify \
+          ./mvnw -B -U -ntp -Dstyle.color=always -Dcoverage clean verify \
           -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
           -Dparallel=classes -DthreadCount=1 -DforkCount=2
 
