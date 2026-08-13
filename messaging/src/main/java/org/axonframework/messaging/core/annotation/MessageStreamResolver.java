@@ -50,11 +50,11 @@ public interface MessageStreamResolver extends Function<Object, MessageStream<?>
      * Resolves the given {@code result} of a handler subscribed for the given {@code messageType} into a
      * {@link MessageStream}.
      *
-     * @param result      The value returned by
+     * @param result      the value returned by
      *                    {@link MessageHandlingMember#handle(Message, ProcessingContext, Object)}, possibly
-     *                    {@code null}.
-     * @param messageType The type of {@link Message} the handler returning the {@code result} is subscribed for.
-     * @return A {@code MessageStream} carrying the given {@code result}.
+     *                    {@code null}
+     * @param messageType the type of {@link Message} the handler returning the {@code result} is subscribed for
+     * @return a {@code MessageStream} carrying the given {@code result}
      */
     MessageStream<?> resolve(@Nullable Object result, Class<? extends Message> messageType);
 
