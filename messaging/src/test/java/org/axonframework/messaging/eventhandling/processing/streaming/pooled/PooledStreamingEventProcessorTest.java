@@ -50,6 +50,7 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorC
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SimpleSegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -1992,24 +1993,13 @@ class PooledStreamingEventProcessorTest {
                                                              createProcessingContext()));
 
             AtomicReference<TrackingToken> claimedFrom = new AtomicReference<>();
-            SegmentChangeListener listener = new SegmentChangeListener() {
-
-                @Override
-                public CompletableFuture<Void> onSegmentClaimed(Segment segment) {
-                    return FutureUtils.emptyCompletedFuture();
-                }
-
-                @Override
-                public CompletableFuture<Void> onSegmentClaimed(Segment segment, TrackingToken from) {
-                    claimedFrom.set(from);
-                    return FutureUtils.emptyCompletedFuture();
-                }
-
-                @Override
-                public CompletableFuture<Void> onSegmentReleased(Segment segment) {
-                    return FutureUtils.emptyCompletedFuture();
-                }
-            };
+            SegmentChangeListener listener = new SimpleSegmentChangeListener(
+                    (segment, from) -> {
+                        claimedFrom.set(from);
+                        return FutureUtils.emptyCompletedFuture();
+                    },
+                    segment -> FutureUtils.emptyCompletedFuture()
+            );
 
             withTestSubject(List.of(), c -> c.initialSegmentCount(1).addSegmentChangeListener(listener));
 
