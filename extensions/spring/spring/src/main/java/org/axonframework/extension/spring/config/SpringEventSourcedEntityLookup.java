@@ -52,7 +52,7 @@ import static org.axonframework.common.StringUtils.lowerCaseFirstCharacterOf;
  * Polymorphic entity hierarchies whose abstract parent lists its subtypes through {@link EventSourced#concreteTypes()}
  * are never registered as a {@link BeanDefinition} by Spring's own component scan (abstract classes are not candidate
  * components), so they cannot be found through {@link ListableBeanFactory#getBeanNamesForAnnotation(Class)}. To support
- * that documented pattern, this class additionally runs its own classpath scan (see {@link #findAbstractEntityRoots()})
+ * that documented pattern, this class additionally runs its own classpath scan (see {@code #findAbstractEntityRoots()})
  * across the given {@code basePackages}, independent of Spring's bean registry, to locate those abstract roots
  * directly.
  *
@@ -80,7 +80,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
     /**
      * Constructs a {@code SpringEventSourcedEntityLookup} that, in addition to the regular bean-registry-based
      * discovery, scans the given {@code basePackages} for abstract polymorphic entity roots (see
-     * {@link #findAbstractEntityRoots()}).
+     * {@code #findAbstractEntityRoots()}).
      *
      * @param basePackages the packages to scan for abstract classes annotated with {@link EventSourced}
      */
