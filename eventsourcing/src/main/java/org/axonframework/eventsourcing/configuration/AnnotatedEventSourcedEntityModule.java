@@ -31,6 +31,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefin
 import org.axonframework.eventsourcing.annotation.Snapshotting;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
@@ -125,7 +126,8 @@ class AnnotatedEventSourcedEntityModule<I, E>
                     c.getComponent(ParameterResolverFactory.class),
                     c.getComponent(MessageTypeResolver.class),
                     c.getComponent(MessageConverter.class),
-                    c.getComponent(EventConverter.class)
+                    c.getComponent(EventConverter.class),
+                    c.getComponent(HandlerDefinition.class)
             );
         }
 
@@ -134,7 +136,8 @@ class AnnotatedEventSourcedEntityModule<I, E>
                 c.getComponent(ParameterResolverFactory.class),
                 c.getComponent(MessageTypeResolver.class),
                 c.getComponent(MessageConverter.class),
-                c.getComponent(EventConverter.class)
+                c.getComponent(EventConverter.class),
+                c.getComponent(HandlerDefinition.class)
         );
     }
 

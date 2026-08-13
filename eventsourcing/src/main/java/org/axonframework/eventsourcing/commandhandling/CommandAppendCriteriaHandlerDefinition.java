@@ -40,7 +40,8 @@ import static java.util.Objects.requireNonNull;
 
 /**
  * Handler-definition decorator that adapts a class-level
- * {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} to annotated external command handlers.
+ * {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} to annotated external and entity-owned
+ * command handlers.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
