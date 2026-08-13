@@ -17,7 +17,6 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
@@ -32,7 +31,10 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -54,9 +56,11 @@ import java.util.stream.StreamSupport;
  * {@link EntityCreator}-annotated constructors and static methods on the entity type and its supertypes to find a
  * suitable constructor or static method to create an entity instance.
  * <p>
- * This class implements the requirements as per the {@link EntityCreator} annotation. It also honors
- * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
- * event is present, as described on {@link ForcedEntityCreator}. This class is thread-safe.
+ * This class implements the requirements as per the {@link EntityCreator} annotation. A no-argument or
+ * identifier-based creator always creates the entity, even without a first event, while an event-based creator only
+ * creates when a matching first event is present. When no creator matches (or the entity declares none), creation is
+ * deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the entity from the
+ * first event instead. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -64,6 +68,8 @@ import java.util.stream.StreamSupport;
  * @since 5.0.0
  */
 public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSourcedEntityFactory<ID, E> {
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final Context.ResourceKey<ID> ID_KEY = Context.ResourceKey.withLabel("EventSourcedEntityFactory.id");
 
@@ -137,7 +143,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private void initialize() {
         scanMethods();
         scanConstructors();
-        validate();
     }
 
     private void scanConstructors() {
@@ -156,14 +161,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
              .forEach(this::addEntityCreatorMethod);
     }
 
-    private void validate() {
-        if (creators.isEmpty()) {
-            throw new AxonConfigurationException(
-                    "No @EntityCreator present on entity of type [%s]. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
-                            entityType.getName()));
-        }
-    }
-
     private void addEntityCreatorMethod(Method method) {
         if (!Modifier.isStatic(method.getModifiers())) {
             throw new AxonConfigurationException("Method-based @EntityCreator must be static. Found method: %s".formatted(
@@ -178,7 +175,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     }
 
     private void addEntityCreatorExecutable(Executable executable) {
-        boolean forced = AnnotationUtils.isAnnotationPresent(executable, ForcedEntityCreator.class);
         String[] payloadQualifiedNamesAttribute = AnnotationUtils
                 .findAnnotationAttribute(executable, EntityCreator.class, "payloadQualifiedNames")
                 .map(o -> (String[]) o)
@@ -242,8 +238,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                                               payloadQualifiedNames,
                                               concreteIdType,
                                               expectedPayloadRepresentation,
-                                              hasMessageParameter,
-                                              forced));
+                                              hasMessageParameter));
     }
 
     private Set<ScannedEntityCreator> getMethodsCompatibleWithIdAndNoMessage(ID id) {
@@ -275,16 +270,14 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             compatibleCreators = getMethodsCompatibleWithIdAndNoMessage(id);
         }
         if (compatibleCreators.isEmpty()) {
-            if (eventMessage == null) {
-                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet.
-                // Return no-op ScannedEntityCreator, which defaults to returning null for the entity creation.
-                return new ScannedEntityCreator();
+            // No matching @EntityCreator (or the entity declares none). Rather than fail, defer creation by returning
+            // a no-op that yields null, so a static event sourcing handler can build the entity from the first event.
+            if (logger.isDebugEnabled()) {
+                logger.debug("No @EntityCreator matched id [{}]{}. Deferring creation to event sourcing handlers.",
+                             id,
+                             eventMessage == null ? " (no first event)" : " and event [" + eventMessage.type() + "]");
             }
-            StringBuilder message = new StringBuilder(
-                    "No suitable @EntityCreator found for id: [%s] and event message [%s]. Candidates were:"
-                            .formatted(id, ObjectUtils.getOrDefault(eventMessage, Message::type, "none")));
-            creators.forEach(creator -> message.append("\n - ").append(creator));
-            throw new AxonConfigurationException(message.toString());
+            return new ScannedEntityCreator();
         }
         Set<ScannedEntityCreator> matchingCreators = compatibleCreators
                 .stream()
@@ -336,7 +329,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         private final @Nullable Class<?> concreteIdType;
         private final @Nullable Class<?> expectedPayloadRepresentation;
         private final boolean hasMessageParameter;
-        private final boolean forced;
         private final boolean noOp;
 
         /**
@@ -351,7 +343,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = null;
             this.expectedPayloadRepresentation = null;
             this.hasMessageParameter = false;
-            this.forced = false;
             this.noOp = true;
         }
 
@@ -361,8 +352,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                 List<QualifiedName> payloadQualifiedNames,
                 @Nullable Class<?> concreteIdType,
                 @Nullable Class<?> expectedPayloadRepresentation,
-                boolean hasMessageParameter,
-                boolean forced
+                boolean hasMessageParameter
         ) {
             ReflectionUtils.ensureAccessible(executable);
             this.executable = executable;
@@ -371,12 +361,11 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = concreteIdType;
             this.expectedPayloadRepresentation = expectedPayloadRepresentation;
             this.hasMessageParameter = hasMessageParameter;
-            this.forced = forced;
             this.noOp = false;
         }
 
         private @Nullable E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
-            if (noOp || (!forced && isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage))) {
+            if (noOp) {
                 return null;
             }
 
@@ -405,33 +394,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(e);
             }
-        }
-
-        /**
-         * Returns {@code true} when this {@link EntityCreator} annotated {@link Executable} (a {@link Constructor} or a
-         * static factory {@link java.lang.reflect.Method}) has no parameters beyond {@link InjectEntityId}-annotated
-         * ones, and no {@code firstEventMessage} is present, indicating that the entity has never been created by an
-         * event and therefore does not exist.
-         * <p>
-         * Concretely, this returns {@code true} when both conditions hold:
-         * <ul>
-         *   <li>every parameter resolver is an {@link IdTypeParameterResolver} (covers both zero-arg creators and
-         *       creators whose only parameters are {@link InjectEntityId}-annotated)</li>
-         *   <li>{@code firstEventMessage} is {@code null}</li>
-         * </ul>
-         * <p>
-         * The {@link #invoke(Object, EventMessage, ProcessingContext)} operation ignores this outcome for
-         * {@link ForcedEntityCreator}-annotated creators, since those are invoked regardless of whether a first event
-         * is present.
-         *
-         * @param firstEventMessage the first {@link EventMessage}, if any, for the entity that is about to be
-         *                          constructed
-         * @return {@code true} when the creator requires no event to produce an entity but no event was supplied,
-         * meaning the entity does not exist yet
-         */
-        private boolean isNoArgOrIdBasedCreatorWithoutFirstEvent(@Nullable EventMessage firstEventMessage) {
-            return firstEventMessage == null
-                    && Arrays.stream(parameterResolvers).allMatch(r -> r == idTypeParameterResolver);
         }
 
         private boolean supportsId(ID id) {

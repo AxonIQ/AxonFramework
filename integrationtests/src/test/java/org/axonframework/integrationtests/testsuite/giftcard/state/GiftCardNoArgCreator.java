@@ -27,12 +27,9 @@ import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 /**
- * An entity-centric command handler for which the entity is created without any parameters, will fail on instance
- * command handlers with an {@link org.axonframework.modelling.repository.EntityNotFoundException}.
- * <p>
- * Although we can default the entity based on the no-arg constructor, the instance command handler essentially
- * <b>exists</b> on that entity when styled entity-centric. By "magically" creating the entity for instance command
- * handlers, we work around the expectation that the entity has a preceding lifecycle.
+ * An entity-centric command handler for which the entity is created without any parameters. Because a no-argument
+ * {@link EntityCreator} always constructs the entity, the entity is never absent; the instance command handler runs on
+ * the (empty) entity and guards its own lifecycle, rejecting a redemption on a card that has not been issued yet.
  *
  * @author Steven van Beelen
  */
@@ -41,6 +38,7 @@ public class GiftCardNoArgCreator {
 
     private String cardId;
     private double amount;
+    private boolean issued;
 
     @EntityCreator
     public GiftCardNoArgCreator() {
@@ -54,6 +52,9 @@ public class GiftCardNoArgCreator {
 
     @CommandHandler
     public void handle(RedeemCardCommand command, EventAppender appender) {
+        if (!issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] does not exist");
+        }
         if (amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
@@ -64,6 +65,7 @@ public class GiftCardNoArgCreator {
     public void on(CardIssuedEvent event) {
         cardId = event.cardId();
         amount = event.amount();
+        issued = true;
     }
 
     @EventSourcingHandler

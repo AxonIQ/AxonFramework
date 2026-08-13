@@ -146,6 +146,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
             }
 
             return evolvedEntity;
+        } catch (StateEvolvingException e) {
+            throw e;
         } catch (Exception e) {
             throw new StateEvolvingException(
                     "Failed to apply event [" + event.type() + "] in order to evolve [" + listenerType + "] state",
@@ -200,10 +202,16 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 return (E) entityType.cast(resultPayload);
             }
         }
-        // A static handler declaring the entity as its return type may deliberately return null to decline creation
-        // or to remove (tombstone) the entity. A null return surfaces as an empty stream, so we rely on the return
-        // type to distinguish it from a void (mutating) instance handler.
+        // A static handler declaring the entity as its return type returned null (an empty stream). While the entity
+        // does not exist yet, this is a legitimate "decline to create" outcome. Once the entity exists, however, it
+        // may not be removed by returning null: model end-of-life as a terminal state instead.
         if (staticHandler && handlerReturnsEntity(handler)) {
+            if (existing != null) {
+                throw new StateEvolvingException(
+                        "A static event sourcing handler returned null for an existing [" + entityType.getName()
+                                + "] entity. An entity that exists cannot be removed by returning null; "
+                                + "model end-of-life as a terminal state instead.");
+            }
             return null;
         }
         return existing;

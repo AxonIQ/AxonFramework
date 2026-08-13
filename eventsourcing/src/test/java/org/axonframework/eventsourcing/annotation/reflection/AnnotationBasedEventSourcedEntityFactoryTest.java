@@ -77,8 +77,13 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
-            assertNull(factory.create("test-id", null, new StubProcessingContext()));
+        void createsIdOnlyConstructorWithoutEventMessage() {
+            // An identifier-based @EntityCreator always creates the entity, even without a first event.
+            EventMessageTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
+
+            assertNotNull(entity);
+            assertEquals("test-id", entity.getId());
+            assertNull(entity.getEventMessage());
         }
 
         @Test
@@ -144,12 +149,12 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
+        void returnsNullWhenNoMatchingPayloadType() {
+            // No creator matches the event and there is no identifier-based fallback creator: creation is deferred by
+            // returning null, so a static event sourcing handler can build the entity instead.
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
-                factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
-            });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         @Test
@@ -218,15 +223,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
+        void returnsNullWhenNoMatchingPayloadType() {
             eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"),
                                                    new PayloadSpecificPayload("my-specific-payload"));
 
-            AxonConfigurationException exception = assertThrows(
-                    AxonConfigurationException.class,
-                    () -> factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage))
-            );
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         @Test
@@ -272,11 +273,14 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void returnsNullForIdOnlyFactoryMethodWithoutEventMessage() {
-            // A method-based no-arg/id-only @EntityCreator must be treated the same as a constructor-based one: no
-            // event message present means the entity does not exist yet, regardless of whether the creator is a
-            // Constructor or a static factory Method.
-            assertNull(factory.create("test-id", null, new StubProcessingContext()));
+        void createsIdOnlyFactoryMethodWithoutEventMessage() {
+            // A method-based identifier-based @EntityCreator, like a constructor-based one, always creates the entity
+            // even without a first event.
+            FactoryMethodsTestEntity entity = factory.create("test-id", null, new StubProcessingContext());
+
+            assertNotNull(entity);
+            assertEquals("test-id", entity.getId());
+            assertNull(entity.getEventMessage());
         }
 
         @Test
@@ -353,7 +357,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void returnsNullForIdOnlyConstructorWithoutEventMessage() {
+        void createsIdOnlyConstructorWithoutEventMessage() {
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     MostSpecificHandlerEntity.class,
                     String.class,
@@ -362,7 +366,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
                     converter
             );
 
-            assertNull(factory.create("test-id", null, new StubProcessingContext()));
+            // Without a first event, the identifier-based creator is used (the metadata creator cannot resolve).
+            var entity = factory.create("test-id", null, new StubProcessingContext());
+
+            assertNotNull(entity);
+            assertEquals("simply-id", entity.invoked);
         }
 
         static class MostSpecificHandlerEntity {
@@ -487,18 +495,20 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsOnMissingFactoryMethods() {
-            var exception = assertThrows(AxonConfigurationException.class,
-                                         () -> new AnnotationBasedEventSourcedEntityFactory<>(
-                                                 NoAnnotatedMethodsEntity.class,
-                                                 String.class,
-                                                 Collections.singleton(NoAnnotatedMethodsEntity.class),
-                                                 parameterResolverFactory,
-                                                 messageTypeResolver,
-                                                 converter
-                                         ));
-            assertTrue(exception.getMessage().contains(
-                    "No @EntityCreator present on entity of type"));
+        void allowsEntityWithoutAnyEntityCreator() {
+            // An entity may declare no @EntityCreator at all: the factory then yields null (deferring creation to a
+            // static event sourcing handler) rather than failing at configuration time.
+            var factory = assertDoesNotThrow(() -> new AnnotationBasedEventSourcedEntityFactory<>(
+                    NoAnnotatedMethodsEntity.class,
+                    String.class,
+                    Collections.singleton(NoAnnotatedMethodsEntity.class),
+                    parameterResolverFactory,
+                    messageTypeResolver,
+                    converter
+            ));
+
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         public static class InvalidEntityNonStaticMethod {
@@ -520,6 +530,50 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         public static class NoAnnotatedMethodsEntity {
 
             public NoAnnotatedMethodsEntity(String id) {
+            }
+        }
+    }
+
+    @Nested
+    class AlwaysCreatingCreators {
+
+        @Test
+        void noArgumentCreatorCreatesWithoutEventMessage() {
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    NoArgEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+
+            assertNotNull(factory.create("test-id", null, new StubProcessingContext()));
+        }
+
+        @Test
+        void identifierCreatorAppliesWhenFirstEventPresentButNoEventBasedCreatorMatches() {
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    IdOnlyEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            when(eventMessage.type()).thenReturn(new MessageType("unrelated-type"));
+
+            IdOnlyEntity entity =
+                    factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+
+            assertNotNull(entity);
+            assertEquals("test-id", entity.id);
+        }
+
+        static class NoArgEntity {
+
+            @EntityCreator
+            NoArgEntity() {
+            }
+        }
+
+        static class IdOnlyEntity {
+
+            private final String id;
+
+            @EntityCreator
+            IdOnlyEntity(@InjectEntityId String id) {
+                this.id = id;
             }
         }
     }

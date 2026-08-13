@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector.inspectType;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
@@ -167,33 +168,18 @@ class StaticEventSourcingHandlerTest {
     class Removal {
 
         @Test
-        void staticHandlerTombstonesExistingEntityBackToNull() {
-            // given
+        void staticHandlerReturningNullForExistingEntityIsRejected() {
+            // given a created counter
             EventMessage created = asEventMessage(new Created());
             Counter state = COUNTER_EVOLVER.evolve(null, created, StubProcessingContext.forMessage(created));
 
-            // when
+            // when a static handler returns null for the now-existing entity, then it is rejected: an entity that
+            // exists cannot be removed by returning null (model end-of-life as a terminal state instead).
             EventMessage deleted = asEventMessage(new Deleted());
-            state = COUNTER_EVOLVER.evolve(state, deleted, StubProcessingContext.forMessage(deleted));
-
-            // then
-            assertThat(state).isNull();
-        }
-
-        @Test
-        void entityCanBeRecreatedAfterTombstone() {
-            // given
-            EventMessage created = asEventMessage(new Created());
-            EventMessage deleted = asEventMessage(new Deleted());
-            Counter state = COUNTER_EVOLVER.evolve(null, created, StubProcessingContext.forMessage(created));
-            state = COUNTER_EVOLVER.evolve(state, deleted, StubProcessingContext.forMessage(deleted));
-
-            // when
-            state = COUNTER_EVOLVER.evolve(state, created, StubProcessingContext.forMessage(created));
-
-            // then
-            assertThat(state).isNotNull();
-            assertThat(state.value).isZero();
+            var context = StubProcessingContext.forMessage(deleted);
+            assertThatThrownBy(() -> COUNTER_EVOLVER.evolve(state, deleted, context))
+                    .isInstanceOf(StateEvolvingException.class)
+                    .hasMessageContaining("cannot be removed by returning null");
         }
     }
 
