@@ -26,7 +26,10 @@ import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandlerDefinition;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
 import org.axonframework.messaging.eventhandling.EventBus;
@@ -82,8 +85,20 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
         registry.registerIfNotPresent(TagResolver.class, EventSourcingConfigurationDefaults::defaultTagResolver)
                 .registerIfNotPresent(EventStorageEngine.class,
                                       EventSourcingConfigurationDefaults::defaultEventStorageEngine)
-                .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore);
+                .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore)
+                .registerIfNotPresent(
+                        HandlerDefinition.class,
+                        configuration -> ClasspathHandlerDefinition.forClassLoader(
+                                Thread.currentThread().getContextClassLoader()
+                        )
+                );
         registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
+        registry.registerDecorator(
+                HandlerDefinition.class,
+                CommandAppendCriteriaHandlerDefinition.DECORATION_ORDER,
+                (configuration, name, delegate) ->
+                        new CommandAppendCriteriaHandlerDefinition(delegate, configuration)
+        );
         registry.registerDecorator(
                 EventStore.class,
                 InterceptingEventStore.DECORATION_ORDER,
