@@ -79,7 +79,11 @@ public class MessageStreamResolverUtils {
      * @param typeResolver The {@code MessageTypeResolver} used to resolve the {@link MessageType} for
      *                     {@link Message Messages} that are held in the returned
      *                     {@link MessageStream}.
-     * @return A {@code MessageStream} based on the given {@code result}.
+    * @param result       the result to map into a {@link MessageStream}
+    * @param typeResolver the {@code MessageTypeResolver} used to resolve the {@link MessageType} for
+    *                     {@link Message Messages} that are held in the returned
+    *                     {@link MessageStream}
+    * @return a {@code MessageStream} based on the given {@code result}
      */
     public static MessageStream<?> resolveToStream(@Nullable Object result,
                                                    MessageTypeResolver typeResolver) {
