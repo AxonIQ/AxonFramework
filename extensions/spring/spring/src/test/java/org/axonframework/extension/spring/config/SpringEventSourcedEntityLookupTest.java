@@ -25,6 +25,7 @@ import org.mockito.*;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,6 +71,25 @@ class SpringEventSourcedEntityLookupTest {
     }
 
     @Test
+    void doesNotDoubleRegisterAbstractRootReachableByBothDiscoveryPaths() {
+        // given
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        new AnnotatedBeanDefinitionReader(beanFactory).register(IndividuallyAnnotatedSubtype.class);
+        var lookup = new SpringEventSourcedEntityLookup(List.of(getClass().getPackageName()));
+
+        // when
+        lookup.postProcessBeanFactory(beanFactory);
+
+        // then
+        // The classpath scan also finds AbstractRootWithConcreteTypes (a sibling nested test class in this same
+        // package), so we count registrars targeting IndividuallyAnnotatedRoot specifically, rather than the total.
+        long registrarsTargetingRoot = countConfigurersTargeting(beanFactory,
+                                                                 IndividuallyAnnotatedRoot.class,
+                                                                 String.class);
+        assertThat(registrarsTargetingRoot).isEqualTo(1);
+    }
+
+    @Test
     void doesNotScanForAbstractRootsWhenNoBasePackagesAreConfigured() {
         // given
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
@@ -81,11 +101,36 @@ class SpringEventSourcedEntityLookupTest {
         assertThat(beanFactory.containsBeanDefinition("abstractRootWithConcreteTypes$$Registrar")).isFalse();
     }
 
-    @SuppressWarnings("unchecked")
     private static void assertConfigurerTargets(DefaultListableBeanFactory beanFactory,
                                                 String registrarBeanName,
                                                 Class<?> expectedEntityType,
                                                 Class<?> expectedIdType) {
+        assertThat(moduleNameOf(beanFactory, registrarBeanName))
+                .isEqualTo(expectedModuleName(expectedEntityType, expectedIdType));
+    }
+
+    private static long countConfigurersTargeting(DefaultListableBeanFactory beanFactory,
+                                                  Class<?> expectedEntityType,
+                                                  Class<?> expectedIdType) {
+        String expectedModuleName = expectedModuleName(expectedEntityType, expectedIdType);
+        return Arrays.stream(beanFactory.getBeanNamesForType(SpringEventSourcedEntityConfigurer.class))
+                     .filter(registrarBeanName -> expectedModuleName.equals(
+                             moduleNameOf(beanFactory, registrarBeanName)
+                     ))
+                     .count();
+    }
+
+    private static String expectedModuleName(Class<?> expectedEntityType,
+                                             Class<?> expectedIdType) {
+        return "AnnotatedEventSourcedEntityModule<"
+                + expectedIdType.getName()
+                + ", "
+                + expectedEntityType.getName()
+                + ">";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String moduleNameOf(DefaultListableBeanFactory beanFactory, String registrarBeanName) {
         var configurer = (SpringEventSourcedEntityConfigurer<Object, Object>) beanFactory.getBean(registrarBeanName);
 
         ComponentRegistry registry = mock();
@@ -94,9 +139,7 @@ class SpringEventSourcedEntityLookupTest {
         var moduleCaptor = ArgumentCaptor.forClass(Module.class);
         verify(registry).registerModule(moduleCaptor.capture());
         assertThat(moduleCaptor.getValue()).isInstanceOf(EventSourcedEntityModule.class);
-        assertThat(moduleCaptor.getValue().name())
-                .isEqualTo("AnnotatedEventSourcedEntityModule<"
-                                   + expectedIdType.getName() + ", " + expectedEntityType.getName() + ">");
+        return moduleCaptor.getValue().name();
     }
 
     @EventSourced(idType = String.class)
