@@ -177,6 +177,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
                 logger.info("Registrar for {} already available. Skipping configuration", entityPrototype);
                 break;
+                logger.info("Registrar bean [{}] already available. Skipping configuration", registrarBeanName);
             }
 
             if (hasSubtypesOrIsPrototype(entitySubtypes, beanFactory, entityPrototype) && entityType != null) {
@@ -201,7 +202,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             String registrarBeanName =
                     lowerCaseFirstCharacterOf(abstractRoot.getSimpleName()) + REGISTRAR_BEAN_NAME_SUFFIX;
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
-                logger.info("Registrar for {} already available. Skipping configuration", abstractRoot.getName());
+                logger.info("Registrar bean [{}] already available. Skipping configuration", registrarBeanName);
                 continue;
             }
             AnnotationUtils.findAnnotationAttributes(abstractRoot, EventSourced.class)
