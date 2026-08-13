@@ -19,9 +19,13 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.extension.spring.config.MessageHandlerLookup;
 import org.axonframework.extension.spring.config.SpringEventSourcedEntityLookup;
 import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigurationPackages;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Role;
+
+import java.util.List;
 
 /**
  * Infrastructure autoconfiguration class for Axon Framework application. Constructs the look-up components, like the
@@ -46,13 +50,23 @@ public class InfrastructureAutoConfiguration {
     }
 
     /**
-     * Provides a Spring aggregate lookup.
+     * Provides a Spring entity lookup.
+     * <p>
+     * Besides the regular bean-registry-based entity discovery, this scans the auto-configuration base packages (see
+     * {@link AutoConfigurationPackages}) for abstract polymorphic entity roots, since those are never registered as a
+     * bean by Spring's own component scan.
      *
-     * @return The lookup scanning for annotations for later entity registrations.
+     * @param beanFactory the bean factory to resolve the auto-configuration base packages from
+     * @return the lookup scanning for annotations for later entity registrations
      */
     @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
     @Bean
-    public static SpringEventSourcedEntityLookup springEventSourcedEntityLookup() {
-        return new SpringEventSourcedEntityLookup();
+    public static SpringEventSourcedEntityLookup springEventSourcedEntityLookup(
+            ConfigurableListableBeanFactory beanFactory
+    ) {
+        List<String> basePackages = AutoConfigurationPackages.has(beanFactory)
+                ? AutoConfigurationPackages.get(beanFactory)
+                : List.of();
+        return new SpringEventSourcedEntityLookup(basePackages);
     }
 }
