@@ -165,6 +165,44 @@ class StaticEventSourcingHandlerTest {
     }
 
     @Nested
+    class NoStateParameter {
+
+        @SuppressWarnings("unused")
+        private static final class FromEvent {
+
+            private final int value;
+
+            private FromEvent(int value) {
+                this.value = value;
+            }
+
+            // Static handler with NO state parameter: creates from the event, ignoring any prior state.
+            @EventHandler
+            static FromEvent onCreated(Created event) {
+                return new FromEvent(0);
+            }
+        }
+
+        private final EntityEvolver<FromEvent> evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                FromEvent.class, converter, messageTypeResolver
+        );
+
+        @Test
+        void staticHandlerWithoutStateParameterCreatesFromEvent() {
+            // given
+            var event = asEventMessage(new Created());
+            var context = StubProcessingContext.forMessage(event);
+
+            // when the entity does not exist yet
+            FromEvent result = evolver.evolve(null, event, context);
+
+            // then the static handler still creates it from the event, without declaring a state parameter
+            assertThat(result).isNotNull();
+            assertThat(result.value).isZero();
+        }
+    }
+
+    @Nested
     class Removal {
 
         @Test
