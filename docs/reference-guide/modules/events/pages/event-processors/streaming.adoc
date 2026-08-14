@@ -483,6 +483,12 @@ This way, changes to the view model can be stored atomically with the changed to
 Furthermore, it guarantees **exactly once** processing semantics.
 ====
 
+[IMPORTANT]
+.Storing tokens in PostgreSQL
+====
+When you are using PostgreSQL to store your tracking tokens, we strongly recommend you read our known issues section on xref:ROOT:known-issues-and-workarounds.adoc#postgresql_and_large_object_storage[PostgreSQL and Large Object storage] to ensure you do not hit any production issue with this combination.
+====
+
 Note that you can configure the token store to use for a streaming processor in the `EventProcessingConfigurer`:
 
 [tabs]
@@ -523,7 +529,7 @@ include::example$events/eventprocessors/streaming/tokenstore/springboot/AxonConf
 --
 ====
 
-==== Retrieving the token store identifier
+==== **Retrieving the token store identifier**
 
 Implementations of `TokenStore` might share state in the underlying storage.
 To ensure correct operation, a token store has a unique identifier that uniquely identifies the storage location of the tokens in that store.
