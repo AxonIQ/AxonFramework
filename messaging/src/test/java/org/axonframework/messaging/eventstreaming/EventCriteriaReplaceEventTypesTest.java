@@ -109,6 +109,24 @@ class EventCriteriaReplaceEventTypesTest {
         }
 
         @Test
+        void replacesAnExistingTypeRestrictionWithANarrowerSet() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT)
+                                                    .andBeingOneOfTypes(TOPPED_UP, USED);
+
+            // when
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED));
+
+            // then
+            assertThat(result.flatten()).singleElement().satisfies(criterion -> {
+                assertThat(criterion.tags()).containsExactly(FIRST_ACCOUNT);
+                assertThat(criterion.types()).containsExactly(USED);
+            });
+            assertThat(result.matches(USED, Set.of(FIRST_ACCOUNT))).isTrue();
+            assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isFalse();
+        }
+
+        @Test
         void acceptsClassesForTheReplacementTypes() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
