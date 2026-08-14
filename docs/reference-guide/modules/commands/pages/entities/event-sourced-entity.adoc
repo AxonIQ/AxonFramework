@@ -109,6 +109,21 @@ It can also evolve an existing instance (returning the next state), or, while th
 Use a static event sourcing handler when an entity should not exist until a specific event establishes it, without declaring a first-event-based xref:commands:entities/entity-creator.adoc[entity creator] for that event.
 An instance handler still requires an existing entity, so it only runs once a static handler (or an entity creator) has produced one.
 
+The state parameter is optional.
+When a handler creates the entity purely from the event and does not need the previous state, you can omit it:
+
+[source,java]
+----
+@EventSourcingHandler
+static Course on(CourseCreated event) {
+    return new Course(event.courseId(), event.name());
+}
+----
+
+Because this form has no access to the prior state, it always produces a fresh instance from the event.
+Use it only for an event that establishes the entity; if that event type could also arrive once the entity already exists, it would replace the current state.
+Keep the state parameter (marked `@Nullable`) whenever the next state depends on the previous one.
+
 [NOTE]
 ====
 Once an entity exists, it stays non-null.
