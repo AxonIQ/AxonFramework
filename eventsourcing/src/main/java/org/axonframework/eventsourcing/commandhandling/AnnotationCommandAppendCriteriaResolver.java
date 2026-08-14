@@ -21,20 +21,13 @@ import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
-import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
-import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.messaging.queryhandling.QueryBus;
-import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
-import org.axonframework.modelling.annotation.InjectEntity;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -236,22 +229,34 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
             if (parameterType == Configuration.class) {
                 return (command, context, sourcingCriteria) -> configuration;
             }
-            if (parameter.isAnnotationPresent(InjectEntity.class)
-                    || parameterType == EventAppender.class
-                    || parameterType == CommandDispatcher.class
-                    || parameterType == CommandGateway.class
-                    || parameterType == CommandBus.class
-                    || parameterType == QueryGateway.class
-                    || parameterType == QueryBus.class) {
-                throw invalid(method, "declares unsupported parameter type [%s]".formatted(parameterType.getName()));
+            return componentResolver(parameterType, configuration, method);
+        }
+
+        /**
+         * Resolves any remaining parameter as a configured component, rejecting whatever the {@link Configuration}
+         * cannot supply.
+         * <p>
+         * This covers every type that is not injectable rather than enumerating the types that are not, so a parameter
+         * that is meaningless to a criteria builder -- a gateway, an entity, an event appender -- is reported through
+         * the same message as any other. A broad type such as {@code Object} matches several components and makes the
+         * lookup itself fail; that detail is folded into the message instead of surfacing as a configuration error.
+         */
+        private static ArgumentResolver componentResolver(Class<?> parameterType,
+                                                          Configuration configuration,
+                                                          Method method) {
+            Object component;
+            try {
+                component = configuration.getOptionalComponent(parameterType).orElse(null);
+            } catch (RuntimeException e) {
+                throw invalid(method, "declares unsupported parameter type [%s]: %s"
+                        .formatted(parameterType.getName(), e.getMessage()));
             }
-            Object component = configuration.getOptionalComponent(parameterType)
-                                            .orElseThrow(() -> invalid(
-                                                    method,
-                                                    "declares unsupported parameter type [%s]"
-                                                            .formatted(parameterType.getName())
-                                            ));
-            return (command, context, sourcingCriteria) -> component;
+            if (component == null) {
+                throw invalid(method,
+                              "declares unsupported parameter type [%s]".formatted(parameterType.getName()));
+            }
+            Object resolved = component;
+            return (command, context, sourcingCriteria) -> resolved;
         }
 
         private static Class<?> boxed(Class<?> type) {
