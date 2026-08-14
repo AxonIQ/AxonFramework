@@ -126,8 +126,8 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
             try {
                 CommandAppendCriteriaOverride.apply(command, context, eventStore, resolver);
                 return delegate.handle(message, context, target);
-            } catch (Throwable throwable) {
-                return MessageStream.failed(throwable);
+            } catch (Exception e) {
+                return MessageStream.failed(e);
             }
         }
 

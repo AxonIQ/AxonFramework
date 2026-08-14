@@ -37,6 +37,7 @@ import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -247,7 +248,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
             // when / then
             assertThatThrownBy(() -> duplicate.handle(
                                                      command,
-                                                     new org.axonframework.messaging.core.unitofwork.StubProcessingContext()
+                                                     new StubProcessingContext()
                                              )
                                              .asCompletableFuture()
                                              .join())

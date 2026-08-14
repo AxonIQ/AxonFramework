@@ -89,8 +89,8 @@ public final class AppendCriteriaResolvingCommandHandlingComponent implements Co
         try {
             CommandAppendCriteriaOverride.apply(command, context, eventStore, resolver);
             return delegate.handle(command, context);
-        } catch (Throwable throwable) {
-            return MessageStream.failed(throwable);
+        } catch (Exception e) {
+            return MessageStream.failed(e);
         }
     }
 

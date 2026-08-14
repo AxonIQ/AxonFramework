@@ -41,7 +41,15 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Synchronous annotation adapter for a class-level append-criteria builder.
+ * Adapts a class-level {@link AppendCriteriaBuilder} method to the {@link CommandAppendCriteriaResolver} contract.
+ * <p>
+ * Resolution is synchronous, matching the resolver contract: the builder's parameters come from the command, the
+ * accumulated sourcing criteria, and the {@link Configuration}, none of which require awaiting. The command is passed
+ * in explicitly rather than read from the {@link ProcessingContext}, because the resolver runs when the append
+ * condition is finalized rather than while the handler is invoked.
+ *
+ * @author Mateusz Nowak
+ * @since 5.4.0
  */
 final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCriteriaResolver {
 
@@ -117,7 +125,8 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
             if (!builder.accepts(payloadType)) {
                 throw invalid(
                         builder.method,
-                        "declares command parameter [%s], which cannot accept handled command payload [%s] declared by [%s]"
+                        ("declares command parameter [%s], which cannot accept handled command payload [%s] "
+                                + "declared by [%s]")
                                 .formatted(builder.commandType.getName(),
                                            payloadType.getName(),
                                            declaringType.getName())
@@ -278,11 +287,12 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
                 arguments[i] = argumentResolvers[i].resolve(command, context, sourcingCriteria);
             }
             try {
+                // The return type is validated on construction, so null is the only value that is not EventCriteria.
                 Object result = method.invoke(null, arguments);
-                if (!(result instanceof EventCriteria criteria)) {
+                if (result == null) {
                     throw invalid(method, "returned null; it must return a non-null EventCriteria");
                 }
-                return criteria;
+                return (EventCriteria) result;
             } catch (IllegalAccessException e) {
                 throw new IllegalArgumentException("Cannot invoke @AppendCriteriaBuilder method.", e);
             } catch (InvocationTargetException e) {

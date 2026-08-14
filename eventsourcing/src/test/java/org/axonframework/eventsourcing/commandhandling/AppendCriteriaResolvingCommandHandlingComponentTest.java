@@ -25,12 +25,15 @@ import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -106,8 +109,10 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
             List<EventCriteria> received = new ArrayList<>();
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("multi-account");
             delegate.subscribe(USE_CREDITS, (command, context) -> {
-                FluxUtils.of(eventStore.transaction(context).source(SourcingCondition.conditionFor(first))).blockLast();
-                FluxUtils.of(eventStore.transaction(context).source(SourcingCondition.conditionFor(second))).blockLast();
+                FluxUtils.of(eventStore.transaction(context)
+                                       .source(SourcingCondition.conditionFor(first))).blockLast();
+                FluxUtils.of(eventStore.transaction(context)
+                                       .source(SourcingCondition.conditionFor(second))).blockLast();
                 eventStore.transaction(context).appendEvent(new GenericEventMessage(
                         new MessageType(CreditsChanged.class), new CreditsChanged("one")
                 ));
@@ -278,7 +283,7 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
             CommandMessage command = command(USE_CREDITS, "one");
 
             // when / then
-            var result = second.handle(command, new org.axonframework.messaging.core.unitofwork.StubProcessingContext());
+            var result = second.handle(command, new StubProcessingContext());
             assertThatThrownBy(() -> result.asCompletableFuture().join())
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
@@ -294,9 +299,9 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
         return component;
     }
 
-    private MessageStream.Single<org.axonframework.messaging.commandhandling.CommandResultMessage> sourceAccountAndAppend(
+    private MessageStream.Single<CommandResultMessage> sourceAccountAndAppend(
             CommandMessage command,
-            org.axonframework.messaging.core.unitofwork.ProcessingContext context
+            ProcessingContext context
     ) {
         String accountId = ((CreditsCommand) command.payload()).accountId();
         EventCriteria criteria = EventCriteria.havingTags("accountId", accountId);

@@ -416,7 +416,10 @@ class DefaultEventStoreTransactionTest {
             assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
-                    .hasStackTraceContaining("aggregate-based consistency markers");
+                    .hasStackTraceContaining("aggregate-based consistency marker")
+                    // the message points at the two ways out, so a reader knows what to change
+                    .hasStackTraceContaining("return the supplied sourcing criteria unchanged")
+                    .hasStackTraceContaining("move the entity to a tag-based event store");
         }
 
         private EventStoreTransaction aggregateBasedTransactionFor(ProcessingContext context) {

@@ -18,8 +18,8 @@ package org.axonframework.eventsourcing.configuration;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ModuleBuilder;
-import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;

@@ -67,8 +67,11 @@ final class CommandAppendCriteriaOverride {
             if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
                     && !current.criteria().equals(commandCriteria)) {
                 throw new IllegalStateException(
-                        "Command append criteria are not supported with aggregate-based consistency markers unless "
-                                + "they equal the sourcing criteria."
+                        ("Cannot apply command append criteria for command [%s]. An aggregate-based consistency marker "
+                                + "tracks a single aggregate sequence, so it cannot express a boundary that differs "
+                                + "from the sourcing criteria. Either return the supplied sourcing criteria unchanged "
+                                + "for this command, or move the entity to a tag-based event store.")
+                                .formatted(command.type().qualifiedName())
                 );
             }
             return current.replaceCriteria(commandCriteria);
