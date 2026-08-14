@@ -18,7 +18,6 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
@@ -82,11 +81,6 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
                 declaringType, method, parameterResolverFactory, messageStreamResolver
         );
         if (original.isEmpty() || !(original.get() instanceof CommandHandlingMember<T> commandHandler)) {
-            if (method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
-                // The builder method itself is not a handler. Inspecting here surfaces a builder declared on a class
-                // that declares no command handler of its own, which would otherwise never be applied nor reported.
-                resolverFor(declaringType);
-            }
             return original;
         }
         Optional<AnnotationCommandAppendCriteriaResolver> resolver = resolverFor(declaringType);

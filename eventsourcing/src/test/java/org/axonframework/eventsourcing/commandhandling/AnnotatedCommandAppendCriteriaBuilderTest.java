@@ -217,16 +217,17 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
         }
 
         @Test
-        void rejectsBuilderOnClassDeclaringNoCommandHandlerOfItsOwn() {
-            // given a builder on a subclass whose only command handler is inherited, so it could never be applied
+        void rejectsInheritedBuilderThatCannotCoverCommandsDeclaredBySubclass() {
+            // given a subclass adding a handler the builder it inherits cannot accept
             Configuration configuration = configuration();
 
-            // when / then
+            // when / then the failure names the class that declared the builder, which is not the violating class
             assertThatThrownBy(() -> component(
-                    new InheritedHandlerOnlyChild(configuration.getComponent(EventStore.class)), configuration
+                    new IncompatibleChildHandler(configuration.getComponent(EventStore.class)), configuration
             ))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("must be declared on a class that itself declares at least one @CommandHandler");
+                    .hasMessageContaining("cannot accept handled command payload")
+                    .hasMessageContaining(NarrowBuilderParent.class.getName());
         }
 
         @Test
@@ -303,6 +304,56 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
 
             // then
             assertThat(BuilderParent.receivedCommands).containsExactly(new UseCredits("one"));
+        }
+
+        @Test
+        void builderOnParentAlsoAppliesToHandlersDeclaredBySubclass() {
+            // given a subclass that adds a handler without declaring a builder of its own
+            BuilderParent.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new PlainChildHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when the command the subclass declares is handled
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then the inherited builder was consulted, rather than the subclass silently keeping the default
+            assertThat(BuilderParent.receivedCommands).containsExactly(new TopUpCredits("one"));
+        }
+
+        @Test
+        void builderDeclaredBySubclassOverridesTheBuilderItWouldInherit() {
+            // given both the parent and the subclass declare a builder
+            BuilderParent.receivedCommands.clear();
+            OverridingChildHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new OverridingChildHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when a command the subclass declares is handled
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then the closest builder wins
+            assertThat(OverridingChildHandler.receivedCommands).containsExactly(new TopUpCredits("one"));
+            assertThat(BuilderParent.receivedCommands).isEmpty();
+        }
+
+        @Test
+        void builderOnAbstractBaseDeclaringNoHandlerAppliesToItsConcreteSubclass() {
+            // given a base class that contributes only a builder, which is a valid way to share one boundary rule
+            AbstractBuilderBase.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new ConcreteFromAbstractBase(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then
+            assertThat(AbstractBuilderBase.receivedCommands).containsExactly(new UseCredits("one"));
         }
     }
 
@@ -422,11 +473,11 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
     }
 
     /**
-     * Declares both a builder and the {@code UseCredits} handler it covers.
+     * Declares a builder wide enough to cover commands added by subclasses, alongside its own handler.
      */
     private static class BuilderParent {
 
-        private static final List<UseCredits> receivedCommands = new ArrayList<>();
+        private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
         protected final EventStore eventStore;
 
         private BuilderParent(EventStore eventStore) {
@@ -439,14 +490,14 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+        static EventCriteria criteria(CreditsCommand command, EventCriteria sourcingCriteria) {
             receivedCommands.add(command);
             return sourcingCriteria;
         }
     }
 
     /**
-     * Adds a handler without declaring a builder of its own.
+     * Adds a handler without declaring a builder of its own, inheriting {@link BuilderParent}'s.
      */
     private static class PlainChildHandler extends BuilderParent {
 
@@ -461,17 +512,93 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
     }
 
     /**
-     * Declares a builder while declaring no command handler of its own, so the builder could never be applied.
+     * Declares its own builder, shadowing the one it would otherwise inherit from {@link BuilderParent}.
      */
-    private static class InheritedHandlerOnlyChild extends PlainParent {
+    private static class OverridingChildHandler extends BuilderParent {
 
-        private InheritedHandlerOnlyChild(EventStore eventStore) {
+        private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
+
+        private OverridingChildHandler(EventStore eventStore) {
             super(eventStore);
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria ownCriteria(TopUpCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    /**
+     * Contributes a builder without declaring any command handler, sharing one boundary rule across subclasses.
+     */
+    private abstract static class AbstractBuilderBase {
+
+        private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
+        protected final EventStore eventStore;
+
+        private AbstractBuilderBase(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(CreditsCommand command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    private static class ConcreteFromAbstractBase extends AbstractBuilderBase {
+
+        private ConcreteFromAbstractBase(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+    }
+
+    /**
+     * Declares a builder accepting only its own command, leaving no room for subclasses to add handlers.
+     */
+    private static class NarrowBuilderParent {
+
+        protected final EventStore eventStore;
+
+        private NarrowBuilderParent(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
         }
 
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
             return sourcingCriteria;
+        }
+    }
+
+    /**
+     * Adds a handler the builder inherited from {@link NarrowBuilderParent} cannot accept.
+     */
+    private static class IncompatibleChildHandler extends NarrowBuilderParent {
+
+        private IncompatibleChildHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
         }
     }
 

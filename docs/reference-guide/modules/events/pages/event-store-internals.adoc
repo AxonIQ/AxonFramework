@@ -132,10 +132,13 @@ Its command parameter must accept every command handled by the class, so a share
 For unrelated payload types, accept `CommandMessage` and switch on `command.payload()` or the qualified command name.
 For a single-command class, the builder can accept that concrete command type.
 
-The scope is the declaring class, and is inherited in neither direction.
-A command handler inherited from a superclass resolves through the builder declared by that superclass, if any.
-So each class in a hierarchy that declares command handlers declares its own builder, and its parameter only needs to accept the commands that class declares.
-A builder on a class that declares no command handler of its own is rejected at startup rather than silently ignored.
+The builder is inherited by subclasses, and the closest one wins.
+For the command handlers a class declares, Axon looks for a builder on that class first and then on its superclasses, so a subclass declaring its own shadows the one it would otherwise inherit.
+Declaring a builder on the root of a hierarchy therefore covers every subclass, and a base class may contribute a builder without declaring any command handler itself.
+
+An inherited builder is validated separately against each subclass that declares command handlers, and must accept the commands of each.
+Adding a command handler that the inherited builder cannot accept is rejected at startup, naming both the builder and the class declaring the new handler.
+Either widen that builder's command parameter, or declare a builder on the subclass.
 
 The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
 This includes one or several injected entities and other sourcing performed during command handling.

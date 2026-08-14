@@ -40,12 +40,16 @@ import java.lang.annotation.Target;
  * The builder runs separately for every command invocation. Its result replaces the complete sourcing-derived append
  * criteria for that command's transaction.
  * <p>
- * Scope is the declaring class, and is not inherited in either direction. The builder applies to the
- * {@link org.axonframework.messaging.commandhandling.annotation.CommandHandler CommandHandlers} declared on its own
- * class only, so its command parameter needs to accept those commands and no others. A command handler inherited from
- * a supertype resolves through the builder declared by that supertype, if any. Consequently, each class in a hierarchy
- * that declares command handlers declares its own builder, and a builder on a class declaring no command handler of
- * its own is rejected as it could never be applied.
+ * The builder is inherited by subclasses, and the closest one wins. For the
+ * {@link org.axonframework.messaging.commandhandling.annotation.CommandHandler CommandHandlers} a class declares, the
+ * builder is looked up on that class first and then on its superclasses, so a subclass declaring its own shadows the
+ * one it would otherwise inherit. Declaring a builder on the root of a hierarchy therefore covers every subclass, and
+ * a base class may contribute a builder without declaring any command handler itself. Interfaces are not searched, as
+ * the method is required to be {@code static}.
+ * <p>
+ * An inherited builder is validated separately against each subclass that declares command handlers, and has to accept
+ * the commands of each. Adding a command handler that the inherited builder cannot accept is rejected at startup;
+ * either widen that builder's command parameter or declare a builder on the subclass.
  *
  * @author Mateusz Nowak
  * @see CommandAppendCriteriaResolver

@@ -58,37 +58,52 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
         this.builder = builder;
     }
 
+    /**
+     * Resolves the builder that applies to the command handlers declared on {@code declaringType}.
+     * <p>
+     * The search starts at {@code declaringType} and walks up its superclasses, so the closest builder wins and a
+     * subclass declaring its own shadows the one it would otherwise inherit. Interfaces are not searched, as a builder
+     * is required to be {@code static} and static interface methods are not inherited.
+     */
     static Optional<AnnotationCommandAppendCriteriaResolver> inspect(Class<?> declaringType,
                                                                      Configuration configuration) {
+        for (Class<?> type = declaringType; type != null && type != Object.class; type = type.getSuperclass()) {
+            List<Method> builders = declaredBuilders(type);
+            if (builders.isEmpty()) {
+                continue;
+            }
+            if (builders.size() > 1) {
+                throw new IllegalArgumentException(
+                        "Command-handling class [%s] declares more than one @AppendCriteriaBuilder: %s"
+                                .formatted(type.getName(), builders.stream()
+                                                                   .map(ReflectionUtils::toDiscernibleSignature)
+                                                                   .toList())
+                );
+            }
+            BuilderMethod builder = new BuilderMethod(builders.getFirst(), configuration);
+            validateCompleteCoverage(declaringType, builder);
+            return Optional.of(new AnnotationCommandAppendCriteriaResolver(builder));
+        }
+        return Optional.empty();
+    }
+
+    private static List<Method> declaredBuilders(Class<?> type) {
         List<Method> builders = new ArrayList<>();
-        for (Method method : declaringType.getDeclaredMethods()) {
+        for (Method method : type.getDeclaredMethods()) {
             if (method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
                 builders.add(method);
             }
         }
-        if (builders.isEmpty()) {
-            return Optional.empty();
-        }
-        if (builders.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Command-handling class [%s] declares more than one @AppendCriteriaBuilder: %s"
-                            .formatted(declaringType.getName(), builders.stream()
-                                                                      .map(ReflectionUtils::toDiscernibleSignature)
-                                                                      .toList())
-            );
-        }
-        BuilderMethod builder = new BuilderMethod(builders.getFirst(), configuration);
-        validateCompleteCoverage(declaringType, builder);
-        return Optional.of(new AnnotationCommandAppendCriteriaResolver(builder));
+        return builders;
     }
 
     /**
-     * Validates the builder against the command handlers <b>declared</b> on {@code declaringType}.
+     * Validates the resolved {@code builder} against the command handlers <b>declared</b> on {@code declaringType}.
      * <p>
-     * The scope is deliberately limited to declared methods, matching the scope in which the builder is applied: a
-     * handler inherited from a supertype is created against that supertype as its declaring type, and therefore
-     * resolves through the supertype's own builder rather than this one. Validating against the full hierarchy would
-     * reject a builder narrowed to the commands its class actually declares.
+     * The scope is the declared handlers, matching the scope in which the builder is applied: a handler inherited from
+     * a supertype is created against that supertype as its declaring type, and so is validated separately against
+     * whichever builder that supertype resolves. An inherited builder is therefore validated once per subclass that
+     * declares handlers, and has to accept the commands of each.
      */
     private static void validateCompleteCoverage(Class<?> declaringType, BuilderMethod builder) {
         Set<Class<?>> commandPayloadTypes = new HashSet<>();
@@ -105,20 +120,14 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
             }
             commandPayloadTypes.add(payloadType);
         }
-        if (commandPayloadTypes.isEmpty()) {
-            throw invalid(
-                    builder.method,
-                    "must be declared on a class that itself declares at least one @CommandHandler. A builder on a "
-                            + "class whose command handlers are all inherited is never applied, as inherited handlers "
-                            + "resolve through the builder of the class declaring them"
-            );
-        }
         for (Class<?> payloadType : commandPayloadTypes) {
             if (!builder.accepts(payloadType)) {
                 throw invalid(
                         builder.method,
-                        "declares command parameter [%s], which cannot accept handled command payload [%s]"
-                                .formatted(builder.commandType.getName(), payloadType.getName())
+                        "declares command parameter [%s], which cannot accept handled command payload [%s] declared by [%s]"
+                                .formatted(builder.commandType.getName(),
+                                           payloadType.getName(),
+                                           declaringType.getName())
                 );
             }
         }
@@ -133,8 +142,10 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
 
     private static IllegalArgumentException invalid(Method method, String reason) {
         return new IllegalArgumentException(
-                "@AppendCriteriaBuilder method %s. Violating method: %s"
-                        .formatted(reason, ReflectionUtils.toDiscernibleSignature(method))
+                "@AppendCriteriaBuilder method %s. Violating method: %s#%s"
+                        .formatted(reason,
+                                   method.getDeclaringClass().getName(),
+                                   ReflectionUtils.toDiscernibleSignature(method))
         );
     }
 
