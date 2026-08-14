@@ -25,6 +25,7 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,5 +95,66 @@ class StaticEventSourcingHandlerAnnotationTest {
         assertThat(state).isNotNull();
         assertThat(state.id()).isEqualTo("acc-1");
         assertThat(state.balance()).isEqualTo(150);
+    }
+
+    @Nested
+    class StaticCreateThenInstanceEvolve {
+
+        private final EntityEvolver<BankAccount> evolver =
+                new AnnotationBasedEntityEvolvingComponent<>(BankAccount.class, converter, messageTypeResolver);
+
+        @Test
+        void firstEventCreatesViaStaticHandlerThenInstanceHandlersEvolve() {
+            // given a stream of the creating event followed by two follow-up events
+            EventMessage opened = asEventMessage(new Opened("acc-1"));
+            EventMessage deposit50 = asEventMessage(new Deposited(50));
+            EventMessage deposit70 = asEventMessage(new Deposited(70));
+
+            // when the static handler creates from the first event, then instance handlers evolve the rest
+            BankAccount state = evolver.evolve(null, opened, StubProcessingContext.forMessage(opened));
+            state = evolver.evolve(state, deposit50, StubProcessingContext.forMessage(deposit50));
+            state = evolver.evolve(state, deposit70, StubProcessingContext.forMessage(deposit70));
+
+            // then
+            assertThat(state).isNotNull();
+            assertThat(state.id).isEqualTo("acc-1");
+            assertThat(state.balance).isEqualTo(120);
+        }
+
+        @Test
+        void instanceHandlerIsSkippedWhileEntityIsStillAbsent() {
+            // given a follow-up event arrives before the creating event, so no instance exists yet
+            EventMessage deposited = asEventMessage(new Deposited(50));
+
+            // when
+            BankAccount state = evolver.evolve(null, deposited, StubProcessingContext.forMessage(deposited));
+
+            // then the instance handler cannot run without an instance, so the entity stays absent
+            assertThat(state).isNull();
+        }
+
+        /**
+         * A mutable entity with no {@link org.axonframework.eventsourcing.annotation.reflection.EntityCreator}: it is
+         * created from its first event by the {@code static} handler, then evolved by an instance handler for
+         * follow-up events.
+         */
+        @SuppressWarnings("unused")
+        static class BankAccount {
+
+            private String id;
+            private int balance;
+
+            @EventSourcingHandler
+            static BankAccount onOpened(@Nullable BankAccount state, Opened event) {
+                var account = new BankAccount();
+                account.id = event.id();
+                return account;
+            }
+
+            @EventSourcingHandler
+            void onDeposited(Deposited event) {
+                this.balance += event.amount();
+            }
+        }
     }
 }
