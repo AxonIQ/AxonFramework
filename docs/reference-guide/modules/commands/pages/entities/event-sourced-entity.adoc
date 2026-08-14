@@ -90,7 +90,7 @@ An entity only needs the state required to make decisions about incoming command
 An event sourcing handler is only needed when the resulting state change is relevant for validating future commands.
 ====
 
-=== Static event sourcing handlers
+=== Static Event Sourcing handlers
 
 An event sourcing handler can also be `static`, taking the current entity state as its first parameter and returning the next state:
 
