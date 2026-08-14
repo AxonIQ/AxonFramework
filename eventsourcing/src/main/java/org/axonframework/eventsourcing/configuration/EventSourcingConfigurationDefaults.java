@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.configuration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandlerDefinition;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -26,9 +27,7 @@ import org.axonframework.eventsourcing.eventstore.InterceptingEventStore;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandlerDefinition;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
-import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
@@ -55,6 +54,11 @@ import java.util.List;
  * <ul>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
+ *     <li>The {@link HandlerDefinition} in a {@link CommandAppendCriteriaHandlerDefinition}, adding support for
+ *     {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} on annotated command handlers. The
+ *     {@code HandlerDefinition} component itself is registered by
+ *     {@link org.axonframework.messaging.core.reflection.ClasspathHandlerDefinitionConfigurationEnhancer} in the
+ *     messaging module.</li>
  * </ul>
  * It also registers the {@link SnapshotSourcingConfigurationEnhancer}, which decorates the
  * {@link EventStorageEngine} to support the {@link org.axonframework.eventsourcing.eventstore.SourcingStrategy.Snapshot
@@ -85,13 +89,7 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
         registry.registerIfNotPresent(TagResolver.class, EventSourcingConfigurationDefaults::defaultTagResolver)
                 .registerIfNotPresent(EventStorageEngine.class,
                                       EventSourcingConfigurationDefaults::defaultEventStorageEngine)
-                .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore)
-                .registerIfNotPresent(
-                        HandlerDefinition.class,
-                        configuration -> ClasspathHandlerDefinition.forClassLoader(
-                                Thread.currentThread().getContextClassLoader()
-                        )
-                );
+                .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore);
         registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
         registry.registerDecorator(
                 HandlerDefinition.class,
