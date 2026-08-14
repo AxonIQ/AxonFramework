@@ -16,7 +16,10 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
+import org.axonframework.common.configuration.ComponentBuilder;
+import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -289,6 +292,76 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("Cannot apply append criteria for command [credits.UseCredits]")
                     .hasStackTraceContaining("Append criteria have already been defined");
+        }
+    }
+
+    /**
+     * Covers the {@code withAppendCriteria} factory, which is the entry point the declarative configuration uses. Its
+     * only other caller is a documentation sample, and that module compiles its samples without running them.
+     */
+    @Nested
+    class ComponentBuilding {
+
+        @Test
+        void builtComponentTakesTheEventStoreFromTheConfigurationAndAppliesTheResolver() {
+            // given a configuration whose EventStore is the one this test observes
+            Configuration configuration = EventSourcingConfigurer
+                    .create()
+                    .componentRegistry(registry -> registry.registerComponent(EventStore.class, c -> eventStore))
+                    .build();
+            List<CommandMessage> resolvedCommands = new ArrayList<>();
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            EventCriteria commandCriteria = EventCriteria.havingTags("decision", "use-credits");
+            ComponentBuilder<CommandHandlingComponent> builder =
+                    AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria(
+                            c -> observingDelegate(finalCondition),
+                            c -> (command, context, sourcingCriteria) -> {
+                                resolvedCommands.add(command);
+                                return commandCriteria;
+                            }
+                    );
+
+            // when
+            CommandHandlingComponent component = builder.build(configuration);
+            CommandMessage use = command(USE_CREDITS, "one");
+            handleSuccessfully(component, use);
+
+            // then the resolver ran, and its criteria reached the transaction of the configured event store
+            assertThat(resolvedCommands).containsExactly(use);
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+        }
+
+        @Test
+        void rejectsNullComponentAndResolverBuilders() {
+            // given
+            ComponentBuilder<CommandHandlingComponent> componentBuilder = c -> componentSourcingOneAccountPerCommand();
+            ComponentBuilder<CommandAppendCriteriaResolver> resolverBuilder =
+                    c -> (command, context, sourcingCriteria) -> sourcingCriteria;
+
+            // when / then
+            assertThatThrownBy(() -> AppendCriteriaResolvingCommandHandlingComponent
+                    .withAppendCriteria(null, resolverBuilder))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("command-handling component builder cannot be null");
+            assertThatThrownBy(() -> AppendCriteriaResolvingCommandHandlingComponent
+                    .withAppendCriteria(componentBuilder, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("command append criteria resolver builder cannot be null");
+        }
+
+        private CommandHandlingComponent observingDelegate(AtomicReference<AppendCondition> finalCondition) {
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("configured");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                eventStore.transaction(context).overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
+                ));
+                return MessageStream.empty();
+            });
+            return delegate;
         }
     }
 
