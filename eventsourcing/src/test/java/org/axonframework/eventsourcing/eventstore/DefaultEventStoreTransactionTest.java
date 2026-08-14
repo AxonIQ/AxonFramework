@@ -17,7 +17,7 @@
 package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandler;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
@@ -400,7 +400,7 @@ class DefaultEventStoreTransactionTest {
                 transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate,
                     eventStore,
                     (command, context, sourcingCriteria) -> unrelatedCriteria

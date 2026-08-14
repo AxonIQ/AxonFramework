@@ -53,7 +53,7 @@ import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aU
 /**
  * Test class validating declarative command append criteria on external command-handling components.
  */
-class CommandAppendCriteriaHandlerTest {
+class AppendCriteriaResolvingCommandHandlingComponentTest {
 
     private static final QualifiedName USE_CREDITS = new QualifiedName("credits.UseCredits");
     private static final QualifiedName TOP_UP_CREDITS = new QualifiedName("credits.TopUpCredits");
@@ -81,7 +81,8 @@ class CommandAppendCriteriaHandlerTest {
                 receivedSourcingCriteria.add(sourcingCriteria);
                 return sourcingCriteria;
             };
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(delegate, eventStore, resolver);
+            CommandHandlingComponent component =
+                    new AppendCriteriaResolvingCommandHandlingComponent(delegate, eventStore, resolver);
             CommandMessage use = command(USE_CREDITS, "one");
             CommandMessage topUp = command(TOP_UP_CREDITS, "two");
 
@@ -112,7 +113,7 @@ class CommandAppendCriteriaHandlerTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate,
                     eventStore,
                     (command, context, sourcingCriteria) -> {
@@ -156,7 +157,7 @@ class CommandAppendCriteriaHandlerTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate, eventStore, (command, context, criteria) -> commandCriteria
             );
 
@@ -185,7 +186,7 @@ class CommandAppendCriteriaHandlerTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate,
                     eventStore,
                     (command, context, sourcingCriteria) -> {
@@ -213,7 +214,7 @@ class CommandAppendCriteriaHandlerTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate,
                     eventStore,
                     (command, context, sourcingCriteria) -> {
@@ -243,7 +244,7 @@ class CommandAppendCriteriaHandlerTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate, eventStore, (command, context, sourcingCriteria) -> null
             );
             var uow = aUnitOfWork();
@@ -268,10 +269,10 @@ class CommandAppendCriteriaHandlerTest {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("duplicate");
             delegate.subscribe(USE_CREDITS, (command, context) -> MessageStream.empty());
-            CommandHandlingComponent first = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent first = new AppendCriteriaResolvingCommandHandlingComponent(
                     delegate, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
             );
-            CommandHandlingComponent second = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent second = new AppendCriteriaResolvingCommandHandlingComponent(
                     first, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
             );
             CommandMessage command = command(USE_CREDITS, "one");

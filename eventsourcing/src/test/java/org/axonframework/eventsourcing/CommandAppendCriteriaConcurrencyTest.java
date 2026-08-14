@@ -17,7 +17,7 @@
 package org.axonframework.eventsourcing;
 
 import org.axonframework.eventsourcing.annotation.EventTag;
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandler;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -153,7 +153,7 @@ class CommandAppendCriteriaConcurrencyTest {
             eventStore.transaction(context).appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });
-        CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+        CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                 delegate,
                 eventStore,
                 (command, context, accumulatedCriteria) -> restrictToUsed
@@ -176,7 +176,7 @@ class CommandAppendCriteriaConcurrencyTest {
             transaction.appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });
-        CommandHandlingComponent component = new CommandAppendCriteriaHandler(
+        CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
                 delegate,
                 eventStore,
                 (command, context, accumulatedCriteria) ->
@@ -192,7 +192,7 @@ class CommandAppendCriteriaConcurrencyTest {
             eventStore.transaction(context).appendEvent(asEventMessage(new DecisionRecorded(tenantId)));
             return MessageStream.empty();
         });
-        return new CommandAppendCriteriaHandler(
+        return new AppendCriteriaResolvingCommandHandlingComponent(
                 delegate,
                 eventStore,
                 (command, context, sourcingCriteria) ->

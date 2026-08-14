@@ -16,7 +16,7 @@
 package events.eventstoreinternals.appendcriteria.declarative;
 
 // tag::declarative-append-criteria[]
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandler;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
@@ -31,7 +31,7 @@ public class CreditCommandConfiguration {
                 CommandHandlingModule.named("credit-commands")
                                      .commandHandlers()
                                      .commandHandlingComponent(
-                                             CommandAppendCriteriaHandler.withAppendCriteria(
+                                             AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria(
                                                      configuration -> SimpleCommandHandlingComponent
                                                              .create("credit-command-handler")
                                                              .subscribe(

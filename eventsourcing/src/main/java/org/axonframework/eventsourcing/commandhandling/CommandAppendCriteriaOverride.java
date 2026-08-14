@@ -27,23 +27,29 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import java.util.Objects;
 
 /**
- * Installs one command append-criteria definition in a command-handling transaction.
+ * Overrides the append criteria of a command-handling transaction with the outcome of one
+ * {@link CommandAppendCriteriaResolver}.
+ * <p>
+ * At most one override is installed per transaction, so a component carrying both an annotated and a declaratively
+ * configured resolver fails rather than letting one silently win.
+ *
+ * @author Mateusz Nowak
+ * @since 5.4.0
  */
-final class CommandAppendCriteriaDefinition {
+final class CommandAppendCriteriaOverride {
 
-    private static final ResourceKey<CommandAppendCriteriaDefinition> DEFINITION_KEY =
-            ResourceKey.withLabel("commandAppendCriteriaDefinition");
-    private static final CommandAppendCriteriaDefinition INSTANCE = new CommandAppendCriteriaDefinition();
+    private static final ResourceKey<Boolean> APPLIED_KEY =
+            ResourceKey.withLabel("commandAppendCriteriaOverrideApplied");
 
-    private CommandAppendCriteriaDefinition() {
+    private CommandAppendCriteriaOverride() {
     }
 
     static void apply(CommandMessage command,
                       ProcessingContext context,
                       EventStore eventStore,
                       CommandAppendCriteriaResolver resolver) {
-        CommandAppendCriteriaDefinition existing = context.putResourceIfAbsent(DEFINITION_KEY, INSTANCE);
-        if (existing != null) {
+        Boolean alreadyApplied = context.putResourceIfAbsent(APPLIED_KEY, Boolean.TRUE);
+        if (alreadyApplied != null) {
             throw new IllegalStateException(
                     ("Cannot apply append criteria for command [%s]. Append criteria have already been defined for "
                             + "this command-handling transaction.")

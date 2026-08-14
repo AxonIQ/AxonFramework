@@ -30,7 +30,7 @@ import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandler;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
@@ -264,7 +264,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                     if (appendCriteriaResolver == null) {
                         return component;
                     }
-                    return new CommandAppendCriteriaHandler(
+                    return new AppendCriteriaResolvingCommandHandlingComponent(
                             component,
                             c.getComponent(EventStore.class),
                             appendCriteriaResolver.build(c)

@@ -42,7 +42,7 @@ import static java.util.Objects.requireNonNull;
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-public final class CommandAppendCriteriaHandler implements CommandHandlingComponent {
+public final class AppendCriteriaResolvingCommandHandlingComponent implements CommandHandlingComponent {
 
     private final CommandHandlingComponent delegate;
     private final EventStore eventStore;
@@ -56,9 +56,9 @@ public final class CommandAppendCriteriaHandler implements CommandHandlingCompon
      * @param eventStore the event store whose transaction receives the resolved criteria
      * @param resolver the component-level command append-criteria resolver
      */
-    public CommandAppendCriteriaHandler(CommandHandlingComponent delegate,
-                                        EventStore eventStore,
-                                        CommandAppendCriteriaResolver resolver) {
+    public AppendCriteriaResolvingCommandHandlingComponent(CommandHandlingComponent delegate,
+                                                           EventStore eventStore,
+                                                           CommandAppendCriteriaResolver resolver) {
         this.delegate = requireNonNull(delegate, "The command-handling component cannot be null.");
         this.eventStore = requireNonNull(eventStore, "The EventStore cannot be null.");
         this.resolver = requireNonNull(resolver, "The command append criteria resolver cannot be null.");
@@ -77,7 +77,7 @@ public final class CommandAppendCriteriaHandler implements CommandHandlingCompon
     ) {
         requireNonNull(componentBuilder, "The command-handling component builder cannot be null.");
         requireNonNull(resolverBuilder, "The command append criteria resolver builder cannot be null.");
-        return configuration -> new CommandAppendCriteriaHandler(
+        return configuration -> new AppendCriteriaResolvingCommandHandlingComponent(
                 componentBuilder.build(configuration),
                 configuration.getComponent(EventStore.class),
                 resolverBuilder.build(configuration)
@@ -87,7 +87,7 @@ public final class CommandAppendCriteriaHandler implements CommandHandlingCompon
     @Override
     public MessageStream.Single<CommandResultMessage> handle(CommandMessage command, ProcessingContext context) {
         try {
-            CommandAppendCriteriaDefinition.apply(command, context, eventStore, resolver);
+            CommandAppendCriteriaOverride.apply(command, context, eventStore, resolver);
             return delegate.handle(command, context);
         } catch (Throwable throwable) {
             return MessageStream.failed(throwable);

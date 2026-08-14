@@ -237,7 +237,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
             CommandHandlingComponent annotated = component(
                     new QualifiedBuilderHandler(configuration.getComponent(EventStore.class)), configuration
             );
-            CommandHandlingComponent duplicate = new CommandAppendCriteriaHandler(
+            CommandHandlingComponent duplicate = new AppendCriteriaResolvingCommandHandlingComponent(
                     annotated,
                     configuration.getComponent(EventStore.class),
                     (command, context, sourcingCriteria) -> sourcingCriteria

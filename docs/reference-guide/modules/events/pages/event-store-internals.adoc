@@ -154,7 +154,7 @@ Annotations adapt the same component-level declarative API:
 include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
 ----
 
-`CommandAppendCriteriaHandler.withAppendCriteria` decorates one external command-handling component with one synchronous resolver.
+`AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria` decorates one external command-handling component with one synchronous resolver.
 The resolver handles every qualified command name supported by that component and runs once per invocation.
 It receives the complete `CommandMessage`, `ProcessingContext`, and accumulated sourcing criteria.
 Configuring append criteria both declaratively and through an annotation for the same component is invalid.
