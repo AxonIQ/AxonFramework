@@ -136,6 +136,41 @@ include::example$commands/entities/statefulcommandhandler/GiftCardCreateIfMissin
 
 `Optional<ManagedEntity<ID, GiftCard>>` is not a valid parameter type: since the wrapper is never `null`, wrapping it in an `Optional` would never be empty, so Axon rejects such a parameter when configuring the handler.
 
+[#observing_appended_events]
+== Observing appended events within the same handler
+
+The injected entity stays subscribed to the events its own handler appends.
+Calling `EventAppender.append(...)` applies each matching event through the entity's `@EventSourcingHandler` methods right away, before `append` returns.
+A handler can therefore append an event and then read the resulting state later in the same method, for example to decide on a dependent second event.
+
+What you observe through the injected parameter depends on how the entity evolves its state:
+
+* **Mutable entity**, whose event sourcing handlers mutate fields on the instance: the injected instance is updated in place, so reading it after the append reflects the appended event.
++
+[source,java]
+----
+@CommandHandler
+void handle(RedeemCard command, @InjectEntity GiftCard card, EventAppender appender) {
+    appender.append(new CardRedeemed(command.id(), command.amount())); // applies on(CardRedeemed) now
+    long remaining = card.remainingValue();                            // already reflects the redemption
+    // decide on a further event based on `remaining`
+}
+----
+
+* **Immutable entity**, whose event sourcing handlers return a new instance: the appended event advances the underlying entity, but the injected parameter still references the pre-append snapshot.
+Inject a xref:#inject_managed_entity[`ManagedEntity`] and read `entity()` after the append to observe the new instance.
++
+[source,java]
+----
+@CommandHandler
+void handle(RedeemCard command, @InjectEntity ManagedEntity<String, GiftCard> managed, EventAppender appender) {
+    appender.append(new CardRedeemed(command.id(), command.amount()));
+    GiftCard updated = managed.entity();                               // the new post-append instance
+}
+----
+
+The same mechanism drives a create-if-missing flow within a single handler: append the creating event, then read the state it just established (directly on a mutable entity, or through a `ManagedEntity`) to decide on a dependent second event.
+
 [#inject_multiple_entities]
 == Injecting multiple entities
 
