@@ -126,11 +126,16 @@ An external command-handling class can declare one `@AppendCriteriaBuilder` when
 include::example$events/eventstoreinternals/appendcriteria/annotation/CreditCommandHandler.java[tag=annotated-append-criteria,indent=0]
 ----
 
-The builder is declared once for the command-handling class and applies to every `@CommandHandler` on that class.
+The builder is declared once for the command-handling class and applies to every `@CommandHandler` declared on that class.
 Axon invokes it separately for every command.
 Its command parameter must accept every command handled by the class, so a shared supertype supports an exhaustive switch.
 For unrelated payload types, accept `CommandMessage` and switch on `command.payload()` or the qualified command name.
 For a single-command class, the builder can accept that concrete command type.
+
+The scope is the declaring class, and is inherited in neither direction.
+A command handler inherited from a superclass resolves through the builder declared by that superclass, if any.
+So each class in a hierarchy that declares command handlers declares its own builder, and its parameter only needs to accept the commands that class declares.
+A builder on a class that declares no command handler of its own is rejected at startup rather than silently ignored.
 
 The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
 This includes one or several injected entities and other sourcing performed during command handling.

@@ -82,9 +82,17 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
         return Optional.of(new AnnotationCommandAppendCriteriaResolver(builder));
     }
 
+    /**
+     * Validates the builder against the command handlers <b>declared</b> on {@code declaringType}.
+     * <p>
+     * The scope is deliberately limited to declared methods, matching the scope in which the builder is applied: a
+     * handler inherited from a supertype is created against that supertype as its declaring type, and therefore
+     * resolves through the supertype's own builder rather than this one. Validating against the full hierarchy would
+     * reject a builder narrowed to the commands its class actually declares.
+     */
     private static void validateCompleteCoverage(Class<?> declaringType, BuilderMethod builder) {
         Set<Class<?>> commandPayloadTypes = new HashSet<>();
-        for (Method method : ReflectionUtils.methodsOf(declaringType)) {
+        for (Method method : declaringType.getDeclaredMethods()) {
             Optional<Map<String, Object>> attributes =
                     AnnotationUtils.findAnnotationAttributes(method, CommandHandler.class);
             if (attributes.isEmpty()) {
@@ -98,7 +106,12 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
             commandPayloadTypes.add(payloadType);
         }
         if (commandPayloadTypes.isEmpty()) {
-            throw invalid(builder.method, "must be declared on a class containing at least one @CommandHandler");
+            throw invalid(
+                    builder.method,
+                    "must be declared on a class that itself declares at least one @CommandHandler. A builder on a "
+                            + "class whose command handlers are all inherited is never applied, as inherited handlers "
+                            + "resolve through the builder of the class declaring them"
+            );
         }
         for (Class<?> payloadType : commandPayloadTypes) {
             if (!builder.accepts(payloadType)) {

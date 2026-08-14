@@ -18,6 +18,7 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
@@ -81,19 +82,29 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
                 declaringType, method, parameterResolverFactory, messageStreamResolver
         );
         if (original.isEmpty() || !(original.get() instanceof CommandHandlingMember<T> commandHandler)) {
+            if (method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
+                // The builder method itself is not a handler. Inspecting here surfaces a builder declared on a class
+                // that declares no command handler of its own, which would otherwise never be applied nor reported.
+                resolverFor(declaringType);
+            }
             return original;
         }
-        Optional<AnnotationCommandAppendCriteriaResolver> resolver = resolvers.computeIfAbsent(
+        Optional<AnnotationCommandAppendCriteriaResolver> resolver = resolverFor(declaringType);
+        if (resolver.isEmpty()) {
+            return original;
+        }
+        return Optional.of(new AppendCriteriaCommandHandlingMember<>(
+                commandHandler,
+                configuration.getComponent(EventStore.class),
+                resolver.get()
+        ));
+    }
+
+    private Optional<AnnotationCommandAppendCriteriaResolver> resolverFor(Class<?> declaringType) {
+        return resolvers.computeIfAbsent(
                 declaringType,
                 type -> AnnotationCommandAppendCriteriaResolver.inspect(type, configuration)
         );
-        return resolver.map(value -> new AppendCriteriaCommandHandlingMember<>(
-                               commandHandler,
-                               configuration.getComponent(EventStore.class),
-                               value
-                       ))
-                       .map(member -> (MessageHandlingMember<T>) member)
-                       .or(() -> original);
     }
 
     private static final class AppendCriteriaCommandHandlingMember<T>
