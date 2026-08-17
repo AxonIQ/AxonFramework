@@ -213,6 +213,42 @@ Custom command append criteria require an event store that supports criteria-awa
 Aggregate-based storage keeps its existing default behavior, but replacing an aggregate consistency boundary with unrelated criteria is not supported and fails explicitly.
 ====
 
+[#entity_owned_command_append_criteria]
+== Entity-owned command handlers
+
+Command handlers declared inside event-sourced entity classes can use the same command append-criteria feature:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[tag=entity-owned-append-criteria,indent=0]
+----
+
+The annotation remains command-oriented.
+It applies because `Account` declares a command handler; it does not configure permanent append criteria for every use of the entity.
+The entity's `@EventCriteriaBuilder`, when present, continues to define sourcing criteria independently.
+
+Builder ownership follows the class that declares the effective command handler.
+A root entity builder applies to command handlers declared by that root class.
+A nested entity class can declare its own builder for its own handlers, as `Card` does above.
+The parent's builder does not apply implicitly to the nested class.
+Likewise, a concrete type in a polymorphic entity hierarchy can declare a builder for handlers owned by that concrete class.
+Every effective command-handling class has zero or one builder.
+
+Entity classes without an append-criteria builder retain the symmetric sourcing-derived append criteria.
+All marker selection, including no-source handling, remains the responsibility of the event-store transaction.
+
+For a declaratively built entity metamodel, configure one resolver on the entity module's command-handling component:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
+----
+
+Call `appendCriteriaResolver` after the required messaging model, entity factory, and sourcing criteria resolver have been configured.
+The resolver applies once to the complete entity command-handling component and runs separately for each command that appends events.
+It remains a command append-criteria resolver: it does not contribute criteria per entity or change how entities are sourced.
+Defining it more than once, or combining it with an annotation builder for the same command-handling transaction, fails explicitly.
+
 [#conditions]
 == Append, source, and stream conditions
 
