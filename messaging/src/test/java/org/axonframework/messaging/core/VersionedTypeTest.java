@@ -21,7 +21,7 @@ import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test class validating the {@link VersionedType} interface and that {@link MessageType} correctly implements it.
+ * Test class validating the {@link VersionedType} interface and that {@link SimpleVersionedType} correctly implements it.
  *
  * @author Josh
  */
@@ -33,43 +33,43 @@ class VersionedTypeTest {
 
     @Test
     void messageTypeIsAVersionedType() {
-        MessageType messageType = new MessageType(QUALIFIED_NAME, VERSION);
+        SimpleVersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
 
-        assertInstanceOf(VersionedType.class, messageType);
+        assertInstanceOf(VersionedType.class, versionedType);
     }
 
     @Test
     void versionedTypeReturnsQualifiedName() {
-        VersionedType versionedType = new MessageType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
 
         assertEquals(QUALIFIED_NAME, versionedType.qualifiedName());
     }
 
     @Test
     void versionedTypeReturnsVersion() {
-        VersionedType versionedType = new MessageType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
 
         assertEquals(VERSION, versionedType.version());
     }
 
     @Test
     void versionedTypeReturnsName() {
-        VersionedType versionedType = new MessageType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
 
         assertEquals(NAME, versionedType.name());
     }
 
     @Test
     void versionedTypeWithDefaultVersion() {
-        VersionedType versionedType = new MessageType(QUALIFIED_NAME);
+        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME);
 
         assertEquals(QUALIFIED_NAME, versionedType.qualifiedName());
-        assertEquals(MessageType.DEFAULT_VERSION, versionedType.version());
+        assertEquals(SimpleVersionedType.DEFAULT_VERSION, versionedType.version());
     }
 
     @Test
     void versionedTypeFromClassConstructor() {
-        VersionedType versionedType = new MessageType(VersionedTypeTest.class, VERSION);
+        VersionedType versionedType = new SimpleVersionedType(VersionedTypeTest.class.getName(), VERSION);
 
         assertEquals(new QualifiedName(VersionedTypeTest.class), versionedType.qualifiedName());
         assertEquals(VERSION, versionedType.version());

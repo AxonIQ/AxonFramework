@@ -20,16 +20,9 @@ package org.axonframework.messaging.core;
  * Describes a component that has a {@link QualifiedName qualified name} and a {@code version}.
  * <p>
  * This interface provides a general-purpose abstraction for any versioned, named type in the framework.
- * It decouples the concept of "a named thing with a version" from {@link MessageType}, so that non-message
- * components (such as snapshot stores) can reference versioned type information without implying that
- * the component is a message.
- * <p>
- * {@link MessageType} is the primary implementation of this interface.
  *
- * @author Allard Buijze
  * @author Ishaan Bhela
  * @since 5.4.0
- * @see MessageType
  * @see QualifiedName
  */
 public interface VersionedType {
