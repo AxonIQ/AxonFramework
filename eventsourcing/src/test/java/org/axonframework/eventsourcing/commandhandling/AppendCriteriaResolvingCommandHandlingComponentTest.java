@@ -213,6 +213,33 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
         }
 
         @Test
+        void resolverAddingNoRestrictionLeavesANonSourcingCommandUnconditional() {
+            // given a command that sources nothing, whose resolver returns the criteria it was supplied
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("unconditional");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                eventStore.transaction(context).overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
+                ));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
+                    delegate, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "one"));
+
+            // then the append stays unconditional rather than dropping to a check from ORIGIN
+            assertThat(finalCondition.get()).isSameAs(AppendCondition.none());
+            assertThat(finalCondition.get().consistencyMarker()).isEqualTo(ConsistencyMarker.INFINITY);
+        }
+
+        @Test
         void resolverFailurePreventsTheQueuedEventFromCommitting() {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("failing-resolver");

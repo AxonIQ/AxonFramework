@@ -120,6 +120,23 @@ class CommandAppendCriteriaConcurrencyTest {
         }
 
         @Test
+        void resolverAddingNoRestrictionAppendsDespiteConcurrentEvents() {
+            // given a command that sources nothing, whose resolver returns the criteria it was supplied
+            EventStore eventStore = eventStore();
+            CommandHandlingComponent component = unconditionalComponent(eventStore);
+
+            // when an event is stored concurrently
+            CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
+                eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one")))).join();
+                component.handle(command(Map.of("tenantId", "tenant-one")), context);
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // then it is not checked against, as adding no restriction means no consistency boundary at all
+            awaitSuccessfulCompletion(result);
+        }
+
+        @Test
         void appendSucceedsWhenNoMatchingEventExists() {
             // given
             EventStore eventStore = eventStore();
@@ -197,6 +214,24 @@ class CommandAppendCriteriaConcurrencyTest {
                 eventStore,
                 (command, context, sourcingCriteria) ->
                         EventCriteria.havingTags("tenant", command.metadata().get("tenantId"))
+        );
+    }
+
+    /**
+     * A component whose resolver returns the criteria it was supplied, which for a command that sources nothing means
+     * it adds no restriction at all.
+     */
+    private static CommandHandlingComponent unconditionalComponent(EventStore eventStore) {
+        SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("unconditional-decision");
+        delegate.subscribe(DECIDE, (command, context) -> {
+            String tenantId = command.metadata().get("tenantId");
+            eventStore.transaction(context).appendEvent(asEventMessage(new DecisionRecorded(tenantId)));
+            return MessageStream.empty();
+        });
+        return new AppendCriteriaResolvingCommandHandlingComponent(
+                delegate,
+                eventStore,
+                (command, context, sourcingCriteria) -> sourcingCriteria
         );
     }
 

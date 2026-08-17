@@ -168,6 +168,16 @@ checked for conflicts.
 This is appropriate only when storing the event is safe regardless of events already present or appended concurrently.
 Tags on the appended event do not by themselves define append criteria for an external handler.
 
+A builder on the class does not change that.
+Returning the supplied criteria unchanged adds no restriction, so a command that sourced nothing stays unconditional.
+That is how one class can mix a command with a narrowed boundary and a command with none at all: a top-up that no rule
+constrains reads nothing and returns what it was given, while a withdrawal sources a balance and narrows.
+
+Returning the supplied criteria for a command that *did* source keeps the symmetric default instead, since those
+criteria describe what was read.
+Sourcing sets the consistency marker, so a sourced command is always checked from that position; narrowing the criteria
+selects which concurrent events conflict, and cannot remove the check.
+
 An append-criteria builder does not determine whether sourcing occurred.
 For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from
 the command or metadata.

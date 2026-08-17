@@ -62,7 +62,13 @@ final class CommandAppendCriteriaOverride {
                     "The command append criteria resolver returned null."
             );
             if (AppendCondition.none().equals(current)) {
-                return AppendCondition.withCriteria(commandCriteria);
+                // The command sourced nothing, so the resolver was supplied criteria that restrict nothing. Getting
+                // those back means it added no restriction either, which leaves no boundary to check. Turning that
+                // into a condition would check every event from ORIGIN, the strictest check there is, when what was
+                // expressed was the absence of one.
+                return commandCriteria.hasCriteria()
+                        ? AppendCondition.withCriteria(commandCriteria)
+                        : AppendCondition.none();
             }
             if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
                     && !current.criteria().equals(commandCriteria)) {
