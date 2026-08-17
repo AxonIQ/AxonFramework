@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Test class validating the {@link VersionedType} interface and that {@link SimpleVersionedType} correctly implements it.
  *
- * @author Josh
+ * @author Ishaan Bhela
  */
 class VersionedTypeTest {
 
