@@ -17,6 +17,7 @@
 package org.axonframework.examples.university.write.subscribestudent;
 
 
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
@@ -50,6 +51,27 @@ class SubscribeStudentToCourseCommandHandler {
     ) {
         var events = decide(command, state);
         eventAppender.append(events);
+    }
+
+    /**
+     * Narrows the consistency boundary of this decision to the events that can actually invalidate it.
+     * <p>
+     * The decision reads more than it can conflict with. Of the sourced types, only two can move a checked invariant
+     * towards violation: another {@code StudentSubscribedToCourse} takes a vacant spot and raises this student's course
+     * count, and a {@code CourseCapacityChanged} may lower the capacity below the number of subscriptions. A concurrent
+     * {@code StudentUnsubscribedFromCourse} frees a spot and lowers the student's course count, while
+     * {@code CourseCreated} and {@code StudentEnrolledInFaculty} cannot un-create the course or un-enroll the student,
+     * so those three can only make this subscription more valid and are left out.
+     * <p>
+     * The supplied criteria are the complete union of everything sourced for this command, so replacing the event types
+     * keeps the tags that were used for sourcing without restating them.
+     */
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(SubscribeStudentToCourse command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria.replaceEventTypes(
+                StudentSubscribedToCourse.class,
+                CourseCapacityChanged.class
+        );
     }
 
     private List<StudentSubscribedToCourse> decide(SubscribeStudentToCourse command, State state) {
