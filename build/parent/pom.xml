@@ -91,7 +91,7 @@
         <jackson2.version>2.22.1</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <jobrunr.version>8.8.0</jobrunr.version>
+        <jobrunr.version>8.8.1</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
@@ -101,7 +101,7 @@
         <!-- Testing -->
         <awaitility.version>4.3.0</awaitility.version>
         <hamcrest.version>3.0</hamcrest.version>
-        <junit.jupiter.version>6.1.2</junit.jupiter.version>
+        <junit.jupiter.version>6.1.3</junit.jupiter.version>
         <mockito.version>5.23.0</mockito.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <assertj.version>3.27.7</assertj.version>
@@ -111,7 +111,7 @@
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>13.9.0</checkstyle.version>
+        <checkstyle.version>13.10.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
