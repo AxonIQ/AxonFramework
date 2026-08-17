@@ -208,6 +208,57 @@ The back-off mechanism applies within the local JVM instance only.
 
 In a distributed environment with multiple PSEP instances, other instances will ignore the back-off and may immediately claim and process the failed segment, providing faster recovery from transient errors.
 
+[IMPORTANT]
+.What an aborted segment costs
+====
+A segment is not a single sequence.
+It is a bucket holding many unrelated sequences that share one tracking token and are processed as one ordered stream.
+
+When a segment aborts, its token does not advance.
+On retry, the segment resumes from the last committed position and meets the same event again.
+Until that event can be processed, *every* sequence assigned to that segment waits behind it, however unrelated it is to the failure.
+
+Segments fail independently, so the remaining segments keep processing.
+The visible effect is therefore partial degradation rather than a full stop: the sequences that stall are the ones that happen to hash into the affected segment, while the rest continue as normal.
+====
+
+[[stalled_segments]]
+=== Common causes of a stalled segment
+
+Any condition that prevents a segment from committing its batch produces the same symptom: that segment stops advancing while others continue.
+The most common causes are:
+
+* *An event handler that keeps failing.* The default `PropagatingErrorHandler` rethrows, so the segment retries the same event indefinitely.
+This is the intended behaviour when silently skipping the event would corrupt a read model, but it stalls the segment for as long as the cause persists.
+* *A transaction-breaking database exception.* Handler work and the token update share one transaction.
+An exception that invalidates that transaction, such as a value exceeding a column's size, rolls back the batch including the token update, so the segment retries from the same position.
+* *An unreachable token store.* A segment needs to extend its claim to keep processing.
+If the token store is unavailable or its connection pool is exhausted, the segment cannot commit progress and releases its claim.
+* *A handler that is slow rather than failing.* Events within a segment are processed in order, so one slow handler delays every sequence behind it.
+Nothing is in error, but the lag is indistinguishable from a stall when viewed from the outside.
+* *Claim contention between nodes.* When processing regularly takes longer than the claim timeout, other nodes <<token_stealing,steal>> the claim mid-batch, and segments can spend more time changing hands than processing.
+ifdef::advanced-framework[]
+* *An overflowing dead-letter queue.* Once the queue reaches its capacity, a failing event can no longer be parked, and the failure propagates to the processor as though no queue were configured.
+See xref:dead-letter-queue:index.adoc#_capacity_and_overflow[Capacity and overflow].
+endif::[]
+
+=== Limiting the impact
+
+The blast radius of a stall is a design choice, not a fixed property of the processor:
+
+* *Choose the segment count deliberately.* A stalled segment holds back roughly `1/segmentCount` of your sequences.
+Raising the <<parallel_processing,segment count>> shrinks the share of data affected by any single stall, at the cost of more tokens to claim and maintain.
+* *Separate failure domains across processors.* Event handling components assigned to the same processor stall together, because they share segments and tokens.
+Placing a component that depends on a fragile downstream system in its own processor keeps its failures away from the rest.
+* *Make handlers idempotent.* Retries after an aborted batch replay events the handler may already have seen.
+Idempotent handlers make those retries harmless, and are a precondition for most other recovery options.
+* *Monitor progress per segment, not per processor.* An aggregate lag figure hides a single stalled segment among healthy ones for a long time.
+Alerting on the slowest segment surfaces the condition while it still affects a small share of the data.
+ifdef::advanced-framework[]
+* *Park failing events instead of retrying them.* A xref:dead-letter-queue:index.adoc[dead-letter queue] moves a failing sequence aside so the segment keeps processing everything else.
+Note that this holds only while the queue has capacity.
+endif::[]
+
 [[tracking_tokens]]
 == Tracking tokens
 
