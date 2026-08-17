@@ -1,0 +1,103 @@
+= Component Factories
+
+A `ComponentFactory<C>` creates instances of type `C` on demand, at the moment they are first requested.
+Unlike components registered with `registerComponent` on the xref:registries.adoc#component-registry[`ComponentRegistry`], a factory is consulted only when no pre-registered component matches the requested type and name combination.
+This makes factories suitable for scenarios where an unknown number of named instances may be needed at runtime.
+
+== How factories differ from regular registration
+
+Regular component registration creates one named or unnamed component upfront.
+A factory, by contrast, can create any number of distinct instances based on the requested name.
+Once a factory constructs an instance, that instance is stored in the `Configuration` under its type-and-name key, so the factory is never called twice for the same combination.
+Consider the following table as a quick reference for the difference between registered and factory-constructed `Components`:
+
+[cols="1,1,1"]
+|===
+|Aspect |`registerComponent` |`registerFactory`
+
+|When invoked
+|Builder invoked lazily on first access
+|Factory invoked when no matching component exists
+
+|Number of instances
+|One per type-and-name registration
+|One per unique type-and-name request
+
+|Name
+|Fixed at registration time
+|Determined by caller at request time
+
+|Override behavior
+|A registered component takes precedence over a factory for the same type and name
+|Factory is skipped when a pre-registered component matches
+|===
+
+A factory-created component is requested through the standard `Configuration` retrieval methods, using the name that triggers construction:
+
+[source,java]
+----
+include::example$configuration/component-factory/RequestFactoryComponentExample.java[tag=request-factory-component-example]
+----
+
+On the second call with the same name, the cached instance is returned without invoking the factory again.
+
+[IMPORTANT]
+====
+Only the single-component retrieval methods (`getComponent(Class<C>, String)`, `getOptionalComponent(Class<C>, String)`, and their `TypeReference`-based equivalents) trigger factory-based creation.
+Bulk retrieval never does; see xref:configuration.adoc#retrieving-components[Retrieving components] for why `getComponents(Class<C>)` can omit factory-eligible instances that have not yet been requested by name.
+====
+
+If a component is registered both explicitly and through a factory for the same type-and-name combination, the explicit registration wins and the factory is **never** invoked.
+Thus, the `ComponentFactory` is regarded as a fallback by the `Configuration` in these scenarios.
+Let's take the following example to explain this in more detail:
+
+[source,java]
+----
+include::example$configuration/component-factory/PreRegisteredPrecedenceExample.java[tag=pre-registered-precedence-example]
+----
+
+In this example, requesting `EventStorageEngine` with name `"storageEngine@billing"` returns the explicitly registered `InMemoryEventStorageEngine`.
+The factory is only invoked for names that have no matching explicit registration.
+
+== Implementing a ComponentFactory
+
+A `ComponentFactory<C>` must implement three methods:
+
+`forType()`::
+Returns the `Class<C>` this factory constructs.
+This tells the registry which type the factory handles.
+
+`construct(String name, Configuration config)`::
+Produces an `Optional<Component<C>>`.
+Return `Optional.empty()` to reject construction, for example when the
+`name` does not match the expected format or when the `config` does not contain required dependencies.
+When construction succeeds, return a `Component` wrapping the new instance.
+
+`registerShutdownHandlers(LifecycleRegistry)` (see xref:registries.adoc#lifecycle-registry[`LifecycleRegistry`])::
+Registers shutdown handlers for any instances this factory has constructed.
+Because factories are only consulted after startup, only shutdown handlers are meaningful here.
+
+[IMPORTANT]
+====
+Because a `ComponentFactory` is invoked only after the application has already started (via `AxonConfiguration#start()`), any component it constructs that requires startup logic must be started explicitly within the `construct` method before being returned.
+The lifecycle registry is not consulted at that point for startup.
+====
+
+The following example shows a factory that constructs context-specific `EventStorageEngine` instances:
+
+[source,java]
+----
+include::example$configuration/component-factory/ContextEventStorageEngineFactory.java[tag=context-event-storage-engine-factory-example]
+----
+
+== Registering a factory
+
+Factories are registered on the xref:registries.adoc#component-registry[`ComponentRegistry`]:
+
+[source,java]
+----
+include::example$configuration/component-factory/RegisterFactoryExample.java[tag=register-factory-example]
+----
+
+Multiple factories of the same type can be registered.
+The registry consults them in registration order until one returns a non-empty result.
