@@ -1049,7 +1049,7 @@ class Coordinator {
                 // A participant rejected the claim; release it so the token store claim is not leaked.
                 return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
             }
-            return segmentChangeListener.onSegmentClaimed(segment)
+            return segmentChangeListener.onSegmentClaimed(segment, token)
                                         .handle((ignored, e) -> {
                                             if (e != null) {
                                                 logger.info(
@@ -1514,12 +1514,12 @@ class Coordinator {
                            }
                        })
                        .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(
-                               // Persist the final safe token (strategy onSegmentReleased -> store) WHILE the claim is
-                               // still held, then release the claim LAST so no other node can resume past durable
-                               // progress.
+                               // Persist the final safe token (strategy onSegmentReleased -> store) and let the release
+                               // listeners wind down WHILE the claim is still held, then release the claim LAST so no
+                               // other node can resume past durable progress or pick up work still running here.
                                context -> work.onSegmentReleased(context)
+                                              .thenCompose(r -> notifyReleaseListeners(work.segment()))
                                               .thenCompose(r -> tokenStore.releaseClaim(name, segmentId, context))
-                                              .thenCompose(r -> segmentChangeListener.onSegmentReleased(work.segment()))
                        ))
                        .exceptionally(throwable -> {
                            Throwable unwrapped = throwable instanceof CompletionException ce ? ce.getCause() : throwable;
@@ -1534,6 +1534,42 @@ class Coordinator {
                                    unwrapped);
                            return null;
                        });
+        }
+
+        /**
+         * Invokes the {@link SegmentChangeListener#onSegmentReleased(Segment) release listeners} for the given
+         * {@code segment} and waits for them to finish, giving them the chance to wind down their work before the claim
+         * is handed over.
+         * <p>
+         * The wait is bounded by the
+         * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold},
+         * since the claim of an aborted work package is no longer extended and would go stale beyond it anyhow.
+         * Listeners that time out or fail do not keep the claim held: the returned {@link CompletableFuture} completes
+         * normally regardless, so the claim is always released afterwards.
+         *
+         * @param segment the released {@link Segment} to notify the listeners of
+         * @return a {@link CompletableFuture} completing once the listeners are done, timed out, or failed
+         */
+        private CompletableFuture<Void> notifyReleaseListeners(Segment segment) {
+            return segmentChangeListener.onSegmentReleased(segment)
+                                        // Copied, as orTimeout completes the future it is invoked on.
+                                        .copy()
+                                        .orTimeout(claimExtensionThreshold, TimeUnit.MILLISECONDS)
+                                        .exceptionally(throwable -> {
+                                            Throwable unwrapped = throwable instanceof CompletionException ce
+                                                    ? ce.getCause() : throwable;
+                                            if (unwrapped instanceof Error error) {
+                                                throw error;
+                                            }
+                                            logger.warn(
+                                                    "Processor [{}] (Coordination Task [{}]). Release listeners for [{}] failed or exceeded the claim extension threshold of [{}]ms; releasing the claim regardless.",
+                                                    name,
+                                                    generation,
+                                                    segment,
+                                                    claimExtensionThreshold,
+                                                    unwrapped);
+                                            return null;
+                                        });
         }
 
         private void advanceReleaseDeadlineFor(int segmentId) {

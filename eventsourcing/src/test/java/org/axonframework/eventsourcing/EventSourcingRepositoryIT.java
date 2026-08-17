@@ -28,34 +28,26 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.*;
+import org.mockito.*;
+import org.mockito.junit.jupiter.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link EventSourcingRepository}.
@@ -65,6 +57,7 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class EventSourcingRepositoryIT {
+
     private EventStore eventStore = mock();
     private EventStoreTransaction eventStoreTransaction = mock();
     private EventSourcedEntityFactory<String, String> factory;
@@ -84,17 +77,17 @@ class EventSourcingRepositoryIT {
         };
 
         testSubject = new EventSourcingRepository<>(
-            String.class,
-            String.class,
-            new SimpleEntityLifecycleHandler<>(
-                eventStore,
-                (id, context) -> EventCriteria.havingAnyTag(),
-                new AnnotationBasedTagResolver(),
-                new InitializingEntityEvolver<>(
-                    (id, event, context) -> factory.create(id, event, context),
-                    (entity, event, context) -> entity + "-" + event.payload()
+                String.class,
+                String.class,
+                new SimpleEntityLifecycleHandler<>(
+                        eventStore,
+                        (id, context) -> EventCriteria.havingAnyTag(),
+                        new AnnotationBasedTagResolver(),
+                        new InitializingEntityEvolver<>(
+                                (id, event, context) -> factory.create(id, event, context),
+                                (entity, event, context) -> entity + "-" + event.payload()
+                        )
                 )
-            )
         );
 
         MessageStream<? extends EventMessage> stream = MessageStream.fromIterable(eventsToLoad);
@@ -106,7 +99,9 @@ class EventSourcingRepositoryIT {
     void loadEventSourcedEntity() {
         ProcessingContext processingContext = new StubProcessingContext();
 
-        ManagedEntity<String, String> result = testSubject.load("test", processingContext).join();
+        ManagedEntity<String, String> result = testSubject.load("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
 
         assertEquals("test(0)-0-1", result.entity());
 
@@ -184,7 +179,9 @@ class EventSourcingRepositoryIT {
     void updateLoadedEventSourcedEntity() {
         ProcessingContext processingContext = new StubProcessingContext();
 
-        ManagedEntity<String, String> result = testSubject.load("test", processingContext).join();
+        ManagedEntity<String, String> result = testSubject.load("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
 
         assertEquals("test(0)-0-1", result.entity());
 
@@ -203,14 +200,14 @@ class EventSourcingRepositoryIT {
     void loadOrCreateShouldLoadWhenEventsAreReturned() {
         ProcessingContext processingContext = new StubProcessingContext();
 
-        CompletableFuture<ManagedEntity<String, String>> result =
-                testSubject.load("test", processingContext);
+        CompletableFuture<ManagedEntity<String, String>> result = testSubject.load("test", processingContext)
+                                                                             .orTimeout(2, TimeUnit.SECONDS);
 
         assertEquals("test(0)-0-1", result.join().entity());
     }
 
     @Test
-    void loadOrCreateThrowsExceptionWhenEventStreamIsEmptyAndNullEntityIsCreated() {
+    void loadOrCreateReturnsNullStateWhenEventStreamIsEmptyAndNullEntityIsCreated() {
         ProcessingContext processingContext = new StubProcessingContext();
 
         eventsToLoad.clear();
@@ -222,10 +219,11 @@ class EventSourcingRepositoryIT {
             return null; // Simulating a null entity creation
         };
 
-        assertThatThrownBy(() -> testSubject.loadOrCreate("test", processingContext).join())
-            .isInstanceOf(CompletionException.class)
-            .cause()
-            .isInstanceOf(EntityNotFoundException.class);
+        ManagedEntity<String, String> loaded = testSubject.loadOrCreate("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
+
+        assertNull(loaded.entity());
     }
 
     @Test
@@ -235,10 +233,13 @@ class EventSourcingRepositoryIT {
             return null; // Simulating a null entity creation
         };
 
-        assertThatThrownBy(() -> testSubject.load("test", processingContext).join())
-            .isInstanceOf(CompletionException.class)
-            .cause()
-            .isInstanceOf(EntityMissingAfterFirstEventException.class);
+        assertThatThrownBy(
+                () -> testSubject.load("test", processingContext)
+                                 .orTimeout(2, TimeUnit.SECONDS)
+                                 .join()
+        ).isInstanceOf(CompletionException.class)
+         .cause()
+         .isInstanceOf(EntityMissingAfterFirstEventException.class);
     }
 
     @Test
@@ -247,7 +248,9 @@ class EventSourcingRepositoryIT {
 
         eventsToLoad.clear();
 
-        ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+        ManagedEntity<String, String> loaded = testSubject.load("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
 
         assertNull(loaded.entity());
 
@@ -261,7 +264,9 @@ class EventSourcingRepositoryIT {
 
         eventsToLoad.clear();
 
-        ManagedEntity<String, String> loaded = testSubject.loadOrCreate("test", processingContext).join();
+        ManagedEntity<String, String> loaded = testSubject.loadOrCreate("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
 
         assertEquals("test()", loaded.entity());
 

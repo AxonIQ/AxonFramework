@@ -20,6 +20,7 @@ import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.IssueCardCommand;
+import org.axonframework.integrationtests.testsuite.giftcard.commands.IssueCardWithInitialRedemptionCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.commands.RedeemCardCommand;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardEventCreator;
 import org.axonframework.integrationtests.testsuite.giftcard.state.GiftCardEventCreatorStateful;
@@ -110,6 +111,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * regardless of the creator style: a non-{@code @Nullable}, non-{@code Optional} {@code @InjectEntity} parameter
  * always propagates an {@link EntityNotFoundException} instead of receiving an entity that was implicitly
  * constructed without a preceding event.
+ * <p>
+ * {@link IdentifierNullableEntityCreationStatefulCommandHandler} additionally validates a create-if-missing flow
+ * within a single command handling: a first event is appended for an entity that does not exist yet, after which a
+ * second, dependent event is appended based on the state the first event just established on the injected
+ * {@link org.axonframework.modelling.repository.ManagedEntity}.
  *
  * @author Steven van Beelen
  */
@@ -462,6 +468,31 @@ class EntityCreationTest {
             CompletableFuture<Void> result = commandGateway.send(new RedeemCardCommand("cardId", 1337), Void.class);
 
             assertThat(result).succeedsWithin(Duration.ofSeconds(2));
+        }
+
+        @Test
+        void createIfMissingSecondEventSucceedsWhenItRespectsStateEstablishedByTheFirstEvent() {
+            CompletableFuture<Void> result = commandGateway.send(
+                    new IssueCardWithInitialRedemptionCommand("cardId", 100, 40), Void.class
+            );
+
+            assertThat(result).succeedsWithin(Duration.ofSeconds(2));
+        }
+
+        @Test
+        void createIfMissingSecondEventFailsWhenItViolatesStateEstablishedByTheFirstEvent() {
+            // The initial redemption (100) exceeds the amount the card was just issued for (50): this only fails
+            // correctly if the injected ManagedEntity reflects the CardIssuedEvent's effect (amount=50) by the time
+            // the second event is decided upon, rather than the null it was originally resolved with, or the
+            // constructor's unrelated default of 9001.
+            CompletableFuture<Void> result = commandGateway.send(
+                    new IssueCardWithInitialRedemptionCommand("cardId", 50, 100), Void.class
+            );
+
+            assertThat(result).failsWithin(Duration.ofSeconds(2))
+                              .withThrowableOfType(ExecutionException.class)
+                              .havingCause()
+                              .withMessageContaining("Insufficient funds");
         }
     }
 

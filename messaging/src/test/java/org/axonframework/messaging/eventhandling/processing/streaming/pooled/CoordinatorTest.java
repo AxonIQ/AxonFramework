@@ -833,6 +833,72 @@ class CoordinatorTest {
         }
 
         @Test
+        void holdsTokenClaimUntilOnSegmentReleasedCompleted() throws NoSuchFieldException {
+            // given - a release listener recording whether the claim was still held when it was invoked
+            AtomicBoolean claimReleased = new AtomicBoolean(false);
+            AtomicReference<Boolean> claimHeldWhileReleasing = new AtomicReference<>();
+            Coordinator coordinator = buildCoordinatorWith(
+                    builder -> builder.segmentChangeListener(SegmentChangeListener.onRelease(segment -> {
+                        claimHeldWhileReleasing.set(!claimReleased.get());
+                        return emptyCompletedFuture();
+                    }))
+            );
+
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(Collections.emptyList())).when(tokenStore)
+                                                              .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(emptyCompletedFuture()).when(workPackage).abort(any());
+            doAnswer(invocation -> {
+                claimReleased.set(true);
+                return emptyCompletedFuture();
+            }).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+
+            Map<Integer, WorkPackage> workPackages =
+                    ReflectionUtils.getFieldValue(Coordinator.class.getDeclaredField("workPackages"), coordinator);
+            workPackages.put(SEGMENT_ID, workPackage);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the claim is only released once the release listener has finished winding down
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any()));
+            assertThat(claimHeldWhileReleasing).hasValue(true);
+        }
+
+        @Test
+        void releasesTokenClaimWhenOnSegmentReleasedNeverCompletes() throws NoSuchFieldException {
+            // given - a release listener that never completes, and a short claim extension threshold to bound the wait
+            Coordinator coordinator = buildCoordinatorWith(
+                    builder -> builder.claimExtensionThreshold(100)
+                                      .segmentChangeListener(SegmentChangeListener.onRelease(
+                                              segment -> new CompletableFuture<>()
+                                      ))
+            );
+
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(Collections.emptyList())).when(tokenStore)
+                                                              .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(emptyCompletedFuture()).when(workPackage).abort(any());
+            doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+
+            Map<Integer, WorkPackage> workPackages =
+                    ReflectionUtils.getFieldValue(Coordinator.class.getDeclaredField("workPackages"), coordinator);
+            workPackages.put(SEGMENT_ID, workPackage);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the hanging listener does not hold on to the claim indefinitely
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any()));
+        }
+
+        @Test
         void onSegmentReleasedFailureIsHandledGracefully() throws NoSuchFieldException {
             // given - coordinator with a release listener that always fails
             Coordinator coordinator = Coordinator.builder()
@@ -864,7 +930,8 @@ class CoordinatorTest {
             // when
             awaitStart(coordinator);
 
-            // then - the failure is swallowed by the exceptionally handler and a retry is still scheduled
+            // then - the failure does not keep the claim held, and a retry is still scheduled
+            verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
             verify(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
         }
     }

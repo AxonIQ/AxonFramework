@@ -17,11 +17,15 @@
 package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.interception.annotation.MessageInterceptingMember;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -42,6 +46,7 @@ import java.util.stream.Collectors;
 
 import static java.util.Collections.emptySet;
 import static java.util.Collections.emptySortedSet;
+import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToSingleStream;
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
 
 /**
@@ -58,20 +63,20 @@ public class AnnotatedHandlerInspector<T> {
     private final Class<T> inspectedType;
     private final List<AnnotatedHandlerInspector<? super T>> superClassInspectors;
     private final List<AnnotatedHandlerInspector<? extends T>> subClassInspectors;
+    private final MessageTypeResolver messageTypeResolver;
     private final Map<Class<?>, SortedSet<MessageHandlingMember<? super T>>> handlers;
     private final Map<Class<?>, MessageHandlerInterceptorMemberChain<T>> interceptorChains;
     private final Map<Class<?>, SortedSet<MessageHandlingMember<? super T>>> interceptors;
 
     private AnnotatedHandlerInspector(Class<T> inspectedType,
                                       List<AnnotatedHandlerInspector<? super T>> superClassInspectors,
-                                      ParameterResolverFactory parameterResolverFactory,
-                                      HandlerDefinition handlerDefinition,
-                                      Map<Class<?>, AnnotatedHandlerInspector<?>> registry,
-                                      List<AnnotatedHandlerInspector<? extends T>> subClassInspectors) {
+                                      List<AnnotatedHandlerInspector<? extends T>> subClassInspectors,
+                                      MessageTypeResolver messageTypeResolver) {
         this.inspectedType = inspectedType;
         this.superClassInspectors = new ArrayList<>(superClassInspectors);
-        this.handlers = new HashMap<>();
         this.subClassInspectors = subClassInspectors;
+        this.messageTypeResolver = messageTypeResolver;
+        this.handlers = new HashMap<>();
         this.interceptorChains = new ConcurrentHashMap<>();
         this.interceptors = new ConcurrentHashMap<>();
     }
@@ -85,39 +90,54 @@ public class AnnotatedHandlerInspector<T> {
      * @return a new inspector instance for the inspected class
      */
     public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType) {
-        return inspectType(handlerType, ClasspathParameterResolverFactory.forClass(handlerType));
+        return inspectType(handlerType,
+                           new AnnotationMessageTypeResolver(),
+                           ClasspathParameterResolverFactory.forClass(handlerType));
     }
 
     /**
      * Create an inspector for given {@code handlerType} that uses given {@code parameterResolverFactory} to resolve
      * method parameters.
      *
-     * @param handlerType              the target handler type
-     * @param parameterResolverFactory the resolver factory to use during detection
      * @param <T>                      the handler's type
+     * @param handlerType              the target handler type
+     * @param messageTypeResolver      the message type resolver used to derive the return type of the message returned
+     *                                 by the {@link org.axonframework.messaging.core.MessageStream} returned from
+     *                                 uncovered
+     *                                 {@link org.axonframework.messaging.core.MessageHandler MessageHandlers}
+     * @param parameterResolverFactory the resolver factory to use during detection
      * @return a new inspector instance for the inspected class
      */
     public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType,
+                                                               MessageTypeResolver messageTypeResolver,
                                                                ParameterResolverFactory parameterResolverFactory) {
-        return inspectType(handlerType,
-                           parameterResolverFactory,
-                           ClasspathHandlerDefinition.forClass(handlerType));
+        return inspectType(
+                handlerType,
+                messageTypeResolver,
+                parameterResolverFactory,
+                ClasspathHandlerDefinition.forClass(handlerType)
+        );
     }
 
     /**
      * Create an inspector for given {@code handlerType} that uses given {@code parameterResolverFactory} to resolve
      * method parameters and given {@code handlerDefinition} to create handlers.
      *
+     * @param <T>                      the handler's type
      * @param handlerType              the target handler type
+     * @param messageTypeResolver      the message type resolver used to derive the return type of the message returned
+     *                                 by the {@link org.axonframework.messaging.core.MessageStream} returned from
+     *                                 uncovered
+     *                                 {@link org.axonframework.messaging.core.MessageHandler MessageHandlers}
      * @param parameterResolverFactory the resolver factory to use during detection
      * @param handlerDefinition        the handler definition used to create concrete handlers
-     * @param <T>                      the handler's type
      * @return a new inspector instance for the inspected class
      */
     public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType,
+                                                               MessageTypeResolver messageTypeResolver,
                                                                ParameterResolverFactory parameterResolverFactory,
                                                                HandlerDefinition handlerDefinition) {
-        return inspectType(handlerType, parameterResolverFactory, handlerDefinition, emptySet());
+        return inspectType(handlerType, messageTypeResolver, parameterResolverFactory, handlerDefinition, emptySet());
     }
 
     /**
@@ -125,43 +145,57 @@ public class AnnotatedHandlerInspector<T> {
      * {@code parameterResolverFactory} to resolve method parameters and given {@code handlerDefinition} to create
      * handlers.
      *
+     * @param <T>                      the handler's type
      * @param handlerType              the target handler type
+     * @param messageTypeResolver      the message type resolver used to derive the return type of the message returned
+     *                                 by the {@link org.axonframework.messaging.core.MessageStream} returned from
+     *                                 uncovered
+     *                                 {@link org.axonframework.messaging.core.MessageHandler MessageHandlers}
      * @param parameterResolverFactory the resolver factory to use during detection
      * @param handlerDefinition        the handler definition used to create concrete handlers
      * @param declaredSubtypes         the declared subtypes of this {@code handlerType}
-     * @param <T>                      the handler's type
      * @return a new inspector instance for the inspected class
      */
     public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType,
+                                                               MessageTypeResolver messageTypeResolver,
                                                                ParameterResolverFactory parameterResolverFactory,
                                                                HandlerDefinition handlerDefinition,
                                                                Set<Class<? extends T>> declaredSubtypes) {
-        return createInspector(handlerType,
-                               parameterResolverFactory,
-                               handlerDefinition,
-                               new HashMap<>(),
-                               declaredSubtypes);
+        return createInspector(
+                handlerType,
+                messageTypeResolver,
+                parameterResolverFactory,
+                handlerDefinition,
+                new HashMap<>(),
+                declaredSubtypes
+        );
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> AnnotatedHandlerInspector<T> createInspector(Class<T> inspectedType,
-                                                                    ParameterResolverFactory parameterResolverFactory,
-                                                                    HandlerDefinition handlerDefinition,
-                                                                    Map<Class<?>, AnnotatedHandlerInspector<?>> registry,
-                                                                    Set<Class<? extends T>> declaredSubtypes) {
+    private static <T> AnnotatedHandlerInspector<T> createInspector(
+            Class<T> inspectedType,
+            MessageTypeResolver messageTypeResolver,
+            ParameterResolverFactory parameterResolverFactory,
+            HandlerDefinition handlerDefinition,
+            Map<Class<?>, AnnotatedHandlerInspector<?>> registry,
+            Set<Class<? extends T>> declaredSubtypes
+    ) {
         if (!registry.containsKey(inspectedType)) {
-            registry.put(inspectedType,
-                         AnnotatedHandlerInspector.initialize(inspectedType,
-                                                              parameterResolverFactory,
-                                                              handlerDefinition,
-                                                              registry,
-                                                              declaredSubtypes));
+            registry.put(inspectedType, AnnotatedHandlerInspector.initialize(
+                    inspectedType,
+                    messageTypeResolver,
+                    parameterResolverFactory,
+                    handlerDefinition,
+                    registry,
+                    declaredSubtypes
+            ));
         }
 
         return (AnnotatedHandlerInspector<T>) registry.get(inspectedType);
     }
 
     private static <T> AnnotatedHandlerInspector<T> initialize(Class<T> inspectedType,
+                                                               MessageTypeResolver messageTypeResolver,
                                                                ParameterResolverFactory parameterResolverFactory,
                                                                HandlerDefinition handlerDefinition,
                                                                Map<Class<?>, AnnotatedHandlerInspector<?>> registry,
@@ -170,34 +204,36 @@ public class AnnotatedHandlerInspector<T> {
         for (Class<?> iFace : inspectedType.getInterfaces()) {
             @SuppressWarnings("unchecked")  // Safe cast: all interfaces of T are guaranteed to be supertypes of T
             Class<? super T> castIF = (Class<? super T>) iFace;
-
-            parents.add(createInspector(castIF,
-                                        parameterResolverFactory,
-                                        handlerDefinition,
-                                        registry,
-                                        emptySet()));
+            parents.add(createInspector(
+                    castIF,
+                    messageTypeResolver,
+                    parameterResolverFactory,
+                    handlerDefinition,
+                    registry,
+                    emptySet()
+            ));
         }
+
         if (inspectedType.getSuperclass() != null && !Object.class.equals(inspectedType.getSuperclass())) {
-            parents.add(createInspector(inspectedType.getSuperclass(),
+            parents.add(createInspector(inspectedType.getSuperclass(), messageTypeResolver,
                                         parameterResolverFactory,
                                         handlerDefinition,
-                                        registry,
-                                        emptySet()));
+                                        registry, emptySet()));
         }
         List<AnnotatedHandlerInspector<? extends T>> children =
                 declaredSubtypes.stream()
-                                .map(subclass -> createInspector(subclass,
-                                                                 parameterResolverFactory,
-                                                                 handlerDefinition,
-                                                                 registry,
-                                                                 emptySet()))
+                                .map(subclass -> createInspector(
+                                        subclass,
+                                        messageTypeResolver,
+                                        parameterResolverFactory,
+                                        handlerDefinition,
+                                        registry,
+                                        emptySet()
+                                ))
                                 .collect(Collectors.toList());
-        AnnotatedHandlerInspector<T> inspector = new AnnotatedHandlerInspector<>(inspectedType,
-                                                                                 parents,
-                                                                                 parameterResolverFactory,
-                                                                                 handlerDefinition,
-                                                                                 registry,
-                                                                                 children);
+
+        AnnotatedHandlerInspector<T> inspector =
+                new AnnotatedHandlerInspector<>(inspectedType, parents, children, messageTypeResolver);
         inspector.initializeMessageHandlers(parameterResolverFactory, handlerDefinition);
         return inspector;
     }
@@ -206,12 +242,14 @@ public class AnnotatedHandlerInspector<T> {
     private void initializeMessageHandlers(ParameterResolverFactory parameterResolverFactory,
                                            HandlerDefinition handlerDefinition) {
         handlers.put(inspectedType, new TreeSet<>(HandlerComparator.instance()));
+        MessageStreamResolver messageStreamResolver = this::resolveResultToStream;
         for (Method method : inspectedType.getDeclaredMethods()) {
-            handlerDefinition.createHandler(inspectedType,
-                                            method,
-                                            parameterResolverFactory,
-                                            result -> resolveToStream(result, new AnnotationMessageTypeResolver()))
-                             .ifPresent(h -> registerHandler(inspectedType, h));
+            handlerDefinition.createHandler(
+                    inspectedType,
+                    method,
+                    parameterResolverFactory,
+                    messageStreamResolver
+            ).ifPresent(h -> registerHandler(inspectedType, h));
         }
 
         // we need to consider handlers from parent/subclasses as well
@@ -240,6 +278,22 @@ public class AnnotatedHandlerInspector<T> {
                                                    registerHandler(key, h);
                                                    registerHandler(inspectedType, h);
                                                })));
+    }
+
+    /**
+     * Resolves a handler's return value into a {@link MessageStream}, taking the {@code messageType} the handler is
+     * subscribed for into account to decide how many {@link Message Messages} it may produce.
+     * <p>
+     * Handlers of {@link CommandMessage CommandMessages} produce exactly one result, as expressed by
+     * {@link org.axonframework.messaging.commandhandling.CommandHandler} returning a {@link MessageStream.Single}. A
+     * collection returned by such a handler is therefore carried as the payload of a single {@link Message}, since
+     * spreading it over one {@code Message} per element would silently discard all elements but the first. Handlers of
+     * other message types may produce several results, and thus do spread a returned collection.
+     */
+    private MessageStream<?> resolveResultToStream(@Nullable Object result, Class<? extends Message> messageType) {
+        return CommandMessage.class.isAssignableFrom(messageType)
+                ? resolveToSingleStream(result, messageTypeResolver)
+                : resolveToStream(result, messageTypeResolver);
     }
 
     private void registerHandler(Class<?> type, MessageHandlingMember<? super T> handler) {

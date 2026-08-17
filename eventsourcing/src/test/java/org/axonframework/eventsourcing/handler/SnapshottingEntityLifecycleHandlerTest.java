@@ -45,6 +45,7 @@ import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.repository.ManagedEntity;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -408,7 +409,7 @@ class SnapshottingEntityLifecycleHandlerTest {
             }
 
             @Override
-            public Account applyStateChange(UnaryOperator<Account> change) {
+            public Account applyStateChange(UnaryOperator<@Nullable Account> change) {
                 return stateRef.updateAndGet(change);
             }
         };

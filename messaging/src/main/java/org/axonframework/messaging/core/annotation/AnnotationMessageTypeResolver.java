@@ -44,6 +44,10 @@ import java.util.Optional;
  * meta-annotated with the namespace annotation as a fallback.
  * <p>
  * Allows for defining a fallback {@code MessageTypeResolver}, for when the defined annotations are not present.
+ * <p>
+ * As annotations are static class metadata, the annotation-based resolution result is cached per payload type without
+ * preventing that type from being unloaded. Only when the configured annotations do not yield a {@link MessageType}
+ * is the fallback consulted.
  *
  * @author Steven van Beelen
  * @since 5.0.0
@@ -52,6 +56,12 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
 
     private final MessageTypeResolver fallback;
     private final AnnotationSpecification specification;
+    private final ClassValue<Optional<MessageType>> annotationCache = new ClassValue<>() {
+        @Override
+        protected Optional<MessageType> computeValue(Class<?> type) {
+            return resolveFromAnnotations(type);
+        }
+    };
 
     /**
      * Constructs a default {@code AnnotationMessageTypeResolver}, using the {@link ClassBasedMessageTypeResolver} as
@@ -95,10 +105,18 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
 
     @Override
     public Optional<MessageType> resolve(Class<?> payloadType) {
+        Optional<MessageType> resolved = annotationCache.get(payloadType);
+        if (resolved.isPresent()) {
+            return resolved;
+        }
+        return fallback != null ? fallback.resolve(payloadType) : Optional.empty();
+    }
+
+    private Optional<MessageType> resolveFromAnnotations(Class<?> payloadType) {
         Map<String, Object> nameAttributes = attributesFor(payloadType, specification.nameAnnotation());
         Map<String, Object> versionAttributes = attributesFor(payloadType, specification.versionAnnotation());
         if (nameAttributes.isEmpty() || versionAttributes.isEmpty()) {
-            return fallback != null ? fallback.resolve(payloadType) : Optional.empty();
+            return Optional.empty();
         }
 
         Map<String, Object> namespaceAttributes = namespaceAttributesFor(payloadType);

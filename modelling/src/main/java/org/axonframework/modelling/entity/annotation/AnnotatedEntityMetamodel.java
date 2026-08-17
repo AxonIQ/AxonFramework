@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.annotation;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.conversion.ConversionException;
@@ -44,7 +45,6 @@ import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.PolymorphicEntityMetamodel;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
-import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -260,7 +260,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
 
     private EntityMetamodel<E> initializeConcreteModel(Class<E> entityType) {
         EntityMetamodelBuilder<E> builder = EntityMetamodel.forEntityType(entityType);
-        AnnotatedHandlerInspector<E> inspected = inspectType(entityType, parameterResolverFactory);
+        AnnotatedHandlerInspector<E> inspected = inspectType(entityType, messageTypeResolver, parameterResolverFactory);
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
                                                                            inspected,
                                                                            eventConverter,
@@ -278,6 +278,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                                                              .anyMatch(this::hasEntityMembers);
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType,
+                messageTypeResolver,
                 parameterResolverFactory,
                 ClasspathHandlerDefinition.forClass(entityType),
                 hasMemberEntities ? Collections.emptySet() : concreteTypes

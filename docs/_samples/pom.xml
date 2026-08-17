@@ -44,7 +44,7 @@
         <skipTests>true</skipTests>
         <build-helper-maven-plugin.version>3.6.1</build-helper-maven-plugin.version>
         <micrometer-tracing.version>1.7.0</micrometer-tracing.version>
-        <opentelemetry.version>1.64.0</opentelemetry.version>
+        <opentelemetry.version>1.65.0</opentelemetry.version>
     </properties>
 
     <dependencies>
@@ -145,23 +145,12 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-            <version>13.1.0</version>
+            <version>13.2.0</version>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- The central-publishing-maven-plugin extension is loaded once for the whole reactor and injects a
-                 publish execution into every module regardless of maven.deploy.skip, so this module's own deployment
-                 must be disabled explicitly, or Central rejects it for missing the sources/javadoc jars skipped above. -->
-            <plugin>
-                <groupId>org.sonatype.central</groupId>
-                <artifactId>central-publishing-maven-plugin</artifactId>
-                <version>0.11.0</version>
-                <configuration>
-                    <skipPublishing>true</skipPublishing>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
