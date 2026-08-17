@@ -1,0 +1,79 @@
+= Component Registry and Lifecycle Registry
+
+Components, decorators, modules, enhancers, and factories, as covered throughout this chapter, are all registered through one of two interfaces: `ComponentRegistry` and `LifecycleRegistry`.
+These two registries are the heart of any xref:configurer.adoc#configurers[`ApplicationConfigurer`].
+Every configurer, whether the base `ApplicationConfigurer`, the xref:configurer.adoc#messaging-configurer[`MessagingConfigurer`], the xref:configurer.adoc#modelling-configurer[`ModellingConfigurer`], or the xref:configurer.adoc#eventsourcing-configurer[`EventSourcingConfigurer`], is ultimately a facade around this pair.
+The convenience methods each of those configurers add exist purely for ease of use, translating a specific registration call into an operation on one of the two registries underneath.
+
+The `ComponentRegistry` is the catalog of everything your application is built from.
+It holds every registered xref:configurer.adoc#components[`Component`], together with the xref:configurer.adoc#decorators[decorators] that wrap them, the xref:module.adoc[modules] that group them, the xref:component-factory.adoc[factories] that can construct them on demand, and the xref:configuration-enhancer.adoc[enhancers] that adjust or complete the registry before it is turned into a `Configuration`.
+Because a `Component` is registered as a lazy builder rather than an eager instance, the `ComponentRegistry` is what allows components to reference each other regardless of the order in which they were registered, resolving each one only the first time it is actually requested.
+
+The `LifecycleRegistry` is concerned with an entirely different question: not what exists, but when it starts and when it stops.
+It holds the start and shutdown handlers attached to components and decorators, together with the xref:configurer.adoc#component-lifecycle[phase] in which each of them runs.
+Where the `ComponentRegistry` answers "what does my application consist of, and how is each part built", the `LifecycleRegistry` answers "in what order do those parts come up, and in what order do they go down again".
+The two are deliberately kept separate: a component's construction logic lives in its `ComponentBuilder`, while its startup and shutdown behavior lives in its lifecycle handlers, so that defining a component never forces you to also reason about its place in the startup sequence.
+
+Both registries are reachable from every configurer layer through the `componentRegistry(Consumer<ComponentRegistry>)` and `lifecycleRegistry(Consumer<LifecycleRegistry>)` operations described xref:configurer.adoc#configurers[here].
+Regardless of which configurer you call these on, be it `MessagingConfigurer`, `ModellingConfigurer`, or `EventSourcingConfigurer`, you are always reaching the same underlying `ComponentRegistry` and `LifecycleRegistry` instances, since each configurer wraps the one below it rather than maintaining its own.
+
+[#component-registry]
+== The `ComponentRegistry`
+
+The `ComponentRegistry` is the registry passed into every xref:configuration-enhancer.adoc[`ConfigurationEnhancer`] and made accessible through `ApplicationConfigurer#componentRegistry(Consumer)`.
+It exposes the following operations:
+
+[cols="<,<"]
+|===
+|Operation |Purpose
+
+|`registerComponent(Class, ComponentBuilder)` |Registers a component under a type, built lazily by the given builder
+|`registerComponent(Class, String, ComponentBuilder)` |Registers a component under a type-and-name combination, allowing several components of the same type to coexist
+|`registerComponent(ComponentDefinition)` |Registers a component from a full `ComponentDefinition`, for example to attach lifecycle handlers or use a `TypeReference`-based type
+|`registerDecorator(Class, int, ComponentDecorator)` |Registers a decorator applied to every component of the given type, invoked at the given order
+|`registerDecorator(Class, String, int, ComponentDecorator)` |Registers a decorator applied only to the component matching the given type-and-name combination
+|`registerDecorator(DecoratorDefinition)` |Registers a decorator from a full `DecoratorDefinition`, for example to attach lifecycle handlers to the decorator itself
+|`hasComponent(Class)` |Checks whether a component of the given type is registered, in this registry or any ancestor
+|`hasComponent(Class, SearchScope)` |Same check, limited to the current registry, its ancestors, or both
+|`hasComponent(Class, String)` |Checks whether a component with the given type-and-name combination is registered, in this registry or any ancestor
+|`hasComponent(Class, String, SearchScope)` |Same check, limited to the current registry, its ancestors, or both
+|`registerIfNotPresent(Class, ComponentBuilder)` |Registers a component of the given type only if none is registered yet
+|`registerIfNotPresent(Class, ComponentBuilder, SearchScope)` |Same, with the presence check limited to the given search scope
+|`registerIfNotPresent(Class, String, ComponentBuilder)` |Registers a component under a type-and-name combination only if none is registered yet
+|`registerIfNotPresent(Class, String, ComponentBuilder, SearchScope)` |Same, with the presence check limited to the given search scope
+|`registerIfNotPresent(ComponentDefinition)` |Registers a component from a definition only if its type-and-name combination is not yet present
+|`registerIfNotPresent(ComponentDefinition, SearchScope)` |Same, with the presence check limited to the given search scope
+|`registerEnhancer(ConfigurationEnhancer)` |Registers an enhancer that can adjust or extend this registry right before the `Configuration` is built
+|`registerModule(Module)` |Registers a `Module` that encapsulates a private set of components, with read access to this registry's components
+|`registerFactory(ComponentFactory)` |Registers a factory that is consulted to construct a component on demand when no matching component was registered upfront
+|`setOverridePolicy(OverridePolicy)` |Sets the policy that dictates what happens when a component is registered under an identifier that is already in use
+|`disableEnhancerScanning()` |Disables classpath scanning for enhancers through the `ServiceLoader` mechanism
+|`disableEnhancer(Class)` |Disables a specific enhancer class from executing during the configuration initialization phase
+|`disableEnhancer(String)` |Same, identifying the enhancer by its fully qualified class name
+|===
+
+[#lifecycle-registry]
+== The `LifecycleRegistry`
+
+The `LifecycleRegistry` is made accessible through `ApplicationConfigurer#lifecycleRegistry(Consumer)`, and is typically used from within a `ComponentDefinition`'s or `DecoratorDefinition`'s lifecycle hooks, or directly when an application starts up.
+It exposes the following operations:
+
+[cols="<,<"]
+|===
+|Operation |Purpose
+
+|`registerLifecyclePhaseTimeout(long, TimeUnit)` |Configures how long the registry waits for a lifecycle phase to complete before proceeding to the next one
+|`onStart(Runnable)` |Registers a start handler that runs in the default phase (`0`)
+|`onStart(int, Runnable)` |Registers a start handler that runs in the given phase
+|`onStart(int, Supplier<CompletableFuture>)` |Registers an asynchronous start handler, providing a future, that runs in the given phase
+|`onStart(int, Consumer<Configuration>)` |Registers a start handler with access to the `Configuration`, that runs in the given phase
+|`onStart(int, LifecycleHandler)` |Registers an asynchronous start handler with access to the `Configuration`, that runs in the given phase
+|`onShutdown(Runnable)` |Registers a shutdown handler that runs in the default phase (`0`)
+|`onShutdown(int, Runnable)` |Registers a shutdown handler that runs in the given phase
+|`onShutdown(int, Supplier<CompletableFuture>)` |Registers an asynchronous shutdown handler, providing a future, that runs in the given phase
+|`onShutdown(int, Consumer<Configuration>)` |Registers a shutdown handler with access to the `Configuration`, that runs in the given phase
+|`onShutdown(int, LifecycleHandler)` |Registers an asynchronous shutdown handler with access to the `Configuration`, that runs in the given phase
+|===
+
+Start handlers run in ascending phase order; shutdown handlers run in descending phase order.
+See xref:configurer.adoc#component-lifecycle[component lifecycle] for how the `Phase` constants relate to Axon's own infrastructure components.
