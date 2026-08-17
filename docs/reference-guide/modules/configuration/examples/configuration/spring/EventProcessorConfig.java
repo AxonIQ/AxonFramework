@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package root.springbootintegration;
+package configuration.spring;
 
 // tag::order-processor-definition[]
 import org.axonframework.extension.spring.config.EventProcessorDefinition;

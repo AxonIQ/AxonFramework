@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package root.springbootintegration;
+package configuration.spring;
 
 // The import block below is indented to the depth of the surrounding class body, so
 // that indent=0 normalization on the include renders the combined regions flush left.
