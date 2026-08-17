@@ -225,14 +225,13 @@ include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[t
 
 The annotation remains command-oriented.
 It applies because `Account` declares a command handler; it does not configure permanent append criteria for every use of the entity.
-The entity's `@EventCriteriaBuilder`, when present, continues to define sourcing criteria independently.
+The two annotations pair up: `@EventCriteriaBuilder` selects what the decision reads, `@AppendCriteriaBuilder` selects what it can conflict with.
+Above, a withdrawal reads deposits because they raise the balance, yet a concurrent deposit can never overdraw the account, so deposits are excluded from the boundary.
 
-Builder ownership follows the class that declares the effective command handler.
-A root entity builder applies to command handlers declared by that root class.
-A nested entity class can declare its own builder for its own handlers, as `Card` does above.
-The parent's builder does not apply implicitly to the nested class.
-Likewise, a concrete type in a polymorphic entity hierarchy can declare a builder for handlers owned by that concrete class.
-Every effective command-handling class has zero or one builder.
+Builder ownership follows the class that declares the effective command handler, so one builder covers every command that class handles.
+A nested entity class can declare its own builder for its own handlers, as `Card` does above; the parent's builder does not reach into the nested class.
+In a polymorphic hierarchy the builder is inherited, so a builder on the root entity also covers command handlers declared by its subclasses, and a subclass declaring its own shadows it.
+Every effective command-handling class resolves zero or one builder.
 
 Entity classes without an append-criteria builder retain the symmetric sourcing-derived append criteria.
 All marker selection, including no-source handling, remains the responsibility of the event-store transaction.
