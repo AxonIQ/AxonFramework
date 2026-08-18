@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Ishaan Bhela
  */
-class VersionedTypeTest {
+class SimpleVersionedTypeTest {
 
     private static final String NAME = "org.axonframework.test.SomeEntity";
     private static final QualifiedName QUALIFIED_NAME = new QualifiedName(NAME);
@@ -69,9 +69,9 @@ class VersionedTypeTest {
 
     @Test
     void versionedTypeFromClassConstructor() {
-        VersionedType versionedType = new SimpleVersionedType(VersionedTypeTest.class.getName(), VERSION);
+        VersionedType versionedType = new SimpleVersionedType(SimpleVersionedTypeTest.class.getName(), VERSION);
 
-        assertEquals(new QualifiedName(VersionedTypeTest.class), versionedType.qualifiedName());
+        assertEquals(new QualifiedName(SimpleVersionedTypeTest.class), versionedType.qualifiedName());
         assertEquals(VERSION, versionedType.version());
     }
 }
