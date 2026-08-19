@@ -16,7 +16,6 @@
 
 package org.axonframework.eventsourcing.annotation.reflection;
 
-import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -37,12 +36,13 @@ import static org.assertj.core.api.Assertions.*;
  * <p>
  * A no-arguments (or {@link InjectEntityId}-only) factory constructor or method annotated with
  * {@link ForcedEntityCreator} is invoked by {@link AnnotationBasedEventSourcedEntityFactory} even when no first event
- * is present, unlike a plain {@link EntityCreator}. This is what allows a create-if-missing instance command handler
- * to run directly on the entity: the entity is never {@code null}, so it can decide for itself whether to append the
- * event that establishes its existence.
+ * is present. Since 5.4.0 a plain {@link EntityCreator} of the same shape does exactly the same, so this deprecated
+ * annotation is redundant and behaves identically to {@link EntityCreator}. These tests pin that equivalence: the
+ * forced form still always creates, and the plain form now creates in the same scenarios.
  *
  * @author Steven van Beelen
  */
+@SuppressWarnings("removal")
 class ForcedEntityCreatorTest {
 
     private final ParameterResolverFactory parameterResolverFactory =
@@ -68,8 +68,8 @@ class ForcedEntityCreatorTest {
         }
 
         @Test
-        void plainConstructorReturnsNullWithoutFirstEvent() {
-            // given
+        void plainConstructorAlsoCreatesEntityWithoutFirstEvent() {
+            // given a plain @EntityCreator now behaves identically to the forced form
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
@@ -78,7 +78,7 @@ class ForcedEntityCreatorTest {
             PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
             // then
-            assertThat(entity).isNull();
+            assertThat(entity).isNotNull();
         }
 
         public static class ForcedEntity {
@@ -115,8 +115,8 @@ class ForcedEntityCreatorTest {
         }
 
         @Test
-        void plainConstructorReturnsNullWithoutFirstEvent() {
-            // given
+        void plainConstructorAlsoCreatesEntityWithoutFirstEvent() {
+            // given a plain @EntityCreator now behaves identically to the forced form
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
@@ -125,7 +125,8 @@ class ForcedEntityCreatorTest {
             PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
             // then
-            assertThat(entity).isNull();
+            assertThat(entity).isNotNull();
+            assertThat(entity.id).isEqualTo("entity-id");
         }
 
         public static class ForcedEntity {
@@ -140,8 +141,11 @@ class ForcedEntityCreatorTest {
 
         public static class PlainEntity {
 
+            private final String id;
+
             @EntityCreator
             public PlainEntity(@InjectEntityId String id) {
+                this.id = id;
             }
         }
     }
@@ -165,8 +169,8 @@ class ForcedEntityCreatorTest {
         }
 
         @Test
-        void plainFactoryMethodReturnsNullWithoutFirstEvent() {
-            // given
+        void plainFactoryMethodAlsoCreatesEntityWithoutFirstEvent() {
+            // given a plain @EntityCreator now behaves identically to the forced form
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     PlainEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
@@ -175,7 +179,8 @@ class ForcedEntityCreatorTest {
             PlainEntity entity = factory.create("entity-id", null, new StubProcessingContext());
 
             // then
-            assertThat(entity).isNull();
+            assertThat(entity).isNotNull();
+            assertThat(entity.id).isEqualTo("entity-id");
         }
 
         public static class ForcedEntity {
@@ -194,9 +199,15 @@ class ForcedEntityCreatorTest {
 
         public static class PlainEntity {
 
+            private final String id;
+
+            private PlainEntity(String id) {
+                this.id = id;
+            }
+
             @EntityCreator
             public static PlainEntity create(@InjectEntityId String id) {
-                return new PlainEntity();
+                return new PlainEntity(id);
             }
         }
     }
@@ -294,18 +305,19 @@ class ForcedEntityCreatorTest {
         }
 
         @Test
-        void forcedCreatorRejectsNonMatchingPayloadQualifiedName() {
-            // given
+        void forcedCreatorDefersWhenPayloadQualifiedNameDoesNotMatch() {
+            // given an event-based creator that matches no incoming event now defers creation by returning null
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     Entity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
             EventMessage nonMatchingEvent = new GenericEventMessage(new MessageType("other-type"), "payload");
 
-            // when / then
-            assertThatThrownBy(() -> factory.create(
-                    "entity-id", nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent)
-            )).isInstanceOf(AxonConfigurationException.class)
-              .hasMessageContaining("No suitable @EntityCreator found for id");
+            // when
+            Entity entity =
+                    factory.create("entity-id", nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent));
+
+            // then
+            assertThat(entity).isNull();
         }
 
         public static class Entity {

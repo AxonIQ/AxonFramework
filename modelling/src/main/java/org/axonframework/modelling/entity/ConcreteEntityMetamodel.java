@@ -169,7 +169,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
 
     @Nullable
     @Override
-    public E evolve(E entity, EventMessage event, ProcessingContext context) {
+    public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {
         var currentEntity = entity;
         for (EntityChildMetamodel<?, E> child : children) {
             currentEntity = child.evolve(currentEntity, event, context);
