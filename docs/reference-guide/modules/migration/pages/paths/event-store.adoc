@@ -69,6 +69,12 @@ However, this version also expects that the Axon Server instances have migrated 
 If you have not performed this migration yet, but do want to upgrade to Axon Framework 5, you should use the `AggregateBasedAxonServerEventStorageEngine` instead.
 This engine uses Axon Server's previous aggregate-oriented APIs, which organize events by aggregate identifier and sequence number.
 
+[NOTE]
+====
+Switching a context to DCB also affects existing snapshots: Axon Framework 4 snapshots cannot be reused afterwards, and affected entities rebuild from their event streams.
+See xref:migration:paths/snapshotting.adoc#reusing_existing_snapshots[Reusing existing Axon Framework 4 snapshots] for the reasoning and what to expect.
+====
+
 To configure the `AggregateBasedAxonServerEventStorageEngine`, please regard the following samples:
 
 [tabs]
@@ -76,7 +82,7 @@ To configure the `AggregateBasedAxonServerEventStorageEngine`, please regard the
 Configuration API::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -100,7 +106,7 @@ public class AxonConfig {
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -127,7 +133,7 @@ public class AxonConfig {
 Spring Boot::
 +
 --
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -152,7 +158,7 @@ public class AxonConfig {
 
 If you need to connect to another context, you should adjust the `connectionManager.getConnection()` such that it uses the desired context name:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import io.axoniq.framework.axonserver.connector.api.AxonServerConnectionManager;
 import io.axoniq.framework.axonserver.connector.event.AggregateBasedAxonServerEventStorageEngine;
@@ -180,10 +186,54 @@ public class AxonConfig {
 --
 ====
 
+[#missing-revision]
+== Events without a revision (AF4 migration concern)
+
+Axon Framework 4 allowed events to be stored without a revision (the field was nullable).
+Axon Framework 5 requires every event to carry a version as part of its `MessageType`, so reading AF4 events with a missing revision would throw an `IllegalArgumentException` with the message "The given version is unsupported because it is empty."
+
+The framework resolves this at read time through the `EventTypeResolver`.
+The default resolver substitutes `0.0.0` for any missing or empty stored version, so no schema change or data migration is needed.
+The value `0.0.0` is chosen deliberately: it is distinct from `MessageType.DEFAULT_VERSION` (`0.0.1`) so that legacy events without a revision always sort as older than any explicitly versioned event.
+
+The default resolver is active out of the box.
+If `0.0.0` does not suit your needs, configure a different fallback version.
+
+When using the `AggregateBasedJpaEventStorageEngine`, consider the following example to configure a custom `EventTypeResolver`:
+
+[tabs]
+====
+Configuration API::
++
+--
+[source,java]
+----
+include::example$migration/paths/eventstore/eventtyperesolver/configapi/AxonConfig.java[tag=event-type-resolver-configuration,indent=0]
+----
+--
+
+Spring Boot::
++
+--
+Provide an `AggregateBasedJpaEventStorageEngineConfiguration` bean with the custom resolver:
+
+[source,java]
+----
+include::example$migration/paths/eventstore/eventtyperesolver/springboot/AxonConfig.java[tag=event-type-resolver-springboot,indent=0]
+----
+--
+====
+
+[NOTE]
+====
+This substitution happens only at read time.
+Stored events are never modified; the missing version is resolved in memory when the event is read from the store.
+====
+
 [#jpa-migration]
 == JPA event storage migration
 
-Axon Framework's JPA event store functionality solely supports the aggregate-based approach; so not DCB.
+Axon Framework's JPA event store functionality solely supports the aggregate-based approach, so it does not support DCB.
 To clarify this distinction, the `JpaEventStorageEngine` is renamed to the `AggregateBasedJpaEventStorageEngine`.
 
 Before we take a look at the <<configuring_jpa_storage_engine,configuration>>, we should cover the <<jpa_schema_changes,schema changes>> imposed on the JPA-based event storage solution:
@@ -248,7 +298,7 @@ Some field constraints have changed:
 
 | `version` (was `payloadRevision`)
 | No longer optional! Axon Framework 5 defaults to 0.0.1 when nothing's given
-| Enforced to ensure non-null versioning inside Axon Framework; foreseen to be used to support version-range registration of event handlers
+| Enforced to ensure non-null versioning inside Axon Framework. Foreseen to be used to support version-range registration of event handlers
 
 | `aggregateSequenceNumber` (was `sequenceNumber`)
 | Now optional
@@ -370,65 +420,14 @@ Once done, we can register the `AggregateBasedJpaEventStorageEngine` with the `E
 
 [source,java]
 ----
-import jakarta.persistence.EntityManagerFactory;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerFactory factory,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        new JpaTransactionalExecutorProvider(factory),
-                        eventConverter,
-                        engineConfig -> engineConfig
-                )
-        );
-    }
-}
+include::example$migration/paths/eventstore/jpastorageengine/defaultconfig/AxonConfig.java[tag=jpa-storage-engine-configuration,indent=0]
 ----
 
 If you had customized the `JpaEventStorageEngine` in Axon Framework 4 to, for example, have a different gap cleaning threshold, you can now move that customization to the `AggregateBasedJpaEventStorageEngineConfiguration` lambda:
 
 [source,java]
 ----
-import jakarta.persistence.EntityManagerFactory;
-import org.axonframework.common.jdbc.PersistenceExceptionResolver;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerFactory factory,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        new JpaTransactionalExecutorProvider(factory),
-                        eventConverter,
-                        engineConfig -> engineConfig
-                                .batchSize(100)
-                                .gapCleaningThreshold(250)
-                                .gapTimeout(10000)
-                                .lowestGlobalSequence(1)
-                                .maxGapOffset(60000)
-                                .persistenceExceptionResolver(
-                                        config.getComponent(PersistenceExceptionResolver.class)
-                                )
-                )
-        );
-    }
-}
+include::example$migration/paths/eventstore/jpastorageengine/customconfig/AxonConfig.java[tag=jpa-storage-engine-custom-configuration,indent=0]
 ----
 --
 
@@ -451,20 +450,20 @@ If you had customized the `JpaEventStorageEngine` in Axon Framework 4 to, for ex
 axon.eventstorage.jpa.batch-size=100
 # Threshold for gap cleanup (default: 250)
 axon.eventstorage.jpa.gap-cleaning-threshold=250
-# Gap timeout in milliseconds (default: 10000)
-axon.eventstorage.jpa.gap-timeout=10000
+# Gap timeout in milliseconds (default: 60000)
+axon.eventstorage.jpa.gap-timeout=60000
 # Minimum global index value (default: 1)
 axon.eventstorage.jpa.lowest-global-sequence=1
-# Max gap distance from highest index (default: 60000)
-axon.eventstorage.jpa.max-gap-offset=60000
+# Max gap distance from highest index (default: 10000)
+axon.eventstorage.jpa.max-gap-offset=10000
 # Polling interval in ms for new events (default: 1000)
 axon.eventstorage.jpa.polling-interval=1000
 ----
 --
 ====
 
+[.axoniq-feature]
 == PostgreSQL event storage migration
-// TODO Axoniq feature
 
 If you are using PostgreSQL as your database for event storage—whether through the `JpaEventStorageEngine` or `JdbcEventStorageEngine` in Axon Framework 4—you would benefit from migrating to the dedicated `PostgresqlEventStorageEngine`.
 

@@ -38,4 +38,5 @@ org.axonframework.extension.springboot.autoconfig.ObjectMapperAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.QueryShutdownAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.ReactorAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.SecurityAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.TracingAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.UpdateCheckerAutoConfiguration

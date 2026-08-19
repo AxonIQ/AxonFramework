@@ -25,6 +25,7 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
@@ -372,6 +373,48 @@ public final class AnnotationUtils {
         }
 
         return hasSubjectAnnotation;
+    }
+
+    /**
+     * Indicates whether an annotation whose {@link Class#getSimpleName() simple name} matches the given
+     * {@code annotationName}, ignoring case, is present directly on the given {@code element}.
+     * <p>
+     * This is useful to detect annotations that exist in several variants across different libraries -- for
+     * example, the {@code Nullable} annotations provided by jspecify, JSR-305, and Jakarta -- without requiring a
+     * hard dependency on any specific one.
+     * <p>
+     * Annotation libraries do not always agree where an annotation belongs: jspecify's {@code Nullable} targets
+     * {@code TYPE_USE}, while {@code javax.annotation.Nullable} and {@code jakarta.annotation.Nullable} land in the
+     * declaration position. When {@code element} is a {@link java.lang.reflect.Parameter}, both positions are
+     * checked: the parameter's own annotations, and those on
+     * {@link java.lang.reflect.Parameter#getAnnotatedType()}. Callers do not need to check both themselves.
+     * <p>
+     * Only annotations with {@link java.lang.annotation.RetentionPolicy#RUNTIME} retention can be found. Notably,
+     * {@code org.jetbrains.annotations.Nullable} uses {@link java.lang.annotation.RetentionPolicy#CLASS} retention
+     * and is therefore absent from the class file at runtime, in either position. Since Kotlin compiles its nullable
+     * types to exactly that annotation, a Kotlin {@code T?} cannot be recognized here either. Use a
+     * {@link org.axonframework.common.nullability.NullabilityResolver} instead, which the Kotlin extension
+     * implements by reading Kotlin's own metadata.
+     *
+     * @param element        the element to inspect
+     * @param annotationName the simple name of the annotation to find, matched ignoring case
+     * @return {@code true} if an annotation with the given simple name is present directly on the {@code element},
+     * or, when {@code element} is a {@link java.lang.reflect.Parameter}, on its annotated type
+     */
+    public static boolean hasAnnotationNamed(AnnotatedElement element, String annotationName) {
+        for (Annotation annotation : element.getAnnotations()) {
+            if (annotation.annotationType().getSimpleName().equalsIgnoreCase(annotationName)) {
+                return true;
+            }
+        }
+        if (element instanceof Parameter parameter) {
+            for (Annotation annotation : parameter.getAnnotatedType().getAnnotations()) {
+                if (annotation.annotationType().getSimpleName().equalsIgnoreCase(annotationName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

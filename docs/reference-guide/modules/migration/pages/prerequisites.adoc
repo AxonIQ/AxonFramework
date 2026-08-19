@@ -11,8 +11,8 @@ Axon Framework 5.0 represents a significant change for event-sourced application
 
 **What This Means for You** - The minimum Java version required for Axon Framework 4.x was Java 8. The Java ecosystem has matured significantly since then, and Java 21 provides a wealth of features that make event-sourced systems more resilient, reliable, modern, and performant. Therefore, If you're currently running your Axon Framework 4.x applications on any Java version before Java 21, then you need to upgrade before performing a migration to Axon Framework 5.
 
+[.axoniq-feature]
 == 2. Axon Server compatibility (optional)
-// TODO Axoniq feature
 
 **Requirement** - Your Axon Server infrastructure needs to align with your Axon Framework 5.0 migration approach.
 

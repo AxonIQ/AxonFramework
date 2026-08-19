@@ -48,8 +48,16 @@ final class NoAppendCondition implements AppendCondition {
         return EventCriteria.havingAnyTag();
     }
 
+    /**
+     * Returns a {@link DefaultAppendCondition} with the given {@code consistencyMarker} and
+     * {@link EventCriteria#havingAnyTag()} criteria. This means <em>any</em> event appended after the marker is
+     * considered a conflict — the strictest possible check from that marker onward.
+     * <p>
+     * To narrow to specific criteria, chain with {@link AppendCondition#replaceCriteria(EventCriteria)}:
+     * <pre>{@code AppendCondition.none().withMarker(marker).replacingCriteria(specificCriteria)}</pre>
+     */
     @Override
     public AppendCondition withMarker(ConsistencyMarker consistencyMarker) {
-        throw new UnsupportedOperationException("Cannot add a consistency marker without any criteria");
+        return new DefaultAppendCondition(consistencyMarker, EventCriteria.havingAnyTag());
     }
 }

@@ -20,6 +20,7 @@ import org.jspecify.annotations.NonNull;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
@@ -30,8 +31,12 @@ import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
+import org.axonframework.messaging.eventhandling.interception.InterceptingEventHandlingComponent;
 import org.junit.jupiter.api.*;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,6 +139,271 @@ class DefaultEventHandlingComponentsConfigurerTest {
                     .declarative("component", cfg -> SimpleEventHandlingComponent.create("other")))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("already registered");
+        }
+    }
+
+    @Nested
+    class InterceptedTest {
+
+        private final EventMessage sampleEvent = EventTestUtils.asEventMessage("payload");
+        private final MessagingConfigurer configurer = MessagingConfigurer.create();
+
+        @Test
+        void singleInterceptorIsInvokedBeforeHandler() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return chain.proceed(msg, ctx); })
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("interceptor", "handler");
+        }
+
+        @Test
+        void multipleInterceptorsAreInvokedInRegistrationOrder() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("first"); return chain.proceed(msg, ctx); })
+                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("second"); return chain.proceed(msg, ctx); })
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("first", "second", "handler");
+        }
+
+        @Test
+        void noWrappingWhenNoInterceptorsRegistered() {
+            // given
+            var component = SimpleEventHandlingComponent.create("comp");
+
+            // when
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // then
+            assertThat(builtComponent).isNotInstanceOf(InterceptingEventHandlingComponent.class);
+        }
+
+        @Test
+        void allRegisteredComponentsAreWrapped() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var comp1 = SimpleEventHandlingComponent.create("comp1");
+            comp1.subscribe(new QualifiedName(String.class),
+                            (e, c) -> { invocationLog.add("handler1"); return MessageStream.empty(); });
+            var comp2 = SimpleEventHandlingComponent.create("comp2");
+            comp2.subscribe(new QualifiedName(String.class),
+                            (e, c) -> { invocationLog.add("handler2"); return MessageStream.empty(); });
+
+            var built = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp1", cfg -> comp1)
+                    .declarative("comp2", cfg -> comp2)
+                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return chain.proceed(msg, ctx); })
+                    .toMap();
+            var cfg = configurer.build();
+
+            // when
+            built.get("comp1").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+            built.get("comp2").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("interceptor", "handler1", "interceptor", "handler2");
+            assertThat(built.get("comp1").build(cfg)).isInstanceOf(InterceptingEventHandlingComponent.class);
+            assertThat(built.get("comp2").build(cfg)).isInstanceOf(InterceptingEventHandlingComponent.class);
+        }
+
+        @Test
+        void interceptorCanShortCircuitWithoutCallingChain() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> { invocationLog.add("handler"); return MessageStream.empty(); });
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .intercepted(cfg -> (msg, ctx, chain) -> { invocationLog.add("interceptor"); return MessageStream.empty(); })
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("interceptor");
+        }
+    }
+
+    @Nested
+    class WithExceptionHandlerTest {
+
+        private final EventMessage sampleEvent = EventTestUtils.asEventMessage("payload");
+        private final MessagingConfigurer configurer = MessagingConfigurer.create();
+
+        @Test
+        void exceptionHandlerIsInvokedWhenHandlerThrows() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("handler failed")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> (event, context, error) -> { invocationLog.add("exceptionHandler"); return MessageStream.empty(); })
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("exceptionHandler");
+        }
+
+        @Test
+        void exceptionHandlerCanSuppressException() {
+            // given
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("handler failed")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> (event, context, error) -> MessageStream.empty())
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when - exception handler returns normally, suppressing the error
+            var result = builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(result.error()).isEmpty();
+        }
+
+        @Test
+        void exceptionHandlerCanPropagateError() {
+            // given
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("original")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> (event, context, error) -> MessageStream.failed(new IOException("wrapped")))
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when - exception handler returns a failed stream, the error propagates
+            var result = builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(result.error()).isPresent();
+            assertThat(result.error().get()).isInstanceOf(IOException.class).hasMessage("wrapped");
+        }
+
+        @Test
+        void exceptionHandlerUnexpectedThrowIsWrappedInFailedStream() {
+            // given
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("original")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> (event, context, error) -> { throw new RuntimeException("unexpected"); })
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when - exception handler throws unexpectedly, the thrown exception propagates as a failed stream
+            var result = builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(result.error()).isPresent();
+            assertThat(result.error().get()).isInstanceOf(RuntimeException.class).hasMessage("unexpected");
+        }
+
+        @Test
+        void genericMessageExceptionHandlerCanBeRegistered() {
+            // given - a generic handler typed at Message that could be shared across all message types
+            List<String> invocationLog = new ArrayList<>();
+            MessageHandlingExceptionHandler<Message> genericHandler = (msg, ctx, error) -> {
+                invocationLog.add("generic:" + error.getMessage());
+                return MessageStream.empty();
+            };
+            var component = SimpleEventHandlingComponent.create("comp");
+            component.subscribe(new QualifiedName(String.class),
+                                (e, c) -> MessageStream.failed(new RuntimeException("boom")));
+
+            var builtComponent = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp", cfg -> component)
+                    .withExceptionHandler(c -> genericHandler)
+                    .toMap()
+                    .get("comp")
+                    .build(configurer.build());
+
+            // when
+            var result = builtComponent.handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("generic:boom");
+            assertThat(result.error()).isEmpty();
+        }
+
+        @Test
+        void exceptionHandlerIsAppliedToAllComponents() {
+            // given
+            List<String> invocationLog = new ArrayList<>();
+            var comp1 = SimpleEventHandlingComponent.create("comp1");
+            comp1.subscribe(new QualifiedName(String.class),
+                            (e, c) -> MessageStream.failed(new RuntimeException("fail1")));
+            var comp2 = SimpleEventHandlingComponent.create("comp2");
+            comp2.subscribe(new QualifiedName(String.class),
+                            (e, c) -> MessageStream.failed(new RuntimeException("fail2")));
+
+            var built = new DefaultEventHandlingComponentsConfigurer()
+                    .declarative("comp1", cfg -> comp1)
+                    .declarative("comp2", cfg -> comp2)
+                    .withExceptionHandler(c -> (event, context, error) -> { invocationLog.add(error.getMessage()); return MessageStream.empty(); })
+                    .toMap();
+            var cfg = configurer.build();
+
+            // when
+            built.get("comp1").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+            built.get("comp2").build(cfg).handle(sampleEvent, STUB_PROCESSING_CONTEXT);
+
+            // then
+            assertThat(invocationLog).containsExactly("fail1", "fail2");
         }
     }
 

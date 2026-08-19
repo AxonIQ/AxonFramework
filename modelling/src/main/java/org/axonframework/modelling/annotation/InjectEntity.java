@@ -18,6 +18,7 @@ package org.axonframework.modelling.annotation;
 
 import org.axonframework.messaging.core.annotation.MessageHandler;
 import org.axonframework.modelling.EntityIdResolver;
+import org.axonframework.modelling.repository.ManagedEntity;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -29,8 +30,12 @@ import java.lang.annotation.Target;
  * Annotation to be placed on a parameter of a {@link MessageHandler} annotated method that should receive an entity
  * loaded from the {@link org.axonframework.modelling.StateManager}.
  * <p>
- * The parameter should be of the type of the entity to inject, or of a
- * {@link org.axonframework.modelling.repository.ManagedEntity} with the generic of the entity to inject.
+ * The parameter should be one of the following three options:
+ * <ol>
+ *     <li>The exact entity type to inject, marked nullable if null can be expected.</li>
+ *     <li>An {@link java.util.Optional} of the entity type to inject.</li>
+ *     <li>A {@link org.axonframework.modelling.repository.ManagedEntity} of the entity identifier and entity type to inject.</li>
+ * </ol>
  * <p>
  * The {@code idProperty} attribute can be used to specify the property of the message payload that contains the
  * identifier of the entity to inject. If not specified, the {@code idResolver} is used to resolve the identifier of the
@@ -46,6 +51,24 @@ import java.lang.annotation.Target;
  *     <li>From the {@code idResolver}.</li>
  *     <li>From the {@link TargetEntityId} annotation on the message payload.</li>
  * </ol>
+ * <p>
+ * When the parameter is typed as the entity itself, and no entity can be found for the resolved identifier, the
+ * parameter's nullability determines the outcome. By default, an
+ * {@link org.axonframework.modelling.repository.EntityNotFoundException} is propagated, failing the message being
+ * handled. A parameter annotated with an annotation resembling {@code "nullable"} will instead resolve to {@code null},
+ * allowing the handler to deal with a missing entity itself. This nullability support is in place to support a
+ * create-if-missing flow. A handler can check whether the injected entity is {@code null}, create the entity, and then
+ * proceed with subsequent tasks.
+ * <p>
+ * Declaring the parameter as {@code Optional<MyEntity>} achieves the same outcome without needing a {@code "nullable"}
+ * annotation: the parameter resolves to {@link java.util.Optional#empty()} instead of {@code null}. Kotlin nullability,
+ * as in {@code MyEntity?}, is supported as well.
+ * <p>
+ * A {@link org.axonframework.modelling.repository.ManagedEntity}-typed parameter is unaffected by nullability. Whether
+ * or not it is annotated {@code "nullable"}, it is always passed through exactly as resolved by the
+ * {@link org.axonframework.modelling.StateManager} backing this annotation. Note that the
+ * {@link ManagedEntity#entity()} <b>is</b> marked as nullable, thus supporting similar create-if-missing behavior as
+ * through the entity type or {@code Optional} path.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0

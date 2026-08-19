@@ -16,13 +16,9 @@
 
 package org.axonframework.messaging.core.interception.annotation;
 
-import org.axonframework.common.annotation.Internal;
-import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
-import org.axonframework.messaging.core.unitofwork.LegacyMessageSupportingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 /**
@@ -36,47 +32,8 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  */
 public interface MessageHandlerInterceptorMemberChain<T> {
 
-    /**
-     * Handle the given {@code message} by passing it through the interceptors and ultimately to the given
-     * {@code handler} on the given {@code target} instance. The result of this invocation is the result as given by the
-     * {@code handler}, possibly modified by any of the interceptors in this chain.
-     *
-     * @param message The message to pass through the interceptor chain.
-     * @param context The context in which the message is being handled.
-     * @param target  The target instance to invoke the interceptors and handlers on.
-     * @param handler The actual handler to invoke once all interceptors have received the message.
-     * @return The result as returned by the handlers or interceptors.
-     * @throws Exception Any exception thrown by the handler or any of the interceptors.
-     */
-    // TODO Remove entirely once #3065, #3195, #3517, and #3728 have been resolved.
-    @Internal
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    Object handleSync(Message message,
-                      ProcessingContext context,
-                      T target,
-                      MessageHandlingMember<? super T> handler
-    ) throws Exception;
-
-    // TODO Remove entirely once #3065, #3195, #3517, and #3728 have been resolved.
-    @Internal
-    @Deprecated(forRemoval = true, since = "5.2.0")
-    default Object handleSync(Message message,
-                              T target,
-                              MessageHandlingMember<? super T> handler
-    ) throws Exception {
-        ProcessingContext processingContext = new LegacyMessageSupportingContext(message);
-        return handleSync(message, processingContext, target, handler);
-    }
-
-    default MessageStream<?> handle(Message message,
-                                    ProcessingContext context,
-                                    T target,
-                                    MessageHandlingMember<? super T> handler) {
-        try {
-            Object result = handleSync(message, context, target, handler);
-            return MessageStream.just(new GenericMessage(new MessageType(result.getClass()), result));
-        } catch (Exception e) {
-            return MessageStream.failed(e);
-        }
-    }
+    MessageStream<?> handle(Message message,
+                            ProcessingContext context,
+                            T target,
+                            MessageHandlingMember<? super T> handler);
 }

@@ -16,10 +16,14 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,6 +34,22 @@ import java.util.concurrent.CompletableFuture;
  * @since 4.5
  */
 abstract class CoordinatorTask {
+
+    /**
+     * Ceiling on the re-claim block a {@link SplitTask} or {@link MergeTask} installs for the segment(s) whose
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken} it is about to
+     * rewrite.
+     * <p>
+     * The block stops the {@link Coordinator} running the task from claiming a segment while that segment's token is
+     * being deleted and re-initialized. Every task clears its own block once its {@link #task()} completes, whether it
+     * succeeded, failed, or threw before its completion handler was attached, so this ceiling is only reached by a task
+     * whose future never completes at all. Even then it is not permanent: the {@code Coordinator} drops the entry the
+     * first time it evaluates a segment whose deadline has passed, so the block expires without anyone clearing it.
+     * <p>
+     * The block is scoped to a single {@code Coordinator}: it stops <em>this</em> processor instance from re-claiming
+     * the segment, and does not stop another instance from claiming it mid-split or mid-merge.
+     */
+    static final Duration RECLAIM_BLOCK_TIMEOUT = Duration.ofSeconds(60);
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -89,6 +109,27 @@ abstract class CoordinatorTask {
         } else {
             result.complete(outcome);
         }
+    }
+
+    /**
+     * Persists the final progress of the given {@code workPackage} in its own <em>committed</em> transaction, before
+     * the task reads the segment's
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken}, so the segment(s) the
+     * task produces start from the freshly-reconciled token. The dedicated transaction is essential: a
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore} may only apply
+     * stores on commit, so a fetch sharing the flush's transaction would not observe it. A {@code null}
+     * {@code workPackage} (the segment was claimed from the token store rather than processed locally, so there is no
+     * local progress to release) is a no-op.
+     *
+     * @param workPackage       the locally-aborted work package whose final progress to persist, or {@code null} if none
+     * @param unitOfWorkFactory the factory creating the transaction the final store commits in
+     * @return a {@link CompletableFuture} completing when the final persistence (if any) has been committed
+     */
+    protected static CompletableFuture<Void> releaseProgressOf(@Nullable WorkPackage workPackage,
+                                                               UnitOfWorkFactory unitOfWorkFactory) {
+        return workPackage == null
+                ? FutureUtils.emptyCompletedFuture()
+                : unitOfWorkFactory.create().executeWithResult(workPackage::onSegmentReleased);
     }
 
     /**

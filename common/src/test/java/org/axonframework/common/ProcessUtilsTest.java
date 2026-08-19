@@ -18,9 +18,12 @@ package org.axonframework.common;
 
 import org.junit.jupiter.api.*;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -90,5 +93,87 @@ class ProcessUtilsTest {
                 ProcessUtils.executeUntilTrue(() -> retryCounter.getAndIncrement() >= 100, 1L, 10L)
         );
         assertEquals(10, retryCounter.get());
+    }
+
+    @Nested
+    class ExecuteUntilTrueAsync {
+
+        @Test
+        void completesImmediatelyWhenActionReturnsTrueOnFirstCall() {
+            // given
+            var executor = Executors.newSingleThreadExecutor();
+
+            // when
+            CompletableFuture<Void> result = ProcessUtils.executeUntilTrue(
+                    () -> CompletableFuture.completedFuture(true), 10L, 3L, executor
+            );
+
+            // then
+            assertThat(result).succeedsWithin(1, TimeUnit.SECONDS);
+        }
+
+        @Test
+        void retriesUntilActionReturnsTrue() {
+            // given
+            AtomicLong callCount = new AtomicLong();
+            var executor = Executors.newSingleThreadExecutor();
+
+            // when
+            CompletableFuture<Void> result = ProcessUtils.executeUntilTrue(
+                    () -> CompletableFuture.completedFuture(callCount.incrementAndGet() >= 3),
+                    10L, 5L, executor
+            );
+
+            // then
+            assertThat(result).succeedsWithin(1, TimeUnit.SECONDS);
+            assertThat(callCount.get()).isEqualTo(3);
+        }
+
+        @Test
+        void failsWithProcessRetriesExhaustedExceptionWhenMaxTriesReached() {
+            // given
+            AtomicLong callCount = new AtomicLong();
+            var executor = Executors.newSingleThreadExecutor();
+
+            // when
+            CompletableFuture<Void> result = ProcessUtils.executeUntilTrue(
+                    () -> {
+                        callCount.incrementAndGet();
+                        return CompletableFuture.completedFuture(false);
+                    },
+                    10L, 5L, executor
+            );
+
+            // then
+            assertThat(result).failsWithin(1, TimeUnit.SECONDS)
+                              .withThrowableOfType(Exception.class)
+                              .havingCause()
+                              .isInstanceOf(ProcessRetriesExhaustedException.class);
+            assertThat(callCount.get()).isEqualTo(5);
+        }
+
+        @Test
+        void propagatesFailedFutureFromActionWithoutRetrying() {
+            // given
+            AtomicLong callCount = new AtomicLong();
+            var executor = Executors.newSingleThreadExecutor();
+            var cause = new RuntimeException("action failed");
+
+            // when
+            CompletableFuture<Void> result = ProcessUtils.executeUntilTrue(
+                    () -> {
+                        callCount.incrementAndGet();
+                        return CompletableFuture.failedFuture(cause);
+                    },
+                    10L, 5L, executor
+            );
+
+            // then - failed future propagates immediately, action is only called once
+            assertThat(result).failsWithin(1, TimeUnit.SECONDS)
+                              .withThrowableOfType(Exception.class)
+                              .havingCause()
+                              .isEqualTo(cause);
+            assertThat(callCount.get()).isEqualTo(1);
+        }
     }
 }

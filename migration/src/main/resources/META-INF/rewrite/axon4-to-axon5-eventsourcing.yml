@@ -1,0 +1,84 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Event-sourcing module renames.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5EventSourcing
+displayName: Apply Axon Framework 5 event-sourcing module renames
+description: >-
+  Relocates the `@EventSourcingHandler` annotation into
+  `eventsourcing.annotation`, relocates `Snapshotter` into the new
+  `eventsourcing.snapshot.api` API package, ensures the
+  `org.axonframework:axon-eventsourcing` dependency is present when the app
+  uses event-sourcing types (the AF5 Spring Boot starter no longer pulls
+  it transitively, so apps not using the BOM need it added explicitly —
+  it transitively brings `axon-modelling` and `axon-messaging`), and
+  applies the source-level aggregate→entity rewrites — annotating no-arg
+  constructors with the now-mandatory `@EntityCreator` and replacing
+  `AggregateLifecycle.apply(...)` with an injected `EventAppender#append(...)`.
+recipeList:
+  # ── AF4 @CommandHandler constructors → AF5 static handle methods ───────────
+  # Must run BEFORE AddCommandAnnotation so the converted method's parameter is
+  # what AddCommandAnnotation sees and registers as a command type.
+  # Java sources get a `public static void handle(...)` rewrite; Kotlin sources
+  # get a `companion object { @JvmStatic @CommandHandler fun handle(...) }`
+  # — both shapes are statically reachable on the JVM, which is what AF5's
+  # command-creates-entity discovery requires.
+  - org.axonframework.migration.ConvertCommandHandlerConstructorToStaticMethod
+  - org.axonframework.migration.ConvertCommandHandlerConstructorToCompanionObject
+
+  # ── Annotate command and event payload classes with @Command / @Event ──────
+  # Scans @CommandHandler methods and adds @Command to their payload types;
+  # migrates @RoutingKey field → @Command(routingKey = "fieldName").
+  - org.axonframework.migration.AddCommandAnnotation
+  # Scans @EventSourcingHandler methods and adds @Event to their payload types;
+  # migrates @Revision("x") → @Event(version = "x").
+  - org.axonframework.migration.AddEventAnnotation
+
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.eventsourcing.EventSourcingHandler
+      newFullyQualifiedTypeName: org.axonframework.eventsourcing.annotation.EventSourcingHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.eventsourcing.Snapshotter
+      newFullyQualifiedTypeName: org.axonframework.eventsourcing.snapshot.api.Snapshotter
+  # ── Add axon-eventsourcing dep when eventsourcing types are in use ──────
+  # Apps that don't import the AF5 BOM and depend only on the Spring Boot
+  # starter won't get axon-eventsourcing transitively. Adding it pulls in
+  # axon-modelling and axon-messaging too.
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: org.axonframework
+      artifactId: axon-eventsourcing
+      version: ${project.version}
+      # Match the AF4 fully-qualified name — `onlyIfUsing` resolves against
+      # the LST as parsed (with AF4 types on classpath), so the AF5
+      # post-rename name would never match.
+      onlyIfUsing: org.axonframework.eventsourcing.EventSourcingHandler
+
+  # ── Aggregate → Entity source-level rewrites ────────────────────────────
+  # Annotates existing no-arg constructors of `@EventSourcedEntity` /
+  # Spring `@EventSourced` classes with the now-mandatory `@EntityCreator`.
+  # Idempotent — skips constructors already annotated. The two more
+  # advanced `@EntityCreator` patterns (identifier-only and creation-from-
+  # origin-event constructors) require semantic decisions and remain a
+  # manual step.
+  - org.axonframework.migration.AddEntityCreatorAnnotation
+  # Replaces `AggregateLifecycle.apply(...)` calls with an injected
+  # `EventAppender#append(...)` — adds the `EventAppender eventAppender`
+  # parameter to the enclosing method when one is not already declared,
+  # and removes the `import static AggregateLifecycle.apply;`.
+  - org.axonframework.migration.ReplaceAggregateLifecycleApply

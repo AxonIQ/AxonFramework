@@ -15,6 +15,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/messages.adoc[Message Migration (@Event, @Command, @Query)]
 * xref:migration:paths/aggregates/index.adoc[Aggregate Migration]
 * xref:migration:paths/event-store.adoc[Event Store migration]
+* xref:migration:paths/snapshotting.adoc[Snapshot migration]
 * xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]
@@ -22,12 +23,26 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/sequencing-policies.adoc[Sequencing Policy migration]
 * xref:migration:paths/dlq.adoc[Dead-Letter Queue migration]
+* xref:migration:paths/token-store.adoc[Token Store migration]
+* xref:migration:paths/distributed-tracing.adoc[Distributed Tracing migration]
+ifdef::advanced-framework[]
+* xref:migration:paths/upcasters.adoc[Upcaster Migration]
+* xref:migration:paths/multi-tenancy.adoc[Multi-Tenancy Migration]
+* xref:advanced-migration:paths/5.0-to-5.1.adoc[Axon Framework 5.0 to Axoniq Framework migration]
+endif::[]
+ifdef::data-protection[]
+* xref:data-protection-migration:migration-path.adoc[Data Protection module migration]
+endif::[]
 3. **What is not yet there**
 4. **Missing a Migration Path?**
 
 == Base migration changes
 
 Every user migrating from Axon Framework 4.x to 5.x will encounter a set of base changes. These primarily involve package renames and module restructurings.
+
+ifdef::advanced-framework[]
+NOTE: Axon Framework 5.1 extracts several production components into a dedicated commercial library: *Axoniq Framework*. If you are migrating to 5.1, be sure to consider the steps explained in the xref:advanced-migration:paths/5.0-to-5.1.adoc[Axon Framework 5.0 to *Axoniq* Framework 5.1] migration path.
+endif::[]
 
 [#import-and-package-changes]
 === Import and package changes
@@ -169,16 +184,23 @@ to
 
 `org.axonframework.extension.metrics.micrometer`
 
+| Tracing Service Provider Interface (SPI) and decorators
+| `org.axonframework.tracing`
+
+to
+
+`org.axonframework.messaging.tracing`
+
 | OpenTelemetry support
 | `org.axonframework.tracing.opentelemetry`
 
 to
 
-`org.axonframework.extension.tracing.opentelemetry`
+`io.axoniq.framework.tracing.micrometer` (the Micrometer Tracing binding provided by Axoniq Framework)
 |===
 ====
 
-For an exhaustive list of all class-level renames and moves, please refer to the https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes.md[`api-changes.md`] file in the root of the Axon Framework repository.
+For an exhaustive list of all class-level renames and moves, please refer to the https://github.com/AxonFramework/AxonFramework/blob/main/axon-5/api-changes/11-class-reference.md[`11-class-reference.md`] file under `axon-5/api-changes/` in the Axon Framework repository.
 
 === Module restructuring
 
@@ -240,9 +262,9 @@ Axon Framework 5 has been restructured into more focused modules. This allows fo
 | `axon-micrometer`
 | `extensions/axon-metrics-micrometer`
 
-| OpenTelemetry tracing support.
+| The tracing SPI and component decorators are part of the core open-source modules. Exporting spans to OpenTelemetry is provided by Axoniq Framework through its Micrometer Tracing binding (`axoniq-tracing-micrometer`).
 | `axon-tracing-opentelemetry`
-| `extensions/axon-tracing-opentelemetry`
+| Not part of the OSS Axon Framework module set.
 |===
 
 Users should update their dependency management (Maven/Gradle) to reflect these changes. Note that the modules in `extensions` have moved to a different group ID (`org.axonframework.extensions.*`) as well.
@@ -271,13 +293,12 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
 </dependencyManagement>
 ----
 
+[#what-is-not-yet-there]
 == What is not yet there
 
 As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
 
 - **Saga & Deadline Overhaul**: Sagas and Deadlines do not have a native "async-native" replacement yet. A full redesign is in progress.
-- **Event Upcasters**: Event upcasting is not yet available.
-- **Snapshots**: The snapshotting feature for entities is not yet available. Currently scheduled for 5.1.
 - **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
 - **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
 - **Annotated Features (Coming in 5.2.0)**:
@@ -299,4 +320,3 @@ If you find that your specific migration challenge is not addressed here, or if 
 2.  **Open an Issue**: Let us know by opening a documentation issue on our link:https://github.com/AxonFramework/AxonFramework/issues[GitHub repository].
 
 Your feedback helps us make this guide better for everyone!
-

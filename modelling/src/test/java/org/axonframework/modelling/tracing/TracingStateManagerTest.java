@@ -1,0 +1,208 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.modelling.tracing;
+
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.tracing.support.TestSpanFactory;
+import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
+import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.repository.ManagedEntity;
+import org.axonframework.modelling.repository.Repository;
+import org.axonframework.modelling.repository.tracing.TracingRepository;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.*;
+
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.axonframework.common.FutureUtils.joinAndUnwrap;
+
+class TracingStateManagerTest {
+
+    private TestSpanFactory spanFactory;
+    private RecordingStateManager delegate;
+    private TracingStateManager testSubject;
+
+    @BeforeEach
+    void setUp() {
+        spanFactory = new TestSpanFactory();
+        delegate = new RecordingStateManager();
+        testSubject = new TracingStateManager(delegate, spanFactory);
+    }
+
+    @Nested
+    class LoadManagedEntity {
+
+        @Test
+        void opensAnInternalSpanWithEntityTypeAndIdentifier() {
+            // given
+            ProcessingContext context = new StubProcessingContext();
+
+            // when
+            joinAndUnwrap(testSubject.loadManagedEntity(Booking.class, "room-42", context));
+
+            // then
+            spanFactory.verifySpanCompleted("StateManager.loadManagedEntity Booking");
+            spanFactory.verifySpanHasType("StateManager.loadManagedEntity Booking", TestSpanType.INTERNAL);
+            spanFactory.verifySpanHasAttributeValue(
+                    "StateManager.loadManagedEntity Booking", "axoniq.entity.type", "Booking");
+            spanFactory.verifySpanHasAttributeValue(
+                    "StateManager.loadManagedEntity Booking", "axoniq.entity.id", "room-42");
+        }
+    }
+
+    @Nested
+    class RegisterWrapsRepositories {
+
+        @SuppressWarnings("unchecked")
+        @Test
+        void registeringALifecycleRepositoryWrapsItSoItsOperationsAreTraced() {
+            // given a plain (untraced) repository, e.g. the one an event-sourced entity module builds in its own
+            // component registry - out of reach of the root registry's Repository decorator
+            RecordingRepository repository = new RecordingRepository();
+
+            // when
+            testSubject.register(repository);
+
+            // then the delegate received a traced wrapper, and loading through it opens the repository span
+            assertThat(delegate.registered).isInstanceOf(TracingRepository.class);
+            joinAndUnwrap(
+                    ((Repository<String, Booking>) delegate.registered).load("room-42", new StubProcessingContext())
+            );
+            spanFactory.verifySpanCompleted("Repository.load Booking");
+        }
+
+        @Test
+        void registeringAnAlreadyTracedRepositoryDoesNotDoubleWrap() {
+            // given a repository that the root registry's decorator already wrapped
+            TracingRepository<String, Booking> alreadyTraced =
+                    new TracingRepository<>(new RecordingRepository(), spanFactory);
+
+            // when
+            testSubject.register(alreadyTraced);
+
+            // then it is registered as-is - no second wrapper, no double spans
+            assertThat(delegate.registered).isSameAs(alreadyTraced);
+        }
+    }
+
+    /**
+     * Minimal {@link StateManager} stub recording the repository it received.
+     */
+    private static final class RecordingStateManager implements StateManager {
+
+        private Repository<?, ?> registered;
+
+        @NonNull
+        @Override
+        public <ID, T> StateManager register(@NonNull Repository<ID, T> repository) {
+            this.registered = repository;
+            return this;
+        }
+
+        @NonNull
+        @Override
+        public <ID, T> CompletableFuture<ManagedEntity<ID, T>> loadManagedEntity(@NonNull Class<T> type,
+                                                                                 @NonNull ID id,
+                                                                                 @NonNull ProcessingContext context) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @NonNull
+        @Override
+        public Set<Class<?>> registeredEntities() {
+            return Set.of();
+        }
+
+        @NonNull
+        @Override
+        public Set<Class<?>> registeredIdsFor(@NonNull Class<?> entityType) {
+            return Set.of();
+        }
+
+        @Nullable
+        @Override
+        public <ID, T> Repository<ID, T> repository(@NonNull Class<T> entityType, @NonNull Class<ID> idType) {
+            return null;
+        }
+
+        @Override
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
+            // No-op - not required for testing
+        }
+    }
+
+    /**
+     * Minimal repository stub.
+     */
+    private static final class RecordingRepository implements Repository.LifecycleManagement<String, Booking> {
+
+        @NonNull
+        @Override
+        public Class<Booking> entityType() {
+            return Booking.class;
+        }
+
+        @NonNull
+        @Override
+        public Class<String> idType() {
+            return String.class;
+        }
+
+        @NonNull
+        @Override
+        public CompletableFuture<ManagedEntity<String, Booking>> load(String identifier,
+                                                                      @NonNull ProcessingContext processingContext) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @NonNull
+        @Override
+        public CompletableFuture<ManagedEntity<String, Booking>> loadOrCreate(String identifier,
+                                                                              @NonNull ProcessingContext processingContext) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @SuppressWarnings("DataFlowIssue")
+        @NonNull
+        @Override
+        public ManagedEntity<String, Booking> persist(String identifier,
+                                                      Booking entity,
+                                                      @NonNull ProcessingContext processingContext) {
+            return null;
+        }
+
+        @NonNull
+        @Override
+        public ManagedEntity<String, Booking> attach(@NonNull ManagedEntity<String, Booking> entity,
+                                                     @NonNull ProcessingContext processingContext) {
+            return entity;
+        }
+
+        @Override
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
+        }
+    }
+
+    static final class Booking {
+
+    }
+}

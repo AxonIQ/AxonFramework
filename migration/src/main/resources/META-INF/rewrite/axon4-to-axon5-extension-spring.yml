@@ -1,0 +1,152 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Spring family of extensions (extensions/spring/* in AF5):
+#   - axon-spring (core Spring support)
+#   - axon-spring-boot-autoconfigure / axon-spring-boot-starter
+#   - axon-spring-boot-actuator-autoconfigure (AF4-only; AF5 has no successor
+#     artifact, but the package move is still applied for source compatibility)
+#
+# Each artifact has its own recipe so the umbrella can compose them
+# individually; they are colocated here because the AF5 source layout groups
+# them under one Maven parent.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringExtension
+displayName: Migrate the Spring extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.spring` to `org.axonframework.extension.spring`
+  and renames the Spring stereotype `@Aggregate` to `@EventSourced`. The
+  stereotype rename is mapped from both the AF4 location and the post-package-
+  move location, so the recipe is order-independent.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring
+      newPackageName: org.axonframework.extension.spring
+      recursive: true
+  # Runs after ChangePackage (so the @Aggregate FQN is at its post-move location)
+  # but BEFORE the ChangeType rename below. Converts @Bean SnapshotTriggerDefinition
+  # methods and their corresponding @Aggregate(snapshotTriggerDefinition = "...")
+  # references to AF5's @Snapshotting annotation, removing the Spring bean entirely
+  # for the two framework-provided types (EventCount, AggregateLoadTime). Custom
+  # implementations receive a TODO comment for manual review.
+  - org.axonframework.migration.MigrateSnapshotTriggerDefinitionToAnnotation
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.spring.stereotype.Aggregate
+      newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.Aggregate
+      newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced
+  # Runs after the @Aggregate → @EventSourced rename above. Adds explicit
+  # tagKey = "<EntitySimpleName>" and idType = Object.class (placeholder)
+  # to every @EventSourced annotation that has no tagKey yet, so developers
+  # and LLM post-processors can see and verify the configuration.
+  # When MigrateSnapshotTriggerDefinitionToAnnotation runs first (normal ordering),
+  # it removes the snapshotTriggerDefinition attribute before this recipe sees the
+  # annotation, so no duplicate TODO comment is emitted for known types.
+  - org.axonframework.migration.ConfigureEventSourcedAnnotation
+  # Build-tool coordinate move: axon-spring artifact moves from groupId
+  # `org.axonframework` to `org.axonframework.extensions.spring`. The unified
+  # `java.dependencies.ChangeDependency` recipe applies to both Maven
+  # (`pom.xml`) and Gradle (`build.gradle` / `build.gradle.kts`) projects.
+  # `newVersion` is set inline so the rename and version bump happen atomically;
+  # without it, ChangeDependency would validate the renamed coordinate against
+  # the pre-bump AF4 version (which doesn't exist at the new groupId).
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring
+      newVersion: ${project.version}
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringBootExtension
+displayName: Migrate the Spring Boot extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.springboot` to
+  `org.axonframework.extension.springboot`, matching the Maven groupId move
+  to `org.axonframework.extensions.spring`. Covers both the autoconfigure
+  and starter artifacts (apps depend on the starter, which transitively
+  pulls autoconfigure). Also rewrites Spring Boot configuration property
+  keys whose binding class moved or was renamed in AF5.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.springboot
+      newPackageName: org.axonframework.extension.springboot
+      recursive: true
+  # Build-tool coordinate moves for the Spring Boot artifacts: groupId
+  # `org.axonframework` → `org.axonframework.extensions.spring`. ArtifactIds
+  # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are
+  # unchanged. The unified `java.dependencies.ChangeDependency` recipe
+  # applies to both Maven and Gradle projects.
+  # `newVersion` is set inline so the rename and version bump happen atomically;
+  # without it, ChangeDependency would validate the renamed coordinate against
+  # the pre-bump AF4 version (which doesn't exist at the new groupId).
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-starter
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-starter
+      newVersion: ${project.version}
+  - org.openrewrite.java.dependencies.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-spring-boot-autoconfigure
+      newGroupId: org.axonframework.extensions.spring
+      newArtifactId: axon-spring-boot-autoconfigure
+      newVersion: ${project.version}
+  # Spring Boot configuration property rename. AF4's `SerializerProperties`
+  # (`@ConfigurationProperties("axon.serializer")`) is replaced in AF5 by
+  # `ConverterProperties` (`@ConfigurationProperties("axon.converter")`),
+  # reflecting the framework-wide rename of `Serializer` → `Converter`. The
+  # three sub-properties (`general`, `messages`, `events`) keep the same
+  # names, so renaming the parent prefix carries them along.
+  #
+  # `ChangeSpringPropertyKey` covers `application.properties`,
+  # `application.yaml` / `application.yml` (including profile-specific files),
+  # and `@Value` / `@ConditionalOnProperty` references. Renaming the parent
+  # prefix (rather than each child key) keeps the nested YAML shape intact.
+  #
+  # Note: AF4's `SerializerType` enum had `XSTREAM` and `JAVA` values which
+  # do not exist in AF5's `ConverterType`. The values are left untouched so
+  # the resulting startup failure surfaces the choice to the developer
+  # instead of silently swapping converters.
+  - org.openrewrite.java.spring.ChangeSpringPropertyKey:
+      oldPropertyKey: axon.serializer
+      newPropertyKey: axon.converter
+
+  # AF4's `axon.eventhandling.processors.<group>.sequencing-policy` property
+  # is obsoleted by AF5's `@SequencingPolicy` annotation on the handler class.
+  # Deleting the key here would race the per-construct skill that moves the
+  # configuration onto the source side; instead we insert an advisory
+  # `# TODO AF5 migration: ...` comment above each matching entry so both the
+  # developer and the next-running LLM-driven skill see it immediately.
+  - org.axonframework.migration.AnnotateObsoleteSequencingPolicyProperty
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5SpringBootActuatorExtension
+displayName: Migrate the Spring Boot Actuator extension to Axon Framework 5
+description: >-
+  Relocates `org.axonframework.actuator` to
+  `org.axonframework.extension.springboot.actuator`. The Actuator support is
+  now nested under the Spring Boot extension namespace.
+recipeList:
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.actuator
+      newPackageName: org.axonframework.extension.springboot.actuator
+      recursive: true

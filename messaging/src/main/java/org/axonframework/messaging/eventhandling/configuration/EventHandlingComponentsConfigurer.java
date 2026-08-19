@@ -18,11 +18,16 @@ package org.axonframework.messaging.eventhandling.configuration;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventHandlingExceptionHandler;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 
@@ -149,6 +154,53 @@ public interface EventHandlingComponentsConfigurer {
         CompletePhase decorated(
                 BiFunction<Configuration, EventHandlingComponent, EventHandlingComponent> decorator
         );
+
+        /**
+         * Registers an interceptor to be applied to all event handling components in this configurer. Multiple calls
+         * accumulate interceptors in registration order. The builder may access the {@link Configuration} and register
+         * lifecycle handlers.
+         * <p>
+         * Calling this method closes the component registration phase — no further components can be added after this
+         * call.
+         *
+         * @param interceptorBuilder builder for the interceptor to apply
+         * @return this phase for further interceptor or decorator registration
+         */
+        CompletePhase intercepted(
+                ComponentBuilder<MessageHandlerInterceptor<? super EventMessage>> interceptorBuilder
+        );
+
+        /**
+         * Wraps all event handling components with the exception handler built by the given {@code handlerBuilder}.
+         * When a handler throws, the exception handler is invoked. Return {@link MessageStream#empty()} to suppress
+         * the error, or {@link MessageStream#failed(Throwable)} to let it propagate to the event processor.
+         * <p>
+         * Accepts either an {@link EventHandlingExceptionHandler} or a generic {@link MessageHandlingExceptionHandler}
+         * typed at any supertype of {@link EventMessage}, allowing a single handler implementation (such as a logger)
+         * to be reused across command, event, and query phases.
+         * <p>
+         * Multiple calls accumulate handlers; later-registered handlers are applied closer to the handler and see
+         * exceptions first.
+         *
+         * @param handlerBuilder builder for the exception handler to apply to all components
+         * @return this phase for further configuration
+         */
+        default CompletePhase withExceptionHandler(
+                ComponentBuilder<? extends MessageHandlingExceptionHandler<? super EventMessage>> handlerBuilder) {
+            requireNonNull(handlerBuilder, "The exception handler builder must not be null.");
+            return intercepted(c -> {
+                MessageHandlingExceptionHandler<? super EventMessage> handler = handlerBuilder.build(c);
+                return (message, context, chain) -> chain.proceed(message, context)
+                                                         .cast()
+                                                         .onErrorContinue(error -> {
+                                                             try {
+                                                                 return handler.handle(message, context, error);
+                                                             } catch (Exception e) {
+                                                                 return MessageStream.failed(e);
+                                                             }
+                                                         });
+            });
+        }
 
         /**
          * Returns the configured map of event handling components.

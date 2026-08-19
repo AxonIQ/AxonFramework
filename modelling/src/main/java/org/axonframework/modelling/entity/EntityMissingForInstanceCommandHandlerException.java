@@ -17,17 +17,22 @@
 package org.axonframework.modelling.entity;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 
 /**
  * Exception indicating that an instance command handler was invoked for an entity that does not exist.
  * <p>
  * If this command is valid for the creation of an entity, as well as instance commands, a creational command can be
  * defined for the same {@link CommandMessage#type()}.
+ * <p>
+ * This is a specialization of {@link EntityNotFoundException}: no business identifier is available at this level, so
+ * {@link EntityNotFoundException#identifier()} returns the {@link CommandMessage#type()} of the command being handled
+ * instead.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
-public class EntityMissingForInstanceCommandHandlerException extends RuntimeException {
+public class EntityMissingForInstanceCommandHandlerException extends EntityNotFoundException {
 
     /**
      * Creates a new exception with the given {@code command}.
@@ -35,7 +40,7 @@ public class EntityMissingForInstanceCommandHandlerException extends RuntimeExce
      * @param command The {@link CommandMessage} that was handled.
      */
     public EntityMissingForInstanceCommandHandlerException(CommandMessage command) {
-        super(String.format(
+        super(command.type(), String.format(
                 "Entity was missing for instance command handler for command [%s]",
                 command.type()
         ));

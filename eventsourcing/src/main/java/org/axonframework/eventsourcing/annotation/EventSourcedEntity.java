@@ -28,10 +28,10 @@ import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolver;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.EntityCommandHandler;
-import org.axonframework.modelling.entity.annotation.AnnotatedEntityIdResolverDefinition;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
 
 import java.lang.annotation.ElementType;
@@ -96,6 +96,13 @@ import java.lang.annotation.Target;
  * id based on the {@link TargetEntityId} annotation on a field or method
  * of the command payload. You can customize this behavior by providing a custom {@link #entityIdResolverDefinition()}.
  *
+ * <h2>Snapshotting</h2>
+ * Snapshotting can be enabled declaratively by adding {@link Snapshotting @Snapshotting} alongside this annotation.
+ * By default, {@code @Snapshotting} triggers a snapshot after every 50 events sourced. Both the event-count and
+ * sourcing-time thresholds are tunable via its attributes. For more complex policies (e.g. payload-based triggers),
+ * use the programmatic API via
+ * {@link org.axonframework.eventsourcing.configuration.EventSourcedEntityModule.OptionalPhase#snapshotPolicy}.
+ *
  * <h2>Polymorphic entities</h2>
  * Polymorphic entities are entities that can have multiple concrete types, and the type of the entity is determined
  * by the payload of the first event. In this case, the {@link EventSourcedEntity#concreteTypes()} should be
@@ -155,11 +162,11 @@ public @interface EventSourcedEntity {
     /**
      * The definition of the {@link EntityIdResolverDefinition} to use to resolve the entity id from a
      * {@link CommandMessage command message}. Defaults to the
-     * {@link AnnotatedEntityIdResolverDefinition}, which resolves the entity id based on the
-     * {@link TargetEntityId} annotation on a payload field or method, after
-     * converting the payload to the representation wanted by the entity.
+     * {@link AnnotationBasedEntityIdResolverDefinition}, which resolves the entity id based on the
+     * {@link TargetEntityId} annotation on a payload field or method. Conversion of the payload to the
+     * representation wanted by the entity is applied by the module before resolution.
      *
      * @return The definition to construct an {@link EntityIdResolverDefinition}.
      */
-    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotatedEntityIdResolverDefinition.class;
+    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotationBasedEntityIdResolverDefinition.class;
 }

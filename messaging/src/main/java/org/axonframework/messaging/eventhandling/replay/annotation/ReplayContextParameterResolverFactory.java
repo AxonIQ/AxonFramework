@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.replay.annotation;
 
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -71,7 +72,7 @@ public class ReplayContextParameterResolverFactory implements ParameterResolverF
             }
 
             return CompletableFuture.completedFuture(
-                    ReplayToken.replayContext(token, type, context.component(Converter.class)).orElse(null)
+                    ReplayToken.replayContext(token, type, context.component(GeneralConverter.class)).orElse(null)
             );
         }
 

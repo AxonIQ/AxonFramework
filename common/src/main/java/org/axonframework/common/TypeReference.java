@@ -71,20 +71,18 @@ public abstract class TypeReference<E> {
 
     /**
      * Returns the class of the type of the component represented by this {@code TypeReference}.
+     * <p>
+     * The class is the erasure of the represented type, following the erasure rules of the Java Language
+     * Specification. A {@link Class} erases to itself, a {@link ParameterizedType} to its raw type, a
+     * {@link java.lang.reflect.TypeVariable} to the erasure of its first bound, and a
+     * {@link java.lang.reflect.GenericArrayType} to an array of the erasure of its component type. Any other
+     * {@link Type} erases to {@link Object}.
      *
-     * @return The class of the component.
+     * @return the class of the component
      */
     @SuppressWarnings("unchecked")
     public Class<E> getTypeAsClass() {
-        if (type instanceof Class<?> clazz) {
-            return (Class<E>) clazz;
-        }
-        if (type instanceof ParameterizedType parameterizedType) {
-            return (Class<E>) parameterizedType.getRawType();
-        }
-        throw new IllegalArgumentException(
-                "Internal error: TypeReference constructed with unsupported type: %s".formatted(type)
-        );
+        return (Class<E>) TypeReflectionUtils.erase(type);
     }
 
     /**

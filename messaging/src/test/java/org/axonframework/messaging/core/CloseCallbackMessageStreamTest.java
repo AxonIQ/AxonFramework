@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class CloseCallbackMessageStreamTest extends MessageStreamTest<Message> {
 
@@ -131,5 +132,49 @@ class CloseCallbackMessageStreamTest extends MessageStreamTest<Message> {
         testSubject.close();
 
         assertEquals(1, invoked.get());
+    }
+
+    @Test
+    void closingTheStreamPropagatesCloseToTheDelegate() {
+        AtomicBoolean delegateClosed = new AtomicBoolean(false);
+        // A delegate that never completes on its own, so the only way it can complete is by
+        // having close() propagated to it from the CloseCallbackMessageStream.
+        MessageStream<Message> delegate = new AbstractMessageStream<>() {
+            @Override
+            protected FetchResult<Entry<Message>> fetchNext() {
+                return FetchResult.notReady();
+            }
+
+            @Override
+            protected void onCompleted() {
+                delegateClosed.set(true);
+            }
+        };
+        MessageStream<Message> testSubject = new CloseCallbackMessageStream<>(delegate, () -> {
+        });
+
+        assertFalse(delegateClosed.get());
+
+        // A consumer closing the wrapping stream must release the delegate as well, otherwise
+        // resources held by the delegate (e.g. an Axon Server subscription query) leak.
+        testSubject.close();
+
+        assertTrue(delegateClosed.get(), "Closing the stream should propagate close() to the delegate.");
+        assertTrue(delegate.isCompleted());
+    }
+
+    @Test
+    void closeHandlerIsInvokedEvenWhenDelegateCloseThrows() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        MessageStream<Message> delegate = mock();
+        doThrow(new MockException("close failed")).when(delegate).close();
+        MessageStream<Message> testSubject = new CloseCallbackMessageStream<>(delegate, () -> invoked.set(true));
+
+        // A failing delegate close must not prevent the close handler from running, otherwise
+        // resources tracked by the handler (e.g. a shutdown latch activity) would leak.
+        testSubject.close();
+
+        verify(delegate).close();
+        assertTrue(invoked.get(), "Close handler must run even when the delegate's close() throws.");
     }
 }

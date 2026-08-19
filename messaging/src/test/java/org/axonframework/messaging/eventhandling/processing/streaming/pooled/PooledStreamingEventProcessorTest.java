@@ -23,11 +23,19 @@ import org.axonframework.common.util.MockException;
 import org.axonframework.conversion.DelegatingGeneralConverter;
 import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.TestConverter;
+import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.commandhandling.gateway.CommandResult;
 import org.axonframework.messaging.core.ApplicationContext;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.conversion.MessageConverter;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -43,15 +51,20 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorC
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SimpleSegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToRetrieveIdentifierException;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.replay.ReplayBlockingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatus;
 import org.axonframework.messaging.eventhandling.replay.ReplayStatusChangedHandler;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.queryhandling.QueryBus;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
+import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
@@ -65,9 +78,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -77,7 +92,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -118,6 +135,8 @@ class PooledStreamingEventProcessorTest {
     private SimpleEventHandlingComponent simpleEhc;
     private RecordingEventHandlingComponent defaultEventHandlingComponent;
     private GeneralConverter converter;
+    private CommandGateway commandGateway;
+    private QueryBus queryBus;
 
     @BeforeEach
     void setUp() {
@@ -132,6 +151,8 @@ class PooledStreamingEventProcessorTest {
         simpleEhc.subscribe(new QualifiedName(Integer.class), (event, ctx) -> MessageStream.empty());
         defaultEventHandlingComponent = spy(new RecordingEventHandlingComponent(simpleEhc));
         converter = new DelegatingGeneralConverter(TestConverter.JACKSON.getConverter());
+        commandGateway = mock(CommandGateway.class);
+        queryBus = mock(QueryBus.class);
         withTestSubject(List.of()); // default always applied
     }
 
@@ -155,6 +176,10 @@ class PooledStreamingEventProcessorTest {
 
         TestApplicationContext testApplicationContext = new TestApplicationContext();
         testApplicationContext.addComponent(GeneralConverter.class, null, converter);
+        testApplicationContext.addComponent(CommandGateway.class, null, commandGateway);
+        testApplicationContext.addComponent(QueryBus.class, null, queryBus);
+        testApplicationContext.addComponent(MessageTypeResolver.class, null, new ClassBasedMessageTypeResolver());
+        testApplicationContext.addComponent(MessageConverter.class, null, mock(MessageConverter.class));
         EventProcessorConfiguration baseConfig = new EventProcessorConfiguration(PROCESSOR_NAME, null);
         var testDefaultConfiguration = new PooledStreamingEventProcessorConfiguration(baseConfig)
                 .eventSource(stubMessageSource)
@@ -240,6 +265,121 @@ class PooledStreamingEventProcessorTest {
                    long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
                    assertThat(currentPosition).isEqualTo(2);
                });
+    }
+
+    @Nested
+    class SegmentRouting {
+
+        // Integer.hashCode(n) == n, so with two segments a sequence identifier of 0 routes to segment 0
+        // (matches even hashes) and 1 routes to segment 1 (matches odd hashes).
+
+        @Test
+        void eachComponentHandlesEventOnceInItsOwnSegment() {
+            // given two components supporting the same event but routing to different segments
+            var componentForSegmentZero = recordingComponent("even", new QualifiedName(String.class), 0);
+            var componentForSegmentOne = recordingComponent("odd", new QualifiedName(String.class), 1);
+            List<EventHandlingComponent> components = List.of(componentForSegmentZero, componentForSegmentOne);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event (each claims it via its own matching component)
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then each component handles the event exactly once, in the single segment its identifier routes to
+            assertThat(componentForSegmentZero.recorded()).containsExactly(event);
+            assertThat(componentForSegmentOne.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void eventIsHandledOnlyByComponentsSupportingItsType() {
+            // given two components supporting different event types, routing to different segments
+            var stringComponent = recordingComponent("string", new QualifiedName(String.class), 0);
+            var longComponent = recordingComponent("long", new QualifiedName(Long.class), 1);
+            List<EventHandlingComponent> components = List.of(stringComponent, longComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when one event of each type is published
+            EventMessage stringEvent = EventTestUtils.asEventMessage("Payload");
+            EventMessage longEvent = EventTestUtils.asEventMessage(42L);
+            stubMessageSource.publishMessage(stringEvent);
+            stubMessageSource.publishMessage(longEvent);
+            startEventProcessor();
+
+            // then both segments advance past both events (a segment advances its token past events it does not handle)
+            awaitSegmentsAtPosition(2L, 0, 1);
+
+            // then each component only handles the event whose type it supports
+            assertThat(stringComponent.recorded()).containsExactly(stringEvent);
+            assertThat(longComponent.recorded()).containsExactly(longEvent);
+        }
+
+        @Test
+        void componentsSharingSequenceIdentifierHandleEventInSameSegment() {
+            // given two components supporting the same event with the same sequence identifier
+            var firstComponent = recordingComponent("first", new QualifiedName(String.class), 0);
+            var secondComponent = recordingComponent("second", new QualifiedName(String.class), 0);
+            List<EventHandlingComponent> components = List.of(firstComponent, secondComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments advance, but only segment 0 claims the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then both components sharing that segment handle the event exactly once
+            assertThat(firstComponent.recorded()).containsExactly(event);
+            assertThat(secondComponent.recorded()).containsExactly(event);
+        }
+
+        @Test
+        void broadcastComponentHandlesEventInEverySegmentWhileRegularComponentHandlesOnlyInItsOwn() {
+            // given a component routing to segment 0 and a component using the broadcast sequence identifier
+            var regularComponent = recordingComponent("regular", new QualifiedName(String.class), 0);
+            var broadcastComponent = recordingComponent(
+                    "broadcast", new QualifiedName(String.class), SequencingPolicy.BROADCAST);
+            List<EventHandlingComponent> components = List.of(regularComponent, broadcastComponent);
+            withTestSubject(components, c -> c.initialSegmentCount(2));
+
+            // when a single event is published
+            EventMessage event = EventTestUtils.asEventMessage("Payload");
+            stubMessageSource.publishMessage(event);
+            startEventProcessor();
+
+            // then both segments consume the event
+            awaitSegmentsAtPosition(1L, 0, 1);
+
+            // then the regular component handles it only in the single segment its identifier routes to
+            assertThat(regularComponent.recorded()).containsExactly(event);
+            // and the broadcast component handles it in every segment, exactly once per segment
+            assertThat(broadcastComponent.recorded()).containsExactly(event, event);
+        }
+
+        private RecordingEventHandlingComponent recordingComponent(String name,
+                                                                   QualifiedName supportedEvent,
+                                                                   Object sequenceIdentifier) {
+            SimpleEventHandlingComponent component =
+                    SimpleEventHandlingComponent.create(name, (event, ctx) -> Optional.of(sequenceIdentifier));
+            component.subscribe(supportedEvent, (event, ctx) -> MessageStream.empty());
+            return new RecordingEventHandlingComponent(component);
+        }
+
+        private void awaitSegmentsAtPosition(long position, int... segmentIds) {
+            await().atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> {
+                       for (int segmentId : segmentIds) {
+                           assertThat(testSubject.processingStatus()).containsKey(segmentId);
+                           assertThat(testSubject.processingStatus().get(segmentId).getCurrentPosition().orElse(0))
+                                   .isEqualTo(position);
+                       }
+                   });
+        }
     }
 
     private ProcessingContext createProcessingContext() {
@@ -480,6 +620,126 @@ class PooledStreamingEventProcessorTest {
             // then
             assertTrue(countDownLatch.await(5, TimeUnit.SECONDS));
         }
+
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link CommandDispatcher} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every dispatched command carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
+        @Test
+        void forContextDispatchesUsingEachEventsOwnPerEventResourceWithinABatch() {
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // CommandGateway actually saw when CommandDispatcher.forContext(ctx) dispatched.
+            Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
+            Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
+            Map<Object, TrackingToken> tokenSeenAtDispatch = Collections.synchronizedMap(new HashMap<>());
+
+            when(commandGateway.send(any(), any(ProcessingContext.class))).thenAnswer(invocation -> {
+                Object payload = invocation.getArgument(0);
+                ProcessingContext dispatchContext = invocation.getArgument(1);
+                TrackingToken.fromContext(dispatchContext).ifPresent(token -> tokenSeenAtDispatch.put(payload, token));
+                return mock(CommandResult.class);
+            });
+
+            var ehc = SimpleEventHandlingComponent.create("test");
+            ehc.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                Object payload = event.payload();
+                TrackingToken.fromContext(ctx).ifPresent(token -> tokenSeenByHandler.put(payload, token));
+                batchKeyOfEvent.put(payload, ctx.toString());
+                return MessageStream.fromFuture(CommandDispatcher.forContext(ctx).send(payload).getResultMessage()).ignoreEntries().cast();
+            });
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(List.of(ehc), c -> c.initialSegmentCount(1).batchSize(5));
+
+            // when - publish 3 events before starting; the WorkPackage groups whichever of them arrive together
+            // into the same batch
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            startEventProcessor();
+
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(tokenSeenAtDispatch.keySet())
+                           .containsExactlyInAnyOrder("event-1", "event-2", "event-3"));
+
+            // sanity precondition - this only proves anything if at least one batch actually contained 2+ events
+            Map<String, List<Object>> eventsByBatch = batchKeyOfEvent.entrySet().stream()
+                    .collect(Collectors.groupingBy(Map.Entry::getValue,
+                                                    Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+            assertThat(eventsByBatch.values())
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
+                    .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
+
+            // then - each event's dispatch must have used its own per-event token, matching what its handler saw
+            assertThat(tokenSeenAtDispatch).isEqualTo(tokenSeenByHandler);
+        }
+
+        /**
+         * Verifies that when a batch contains multiple events, each event's {@code @EventHandler} resolves a
+         * {@link QueryUpdateEmitter} bound to its <em>own</em> per-event {@link ProcessingContext} branch, so that
+         * every emitted update carries that event's own per-event resource - not another event's from the same
+         * batch.
+         */
+        @Test
+        void forContextEmitsUsingEachEventsOwnPerEventResourceWithinABatch() {
+            // For each event, records the TrackingToken the handler itself observed (read directly off its own
+            // branch) plus a batch identity key (the branch's toString omits the per-event override, so two events
+            // share this key iff they were branched from the same batch root). Also records the TrackingToken the
+            // QueryBus actually saw when QueryUpdateEmitter.forContext(ctx) emitted.
+            Map<Object, TrackingToken> tokenSeenByHandler = Collections.synchronizedMap(new LinkedHashMap<>());
+            Map<Object, String> batchKeyOfEvent = Collections.synchronizedMap(new HashMap<>());
+            Map<Object, TrackingToken> tokenSeenAtEmit = Collections.synchronizedMap(new HashMap<>());
+
+            when(queryBus.emitUpdate(any(), any(), any())).thenAnswer(invocation -> {
+                Supplier<SubscriptionQueryUpdateMessage> updateSupplier = invocation.getArgument(1);
+                ProcessingContext emitContext = invocation.getArgument(2);
+                Object payload = updateSupplier.get().payload();
+                TrackingToken.fromContext(emitContext).ifPresent(token -> tokenSeenAtEmit.put(payload, token));
+                return CompletableFuture.completedFuture(null);
+            });
+
+            var ehc = SimpleEventHandlingComponent.create("test");
+            ehc.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                Object payload = event.payload();
+                TrackingToken.fromContext(ctx).ifPresent(token -> tokenSeenByHandler.put(payload, token));
+                batchKeyOfEvent.put(payload, ctx.toString());
+                QueryUpdateEmitter.forContext(ctx).emit(String.class, q -> true, payload);
+                return MessageStream.empty();
+            });
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(List.of(ehc), c -> c.initialSegmentCount(1).batchSize(5));
+
+            // when - publish 3 events before starting; the WorkPackage groups whichever of them arrive together
+            // into the same batch
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            startEventProcessor();
+
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(tokenSeenAtEmit.keySet())
+                           .containsExactlyInAnyOrder("event-1", "event-2", "event-3"));
+
+            // sanity precondition - this only proves anything if at least one batch actually contained 2+ events
+            Map<String, List<Object>> eventsByBatch = batchKeyOfEvent.entrySet().stream()
+                    .collect(Collectors.groupingBy(Map.Entry::getValue,
+                                                    Collectors.mapping(Map.Entry::getKey, Collectors.toList())));
+            assertThat(eventsByBatch.values())
+                    .as("expected at least one batch with 2+ events, so each event's own branch resolution can be observed")
+                    .anyMatch(eventsInBatch -> eventsInBatch.size() >= 2);
+
+            // then - each event's emit must have used its own per-event token, matching what its handler saw
+            assertThat(tokenSeenAtEmit).isEqualTo(tokenSeenByHandler);
+        }
     }
 
     @Nested
@@ -563,14 +823,61 @@ class PooledStreamingEventProcessorTest {
             assertWithin(1, TimeUnit.SECONDS, () -> assertEquals(2, testSubject.processingStatus().size()));
         }
 
-        @Test
-        void getTokenStoreIdentifier() {
-            String expectedIdentifier = "some-identifier";
+        @Nested
+        class GetTokenStoreIdentifier {
 
-            when(tokenStore.retrieveStorageIdentifier(any()))
-                    .thenReturn(completedFuture(expectedIdentifier));
+            @Test
+            void returnsIdentifierResolvedDuringStart() {
+                // given
+                String expectedIdentifier = "some-identifier";
+                when(tokenStore.retrieveStorageIdentifier(any()))
+                        .thenReturn(completedFuture(expectedIdentifier));
 
-            assertEquals(expectedIdentifier, testSubject.getTokenStoreIdentifier());
+                // when
+                startEventProcessor();
+
+                // then
+                assertEquals(expectedIdentifier, testSubject.getTokenStoreIdentifier());
+            }
+
+            @Test
+            void resolvesIdentifierLazilyWhenCalledBeforeStart() {
+                // when
+                String identifier = testSubject.getTokenStoreIdentifier();
+
+                // then
+                assertThat(identifier).isNotNull();
+            }
+
+            @Test
+            void propagatesExceptionWhenLazyResolutionFails() {
+                // given
+                var failure = new UnableToRetrieveIdentifierException("Storage unavailable", new RuntimeException());
+                when(tokenStore.retrieveStorageIdentifier(any()))
+                        .thenReturn(CompletableFuture.failedFuture(failure));
+
+                // when / then
+                assertThrows(UnableToRetrieveIdentifierException.class, () -> testSubject.getTokenStoreIdentifier());
+            }
+
+            @Test
+            void startCompletesExceptionallyAndSkipsCoordinatorWhenRetrievalFails() {
+                // given
+                var failure = new UnableToRetrieveIdentifierException("Storage unavailable", new RuntimeException());
+                when(tokenStore.retrieveStorageIdentifier(any()))
+                        .thenReturn(CompletableFuture.failedFuture(failure));
+
+                // when
+                var startFuture = testSubject.start();
+
+                // then
+                assertThat(startFuture).isCompletedExceptionally()
+                                       .failsWithin(1, TimeUnit.SECONDS)
+                                       .withThrowableOfType(ExecutionException.class)
+                                       .havingCause()
+                                       .isInstanceOf(UnableToRetrieveIdentifierException.class);
+                assertFalse(testSubject.isRunning());
+            }
         }
 
         @Test
@@ -737,6 +1044,224 @@ class PooledStreamingEventProcessorTest {
     }
 
     @Nested
+    class StreamReopeningTest {
+
+        private RecordingEventHandlingComponent recordingComponent;
+
+        @BeforeEach
+        void setUpEventSourceRetainingEventsOnClose() {
+            // The events must survive the coordinator closing a stream, as a reopened stream has to resume on them.
+            stubMessageSource = spy(new AsyncInMemoryStreamableEventSource(true, false));
+            when(stubMessageSource.firstToken(null))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(-1)));
+            SimpleEventHandlingComponent component = SimpleEventHandlingComponent.create("test");
+            component.subscribe(new QualifiedName(String.class), (event, ctx) -> MessageStream.empty());
+            recordingComponent = new RecordingEventHandlingComponent(component);
+            withTestSubject(List.of(recordingComponent), c -> c.initialSegmentCount(1));
+        }
+
+        @Test
+        void reopensStreamWithoutWaitingForTheNextTokenClaim() {
+            // given - a token claim interval far beyond the assertion window, so only noticing the completed stream on
+            //         a coordination run can explain a timely reopen. The claim extension threshold keeps those runs
+            //         frequent, ruling out a lost availability callback as the reason for a slow reopen.
+            withTestSubject(List.of(recordingComponent),
+                            c -> c.initialSegmentCount(1).tokenClaimInterval(30_000).claimExtensionThreshold(100));
+            EventMessage eventOne = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(eventOne);
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).containsExactly(eventOne));
+
+            // when
+            stubMessageSource.completeOpenStreams();
+            EventMessage eventTwo = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(eventTwo);
+
+            // then - handled long before the next token claim would have come around
+            await().atMost(3, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(eventTwo));
+        }
+
+        @Test
+        void reopensStreamAtTheLastHandledEventWhenTheSourceCompletesIt() {
+            // given
+            EventMessage eventOne = EventTestUtils.asEventMessage("event-1");
+            EventMessage eventTwo = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(eventOne);
+            stubMessageSource.publishMessage(eventTwo);
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).containsExactly(eventOne, eventTwo));
+
+            // when - the source terminates the stream without reporting an error, as a broker ending a tailing stream
+            stubMessageSource.completeOpenStreams();
+            EventMessage eventThree = EventTestUtils.asEventMessage("event-3");
+            EventMessage eventFour = EventTestUtils.asEventMessage("event-4");
+            stubMessageSource.publishMessage(eventThree);
+            stubMessageSource.publishMessage(eventFour);
+
+            // then - a fresh stream resumes exactly where the completed one left off: no event is skipped or replayed
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded())
+                           .containsExactly(eventOne, eventTwo, eventThree, eventFour));
+            verify(stubMessageSource, atLeast(2)).open(any(), isNull());
+        }
+
+        @Test
+        void keepsSegmentClaimedAndReportsNoErrorWhenReopeningTheStream() {
+            // given
+            stubMessageSource.publishMessage(EventTestUtils.asEventMessage("event-1"));
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus()).containsKey(0));
+            clearInvocations(stubMessageSource);
+
+            // when
+            stubMessageSource.completeOpenStreams();
+
+            // then - the coordinator replaces the stream without giving up the segment it holds
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(stubMessageSource).open(any(), isNull()));
+            assertThat(testSubject.processingStatus()).containsKey(0);
+            assertThat(testSubject.isError()).isFalse();
+            verify(tokenStore, never()).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
+
+            // then - and it continues processing on the reopened stream
+            EventMessage nextEvent = EventTestUtils.asEventMessage("event-2");
+            stubMessageSource.publishMessage(nextEvent);
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(nextEvent));
+        }
+
+        @Test
+        void doesNotSpinWhenTheSourceKeepsHandingOutCompletedStreams() throws InterruptedException {
+            // given - a source that only ever returns completed streams, so every reopen attempt is futile. The
+            //         coordinator gets the single thread it runs on in production, as a second one lets a reopen
+            //         scheduled from the availability callback land while the run that opened the stream still holds
+            //         the processing gate, which drops it and hides the pace the reopens are scheduled at.
+            coordinatorExecutor = new DelegateScheduledExecutorService(Executors.newSingleThreadScheduledExecutor());
+            withTestSubject(List.of(recordingComponent), c -> c.initialSegmentCount(1));
+            AtomicInteger openCount = new AtomicInteger();
+            doAnswer(invocation -> {
+                openCount.incrementAndGet();
+                // A completed stream invokes the availability callback the moment the coordinator registers one,
+                // which is the notification a source ending every stream it hands out keeps repeating.
+                return MessageStream.empty();
+            }).when(stubMessageSource).open(any(), isNull());
+
+            // when
+            startEventProcessor();
+            Thread.sleep(500);
+
+            // then - reopening is paced by the coordination runs, rather than looping on itself
+            assertThat(openCount.get()).describedAs("streams opened in 500ms").isLessThan(15);
+        }
+
+        @Test
+        void reportsErrorWhenTheStreamTurnsOutToBeFailedWhileReadingIt() {
+            // given - a stream that reports its failure as soon as the coordinator reads from it
+            doReturn(MessageStream.failed(new IllegalStateException("Stream failed")))
+                    .doCallRealMethod()
+                    .when(stubMessageSource).open(any(), isNull());
+
+            // when
+            startEventProcessor();
+
+            // then - reading the stream surfaces the failure, which is reported through the retry logic
+            assertWithin(1, TimeUnit.SECONDS, () -> assertTrue(testSubject.isError()));
+        }
+
+        @Test
+        void reopensStreamWhenItsSourceCompletesItWithAnErrorWhileTheCoordinatorIsIdle() {
+            // given - a stream reporting its terminal state without being read, as a stream fed by a remote source
+            //         does when that source signals a failure while the coordinator has nothing to read
+            AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicReference<Optional<Throwable>> streamError = new AtomicReference<>(Optional.empty());
+            //noinspection unchecked
+            MessageStream<EventMessage> remotelyFailingStream = mock(MessageStream.class);
+            when(remotelyFailingStream.isCompleted()).thenAnswer(invocation -> completed.get());
+            when(remotelyFailingStream.error()).thenAnswer(invocation -> streamError.get());
+            when(remotelyFailingStream.hasNextAvailable()).thenReturn(false);
+            when(remotelyFailingStream.next()).thenReturn(Optional.empty());
+            when(remotelyFailingStream.peek()).thenReturn(Optional.empty());
+            doReturn(remotelyFailingStream).doCallRealMethod().when(stubMessageSource).open(any(), isNull());
+
+            startEventProcessor();
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus()).containsKey(0));
+
+            // when - the source terminates the stream with an error, in between two coordination runs
+            streamError.set(Optional.of(new IllegalStateException("Stream failed remotely")));
+            completed.set(true);
+
+            // then - a closed stream cannot be read from regardless of why it closed, so it is replaced by a fresh one
+            EventMessage nextEvent = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(nextEvent);
+            await().atMost(5, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(nextEvent));
+            verify(stubMessageSource, atLeast(2)).open(any(), isNull());
+        }
+
+        @Test
+        void pacesReopeningWhileTheSourceKeepsFailingEveryStreamItHandsOut() throws InterruptedException {
+            // given - a source that keeps failing every stream it hands out, as a backend that cannot serve one yet
+            //         does. Each attempt costs a call on that backend, so retrying on every coordination run is what
+            //         has to be avoided.
+            AtomicInteger openCount = new AtomicInteger();
+            stubMessageSource.setOnOpen(openCount::incrementAndGet);
+            startEventProcessor();
+
+            // when - the failure arrives the way a remote source reports one, after the coordination run that opened
+            //        the stream rather than during it
+            boolean reportedError = failStreamsFor(1500);
+
+            // then - the retry is paced by the coordinator's error handling rather than following every coordination
+            // run. 1500ms at a one-second pace allows two opens, so five leaves room for a slow machine.
+            assertThat(openCount.get()).describedAs("streams opened in 1500ms").isLessThanOrEqualTo(5);
+            // and the failure is reported rather than swallowed by an immediate replacement. Observed while the source
+            // was failing, since the flag clears again on every run that manages to open a stream.
+            assertThat(reportedError).describedAs("processor reported the failing source").isTrue();
+            // and the retry is scheduled with a delay rather than immediately
+            verify(coordinatorExecutor, atLeastOnce())
+                    .schedule(any(Runnable.class), longThat(delay -> delay >= 500), eq(TimeUnit.MILLISECONDS));
+        }
+
+        @Test
+        void resumesOnceTheSourceStopsFailingEveryStream() throws InterruptedException {
+            // given - a source failing every stream it hands out for a while
+            AtomicInteger openCount = new AtomicInteger();
+            stubMessageSource.setOnOpen(openCount::incrementAndGet);
+            startEventProcessor();
+            failStreamsFor(700);
+            assertThat(openCount).describedAs("streams opened while failing").hasValueGreaterThan(0);
+
+            // when - the source recovers
+            EventMessage event = EventTestUtils.asEventMessage("event-1");
+            stubMessageSource.publishMessage(event);
+
+            // then - waiting between attempts does not wedge the processor, it picks the segment back up and handles
+            // what it missed
+            await().atMost(10, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordingComponent.recorded()).contains(event));
+            assertThat(testSubject.processingStatus()).containsKey(0);
+        }
+
+        // Fails whatever stream is open, repeatedly, for the given duration. Runs on the calling thread so every
+        // failure lands between two coordination runs, which is when a remote source reports one. Returns whether the
+        // processor reported an error at any point, which a single read after the fact could miss.
+        private boolean failStreamsFor(long millis) throws InterruptedException {
+            boolean reportedError = false;
+            for (long elapsed = 0; elapsed < millis; elapsed += 25) {
+                stubMessageSource.failOpenStreams(new IllegalStateException("Source unreachable"));
+                Thread.sleep(25);
+                reportedError |= testSubject.isError();
+            }
+            return reportedError;
+        }
+    }
+
+    @Nested
     class WorkPackageAbortingTest {
 
         @Test
@@ -816,6 +1341,40 @@ class PooledStreamingEventProcessorTest {
 
             assertFalse(coordinatorExecutor.isShutdown());
             assertFalse(workerExecutor.isShutdown());
+        }
+
+        @Test
+        void abortFlowWaitsForSegmentChangeListenerBeforeCompleting() {
+            // given - processor with a single segment and a listener that blocks release until a gate is opened
+            CompletableFuture<Void> releaseGate = new CompletableFuture<>();
+            AtomicReference<Segment> releasedSegment = new AtomicReference<>();
+
+            withTestSubject(List.of(), c -> c
+                    .initialSegmentCount(1)
+                    .addSegmentChangeListener(SegmentChangeListener.onRelease(segment -> {
+                        releasedSegment.set(segment);
+                        return releaseGate;
+                    })));
+            startEventProcessor();
+            await().atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertFalse(testSubject.processingStatus().isEmpty()));
+
+            // when - shutdown is triggered while the release listener is still pending
+            CompletableFuture<Void> shutdownFuture = testSubject.shutdown();
+
+            // then - the listener is called with the correct segment before shutdown can proceed
+            await().atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(releasedSegment.get())
+                           .isNotNull()
+                           .extracting(Segment::getSegmentId)
+                           .isEqualTo(0));
+
+            // then - shutdown is blocked as long as the listener future is not completed
+            assertThat(shutdownFuture).isNotCompleted();
+
+            // then - completing the gate unblocks the abort flow and shutdown finishes
+            releaseGate.complete(null);
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> assertThat(shutdownFuture).isCompleted());
         }
     }
 
@@ -1090,6 +1649,224 @@ class PooledStreamingEventProcessorTest {
             // then - verify no events processed during replay
             assertThat(recordedEvents).isEmpty();
         }
+
+        @Test
+        void replayBlockingEventHandlingComponentCorrectlySkipsEventsWithBatchSizeGreaterThanOne() {
+            // given
+            List<EventMessage> recordedEvents = new CopyOnWriteArrayList<>();
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                recordedEvents.add(event);
+                return MessageStream.empty();
+            });
+            var replayBlockingComponent = new ReplayBlockingEventHandlingComponent<>(innerComponent);
+
+            // do not clear event source after close
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(replayBlockingComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // when - publish 5 events and process normally (not during replay)
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedEvents).containsOnly(event1, event2, event3, event4, event5));
+
+            joinAndUnwrap(testSubject.shutdown());
+            recordedEvents.clear();
+
+            // Reset tokens to trigger a replay from the beginning
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // when - restart; with batchSize=5 all 5 replay events land in a single batch
+            startEventProcessor();
+
+            // then - wait for the processor to catch up to position 5
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> {
+                       long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
+                       assertThat(currentPosition).isEqualTo(5);
+                   });
+
+            // then - replay-blocking component must have skipped all events: each event in the batch must have
+            // had isReplaying=true (i.e. its per-event ReplayToken was correctly injected, not the plain
+            // batch-end GlobalSequenceTrackingToken)
+            assertThat(recordedEvents).isEmpty();
+        }
+
+        @Test
+        void perEventTokenIsCorrectWhenBatchCrossesReplayBoundaryInMiddle() {
+            // given
+            // batchSize=5, 3 events processed before reset (tokenAtReset=3), then 5 more events added.
+            // Batch 1 (full, size 5): tokens 1-3 are replay, tokens 4-5 are post-replay — boundary in middle.
+            // Batch 2 (partial, size 3): tokens 6-8 are post-replay.
+            // The batch-end of batch 1 is the plain GST(5).
+            Map<EventMessage, TrackingToken> recordedTokens = Collections.synchronizedMap(new HashMap<>());
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                TrackingToken.fromContext(ctx).ifPresent(t -> recordedTokens.put(event, t));
+                return MessageStream.empty();
+            });
+            innerComponent.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(innerComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // publish 3 events (tokens 1-3) — these will become replay events
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens).containsKeys(event1, event2, event3));
+            joinAndUnwrap(testSubject.shutdown());
+            recordedTokens.clear();
+
+            // reset to replay from the start; tokenAtReset = GST(3)
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // publish 5 more events (tokens 4-8) — tokens 4-5 land in batch 1 (post-replay), tokens 6-8 in batch 2
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            EventMessage event6 = EventTestUtils.asEventMessage("event-6");
+            EventMessage event7 = EventTestUtils.asEventMessage("event-7");
+            EventMessage event8 = EventTestUtils.asEventMessage("event-8");
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+            stubMessageSource.publishMessage(event6);
+            stubMessageSource.publishMessage(event7);
+            stubMessageSource.publishMessage(event8);
+
+            // when - restart
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5, event6, event7, event8));
+
+            // then — each event must carry its own per-event token
+            TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(3);
+
+            // events 1-2: replay, not concluding
+            assertPerEventReplayToken(recordedTokens.get(event1), tokenAtReset, new GlobalSequenceTrackingToken(1), false);
+            assertPerEventReplayToken(recordedTokens.get(event2), tokenAtReset, new GlobalSequenceTrackingToken(2), false);
+            // event3: replay boundary — still a ReplayToken, concludesReplay = true
+            assertPerEventReplayToken(recordedTokens.get(event3), tokenAtReset, new GlobalSequenceTrackingToken(3), true);
+
+            // events 4-8: post-replay — plain GlobalSequenceTrackingToken
+            assertEquals(new GlobalSequenceTrackingToken(4), recordedTokens.get(event4));
+            assertEquals(new GlobalSequenceTrackingToken(5), recordedTokens.get(event5));
+            assertEquals(new GlobalSequenceTrackingToken(6), recordedTokens.get(event6));
+            assertEquals(new GlobalSequenceTrackingToken(7), recordedTokens.get(event7));
+            assertEquals(new GlobalSequenceTrackingToken(8), recordedTokens.get(event8));
+        }
+
+        @Test
+        void perEventTokenIsCorrectWhenReplayEndsAtBatchBoundary() {
+            // given
+            // batchSize=5, 5 events processed before reset (tokenAtReset=5), then 3 more events added.
+            // Batch 1 (full, size 5): tokens 1-5 are all replay — boundary falls at the very end of the batch.
+            // Batch 2 (partial, size 3): tokens 6-8 are post-replay.
+            // The batch-end of batch 1 is ReplayToken(current=5, atReset=5) — still a ReplayToken.
+            Map<EventMessage, TrackingToken> recordedTokens = Collections.synchronizedMap(new HashMap<>());
+
+            var innerComponent = SimpleEventHandlingComponent.create("test");
+            innerComponent.subscribe(new QualifiedName(String.class), (event, ctx) -> {
+                TrackingToken.fromContext(ctx).ifPresent(t -> recordedTokens.put(event, t));
+                return MessageStream.empty();
+            });
+            innerComponent.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+
+            stubMessageSource = new AsyncInMemoryStreamableEventSource(false, false);
+            withTestSubject(
+                    List.of(innerComponent),
+                    c -> c.initialSegmentCount(1).batchSize(5)
+            );
+
+            // publish 5 events (tokens 1-5) — these will become replay events
+            EventMessage event1 = EventTestUtils.asEventMessage("event-1");
+            EventMessage event2 = EventTestUtils.asEventMessage("event-2");
+            EventMessage event3 = EventTestUtils.asEventMessage("event-3");
+            EventMessage event4 = EventTestUtils.asEventMessage("event-4");
+            EventMessage event5 = EventTestUtils.asEventMessage("event-5");
+            stubMessageSource.publishMessage(event1);
+            stubMessageSource.publishMessage(event2);
+            stubMessageSource.publishMessage(event3);
+            stubMessageSource.publishMessage(event4);
+            stubMessageSource.publishMessage(event5);
+
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5));
+            joinAndUnwrap(testSubject.shutdown());
+            recordedTokens.clear();
+
+            // reset to replay from the start; tokenAtReset = GST(5)
+            joinAndUnwrap(testSubject.resetTokens(source -> source.firstToken(null)));
+
+            // publish 3 more events (tokens 6-8) — these land in batch 2 (post-replay)
+            EventMessage event6 = EventTestUtils.asEventMessage("event-6");
+            EventMessage event7 = EventTestUtils.asEventMessage("event-7");
+            EventMessage event8 = EventTestUtils.asEventMessage("event-8");
+            stubMessageSource.publishMessage(event6);
+            stubMessageSource.publishMessage(event7);
+            stubMessageSource.publishMessage(event8);
+
+            // when - restart
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(recordedTokens)
+                           .containsKeys(event1, event2, event3, event4, event5, event6, event7, event8));
+
+            // then — each event must carry its own per-event token
+            TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(5);
+
+            // events 1-4: replay, not concluding — before the fix all saw ReplayToken(current=5, atReset=5)
+            assertPerEventReplayToken(recordedTokens.get(event1), tokenAtReset, new GlobalSequenceTrackingToken(1), false);
+            assertPerEventReplayToken(recordedTokens.get(event2), tokenAtReset, new GlobalSequenceTrackingToken(2), false);
+            assertPerEventReplayToken(recordedTokens.get(event3), tokenAtReset, new GlobalSequenceTrackingToken(3), false);
+            assertPerEventReplayToken(recordedTokens.get(event4), tokenAtReset, new GlobalSequenceTrackingToken(4), false);
+            // event5: replay boundary — still a ReplayToken, concludesReplay = true
+            assertPerEventReplayToken(recordedTokens.get(event5), tokenAtReset, new GlobalSequenceTrackingToken(5), true);
+
+            // events 6-8: post-replay — plain GlobalSequenceTrackingToken
+            assertEquals(new GlobalSequenceTrackingToken(6), recordedTokens.get(event6));
+            assertEquals(new GlobalSequenceTrackingToken(7), recordedTokens.get(event7));
+            assertEquals(new GlobalSequenceTrackingToken(8), recordedTokens.get(event8));
+        }
+
+        private void assertPerEventReplayToken(TrackingToken token,
+                                               TrackingToken expectedAtReset,
+                                               TrackingToken expectedCurrent,
+                                               boolean expectedConcludesReplay) {
+            assertInstanceOf(ReplayToken.class, token);
+            ReplayToken replayToken = (ReplayToken) token;
+            assertEquals(expectedCurrent, replayToken.getCurrentToken());
+            assertEquals(expectedAtReset, replayToken.getTokenAtReset());
+            assertTrue(ReplayToken.isReplay(token));
+            assertEquals(expectedConcludesReplay, ReplayToken.concludesReplay(token));
+        }
     }
 
     @Nested
@@ -1205,6 +1982,34 @@ class PooledStreamingEventProcessorTest {
                    .untilAsserted(() -> assertThat(claimedSegments.stream()
                                                                   .filter(id -> id == testSegmentId)
                                                                   .count()).isGreaterThanOrEqualTo(2));
+        }
+
+        @Test
+        void segmentChangeListenerIsGivenTheStoredTokenOnClaim() {
+            // given - a segment whose stored token sits behind the head of the stream
+            GlobalSequenceTrackingToken storedToken = new GlobalSequenceTrackingToken(42);
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             1,
+                                                             storedToken,
+                                                             createProcessingContext()));
+
+            AtomicReference<TrackingToken> claimedFrom = new AtomicReference<>();
+            SegmentChangeListener listener = new SimpleSegmentChangeListener(
+                    (segment, from) -> {
+                        claimedFrom.set(from);
+                        return FutureUtils.emptyCompletedFuture();
+                    },
+                    segment -> FutureUtils.emptyCompletedFuture()
+            );
+
+            withTestSubject(List.of(), c -> c.initialSegmentCount(1).addSegmentChangeListener(listener));
+
+            // when
+            startEventProcessor();
+
+            // then
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(claimedFrom.get()).isEqualTo(storedToken));
         }
 
         @Test
@@ -1416,6 +2221,41 @@ class PooledStreamingEventProcessorTest {
 
             var thrown = assertThrows(IllegalStateException.class, () -> joinAndUnwrap(testSubject.resetTokens()));
             assertEquals("The Processor must be shut down before triggering a reset.", thrown.getMessage());
+        }
+
+        @Test
+        void resetTokensWithoutResetContextDoesNotRequireAConverter() {
+            // given - a processor whose unit of work provides no components at all, as is the default
+            TrackingToken initialToken = new GlobalSequenceTrackingToken(42);
+            int expectedSegmentCount = 2;
+            // given - the absent reset context is stored as an empty byte[], needing no conversion
+            TrackingToken expectedToken = ReplayToken.createReplayToken(initialToken, initialToken, new byte[0]);
+            simpleEhc.subscribe((ResetHandler) (resetContext, ctx) -> MessageStream.empty());
+            withTestSubject(
+                    List.of(),
+                    c -> c.initialSegmentCount(expectedSegmentCount)
+                          .initialToken(source -> completedFuture(initialToken))
+                          .unitOfWorkFactory(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE))
+            );
+            // given - an initialized token per segment to reset
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             expectedSegmentCount,
+                                                             initialToken,
+                                                             null));
+
+            // when - resetting without a reset context, so there is nothing to convert
+            joinAndUnwrap(testSubject.resetTokens());
+
+            // then - every segment gets the same token, carrying the single empty reset context
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            assertThat(segments).hasSize(expectedSegmentCount);
+            for (Segment segment : segments) {
+                TrackingToken token = joinAndUnwrap(
+                        tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null)
+                );
+                assertThat(token).isEqualTo(expectedToken);
+                assertThat(ReplayToken.isReplay(token)).isTrue();
+            }
         }
 
         @Test

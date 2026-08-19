@@ -53,8 +53,13 @@ import java.util.List;
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  * </ul>
+ * It also registers the {@link SnapshotSourcingConfigurationEnhancer}, which decorates the
+ * {@link EventStorageEngine} to support the {@link org.axonframework.eventsourcing.eventstore.SourcingStrategy.Snapshot
+ * snapshot sourcing strategy}. Registering it here rather than through the {@link java.util.ServiceLoader} means
+ * applications registering {@code this} enhancer manually receive it as well.
  *
  * @author Steven van Beelen
+ * @author John Hendrikx
  * @since 5.0.0
  */
 public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer {
@@ -78,6 +83,7 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
                 .registerIfNotPresent(EventStorageEngine.class,
                                       EventSourcingConfigurationDefaults::defaultEventStorageEngine)
                 .registerIfNotPresent(EventStore.class, EventSourcingConfigurationDefaults::simpleEventStore);
+        registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
         registry.registerDecorator(
                 EventStore.class,
                 InterceptingEventStore.DECORATION_ORDER,

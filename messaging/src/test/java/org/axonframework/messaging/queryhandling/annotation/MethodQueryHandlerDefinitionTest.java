@@ -31,6 +31,7 @@ import org.junit.jupiter.api.*;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,8 +75,9 @@ class MethodQueryHandlerDefinitionTest {
         ProcessingContext context = StubProcessingContext.forMessage(message);
         assertTrue(handler.canHandle(message, context));
 
-        Object invocationResult = handler.handleSync(message, context, this);
-        assertNull(invocationResult);
+        var invocationResult = handler.handle(message, context, this);
+        assertThat(invocationResult.hasNextAvailable()).isFalse();
+        assertThat(invocationResult.isCompleted()).isTrue();
     }
 
     @Test

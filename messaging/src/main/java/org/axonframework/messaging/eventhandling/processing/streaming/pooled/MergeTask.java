@@ -16,20 +16,25 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-import org.axonframework.messaging.core.unitofwork.UnitOfWork;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 /**
  * A {@link CoordinatorTask} implementation dedicated to merging two {@link Segment}s.
@@ -55,8 +60,9 @@ class MergeTask extends CoordinatorTask {
     private final Map<Integer, WorkPackage> workPackages;
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
-    private final Map<Integer, java.time.Instant> releasesDeadlines;
-    private final java.time.Clock clock;
+    private final Map<Integer, Instant> releasesDeadlines;
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    private final Clock clock;
 
     /**
      * Constructs a {@code MergeTask}.
@@ -75,16 +81,17 @@ class MergeTask extends CoordinatorTask {
      *                          the merged token.
      * @param unitOfWorkFactory The {@link UnitOfWorkFactory} that spawns {@link UnitOfWork UnitOfWorks} used to invoke
      *                          all {@link TokenStore} operations inside a unit of work.
-     * @param clock              the clock used for time-based operations
+     * @param clock             the clock used for time-based operations, deprecated in favor of {@link ClockUtils#get()}
      */
     MergeTask(CompletableFuture<Boolean> result,
               String name,
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
-              Map<Integer, java.time.Instant> releasesDeadlines,
+              Map<Integer, Instant> releasesDeadlines,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
-              java.time.Clock clock) {
+              @Deprecated(forRemoval = true, since = "5.2.0")
+              Clock clock) {
         super(result, name);
         this.name = name;
         this.segmentId = segmentId;
@@ -106,81 +113,77 @@ class MergeTask extends CoordinatorTask {
     protected CompletableFuture<Boolean> task() {
         logger.debug("Processor [{}] will perform merge instruction for segment {}.", name, segmentId);
 
-        Segment thisSegment = joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
-            context -> tokenStore.fetchSegment(name, segmentId, context)
-        ));
+        return unitOfWorkFactory.create().executeWithResult(
+                context -> tokenStore.fetchSegment(name, segmentId, context)
+        ).thenCompose(thisSegment -> {
+            if (segmentId == thisSegment.mergeableSegmentId()) {
+                logger.debug("Processor [{}] cannot merge segment {}. "
+                                     + "A merge request can only be fulfilled if there is more than one segment.",
+                             name, segmentId);
+                return CompletableFuture.completedFuture(false);
+            }
 
-        if (segmentId == thisSegment.mergeableSegmentId()) {
-            logger.debug("Processor [{}] cannot merge segment {}. "
-                                 + "A merge request can only be fulfilled if there is more than one segment.",
-                         name, segmentId);
-            return CompletableFuture.completedFuture(false);
-        }
-
-        Segment thatSegment = joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
-            context -> tokenStore.fetchSegment(name, thisSegment.mergeableSegmentId(), context)
-        ));
-
-        CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
-        CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
-        return thisTokenFuture.thenCombine(
-                thatTokenFuture,
-                (thisToken, thatToken) -> mergeSegments(thisSegment, thisToken, thatSegment, thatToken)
-        );
+            return unitOfWorkFactory.create().executeWithResult(
+                    context -> tokenStore.fetchSegment(name, thisSegment.mergeableSegmentId(), context)
+            ).thenCompose(thatSegment -> FutureUtils.runFailing(() -> {
+                // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, for
+                // instance) into a failed future, so the handler below observes it too rather than being skipped along
+                // with the rest of the chain -- leaking whichever blocks tokenFor already installed.
+                CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
+                CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
+                return thisTokenFuture
+                        .thenCombine(thatTokenFuture,
+                                     (thisToken, thatToken) -> mergeSegments(thisSegment, thisToken, thatSegment, thatToken))
+                        .thenCompose(Function.identity());
+            })
+            // Lift the block on both segments however the merge ends. Clearing it only on the paths that reach the
+            // token rewrite would leave a failed abort or a failed token fetch of either half blocking re-claim of
+            // both until the ceiling expires.
+            .whenComplete((result, throwable) -> {
+                releasesDeadlines.remove(thisSegment.getSegmentId());
+                releasesDeadlines.remove(thatSegment.getSegmentId());
+            }));
+        });
     }
 
     private CompletableFuture<TrackingToken> tokenFor(int segmentId) {
         // Block the segment from being claimed by the Coordinator while we perform the merge.
         // This prevents a race condition where the Coordinator might claim a segment that's being merged.
-        releasesDeadlines.put(segmentId,
-                              clock.instant().plusSeconds(60)); // Block for 1 minute (will be cleared after merge)
+        releasesDeadlines.put(segmentId, clock.instant().plus(RECLAIM_BLOCK_TIMEOUT));
 
         // Remove WorkPackage so that the CoordinatorTask cannot find it to release its claim upon impending abortion.
-        return workPackages.containsKey(segmentId)
-                ? workPackages.remove(segmentId)
-                              .abort(null)
-                              .thenCompose(e -> fetchTokenInUnitOfWork(segmentId))
-                : fetchTokenInUnitOfWork(segmentId);
+        WorkPackage workPackage = workPackages.remove(segmentId);
+        return workPackage != null
+                ? workPackage.abort(null)
+                             .thenCompose(e -> fetchTokenInUnitOfWork(segmentId, workPackage))
+                : fetchTokenInUnitOfWork(segmentId, null);
     }
 
-    private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId) {
-        return unitOfWorkFactory.create().executeWithResult(
-                context -> tokenStore.fetchToken(name, segmentId, context)
-        );
+    private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId, @Nullable WorkPackage workPackage) {
+        // Commit the aborted package's final progress BEFORE fetching the token, so the merged segment inherits the
+        // freshly-reconciled position rather than a stale stored token.
+        return releaseProgressOf(workPackage, unitOfWorkFactory)
+                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
+                        context -> tokenStore.fetchToken(name, segmentId, context)
+                ));
     }
 
-    private Boolean mergeSegments(Segment thisSegment, TrackingToken thisToken,
-                                  Segment thatSegment, TrackingToken thatToken) {
-        try {
+    private CompletableFuture<Boolean> mergeSegments(Segment thisSegment, TrackingToken thisToken,
+                                                     Segment thatSegment, TrackingToken thatToken) {
+        return unitOfWorkFactory.create().executeWithResult(context -> {
             Segment mergedSegment = thisSegment.mergedWith(thatSegment);
             TrackingToken mergedToken = thatSegment.getSegmentId() < thisSegment.getSegmentId()
                     ? MergedTrackingToken.merged(thatToken, thisToken)
                     : MergedTrackingToken.merged(thisToken, thatToken);
-
-            joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
-                    context -> tokenStore.deleteToken(name, thisSegment.getSegmentId(), context)
-                                         .thenCompose(result -> tokenStore.deleteToken(name, thatSegment.getSegmentId(), context))
-                                         .thenCompose(result -> tokenStore.initializeSegment(
-                                             mergedToken,
-                                             name,
-                                             mergedSegment,
-                                             context
-                                         ))
-                                         .thenCompose(result -> tokenStore.releaseClaim(
-                                             name,
-                                             mergedSegment.getSegmentId(),
-                                             context
-                                         ))
-            ));
-
-            logger.info("Processor [{}] successfully merged {} with {} into {}.",
-                        name, thisSegment, thatSegment, mergedSegment);
-        } finally {
-            // Remove both segments from the releases deadlines to allow the Coordinator to claim the merged segment
-            releasesDeadlines.remove(thisSegment.getSegmentId());
-            releasesDeadlines.remove(thatSegment.getSegmentId());
-        }
-        return true;
+            return tokenStore.deleteToken(name, thisSegment.getSegmentId(), context)
+                             .thenCompose(result -> tokenStore.deleteToken(name, thatSegment.getSegmentId(), context))
+                             .thenCompose(result -> tokenStore.initializeSegment(mergedToken, name, mergedSegment, context))
+                             .thenApply(unused -> {
+                                 logger.info("Processor [{}] successfully merged {} with {} into {}.",
+                                             name, thisSegment, thatSegment, mergedSegment);
+                                 return true;
+                             });
+        });
     }
 
     @Override

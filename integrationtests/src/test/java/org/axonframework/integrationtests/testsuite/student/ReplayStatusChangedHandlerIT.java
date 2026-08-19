@@ -162,7 +162,7 @@ public abstract class ReplayStatusChangedHandlerIT extends AbstractStudentIT {
                 ))
                 .customized(
                         (config, psep) -> psep.initialSegmentCount(2)
-                                              .batchSize(1)
+                                              .batchSize(3)
                 );
         return configurer.messaging(
                 messaging -> messaging.eventProcessing(

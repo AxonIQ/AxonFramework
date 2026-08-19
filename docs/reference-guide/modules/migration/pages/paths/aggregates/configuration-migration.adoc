@@ -9,14 +9,7 @@ The configuration of entities now uses the `EventSourcedEntityModule` instead of
 
 [source,java]
 ----
-// Axon Framework 5
-
-
-public void configure(EventSourcingConfigurer configurer) {
-    configurer.modelling().registerEventSourcedEntity(
-        EventSourcedEntityModule.autodetected(String.class, GiftCard.class)
-    );
-}
+include::example$migration/paths/aggregates/configurationmigration/AxonConfig.java[tag=register-entity-module,indent=0]
 ----
 
 One notable change in this configuration is that the identifier type of the entity must be explicitly provided.
@@ -33,7 +26,7 @@ Most significant, the `@Aggregate` annotation is replaced by `@EventSourced`. Th
 [#event-sourced-instead-of-aggregate-spring]
 === `@EventSourced` instead of `@Aggregate` (Spring)
 
-[source,java]
+[source,java,role=axon4]
 ----
 // Axon Framework 4
 @Aggregate
@@ -42,17 +35,20 @@ public class GiftCard {
     private String giftCardId;
     // ...
 }
+----
 
-// Axon Framework 5
-@EventSourced
-public class GiftCard {
-    private String giftCardId;
-    // ...
-}
+[source,java]
+----
+include::example$migration/paths/aggregates/configurationmigration/springboot/GiftCard.java[tag=event-sourced-spring,indent=0]
 ----
 
 Also, `@AggregateMember` is replaced by `@EntityMember` for child entities within an aggregate, see the xref:migration:paths/aggregates/multi-entity-migration.adoc[multi-entity migration] section for more details.
 
+== See also
+
+- xref:commands:entities/event-sourced-entity.adoc[Event-Sourced Entities]: reference guide for `@EventSourced`, `EventSourcedEntityModule`, and snapshot configuration in Axon Framework 5
+- xref:commands:entities/index.adoc[Entities]: overview of all entity patterns and when to use each
+
 [IMPORTANT]
 .
-The `@EventSourced` annotation in Axon Framework 5/Spring Boot is the configuration replacement for `@Aggregate`, but not a fully functional/feature replacement, as attributes you may have used in AF4 (like caching, snapshotting, ...) are no longer supported. xref:migration:paths/index.adoc#missing-a-migration-path[Contact us] if you require these use-cases.
+The `@EventSourced` annotation in Axon Framework 5/Spring Boot is the configuration replacement for `@Aggregate`, but not a fully functional/feature replacement, as attributes you may have used in AF4 (like caching, snapshotting, ...) are no longer supported or available in a different way. xref:migration:paths/index.adoc#missing-a-migration-path[Contact us] if you require these use-cases.

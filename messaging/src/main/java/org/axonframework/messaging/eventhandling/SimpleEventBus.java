@@ -16,13 +16,13 @@
 
 package org.axonframework.messaging.eventhandling;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.Registration;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,8 +36,9 @@ import java.util.function.BiFunction;
  * This event bus supports two publication modes depending on whether a {@link ProcessingContext} is provided:
  * <ul>
  *     <li><b>Immediate publication (context is {@code null}):</b> Events are published directly to all subscribers
- *     without any queueing or lifecycle management. This mode is useful for fire-and-forget event publication
- *     outside of any transactional boundary.</li>
+ *     without any queueing or lifecycle management, outside any transactional boundary. The returned
+ *     {@link CompletableFuture} completes once all subscribers have finished handling the events, and completes
+ *     exceptionally when a subscriber fails.</li>
  *     <li><b>Deferred publication (context is provided):</b> Events are queued and published during the
  *     {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}
  *     phase of the processing lifecycle. This ensures that events are only published if the processing context
@@ -106,9 +107,8 @@ public class SimpleEventBus implements EventBus {
     @Override
     public CompletableFuture<Void> publish(@Nullable ProcessingContext context, List<? extends EventMessage> events) {
         if (context == null) {
-            // No processing context, publish immediately
-            eventSubscribers.notifySubscribers(events, context);
-            return FutureUtils.emptyCompletedFuture();
+            // No processing context, publish immediately and propagate subscriber completion to the publisher.
+            return eventSubscribers.notifySubscribers(events, context);
         }
 
         registerEventPublishingHooks(context, events);
@@ -170,7 +170,7 @@ public class SimpleEventBus implements EventBus {
             futures.add(processor.apply(newMessages, context));
         }
 
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+        return FutureUtils.allOrEmpty(futures);
     }
 
     @Override

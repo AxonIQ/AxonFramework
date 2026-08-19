@@ -119,10 +119,4 @@ public interface ComponentDescriptor {
         describeProperty("delegate", delegate);
     }
 
-    /**
-     * Provides the description of {@code this ComponentDescriptor}.
-     *
-     * @return The description result of {@code this ComponentDescriptor}.
-     */
-    String describe();
 }

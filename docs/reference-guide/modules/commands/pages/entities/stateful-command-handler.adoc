@@ -1,0 +1,214 @@
+= Stateful Command Handlers
+:navtitle: Stateful command handlers
+
+A stateful command handler keeps command handling logic in a dedicated class, separate from the entity that holds state.
+The entity is loaded automatically by Axon and injected as a parameter via `@InjectEntity`.
+The injected entity can still be event sourced, as shown xref:commands:entities/event-sourced-entity.adoc[here], but without the command handlers inside the event-sourced entity class.
+
+This separates two concerns:
+
+* The **entity** maintains state fields and event sourcing handlers.
+* The **stateful command handler** contains decision logic, validates the command against entity state, and appends events.
+
+== Defining a stateful command handler
+
+Declare command handlers in a regular class.
+Annotate entity parameters with `@InjectEntity` to tell Axon to load the correct entity instance before the handler is invoked.
+Axon identifies which instance to load using the `@TargetEntityId`-annotated field on the command payload.
+
+The entity used in this example tracks the basic state of a university course:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/Course.java[tag=course-entity,indent=0]
+----
+
+The stateful command handler is a plain class.
+Its methods receive the `Course` entity as a parameter whenever prior state is needed:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/CourseCommandHandler.java[tag=stateful-command-handler,indent=0]
+----
+
+<1> Creational handlers do not receive an entity parameter; the course does not yet exist and is created when `CourseCreated` is published.
+
+<2> `@InjectEntity` tells Axon to load the `Course` entity before invoking this handler.
+By default, the entity ID is read from the `@TargetEntityId`-annotated field on the command payload; see <<resolve_entity_id>> for the other options.
+
+<3> The handler reads entity state to make a decision.
+No event is appended if the name has not changed; an idempotent pattern common in this style.
+
+The commands used in this example:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/CourseCommands.java[tags=course-commands-import;course-commands,indent=0]
+----
+
+For how to define the entity itself (state fields, event sourcing handlers, and configuration), see xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities].
+
+[#resolve_entity_id]
+== Resolving the entity identifier
+
+`@InjectEntity` needs an identifier to look up the entity.
+The annotation offers two attributes for controlling how that identifier is resolved from the incoming command:
+
+* **`idProperty`**: name a field on the command payload directly: `@InjectEntity(idProperty = "courseId")`.
+Useful when the command targets multiple entities (see <<inject_multiple_entities>>) or when the relevant field is not marked with `@TargetEntityId`.
+* **`idResolver`**: supply a class implementing `EntityIdResolver` for custom extraction logic, useful when the identifier is computed from multiple fields or requires lookup logic.
+
+Without either attribute set, Axon falls back to the default resolver, which reads the field marked with `@TargetEntityId` on the command payload (the form used in the example above).
+
+[#missing_injected_entity]
+== Handling a missing entity
+
+By default, an `@InjectEntity` parameter requires the entity to exist.
+If no entity can be found for the resolved identifier, Axon throws an `EntityNotFoundException`, failing the command instead of invoking the handler.
+
+Note that this existence check applies regardless of how the entity's `@EntityCreator` (applicable to event-sourced entities **only**, as detailed further xref:commands:entities/entity-creator.adoc[here]) constructs it.
+Even a no-arg or identifier-based creator, which do not need a preceding event to produce an instance, only create said entity if that instance actually exists.
+The same holds for `ManagedEntity.entity()`, for which the behavior is further explained xref:inject_managed_entity[here].
+
+Annotate the parameter with **any** annotation matching `@Nullable` to opt out having the `EntityNotFoundException` thrown whenever the entity does not exist.
+In doing so, you can effectively opt **into** create-or-update semantics instead.
+A `@Nullable @InjectEntity` parameter resolves to `null` when the entity does not exist yet, allowing the handler to decide whether to create it:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/NullableGiftCardHandler.java[tag=nullable-entity-handler,indent=0]
+----
+
+Declaring the parameter as `Optional<GiftCard>` achieves the same outcome without needing a `@Nullable` annotation:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/OptionalGiftCardHandler.java[tag=optional-entity-handler,indent=0]
+----
+
+In Kotlin, the nullable type carries this information on its own, so no annotation is required:
+
+[source,kotlin]
+----
+@CommandHandler
+fun handle(command: IssueCard,
+           @InjectEntity card: GiftCard?,
+           appender: EventAppender) {
+    if (card == null) {
+        appender.append(CardIssued(command.cardId, command.amount))
+    } else {
+        throw IllegalStateException("GiftCard for id [${command.cardId}] already exists")
+    }
+}
+----
+
+A non-null `GiftCard` keeps the default behavior of failing with an `EntityNotFoundException`.
+This requires the `axon-kotlin` extension on the classpath, which teaches Axon to read Kotlin's declared nullability.
+Without it, a `GiftCard?` parameter is indistinguishable from a non-null one, so the command fails with an `EntityNotFoundException` instead of the handler receiving `null`.
+
+[NOTE]
+====
+The Kotlin type wins over a `@Nullable` annotation when the two disagree.
+A parameter declared as a non-null `GiftCard` fails even when annotated `@Nullable`, because Kotlin already rejects `null` for it at the call boundary.
+Write `GiftCard?` to accept a missing entity.
+====
+
+[#inject_managed_entity]
+=== Working with a ManagedEntity instead
+
+Everything above concerns the entity type itself.
+Declare the parameter as `ManagedEntity<ID, GiftCard>` instead, and none of it applies: Axon always gives you the wrapper exactly as resolved, whether or not it carries a `@Nullable` annotation.
+Only `ManagedEntity.entity()` can be `null`.The wrapper itself never is:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/ManagedEntityGiftCardHandler.java[tag=managed-entity-handler,indent=0]
+----
+
+Because the wrapper itself is never replaced, it keeps working after the handler appends an event.
+An event-sourced entity stays subscribed to live updates, so appending an event evolves that same `ManagedEntity` in place.
+That lets a handler make a second decision, later in the same method, based on state an event earlier in that method just established:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/GiftCardCreateIfMissingHandler.java[tag=managed-entity-create-if-missing-handler,indent=0]
+----
+
+`Optional<ManagedEntity<ID, GiftCard>>` is not a valid parameter type: since the wrapper is never `null`, wrapping it in an `Optional` would never be empty, so Axon rejects such a parameter when configuring the handler.
+
+[#inject_multiple_entities]
+== Injecting multiple entities
+
+A single handler method can receive more than one entity.
+Use `idProperty` to specify which field of the command payload identifies each entity:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/SubscribeStudentToCourseHandler.java[tag=injecting-multiple-entities,indent=0]
+----
+
+<1> `idProperty = "courseId"` tells Axon to load the `Course` entity using the `courseId` field of the command.
+
+<2> `idProperty = "studentId"` tells Axon to load the `Student` entity using the `studentId` field of the command.
+
+The command in this example has no `@TargetEntityId` because there is no single primary entity; the handler works across two:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/SubscribeStudentToCourse.java[tag=subscribe-student-to-course,indent=0]
+----
+
+== Vertical slice architecture
+
+Stateful command handlers are the natural fit for https://www.jimmybogard.com/vertical-slice-architecture/[Vertical Slice Architecture] in Axon Framework.
+
+In Vertical Slice Architecture, you organize code around use cases rather than technical layers.
+Each slice owns everything needed to fulfill one request: the command, the handler, the entity state it reads, and the events it appends.
+A slice cuts vertically through the application stack (from the incoming command down to the event store) rather than grouping code horizontally by layers such as controllers, services, and repositories.
+
+=== From event model to code
+
+Event Storming and Event Modeling produce a sequence of commands, events, and the entities they act on.
+Each command-event pair on that model is a slice.
+Axon lets you translate that model directly into code: one class per slice, where the class name reflects the use case.
+
+For a university faculty system, the Event Model maps to code like this:
+
+[cols="1,1,1", options="header"]
+|===
+| Command | Event | Handler class
+
+| `CreateCourse`
+| `CourseCreated`
+| `CreateCourseHandler`
+
+| `RenameCourse`
+| `CourseRenamed`
+| `RenameCourseHandler`
+
+| `ChangeCourseCapacity`
+| `CourseCapacityChanged`
+| `ChangeCourseCapacityHandler`
+
+| `EnrollStudentInFaculty`
+| `StudentEnrolledInFaculty`
+| `EnrollStudentInFacultyHandler`
+
+| `SubscribeStudentToCourse`
+| `StudentSubscribedToCourse`
+| `SubscribeStudentToCourseHandler`
+|===
+
+Each handler class contains exactly one `@CommandHandler` method, loads the entity state it needs via `@InjectEntity`, and appends the events that result from the decision:
+
+[source,java]
+----
+include::example$commands/entities/statefulcommandhandler/RenameCourseHandler.java[tag=vertical-slice-handler,indent=0]
+----
+
+The result is a codebase where finding the code for a use case is trivial: look for the handler class named after the command.
+
+* **Navigability**: each use case lives in one place. No need to trace through service layers to find where a command is processed.
+* **Testability**: a handler class with a single method is straightforward to test in isolation, with a stub or mock entity.
+* **Parallel development**: slices are independent. Multiple developers can work on different commands without touching the same files.
+* **Alignment with the domain model**: the code structure mirrors the Event Model, keeping implementation and design in sync.

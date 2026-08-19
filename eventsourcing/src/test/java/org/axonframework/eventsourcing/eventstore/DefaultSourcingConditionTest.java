@@ -19,6 +19,8 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.*;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -35,15 +37,15 @@ class DefaultSourcingConditionTest {
     void throwsExceptionWhenConstructingWithNullEventCriteria() {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class,
-                     () -> new DefaultSourcingCondition(Position.START, null));
+                     () -> new DefaultSourcingCondition(new SourcingStrategy.Absolute(Position.START), null));
     }
 
     @Test
     void combineUsesTheSmallestStartValue() {
         GlobalIndexPosition position1 = new GlobalIndexPosition(10);
         GlobalIndexPosition position2 = new GlobalIndexPosition(20);
-        SourcingCondition sc1 = new DefaultSourcingCondition(position1, TEST_CRITERIA);
-        SourcingCondition sc2 = new DefaultSourcingCondition(position2, TEST_CRITERIA);
+        SourcingCondition sc1 = new DefaultSourcingCondition(new SourcingStrategy.Absolute(position1), TEST_CRITERIA);
+        SourcingCondition sc2 = new DefaultSourcingCondition(new SourcingStrategy.Absolute(position2), TEST_CRITERIA);
 
         SourcingCondition result1 = sc1.or(sc2);
         SourcingCondition result2 = sc2.or(sc1);
@@ -55,10 +57,36 @@ class DefaultSourcingConditionTest {
     }
 
     @Test
+    void withCriteriaReplacesTheExistingCriteriaPreservingStrategy() {
+        // given a condition with a sourcing strategy and a replacement criteria
+        SourcingStrategy strategy = new SourcingStrategy.Absolute(new GlobalIndexPosition(10));
+        SourcingCondition testSubject = new DefaultSourcingCondition(strategy, TEST_CRITERIA);
+        EventCriteria replacement = EventCriteria.havingTags("other-key", "other-value");
+
+        // when the criteria is replaced
+        SourcingCondition result = testSubject.withCriteria(replacement);
+
+        // then the strategy is preserved and only the replacement criteria remains (the original is dropped)
+        assertEquals(strategy, result.strategy());
+        assertEquals(Set.of(replacement), result.criteria().flatten());
+    }
+
+    @Test
+    void withCriteriaThrowsExceptionForNullCriteria() {
+        // given a condition with an absolute start position
+        SourcingCondition testSubject =
+                new DefaultSourcingCondition(new SourcingStrategy.Absolute(Position.START), TEST_CRITERIA);
+
+        // when replacing with null criteria, then a NullPointerException is raised
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class, () -> testSubject.withCriteria(null));
+    }
+
+    @Test
     void combineWithStandardPositionUsesTheSmallestStartValue() {
         GlobalIndexPosition position = new GlobalIndexPosition(10);
-        SourcingCondition sc1 = new DefaultSourcingCondition(Position.START, TEST_CRITERIA);
-        SourcingCondition sc2 = new DefaultSourcingCondition(position, TEST_CRITERIA);
+        SourcingCondition sc1 = new DefaultSourcingCondition(new SourcingStrategy.Absolute(Position.START), TEST_CRITERIA);
+        SourcingCondition sc2 = new DefaultSourcingCondition(new SourcingStrategy.Absolute(position), TEST_CRITERIA);
 
         SourcingCondition result1 = sc1.or(sc2);
         SourcingCondition result2 = sc2.or(sc1);

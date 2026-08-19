@@ -99,8 +99,8 @@ public class InterceptingEventSink implements EventSink {
             this.interceptorChain = new DefaultMessageDispatchInterceptorChain<>(interceptors);
         }
 
-        private CompletableFuture<Void> interceptAndPublish(
-                List<? extends EventMessage> events,
+        private <M extends EventMessage> CompletableFuture<Void> interceptAndPublish(
+                List<M> events,
                 @Nullable ProcessingContext context
         ) {
 
@@ -108,23 +108,12 @@ public class InterceptingEventSink implements EventSink {
              * Captures events in a batch. A fast path for when there
              * is only a single event here is not possible because the
              * interceptor may produce more than one event.
-             *
-             * Note: this could benefit from having a flatMap method
-             * on MessageStream.
              */
 
-            List<EventMessage> interceptedEvents = new ArrayList<>();
-            MessageStream<EventMessage> resultStream = MessageStream.empty();
-
-            for (EventMessage event : events) {
-                resultStream = resultStream.concatWith(interceptorChain.proceed(event, context).cast());
-            }
-
-            return resultStream
-                .onNext(entry -> interceptedEvents.add(entry.message()))
-                .ignoreEntries()
-                .asCompletableFuture()
-                .thenCompose(v -> delegate.publish(context, interceptedEvents));
+            return MessageStream.fromIterable(events)
+                .flatMap(entry -> interceptorChain.proceed(entry.message(), context).<M>cast())
+                .collect(ArrayList<M>::new, List::add)
+                .thenCompose(interceptedEvents -> delegate.publish(context, interceptedEvents));
         }
     }
 }

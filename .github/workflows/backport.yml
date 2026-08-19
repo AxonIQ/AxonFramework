@@ -1,0 +1,193 @@
+name: Axon Framework (Backport)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to backport'
+        required: true
+        type: number
+      target_branch:
+        description: 'Target branch to backport to'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  backport:
+    name: Backport PR
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/backport') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse inputs
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "branch=${{ inputs.target_branch }}" >> $GITHUB_OUTPUT
+            echo "pr_number=${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+          else
+            branch=$(echo "$COMMENT_BODY" | awk 'NR==1{print $2}')
+            echo "branch=$branch" >> $GITHUB_OUTPUT
+            echo "pr_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Backport
+        id: backport
+        uses: korthout/backport-action@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          source_pr_number: ${{ steps.parse.outputs.pr_number }}
+          target_branches: ${{ steps.parse.outputs.branch }}
+          add_author_as_assignee: true
+          add_labels: 'Type: Port'
+          copy_labels_pattern: '.*'
+
+      - name: Configure backport PRs
+        if: steps.backport.outputs.created_pull_numbers != ''
+        env:
+          GH_TOKEN: ${{ secrets.ADD_PROJECT_TOKEN }}
+          GITHUB_REST_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ steps.parse.outputs.branch }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          CREATED_PRS: ${{ steps.backport.outputs.created_pull_numbers }}
+        run: |
+          echo "Looking up project node ID for project 25 in org $REPO_OWNER..."
+          PROJECT_ID=$(gh api graphql \
+            -f query='query($org: String!, $number: Int!) {
+              organization(login: $org) { projectV2(number: $number) { id } }
+            }' \
+            -f org="$REPO_OWNER" \
+            -F number=${{ vars.PROJECT_NUMBER }} \
+            --jq '.data.organization.projectV2.id')
+          echo "Project ID: $PROJECT_ID"
+
+          echo "Looking up Status field and 'In Review' option..."
+          STATUS_INFO=$(gh api graphql \
+            -f query='query($projectId: ID!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  fields(first: 20) {
+                    nodes {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                        options { id name }
+                      }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f projectId="$PROJECT_ID")
+
+          STATUS_FIELD_ID=$(echo "$STATUS_INFO" | jq -r '
+            .data.node.fields.nodes[]
+            | select(.name == "Status")
+            | .id // empty')
+          IN_REVIEW_OPTION_ID=$(echo "$STATUS_INFO" | jq -r '
+            .data.node.fields.nodes[]
+            | select(.name == "Status")
+            | .options[]
+            | select(.name == "In Review")
+            | .id // empty')
+          echo "Status field ID: ${STATUS_FIELD_ID:-not found}"
+          echo "Available Status options: $(echo "$STATUS_INFO" | jq -r '.data.node.fields.nodes[] | select(.name == "Status") | .options[].name' | tr '\n' ', ')"
+          echo "'In Review' option ID: ${IN_REVIEW_OPTION_ID:-not found}"
+
+          compute_milestone() {
+            local prefix="${TARGET_BRANCH%x}"
+            echo "Computing milestone from branch $TARGET_BRANCH (prefix: $prefix)..." >&2
+            local max_patch
+            max_patch=$(gh api "/repos/$REPO/tags" --paginate --jq '.[].name' \
+              | grep "^${prefix}[0-9]" \
+              | sed "s/^${prefix}//" \
+              | grep '^[0-9]*$' \
+              | sort -n \
+              | tail -1) || return 0
+            [ -n "$max_patch" ] || { echo "No matching tags found for prefix $prefix" >&2; return 0; }
+            echo "Highest existing patch version: $max_patch" >&2
+            local next_patch=$((max_patch + 1))
+            local bare_version
+            bare_version=$(echo "$prefix" | sed 's/^[^0-9]*//')"$next_patch"
+            local milestone_title="Release $bare_version"
+            echo "Target milestone: $milestone_title" >&2
+            local milestone_number
+            milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
+              -f state=all --paginate --jq ".[] | select(.title == \"$milestone_title\") | .number") || return 0
+            if [ -z "$milestone_number" ]; then
+              echo "Milestone not found, creating..." >&2
+              milestone_number=$(GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/milestones" \
+                -X POST -f title="$milestone_title" \
+                --jq '.number') || return 0
+            fi
+            echo "Milestone number: $milestone_number" >&2
+            echo "$milestone_number"
+          }
+
+          MILESTONE_NUMBER=$(compute_milestone) || MILESTONE_NUMBER=""
+          [ -n "$MILESTONE_NUMBER" ] && echo "Milestone: $MILESTONE_NUMBER" || echo "Milestone could not be determined, skipping"
+
+          for pr in $CREATED_PRS; do
+            echo "Configuring backport PR #$pr..."
+
+            PR_ID=$(gh api graphql \
+              -f query='query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) { pullRequest(number: $number) { id } }
+              }' \
+              -f owner="$REPO_OWNER" \
+              -f repo="${REPO#*/}" \
+              -F number=$pr \
+              --jq '.data.repository.pullRequest.id')
+            echo "PR node ID: $PR_ID"
+
+            echo "Adding PR #$pr to project..."
+            ITEM_ID=$(gh api graphql \
+              -f query='mutation($project: ID!, $pr: ID!) {
+                addProjectV2ItemById(input: {projectId: $project, contentId: $pr}) { item { id } }
+              }' \
+              -f project="$PROJECT_ID" \
+              -f pr="$PR_ID" \
+              --jq '.data.addProjectV2ItemById.item.id')
+            echo "Project item ID: $ITEM_ID"
+
+            if [ -n "$STATUS_FIELD_ID" ] && [ -n "$IN_REVIEW_OPTION_ID" ] && [ -n "$ITEM_ID" ]; then
+              echo "Setting status to 'In Review'..."
+              gh api graphql \
+                -f query='mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $project
+                    itemId: $item
+                    fieldId: $field
+                    value: { singleSelectOptionId: $option }
+                  }) { projectV2Item { id } }
+                }' \
+                -f project="$PROJECT_ID" \
+                -f item="$ITEM_ID" \
+                -f field="$STATUS_FIELD_ID" \
+                -f option="$IN_REVIEW_OPTION_ID" || true
+            else
+              echo "Skipping status update (missing field or option ID)"
+            fi
+
+            if [ -n "$MILESTONE_NUMBER" ]; then
+              echo "Setting milestone $MILESTONE_NUMBER on PR #$pr..."
+              GH_TOKEN="$GITHUB_REST_TOKEN" gh api "/repos/$REPO/issues/$pr" \
+                -X PATCH -F milestone="$MILESTONE_NUMBER" || true
+            fi
+          done
+        continue-on-error: true

@@ -18,13 +18,15 @@ package org.axonframework.integrationtests.testsuite.administration;
 
 import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.AbstractIntegrationTest;
+import org.axonframework.integrationtests.testsuite.AbstractIT;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.junit.jupiter.api.*;
@@ -37,7 +39,7 @@ import java.util.stream.Collectors;
  * Test suite for verifying polymorphic behavior of entities. Can be implemented by different test classes that verify
  * different ways of building the {@link org.axonframework.modelling.entity.EntityCommandHandlingComponent}.
  */
-public abstract class AbstractAdministrationIT extends AbstractIntegrationTest {
+public abstract class AbstractAdministrationIT extends AbstractIT {
 
     private final CreateEmployee CREATE_EMPLOYEE_1_COMMAND = new CreateEmployee(
             new PersonIdentifier(PersonType.EMPLOYEE, createId("employee")),
@@ -77,19 +79,16 @@ public abstract class AbstractAdministrationIT extends AbstractIntegrationTest {
     void canNotCreateDuplicateEmployee() {
         sendCommand(CREATE_EMPLOYEE_1_COMMAND);
 
-        assertThrowsExceptionWithText("existing entity", () -> {
-            sendCommand(CREATE_EMPLOYEE_1_COMMAND);
-        });
+        assertThrowsExceptionWithText("AppendEventsTransactionRejectedException",
+                                      () -> sendCommand(CREATE_EMPLOYEE_1_COMMAND));
     }
-
 
     @Test
     void canNotCreateDuplicateCustomer() {
         sendCommand(CREATE_CUSTOMER_1_COMMAND);
 
-        assertThrowsExceptionWithText("existing entity", () -> {
-            sendCommand(CREATE_CUSTOMER_1_COMMAND);
-        });
+        assertThrowsExceptionWithText("AppendEventsTransactionRejectedException",
+                                      () -> sendCommand(CREATE_CUSTOMER_1_COMMAND));
     }
 
     @Test
@@ -151,17 +150,39 @@ public abstract class AbstractAdministrationIT extends AbstractIntegrationTest {
         sendCommand(new AssignTaskCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "task-4", "Task " + 4));
     }
 
+    @Test
+    void canGrantAndRevokeCertificationsForEmployee() {
+        sendCommand(CREATE_EMPLOYEE_1_COMMAND);
+
+        sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "Axon Pro", "Axoniq"));
+        sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA", "Amazon"));
+
+        assertThrowsExceptionWithText("Employee already holds certification AWS-SAA", () -> {
+            sendCommand(new GrantCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA", "Amazon"));
+        });
+
+        sendCommand(new RevokeCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA"));
+
+        assertThrowsExceptionWithText("Certification is already revoked", () -> {
+            sendCommand(new RevokeCertificationCommand(CREATE_EMPLOYEE_1_COMMAND.identifier(), "AWS-SAA"));
+        });
+    }
+
 
     private void assertThrowsExceptionWithText(String expectedMessage, Runnable runnable) {
         try {
             runnable.run();
         } catch (CompletionException e) {
-            Assertions.assertTrue(e.getCause().getMessage().toLowerCase().contains(expectedMessage.toLowerCase()),
-                                  () -> "Expected message to contain: " + expectedMessage + ", but got: " + e.getCause()
-                                                                                                             .getMessage()
-                                          + "\n" + Arrays.stream(
-                                                                 e.getCause().getStackTrace()).map(StackTraceElement::toString)
-                                                         .collect(Collectors.joining("\n")));
+            Throwable cause = e.getCause();
+            String matchTarget = cause.getClass().getSimpleName() + ": " + cause.getMessage();
+            Assertions.assertTrue(
+                    matchTarget.toLowerCase().contains(expectedMessage.toLowerCase()),
+                    () -> "Expected message to contain: " + expectedMessage
+                            + ", but got: " + matchTarget + "\n"
+                            + Arrays.stream(cause.getStackTrace())
+                                    .map(StackTraceElement::toString)
+                                    .collect(Collectors.joining("\n"))
+            );
             return;
         } catch (Exception e) {
             Assertions.fail("Expected CompletionException, but got: " + e.getClass().getSimpleName());

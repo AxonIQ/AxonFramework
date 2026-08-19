@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.child;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -41,7 +42,9 @@ public class FieldChildEntityFieldDefinition<P, F> implements ChildEntityFieldDe
     private final Field field;
     private final Class<P> parentClass;
     private final String fieldName;
+    @Nullable
     private Method optionalGetter;
+    @Nullable
     private Method optionalSetter;
 
     /**
@@ -69,12 +72,15 @@ public class FieldChildEntityFieldDefinition<P, F> implements ChildEntityFieldDe
     }
 
     /**
-     * Detects the optional getter for the given field. It will look for a method with the same name as the field, or a
-     * method with the name "get" + the field name.
+     * Detects the optional getter for the given field.
+     * <p>
+     * It will look for a method with the same name as the field, or a method with the name "get" + the field name, as
+     * well as matching the return type to the field type.
      */
     private void detectOptionalGetter(Class<P> parentClass, Field field) {
         this.optionalGetter = StreamSupport.stream(ReflectionUtils.methodsOf(parentClass).spliterator(), false)
                                            .filter(m -> m.getParameterCount() == 0)
+                                           .filter(m -> field.getType().isAssignableFrom(m.getReturnType()))
                                            .filter(m -> m.getName().equals(field.getName())
                                                    || m.getName().equals("get" + capitalize(field.getName())))
                                            .findFirst()
@@ -85,12 +91,15 @@ public class FieldChildEntityFieldDefinition<P, F> implements ChildEntityFieldDe
     }
 
     /**
-     * Detects the optional setter for the given field. It will look for a method with the same name as the field, the
-     * name "set" + the field name, or the name "evolve" + the field name.
+     * Detects the optional setter for the given field.
+     * <p>
+     * It will look for a method with the same name as the field, the name "set" + the field name, or the name "evolve"
+     * + the field name, as well as matching the field type against the parameter type.
      */
     private void detectOptionalSetter(Class<P> parentClass, Field field) {
         this.optionalSetter = StreamSupport.stream(ReflectionUtils.methodsOf(parentClass).spliterator(), false)
                                            .filter(m -> m.getParameterCount() == 1)
+                                           .filter(m -> m.getParameterTypes()[0].isAssignableFrom(field.getType()))
                                            .filter(m -> m.getName().equals(field.getName())
                                                    || m.getName().equals("set" + capitalize(field.getName()))
                                                    || m.getName().equals("evolve" + capitalize(field.getName())))

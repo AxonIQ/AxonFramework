@@ -62,7 +62,8 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 import static java.util.Objects.requireNonNull;
-import static org.axonframework.messaging.core.configuration.reflection.ParameterResolverFactoryUtils.registerToComponentRegistry;
+import static org.axonframework.messaging.core.configuration.reflection.ParameterResolverFactoryUtils
+        .registerToComponentRegistry;
 
 /**
  * The messaging {@link ApplicationConfigurer} of Axon Framework's configuration API.

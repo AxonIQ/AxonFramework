@@ -36,6 +36,8 @@ public abstract class ComponentDescriptorTestSuite {
 
     abstract ComponentDescriptor testSubject();
 
+    abstract String describeAsString(ComponentDescriptor testSubject);
+
     @BeforeEach
     void setUp() {
         testSubject = testSubject();
@@ -51,7 +53,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullString", nullString);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullString(result);
@@ -64,7 +66,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullLong", nullLong);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullLong(result);
@@ -77,7 +79,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullBoolean", nullBoolean);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullBoolean(result);
@@ -90,7 +92,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullObject", nullObject);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullObject(result);
@@ -103,7 +105,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullList", nullList);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullList(result);
@@ -116,7 +118,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("nullMap", nullMap);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeNullMap(result);
@@ -144,7 +146,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("testName", "testValue");
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeString(result);
@@ -156,7 +158,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("testName", 42L);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeLong(result);
@@ -168,7 +170,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("testName", true);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeBoolean(result);
@@ -191,7 +193,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("collection", collection);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeCollection(result);
@@ -204,7 +206,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("emptyCollection", emptyCollection);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeEmptyCollection(result);
@@ -222,7 +224,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("components", components);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeCollectionOfDescribableComponentsShouldIncludeTypeAndId(result, component1, component2);
@@ -251,7 +253,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("map", map);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeMap(result);
@@ -264,7 +266,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("emptyMap", emptyMap);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeEmptyMap(result);
@@ -280,7 +282,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("componentMap", map);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeMapWithDescribableComponentsShouldIncludeTypeAndId(result, component1);
@@ -304,7 +306,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("component", component);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeDescribableComponentShouldIncludeTypeAndId(result, component);
@@ -327,7 +329,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("circularRef", component1);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeComponentWithCircularReference(result, component1, component2);
@@ -341,7 +343,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("selfRef", component);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeComponentWithSelfReference(result, component);
@@ -359,7 +361,7 @@ public abstract class ComponentDescriptorTestSuite {
             testSubject.describeProperty("circularRefCollection", components);
 
             // when
-            var result = testSubject.describe();
+            var result = describeAsString(testSubject);
 
             // then
             assertDescribeCollectionWithCircularReferences(result, component1, component2);

@@ -16,126 +16,169 @@
 
 package org.axonframework.extension.springboot;
 
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.extension.spring.config.EventProcessorSettings;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.EnableMBeanExport;
-import org.springframework.jmx.support.RegistrationPolicy;
-import org.springframework.test.context.ContextConfiguration;
-
-import java.util.concurrent.TimeUnit;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.mock.env.MockEnvironment;
+import org.springframework.stereotype.Component;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating how the
- * {@link org.axonframework.extension.springboot.autoconfig.EventProcessingAutoConfiguration} class constructs an
- * {@link EventProcessorSettings.MapWrapper} based on the properties set by the {@link EventProcessorSettings}.
+ * Test class validating how {@link EventProcessorProperties.ProcessorSettings} bound from application properties
+ * describe the {@link TokenStore} of a pooled processor.
  *
- * @author Simon Zambrovski
- * @author Steven van Beelen
+ * @author Stefan Dragisic
  */
 class EventProcessorPropertiesTest {
 
-    @SpringBootTest(classes = MyContext.class)
-    @Nested
-    class LoadDefaultProperties {
+    private static final String PROCESSOR_NAME = "test-processor";
+    private static final String PROCESSOR_PREFIX = "axon.eventhandling.processors[" + PROCESSOR_NAME + "]";
 
-        @Autowired(required = false)
-        private EventProcessorSettings.MapWrapper eventProcessorProperties;
+    @Nested
+    class UnsetTokenStoreProperty {
 
         @Test
-        void constructedMapWrapperOnlyContainsDefaultProperties() {
-            assertThat(eventProcessorProperties).isNotNull();
-            EventProcessorSettings defaultSettings = eventProcessorProperties.settings()
-                                                                             .get(EventProcessorSettings.DEFAULT);
-            assertThat(defaultSettings).isNotNull();
-            assertThat(defaultSettings.processorMode()).isEqualTo(EventProcessorSettings.ProcessorMode.POOLED);
+        void bindingWithoutATokenStorePropertyLeavesTheTokenStoreNameUnset() {
+            // given - an application that configures a processor without naming a token store
+            Environment environment = environmentWith(PROCESSOR_PREFIX + ".mode", "pooled");
+
+            // when
+            EventProcessorSettings settings = EventProcessorProperties.getProcessors(environment).get(PROCESSOR_NAME);
+
+            // then - an unset name is what makes the token store optional while customizing the processor
+            assertThat(settings).isInstanceOf(EventProcessorSettings.PooledEventProcessorSettings.class);
+            assertThat(((EventProcessorSettings.PooledEventProcessorSettings) settings).tokenStore()).isNull();
+        }
+
+        @Test
+        void startsAnApplicationWhoseTokenStoreBeanIsNotNamedTokenStore() {
+            // given - the only TokenStore bean is named "customTokenStore", and no token-store property is set
+            // when / then - the unset name resolves the TokenStore by type instead of demanding a named bean
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class)
+                    .run(context -> assertThat(selectedTokenStore(context.getBean(AxonConfiguration.class)))
+                            .isSameAs(context.getBean("customTokenStore", TokenStore.class)));
+        }
+
+        @Test
+        void prefersTheConventionallyNamedTokenStoreBeanWhenSeveralBeansExist() {
+            // given - two TokenStore beans, one of them named "tokenStore", and no token-store property is set
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class, ConventionalTokenStoreContext.class)
+                    // when / then - the conventional bean name wins over an ambiguous type-level lookup
+                    .run(context -> assertThat(selectedTokenStore(context.getBean(AxonConfiguration.class)))
+                            .isSameAs(context.getBean("tokenStore", TokenStore.class)));
+        }
+
+        @Test
+        void reportsTheLookedForBeanNameWhenNoTokenStoreCanBeResolved() {
+            // given - two TokenStore beans, neither named "tokenStore", and no token-store property is set
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class, SecondUnconventionalTokenStoreContext.class)
+                    // when / then - naming the bean that was looked for is what makes the failure actionable
+                    .run(context -> assertThat(context)
+                            .getFailure()
+                            .hasStackTraceContaining("Could not find a mandatory TokenStore with name 'tokenStore'")
+                            .hasStackTraceContaining("The TokenStore is a hard requirement"));
         }
     }
 
-    @SpringBootTest(
-            classes = MyContext.class,
-            properties = {
-                    "axon.eventhandling.processors[this.is.a.package].mode=subscribing"
-            }
-    )
     @Nested
-    class LoadPropertiesForPackageBasedBinding {
-
-        @Autowired(required = false)
-        private EventProcessorSettings.MapWrapper eventProcessorProperties;
+    class ExplicitlySetTokenStoreProperty {
 
         @Test
-        void constructedMapWrapperContainsDefaultAndCustomProperties() {
-            assertThat(eventProcessorProperties).isNotNull();
-            assertThat(eventProcessorProperties.settings()).containsKeys("this.is.a.package");
-            assertThat(eventProcessorProperties.settings().get("this.is.a.package").processorMode())
-                    .isEqualTo(EventProcessorSettings.ProcessorMode.SUBSCRIBING);
+        void bindingATokenStorePropertyKeepsTheConfiguredName() {
+            // given
+            Environment environment = environmentWith(PROCESSOR_PREFIX + ".mode", "pooled",
+                                                      PROCESSOR_PREFIX + ".token-store", "my-token-store");
+
+            // when
+            EventProcessorSettings settings = EventProcessorProperties.getProcessors(environment).get(PROCESSOR_NAME);
+
+            // then
+            assertThat(((EventProcessorSettings.PooledEventProcessorSettings) settings).tokenStore())
+                    .isEqualTo("my-token-store");
+        }
+
+        @Test
+        void failsToStartAnApplicationNamingAnUnknownTokenStore() {
+            // given / when / then - an explicitly named token store stays mandatory
+            new ApplicationContextRunner()
+                    .withUserConfiguration(TestContext.class)
+                    .withPropertyValues("axon.eventhandling.processors[..default].token-store=unknown-token-store")
+                    .run(context -> assertThat(context).hasFailed());
         }
     }
 
-    @SpringBootTest(
-            classes = MyContext.class,
-            properties = {
-                    "axon.eventhandling.processors.foo.batch-size=1",
-                    "axon.eventhandling.processors.foo.initial-segment-count=2",
-                    "axon.eventhandling.processors.foo.mode=pooled",
-                    "axon.eventhandling.processors.foo.sequencing-policy=sp",
-                    "axon.eventhandling.processors.foo.source=source",
-                    "axon.eventhandling.processors.foo.thread-count=3",
-                    "axon.eventhandling.processors.foo.token-claim-interval=4",
-                    "axon.eventhandling.processors.foo.token-claim-interval-time-unit=SECONDS",
-                    "axon.eventhandling.processors.bar.initial-segment-count=77",
-            }
-    )
-    @Nested
-    class ConfigureProcessorsWithProperties {
-
-        @Autowired(required = false)
-        private EventProcessorSettings.MapWrapper eventProcessorProperties;
-
-        @Test
-        void processorsConfigured() {
-            assertThat(eventProcessorProperties).isNotNull();
-            assertThat(eventProcessorProperties.settings()).containsKeys("foo", "bar");
-            EventProcessorSettings fooSettings = eventProcessorProperties.settings().get("foo");
-            assertThat(fooSettings).isInstanceOf(EventProcessorProperties.ProcessorSettings.class);
-            EventProcessorProperties.ProcessorSettings castedFooSettings =
-                    (EventProcessorProperties.ProcessorSettings) fooSettings;
-            assertThat(castedFooSettings).isNotNull();
-            assertThat(castedFooSettings.batchSize()).isEqualTo(1);
-            assertThat(castedFooSettings.initialSegmentCount()).isEqualTo(2);
-            assertThat(castedFooSettings.processorMode()).isEqualTo(EventProcessorSettings.ProcessorMode.POOLED);
-            assertThat(castedFooSettings.sequencingPolicy()).isEqualTo("sp");
-            assertThat(castedFooSettings.source()).isEqualTo("source");
-            assertThat(castedFooSettings.threadCount()).isEqualTo(3);
-            assertThat(castedFooSettings.getTokenClaimInterval()).isEqualTo(4);
-            assertThat(castedFooSettings.getTokenClaimIntervalTimeUnit()).isEqualTo(TimeUnit.SECONDS);
-
-            EventProcessorProperties.ProcessorSettings defaultSettings = new EventProcessorProperties.ProcessorSettings();
-            EventProcessorSettings barSettings = eventProcessorProperties.settings().get("bar");
-            assertThat(barSettings).isNotNull();
-            assertThat(barSettings).isInstanceOf(EventProcessorProperties.ProcessorSettings.class);
-            EventProcessorProperties.ProcessorSettings castedBarSettings =
-                    (EventProcessorProperties.ProcessorSettings) barSettings;
-            assertThat(castedBarSettings.batchSize()).isEqualTo(defaultSettings.batchSize());
-            assertThat(castedBarSettings.initialSegmentCount()).isEqualTo(77); // the only modified value
-            assertThat(castedBarSettings.getMode()).isEqualTo(defaultSettings.getMode());
-            assertThat(castedBarSettings.sequencingPolicy()).isEqualTo(defaultSettings.sequencingPolicy());
-            assertThat(castedBarSettings.source()).isEqualTo(defaultSettings.source());
-            assertThat(castedBarSettings.threadCount()).isEqualTo(defaultSettings.threadCount());
-            assertThat(castedBarSettings.getTokenClaimInterval()).isEqualTo(defaultSettings.getTokenClaimInterval());
-            assertThat(castedBarSettings.getTokenClaimIntervalTimeUnit()).isEqualTo(defaultSettings.getTokenClaimIntervalTimeUnit());
-        }
+    /**
+     * Returns the {@link TokenStore} the single pooled processor of the application was configured with.
+     */
+    private static TokenStore selectedTokenStore(AxonConfiguration axonConfiguration) {
+        var processorConfigurations =
+                axonConfiguration.getModuleConfigurations()
+                                 .stream()
+                                 .flatMap(module -> module
+                                         .getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)
+                                         .stream())
+                                 .toList();
+        assertThat(processorConfigurations).hasSize(1);
+        return processorConfigurations.getFirst().tokenStore();
     }
 
-    @ContextConfiguration
+    private static Environment environmentWith(String... keysAndValues) {
+        MockEnvironment environment = new MockEnvironment();
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            environment.setProperty(keysAndValues[i], keysAndValues[i + 1]);
+        }
+        return environment;
+    }
+
+    @Configuration
     @EnableAutoConfiguration
-    @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
-    private static class MyContext {
+    static class TestContext {
 
+        @Bean
+        public TokenStore customTokenStore() {
+            return new InMemoryTokenStore();
+        }
+
+        @SuppressWarnings("unused")
+        @Component
+        public static class EventHandlingComponent {
+
+            @SuppressWarnings("unused")
+            @EventHandler
+            public void on(String event) {
+                // a handler is required for a pooled processor to be constructed at all
+            }
+        }
+    }
+
+    @Configuration
+    static class ConventionalTokenStoreContext {
+
+        @Bean
+        public TokenStore tokenStore() {
+            return new InMemoryTokenStore();
+        }
+    }
+
+    @Configuration
+    static class SecondUnconventionalTokenStoreContext {
+
+        @Bean
+        public TokenStore anotherTokenStore() {
+            return new InMemoryTokenStore();
+        }
     }
 }

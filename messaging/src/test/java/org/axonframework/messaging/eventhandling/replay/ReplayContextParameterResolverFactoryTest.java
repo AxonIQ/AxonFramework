@@ -18,13 +18,16 @@ package org.axonframework.messaging.eventhandling.replay;
 
 import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.DelegatingGeneralConverter;
+import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.conversion.TestConverter;
-import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
+import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -33,6 +36,7 @@ import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -125,11 +129,57 @@ class ReplayContextParameterResolverFactoryTest {
         assertThat(handler.eventsMatchingResetContextFilter).containsExactly(2L, 3L);
     }
 
+    @SuppressWarnings("DataFlowIssue")
+    @Test
+    void replayContextIsConvertedFromMapToRecord() {
+        // given
+        Map<String, Object> mapContext = Map.of("sequences", List.of(2L, 3L));
+        var handler = new SomeHandler();
+        var testSubject = new AnnotatedEventHandlingComponent<>(
+                handler,
+                ClasspathParameterResolverFactory.forClass(SomeHandler.class),
+                ClasspathHandlerDefinition.forClass(SomeHandler.class),
+                new AnnotationMessageTypeResolver(),
+                new DelegatingEventConverter(PassThroughConverter.INSTANCE)
+        );
+        var event = new GenericEventMessage(new MessageType(Long.class), 2L);
+        var replayToken = ReplayToken.createReplayToken(
+                new GlobalSequenceTrackingToken(3L),
+                new GlobalSequenceTrackingToken(2L),
+                converter.convert(mapContext, byte[].class)
+        );
+
+        // when
+        testSubject.handle(event, contextWithToken(event, replayToken));
+
+        // then
+        assertThat(handler.receivedLongs).containsExactly(2L);
+        assertThat(handler.receivedResetContexts).hasSize(1);
+        assertThat(handler.receivedResetContexts.getFirst()).isNotNull();
+        assertThat(handler.receivedResetContexts.getFirst().sequences()).containsExactly(2L, 3L);
+    }
+
+    @SuppressWarnings("DataFlowIssue")
+    @Test
+    void conversionExceptionIsThrownWhenConversionFails() {
+        // given
+        String incompatibleContext = "incompatible-string-context";
+        var replayToken = ReplayToken.createReplayToken(
+                new GlobalSequenceTrackingToken(3L),
+                new GlobalSequenceTrackingToken(2L),
+                converter.convert(incompatibleContext, byte[].class)
+        );
+
+        // when/then
+        assertThatThrownBy(() -> ReplayToken.replayContext(replayToken, MyResetContext.class, converter))
+                .isInstanceOf(ConversionException.class);
+    }
+
     private EventMessage longEvent(Long value) {
         return new GenericEventMessage(new MessageType(Long.class), value);
     }
 
-    @SuppressWarnings("SameParameterValue")
+    @SuppressWarnings({"SameParameterValue", "DataFlowIssue"})
     private TrackingToken createTrackingToken(Long position, boolean replay) {
         if (replay) {
             return ReplayToken.createReplayToken(
@@ -141,8 +191,12 @@ class ReplayContextParameterResolverFactoryTest {
         return new GlobalSequenceTrackingToken(position);
     }
 
+    @SuppressWarnings("AccessStaticViaInstance")
     private ProcessingContext contextWithToken(EventMessage event, TrackingToken token) {
-        return StubProcessingContext.withComponent(Converter.class, converter)
+        // Register a General-, Message-, and EventConverter to recreate the normal Converter usage in Axon Framework
+        return StubProcessingContext.withComponent(GeneralConverter.class, new DelegatingGeneralConverter(converter))
+                                    .withComponent(MessageConverter.class, new DelegatingMessageConverter(converter))
+                                    .withComponent(EventConverter.class, new DelegatingEventConverter(converter))
                                     .withMessage(event)
                                     .withResource(TrackingToken.RESOURCE_KEY, token);
     }
@@ -169,61 +223,5 @@ class ReplayContextParameterResolverFactoryTest {
 
     private record MyResetContext(List<Long> sequences) {
 
-    }
-
-    @Nested
-    class WithJacksonConverter {
-
-        private static final JacksonConverter jacksonConverter = new JacksonConverter();
-
-        @Test
-        void replayContextIsConvertedFromMapToRecord() {
-            // given
-            Map<String, Object> mapContext = Map.of("sequences", List.of(2L, 3L));
-            var handler = new SomeHandler();
-            var testSubject = new AnnotatedEventHandlingComponent<>(
-                    handler,
-                    ClasspathParameterResolverFactory.forClass(SomeHandler.class),
-                    ClasspathHandlerDefinition.forClass(SomeHandler.class),
-                    new AnnotationMessageTypeResolver(),
-                    new DelegatingEventConverter(PassThroughConverter.INSTANCE)
-            );
-            var event = new GenericEventMessage(new MessageType(Long.class), 2L);
-            var replayToken = ReplayToken.createReplayToken(
-                    new GlobalSequenceTrackingToken(3L),
-                    new GlobalSequenceTrackingToken(2L),
-                    converter.convert(mapContext, byte[].class)
-            );
-
-            // when
-            testSubject.handle(event, contextWithJacksonConverter(event, replayToken));
-
-            // then
-            assertThat(handler.receivedLongs).containsExactly(2L);
-            assertThat(handler.receivedResetContexts).hasSize(1);
-            assertThat(handler.receivedResetContexts.getFirst()).isNotNull();
-            assertThat(handler.receivedResetContexts.getFirst().sequences()).containsExactly(2L, 3L);
-        }
-
-        @Test
-        void conversionExceptionIsThrownWhenConversionFails() {
-            // given
-            String incompatibleContext = "incompatible-string-context";
-            var replayToken = ReplayToken.createReplayToken(
-                    new GlobalSequenceTrackingToken(3L),
-                    new GlobalSequenceTrackingToken(2L),
-                    converter.convert(incompatibleContext, byte[].class)
-            );
-
-            // when/then
-            assertThatThrownBy(() -> ReplayToken.replayContext(replayToken, MyResetContext.class, jacksonConverter))
-                    .isInstanceOf(ConversionException.class);
-        }
-
-        private ProcessingContext contextWithJacksonConverter(EventMessage event, TrackingToken token) {
-            return StubProcessingContext.withComponent(Converter.class, jacksonConverter)
-                                        .withMessage(event)
-                                        .withResource(TrackingToken.RESOURCE_KEY, token);
-        }
     }
 }

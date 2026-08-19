@@ -80,35 +80,7 @@ The example below shows how this approach is used to define a (1) `PooledStreami
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.eventstreaming.StreamableEventSource;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new AnnotatedEventHandlingClass());
-    }
-}
+include::example$events/eventprocessors/streaming/declarative/AxonConfig.java[tag=declarative-pooled-streaming-processor,indent=0]
 ----
 
 The example above shows how to configure "example-processor" as a Pooled Streaming Event Processor.
@@ -119,48 +91,7 @@ This does not limit to possibility to override defaults, as is shown below:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.eventstreaming.StreamableEventSource;
-
-import java.time.Duration;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer
-                // Set defaults for all pooled streaming processors
-                .defaults((config, processorConfig) -> processorConfig
-                        .eventSource(config.getComponent(StreamableEventSource.class))
-                        .segmentCount(4)
-                        .batchSize(100)
-                        .claimExtensionThreshold(Duration.ofSeconds(5))
-                )
-                // Configure a specific processor
-                .processor(
-                        "example-processor",
-                        config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                        .customize((c, pooledStreamingConfig) -> pooledStreamingConfig
-                                                .segmentCount(8)  // Override default for this processor
-                                        )
-                );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.autodetected(c -> new AnnotatedEventHandlingClass());
-    }
-}
+include::example$events/eventprocessors/streaming/defaults/AxonConfig.java[tag=processor-defaults-with-override,indent=0]
 ----
 
 [#autodetected_config_spring_properties_pooled]
@@ -198,28 +129,7 @@ This approach provides several advantages:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventHandlerSelector;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("example-processor")
-                                       .assigningHandlers(EventHandlerSelector.matchesNamespaceOnType(
-                                               "orders"
-                                       ))
-                                       .customized(config -> config
-                                               .initialSegmentCount(4)
-                                               .batchSize(100)
-                                               .claimExtensionThreshold(5000)
-                                               .tokenClaimInterval(5000)
-                                       );
-    }
-}
+include::example$events/eventprocessors/streaming/springboot/namespaceselector/EventProcessorConfig.java[tag=event-processor-definition-namespace-selector,indent=0]
 ----
 
 The `assigningHandlers` method uses the `EventHandlerSelector` to receive an `EventHandlerDescriptor` that provides access to:
@@ -232,48 +142,19 @@ The `assigningHandlers` method uses the `EventHandlerSelector` to receive an `Ev
 This allows flexible handler selection based on naming conventions, packages, types, or other criteria.
 
 In the example above, we use the convenience `EventHandlerSelector#matchesNamespaceOnType` method that assigns handlers that are annotated with `@Namespace("orders")` to an `PooledStreamingEventProcessor` with the name `"example-processor"`.
-Event Handlers can describe their `@Namespace` on several levels, as described xref:ROOT:spring-boot-integration.adoc#namespace-based-handler-selection[here].
+Event Handlers can describe their `@Namespace` on several levels, as described xref:configuration:spring.adoc#namespace-based-handler-selection[here].
 When the Event Processor name and namespace are identical, you can use the `EventProcessorDefinition.pooledStreamingMatching()` to skip the `assigningHandlers` method automatically:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreamingMatching("orders")
-                                       .customized(config -> config
-                                               .initialSegmentCount(4)
-                                               .batchSize(100)
-                                               .claimExtensionThreshold(5000)
-                                               .tokenClaimInterval(5000)
-                                       );
-    }
-}
+include::example$events/eventprocessors/streaming/springboot/matchingcustomized/EventProcessorConfig.java[tag=event-processor-definition-matching-customized,indent=0]
 ----
 
 Use `notCustomized()` instead of `customized()` when you don't need custom processor settings but still want explicit handler assignment:
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreamingMatching("orders")
-                                       .notCustomized();
-    }
-}
+include::example$events/eventprocessors/streaming/springboot/matchingdefault/EventProcessorConfig.java[tag=event-processor-definition-matching-default,indent=0]
 ----
 
 [IMPORTANT]
@@ -289,6 +170,32 @@ When using multiple configuration approaches:
 To avoid conflicts, ensure each handler is matched by at most one `EventProcessorDefinition` using mutually exclusive selectors.
 ====
 
+[[lifecycle]]
+== Processor lifecycle
+
+The `PooledStreamingEventProcessor` follows the common xref:event-processors/index.adoc#lifecycle[Event Processor lifecycle] contract, with one important addition: `start()` performs initialization work before event processing can begin.
+
+[NOTE]
+====
+In most scenarios, you do not need to invoke `start()` manually.
+Axon Framework invokes `start()` automatically as part of its lifecycle management when the application starts up.
+Only invoke `start()` directly when you need explicit control over the startup sequence.
+====
+
+=== What start() does
+
+When `start()` is called, the processor performs the following steps in sequence before its returned `CompletableFuture<Void>` completes:
+
+1. Resolves the <<token_store,token store>> identifier from the configured `TokenStore`.
+2. Starts the internal `Coordinator`, which opens the event stream and begins claiming segments.
+
+Because `start()` is fully asynchronous, callers should await the returned future before interacting with any processor state that depends on a running processor:
+
+[source,java]
+----
+include::example$events/eventprocessors/streaming/lifecycle/ProcessorService.java[tag=start-and-query-identifier,indent=0]
+----
+
 [[error_mode]]
 == Error mode
 
@@ -296,10 +203,61 @@ Whenever the xref:event-processors/index.adoc#error-handling[error handler] reth
 
 The processor will retry processing using an incremental back-off period, starting at 1 second and doubling after each attempt until it reaches the maximum wait time of 60 seconds per attempt.
 
-Due to the <<Pooled streaming processor threading,two-pool threading architecture>>, the failed segment is likely to be picked up quickly by another thread within the same JVM.
+Due to the <<thread_configuration,two-pool threading architecture>>, the failed segment is likely to be picked up quickly by another thread within the same JVM.
 The back-off mechanism applies within the local JVM instance only.
 
 In a distributed environment with multiple PSEP instances, other instances will ignore the back-off and may immediately claim and process the failed segment, providing faster recovery from transient errors.
+
+[IMPORTANT]
+.What an aborted segment costs
+====
+A segment is not a single sequence.
+It is a bucket holding many unrelated sequences that share one tracking token and are processed as one ordered stream.
+
+When a segment aborts, its token does not advance.
+On retry, the segment resumes from the last committed position and meets the same event again.
+Until that event can be processed, *every* sequence assigned to that segment waits behind it, however unrelated it is to the failure.
+
+Segments fail independently, so the remaining segments keep processing.
+The visible effect is therefore partial degradation rather than a full stop: the sequences that stall are the ones that happen to hash into the affected segment, while the rest continue as normal.
+====
+
+[[stalled_segments]]
+=== Common causes of a stalled segment
+
+Any condition that prevents a segment from committing its batch produces the same symptom: that segment stops advancing while others continue.
+The most common causes are:
+
+* *An event handler that keeps failing.* The default `PropagatingErrorHandler` rethrows, so the segment retries the same event indefinitely.
+This is the intended behaviour when silently skipping the event would corrupt a read model, but it stalls the segment for as long as the cause persists.
+* *A transaction-breaking database exception.* Handler work and the token update share one transaction.
+An exception that invalidates that transaction, such as a value exceeding a column's size, rolls back the batch including the token update, so the segment retries from the same position.
+* *An unreachable token store.* A segment needs to extend its claim to keep processing.
+If the token store is unavailable or its connection pool is exhausted, the segment cannot commit progress and releases its claim.
+* *A handler that is slow rather than failing.* Events within a segment are processed in order, so one slow handler delays every sequence behind it.
+Nothing is in error, but the lag is indistinguishable from a stall when viewed from the outside.
+* *Claim contention between nodes.* When processing regularly takes longer than the claim timeout, other nodes <<token_stealing,steal>> the claim mid-batch, and segments can spend more time changing hands than processing.
+ifdef::advanced-framework[]
+* *An overflowing dead-letter queue.* Once the queue reaches its capacity, a failing event can no longer be parked, and the failure propagates to the processor as though no queue were configured.
+See xref:dead-letter-queue:index.adoc#_capacity_and_overflow[Capacity and overflow].
+endif::[]
+
+=== Limiting the impact
+
+The blast radius of a stall is a design choice, not a fixed property of the processor:
+
+* *Choose the segment count deliberately.* A stalled segment holds back roughly `1/segmentCount` of your sequences.
+Raising the <<parallel_processing,segment count>> shrinks the share of data affected by any single stall, at the cost of more tokens to claim and maintain.
+* *Separate failure domains across processors.* Event handling components assigned to the same processor stall together, because they share segments and tokens.
+Placing a component that depends on a fragile downstream system in its own processor keeps its failures away from the rest.
+* *Make handlers idempotent.* Retries after an aborted batch replay events the handler may already have seen.
+Idempotent handlers make those retries harmless, and are a precondition for most other recovery options.
+* *Monitor progress per segment, not per processor.* An aggregate lag figure hides a single stalled segment among healthy ones for a long time.
+Alerting on the slowest segment surfaces the condition while it still affects a small share of the data.
+ifdef::advanced-framework[]
+* *Park failing events instead of retrying them.* A xref:dead-letter-queue:index.adoc[dead-letter queue] moves a failing sequence aside so the segment keeps processing everything else.
+Note that this holds only while the queue has capacity.
+endif::[]
 
 [[tracking_tokens]]
 == Tracking tokens
@@ -408,30 +366,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configureInitialToken
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configureInitialToken(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .customized((c, pooledStreamingConfig) -> pooledStreamingConfig.initialToken(
-                                        source -> source.firstToken(null)
-                                ))
-        );
-    }
-}
+include::example$events/eventprocessors/streaming/initialtoken/AxonConfig.java[tag=initial-token-config-api,indent=0]
 ----
 --
 
@@ -443,23 +378,7 @@ When using `EventProcessorDefinition`, the initial token can be configured throu
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("example-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanType().getPackageName()
-                              .equals("com.example.eventhandlers"))
-                .customized(config -> config
-                    .initialToken(source -> source.latestToken(null)));
-    }
-}
+include::example$events/eventprocessors/streaming/initialtoken/EventProcessorConfig.java[tag=initial-token-spring-boot,indent=0]
 ----
 --
 ====
@@ -495,30 +414,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configureTokenClaims
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configureTokenClaims(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).customized(
-                        (c, pooledStreamingConfig) -> pooledStreamingConfig.claimExtensionThreshold(2500)
-                                                                           .tokenClaimInterval(7500)
-                )
-        );
-    }
-}
+include::example$events/eventprocessors/streaming/tokenclaim/AxonConfig.java[tag=token-claim-config-api,indent=0]
 ----
 --
 
@@ -530,23 +426,7 @@ When using `EventProcessorDefinition`, configure token claim settings through th
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("example-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanName().startsWith("example"))
-                .customized(config -> config
-                    .claimExtensionThreshold(2500)
-                    .tokenClaimInterval(7500));
-    }
-}
+include::example$events/eventprocessors/streaming/tokenclaim/EventProcessorConfig.java[tag=token-claim-spring-boot,indent=0]
 ----
 --
 ====
@@ -640,8 +520,11 @@ The framework provides a couple of `TokenStore` implementations:
 * `InMemoryTokenStore` - A `TokenStore` implementation that keeps the tokens in memory.
 This implementation does not suffice as a production-ready store in most applications.
 * `JpaTokenStore` - A `TokenStore` implementation using JPA to store the tokens with.
-Expects that a table is constructed based on the `org.axonframework.eventhandling.tokenstore.jpa.TokenEntry`.
+Expects that a table is constructed based on the `TokenEntry` JPA entity.
 It is easily auto-configurable with, for example, Spring Boot.
+* `JdbcTokenStore` - A `TokenStore` implementation using JDBC to store the tokens with.
+Expects that the schema is constructed through the `JdbcTokenStore#createSchema(TokenTableFactory)` method.
+Several `TokenTableFactory` implementations can be chosen here, like the `GenericTokenTableFactory`, `PostgresTokenTableFactory` or `Oracle11TokenTableFactory` implementation.
 
 [NOTE]
 .Keep your tokens close
@@ -649,6 +532,12 @@ It is easily auto-configurable with, for example, Spring Boot.
 Where possible, we recommend using a token store that stores tokens in the same database as to where the event handlers update the view models.
 This way, changes to the view model can be stored atomically with the changed tokens.
 Furthermore, it guarantees **exactly once** processing semantics.
+====
+
+[IMPORTANT]
+.Storing tokens in PostgreSQL
+====
+When you are using PostgreSQL to store your tracking tokens, we strongly recommend you read our known issues section on xref:ROOT:known-issues-and-workarounds.adoc#postgresql_and_large_object_storage[PostgreSQL and Large Object storage] to ensure you do not hit any production issue with this combination.
 ====
 
 Note that you can configure the token store to use for a streaming processor in the `EventProcessingConfigurer`:
@@ -662,62 +551,14 @@ To configure a `TokenStore` for all processors:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .notCustomized()
-        ).defaults((config, psepConfig) -> psepConfig.tokenStore(
-                config.getComponent(TokenStore.class)
-        ));
-    }
-}
+include::example$events/eventprocessors/streaming/tokenstore/defaults/AxonConfig.java[tag=token-store-defaults-for-all,indent=0]
 ----
 
 Alternatively, to configure a `TokenStore` for a specific processor, use:
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .customized((c, psepConfig) -> psepConfig.tokenStore(
-                                        c.getComponent(TokenStore.class)
-                                ))
-        );
-    }
-}
+include::example$events/eventprocessors/streaming/tokenstore/specific/AxonConfig.java[tag=token-store-for-specific-processor,indent=0]
 ----
 --
 Spring Boot::
@@ -733,41 +574,21 @@ To override the TokenStore, either define a bean in a Spring `@Configuration` cl
 
 [source,java]
 ----
-import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
-import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStoreConfiguration;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public TokenStore customTokenStore(EntityManagerFactory entityManagerFactory,
-                                       GeneralConverter converter) {
-        return new JpaTokenStore(new JpaTransactionalExecutorProvider(entityManagerFactory), converter, JpaTokenStoreConfiguration.DEFAULT);
-    }
-}
+include::example$events/eventprocessors/streaming/tokenstore/springboot/AxonConfig.java[tag=token-store-spring-boot-bean,indent=0]
 ----
 
 --
 ====
 
-==== Retrieving the token store identifier
+==== **Retrieving the token store identifier**
 
 Implementations of `TokenStore` might share state in the underlying storage.
 To ensure correct operation, a token store has a unique identifier that uniquely identifies the storage location of the tokens in that store.
-This identifier can be queried with the `retrieveStorageIdentifier` method of your event processor.
+This identifier is resolved eagerly during `start()`, but if queried before the processor has started, it is resolved lazily with a blocking call to the `TokenStore`.
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
-public class AxonConfig {
-
-    public String tokenStoreFor(StreamingEventProcessor eventProcessor) {
-        return eventProcessor.getTokenStoreIdentifier();
-    }
-}
+include::example$events/eventprocessors/streaming/tokenstoreidentifier/AxonConfig.java[tag=token-store-identifier,indent=0]
 ----
 
 [[parallel_processing]]
@@ -800,28 +621,7 @@ The default number of segments for a `PooledStreamingEventProcessor` is sixteen.
 
 [source,java]
 ----
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent)
-                                .customized((c, psepConfig) -> psepConfig.initialSegmentCount(32))
-        );
-    }
-}
+include::example$events/eventprocessors/streaming/segmentcount/AxonConfig.java[tag=segment-count-config-api,indent=0]
 ----
 --
 
@@ -835,23 +635,7 @@ When using `EventProcessorDefinition`, you can configure the initial segment cou
 
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("example-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanType().getPackageName()
-                              .equals("com.example.eventhandlers"))
-                .customized(config -> config
-                    .initialSegmentCount(32));
-    }
-}
+include::example$events/eventprocessors/streaming/segmentcount/EventProcessorConfig.java[tag=segment-count-spring-boot,indent=0]
 ----
 --
 
@@ -870,6 +654,7 @@ axon.eventhandling.processors.example-processor.initial-segment-count=32
 --
 ====
 
+ifdef::advanced-framework[]
 [NOTE]
 .Parallel Processing and Subscribing Event Processors
 ====
@@ -877,6 +662,7 @@ Note that xref:event-processors/subscribing.adoc[Subscribing Event Processors] d
 The only means to achieve this, is through a `SubscribableEventSource` that manages sequencing and threading for you.
 An example of this is the xref:event-processors/subscribing.adoc#persistent_streams[persistent stream] functionality.
 ====
+endif::[]
 
 The Event Handling Components a processor is in charge of may have specific expectations on the event order.
 The ordering is guaranteed when only a single thread is processing events.
@@ -977,18 +763,7 @@ Hence, for the `PropertySequencingPolicy`, you are able to omit the first parame
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.core.annotation.SequencingPolicy;
-import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
-
-@SequencingPolicy(type = PropertySequencingPolicy.class, parameters = {"studentId"})
-class CustomEventHandlingComponent {
-
-    @EventHandler
-    public void handle(StudentEnrolledEvent event) {
-        // Handler logic
-    }
-}
+include::example$events/eventprocessors/streaming/sequencingpolicy/onclass/CustomEventHandlingComponent.java[tag=sequencing-policy-on-class,indent=0]
 ----
 --
 
@@ -1010,19 +785,7 @@ Thus, if you have an Event Handling Component with a `@SequencingPolicy` on the 
 
 [source,java]
 ----
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.axonframework.messaging.core.annotation.SequencingPolicy;
-import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
-
-@SequencingPolicy(type = PropertySequencingPolicy.class, parameters = {"studentId"})
-class CustomEventHandlingComponent {
-
-    @EventHandler
-    @SequencingPolicy(type = PropertySequencingPolicy.class, parameters = {"courseId"})
-    public void handle(CourseCreatedEvent event) {
-        // Handler logic
-    }
-}
+include::example$events/eventprocessors/streaming/sequencingpolicy/onhandler/CustomEventHandlingComponent.java[tag=sequencing-policy-on-handler,indent=0]
 ----
 --
 ====
@@ -1036,51 +799,7 @@ Declarative Sequencing Policy configuration::
 --
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.declarative(c -> {
-            PropertySequencingPolicy<BaseEvent, Object> policy =
-                    new PropertySequencingPolicy<>(BaseEvent.class, "identifier");
-
-            EventHandlingComponent eventHandlingComponent = new SimpleEventHandlingComponent(policy);
-            eventHandlingComponent.subscribe(
-                    new QualifiedName("test-event"),
-                    (event, context) -> {
-                        // process events
-                        return MessageStream.empty();
-                    }
-                    );
-            return eventHandlingComponent;
-        });
-    }
-}
+include::example$events/eventprocessors/streaming/sequencingpolicy/declarative/AxonConfig.java[tag=declarative-sequencing-policy-config,indent=0]
 ----
 --
 
@@ -1088,7 +807,7 @@ Autodetected Sequencing Policy configuration - Spring Boot::
 +
 --
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 // TODO #4053 - Introduce Event Processor Specification bean example.
 ----
@@ -1109,14 +828,7 @@ This approach does require the bean name to be present in the Application Contex
 
 [source,java]
 ----
-@Configuration
-public class AxonConfig {
-    // omitting other configuration methods...
-    @Bean
-    public SequencingPolicy<EventMessage<?>> customSequencingPolicy() {
-        return new FullConcurrencyPolicy();
-    }
-}
+include::example$events/eventprocessors/streaming/sequencingpolicy/springbootbean/AxonConfig.java[tag=sequencing-policy-spring-boot-bean,indent=0]
 ----
 --
 ====
@@ -1125,11 +837,11 @@ If the available policies do not suffice, you can define your own.
 To that end, we should implement the `SequencingPolicy` interface.
 This interface defines a single method, `sequenceIdentifierFor(EventMessage, ProcessingContext)`, that returns an `Optional` of the sequence identifier for the given event and context:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
-public interface SequencingPolicy {
+public interface SequencingPolicy<M extends Message> {
 
-    Optional<Object> sequenceIdentifierFor(EventMessage event, ProcessingContext context);
+    Optional<Object> sequenceIdentifierFor(M message, @Nullable ProcessingContext context);
 }
 ----
 
@@ -1173,37 +885,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.common.AxonThreadFactory;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-
-import java.util.concurrent.Executors;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).customized(
-                        (c, psepConfig) -> psepConfig.coordinatorExecutor(Executors.newScheduledThreadPool(
-                                                             1, new AxonThreadFactory("Coordinator - example-processor")
-                                                     ))
-                                                     .workerExecutor(Executors.newScheduledThreadPool(
-                                                             16, new AxonThreadFactory("Worker - example-processor")
-                                                     ))
-                )
-        );
-    }
-}
+include::example$events/eventprocessors/streaming/threadpool/AxonConfig.java[tag=thread-pool-config-api,indent=0]
 ----
 --
 
@@ -1215,31 +897,7 @@ When using `EventProcessorDefinition`, you can configure custom thread pools for
 
 [source,java]
 ----
-import org.axonframework.common.AxonThreadFactory;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-import java.util.concurrent.Executors;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition exampleProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("example-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanType().getPackageName()
-                              .startsWith("com.example"))
-                .customized(config -> config
-                    .coordinatorExecutor(Executors.newScheduledThreadPool(
-                        1, new AxonThreadFactory("Coordinator - example-processor")
-                    ))
-                    .workerExecutor(Executors.newScheduledThreadPool(
-                        16, new AxonThreadFactory("Worker - example-processor")
-                    )));
-    }
-}
+include::example$events/eventprocessors/streaming/threadpool/EventProcessorConfig.java[tag=thread-pool-spring-boot,indent=0]
 ----
 --
 
@@ -1301,23 +959,7 @@ When invoking `releaseSegment`, the `StreamingEventProcessor` will "let go of" t
 
 [source,java]
 ----
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class StreamingProcessorService {
-
-    // The Configuration allows access to all the configured EventProcessors
-    private Configuration configuration;
-
-    CompletableFuture<Void> releaseSegmentFor(String processorName, int segmentId) {
-        Map<String, StreamingEventProcessor> processors = configuration.getComponents(StreamingEventProcessor.class);
-        return processors.get(processorName)
-                         .releaseSegment(segmentId);
-    }
-}
+include::example$events/eventprocessors/streaming/segments/release/StreamingProcessorService.java[tag=release-segment,indent=0]
 ----
 
 [[splitting_and_merging_segments]]
@@ -1353,29 +995,7 @@ For those taking this approach, consider the following snippet as a form of guid
 
 [source,java]
 ----
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class StreamingProcessorService {
-
-    // The Configuration allows access to all the configured EventProcessors
-    private Configuration configuration;
-
-    CompletableFuture<Boolean> splitSegmentFor(String processorName, int segmentId) {
-        Map<String, StreamingEventProcessor> processors = configuration.getComponents(StreamingEventProcessor.class);
-        return processors.get(processorName)
-                         .splitSegment(segmentId);
-    }
-
-    CompletableFuture<Boolean> mergeSegmentFor(String processorName, int segmentId) {
-        Map<String, StreamingEventProcessor> processors = configuration.getComponents(StreamingEventProcessor.class);
-        return processors.get(processorName)
-                         .mergeSegment(segmentId);
-    }
-}
+include::example$events/eventprocessors/streaming/segments/splitmerge/StreamingProcessorService.java[tag=split-merge-segment,indent=0]
 ----
 
 Note that if you are moving towards a solution using the `StreamingProcessorService`, there are a couple of points to consider.
@@ -1476,28 +1096,7 @@ Reset without reset context::
 
 [source,java]
 ----
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class StreamingProcessorService {
-
-    // The Configuration allows access to all the configured EventProcessors
-    private Configuration configuration;
-
-    CompletableFuture<CompletableFuture<Void>> resetTokensFor(String processorName) {
-        Map<String, StreamingEventProcessor> processors = configuration.getComponents(StreamingEventProcessor.class);
-        StreamingEventProcessor processor = processors.get(processorName);
-        // shutdown this streaming processor
-        return processor.shutdown()
-                        // reset the tokens to prepare the processor
-                        .thenApply(result -> processor.resetTokens())
-                        // start the processor to initiate the replay
-                        .thenApply(result -> processor.start());
-    }
-}
+include::example$events/eventprocessors/streaming/replay/resetwithoutcontext/StreamingProcessorService.java[tag=reset-tokens-without-context,indent=0]
 ----
 --
 Reset with reset context::
@@ -1506,29 +1105,7 @@ Reset with reset context::
 
 [source,java]
 ----
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-class StreamingProcessorService {
-
-    // The Configuration allows access to all the configured EventProcessors
-    private Configuration configuration;
-
-    CompletableFuture<CompletableFuture<Void>> resetTokensFor(String processorName,
-                                                              Object resetContext) {
-        Map<String, StreamingEventProcessor> processors = configuration.getComponents(StreamingEventProcessor.class);
-        StreamingEventProcessor processor = processors.get(processorName);
-        // shutdown this streaming processor
-        return processor.shutdown()
-                        // reset the tokens to prepare the processor
-                        .thenApply(result -> processor.resetTokens(resetContext))
-                        // start the processor to initiate the replay
-                        .thenApply(result -> processor.start());
-    }
-}
+include::example$events/eventprocessors/streaming/replay/resetwithcontext/StreamingProcessorService.java[tag=reset-tokens-with-context,indent=0]
 ----
 --
 ====
@@ -1578,42 +1155,7 @@ The following sample Event Handling Component shows the available replay API:
 
 [source,java]
 ----
-@AllowReplay // <1>
-@ProcessingGroup("card-summary")
-public class CardSummaryProjection {
-    //...
-    @EventHandler
-    @DisallowReplay // <2>
-    public void on(CardIssuedEvent event) {
-        // This event handler performs a "side effect",
-        //  like sending an e-mail or a sms.
-        // Neither, is something we want to reoccur when a
-        //  replay happens, hence we disallow this method
-        //  to be replayed
-    }
-
-    @EventHandler
-    public void on(CardRedeemedEvent event, ReplayStatus replayStatus) { // <3>
-        // We can wire a ReplayStatus here so we can see whether this
-        // event is delivered to our handler as a 'REGULAR' event or
-        // a 'REPLAY' event
-        // Perform event handling
-    }
-
-    @ResetHandler // <4>
-    public void onReset(ResetContext resetContext) {
-        // Do pre-reset logic, like clearing out the projection table for a
-        // clean slate. The given resetContext is [optional], allowing the
-        // user to specify in what context a reset was executed.
-    }
-
-    @EventHandler
-    public void on(CardCancelledEvent event, @ReplayContext CardReplayContext context) { // <5>
-        // During replays, this method will get the CardReplayContext injected that was providing during the reset call.
-        // If there is no replay, no context was supplied or the context type does not match, the parameter is null.
-    }
-    //...
-}
+include::example$events/eventprocessors/streaming/replay/api/CardSummaryProjection.java[tag=replay-api,indent=0]
 ----
 
 The `CardSummaryProjection` shows a couple of interesting things to take note of when it comes to "being aware" of a replay in progress:
@@ -1643,49 +1185,7 @@ This will ensure all subscribed event handlers for that event handling component
 
 [source,java]
 ----
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorsConfigurer;
-import org.axonframework.messaging.eventhandling.replay.ReplayBlockingEventHandlingComponent;
-
-public class AxonConfig {
-
-    public void configureEventProcessing(MessagingConfigurer configurer) {
-        configurer.eventProcessing(eventConfigurer -> eventConfigurer.pooledStreaming(
-                this::configurePooledStreamingProcessor
-        ));
-    }
-
-    private PooledStreamingEventProcessorsConfigurer configurePooledStreamingProcessor(
-            PooledStreamingEventProcessorsConfigurer pooledStreamingConfigurer
-    ) {
-        return pooledStreamingConfigurer.processor(
-                "example-processor",
-                config -> config.eventHandlingComponents(this::configureHandlingComponent).notCustomized()
-        );
-    }
-
-    private EventHandlingComponentsConfigurer.AdditionalComponentPhase configureHandlingComponent(
-            EventHandlingComponentsConfigurer.RequiredComponentPhase componentConfigurer
-    ) {
-        return componentConfigurer.declarative(c -> {
-            EventHandlingComponent eventHandlingComponent =
-                    new ReplayBlockingEventHandlingComponent(new SimpleEventHandlingComponent());
-            eventHandlingComponent.subscribe(
-                    new QualifiedName("test-event"),
-                    (event, context) -> {
-                        // process events
-                        return MessageStream.empty();
-                    }
-            );
-            return eventHandlingComponent;
-        });
-    }
-}
+include::example$events/eventprocessors/streaming/replay/blocking/AxonConfig.java[tag=replay-blocking-event-handling-component,indent=0]
 ----
 
 [#_multiple_event_sources]
@@ -1705,7 +1205,7 @@ The default implementation chooses the event with the oldest timestamp (that is,
 
 Consider the following sample when constructing a `MultiStreamableEventSource`:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 public class AxonConfig {
     // omitting other configuration methods...
@@ -1723,7 +1223,7 @@ public class AxonConfig {
 
 For simple cases using the default timestamp-based comparison, you can use the `comparingTimestamps()` method:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 // Simple case using default timestamp comparison
 MultiStreamableEventSource source = MultiStreamableEventSource
@@ -1740,7 +1240,7 @@ Configuration API::
 +
 --
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 public class AxonConfig {
     // omitting other configuration methods...
@@ -1765,7 +1265,7 @@ Spring Boot::
 
 When using `EventProcessorDefinition`, first create a `MultiStreamableEventSource` bean, then reference it in your processor configuration:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import org.axonframework.extension.spring.config.EventProcessorDefinition;
 import org.axonframework.messaging.eventstreaming.MultiStreamableEventSource;
@@ -1814,7 +1314,7 @@ axon.eventhandling.processors.example-processor.source=multiStreamableEventSourc
 
 This approach does require the bean name to be present in the Application Context of course:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @Configuration
 public class AxonConfig {

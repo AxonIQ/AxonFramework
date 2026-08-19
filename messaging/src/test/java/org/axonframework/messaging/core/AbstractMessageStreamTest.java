@@ -19,12 +19,15 @@ package org.axonframework.messaging.core;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.axonframework.messaging.core.AbstractMessageStream.FetchResult;
 import org.axonframework.messaging.core.MessageStream.Entry;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +68,7 @@ class AbstractMessageStreamTest {
             thrownExceptionInOnCompleted = e;
         }
 
+        @NonNull
         @Override
         protected FetchResult<Entry<Message>> fetchNext() {
             FetchResult<Entry<Message>> result = results.poll();
@@ -322,6 +326,7 @@ class AbstractMessageStreamTest {
             assertThat(count.get()).isEqualTo(0);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void withNullCallbackThenThrowsNullPointerException() {
             assertThatThrownBy(() -> stream.setCallback(null))
@@ -553,7 +558,7 @@ class AbstractMessageStreamTest {
              * The class doc says: "If the registered callback throws an exception, the stream is
              * completed exceptionally, unless the callback was called to signal completion."
              *
-             * When complete() fires the callback and it throws, completeExceptionally() is called
+             * When complete() fires the callback, and it throws, completeExceptionally() is called
              * but is a no-op because completed=true already. The stream remains normally completed.
              */
 
@@ -567,6 +572,189 @@ class AbstractMessageStreamTest {
 
             assertThat(stream.isCompleted()).isTrue();
             assertThat(stream.error()).isEmpty();
+        }
+    }
+
+    @Nested
+    class WhenBridgingFromDelegate {
+
+        /*
+         * Tests for FetchResult.of(MessageStream<M> delegate) -- the static bridge that maps a
+         * delegate stream's current state to the FetchResult model.
+         */
+
+        @Test
+        void withValueAvailableThenReturnsValueResult() {
+            // given
+            ControllableStream delegate = new ControllableStream();
+            Entry<Message> entry = entryOf("msg");
+            delegate.enqueue(FetchResult.of(entry));
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isEqualTo(new FetchResult.Value<>(entry));
+        }
+
+        @Test
+        void withNoValueAndNotCompletedThenReturnsNotReady() {
+            // given: nothing enqueued, not closed -- next() returns empty while isCompleted()=false
+            ControllableStream delegate = new ControllableStream();
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then: must not throw, and must signal the stream is temporarily unavailable
+            assertThat(result).isEqualTo(FetchResult.notReady());
+        }
+
+        @Test
+        void withCompletedDelegateThenReturnsCompleted() {
+            // given
+            ControllableStream delegate = new ControllableStream();
+            delegate.close();
+
+            // when
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isEqualTo(FetchResult.completed());
+        }
+
+        @Test
+        void withFailedDelegateThenReturnsError() {
+            // given: enqueue an error result; next() will process it, completing the stream exceptionally
+            ControllableStream delegate = new ControllableStream();
+            RuntimeException failure = new RuntimeException("stream failed");
+            delegate.enqueue(FetchResult.error(failure));
+
+            // when: bridge calls next() which processes the error; bridge then reads isCompleted()+error()
+            FetchResult<Entry<Message>> result = FetchResult.of(delegate);
+
+            // then
+            assertThat(result).isInstanceOf(FetchResult.Error.class);
+            assertThat(((FetchResult.Error<?>) result).error()).isSameAs(failure);
+        }
+    }
+
+    @Nested
+    class WhenCompletionTriggersCallback {
+
+        /*
+         * The concurrency model of this class states that producer-side signals, and the callbacks they
+         * trigger, flow upstream (inner to outer), and that a callback must therefore never be invoked
+         * while this stream's lock is held. signalProgress() honors that; completion must do the same.
+         *
+         * A composed stream registers a callback that reads the stream it wraps, so a callback running
+         * while the completing stream is locked takes a second lock in the opposite direction. Two
+         * streams completing at once then deadlock, leaving an event processor with no events, no error,
+         * and no thread of its own to blame.
+         */
+
+        @Test
+        void thenCallbackDoesNotRunWhileStreamIsLocked() {
+            // given: a callback that lets another thread interact with the very stream that is completing
+            ControllableStream stream = new ControllableStream();
+            AtomicBoolean otherThreadCouldReadStream = new AtomicBoolean();
+
+            CountDownLatch probeReadStream = new CountDownLatch(1);
+
+            stream.setCallback(() -> {
+                Thread probe = new Thread(() -> {
+                    stream.isCompleted();
+
+                    probeReadStream.countDown();
+                });
+
+                probe.setDaemon(true);
+                probe.start();
+
+                try {
+                    // recorded inside the callback: whether the other thread got through while it runs
+                    otherThreadCouldReadStream.set(probeReadStream.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            stream.enqueue(FetchResult.completed());
+
+            // when: the stream completes, firing the callback
+            stream.next();
+
+            // then
+            assertThat(otherThreadCouldReadStream).isTrue();
+        }
+
+        @Test
+        void thenTwoStreamsCompletingConcurrentlyDoNotDeadlock() throws Exception {
+            // given: two streams whose callbacks read each other, as composed streams do
+            ControllableStream first = new ControllableStream();
+            ControllableStream second = new ControllableStream();
+            CyclicBarrier bothInsideCallback = new CyclicBarrier(2);
+
+            first.setCallback(() -> {
+                awaitQuietly(bothInsideCallback);
+
+                second.isCompleted();
+            });
+            second.setCallback(() -> {
+                awaitQuietly(bothInsideCallback);
+
+                first.isCompleted();
+            });
+
+            first.enqueue(FetchResult.completed());
+            second.enqueue(FetchResult.completed());
+
+            CountDownLatch bothReturned = new CountDownLatch(2);
+
+            // when: both complete at the same moment, each callback reaching into the other stream
+            startDaemon(() -> {
+                first.next();
+
+                bothReturned.countDown();
+            });
+            startDaemon(() -> {
+                second.next();
+
+                bothReturned.countDown();
+            });
+
+            // then: neither thread holds a lock the other one needs
+            assertThat(bothReturned.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        @Test
+        void thenCompletionIsVisibleToTheCallback() {
+            // given: the completion the callback announces must be observable by that callback
+            ControllableStream stream = new ControllableStream();
+            AtomicBoolean completedDuringCallback = new AtomicBoolean();
+
+            stream.setCallback(() -> completedDuringCallback.set(stream.isCompleted()));
+            stream.enqueue(FetchResult.completed());
+
+            // when
+            stream.next();
+
+            // then
+            assertThat(completedDuringCallback).isTrue();
+        }
+
+        private void awaitQuietly(CyclicBarrier barrier) {
+            try {
+                barrier.await(5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to synchronize both callbacks.", e);
+            }
+        }
+
+        private void startDaemon(Runnable task) {
+            Thread thread = new Thread(task);
+
+            thread.setDaemon(true);
+            thread.start();
         }
     }
 }

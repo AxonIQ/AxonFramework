@@ -17,6 +17,7 @@
 package org.axonframework.messaging.queryhandling;
 
 import org.axonframework.common.TypeReference;
+import org.axonframework.conversion.TestConverter;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -74,16 +75,14 @@ class FutureAsResponseTypeToQueryHandlersTest {
         queryBus.subscribe(queryHandlingComponent);
     }
 
-    @Disabled("TODO #3717")
     @Test
     void queryWithMultipleResponses() throws ExecutionException, InterruptedException {
         QueryMessage testQuery =
                 new GenericQueryMessage(new MessageType("myQueryWithMultipleResponses"), "criteria");
 
         List<String> result = queryBus.query(testQuery, null)
-                .first()
-                .asCompletableFuture()
-                .thenApply(e -> e.message().payloadAs(LIST_OF_STRINGS))
+                                      .collect(ArrayList<String>::new,
+                                               (list, message) -> list.add(message.payloadAs(String.class)))
                                       .get();
 
         assertEquals(asList("Response1", "Response2"), result);
@@ -112,12 +111,14 @@ class FutureAsResponseTypeToQueryHandlersTest {
                 new MessageType("myQueryWithMultipleResponses"), "criteria"
         );
 
-        Flux<List<String>> response = FluxUtils.of(queryBus.subscriptionQuery(testQuery, null, 50))
-                                               .map(MessageStream.Entry::message)
-                                               .mapNotNull(m -> m.payloadAs(LIST_OF_STRINGS));
+        Flux<String> response = FluxUtils.of(queryBus.subscriptionQuery(testQuery, null, 50))
+                                         .map(MessageStream.Entry::message)
+                                         .mapNotNull(m -> m.payloadAs(
+                                                 String.class, TestConverter.JACKSON.getConverter()
+                                         ));
         queryBus.completeSubscriptions(s -> true, null);
         StepVerifier.create(response)
-                    .expectNext(asList("Response1", "Response2"))
+                    .expectNext("Response1", "Response2")
                     .verifyComplete();
     }
 
@@ -145,11 +146,8 @@ class FutureAsResponseTypeToQueryHandlersTest {
 
         MessageStream<QueryResponseMessage> query = queryBus.query(testQuery, null);
         queryBus.completeSubscriptions(s -> true, null);
-        List<String> result = query.reduce(new ArrayList<String>(), (list, entry) -> {
-                                          list.add(entry.message().payloadAs(String.class));
-                                          return list;
-                                      })
-                                      .get();
+        List<String> result = query.collect(ArrayList<String>::new, (list, message) -> list.add(message.payloadAs(String.class)))
+                                   .get();
         assertEquals(asList("Response1", "Response2"), result);
     }
 

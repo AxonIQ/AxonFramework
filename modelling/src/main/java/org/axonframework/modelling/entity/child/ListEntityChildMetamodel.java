@@ -18,18 +18,24 @@ package org.axonframework.modelling.entity.child;
 
 import org.axonframework.modelling.entity.EntityMetamodel;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static java.util.Objects.requireNonNull;
+import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
- * An {@link EntityChildMetamodel} that handles commands and events for a list of child entities. It will use
- * the provided {@link ChildEntityFieldDefinition} to resolve the child entities from the parent entity. Once the
- * entities are resolved, it will delegate the command- and event-handling to the child entity metamodel(s), based on
- * the {@code commandTargetResolver} and {@code eventTargetMatcher} respectively.
+ * An {@link EntityChildMetamodel} that handles commands and events for a list of child entities.
+ * <p>
+ * It will use the provided {@link ChildEntityFieldDefinition} to resolve the child entities from the parent entity.
+ * Once the entities are resolved, it will delegate the command- and event-handling to the child entity metamodel(s),
+ * based on the {@code commandTargetResolver} and {@code eventTargetMatcher} respectively.
  *
- * @param <C> The type of the child entity.
- * @param <P> The type of the parent entity.
+ * @param <C> the type of the child entity
+ * @param <P> the type of the parent entity
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
@@ -49,18 +55,23 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
     }
 
     @Override
-    protected List<C> getChildEntities(P entity) {
-        List<C> childEntities = childEntityFieldDefinition
-                .getChildValue(entity);
+    protected Map<Object, C> getChildEntities(P parent) {
+        List<C> childEntities = childEntityFieldDefinition.getChildValue(parent);
         if (childEntities == null) {
-            return List.of();
+            return Map.of();
         }
-        return childEntities;
+        Map<Object, C> indexedChildEntities = new LinkedHashMap<>();
+        for (int i = 0; i < childEntities.size(); i++) {
+            indexedChildEntities.put(i, childEntities.get(i));
+        }
+        return Collections.unmodifiableMap(indexedChildEntities);
     }
 
     @Override
-    protected P applyEvolvedChildEntities(P entity, List<C> evolvedChildEntities) {
-        return childEntityFieldDefinition.evolveParentBasedOnChildInput(entity, evolvedChildEntities);
+    protected P applyEvolvedChildEntities(P entity, Map<Object, C> evolvedChildEntities) {
+        return childEntityFieldDefinition.evolveParentBasedOnChildInput(
+                entity, new ArrayList<>(evolvedChildEntities.values())
+        );
     }
 
     @Override
@@ -80,31 +91,32 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
      * {@link EventTargetMatcher eventTargetMatcher} are both required, as they are used to match the child entities to
      * the command and event respectively.
      *
-     * @param parentClass              The class of the parent entity.
+     * @param parentClass     The class of the parent entity.
      * @param entityMetamodel The {@link EntityMetamodel} of the child entity.
-     * @param <C>                      The type of the child entity.
-     * @param <P>                      The type of the parent entity.
+     * @param <C>             The type of the child entity.
+     * @param <P>             The type of the parent entity.
      * @return A new {@link Builder} for the given parent class and child entity metamodel.
      */
-        public static <C, P> Builder<C, P> forEntityModel(Class<P> parentClass,
+    public static <C, P> Builder<C, P> forEntityModel(Class<P> parentClass,
                                                       EntityMetamodel<C> entityMetamodel
     ) {
         return new Builder<>(parentClass, entityMetamodel);
     }
 
     /**
-     * Builder for creating a {@link ListEntityChildMetamodel} for the given parent class and child entity
-     * metamodel. The builder can be used to configure the child entity metamodel and create a new instance of
-     * {@link ListEntityChildMetamodel}. The {@link ChildEntityFieldDefinition} is required to resolve the
-     * child entities from the parent entity and evolve the parent entity based on the child entities. The
+     * Builder for creating a {@link ListEntityChildMetamodel} for the given parent class and child entity metamodel.
+     * The builder can be used to configure the child entity metamodel and create a new instance of
+     * {@link ListEntityChildMetamodel}. The {@link ChildEntityFieldDefinition} is required to resolve the child
+     * entities from the parent entity and evolve the parent entity based on the child entities. The
      * {@link CommandTargetResolver commandTargetResolver} and {@link EventTargetMatcher eventTargetMatcher} are both
      * required, as they are used to match the child entities to the command and event respectively.
      *
-     * @param <C> The type of the child entity.
-     * @param <P> The type of the parent entity.
+     * @param <C> the type of the child entity
+     * @param <P> the type of the parent entity
      */
     public static class Builder<C, P> extends AbstractEntityChildMetamodel.Builder<C, P, Builder<C, P>> {
 
+        @SuppressWarnings("NotNullFieldNotInitialized") // Ensured by validate()
         private ChildEntityFieldDefinition<P, List<C>> childEntityFieldDefinition;
 
         @SuppressWarnings("unused") // Is used for generics
@@ -116,14 +128,13 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
          * Sets the {@link ChildEntityFieldDefinition} to use for resolving the child entities from the parent entity
          * and evolving the parent entity based on the evolved child entities.
          *
-         * @param fieldDefinition The {@link ChildEntityFieldDefinition} to use for resolving the child entities from
+         * @param fieldDefinition the {@link ChildEntityFieldDefinition} to use for resolving the child entities from
          *                        the parent entity
-         * @return This builder instance for a fluent API.
+         * @return builder instance for a fluent API
          */
-        public Builder<C, P> childEntityFieldDefinition(
-                ChildEntityFieldDefinition<P, List<C>> fieldDefinition) {
-            this.childEntityFieldDefinition = requireNonNull(fieldDefinition,
-                                                             "The childEntityFieldDefinition may not be null.");
+        public Builder<C, P> childEntityFieldDefinition(ChildEntityFieldDefinition<P, List<C>> fieldDefinition) {
+            assertNonNull(fieldDefinition, "The childEntityFieldDefinition may not be null.");
+            this.childEntityFieldDefinition = fieldDefinition;
             return this;
         }
 
@@ -132,16 +143,20 @@ public class ListEntityChildMetamodel<C, P> extends AbstractEntityChildMetamodel
          * {@link ChildEntityFieldDefinition}, {@link EventTargetMatcher}, and {@link CommandTargetResolver} are
          * required to be set before calling this method.
          *
-         * @return A new {@link ListEntityChildMetamodel} instance with the configured properties.
+         * @return a new {@link ListEntityChildMetamodel} instance with the configured properties
          */
         public ListEntityChildMetamodel<C, P> build() {
             this.validate();
             return new ListEntityChildMetamodel<>(
-                    metamodel,
-                    childEntityFieldDefinition,
-                    commandTargetResolver,
-                    eventTargetMatcher
+                    metamodel, childEntityFieldDefinition, commandTargetResolver, eventTargetMatcher
             );
+        }
+
+        @Override
+        protected void validate() {
+            assertNonNull(childEntityFieldDefinition,
+                          "The ChildEntityFieldDefinition must be set before building the metamodel.");
+            super.validate();
         }
     }
 }

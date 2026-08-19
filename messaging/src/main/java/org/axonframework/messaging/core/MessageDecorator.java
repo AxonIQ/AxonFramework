@@ -17,6 +17,7 @@
 package org.axonframework.messaging.core;
 
 import org.jspecify.annotations.Nullable;
+import org.axonframework.common.TypeReference;
 import org.axonframework.conversion.Converter;
 
 import java.lang.reflect.Type;
@@ -65,6 +66,12 @@ public abstract class MessageDecorator implements Message {
     @Override
     @Nullable
     public <T> T payloadAs(Class<T> type) {
+        return delegate.payloadAs(type);
+    }
+
+    @Override
+    @Nullable
+    public <T> T payloadAs(TypeReference<T> type) {
         return delegate.payloadAs(type);
     }
 

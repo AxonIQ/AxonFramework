@@ -19,46 +19,33 @@ package org.axonframework.eventsourcing;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
-import org.axonframework.eventsourcing.handler.SourcingHandler;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.*;
+import org.mockito.junit.jupiter.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link EventSourcingRepository}.
@@ -73,7 +60,7 @@ class EventSourcingRepositoryTest {
 
     private EventStore eventStore = mock();
     private EventStoreTransaction eventStoreTransaction = mock();
-    private SourcingHandler<String, String> sourcingHandler = mock();
+    private EntityLifecycleHandler<String, String> handler = mock();
     private EventSourcedEntityFactory<String, String> factory;
 
     private EventSourcingRepository<String, String> testSubject;
@@ -92,24 +79,24 @@ class EventSourcingRepositoryTest {
         testSubject = new EventSourcingRepository<>(
                 String.class,
                 String.class,
-                eventStore,
-                (id, event, context) -> factory.create(id, event, context),
-                (entity, event, context) -> entity + "-" + event.payload(),
-                sourcingHandler
+                handler
+        );
+
+        InitializingEntityEvolver<String, String> evolver = new InitializingEntityEvolver<>(
+            (id, event, context) -> factory.create(id, event, context),
+            (entity, event, context) -> entity + "-" + event.payload()
         );
 
         // Simulate event evolution:
-        when(sourcingHandler.source(eq("test"), any(), any())).thenAnswer(invocation -> {
+        when(handler.source(eq("test"), any())).thenAnswer(invocation -> {
             if (invocation.getArgument(0) instanceof String id
-                && invocation.getArgument(1) instanceof InitializingEntityEvolver e
-                && invocation.getArgument(2) instanceof ProcessingContext pc
+                && invocation.getArgument(1) instanceof ProcessingContext pc
             ) {
                 return CompletableFuture.supplyAsync(() -> {
                     String result = null;
 
                     for (EventMessage event : eventsToLoad) {
-                        @SuppressWarnings("unchecked")
-                        String evolved = (String) e.evolve(id, result, event, pc);
+                        String evolved = evolver.evolve(id, result, event, pc);
 
                         result = evolved;
                     }
@@ -130,8 +117,7 @@ class EventSourcingRepositoryTest {
 
         assertEquals("test(0)-0-1", result.entity());
 
-        verify(eventStore).transaction(processingContext);
-        verify(eventStoreTransaction).onAppend(any());
+        verify(handler).source("test", processingContext);
     }
 
     @Test
@@ -140,7 +126,8 @@ class EventSourcingRepositoryTest {
 
         ManagedEntity<String, String> result = testSubject.persist("id", "entity", processingContext);
 
-        verify(eventStoreTransaction).onAppend(any());
+        verify(handler).subscribe(result, processingContext);
+
         assertEquals("entity", result.entity());
         assertEquals("id", result.identifier());
     }
@@ -152,8 +139,10 @@ class EventSourcingRepositoryTest {
         ManagedEntity<String, String> first = testSubject.persist("id", "entity", processingContext);
         ManagedEntity<String, String> second = testSubject.persist("id", "entity", processingContext);
 
-        verify(eventStoreTransaction).onAppend(any());
         assertSame(first, second);
+
+        verify(handler).subscribe(first, processingContext);
+
         assertEquals("entity", first.entity());
         assertEquals("id", first.identifier());
     }
@@ -168,7 +157,8 @@ class EventSourcingRepositoryTest {
         // Attaches entity of correct internal type:
         testSubject.attach(result, processingContext2);
 
-        verify(eventStoreTransaction, times(2)).onAppend(any());
+        verify(handler).subscribe(result, processingContext);
+        verify(handler).subscribe(result, processingContext2);
     }
 
     @Test
@@ -178,8 +168,7 @@ class EventSourcingRepositoryTest {
 
         ManagedEntity<String, String> result = testSubject.load("test", processingContext).get();
 
-        // Attaches entity of incorrect internal type (which will then be recreated):
-        testSubject.attach(new ManagedEntity<>() {
+        ManagedEntity<String, String> externalManagedEntity = new ManagedEntity<>() {
             @Override
             public String identifier() {
                 return result.identifier();
@@ -195,28 +184,13 @@ class EventSourcingRepositoryTest {
                 fail("This should not have been invoked");
                 return "ERROR";
             }
-        }, processingContext2);
+        };
 
-        verify(eventStoreTransaction, times(2)).onAppend(any());
-    }
+        // Attaches entity of incorrect internal type (which will then be recreated):
+        ManagedEntity<String, String> internalManagedEntity = testSubject.attach(externalManagedEntity, processingContext2);
 
-    @Test
-    void updateLoadedEventSourcedEntity() {
-        ProcessingContext processingContext = new StubProcessingContext();
-
-        ManagedEntity<String, String> result = testSubject.load("test", processingContext).join();
-
-        assertEquals("test(0)-0-1", result.entity());
-
-        verify(eventStore).transaction(processingContext);
-        verify(eventStoreTransaction).onAppend(any());
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Consumer<EventMessage>> callback = ArgumentCaptor.forClass(Consumer.class);
-        verify(eventStoreTransaction).onAppend(callback.capture());
-
-        callback.getValue().accept(new GenericEventMessage(new MessageType("event"), "live"));
-        assertEquals("test(0)-0-1-live", result.entity());
+        verify(handler).subscribe(result, processingContext);
+        verify(handler).subscribe(internalManagedEntity, processingContext2);
     }
 
     @Test
@@ -230,42 +204,10 @@ class EventSourcingRepositoryTest {
     }
 
     @Test
-    void loadOrCreateThrowsExceptionWhenEventStreamIsEmptyAndNullEntityIsCreated() {
-        ProcessingContext processingContext = new StubProcessingContext();
-
-        eventsToLoad = List.of();
-
-        factory = (id, event, ctx) -> {
-            if (event != null) {
-                return id + "(" + event.payload() + ")";
-            }
-            return null; // Simulating a null entity creation
-        };
-
-        assertThatThrownBy(() -> testSubject.loadOrCreate("test", processingContext).join())
-            .isInstanceOf(CompletionException.class)
-            .cause()
-            .isInstanceOf(EntityMissingAfterLoadOrCreateException.class);
-    }
-
-    @Test
-    void loadThrowsExceptionIfNullEntityIsReturnedAfterFirstEvent() {
-        ProcessingContext processingContext = new StubProcessingContext();
-        factory = (id, event, ctx) -> {
-            return null; // Simulating a null entity creation
-        };
-
-        assertThatThrownBy(() -> testSubject.load("test", processingContext).join())
-            .isInstanceOf(CompletionException.class)
-            .cause()
-            .isInstanceOf(EntityMissingAfterFirstEventException.class);
-    }
-
-    @Test
     void loadShouldReturnNullEntityWhenNoEventsAreReturned() {
         StubProcessingContext processingContext = new StubProcessingContext();
 
-        when(sourcingHandler.source(eq("test"), any(), eq(processingContext))).thenReturn(CompletableFuture.completedFuture(null));
+        when(handler.source(eq("test"), eq(processingContext))).thenReturn(CompletableFuture.completedFuture(null));
 
         doReturn(MessageStream.empty())
                 .when(eventStoreTransaction)
@@ -274,9 +216,6 @@ class EventSourcingRepositoryTest {
         ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
 
         assertNull(loaded.entity());
-
-        verify(eventStore).transaction(processingContext);
-        verify(eventStoreTransaction).onAppend(any());
     }
 
     @Test
@@ -285,12 +224,126 @@ class EventSourcingRepositoryTest {
 
         eventsToLoad = List.of();
 
+        when(handler.initialize("test", processingContext)).thenReturn("test()");
+
         ManagedEntity<String, String> loaded = testSubject.loadOrCreate("test", processingContext).join();
 
         assertEquals("test()", loaded.entity());
+    }
 
-        verify(eventStore).transaction(processingContext);
-        verify(eventStoreTransaction).onAppend(any());
+    @Test
+    void loadOrCreateAllowsSubsequentResolutionToObserveEntityCreatedWithinSameUnitOfWork() {
+        ProcessingContext processingContext = new StubProcessingContext();
+        eventsToLoad = List.of();
+
+        when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
+
+        // Even though initialize() failed, loadOrCreate resolves normally to a ManagedEntity wrapping a null
+        // entity - the wrapper itself is still subscribed for live updates, which is what allows a
+        // same-unit-of-work creation to be observed by a later resolution instead of a poisoned result.
+        ManagedEntity<String, String> firstResult = testSubject.loadOrCreate("test", processingContext)
+                                                               .orTimeout(2, TimeUnit.SECONDS)
+                                                               .join();
+
+        assertNull(firstResult.entity());
+        verify(handler).subscribe(firstResult, processingContext);
+
+        // Simulate a creation event being appended and applied via the onAppend callback a real
+        // EntityLifecycleHandler would have registered through subscribe(...).
+        firstResult.applyStateChange(current -> "test(created)");
+
+        ManagedEntity<String, String> secondResult = testSubject.loadOrCreate("test", processingContext).join();
+
+        assertSame(firstResult, secondResult);
+        assertEquals("test(created)", secondResult.entity());
+    }
+
+    @Nested
+    class LoadAndLoadOrCreateWithinOneProcessingContext {
+
+        private final ProcessingContext processingContext = new StubProcessingContext();
+
+        @BeforeEach
+        void noEventsForTheIdentifier() {
+            eventsToLoad = List.of();
+        }
+
+        @Test
+        void loadOrCreateAfterNotFoundLoadCreatesThroughTheLifecycleHandler() {
+            // given a load reporting the entity as missing, without invoking initialize(...)
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
+
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+            assertThat(loaded.entity()).isNull();
+
+            // when loadOrCreate follows for the same identifier in the same context
+            ManagedEntity<String, String> created = testSubject.loadOrCreate("test", processingContext).join();
+
+            // then the entity was created, on the very same managed instance the earlier load handed out
+            assertThat(created.entity()).isEqualTo("test()");
+            assertThat(created).isSameAs(loaded);
+            assertThat(loaded.entity()).isEqualTo("test()");
+        }
+
+        @Test
+        void loadOrCreateAfterNotFoundLoadReturnsSameInstanceWithNullStateWhenEntityRequiresAFirstEvent() {
+            // given an entity that cannot be constructed from its identifier alone
+            when(handler.initialize("test", processingContext)).thenThrow(new EntityNotFoundException("test"));
+
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+            assertThat(loaded.entity()).isNull();
+
+            // when loadOrCreate follows for the same identifier in the same context
+            ManagedEntity<String, String> result = testSubject.loadOrCreate("test", processingContext)
+                                                              .orTimeout(2, TimeUnit.SECONDS)
+                                                              .join();
+
+            // then it resolves normally, on the same managed instance, still available for the first appended
+            // event to evolve
+            assertThat(result).isSameAs(loaded);
+            assertThat(result.entity()).isNull();
+        }
+
+        @Test
+        void loadAfterLoadOrCreateObservesTheCreatedEntity() {
+            // given loadOrCreate created the entity
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
+
+            ManagedEntity<String, String> created = testSubject.loadOrCreate("test", processingContext).join();
+
+            // when load follows for the same identifier in the same context
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+
+            // then both calls describe the same managed entity
+            assertThat(loaded).isSameAs(created);
+            assertThat(loaded.entity()).isEqualTo("test()");
+        }
+
+        @Test
+        void repeatedLoadOrCreateCreatesTheEntityOnlyOnce() {
+            // given a first loadOrCreate creating the entity
+            when(handler.initialize("test", processingContext)).thenReturn("test()");
+
+            ManagedEntity<String, String> first = testSubject.loadOrCreate("test", processingContext).join();
+
+            // when loadOrCreate is invoked again for the same identifier in the same context
+            ManagedEntity<String, String> second = testSubject.loadOrCreate("test", processingContext).join();
+
+            // then the cached entity is returned without creating a second instance
+            assertThat(second).isSameAs(first);
+            assertThat(second.entity()).isEqualTo("test()");
+            verify(handler, times(1)).initialize("test", processingContext);
+        }
+
+        @Test
+        void loadOfMissingEntityDoesNotInvokeTheLifecycleHandlerInitialization() {
+            // when loading an identifier without events
+            ManagedEntity<String, String> loaded = testSubject.load("test", processingContext).join();
+
+            // then the managed entity holds no state and no creation was attempted
+            assertThat(loaded.entity()).isNull();
+            verify(handler, never()).initialize(any(), any());
+        }
     }
 
     private static boolean conditionPredicate(SourcingCondition condition) {

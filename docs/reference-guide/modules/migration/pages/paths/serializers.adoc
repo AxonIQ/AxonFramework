@@ -33,9 +33,7 @@ For users who require an XML-based format, it is recommended to use the `Jackson
 
 [source,java]
 ----
-// Configuring Jackson for XML conversion
-XmlMapper xmlMapper = new XmlMapper();
-Converter xmlConverter = new JacksonConverter(xmlMapper);
+include::example$migration/paths/serializers/XmlConversionConfiguration.java[tag=xml-conversion,indent=0]
 ----
 
 [WARNING]
@@ -66,7 +64,7 @@ As with serializers, converters can be configured in multiple ways depending on 
 
 When using the `MessagingConfigurer` in a non-Spring environment, the configuration has shifted from the `Configurer` to a more modular approach.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public void configure(Configurer configurer) {
@@ -74,23 +72,19 @@ public void configure(Configurer configurer) {
               .configureMessageSerializer(c -> JacksonSerializer.defaultSerializer())
               .configureEventSerializer(c -> JacksonSerializer.defaultSerializer());
 }
+----
 
+[source,java]
+----
 // AF5
-public void configure(MessagingConfigurer configurer, ObjectMapper objectMapper) {
-    configurer.componentRegistry(registry -> {
-        Converter generalConverter = new JacksonConverter(objectMapper);
-        registry.registerComponent(GeneralConverter.class, c -> new DelegatingGeneralConverter(generalConverter));
-        registry.registerComponent(MessageConverter.class, c -> new DelegatingMessageConverter(generalConverter));
-        registry.registerComponent(EventConverter.class, c -> new DelegatingEventConverter(generalConverter));
-    });
-}
+include::example$migration/paths/serializers/DeclarativeConversionConfiguration.java[tags=declarative-configuration-import;declarative-configuration,indent=0]
 ----
 
 === Spring configuration
 
 In a Spring environment, you can define beans for the different converter levels. Axon's auto-configuration will automatically pick them up.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 @Configuration
@@ -101,26 +95,12 @@ public class SerializationConfig {
         return JacksonSerializer.defaultSerializer();
     }
 }
+----
 
+[source,java]
+----
 // AF5
-@Configuration
-public class ConversionConfig {
-    @Bean
-    @Primary
-    public GeneralConverter converter(ObjectMapper objectMapper) {
-        return new DelegatingGeneralConverter(new JacksonConverter(objectMapper));
-    }
-
-    @Bean
-    public MessageConverter messageConverter(GeneralConverter generalConverter) {
-        return new DelegatingMessageConverter(generalConverter);
-    }
-
-    @Bean
-    public EventConverter eventConverter(MessageConverter messageConverter) {
-        return new DelegatingEventConverter(messageConverter);
-    }
-}
+include::example$migration/paths/serializers/ConversionConfig.java[tag=spring-configuration,indent=0]
 ----
 
 === Spring Boot properties configuration
@@ -151,10 +131,12 @@ Available types for properties are:
 
 * `jackson` - using jackson latest version 3 as propagated by Spring Boot 4
 * `jackson2` - fallback for legacy jackson version 2 (Spring Boot 2/3)
-* `avro` - https://avro.apache.org/[Apache Avro] schema based, see the xref:axon-framework-reference:ROOT:conversion.adoc#avro_converter[AvroConverter] section
+* `avro` - https://avro.apache.org/[Apache Avro] schema based, see the xref:ROOT:conversion.adoc#avro_converter[AvroConverter] section
 * `cbor` - uses Jackson/CBORMapper to convert objects into the Concise Binary Object Representation.
 
-Note that `avro` can only be used for `messages` or `events`, not as a `general` converter.
+NOTE: The `avro` converter can only be used for `messages` or `events`, not as a `general` converter.
+
+IMPORTANT: Jackson 3 changed the default for deserializing `final` fields. If your upgrade from Jackson 2 to Jackson 3, check the xref:ROOT:conversion.adoc#jackson3_converter_final_fields_note[additional information in the conversion reference].
 
 
 

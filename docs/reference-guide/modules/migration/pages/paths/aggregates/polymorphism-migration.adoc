@@ -2,18 +2,16 @@
 :navtitle: Polymorphic Migration
 
 Polymorphic aggregates allow you to define a hierarchy where subtypes inherit command and event sourcing handlers from their superclasses.
-For a detailed guide on how to model these, please refer to the xref:commands:modeling/aggregate-polymorphism.adoc[modeling section].
+For a detailed guide on how to model these, please refer to the xref:commands:entities/entity-polymorphism.adoc[entity polymorphism reference].
 
 Let's take a look at the following example:
 
 [source,java]
 ----
-public abstract class Card {}
-
-public class GiftCard extends Card {}
-
-public class OpenLoopGiftCard extends GiftCard {}
-public class RechargeableGiftCard extends GiftCard {}
+include::example$migration/paths/aggregates/polymorphismmigration/Card.java[tag=card-supertype,indent=0]
+include::example$migration/paths/aggregates/polymorphismmigration/GiftCard.java[tag=gift-card-entity,indent=0]
+include::example$migration/paths/aggregates/polymorphismmigration/OpenLoopGiftCard.java[tag=open-loop-gift-card,indent=0]
+include::example$migration/paths/aggregates/polymorphismmigration/RechargeableGiftCard.java[tag=rechargeable-gift-card,indent=0]
 ----
 
 In Axon Framework 4, polymorphic aggregates were often configured using Spring's `@Aggregate` annotation on both the base and subclasses.
@@ -28,31 +26,7 @@ Axon Framework 5 (Declarative)::
 --
 [source,java]
 ----
-public class AxonConfig {
-    // ...
-    public void configure(EventSourcingConfigurer configurer) {
-         configurer.registerEntity(
-                EventSourcedEntityModule.declarative(String.class, GiftCard.class)
-                        .messagingModel((configuration, builder) -> PolymorphicEntityMetamodel.forSuperType(GiftCard.class)
-                                .addConcreteType(AnnotatedEntityMetamodel.forConcreteType(
-                                        OpenLoopGiftCard.class,
-                                        configuration.getComponent(ParameterResolverFactory.class),
-                                        configuration.getComponent(MessageTypeResolver.class),
-                                        configuration.getComponent(MessageConverter.class),
-                                        configuration.getComponent(EventConverter.class)
-                                ))
-                                .addConcreteType(AnnotatedEntityMetamodel.forConcreteType(
-                                        RechargeableGiftCard.class,
-                                        configuration.getComponent(ParameterResolverFactory.class),
-                                        configuration.getComponent(MessageTypeResolver.class),
-                                        configuration.getComponent(MessageConverter.class),
-                                        configuration.getComponent(EventConverter.class)
-                                ))
-                                .build())
-        );
-                                    // other phases (factory, etc.) omitted for brevity
-    }
-}
+include::example$migration/paths/aggregates/polymorphismmigration/AxonConfig.java[tag=declarative-polymorphic-registration,indent=0]
 ----
 --
 
@@ -62,31 +36,15 @@ Axon Framework 5 (AutoDetected)::
 In most cases, you can rely on auto-detection of polymorphic entities by Axon Framework 5. Simply register the base type, and the framework will discover the subtypes automatically.
 [source,java]
 ----
-@EventSourcedEntity(
-    concreteTypes = {
-            OpenLoopGiftCard.class,
-            RechargeableGiftCard.class
-    }
-)
-public class GiftCard extends Card {
-    // ...
-}
-
-public class AxonConfig {
-    // ...
-    public void configure(EventSourcingConfigurer configurer) {
-        configurer.registerEntity(
-                EventSourcedEntityModule.autodetected(String.class, GiftCard.class)
-        );
-    }
-}
+include::example$migration/paths/aggregates/polymorphismmigration/autodetected/GiftCard.java[tag=autodetected-entity,indent=0]
+include::example$migration/paths/aggregates/polymorphismmigration/autodetected/AxonConfig.java[tag=autodetected-registration,indent=0]
 ----
 --
 
 Axon Framework 4::
 +
 --
-[source,java]
+[source,java,role=axon4]
 ----
 public class AxonConfig {
     // ...
@@ -106,3 +64,7 @@ public class AxonConfig {
 --
 
 ====
+
+== See also
+
+- xref:commands:entities/entity-polymorphism.adoc[Polymorphic Entities]: full reference for `@EventSourcedEntity(concreteTypes = {...})`, the `@EntityCreator` factory pattern, and `PolymorphicEntityMetamodel` configuration in Axon Framework 5

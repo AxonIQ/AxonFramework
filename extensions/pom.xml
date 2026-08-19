@@ -26,17 +26,15 @@
 
     <groupId>org.axonframework.extensions</groupId>
     <artifactId>axon-extensions</artifactId>
+    <packaging>pom</packaging>
 
     <name>Axon Extension - Parent</name>
-    <description>
-        Module providing parent for Axon Framework Extensions.
-    </description>
+    <description>Module providing parent for Axon Framework Extensions.</description>
 
-    <packaging>pom</packaging>
     <modules>
-        <module>spring</module>
+        <module>kotlin</module>
         <module>metrics</module>
-        <module>tracing</module>
         <module>reactor</module>
+        <module>spring</module>
     </modules>
 </project>

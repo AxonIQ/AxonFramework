@@ -16,7 +16,7 @@ This single dependency provides everything you need to connect to Axon Server:
 ./pom.xml
 ----
 <dependency>
-    <groupId>org.axonframework</groupId>
+    <groupId>io.axoniq.framework</groupId>
     <artifactId>axon-server-connector</artifactId>
     <version>${axon.version}</version>
 </dependency>
@@ -37,7 +37,7 @@ Create a `docker-compose.yml` file in your project root:
 ----
 services:
   axon-server:
-    image: docker.axoniq.io/axoniq/axonserver:2025.2.0
+    image: docker.axoniq.io/axoniq/axonserver:2026.0.0
     ports:
       - "8024:8024"
       - "8124:8124"

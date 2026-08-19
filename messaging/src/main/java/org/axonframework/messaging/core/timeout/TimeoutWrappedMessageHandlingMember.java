@@ -16,6 +16,7 @@
 package org.axonframework.messaging.core.timeout;
 
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -62,7 +63,7 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
     }
 
     @Override
-    public Object handleSync(Message message, ProcessingContext context, @Nullable T target) throws Exception {
+    public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
         String taskName = String.format("Message [%s] for handler [%s]",
                                         message.type().name(),
                                         target != null ? target.getClass().getName() : null);
@@ -70,15 +71,16 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
                 taskName,
                 timeout,
                 warningThreshold,
-                warningInterval
+                warningInterval,
+                getClass()
         );
         task.start();
         try {
-            Object result = super.handleSync(message, context, target);
+            MessageStream<?> result = super.handle(message, context, target);
             task.ensureNoInterruptionWasSwallowed();
             return result;
         } catch (Exception e) {
-            throw task.detectInterruptionInsteadOfException(e);
+            return MessageStream.failed(task.detectInterruptionInsteadOfException(e));
         } finally {
             task.complete();
         }

@@ -16,25 +16,33 @@
 
 package org.axonframework.messaging.core.interception;
 
+import org.axonframework.common.FutureUtils;
+import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.LegacyMessageSupportingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.queryhandling.GenericQueryMessage;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.junit.jupiter.api.*;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -50,7 +58,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author Steven van Beelen
  */
-@Disabled("TODO #3062 - Exception Handler support")
 class ExceptionHandlerTest {
 
     private static final String COMMAND_HANDLER_INVOKED = "command";
@@ -138,8 +145,6 @@ class ExceptionHandlerTest {
 
         assertEquals(Arrays.asList("handleIllegalStateExceptionForSomeCommand",
                                    "handleExceptionForSomeCommand",
-                                   "handleExceptionForSomeCommandThroughAnnotation",
-                                   "handleIllegalStateExceptionForSomeCommandThroughAnnotation",
                                    "handleIllegalStateException",
                                    "handleIllegalStateExceptionThroughAnnotation",
                                    "leastSpecificExceptionHandler"),
@@ -159,7 +164,11 @@ class ExceptionHandlerTest {
         if (handler.isPresent()) {
             MessageHandlerInterceptorMemberChain<ExceptionHandlingComponent> interceptorChain =
                     inspector.chainedInterceptor(ExceptionHandlingComponent.class);
-            return interceptorChain.handleSync(message, messageHandlingComponent, handler.get());
+            ProcessingContext context = StubProcessingContext.forMessage(message);
+            return FutureUtils.joinAndUnwrap(
+                    interceptorChain.handle(message, context, messageHandlingComponent, handler.get())
+                                    .reduce(null, (acc, entry) -> entry.message().payload())
+            );
         }
         return null;
     }
@@ -184,21 +193,6 @@ class ExceptionHandlerTest {
         public void handleIllegalStateException(IllegalStateException exception) {
             invokedExceptionHandlers.add("handleIllegalStateException");
             throw exception;
-        }
-
-        @ExceptionHandler(
-                resultType = IllegalStateException.class,
-                payloadType = SomeCommand.class
-        )
-        public void handleIllegalStateExceptionForSomeCommandThroughAnnotation() {
-            invokedExceptionHandlers.add("handleIllegalStateExceptionForSomeCommandThroughAnnotation");
-            throw new IllegalStateException("handleIllegalStateExceptionForSomeCommandThroughAnnotation");
-        }
-
-        @ExceptionHandler(payloadType = SomeCommand.class)
-        public void handleExceptionForSomeCommandThroughAnnotation() {
-            invokedExceptionHandlers.add("handleExceptionForSomeCommandThroughAnnotation");
-            throw new IllegalStateException("handleExceptionForSomeCommandThroughAnnotation");
         }
 
         @ExceptionHandler
@@ -229,6 +223,242 @@ class ExceptionHandlerTest {
         public SomeQueryResponse handle(SomeQuery query) throws Exception {
             invokedHandler.set(QUERY_HANDLER_INVOKED);
             throw query.exceptionSupplier.get();
+        }
+    }
+
+    @Nested
+    class AnnotatedEventHandlerExceptionHandling {
+
+        @Test
+        void exceptionHandlerIsInvokedWhenEventHandlerThrows() {
+            // given
+            var handler = new EventHandlerWithRethrowingExceptionHandler();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when - event handler throws; exception handler is invoked and re-throws
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - handler was invoked, and the re-thrown exception propagates
+            assertTrue(handler.exceptionHandlerInvoked);
+            assertTrue(result.error().isPresent());
+        }
+
+        @Test
+        void exceptionHandlerCanSuppressException() {
+            // given
+            var handler = new EventHandlerWithSuppressingExceptionHandler();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when - event handler throws; exception handler swallows the exception
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - exception was suppressed; stream completes without error
+            assertTrue(result.error().isEmpty());
+        }
+
+        @Test
+        void exceptionHandlerNotMatchingExceptionTypeIsSkipped() {
+            // given
+            var handler = new EventHandlerWithIoExceptionHandlerOnly();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when - event handler throws IllegalArgumentException; @ExceptionHandler(resultType = IOException.class) does not match
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - exception handler not invoked; original exception propagates
+            assertFalse(handler.exceptionHandlerInvoked);
+            assertTrue(result.error().isPresent());
+            assertInstanceOf(IllegalArgumentException.class, result.error().get());
+        }
+
+        private static AnnotatedEventHandlingComponent<?> annotatedEventHandlingComponent(Object handler) {
+            return new AnnotatedEventHandlingComponent<>(
+                    handler,
+                    ClasspathParameterResolverFactory.forClass(handler.getClass()),
+                    ClasspathHandlerDefinition.forClass(handler.getClass()),
+                    new AnnotationMessageTypeResolver(),
+                    new DelegatingEventConverter(PassThroughConverter.INSTANCE)
+            );
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithRethrowingExceptionHandler {
+
+            boolean exceptionHandlerInvoked = false;
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onException(RuntimeException ex) {
+                exceptionHandlerInvoked = true;
+                throw ex;
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithSuppressingExceptionHandler {
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onException() {
+                // return normally — suppresses the exception
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithIoExceptionHandlerOnly {
+
+            boolean exceptionHandlerInvoked = false;
+
+            @EventHandler
+            void on(String event) {
+                throw new IllegalArgumentException("wrong type");
+            }
+
+            @ExceptionHandler(resultType = IOException.class)
+            void onIoException() {
+                exceptionHandlerInvoked = true;
+            }
+        }
+
+        @Test
+        void exceptionHandlerReceivesEventMessageAsParameter() {
+            // given
+            var handler = new EventHandlerWithEventMessageParameter();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - exception handler received the full EventMessage
+            assertSame(event, handler.capturedMessage);
+            assertTrue(result.error().isEmpty());
+        }
+
+        @Test
+        void exceptionHandlerReceivesBothEventMessageAndExceptionAsParameters() {
+            // given
+            var handler = new EventHandlerWithEventMessageAndExceptionParameters();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - exception handler received both the full EventMessage and the exception
+            assertSame(event, handler.capturedMessage);
+            assertInstanceOf(RuntimeException.class, handler.capturedException);
+            assertTrue(result.error().isEmpty());
+        }
+
+        @Test
+        void exceptionHandlerWithEventMessageParameterDoesNotMatchWrongMessageType() {
+            // given - a component that only handles CommandMessage in its exception handler
+            var handler = new EventHandlerWithCommandMessageExceptionHandler();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when - an EventMessage arrives, but the exception handler expects a CommandMessage
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - exception handler is not invoked; original exception propagates
+            assertFalse(handler.exceptionHandlerInvoked);
+            assertTrue(result.error().isPresent());
+        }
+
+        @Test
+        void exceptionHandlerWithQueryMessageParameterDoesNotMatchEventMessage() {
+            // given - a projection whose exception handler targets only QueryMessage failures
+            var handler = new ProjectionWithQueryMessageExceptionHandler();
+            var component = annotatedEventHandlingComponent(handler);
+            var event = asEventMessage("test-payload");
+
+            // when - an EventMessage arrives and the event handler throws
+            var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+            // then - the QueryMessage-scoped exception handler is not invoked; original exception propagates
+            assertFalse(handler.exceptionHandlerInvoked);
+            assertTrue(result.error().isPresent());
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithEventMessageParameter {
+
+            EventMessage capturedMessage;
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onException(EventMessage message) {
+                capturedMessage = message;
+                // return normally — suppresses the exception
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithEventMessageAndExceptionParameters {
+
+            EventMessage capturedMessage;
+            RuntimeException capturedException;
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onException(EventMessage message, RuntimeException exception) {
+                capturedMessage = message;
+                capturedException = exception;
+                // return normally — suppresses the exception
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithCommandMessageExceptionHandler {
+
+            boolean exceptionHandlerInvoked = false;
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onException(CommandMessage message) {
+                exceptionHandlerInvoked = true;
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class ProjectionWithQueryMessageExceptionHandler {
+
+            boolean exceptionHandlerInvoked = false;
+
+            @EventHandler
+            void on(String event) {
+                throw new RuntimeException("event handler failed");
+            }
+
+            @ExceptionHandler
+            void onQueryException(QueryMessage message) {
+                // only intended for query-related failures in a projection
+                exceptionHandlerInvoked = true;
+            }
         }
     }
 

@@ -37,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static java.util.concurrent.CompletableFuture.failedFuture;
 import static org.axonframework.common.ObjectUtils.getOrDefault;
 
 /**
@@ -99,21 +100,26 @@ public class InMemoryTokenStore implements TokenStore {
                                               int segmentId,
                                               @Nullable ProcessingContext context) {
         Objects.requireNonNull(context, "processingContext may not be null for an InMemoryTokenStore");
+        ProcessAndSegmentId key = new ProcessAndSegmentId(processorName, segmentId);
+        if (!tokens.containsKey(key)) {
+            return noSuchToken(processorName, segmentId);
+        }
         if (context.isStarted()) {
-            context.runOnAfterCommit(c -> updateToken(token, processorName, segmentId));
-        } else {
-            updateToken(token, processorName, segmentId);
+            context.runOnAfterCommit(c -> {
+                if (!updateToken(token, key)) {
+                    throw noSuchTokenException(processorName, segmentId);
+                }
+            });
+        } else if (!updateToken(token, key)) {
+            return noSuchToken(processorName, segmentId);
         }
         return FutureUtils.emptyCompletedFuture();
     }
 
-    private void updateToken(@Nullable TrackingToken token, String processorName, int segmentId) {
-        ProcessAndSegmentId key = new ProcessAndSegmentId(processorName, segmentId);
+    private boolean updateToken(@Nullable TrackingToken token, ProcessAndSegmentId key) {
         SegmentAndToken old = tokens.computeIfPresent(key, (ps, st) -> new SegmentAndToken(st.segment, token));
 
-        if (old == null) {
-            throw new UnableToClaimTokenException("No such token for processor '%s' and segment %d".formatted(processorName, segmentId));
-        }
+        return old != null;
     }
 
     @Override
@@ -122,8 +128,8 @@ public class InMemoryTokenStore implements TokenStore {
                                                        @Nullable ProcessingContext context) {
         SegmentAndToken st = tokens.get(new ProcessAndSegmentId(processorName, segmentId));
         if (st == null) {
-            throw new UnableToClaimTokenException(
-                    "No token was initialized for segment " + segmentId + " for processor " + processorName);
+            return failedFuture(new UnableToClaimTokenException(
+                    "No token was initialized for segment " + segmentId + " for processor " + processorName));
         } else if (NULL_TOKEN == st.trackingToken) {
             return FutureUtils.emptyCompletedFuture();
         }
@@ -158,7 +164,7 @@ public class InMemoryTokenStore implements TokenStore {
         SegmentAndToken previous = tokens.putIfAbsent(new ProcessAndSegmentId(processorName, segment.getSegmentId()),
                                                       new SegmentAndToken(segment, token == null ? NULL_TOKEN : token));
         if (previous != null) {
-            throw new UnableToInitializeTokenException("Token was already present");
+            return failedFuture(new UnableToInitializeTokenException("Token was already present"));
         }
         return completedFuture(null);
     }
@@ -189,6 +195,15 @@ public class InMemoryTokenStore implements TokenStore {
     @Override
     public CompletableFuture<String> retrieveStorageIdentifier(@Nullable ProcessingContext context) {
         return completedFuture(identifier);
+    }
+
+    private CompletableFuture<Void> noSuchToken(String processorName, int segmentId) {
+        return failedFuture(noSuchTokenException(processorName, segmentId));
+    }
+
+    private UnableToClaimTokenException noSuchTokenException(String processorName, int segmentId) {
+        return new UnableToClaimTokenException(
+                "No such token for processor '%s' and segment %d".formatted(processorName, segmentId));
     }
 
     private record SegmentAndToken(Segment segment, TrackingToken trackingToken) {}

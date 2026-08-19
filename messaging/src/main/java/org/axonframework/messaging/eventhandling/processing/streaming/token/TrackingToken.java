@@ -31,11 +31,23 @@ import java.util.OptionalLong;
  * @since 3.0.0
  */
 public interface TrackingToken {
-
     /**
-     * The {@link ResourceKey} used whenever a {@link Context} would contain a {@link TrackingToken}.
+     * The {@link ResourceKey} used to store the per-event {@link TrackingToken} in a {@link Context}.
+     * <p>
+     * During batch processing, each event's handler receives a {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}
+     * with this key set to the token of that specific event.
      */
     ResourceKey<TrackingToken> RESOURCE_KEY = ResourceKey.withLabel("trackingToken");
+
+    /**
+     * The {@link ResourceKey} used to expose the batch-end {@link TrackingToken} in a batch
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}.
+     * <p>
+     * This key holds the token of the <em>last</em> event in the current batch, i.e. the position that will be stored
+     * in the {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore} when the
+     * batch commits. Per-event tokens are available under {@link #RESOURCE_KEY}.
+     */
+    ResourceKey<TrackingToken> BATCH_END_RESOURCE_KEY = ResourceKey.withLabel("batchEndTrackingToken");
 
     /**
      * Adds the given {@code token} to the given {@code context} using the {@link #RESOURCE_KEY}.

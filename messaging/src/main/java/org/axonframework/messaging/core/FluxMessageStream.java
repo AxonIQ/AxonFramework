@@ -16,19 +16,15 @@
 
 package org.axonframework.messaging.core;
 
-import org.axonframework.messaging.core.MessageStream.Entry;
 import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import reactor.core.publisher.Flux;
 
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 /**
  * A {@link MessageStream} implementation using a {@link Flux} as the source for {@link Entry entries}.
@@ -59,17 +55,6 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
      */
     FluxMessageStream(Flux<Entry<M>> source) {
         this.source = source;
-    }
-
-    @Override
-    public <RM extends Message> MessageStream<RM> map(Function<Entry<M>, Entry<RM>> mapper) {
-        return new FluxMessageStream<>(source.map(mapper));
-    }
-
-    @Override
-    public <R> CompletableFuture<R> reduce(R identity,
-                                           BiFunction<R, ? super Entry<M>, R> accumulator) {
-        return source.reduce(identity, accumulator).toFuture();
     }
 
     @Override
@@ -151,10 +136,4 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
             s.cancel();
         }
     }
-
-    @Override
-    public MessageStream<M> onErrorContinue(Function<Throwable, MessageStream<? extends M>> onError) {
-        return new FluxMessageStream<>(source.onErrorResume(exception -> FluxUtils.of(onError.apply(exception))));
-    }
-
 }

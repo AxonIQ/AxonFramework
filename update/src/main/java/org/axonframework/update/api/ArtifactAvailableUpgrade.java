@@ -19,7 +19,7 @@ package org.axonframework.update.api;
 import org.axonframework.common.annotation.Internal;
 
 /**
- * Represents an upgrade suggestion for a specific artifact version by the AxonIQ UpdateChecker API.
+ * Represents an upgrade suggestion for a specific artifact version by the Axoniq UpdateChecker API.
  *
  * @param groupId         The group ID of the library.
  * @param artifactId      The artifact ID of the library.

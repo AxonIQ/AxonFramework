@@ -16,16 +16,16 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc;
 
+import org.axonframework.common.ClockUtils;
 import org.jspecify.annotations.Nullable;
-import org.axonframework.common.ClassUtils;
 import org.axonframework.common.DateTimeUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.LegacyTokenTypes;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry;
 import org.axonframework.conversion.Converter;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.TemporalAmount;
 import java.util.Objects;
@@ -41,11 +41,6 @@ import static org.axonframework.common.DateTimeUtils.formatInstant;
  * @since 3.0.0
  */
 public class JdbcTokenEntry {
-
-    /**
-     * The clock used to persist timestamps in this entry. Defaults to UTC system time.
-     */
-    public static Clock clock = Clock.systemUTC();
 
     private byte[] token;
     private String tokenType;
@@ -106,8 +101,7 @@ public class JdbcTokenEntry {
         if (token == null || tokenType == null) {
             return null;
         }
-        Class<TrackingToken> type = ClassUtils.loadClass(this.tokenType);
-        return converter.convert(this.token, type);
+        return LegacyTokenTypes.deserialize(converter, token, tokenType);
     }
 
     /**
@@ -192,7 +186,7 @@ public class JdbcTokenEntry {
         if (!mayClaim(owner, claimTimeout)) {
             return false;
         }
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         this.owner = owner;
         return true;
     }
@@ -210,7 +204,7 @@ public class JdbcTokenEntry {
     }
 
     private boolean expired(TemporalAmount claimTimeout) {
-        return timestamp().plus(claimTimeout).isBefore(clock.instant());
+        return timestamp().plus(claimTimeout).isBefore(ClockUtils.instant());
     }
 
     /**
@@ -223,7 +217,7 @@ public class JdbcTokenEntry {
     public boolean releaseClaim(String owner) {
         if (Objects.equals(this.owner, owner)) {
             this.owner = null;
-            this.timestamp = formatInstant(clock.instant());
+            this.timestamp = formatInstant(ClockUtils.instant());
         }
         return this.owner == null;
     }
@@ -236,7 +230,7 @@ public class JdbcTokenEntry {
      * @param converter The converter to update token to.
      */
     public final void updateToken(@Nullable TrackingToken token, Converter converter) {
-        this.timestamp = formatInstant(clock.instant());
+        this.timestamp = formatInstant(ClockUtils.instant());
         if (token != null) {
             this.token = converter.convert(token, byte[].class);
             this.tokenType = token.getClass().getName();

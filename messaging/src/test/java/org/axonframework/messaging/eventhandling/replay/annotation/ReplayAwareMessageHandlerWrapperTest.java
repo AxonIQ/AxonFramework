@@ -127,11 +127,10 @@ class ReplayAwareMessageHandlerWrapperTest {
             return EventMessage.class.isAssignableFrom(messageType);
         }
 
-        @Override
         @Deprecated
-        public Object handleSync(@NonNull Message message,
-                                 @NonNull ProcessingContext context,
-                                 @Nullable Object target) {
+        private Object handleSync(@NonNull Message message,
+                                  @NonNull ProcessingContext context,
+                                  @Nullable Object target) {
             throw new UnsupportedOperationException("Use handle() instead");
         }
 
@@ -188,11 +187,10 @@ class ReplayAwareMessageHandlerWrapperTest {
             return CommandMessage.class.isAssignableFrom(messageType);
         }
 
-        @Override
         @Deprecated
-        public Object handleSync(@NonNull Message message,
-                                 @NonNull ProcessingContext context,
-                                 @Nullable Object target) {
+        private Object handleSync(@NonNull Message message,
+                                  @NonNull ProcessingContext context,
+                                  @Nullable Object target) {
             throw new UnsupportedOperationException("Use handle() instead");
         }
 

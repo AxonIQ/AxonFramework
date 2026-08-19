@@ -2,7 +2,7 @@ name: meta-annotations-guide
 title: Meta Annotations
 version:
   axon-(?<version>+({0..9}).+({0..9})).*: $<version>
-  master: development
+  '*': development
 start_page: ROOT:index.adoc
 
 asciidoc:

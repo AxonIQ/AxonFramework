@@ -28,6 +28,7 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -181,6 +182,102 @@ class SimpleEventBusTest {
             // when / then - no exception should be thrown
             testSubject.publish(null, List.of(newEvent("event1")));
         }
+
+        @Test
+        void publishFutureOnlyCompletesWhenSubscribersComplete() {
+            // given
+            CompletableFuture<Void> subscriberResult = new CompletableFuture<>();
+            testSubject.subscribe((events, context) -> subscriberResult);
+
+            // when
+            CompletableFuture<Void> publishResult = testSubject.publish(null, List.of(newEvent("event1")));
+
+            // then - the publish future tracks the subscriber and does not complete before it does
+            assertThat(publishResult).isNotDone();
+            subscriberResult.complete(null);
+            assertThat(publishResult).isCompleted();
+        }
+
+        @Test
+        void publishFutureCompletesExceptionallyWhenSubscriberFails() {
+            // given
+            RuntimeException failure = new RuntimeException("subscriber failed");
+            testSubject.subscribe((events, context) -> CompletableFuture.failedFuture(failure));
+
+            // when
+            CompletableFuture<Void> publishResult = testSubject.publish(null, List.of(newEvent("event1")));
+
+            // then
+            assertThat(publishResult)
+                    .failsWithin(Duration.ZERO)
+                    .withThrowableThat()
+                    .havingCause()
+                    .isEqualTo(failure);
+        }
+
+        @Test
+        void everySubscriberIsNotifiedEvenWhenAnEarlierOneFails() {
+            // given
+            testSubject.subscribe((events, context) -> CompletableFuture.failedFuture(new RuntimeException("boom")));
+            RecordingEventListener laterListener = new RecordingEventListener();
+            testSubject.subscribe(laterListener);
+
+            // when
+            CompletableFuture<Void> publishResult = testSubject.publish(null, List.of(newEvent("event1")));
+
+            // then - the earlier failure does not prevent the later subscriber from receiving the event,
+            // and the failure is still reported to the publisher
+            assertThat(laterListener.getReceivedEvents()).hasSize(1);
+            assertThat(publishResult).isCompletedExceptionally();
+        }
+
+        @Test
+        void publishReportsSynchronousSubscriberFailureThroughReturnedFuture() {
+            // given
+            RuntimeException failure = new RuntimeException("subscriber threw");
+            testSubject.subscribe((events, context) -> {
+                throw failure;
+            });
+            RecordingEventListener laterListener = new RecordingEventListener();
+            testSubject.subscribe(laterListener);
+
+            // when - a subscriber throwing must not surface at the publishing call site
+            CompletableFuture<Void> publishResult = testSubject.publish(null, List.of(newEvent("event1")));
+
+            // then - the throw is carried by the publication future and the later subscriber still received the event
+            assertThat(publishResult)
+                    .failsWithin(Duration.ZERO)
+                    .withThrowableThat()
+                    .havingCause()
+                    .isEqualTo(failure);
+            assertThat(laterListener.getReceivedEvents()).hasSize(1);
+        }
+
+        @Test
+        void firstFailureIsReportedWhenMultipleSubscribersThrowSynchronously() {
+            // given
+            RuntimeException firstFailure = new RuntimeException("first subscriber threw");
+            RuntimeException secondFailure = new RuntimeException("second subscriber threw");
+            testSubject.subscribe((events, context) -> {
+                throw firstFailure;
+            });
+            testSubject.subscribe((events, context) -> {
+                throw secondFailure;
+            });
+            RecordingEventListener laterListener = new RecordingEventListener();
+            testSubject.subscribe(laterListener);
+
+            // when
+            CompletableFuture<Void> publishResult = testSubject.publish(null, List.of(newEvent("event1")));
+
+            // then - the failure of the first throwing subscriber is reported, the remaining ones still ran
+            assertThat(publishResult)
+                    .failsWithin(Duration.ZERO)
+                    .withThrowableThat()
+                    .havingCause()
+                    .isEqualTo(firstFailure);
+            assertThat(laterListener.getReceivedEvents()).hasSize(1);
+        }
     }
 
     @Nested
@@ -319,11 +416,9 @@ class SimpleEventBusTest {
             uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
             CompletableFuture<Void> result = uow.execute();
 
-            // then
+            // then - the throwing subscriber fails the UnitOfWork without hiding the event from the next subscriber
             assertThat(result).isCompletedExceptionally();
-            // When exception is thrown, the entire UnitOfWork fails and no events are committed
-            // The exception prevents event processing from completing, so listeners may or may not receive events
-            // The key assertion is that the UnitOfWork completed exceptionally
+            assertThat(recordingListener.getReceivedEvents()).hasSize(1);
         }
 
         @Test

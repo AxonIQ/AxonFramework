@@ -17,7 +17,7 @@ The same events can be opened with different consistency scopes based on the spe
 == 2. ThreadLocal usage prevents proper asynchronous and reactive programming
 
 **Problem:** Axon Framework 4.x's reliance on ThreadLocal variables (particularly in `AggregateLifecycle`) creates errors when working with asynchronous code, reactive streams, or modern concurrency patterns.
-Developers encounter cryptic errors like "Cannot retrieve current `AggregateLifecycle`; none is yet defined" when attempting to use async operations.
+Developers encounter cryptic errors about `AggregateLifecycle` not being defined in the current context when attempting to use async operations.
 
 **Axon Framework 5 Solution:** Complete removal of ThreadLocal dependencies throughout the framework.
 The Unit of Work has been rebuilt to be fully composable from async functions, enabling native support for Project Reactor, Kotlin Coroutines, and Java virtual threads.

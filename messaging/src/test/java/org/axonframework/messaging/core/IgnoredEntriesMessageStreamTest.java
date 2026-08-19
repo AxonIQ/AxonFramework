@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test class validating the {@link IgnoredEntriesMessageStream} through the {@link MessageStreamTest} suite.
@@ -71,9 +71,9 @@ class IgnoredEntriesMessageStreamTest extends MessageStreamTest<Message> {
 
         var result = testSubject.onNext(e -> processed.set(true)).asCompletableFuture();
 
-        assertTrue(result.isDone());
-        assertNull(result.join());
-        assertFalse(processed.get());
+        assertThat(result).isDone();
+        assertThat(result.join()).isNull();
+        assertThat(processed.get()).isFalse();
     }
 
     @Override
@@ -83,14 +83,43 @@ class IgnoredEntriesMessageStreamTest extends MessageStreamTest<Message> {
 
         var actual = testSubject.first().asCompletableFuture();
 
-        assertTrue(actual.isCompletedExceptionally());
-        assertInstanceOf(MockException.class, actual.exceptionNow());
+        assertThat(actual).isCompletedExceptionally();
+        assertThat(actual.exceptionNow()).isInstanceOf(MockException.class);
     }
 
     @Test
     void shouldKeepOriginalExceptionAsFailure() {
         var testSubject = MessageStream.failed(new MockException()).ignoreEntries();
 
-        assertTrue(testSubject.error().isPresent());
+        assertThat(testSubject.error()).isPresent();
+    }
+
+    @Test
+    void reduceFromStreamWithSeveralEntriesReturnsSeedValue() {
+        // given
+        var testSubject = MessageStream.fromItems(createRandomMessage(), createRandomMessage())
+                                       .ignoreEntries();
+
+        // when
+        var result = testSubject.reduce("seed", (acc, entry) -> "never-called");
+
+        // then
+        assertThat(result).isCompletedWithValue("seed");
+    }
+
+    @Test
+    void reduceFromStreamWithSeveralEntriesReturnsOriginalFailure() {
+        // given
+        var failure = new MockException();
+        var testSubject = MessageStream.fromItems(createRandomMessage())
+                                       .concatWith(MessageStream.failed(failure))
+                                       .ignoreEntries();
+
+        // when
+        var result = testSubject.reduce("seed", (acc, entry) -> "never-called");
+
+        // then
+        assertThat(result).isCompletedExceptionally();
+        assertThat(result.exceptionNow()).isSameAs(failure);
     }
 }

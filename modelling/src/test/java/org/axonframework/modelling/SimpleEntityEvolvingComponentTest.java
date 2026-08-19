@@ -132,6 +132,11 @@ class SimpleEntityEvolvingComponentTest {
     }
 
     @Test
+    void supportedEventsReturnsPrecomputedSet() {
+        assertSame(testSubject.supportedEvents(), testSubject.supportedEvents());
+    }
+
+    @Test
     void describeToThrowsNullPointerExceptionForNullComponentDescriptor() {
         //noinspection DataFlowIssue
         assertThrows(NullPointerException.class, () -> testSubject.describeTo(null));

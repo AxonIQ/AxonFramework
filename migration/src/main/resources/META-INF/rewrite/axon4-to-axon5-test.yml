@@ -1,0 +1,71 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Test module (axon-test) renames.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Test
+displayName: Apply Axon Framework 5 test module renames
+description: >-
+  Renames `AggregateTestFixture` and `SagaTestFixture` to the unified
+  `AxonTestFixture` introduced in Axon Framework 5, and rewrites AF4-style
+  flat fixture call chains (`fixture.given(...).when(...).expectEvents(...)`)
+  to the AF5 fluent given/when/then API
+  (`fixture.given().events(...).when().command(...).then().events(...)`).
+  Also generates an `@AfterEach tearDown()` calling `fixture.stop()` on
+  test classes that declare an `AxonTestFixture` field but have no
+  existing `@AfterEach`. Targets the `axon-test` Maven artifact. Hamcrest
+  matcher conversions and Kotlin `@AfterEach` insertion remain manual.
+recipeList:
+  # Aggregate-fixture *setup* rewrite — must run BEFORE the
+  # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
+  # type is still on the constructor expression and so SagaTestFixture
+  # constructor sites stay untouched (they share the renamed AF5 type after
+  # ChangeType, but only the AF4 AggregateTestFixture FQN is matched here).
+  # Reads the aggregate-id type from the cross-recipe map populated by
+  # `AddEventTagAnnotation` while `@AggregateIdentifier` is still on the source.
+  - org.axonframework.migration.MigrateAggregateTestFixtureSetup
+  # Type rename — must run BEFORE the fluent-API rewrite so subsequent matchers
+  # see the new `AxonTestFixture` type, and so the import is updated in one
+  # cycle even when the call-chain rewrite doesn't fire.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.aggregate.AggregateTestFixture
+      newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.saga.SagaTestFixture
+      newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  # FixtureConfiguration<T> is the interface type used as variable declarations
+  # in many AF4 tests (e.g. `FixtureConfiguration<Dwelling> fixture`).
+  # AF5 replaces it with the concrete AxonTestFixture — no type argument.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.aggregate.FixtureConfiguration
+      newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  # AF5's AxonTestFixture is non-generic — drop the `<T>` payload parameter that
+  # AF4 used on AggregateTestFixture / SagaTestFixture / FixtureConfiguration so
+  # call sites like `AxonTestFixture<Order>` collapse to a raw `AxonTestFixture`.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  # Fluent-API rewrite — handles the call-chain shape change documented in
+  # `paths/test-fixtures.adoc`. Leaves Hamcrest-matcher methods alone.
+  - org.axonframework.migration.MigrateAxonTestFixtureFluentApi
+  # Tear-down generation — adds `@AfterEach tearDown() { fixture.stop(); }`
+  # to test classes that declare an `AxonTestFixture` field but have no
+  # existing `@AfterEach`. Must run AFTER the `ChangeType` passes above so
+  # the field already carries the AF5 FQN that this recipe matches.
+  # Conservative: skips classes that already have any `@AfterEach` or any
+  # method named `tearDown`. Java sources only.
+  - org.axonframework.migration.AddAxonTestFixtureTearDown

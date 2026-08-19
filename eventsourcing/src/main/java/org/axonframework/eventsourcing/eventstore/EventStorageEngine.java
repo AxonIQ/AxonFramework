@@ -21,7 +21,6 @@ import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -107,7 +106,7 @@ public interface EventStorageEngine extends DescribableComponent {
      * {@link #appendEvents(AppendCondition, ProcessingContext, List) appending events}.
      * <p>
      * The {@code condition} dictates the sequence to load based on the {@link SourcingCondition#criteria()}.
-     * Additionally, an optional {@link SourcingCondition#start()} position may be provided.
+     * Additionally, an optional {@link SourcingCondition#strategy()} may be provided.
      * <p>
      * The returned stream is finite, i.e. it should not block to wait for further events if the end of the event stream
      * of the aggregate is reached.
@@ -117,7 +116,25 @@ public interface EventStorageEngine extends DescribableComponent {
      * @return A <b>finite</b> {@link MessageStream} of {@link EventMessage events} matching the given
      * {@code condition}.
      */
-    MessageStream<EventMessage> source(SourcingCondition condition);
+    default MessageStream<EventMessage> source(SourcingCondition condition) {
+        return source(condition, null);
+    }
+
+    /**
+     * Creates a <b>finite</b> {@link MessageStream} of {@link EventMessage events} matching the given
+     * {@code condition}, carrying along the active {@link ProcessingContext}.
+     * <p>
+     * Behaves identically to {@link #source(SourcingCondition)}; the {@code context} is passed to decorators (for
+     * example snapshot-loading and tracing decorators) that need to correlate the sourcing operation with the
+     * surrounding unit of work.
+     *
+     * @param condition the {@link SourcingCondition} dictating the {@link MessageStream stream} of
+     *                  {@link EventMessage events} to source
+     * @param context   the {@link ProcessingContext} active while sourcing; may be {@code null}
+     * @return a <b>finite</b> {@link MessageStream} of {@link EventMessage events} matching the given
+     * {@code condition}
+     */
+    MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context);
 
     /**
      * Creates an <b>infinite</b> {@link MessageStream} of {@link EventMessage events} matching the given
@@ -167,7 +184,9 @@ public interface EventStorageEngine extends DescribableComponent {
     /**
      * Interface representing the transaction of an appendEvents invocation.
      * <p>
-     * Events may only be visible to consumers after the invocation of {@link #commit()}.
+     * Events may only be visible to consumers after the invocation of {@link #commit()}. Implementations must make
+     * those events visible <b>as a whole</b>: a consumer sourcing or streaming concurrently with a {@link #commit()}
+     * either observes none of the events of that invocation, or all of them, and never a strict prefix.
      *
      * @param <R> the type of the commit result
      */

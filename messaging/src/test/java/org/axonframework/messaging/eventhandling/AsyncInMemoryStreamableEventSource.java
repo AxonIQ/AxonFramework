@@ -190,6 +190,35 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
     }
 
     /**
+     * Completes every currently open stream as if this source terminated them, without reporting an error and without
+     * clearing the published events.
+     * <p>
+     * A completed stream reports {@link MessageStream#isCompleted()} as {@code true}, an empty
+     * {@link MessageStream#error()}, and never returns another event. This mirrors a source that ends an otherwise
+     * infinite stream, which {@link MessageStream#close()} cannot emulate here, as closing may clear the published
+     * events. Each completed stream's availability callback is invoked, matching the {@code MessageStream} contract
+     * that the callback fires on completion.
+     */
+    public void completeOpenStreams() {
+        openStreams.forEach(AsyncMessageStream::complete);
+    }
+
+    /**
+     * Completes every currently open stream with the given {@code cause}, as if this source failed them, without
+     * clearing the published events.
+     * <p>
+     * Such a stream reports {@link MessageStream#isCompleted()} as {@code true} and the given {@code cause} as its
+     * {@link MessageStream#error()}. This mirrors a source that cannot serve a stream at all, such as a backend that is
+     * unreachable or does not know the requested context yet. Call this repeatedly to model a source that keeps failing
+     * every stream opened against it.
+     *
+     * @param cause the error to complete every currently open stream with
+     */
+    public void failOpenStreams(Throwable cause) {
+        openStreams.forEach(stream -> stream.completeExceptionally(cause));
+    }
+
+    /**
      * Set a handler to be called whenever a stream is opened.
      *
      * @param onOpen the handler to call
@@ -230,6 +259,7 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
         private final AtomicReference<Runnable> callback = new AtomicReference<>(NO_OP_CALLBACK);
         private final StreamingCondition condition;
         private volatile boolean closed = false;
+        private volatile @Nullable Throwable completionError;
 
         public AsyncMessageStream(StreamingCondition condition) {
             this.condition = condition;
@@ -246,9 +276,11 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                 // Start from the beginning
                 this.currentPosition = new AtomicLong(0);
             } else {
-                // Start from the position after the given token
+                // Events are published with a token one higher than their storage index, so a token's position is the
+                // index of the first event that has not been consumed yet. Matching the InMemoryEventStorageEngine,
+                // which opens a stream at condition.position() directly.
                 long tokenPosition = startToken.position().orElse(-1);
-                this.currentPosition = new AtomicLong(tokenPosition + 1);
+                this.currentPosition = new AtomicLong(Math.max(0, tokenPosition));
             }
         }
 
@@ -341,7 +373,7 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
 
         @Override
         public @NonNull Optional<Throwable> error() {
-            return Optional.empty();
+            return Optional.ofNullable(completionError);
         }
 
         @Override
@@ -389,6 +421,25 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                 if (currentCallback != null) {
                     currentCallback.run();
                 }
+            }
+        }
+
+        private void completeExceptionally(Throwable cause) {
+            if (closed) {
+                return;
+            }
+            completionError = cause;
+            complete();
+        }
+
+        private void complete() {
+            if (closed) {
+                return;
+            }
+            Runnable currentCallback = callback.get();
+            closed = true;
+            if (currentCallback != null) {
+                currentCallback.run();
             }
         }
     }

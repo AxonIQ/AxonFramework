@@ -72,16 +72,19 @@ public class UnitOfWork implements ProcessingLifecycle {
     /**
      * Constructs a {@code UnitOfWork} with the given parameters.
      *
-     * @param identifier         The identifier of this Unit of Work.
-     * @param workScheduler      The {@link Executor} for processing unit of work actions.
-     * @param applicationContext The {@link ApplicationContext} for component resolution.
+     * @param identifier           The identifier of this Unit of Work.
+     * @param workScheduler        The {@link Executor} for processing unit of work actions.
+     * @param applicationContext   The {@link ApplicationContext} for component resolution.
+     * @param lifecycleInterceptor The {@link ProcessingLifecycleInterceptor} invoked immediately around every action
+     *                             and handler dispatch, or {@code null} for the direct, zero-overhead path.
      */
     @Internal
     UnitOfWork(
             String identifier,
             Executor workScheduler,
             boolean forceSyncProcessing,
-            ApplicationContext applicationContext
+            ApplicationContext applicationContext,
+            @Nullable ProcessingLifecycleInterceptor lifecycleInterceptor
     ) {
         Objects.requireNonNull(identifier, "identifier may not be null.");
         Objects.requireNonNull(workScheduler, "workScheduler may not be null.");
@@ -91,7 +94,8 @@ public class UnitOfWork implements ProcessingLifecycle {
                 identifier,
                 workScheduler,
                 forceSyncProcessing,
-                applicationContext
+                applicationContext,
+                lifecycleInterceptor
         );
     }
 
@@ -161,12 +165,16 @@ public class UnitOfWork implements ProcessingLifecycle {
         CompletableFuture<R> result = new CompletableFuture<>();
         onInvocation(processingContext -> safe(() -> action.apply(processingContext))
                 .whenComplete(FutureUtils.alsoComplete(result)));
-        return execute().thenCombine(result, (executeResult, invocationResult) -> invocationResult);
+        return execute().thenCompose(ignored -> result);
     }
 
     /**
-     * Wraps a given {@code action} in a try-catch block to ensure exceptions are exclusively returned as a failed
-     * {@link CompletableFuture}.
+     * Wraps a given {@code action} so that any {@link Throwable} it throws is returned as a failed
+     * {@link CompletableFuture} instead of propagating.
+     * <p>
+     * {@link Throwable} is caught (not only {@link Exception}) so that an {@link Error} also fails the future rather
+     * than escaping and leaving the Unit of Work hung; such {@code Error}s are logged as they signal severe,
+     * easily-missed problems.
      *
      * @param action A {@link Callable} to execute within the try-catch block.
      * @return A {@link CompletableFuture} wrapping both the successful and exceptional result of the given
@@ -180,8 +188,13 @@ public class UnitOfWork implements ProcessingLifecycle {
                         "The action returned a null CompletableFuture."));
             }
             return result;
-        } catch (Exception e) {
-            return CompletableFuture.failedFuture(e);
+        } catch (Throwable t) {
+            if (t instanceof Error) {
+                logger.error("An Error escaped a Unit of Work action and was captured as a failed result. "
+                                     + "This typically indicates a severe problem such as a classpath or "
+                                     + "dependency mismatch.", t);
+            }
+            return CompletableFuture.failedFuture(t);
         }
     }
 
@@ -206,18 +219,21 @@ public class UnitOfWork implements ProcessingLifecycle {
         private final ApplicationContext applicationContext;
         private final ConcurrentMap<ResourceKey<?>, Object> resources;
         private final boolean forceSyncProcessing;
+        private final @Nullable ProcessingLifecycleInterceptor lifecycleInterceptor;
 
         private UnitOfWorkProcessingContext(
                 String identifier,
                 Executor workScheduler,
                 boolean forceSyncProcessing,
-                ApplicationContext applicationContext
+                ApplicationContext applicationContext,
+                @Nullable ProcessingLifecycleInterceptor lifecycleInterceptor
         ) {
             this.identifier = identifier;
             this.workScheduler = workScheduler;
             this.forceSyncProcessing = forceSyncProcessing;
             this.resources = new ConcurrentHashMap<>();
             this.applicationContext = applicationContext;
+            this.lifecycleInterceptor = lifecycleInterceptor;
         }
 
         @Override
@@ -385,7 +401,9 @@ public class UnitOfWork implements ProcessingLifecycle {
             while (!completeHandlers.isEmpty()) {
                 Consumer<ProcessingContext> nextCompletionHandler = completeHandlers.poll();
                 if (nextCompletionHandler != null) {
-                    workScheduler.execute(() -> nextCompletionHandler.accept(this));
+                    workScheduler.execute(() -> interceptCompletion(
+                            () -> nextCompletionHandler.accept(this)
+                    ));
                 }
             }
         }
@@ -399,7 +417,11 @@ public class UnitOfWork implements ProcessingLifecycle {
                 ErrorHandler nextErrorHandler = errorHandlers.poll();
                 if (nextErrorHandler != null) {
                     workScheduler.execute(
-                            () -> nextErrorHandler.handle(this, recordedCause.phase(), recordedCause.cause())
+                            () -> interceptError(
+                                    recordedCause.phase(),
+                                    recordedCause.cause(),
+                                    () -> nextErrorHandler.handle(this, recordedCause.phase(), recordedCause.cause())
+                            )
                     );
                 }
             }
@@ -424,8 +446,8 @@ public class UnitOfWork implements ProcessingLifecycle {
 
             CompletableFuture<Void> phaseResult = actionQueue.stream()
                                                              .map(handler -> FutureUtils.emptyCompletedFuture()
-                                                                                        .thenComposeAsync(result -> handler.apply(
-                                                                                                this), workScheduler)
+                                                                                        .thenComposeAsync(result -> intercept(
+                                                                                                current, handler), workScheduler)
                                                                                         .thenAccept(FutureUtils::ignoreResult))
                                                              .reduce(CompletableFuture::allOf)
                                                              .orElseGet(FutureUtils::emptyCompletedFuture);
@@ -438,6 +460,62 @@ public class UnitOfWork implements ProcessingLifecycle {
                 }
             }
             return phaseResult;
+        }
+
+        /**
+         * Runs the given phase {@code handler} through the {@link ProcessingLifecycleInterceptor}, or directly
+         * when no interceptor is installed, keeping the original zero-overhead execution path.
+         */
+        private CompletableFuture<?> intercept(Phase phase, Function<ProcessingContext, CompletableFuture<?>> handler) {
+            return lifecycleInterceptor != null
+                    ? lifecycleInterceptor.interceptPhase(this, phase, () -> handler.apply(this))
+                    : handler.apply(this);
+        }
+
+        /**
+         * Runs the given completion-handler {@code action} through the {@link ProcessingLifecycleInterceptor}, or
+         * directly when no interceptor is installed.
+         * <p>
+         * A misbehaving interceptor that throws is logged and swallowed here: this dispatch runs on a bare
+         * {@code workScheduler.execute(...)} worker thread, so an escaping exception would otherwise vanish silently
+         * and block every completion handler still queued behind it. A failing interceptor must not turn an otherwise
+         * successful completion into a failure.
+         */
+        private void interceptCompletion(Runnable action) {
+            try {
+                if (lifecycleInterceptor != null) {
+                    lifecycleInterceptor.interceptCompletion(this, action);
+                } else {
+                    action.run();
+                }
+            } catch (Exception e) {
+                logger.warn("A ProcessingLifecycleInterceptor threw an exception while intercepting a completion "
+                                    + "handler dispatch. The exception is ignored so remaining handlers keep running.",
+                            e);
+            }
+        }
+
+        /**
+         * Runs the given error-handler {@code action} through the {@link ProcessingLifecycleInterceptor}, or
+         * directly when no interceptor is installed.
+         * <p>
+         * A misbehaving interceptor that throws is logged and swallowed here, for the same reason as in
+         * {@link #interceptCompletion(Runnable)}: this dispatch runs on a bare {@code workScheduler.execute(...)}
+         * worker thread, so an escaping exception would otherwise vanish silently and block every error handler still
+         * queued behind it.
+         */
+        private void interceptError(@Nullable Phase failedPhase, Throwable cause, Runnable action) {
+            try {
+                if (lifecycleInterceptor != null) {
+                    lifecycleInterceptor.interceptError(this, failedPhase, cause, action);
+                } else {
+                    action.run();
+                }
+            } catch (Exception e) {
+                logger.warn("A ProcessingLifecycleInterceptor threw an exception while intercepting an error "
+                                    + "handler dispatch. The exception is ignored so remaining handlers keep running.",
+                            e);
+            }
         }
 
         @Override

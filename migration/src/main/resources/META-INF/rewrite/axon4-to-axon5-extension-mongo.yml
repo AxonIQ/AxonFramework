@@ -1,0 +1,28 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Mongo extension (axon-mongo): placeholder.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5MongoExtension
+displayName: Migrate the Mongo extension to Axon Framework 5 (placeholder)
+description: >-
+  Placeholder for the Mongo extension migration. The Mongo extension lives at
+  `org.axonframework.extensions.mongo` in AF4 and does not yet have a
+  finalized Axon Framework 5 equivalent. Update this recipe once the AF5
+  Mongo integration ships.
+recipeList: []

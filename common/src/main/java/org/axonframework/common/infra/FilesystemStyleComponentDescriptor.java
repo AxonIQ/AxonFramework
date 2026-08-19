@@ -19,8 +19,13 @@ package org.axonframework.common.infra;
 import org.axonframework.common.configuration.Component;
 import org.jspecify.annotations.Nullable;
 
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * A {@link ComponentDescriptor} implementation inspired by filesystem structures. Components are represented as
@@ -205,7 +210,11 @@ public class FilesystemStyleComponentDescriptor implements ComponentDescriptor {
         processedComponents.put(name, value);
     }
 
-    @Override
+    /**
+     * Provides a description of what has been described in this Descriptor as a String.
+     *
+     * @return a description of what has been described in this Descriptor
+     */
     public String describe() {
         try {
             return new TreeRenderer().render(processedComponents);

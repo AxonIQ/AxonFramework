@@ -2,7 +2,7 @@
 :navtitle: Advanced Testing
 
 After having taken note of the xref:basic-testing.adoc[basic test] flow and the use of xref:matchers-and-field-filters.adoc[matchers and field filters], it's worth to investigate more advanced testing scenarios.
-This page covers those advanced tests, discussing <<integration_testing,integration tests>>, <<testing-with-spring-boot,testing with spring boot>>, and <<testing-with-axon-server-testcontainer,testing with Testcontainers>> to name a few.
+This page covers those advanced tests, discussing <<integration_testing,integration tests>> and <<testing-with-spring-boot,testing with Spring Boot>> to name a few.
 
 [#integration_testing]
 == Integration testing
@@ -15,52 +15,7 @@ As such, examples of integration tests can roughly be consolidated to flows like
 
 [source,java]
 ----
-import org.axonframework.common.configuration.ApplicationConfigurer;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.modelling.repository.Repository;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
-
-class AccountIntegrationTest {
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        // One way or another, you need access to the full ApplicationConfigurer.
-        // In this example, the ApplicationConfigurer is constructed statically and accessed as such for tests.
-        fixture = AxonTestFixture.with(MainApp.configurer());
-    }
-
-    @Test
-    void test() {
-        fixture.given()
-               .events(new AccountCreatedEvent("account-1", 1337))
-               .execute(config -> {
-                   // Retrieve components for setup
-                   var repository = config.getComponent(Repository.class);
-                   // Perform setup...
-               })
-               .when()
-               .command(new PlaceOrderCommand("order-1", "account-1"))
-               .then()
-               .expect(config -> {
-                   // Retrieve components for verification
-                   Repository repository = config.getComponent(Repository.class);
-                   // Perform verification...
-                   assertThat(repository).has(/*...*/);
-               });
-    }
-
-    @AfterEach
-    void tearDown() {
-        // Ensure to stop the fixture to cleanly close your resources
-        fixture.stop();
-    }
-}
+include::example$testing/advancedtesting/integrationtest/AccountIntegrationTest.java[tags=integration-test-import;integration-test-class,indent=0]
 ----
 
 When using the fully declarative configuration route, you will be aware of your `ApplicationConfigurer` already and how to use it for fixtures.
@@ -76,57 +31,13 @@ Note that the `MessagesRecordingConfigurationEnhancer` must be registered as a b
 
 [source,java]
 ----
-import org.axonframework.common.configuration.AxonConfiguration;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.axonframework.test.fixture.MessagesRecordingConfigurationEnhancer;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-
-@SpringBootTest
-class AccountSpringTest {
-
-    @TestConfiguration
-    static class TestConfig {
-
-        @Bean
-        public MessagesRecordingConfigurationEnhancer recordingEnhancer() {
-            return new MessagesRecordingConfigurationEnhancer();
-        }
-    }
-
-    @Autowired
-    private AxonConfiguration configuration;
-
-    private AxonTestFixture fixture;
-
-    @BeforeEach
-    void setUp() {
-        fixture = new AxonTestFixture(configuration, new AxonTestFixture.Customization());
-    }
-
-    @Test
-    void testWithSpringConfiguration() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00));
-    }
-
-    @AfterEach
-    void tearDown() {
-        fixture.stop();
-    }
-}
+include::example$testing/advancedtesting/springboot/manualwiring/AccountSpringTest.java[tag=spring-boot-manual-wiring,indent=0]
 ----
 
+ifdef::advanced-framework[]
 From here, it is rather straightforward to add Testcontainers into the mix, when your (integration) test requires it.
 Be sure to check out the <<testing-with-axon-server-testcontainer,tests with Testcontainers>> section for that.
+endif::[]
 
 === Using @AxonSpringBootTest
 
@@ -152,70 +63,17 @@ Then annotate your test class:
 
 [source,java]
 ----
-import org.axonframework.extension.springboot.test.AxonSpringBootTest;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-
-@AxonSpringBootTest(properties = "axon.axonserver.enabled=false")
-class AccountSpringBootTest {
-
-    @Autowired
-    private AxonTestFixture fixture;
-
-    @Test
-    void testWithSpringConfiguration() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00));
-    }
-}
+include::example$testing/advancedtesting/springboot/axonspringboottest/AccountSpringBootTest.java[tag=axon-spring-boot-test,indent=0]
 ----
 
 The fixture's `Customization` is derived automatically from the Spring environment.
-When `axon.axonserver.enabled` is `false`, the fixture disables Axon Server; when `true` or absent, it remains enabled.
+When `axon.axonserver.enabled` is `false` or absent, the fixture disables Axon Server. When `true`, it remains enabled.
 
 To override the default customization, declare a `Customization` bean in the test:
 
 [source,java]
 ----
-import org.axonframework.extension.springboot.test.AxonSpringBootTest;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-
-@AxonSpringBootTest
-class AccountCustomizedTest {
-
-    @TestConfiguration
-    static class TestConfig {
-
-        @Bean
-        public AxonTestFixture.Customization customization() {
-            return new AxonTestFixture.Customization().disableAxonServer();
-        }
-    }
-
-    @Autowired
-    private AxonTestFixture fixture;
-
-    @Test
-    void testWithCustomization() {
-        fixture.given()
-               .noPriorActivity()
-               .when()
-               .command(new CreateAccountCommand("account-1", 500.00))
-               .then()
-               .success()
-               .events(new AccountCreatedEvent("account-1", 500.00));
-    }
-}
+include::example$testing/advancedtesting/springboot/customization/AccountCustomizedTest.java[tag=axon-spring-boot-test-customization,indent=0]
 ----
 
 === Verifying (mocked) Spring beans
@@ -226,45 +84,7 @@ As such, by using `expect(consumer<Configuration>)`, you are able to verify if y
 
 [source,java]
 ----
-import org.axonframework.extension.springboot.test.AxonSpringBootTest;
-import org.axonframework.test.fixture.AxonTestFixture;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-
-import static org.mockito.Mockito.*;
-
-@AxonSpringBootTest(properties = "axon.axonserver.enabled=false")
-class AccountSpringTest {
-
-    @TestConfiguration
-    static class TestConfig {
-
-        @Bean
-        public MyService myService() {
-            return mock(MyService.class);
-        }
-    }
-
-    @Autowired
-    private AxonTestFixture fixture;
-
-    @Test
-    void testWithSpringConfigurationAndMockedBean() {
-        fixture.given()
-               .event(new AccountCreatedEvent("account-1", 500.00))
-               .when()
-               .command(new WithdrawMoneyCommand("account-1", 100.00))
-               .then()
-               .success()
-               .events(new MoneyWithdrawnEvent("account-1", 100.00))
-               .expect(config -> {
-                   MyService myService = config.getComponent(MyService.class);
-                   verify(myService).invoked();
-               });
-    }
-}
+include::example$testing/advancedtesting/springboot/mockedbeans/AccountSpringTest.java[tags=verifying-mocked-spring-beans-import;verifying-mocked-spring-beans-class,indent=0]
 ----
 
 ifdef::advanced-framework[]

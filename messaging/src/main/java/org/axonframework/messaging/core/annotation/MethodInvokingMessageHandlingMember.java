@@ -33,7 +33,6 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
 /**
@@ -63,7 +62,10 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
      * @param messageType              the type of message that is expected by the target method
      * @param explicitPayloadType      the expected message payload type
      * @param parameterResolverFactory factory used to resolve method parameters
-     * @param returnTypeConverter      the return type converter to apply to the handling result
+     * @param returnTypeConverter      the return type converter to apply to the handling result. When it is a
+     *                                 {@link MessageStreamResolver}, the given {@code messageType} is passed along to
+     *                                 it, so that it can tell how many {@link Message Messages} this handler may
+     *                                 produce
      */
     public MethodInvokingMessageHandlingMember(Method method,
                                                Class<? extends Message> messageType,
@@ -72,7 +74,9 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
                                                Function<Object, MessageStream<?>> returnTypeConverter) {
         this.messageType = messageType;
         this.method = ReflectionUtils.ensureAccessible(method);
-        this.returnTypeConverter = returnTypeConverter;
+        this.returnTypeConverter = returnTypeConverter instanceof MessageStreamResolver resolver
+                ? result -> resolver.resolve(result, messageType)
+                : returnTypeConverter;
         Parameter[] parameters = method.getParameters();
         this.parameterCount = method.getParameterCount();
         parameterResolvers = new ParameterResolver[parameterCount];
@@ -148,24 +152,6 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
             }
         }
         return true;
-    }
-
-    @Override
-    public Object handleSync(Message message,
-                             ProcessingContext context,
-                             @Nullable T target) throws Exception {
-        try {
-            MessageStream.Entry<?> resultEntry = handle(message, context, target).first()
-                                                                                 .asCompletableFuture()
-                                                                                 .get();
-            return resultEntry != null ? resultEntry.message().payload() : null;
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof Exception ex) {
-                throw ex;
-            } else {
-                throw e;
-            }
-        }
     }
 
     @Override

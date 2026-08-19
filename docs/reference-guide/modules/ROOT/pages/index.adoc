@@ -1,7 +1,12 @@
 = Introduction
 :page-aliases: introduction.adoc
 
-This reference guide covers Axon Framework, which takes a messaging-centric approach to building applications.
+This reference guide covers:
+
+* Axon Framework, which takes a messaging-centric approach to building applications
+ifdef::advanced-framework[]
+include::ROOT:partial$introduction-listing.adoc[]
+endif::[]
 
 Axon Framework helps you build applications around three core message types:
 
@@ -10,11 +15,16 @@ Axon Framework helps you build applications around three core message types:
 * **Queries** - Messages that request information from the system.
 
 These messages are equally important in Axon Framework, enabling you to build applications based on link:https://www.axoniq.io/concepts/cqrs-and-event-sourcing[CQRS and Event Sourcing] patterns.
-Axon also supports link:https://www.axoniq.io/concepts/domain-driven-design[Domain-Driven Design] practices by providing tools for building entities and managing domain logic.
+Next to that, Axon Framework supports link:https://www.axoniq.io/concepts/domain-driven-design[Domain-Driven Design] practices by providing tools for building entities and managing domain logic.
+
+ifdef::advanced-framework[]
+include::ROOT:partial$introduction-section.adoc[]
+endif::[]
 
 [[platform]]
 == Easy monitoring and management
-Axoniq Platform makes it easy to monitor and manage your Axon Framework applications. It provides insights into the performance and behavior of your application, and allows you to manage your application's event processors.
+
+Axoniq Platform makes it easy to monitor and manage your Framework applications. It provides insights into the performance and behavior of your application, and allows you to manage your application's event processors.
 You can also get scalable xref:axon-server-reference::index.adoc[Axon Server] licenses with scalable pricing, and manage your Axon Server instances.
 
 image::axoniq-console-teaser.png[alt="Statistics measured on Axoniq Platform"]
@@ -22,20 +32,27 @@ image::axoniq-console-teaser.png[alt="Statistics measured on Axoniq Platform"]
 For more information, see the xref:axoniq-platform-reference:ROOT:index.adoc[Axoniq Platform Reference] or link:https://platform.axoniq.io[sign up directly].
 
 == Reference sections
-A summary of the various subsections is given below.
+
+A summary of the various chapters is given below.
 
 [cols="<,<"]
 |===
 |Sub-Section |Purpose
 
-|xref:messaging-concepts:index.adoc[Messaging Concepts] |Conceptual overview of "Messages" within the Axon Framework
-|xref:commands:index.adoc[Commands] |Command Message Development using the Axon Framework
-|xref:events:index.adoc[Events] |Event Message Development using the Axon Framework
-|xref:queries:index.adoc[Queries] |Query Message Development using the Axon Framework
-|xref:testing:index.adoc[Testing] |Testing capabilities provided by the Axon Framework
-|xref:conversion.adoc[Conversion] |Details on the conversion capabilities provided by the Axon Framework
-|xref:tuning:index.adoc[Tuning] |Tuning capabilities provided by the Axon Framework
-|xref:monitoring:index.adoc[Monitoring and Metrics] |Monitoring and Metric capabilities provided by the Axon Framework
-|xref:spring-boot-integration.adoc[Spring Boot Integration] |Axon Framework integration with Spring Boot
-|xref:modules.adoc[Modules] |Modules provided by the Axon Framework
+|xref:migration:index.adoc[Migration] |Extensive guide on how to migrate from Axon Framework 4 to 5
+|xref:messaging-concepts:index.adoc[Messaging Concepts] |Conceptual overview of "Messages" and all concepts relating to it
+|xref:commands:index.adoc[Commands] |Chapter dedicated to dispatching commands, handling commands, and drafting Command Models / Entities
+|xref:events:index.adoc[Events] |Chapter dedicated to publishing and handling events, and all the specifics surrounding Event Processing
+|xref:queries:index.adoc[Queries] |Chapter dedicated to dispatching and handling queries
+|xref:testing:index.adoc[Testing] |Testing capabilities provided by the Framework
+|xref:conversion.adoc[Conversion] |Details on the conversion capabilities of Framework
+|xref:tuning:index.adoc[Tuning] |Chapter describing several specific tuning capabilities of the Framework
+|xref:monitoring:index.adoc[Monitoring and Metrics] |Chapter mentioning the monitoring and metric capabilities provided by the Framework
+|xref:spring-boot-integration.adoc[Spring Boot Integration] |Chapter around the Framework's integration with Spring Boot
+ifdef::advanced-framework[]
+include::ROOT:partial$introduction-chapter-listing.adoc[]
+endif::[]
+|xref:modules.adoc[Modules] |Complete listing of all the modules provided for the Framework
+|xref:release-notes:index.adoc[Release notes] |Listing of all the release notes for Framework
+|xref:known-issues-and-workarounds.adoc[Known Issue and Workarounds] |Listing of several known issues and their workaround within the Framework
 |===

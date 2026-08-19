@@ -85,4 +85,15 @@ public sealed interface AppendCondition extends EventsCondition permits NoAppend
      * @return An {@code AppendCondition} with the given {@code consistencyMarker}.
      */
     AppendCondition withMarker(ConsistencyMarker consistencyMarker);
+
+    /**
+     * Creates an {@code AppendCondition} with the same {@link #consistencyMarker()} as this one, but with the given
+     * {@code criteria}, replacing any previously set criteria.
+     *
+     * @param criteria the {@link EventCriteria} for the new {@code AppendCondition}
+     * @return an {@code AppendCondition} with the given {@code criteria}
+     */
+    default AppendCondition replaceCriteria(EventCriteria criteria) {
+        return new DefaultAppendCondition(this.consistencyMarker(), criteria);
+    }
 }

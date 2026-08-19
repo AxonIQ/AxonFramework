@@ -27,8 +27,8 @@ import org.axonframework.common.configuration.ComponentRegistry;
  * <p>
  * Data "purging" is a no-op: each test shuts down and recreates the
  * {@link org.axonframework.common.configuration.AxonConfiguration} via
- * {@link org.axonframework.integrationtests.testsuite.AbstractIntegrationTest#startApp()}, so the in-memory stores are
- * always fresh at the start of every test.
+ * {@link org.axonframework.integrationtests.testsuite.AbstractIT#startApp()}, so the in-memory stores
+ * are always fresh at the start of every test.
  * <p>
  * Leaf test classes should hold a {@code private static final} instance of this class:
  * <pre>{@code

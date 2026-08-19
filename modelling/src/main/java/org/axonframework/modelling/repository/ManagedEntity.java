@@ -16,6 +16,8 @@
 
 package org.axonframework.modelling.repository;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.function.UnaryOperator;
 
 /**
@@ -37,9 +39,15 @@ public interface ManagedEntity<ID, E> {
 
     /**
      * The current state of the entity.
+     * <p>
+     * This is {@code null} when no entity was found for, or could be constructed from. For example while resolving a
+     * create-if-missing flow. In that case, the {@code ManagedEntity} wrapper itself is still returned by the
+     * {@link Repository}, and may still be live-tracked (e.g. for event-sourced entities), so it reflects a creation
+     * event appended later in the same {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}.
      *
-     * @return The current state of the entity.
+     * @return the current state of the entity, or {@code null} when it could not be found or constructed
      */
+    @Nullable
     E entity();
 
     /**
@@ -48,5 +56,6 @@ public interface ManagedEntity<ID, E> {
      * @param change The function applying the requested change.
      * @return The state of the entity after the change.
      */
-    E applyStateChange(UnaryOperator<E> change);
+    @Nullable
+    E applyStateChange(UnaryOperator<@Nullable E> change);
 }

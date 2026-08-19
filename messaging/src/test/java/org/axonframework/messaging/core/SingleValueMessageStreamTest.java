@@ -24,6 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -47,8 +48,7 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
 
     @Override
     protected MessageStream.Empty<Message> completedEmptyStreamTestSubject() {
-        Assumptions.abort("DelayedMessageStream does not support empty streams");
-        return null;
+        return (MessageStream.Empty<Message>) MessageStream.fromFuture(CompletableFuture.completedFuture(null));
     }
 
     @Override
@@ -154,6 +154,33 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
         testSubject.close();
 
         assertTrue(future.isCancelled());
+    }
+
+    @Nested
+    class NullEntryHandling {
+
+        @Test
+        void entryConstructorRejectsNullEntry() {
+            // when / then
+            assertThatThrownBy(() -> new SingleValueMessageStream<>((MessageStream.Entry<Message>) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        void futureConstructorCompletingWithNullPutsStreamInErrorState() {
+            // given
+            CompletableFuture<MessageStream.Entry<Message>> future = new CompletableFuture<>();
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(future);
+
+            // when
+            future.complete(null);
+
+            // then
+            assertThat(testSubject.hasNextAvailable()).isFalse();
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.error()).isPresent();
+            assertThat(testSubject.error().get()).isInstanceOf(NullPointerException.class);
+        }
     }
 
     @Nested

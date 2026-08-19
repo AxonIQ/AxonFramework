@@ -24,7 +24,7 @@ public class EnrollStudentInFacultyFixtureTest {
     }
 
     @Test
-    public void givenStudentNotEnrolledInFactulty_WhenEnrollStudentInFaculty_ThenStudentEnrolledInFaculty() {
+    public void givenStudentNotEnrolledInFaculty_WhenEnrollStudentInFaculty_ThenStudentEnrolledInFaculty() {
         var studentId = StudentId.random();
         var firstName = "First Name";
         var lastName = "Last Name";
@@ -38,7 +38,7 @@ public class EnrollStudentInFacultyFixtureTest {
     }
 
     @Test
-    public void givenStudentEnrolledInFactulty_WhenEnrollStudentInFaculty_ThenNothing() {
+    public void givenStudentEnrolledInFaculty_WhenEnrollStudentInFaculty_ThenNothing() {
         var studentId = StudentId.random();
         var firstName = "First Name";
         var lastName = "Last Name";

@@ -18,12 +18,12 @@ package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.jspecify.annotations.Nullable;
 
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 /**
  * Interface describing the actions that can be taken on a transaction to source a model from the {@link EventStore}
@@ -67,9 +67,9 @@ public interface EventStoreTransaction {
      * {@link Position resume position} is only known when the stream reaches its terminal event. As such, the callback
      * is guaranteed to be invoked only if the stream is fully consumed.
      * <p>
-     * If sourcing completes and no events are found, the callback will be invoked with the position
-     * specified in {@code sourcingCondition} or with a greater position. Returning a greater position
-     * allows resuming from a point that already excludes positions known to be non-matching.
+     * If sourcing completes and no events are found, the callback will be invoked with the position specified in
+     * {@code sourcingCondition} or with a greater position. Returning a greater position allows resuming from a point
+     * that already excludes positions known to be non-matching.
      * <p>
      * If the stream terminates with an error, is closed prematurely, or is not consumed to completion, the callback is
      * not guaranteed to be invoked.
@@ -113,6 +113,36 @@ public interface EventStoreTransaction {
      * @param callback A {@link Consumer} to invoke when an event is appended in this transaction.
      */
     void onAppend(Consumer<EventMessage> callback);
+
+    /**
+     * Overrides the {@link AppendCondition} that will be used when committing this transaction. The provided
+     * {@code conditionOverride} function receives the current {@link AppendCondition} derived from
+     * {@link #source(SourcingCondition) sourcing} calls (or {@link AppendCondition#none()} if no sourcing occurred) and
+     * returns the desired condition.
+     * <p>
+     * This allows two primary use cases:
+     * <ol>
+     *     <li><b>Appending without sourcing</b> — enforcing uniqueness constraints without first sourcing events. The
+     *     input is {@link AppendCondition#none()}, and the override sets the desired criteria and marker (e.g.,
+     *     {@link AppendCondition#withCriteria(EventCriteria)} which uses {@link ConsistencyMarker#ORIGIN} to check
+     *     against the entire event store).</li>
+     *     <li><b>Narrowing (or broadening) the append condition</b> — sourcing events with broad criteria for state
+     *     but only a subset causes real conflicts. The override can narrow the criteria via
+     *     {@link AppendCondition#replaceCriteria(EventCriteria)} while preserving the sourced marker.</li>
+     * </ol>
+     * <p>
+     * Multiple calls to this method compose: each subsequent override receives the output of the previous one.
+     * The override is applied at commit time, after all {@link #source(SourcingCondition) source} calls have been
+     * processed.
+     * <p>
+     * Returning {@link AppendCondition#none()} (or {@code null}) from the override function bypasses conflict detection
+     * entirely.
+     *
+     * @param conditionOverride a {@link UnaryOperator} that transforms the current {@link AppendCondition}
+     */
+    default void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * Returns the position in the event store of the last {@link #appendEvent(EventMessage) appended} event by this

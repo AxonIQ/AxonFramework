@@ -18,12 +18,15 @@ package org.axonframework.messaging.eventhandling.processing.streaming.token.sto
 
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToInitializeTokenException;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
@@ -168,6 +171,64 @@ class InMemoryTokenStoreTest {
             final List<Segment> segments =
                     joinAndUnwrap(testSubject.fetchAvailableSegments("proc3", null));
             assertThat(segments.size(), is(0));
+        }
+    }
+
+    @Nested
+    class CompletableFutureFailures {
+
+        @Test
+        void fetchTokenForMissingSegmentReturnsFailedFuture() {
+            // when
+            CompletableFuture<TrackingToken> result = assertDoesNotThrow(
+                    () -> testSubject.fetchToken("test1", 1, null)
+            );
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(result.exceptionNow())
+                    .isInstanceOf(UnableToClaimTokenException.class)
+                    .hasMessageContaining("No token was initialized for segment 1 for processor test1");
+        }
+
+        @Test
+        void storeTokenForMissingSegmentReturnsFailedFuture() {
+            // when
+            CompletableFuture<Void> result = assertDoesNotThrow(
+                    () -> testSubject.storeToken(new GlobalSequenceTrackingToken(1),
+                                                 "test1",
+                                                 1,
+                                                 createProcessingContext())
+            );
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(result.exceptionNow())
+                    .isInstanceOf(UnableToClaimTokenException.class)
+                    .hasMessageContaining("No such token for processor 'test1' and segment 1");
+        }
+
+        @Test
+        void initializeSegmentForExistingSegmentReturnsFailedFuture() {
+            // given
+            joinAndUnwrap(testSubject.initializeSegment(null,
+                                                        "test1",
+                                                        Segment.ROOT_SEGMENT,
+                                                        createProcessingContext()));
+
+            // when
+            CompletableFuture<Void> result = assertDoesNotThrow(
+                    () -> testSubject.initializeSegment(null,
+                                                        "test1",
+                                                        Segment.ROOT_SEGMENT,
+                                                        createProcessingContext())
+            );
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(result.exceptionNow())
+                    .isInstanceOf(UnableToInitializeTokenException.class)
+                    .hasMessageContaining("Token was already present");
         }
     }
 

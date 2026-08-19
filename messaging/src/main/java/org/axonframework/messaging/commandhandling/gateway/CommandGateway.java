@@ -55,14 +55,14 @@ public interface CommandGateway extends DescribableComponent {
      * {@link CommandMessage} that is eventually posted on the
      * {@link CommandBus}, unless the {@code command} already implements
      * {@link Message}. In that case, a {@code CommandMessage} is constructed from that
-     * message's payload and {@link org.axonframework.messaging.core.Metadata}. The provided {@code metadata} is attached
+     * message's payload and {@link Metadata}. The provided {@code metadata} is attached
      * afterward in this case.
      *
-     * @param command  The command payload or {@link CommandMessage} to send.
-     * @param metadata Meta-data that must be registered with the {@code command}.
-     * @param context  The processing context, if any, to dispatch the given {@code command} in.
-     * @return A command result success and failure hooks can be registered. The
-     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response.
+     * @param command  the command payload or {@link CommandMessage} to send
+     * @param metadata the metadata to register with the {@code command}
+     * @param context  the processing context, if any, to dispatch the given {@code command} in
+     * @return a command result to which success and failure hooks can be registered; the
+     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response
      */
     CommandResult send(Object command, Metadata metadata, @Nullable ProcessingContext context);
 
@@ -80,16 +80,16 @@ public interface CommandGateway extends DescribableComponent {
      * <p/>
      * The given {@code command} is wrapped as the payload of the
      * {@link CommandMessage} that is eventually posted on the {@code CommandBus},
-     * unless the {@code command} already implements {@link org.axonframework.messaging.core.Message}. In that case, a
+     * unless the {@code command} already implements {@link Message}. In that case, a
      * {@code CommandMessage} is constructed from that message's payload and
-     * {@link org.axonframework.messaging.core.Metadata}.
+     * {@link Metadata}.
      *
-     * @param command The command payload or {@link CommandMessage} to send.
-     * @return A command result success and failure hooks can be registered. The
-     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response.
+     * @param command the command payload or {@link CommandMessage} to send
+     * @return a command result to which success and failure hooks can be registered; the
+     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response
      * @see CommandGateway#send(Object, Metadata, ProcessingContext)
      */
-        default CommandResult send(Object command) {
+    default CommandResult send(Object command) {
         return send(command, Metadata.emptyInstance(), null);
     }
 
@@ -111,20 +111,20 @@ public interface CommandGateway extends DescribableComponent {
      * {@code CommandMessage} is constructed from that message's payload and
      * {@link Metadata}.
      *
-     * @param command The command payload or {@link CommandMessage} to send.
-     * @param context The processing context, if any, to dispatch the given {@code command} in.
-     * @return A command result success and failure hooks can be registered. The
-     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response.
+     * @param command the command payload or {@link CommandMessage} to send
+     * @param context the processing context, if any, to dispatch the given {@code command} in
+     * @return a command result to which success and failure hooks can be registered; the
+     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response
      * @see CommandGateway#send(Object, Metadata, ProcessingContext)
      */
-        default CommandResult send(Object command,
+    default CommandResult send(Object command,
                                @Nullable ProcessingContext context) {
         return send(command, Metadata.emptyInstance(), context);
     }
 
     /**
-     * Sends the given {@code command} with the given {@code metadata} in the provided {@code context} (if available)
-     * and returns a {@link CommandResult} immediately, without waiting for the command to execute.
+     * Sends the given {@code command} with the given {@code metadata} and returns a {@link CommandResult} immediately,
+     * without waiting for the command to execute.
      * <p>
      * The caller will therefore not receive any immediate feedback on the {@code command's} execution. Instead, hooks
      * <em>can</em> be added to the returned {@code CommandResult} to react on success or failure of command
@@ -137,17 +137,17 @@ public interface CommandGateway extends DescribableComponent {
      * The given {@code command} and {@code metadata} are wrapped as the payload of the
      * {@link CommandMessage} that is eventually posted on the
      * {@link CommandBus}, unless the {@code command} already implements
-     * {@link org.axonframework.messaging.core.Message}. In that case, a {@code CommandMessage} is constructed from that
-     * message's payload and {@link org.axonframework.messaging.core.Metadata}. The provided {@code metadata} is attached
+     * {@link Message}. In that case, a {@code CommandMessage} is constructed from that
+     * message's payload and {@link Metadata}. The provided {@code metadata} is attached
      * afterward in this case.
      *
-     * @param command  The command payload or {@link CommandMessage} to send.
-     * @param metadata Meta-data that must be registered with the {@code command}.
-     * @return A command result success and failure hooks can be registered. The
-     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response.
+     * @param command  the command payload or {@link CommandMessage} to send
+     * @param metadata the metadata to register with the {@code command}
+     * @return a command result to which success and failure hooks can be registered; the
+     * {@link CommandResult#getResultMessage()} serves as a shorthand to retrieve the response
      * @see CommandGateway#send(Object, Metadata, ProcessingContext)
      */
-        default CommandResult send(Object command,
+    default CommandResult send(Object command,
                                Metadata metadata) {
         return send(command, metadata, null);
     }
@@ -168,16 +168,16 @@ public interface CommandGateway extends DescribableComponent {
      * {@code CommandMessage} is constructed from that message's payload and
      * {@link Metadata}.
      *
-     * @param <R>        The generic type of the expected response.
-     * @param command    The command payload or {@link CommandMessage} to send.
-     * @param resultType The class representing the type of the expected command result.
-     * @return A {@link CompletableFuture} that will be resolved successfully or exceptionally based on the eventual
-     * command execution result.
+     * @param <R>        the generic type of the expected response
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @return a {@link CompletableFuture} that will be resolved successfully or exceptionally based on the eventual
+     * command execution result
      * @see CommandGateway#send(Object, Class, ProcessingContext)
      */
     default <R> CompletableFuture<R> send(Object command,
                                           Class<R> resultType) {
-        return send(command, resultType, null);
+        return send(command, resultType, Metadata.emptyInstance(), null);
     }
 
     /**
@@ -196,18 +196,50 @@ public interface CommandGateway extends DescribableComponent {
      * {@code CommandMessage} is constructed from that message's payload and
      * {@link Metadata}.
      *
-     * @param <R>        The generic type of the expected response.
-     * @param command    The command payload or {@link CommandMessage} to send.
-     * @param resultType The class representing the type of the expected command result.
-     * @param context    The processing context, if any, to dispatch the given {@code command} in.
-     * @return A {@link CompletableFuture} that will be resolved successfully or exceptionally based on the eventual
-     * command execution result.
-     * @see CommandGateway#send(Object, ProcessingContext)
+     * @param <R>        the generic type of the expected response
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @param context    the processing context, if any, to dispatch the given {@code command} in
+     * @return a {@link CompletableFuture} that will be resolved successfully or exceptionally based on the eventual
+     * command execution result
+     * @see CommandGateway#send(Object, Class, Metadata, ProcessingContext)
      */
     default <R> CompletableFuture<R> send(Object command,
                                           Class<R> resultType,
                                           @Nullable ProcessingContext context) {
-        return send(command, context).resultAs(resultType);
+        return send(command, resultType, Metadata.emptyInstance(), context);
+    }
+
+    /**
+     * Sends the given {@code command} with the given {@code metadata} in the provided {@code context} (if available)
+     * and returns a {@link CompletableFuture} immediately, without waiting for the command to execute.
+     * <p>
+     * The caller will therefore not receive any immediate feedback on the {@code command's} execution. Instead, hooks
+     * <em>can</em> be added to the returned {@code CompletableFuture} to react on success or failure of command
+     * execution.
+     * <p>
+     * Note that this operation expects the {@link CommandBus} to use new threads for
+     * command execution.
+     * <p/>
+     * The given {@code command} and {@code metadata} are wrapped as the payload of the {@link CommandMessage} that is
+     * eventually posted on the {@code CommandBus}, unless the {@code command} already implements {@link Message}. In
+     * that case, a {@code CommandMessage} is constructed from that message's payload and {@link Metadata}. The provided
+     * {@code metadata} is attached afterward in this case.
+     *
+     * @param <R>        the generic type of the expected response
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @param metadata   the metadata to register with the {@code command}
+     * @param context    the processing context, if any, to dispatch the given {@code command} in
+     * @return a {@link CompletableFuture} that will be resolved successfully or exceptionally based on the eventual
+     * command execution result
+     * @since 5.3.0
+     */
+    default <R> CompletableFuture<R> send(Object command,
+                                          Class<R> resultType,
+                                          Metadata metadata,
+                                          @Nullable ProcessingContext context) {
+        return send(command, metadata, context).resultAs(resultType);
     }
 
     /**
@@ -220,9 +252,9 @@ public interface CommandGateway extends DescribableComponent {
      * If the result is needed, use {@link #sendAndWait(Object, Class)} instead, as it allows for type conversion of the
      * result payload.
      *
-     * @param command The command payload or {@link CommandMessage} to send.
-     * @return The payload of the result message, or {@code null} when none is present.
-     * @throws CommandExecutionException When a checked exception occurs while handling the command.
+     * @param command the command payload or {@link CommandMessage} to send
+     * @return the payload of the result message, or {@code null} when none is present
+     * @throws CommandExecutionException when a checked exception occurs while handling the command
      * @see CommandGateway#sendAndWait(Object, Class)
      */
     @Nullable
@@ -240,10 +272,10 @@ public interface CommandGateway extends DescribableComponent {
      * If the result is needed, use {@link #sendAndWait(Object, Class)} instead, as it allows for type conversion of the
      * result payload.
      *
-     * @param command The command payload or {@link CommandMessage} to send.
-     * @param context The processing context, if any, to dispatch the given {@code command} in.
-     * @return The payload of the result message, or {@code null} when none is present.
-     * @throws CommandExecutionException When a checked exception occurs while handling the command.
+     * @param command the command payload or {@link CommandMessage} to send
+     * @param context the processing context, if any, to dispatch the given {@code command} in
+     * @return the payload of the result message, or {@code null} when none is present
+     * @throws CommandExecutionException when a checked exception occurs while handling the command
      * @see CommandGateway#sendAndWait(Object, Class, ProcessingContext)
      */
     @Nullable
@@ -259,17 +291,17 @@ public interface CommandGateway extends DescribableComponent {
      * it was unsuccessful or conversion failed, an exception is thrown. Any checked exceptions that may occur as the
      * result of running the command will be wrapped in a {@link CommandExecutionException}.
      *
-     * @param command    The command payload or {@link CommandMessage} to send.
-     * @param resultType The class representing the type of the expected command result.
-     * @param <R>        The generic type of the expected response.
-     * @return The payload of the result message of type {@code R}, or {@code null} when none is present.
-     * @throws CommandExecutionException When a checked exception occurs while handling the command.
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @param <R>        the generic type of the expected response
+     * @return the payload of the result message of type {@code R}, or {@code null} when none is present
+     * @throws CommandExecutionException when a checked exception occurs while handling the command
      * @see CommandGateway#sendAndWait(Object, Class, ProcessingContext)
      */
     @Nullable
     default <R> R sendAndWait(Object command,
                               Class<R> resultType) {
-        return sendAndWait(command, resultType, null);
+        return sendAndWait(command, resultType, Metadata.emptyInstance(), null);
     }
 
     /**
@@ -279,17 +311,43 @@ public interface CommandGateway extends DescribableComponent {
      * it was unsuccessful or conversion failed, an exception is thrown. Any checked exceptions that may occur as the
      * result of running the command will be wrapped in a {@link CommandExecutionException}.
      *
-     * @param command    The command payload or {@link CommandMessage} to send.
-     * @param resultType The class representing the type of the expected command result.
-     * @param context    The processing context, if any, to dispatch the given {@code command} in.
-     * @param <R>        The generic type of the expected response.
-     * @return The payload of the result message of type {@code R}, or {@code null} when none is present.
-     * @throws CommandExecutionException When a checked exception occurs while handling the command.
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @param context    the processing context, if any, to dispatch the given {@code command} in
+     * @param <R>        the generic type of the expected response
+     * @return the payload of the result message of type {@code R}, or {@code null} when none is present
+     * @throws CommandExecutionException when a checked exception occurs while handling the command
+     * @see CommandGateway#sendAndWait(Object, Class, Metadata, ProcessingContext)
      */
     @Nullable
     default <R> R sendAndWait(Object command,
                               Class<R> resultType,
                               @Nullable ProcessingContext context) {
-        return send(command, context).wait(resultType);
+        return sendAndWait(command, resultType, Metadata.emptyInstance(), context);
+    }
+
+    /**
+     * Send the given {@code command} with the given {@code metadata} in the provided {@code context} (if available) and
+     * waits for the result converted to the {@code resultType}.
+     * <p>
+     * If the command was successful, its result will be converted to the specified {@code returnType} and returned. If
+     * it was unsuccessful or conversion failed, an exception is thrown. Any checked exceptions that may occur as the
+     * result of running the command will be wrapped in a {@link CommandExecutionException}.
+     *
+     * @param command    the command payload or {@link CommandMessage} to send
+     * @param resultType the class representing the type of the expected command result
+     * @param metadata   the metadata to register with the {@code command}
+     * @param context    the processing context, if any, to dispatch the given {@code command} in
+     * @param <R>        the generic type of the expected response
+     * @return the payload of the result message of type {@code R}, or {@code null} when none is present
+     * @throws CommandExecutionException when a checked exception occurs while handling the command
+     * @since 5.3.0
+     */
+    @Nullable
+    default <R> R sendAndWait(Object command,
+                              Class<R> resultType,
+                              Metadata metadata,
+                              @Nullable ProcessingContext context) {
+        return send(command, metadata, context).wait(resultType);
     }
 }

@@ -36,17 +36,18 @@ One of the most significant changes in AF5 is the introduction of xref:messaging
 
 To embrace this, you should use the `@Command`, `@Event`, and `@Query` annotations on your message classes.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 @Revision("1.0")
 public class MyEvent {
 }
+----
 
+[source,java]
+----
 // AF5
-@Event(name = "MyEvent", version = "1.0")
-public class MyEvent {
-}
+include::example$migration/paths/messages/MyEvent.java[tag=explicit-message-type,indent=0]
 ----
 
 By using these annotations, you provide Axon with the necessary information to resolve the `MessageType` without relying on fully qualified class names, which simplifies refactoring and cross-service communication.
@@ -83,38 +84,38 @@ If you used `@Revision` in AF4, ensure to migrate to the new versioning approach
 When sending a command to an entity (formerly aggregate), you previously used `@TargetAggregateIdentifier`. 
 In Axon Framework 5, this is replaced by `@TargetEntityId`. This shift is part of the broader move towards Dynamic Consistency Boundaries. See the xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[architecture principles] for more context.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public class MarkOrderAsShippedCommand {
     @TargetAggregateIdentifier
     private String orderId;
 }
+----
 
+[source,java]
+----
 // AF5
-public class MarkOrderAsShippedCommand {
-    @TargetEntityId
-    private String orderId;
-}
+include::example$migration/paths/messages/MarkOrderAsShippedCommand.java[tag=target-entity-id,indent=0]
 ----
 
 === Command routing
 
 For commands that require a specific routing key (for example for consistent hashing in a distributed command bus), the `@RoutingKey` annotation is replaced by the `routingKey` field in the `@Command` annotation.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public class MyCommand {
     @RoutingKey
     private String someKey;
 }
+----
 
+[source,java]
+----
 // AF5
-@Command(routingKey = "someKey")
-public class MyCommand {
-    private String someKey;
-}
+include::example$migration/paths/messages/MyCommand.java[tag=command-routing-key,indent=0]
 ----
 
 Note that in Axon Framework 5, the `routingKey` property in the annotation refers to the **name of the property** (field or method) in the class that should be used for routing.
@@ -132,23 +133,22 @@ The key for this tag should reflect the **aggregate's type** (typically the simp
 
 This ensures compatibility with an aggregate-based storage solution, wherein events are stored with an aggregate `type` column.
 
-[source,java]
+[source,java,role=axon4]
 ----
-import org.axonframework.eventsourcing.annotation.EventTag;
-
 // AF4
 public class OrderCreatedEvent {
     private String orderId;
     // ...
 }
+----
+
+[source,java]
+----
+import org.axonframework.eventsourcing.annotation.EventTag;
 
 // AF5
-public class OrderCreatedEvent {
-    @EventTag(key = "Order") // "Order" is the aggregate type
-    private String orderId;
-    // ...
-}
+include::example$migration/paths/messages/OrderCreatedEvent.java[tag=event-tag-aggregate-identification,indent=0]
 ----
 
 This tagging is crucial for maintaining the link between the event and its entity, enabling correct event sourcing and consistency boundary protection in AF5.
-For more details on how tagging works, see the xref:events:event-publishing.adoc#event_tagging[Event tagging] section.
+For more details on migrating to event tagging, see xref:migration:paths/aggregates/event-tagging.adoc[Event tagging migration guide].

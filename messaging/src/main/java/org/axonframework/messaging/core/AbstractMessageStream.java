@@ -86,7 +86,7 @@ import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK
  * All methods in this class are either {@code final}, {@code private}, {@code abstract} or empty to
  * protect its invariants.
  *
- * @param <M> The type of {@link Message} contained in the {@link MessageStream.Entry entries} of this stream.
+ * @param <M> the type of {@link Message} contained in the {@link MessageStream.Entry entries} of this stream
  * @author Jan Galinski
  * @author John Hendrikx
  * @since 5.1.0
@@ -108,18 +108,17 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * This abstraction allows implementations to distinguish between a stream that is
      * temporarily out of elements and one that has been fully exhausted.
      *
-     * @param <T> The type of value returned when available
+     * @param <T> the type of value returned when available
      */
-    public sealed interface FetchResult<T extends Entry<?>> {
+    public sealed interface FetchResult<T extends @Nullable Entry<?>> {
 
         /**
-         * Creates a {@link FetchResult} reflecting the current observable state of the given {@link MessageStream}.
+         * Creates a {@code FetchResult} reflecting the current observable state of the given {@link MessageStream}.
          * <p>
          * This method inspects the provided {@code delegate} in a non-blocking manner and translates its state into a
-         * corresponding {@link FetchResult}:
+         * corresponding {@code FetchResult}:
          * <ul>
-         *     <li>If {@link MessageStream#hasNextAvailable()} returns {@code true}, this method
-         *     retrieves the next entry via {@link MessageStream#next()} and returns a
+         *     <li>If there is a {@link MessageStream#next()} element, it returns a
          *     {@link FetchResult.Value}.</li>
          *     <li>If no entry is currently available and the stream is not completed, a
          *     {@link FetchResult.NotReady} is returned.</li>
@@ -129,7 +128,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          *     containing the reported error.</li>
          * </ul>
          * <p>
-         * This method effectively adapts a {@link MessageStream} to the {@link FetchResult}-based
+         * This method effectively adapts a {@link MessageStream} to the {@code FetchResult}-based
          * consumption model used by {@link AbstractMessageStream}.
          * <p>
          * Note that this method may consume an entry from the delegate when one is available,
@@ -138,47 +137,46 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          *
          * @param <M>      the message type contained in the stream
          * @param delegate the {@link MessageStream} to inspect, must not be {@code null}
-         * @return a {@link FetchResult} representing the delegate's current state
+         * @return a {@code FetchResult} representing the delegate's current state
          * @throws NullPointerException if {@code delegate} is {@code null}
          */
         static <M extends Message> FetchResult<Entry<M>> of(MessageStream<M> delegate) {
-            if (delegate.hasNextAvailable()) {
-                return FetchResult.of(delegate.next().orElse(null));
-            }
-
-            if (!delegate.isCompleted()) {
-                return FetchResult.notReady();
-            }
-
-            return delegate.error()
-                           .map(FetchResult::<Entry<M>>error)
-                           .orElse(FetchResult.completed());
+            return delegate.next()
+                .map(FetchResult::of)
+                .orElseGet(() -> delegate.isCompleted()
+                    ? delegate.error()
+                        .map(FetchResult::<Entry<M>>error)
+                        .orElse(FetchResult.completed())
+                    : FetchResult.notReady()
+                );
         }
 
         /**
-         * Creates a {@link FetchResult} representing a successfully fetched value.
+         * Creates a {@code FetchResult} representing a successfully fetched value.
          *
          * @param <T>   the entry type
-         * @param value the non-{@code null} value
+         * @param value the value, cannot be {@code null}
          * @return a {@link Value} containing the given value, never {@code null}
+         * @throws NullPointerException if {@code value} is {@code null}
          */
         static <T extends Entry<?>> FetchResult<T> of(T value) {
             return new Value<>(value);
         }
 
         /**
-         * Creates a {@link FetchResult} representing a producer side error.
+         * Creates a {@code FetchResult} representing a producer side error.
          *
          * @param <T>   the entry type
          * @param error the non-{@code null} error
          * @return an {@link Error} representing the failure, never {@code null}
+         * @throws NullPointerException if {@code error} is {@code null}
          */
         static <T extends Entry<?>> FetchResult<T> error(Throwable error) {
             return new Error<>(error);
         }
 
         /**
-         * Returns a {@link FetchResult} indicating that no element is available and no further elements will be
+         * Returns a {@code FetchResult} indicating that no element is available and no further elements will be
          * produced.
          *
          * @param <T> the entry type
@@ -190,7 +188,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * Returns a {@link FetchResult} indicating that no element is currently available, but more elements may become
+         * Returns a {@code FetchResult} indicating that no element is currently available, but more elements may become
          * available in the future.
          *
          * @param <T> the entry type
@@ -202,14 +200,21 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         /**
-         * A {@link FetchResult} containing a successfully fetched value. The value can be {@code null} to support
-         * {@link MessageStream#ignoreEntries()}.
+         * A {@link FetchResult} containing a successfully fetched value.
          *
          * @param <T>   the entry type
          * @param value the value
          */
-        record Value<T extends Entry<?>>(@Nullable T value) implements FetchResult<T> {
+        record Value<T extends Entry<?>>(T value) implements FetchResult<T> {
 
+            /**
+             * Compact constructor ensuring the given {@code value} is not {@code null}.
+             *
+             * @param value the non-{@code null} value
+             */
+            public Value {
+                Objects.requireNonNull(value, "value");
+            }
         }
 
         /**
@@ -220,6 +225,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          */
         record Error<T extends Entry<?>>(Throwable error) implements FetchResult<T> {
 
+            /**
+             * Compact constructor ensuring the given {@code error} is not {@code null}.
+             *
+             * @param error the non-{@code null} error
+             */
             public Error {
                 Objects.requireNonNull(error, "error");
             }
@@ -255,8 +265,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * Lock direction: consumer-side calls (next, peek, hasNextAvailable, setCallback, close)
      * acquire locks from outer to inner (downstream). Producer-side signals (signalProgress and
      * the callbacks they trigger) flow in the opposite direction: inner to outer (upstream).
-     * To prevent deadlock, signalProgress releases its lock before invoking the callback rather
-     * than holding it across the call.
+     * To prevent deadlock, a callback is never invoked while this stream's lock is held: two
+     * streams that notify each other would otherwise take their locks in opposite orders.
+     *
+     * Consequently, completion may not invoke the callback either, because completion is reached
+     * from consumer-side calls that hold the lock (next -> fetchNext -> complete). Instead it
+     * records that a notification is owed in callbackPending, and the consumer-side entry point
+     * flushes it after releasing the lock. Internal variants of those entry points (nextInternal,
+     * peekInternal) exist so nesting them cannot flush while an outer frame still holds the lock -
+     * the monitor is reentrant, so a nested flush would run the callback locked after all.
      *
      * Ordering requirement: signalProgress() must only be called after the state change it
      * announces is fully visible via fetchNext(). This ensures that if a signal arrives while
@@ -330,6 +347,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private boolean initialized;
 
     /**
+     * Indicates that the consumer is owed a callback invocation, recorded while this stream's lock is held so that the
+     * invocation itself can happen after the lock is released. Setting it is idempotent: the consumer is notified once,
+     * no matter how many state changes asked for a notification.
+     * <p>
+     * Only access while synchronized on this class.
+     */
+    private boolean callbackPending;
+
+    /**
      * This method can be used after the super constructor call completes in a subtype to set the initial state of the
      * stream. It may only be called during construction, and will throw an exception if the stream already has a valid
      * state.
@@ -347,9 +373,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         }
 
         switch (initialFetchResult) {
-            case FetchResult.Value(Entry<M> value) -> throw new IllegalArgumentException(
-                    "Value fetchResult not supported during initialization");
-            case FetchResult.Error(Throwable error) -> completeExceptionally(error);
+            case FetchResult.Value(Entry<M> ignored) -> throw new IllegalArgumentException("Value fetchResult not supported during initialization");
+            case FetchResult.Error(Throwable throwable) -> completeExceptionally(throwable);
             case FetchResult.Completed() -> complete();
             case FetchResult.NotReady() -> awaitingData = true;
         }
@@ -364,24 +389,19 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         synchronized (this) {
             this.callback = callback;
 
-            boolean wasCompleted = isCompleted();
-
-            if (!hasNextAvailable() && !isCompleted()) {
-                return;
-            }
-
-            if (!wasCompleted && isCompleted()) {
+            if (peekInternal().isPresent() || completed) {
 
                 /*
-                 * complete() or completeExceptionally() was triggered by the hasNextAvailable()
-                 * probe above, which already fired the callback - don't fire again
+                 * There is something to report right away. Should the probe above have completed the
+                 * stream, complete() already recorded the notification; recording it is idempotent,
+                 * so the flush below invokes the callback exactly once either way.
                  */
 
-                return;
+                this.callbackPending = true;
             }
         }
 
-        invokeCallbackSafely();
+        flushPendingCallback();
     }
 
     /**
@@ -392,7 +412,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * a consumer of another (sub)stream they own.
      */
     @Override
-    public final synchronized void close() {
+    public final void close() {
 
         /*
          * Close is generally called by the consumer, indicating a loss of interest
@@ -401,7 +421,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          * availability of further elements.
          */
 
-        complete();
+        synchronized (this) {
+            complete();
+        }
+
+        flushPendingCallback();
     }
 
     /**
@@ -432,7 +456,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * <p>
      * Failing to observe this ordering may result in a lost wake-up scenario where:
      * <ul>
-     *     <li>progress is signalled, but</li>
+     *     <li>progress is signaled, but</li>
      *     <li>the consumer observes no available element and returns {@link FetchResult.NotReady}</li>
      * </ul>
      * even though data is available.
@@ -476,25 +500,65 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     }
 
     @Override
-    public final synchronized boolean hasNextAvailable() {
-        return peek().isPresent();
+    public final boolean hasNextAvailable() {
+        boolean available;
+
+        synchronized (this) {
+            available = peekInternal().isPresent();
+        }
+
+        flushPendingCallback();
+
+        return available;
     }
 
     @Override
-    public final synchronized Optional<Entry<M>> peek() {
+    public final Optional<Entry<M>> peek() {
+        Optional<Entry<M>> peeked;
+
+        synchronized (this) {
+            peeked = peekInternal();
+        }
+
+        flushPendingCallback();
+
+        return peeked;
+    }
+
+    @Override
+    public final Optional<Entry<M>> next() {
+        Optional<Entry<M>> nextEntry;
+
+        synchronized (this) {
+            nextEntry = nextInternal();
+        }
+
+        flushPendingCallback();
+
+        return nextEntry;
+    }
+
+    /**
+     * Same as {@link #peek()}, but without flushing a pending callback. Callers must hold this stream's lock, and are
+     * responsible for flushing once they release it.
+     */
+    private Optional<Entry<M>> peekInternal() {
         if (completed) {
             return Optional.empty();
         }
 
         if (peekedEntry == null) {
-            peekedEntry = next().orElse(null);
+            peekedEntry = nextInternal().orElse(null);
         }
 
         return Optional.ofNullable(peekedEntry);
     }
 
-    @Override
-    public final synchronized Optional<Entry<M>> next() {
+    /**
+     * Same as {@link #next()}, but without flushing a pending callback. Callers must hold this stream's lock, and are
+     * responsible for flushing once they release it.
+     */
+    private Optional<Entry<M>> nextInternal() {
         if (!this.initialized) {
             initialize(FetchResult.notReady());
         }
@@ -518,28 +582,40 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
         this.awaitingData = false;
 
-        return switch (fetchNext()) {
-            case FetchResult.Value(Entry<M> v) -> Optional.of(v);
-            case FetchResult.NotReady() -> {
-                awaitingData = true;
+        try {
+            return switch (fetchNext()) {
+                case FetchResult.Value(Entry<M> v) -> Optional.of(v);
+                case FetchResult.NotReady() -> {
+                    awaitingData = true;
 
-                yield Optional.empty();
-            }
-            case FetchResult.Error(Throwable error) -> {
-                completeExceptionally(error);
+                    yield Optional.empty();
+                }
+                case FetchResult.Error(Throwable error) -> {
+                    completeExceptionally(error);
 
-                yield Optional.empty();
-            }
-            case FetchResult.Completed() -> {
-                complete();
+                    yield Optional.empty();
+                }
+                case FetchResult.Completed() -> {
+                    complete();
 
-                yield Optional.empty();
-            }
-        };
+                    yield Optional.empty();
+                }
+            };
+        }
+        catch (Exception e) {
+            completeExceptionally(e);
+
+            return Optional.empty();
+        }
     }
 
     /**
      * Attempts to fetch the next available {@link Entry} from the underlying source.
+     * <p>
+     * This method is invoked exclusively by the enclosing AbstractMessageStream implementation. Calls are
+     * serialized under a single internal lock; the method is never executed concurrently with itself or
+     * other lifecycle methods of this instance. Implementations may assume single-threaded access and do
+     * not need to provide their own synchronization for correctness of this method.
      * <p>
      * This method is invoked by {@link #next()} when no previously peeked entry is available. Implementations must
      * return a {@link FetchResult} describing the current state of the stream:
@@ -566,6 +642,9 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * Implementations must not attempt to complete or close the stream directly.
      * Instead, they must return {@link FetchResult.Completed} or {@link FetchResult.Error}
      * to signal termination.
+     * <p>
+     * If an implementation throws an exception, the stream completes exceptionally with
+     * that exception.
      *
      * @return a {@link FetchResult} representing the outcome of the fetch attempt
      */
@@ -574,6 +653,11 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     /**
      * Callback invoked when the stream is about to transition to a completed state, either successfully or
      * exceptionally. Subclasses may override this method to perform custom actions on completion.
+     * <p>
+     * This method is invoked exclusively by the enclosing AbstractMessageStream implementation. Calls are
+     * serialized under a single internal lock; the method is never executed concurrently with itself or
+     * other lifecycle methods of this instance. Implementations may assume single-threaded access and do
+     * not need to provide their own synchronization for correctness of this method.
      * <p>
      * If the implementation throws an exception, the stream still completes, but it will complete with the thrown
      * exception. If the stream was about to complete with an error, and the callback fails as well, the exception is
@@ -607,6 +691,29 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
             this.awaitingData = false;
             this.peekedEntry = null;
 
+            /*
+             * Completion is reached from consumer-side calls that hold this lock, so the callback
+             * cannot be invoked here: doing so takes the next lock upstream while holding this one.
+             * The consumer-side entry point invokes it once it has released the lock.
+             */
+
+            this.callbackPending = true;
+        }
+    }
+
+    /**
+     * Invokes the callback if one is owed to the consumer. Must be called without holding this stream's lock, so the
+     * callback can take locks upstream freely.
+     */
+    private void flushPendingCallback() {
+        boolean owed;
+
+        synchronized (this) {
+            owed = callbackPending;
+            this.callbackPending = false;
+        }
+
+        if (owed) {
             invokeCallbackSafely();
         }
     }
@@ -623,6 +730,13 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         } catch (Throwable t) {
             synchronized (this) {
                 completeExceptionally(t);
+
+                /*
+                 * Completing here recorded another notification, but the callback that would receive it
+                 * is the one that just threw. Drop it; the failure is observable through error().
+                 */
+
+                this.callbackPending = false;
             }
         }
     }
@@ -681,11 +795,12 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
                 : null;
         String flags = describeFlags();  // pipe separated
         String delegates = describeDelegates();  // comma separated, with the active prepended with asterisk
-        String statusDescription = Stream.of(status, (peekedEntry == null ? null : "P"), flags).filter(Objects::nonNull)
-                                         .collect(Collectors.joining("|"));
+        String statusDescription = Stream.of(status, (peekedEntry == null ? null : "P"), flags)
+                                         .filter(Objects::nonNull).collect(Collectors.joining("|"));
 
-        return getClass().getSimpleName().replace("MessageStream", "") + (statusDescription.isEmpty() ? "" :
-                "[" + statusDescription + "]") + (delegates == null ? "" : "{" + delegates + "}");
+        return getClass().getSimpleName().replace("MessageStream", "")
+                + (statusDescription.isEmpty() ? "" : "[" + statusDescription + "]")
+                + (delegates == null ? "" : "{" + delegates + "}");
     }
 
     /**
@@ -696,6 +811,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      *
      * @return the flags that apply to this stream, or {@code null} if there are no relevant flags
      */
+    @Nullable
     protected String describeFlags() {
         return null;
     }
@@ -709,6 +825,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      *
      * @return the description of delegate streams, or {@code null} if there are no delegates
      */
+    @Nullable
     protected String describeDelegates() {
         return null;
     }

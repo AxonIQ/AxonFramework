@@ -16,25 +16,16 @@
 
 package org.axonframework.integrationtests.testsuite.administration.state.mutable;
 
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
 import org.axonframework.integrationtests.testsuite.administration.events.CustomerCreated;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public class MutableCustomer extends MutablePerson {
 
     @CommandHandler
-    public void handle(CreateCustomer command, EventAppender appender) {
-        if (identifier != null) {
-            throw new IllegalStateException("Customer is an existing entity");
-        }
-        appender.append(new CustomerCreated(command.identifier(),
-                                            command.emailAddress()));
-    }
-
-    @CommandHandler
-    public static void create(CreateCustomer command, EventAppender appender) {
+    public static void handle(CreateCustomer command, EventAppender appender) {
         appender.append(new CustomerCreated(command.identifier(),
                                             command.emailAddress()));
     }

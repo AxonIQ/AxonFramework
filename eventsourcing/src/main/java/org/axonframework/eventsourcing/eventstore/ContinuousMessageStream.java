@@ -81,12 +81,12 @@ public final class ContinuousMessageStream<E> extends AbstractMessageStream<Even
     }
 
     @Override
-    protected synchronized void onCompleted() {
+    protected void onCompleted() {
         seal();
     }
 
     @Override
-    protected synchronized FetchResult<Entry<EventMessage>> fetchNext() {
+    protected FetchResult<Entry<EventMessage>> fetchNext() {
         if (callbackRegistration == null) {
             this.callbackRegistration = callbackTracker.apply(this, this::signalProgress);
         }

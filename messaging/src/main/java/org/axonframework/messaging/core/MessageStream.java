@@ -19,14 +19,19 @@ package org.axonframework.messaging.core;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * Represents a stream of {@link Entry entries} containing {@link Message Messages} of type {@code M} that can be
@@ -110,7 +115,7 @@ public interface MessageStream<M extends Message> {
     static <M extends Message> MessageStream<M> fromIterable(Iterable<? extends M> iterable,
                                                              Function<? super M, ? extends Context> contextSupplier) {
         return new IteratorMessageStream<>(StreamSupport.stream(iterable.spliterator(), false)
-                                                        .<Entry<M>>map(message -> new SimpleEntry<M>(
+                                                        .<Entry<M>>map(message -> new SimpleEntry<>(
                                                                 message,
                                                                 contextSupplier.apply(message)
                                                         ))
@@ -186,7 +191,7 @@ public interface MessageStream<M extends Message> {
      * @param <M>    The type of {@link Message} contained in the {@link Entry entries} of this stream.
      * @return A stream containing at most one {@link Entry entry} from the given {@code future}.
      */
-    static <M extends Message> Single<M> fromFuture(CompletableFuture<? extends M> future) {
+    static <M extends Message> Single<M> fromFuture(CompletableFuture<? extends @Nullable M> future) {
         return fromFuture(future, message -> Context.empty());
     }
 
@@ -206,9 +211,9 @@ public interface MessageStream<M extends Message> {
      * @return A stream containing at most one {@link Entry entry} from the given {@code future} with a {@link Context}
      * provided by the {@code contextSupplier}.
      */
-    static <M extends Message> Single<M> fromFuture(CompletableFuture<? extends M> future,
+    static <M extends Message> Single<M> fromFuture(CompletableFuture<? extends @Nullable M> future,
                                                     Function<M, Context> contextSupplier) {
-        return new DelayedMessageStream.Single<>(
+        return DelayedMessageStream.createSingle(
                 future.thenApply(message -> MessageStream.just(message, contextSupplier))
         );
     }
@@ -216,11 +221,14 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream containing the single given {@code message}, automatically wrapped in an {@link Entry}.
      * <p>
-     * Once the {@code Entry} is consumed, the stream is considered completed.
+     * Once the {@code Entry} is consumed, the stream is considered completed. If {@code message} is {@code null}, the
+     * returned stream contains no entries and behaves like {@link #empty()}.
      *
-     * @param message The {@link Message} to wrap in an {@link Entry} and return in the stream.
+     * @param message The {@link Message} to wrap in an {@link Entry} and return in the stream, or {@code null} to
+     *                produce an empty stream.
      * @param <M>     The type of {@link Message} given.
-     * @return A stream consisting of a single {@link Entry entry} wrapping the given {@code message}.
+     * @return A stream consisting of a single {@link Entry entry} wrapping the given {@code message}, or an
+     * {@link Empty empty stream} if {@code message} is {@code null}.
      */
     static <M extends Message> Single<M> just(@Nullable M message) {
         return just(message, m -> Context.empty());
@@ -229,21 +237,26 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream containing the single given {@code message}, automatically wrapped in an {@link Entry}.
      * <p>
-     * Once the {@code Entry} is consumed, the stream is considered completed.
+     * Once the {@code Entry} is consumed, the stream is considered completed. If {@code message} is {@code null}, the
+     * returned stream contains no entries and behaves like {@link #empty()}; the {@code contextSupplier} is not
+     * invoked in that case.
      *
-     * @param message         The {@link Message} to wrap in an {@link Entry} and return in the stream.
+     * @param message         The {@link Message} to wrap in an {@link Entry} and return in the stream, or {@code null}
+     *                        to produce an empty stream.
      * @param contextSupplier A {@link Function} ingesting the given {@code message} returning the {@link Context} to
      *                        set for the {@link Entry} the {@code message} is wrapped in.
      * @param <M>             The type of {@link Message} given.
      * @return A stream consisting of a single {@link Entry entry} wrapping the given {@code message} with a
-     * {@link Context} provided by the {@code contextSupplier}.
+     * {@link Context} provided by the {@code contextSupplier}, or an {@link Empty empty stream} if {@code message}
+     * is {@code null}.
      */
     static <M extends Message> Single<M> just(@Nullable M message,
                                               Function<M, Context> contextSupplier) {
         if (message == null) {
             return empty().cast();
         }
-        return new SingleValueMessageStream<>(new SimpleEntry<>(message, contextSupplier.apply(message)));
+        var safeMsg = requireNonNull(message);
+        return new SingleValueMessageStream<>(new SimpleEntry<>(safeMsg, contextSupplier.apply(message)));
     }
 
     /**
@@ -344,7 +357,7 @@ public interface MessageStream<M extends Message> {
      * The callback is called on an arbitrary thread, and it should keep work performed on this thread to a minimum
      * as this may interfere with other callbacks handled by the same thread. Any exception thrown by the callback
      * will result in the stream completing with this exception as the error, unless the callback was called to
-     * indicate completition.
+     * indicate completion.
      *
      * @param callback The callback to invoke when {@link Entry entries} are available for reading, or the stream
      *                 completes.
@@ -442,6 +455,52 @@ public interface MessageStream<M extends Message> {
     }
 
     /**
+     * Returns a stream that maps each {@link Entry entry} from this stream to an inner {@link MessageStream} using the
+     * given {@code mapper}, then concatenates all inner stream entries in order.
+     * <p>
+     * Each outer entry produces exactly one inner stream. Inner streams are drained in sequence: the next inner stream
+     * is not started until the current one completes normally. If any inner stream completes with an error, that error
+     * is propagated and no further entries are emitted.
+     * <p>
+     * The returned stream completes the same way {@code this} stream completes, unless an inner stream completes with
+     * an error.
+     *
+     * @param <N>    the type of {@link Message} contained in the inner streams and the returned stream
+     * @param mapper the function mapping each {@link Entry} of type {@code M} to a {@link MessageStream} of type
+     *               {@code N}, cannot be {@code null}
+     * @return a stream that is the concatenation of all inner streams produced by {@code mapper}
+     * @throws NullPointerException when any argument is {@code null}
+     * @since 5.2.0
+     */
+    default <N extends Message> MessageStream<N> flatMap(
+            Function<? super Entry<M>, ? extends MessageStream<? extends N>> mapper) {
+        return new FlatMappedMessageStream<>(this, Objects.requireNonNull(mapper, "The mapper parameter must not be null."));
+    }
+
+    /**
+     * Returns a stream that maps each {@link Entry entry} from this stream to zero or more output entries of type
+     * {@code N}, using the given {@code mapper}.
+     * <p>
+     * For each input entry, {@code mapper} is called with the entry and a {@link Consumer} it may invoke zero or more
+     * times to emit output entries. All output entries for a given input are emitted synchronously during the same
+     * processing step, making this more efficient than {@link #flatMap(Function)} for the common case of synchronous
+     * 0-to-N expansion.
+     * <p>
+     * The returned stream completes the same way {@code this} stream completes.
+     *
+     * @param <N>    the type of {@link Message} contained in the returned stream's entries
+     * @param mapper a {@link BiConsumer} that receives each input {@link Entry} and a {@link Consumer} to push
+     *               zero or more output {@link Entry entries} of type {@code N} to, cannot be {@code null}
+     * @return a stream of output entries produced by {@code mapper} for each input entry
+     * @throws NullPointerException when any argument is {@code null}
+     * @since 5.2.0
+     */
+    default <N extends Message> MessageStream<N> mapMulti(
+            BiConsumer<? super Entry<M>, ? super Consumer<Entry<N>>> mapper) {
+        return new MapMultiMessageStream<>(this, Objects.requireNonNull(mapper, "The mapper parameter must not be null."));
+    }
+
+    /**
      * Returns a {@link CompletableFuture} of type {@code R}, using the given {@code identity} as the initial value for
      * the given {@code accumulator}. Throws an exception if this stream is unbounded.
      * <p>
@@ -459,8 +518,44 @@ public interface MessageStream<M extends Message> {
      * stream.
      * @throws UnsupportedOperationException if this stream is unbounded
      */
-    default <R> CompletableFuture<R> reduce(R identity, BiFunction<R, ? super Entry<M>, R> accumulator) {
+    default <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
+                                                      BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator) {
         return MessageStreamUtils.reduce(this, identity, accumulator);
+    }
+
+    /**
+     * Returns a {@link CompletableFuture} containing the container produced by {@code containerSupplier}, populated
+     * by passing each message in this stream to {@code accumulator}.
+     * <p>
+     * Unlike {@link #reduce(Object, BiFunction)}, the accumulator receives the message directly (not the
+     * {@link Entry}), and its return value is ignored -- it is expected to mutate the container in place. This makes
+     * method references like {@code List::add} directly usable:
+     * <pre>{@code
+     * CompletableFuture<List<MyMessage>> result = stream.collect(ArrayList::new, List::add);
+     * }</pre>
+     * <p>
+     * Note that parallel processing <b>is not</b> supported.
+     *
+     * @param containerSupplier a {@link Supplier} that creates the initial container; invoked exactly once, cannot
+     *                          be {@code null}
+     * @param accumulator       a {@link BiConsumer} that receives the container and each message; expected to mutate
+     *                          the container in place, cannot be {@code null}
+     * @param <C>               the type of the result container
+     * @return a {@link CompletableFuture} carrying the populated container after all messages are consumed
+     * @throws UnsupportedOperationException if this stream is unbounded
+     * @throws NullPointerException when any argument is {@code null}
+     * @see #reduce(Object, BiFunction)
+     * @since 5.2.0
+     */
+    default <C> CompletableFuture<C> collect(Supplier<C> containerSupplier, BiConsumer<? super C, M> accumulator) {
+        Objects.requireNonNull(containerSupplier, "The containerSupplier parameter must not be null.");
+        Objects.requireNonNull(accumulator, "The accumulator parameter must not be null.");
+
+        return reduce(containerSupplier.get(), (container, entry) -> {
+            accumulator.accept(container, entry.message());
+
+            return container;
+        });
     }
 
     /**
@@ -513,6 +608,21 @@ public interface MessageStream<M extends Message> {
      */
     default MessageStream<M> concatWith(MessageStream<? extends M> other) {
         return new ConcatenatingMessageStream<>(this, other);
+    }
+
+    /**
+     * Returns a stream that concatenates this stream with a stream created lazily by the given {@code next} supplier,
+     * if this stream completes successfully.
+     * <p>
+     * The supplier is invoked at most once, and only when a consumer first requests messages from the continuation
+     * stream. If this stream completes with an error the supplier is never called.
+     *
+     * @param next a supplier producing the {@code MessageStream} to append; invoked lazily on first access
+     * @return a stream concatenating this stream with the lazily-created stream from {@code next}
+     * @throws UnsupportedOperationException if this stream is unbounded
+     */
+    default MessageStream<M> concatWith(Supplier<MessageStream<M>> next) {
+        return concatWith(new LazyMessageStream<>(next));
     }
 
     /**
@@ -664,7 +774,7 @@ public interface MessageStream<M extends Message> {
          * {@code null} if none were produced, or completed exceptionally if the stream fails.
          * @throws UnsupportedOperationException if this stream is unbounded
          */
-        default CompletableFuture<Entry<M>> asCompletableFuture() {
+        default CompletableFuture<@Nullable Entry<M>> asCompletableFuture() {
 
             /*
              * NOTE: We intentionally use full reduce-based consumption instead of a single next()
@@ -672,7 +782,6 @@ public interface MessageStream<M extends Message> {
              * value-suppressing (ignoreEntries). This ensures correct lifecycle execution
              * regardless of stream transformations.
              */
-
             return reduce(null, (accumulator, entry) -> accumulator != null ? accumulator : entry);
         }
     }

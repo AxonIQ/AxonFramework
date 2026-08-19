@@ -16,8 +16,8 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.ObjectUtils;
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.conversion.CachingSupplier;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.GenericMessage;
@@ -28,7 +28,6 @@ import org.axonframework.messaging.core.Metadata;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Type;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -44,16 +43,6 @@ import java.util.function.Supplier;
 public class GenericEventMessage extends MessageDecorator implements EventMessage {
 
     private final Supplier<Instant> timestampSupplier;
-
-    /**
-     * {@link Clock} instance used to set the time on new events. To fix the time while testing set this value to a
-     * constant value.
-     *
-     * @deprecated #3083 - Configure application wide Clock
-     */
-    @Internal
-    @Deprecated // TODO #3083 - Configure application wide Clock
-    public static Clock clock = Clock.systemUTC();
 
     /**
      * Constructs a {@code GenericEventMessage} for the given {@code type} and {@code payload}.
@@ -78,7 +67,7 @@ public class GenericEventMessage extends MessageDecorator implements EventMessag
     public GenericEventMessage(MessageType type,
                                @Nullable Object payload,
                                Map<String, @Nullable String> metadata) {
-        this(new GenericMessage(type, payload, metadata), clock.instant());
+        this(new GenericMessage(type, payload, metadata), ClockUtils.instant());
     }
 
     /**
@@ -97,6 +86,23 @@ public class GenericEventMessage extends MessageDecorator implements EventMessag
                                Map<String, String> metadata,
                                Instant timestamp) {
         this(new GenericMessage(identifier, type, payload, metadata), timestamp);
+    }
+
+    /**
+     * Constructs a {@code GenericEventMessage} for the given {@code delegate}, intended
+     * to reconstruct another {@link EventMessage}.
+     * <p>
+     * The timestamp of the event is supplied lazily through the global {@link ClockUtils#SUPPLIER}.
+     * <p>
+     * Unlike the other constructors, this constructor will not attempt to retrieve any correlation data from the Unit
+     * of Work.
+     *
+     * @param delegate          The {@link Message} containing {@link Message#payload() payload},
+     *                          {@link Message#type() type}, {@link Message#identifier() identifier} and
+     *                          {@link Message#metadata() metadata} for the {@link EventMessage} to reconstruct.
+     */
+    public GenericEventMessage(Message delegate) {
+        this(delegate, ClockUtils.SUPPLIER);
     }
 
     /**
@@ -142,12 +148,12 @@ public class GenericEventMessage extends MessageDecorator implements EventMessag
     }
 
     @Override
-        public Instant timestamp() {
+    public Instant timestamp() {
         return timestampSupplier.get();
     }
 
     @Override
-        public EventMessage withMetadata(Map<String, String> metadata) {
+    public EventMessage withMetadata(Map<String, String> metadata) {
         if (metadata().equals(metadata)) {
             return this;
         }
@@ -155,7 +161,7 @@ public class GenericEventMessage extends MessageDecorator implements EventMessag
     }
 
     @Override
-        public EventMessage andMetadata(Map<String, String> metadata) {
+    public EventMessage andMetadata(Map<String, String> metadata) {
         //noinspection ConstantConditions
         if (metadata == null || metadata.isEmpty() || metadata().equals(metadata)) {
             return this;

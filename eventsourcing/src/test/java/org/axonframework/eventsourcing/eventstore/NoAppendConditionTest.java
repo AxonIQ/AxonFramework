@@ -19,8 +19,8 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.*;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link NoAppendCondition}.
@@ -28,6 +28,8 @@ import static org.mockito.Mockito.*;
  * @author Steven van Beelen
  */
 class NoAppendConditionTest {
+
+    private static final EventCriteria TEST_CRITERIA = EventCriteria.havingTags("key", "value");
 
     @Test
     void consistencyMarkerFixedToLongMax() {
@@ -40,7 +42,42 @@ class NoAppendConditionTest {
     }
 
     @Test
-    void withMarkerThrowsUnsupportedOperationException() {
-        assertThrows(UnsupportedOperationException.class, () -> AppendCondition.none().withMarker(mock()));
+    void withMarkerReturnsDefaultAppendConditionWithHavingAnyTagCriteria() {
+        // given
+        ConsistencyMarker marker = new GlobalIndexConsistencyMarker(42);
+
+        // when
+        AppendCondition result = AppendCondition.none().withMarker(marker);
+
+        // then
+
+        assertThat(result.consistencyMarker()).isEqualTo(marker);
+        assertThat(result.criteria()).isEqualTo(EventCriteria.havingAnyTag());
+    }
+
+    @Test
+    void replaceCriteriaReturnsDefaultAppendConditionWithInfinityMarker() {
+        // when
+        AppendCondition result = AppendCondition.none().replaceCriteria(TEST_CRITERIA);
+
+        // then
+
+        assertThat(result.consistencyMarker()).isEqualTo(ConsistencyMarker.INFINITY);
+        assertThat(result.criteria()).isEqualTo(TEST_CRITERIA);
+    }
+
+    @Test
+    void witherMethodsChainingInAnyOrderProducesSameResult() {
+        // given
+        ConsistencyMarker marker = new GlobalIndexConsistencyMarker(42);
+
+        // when
+        AppendCondition criteriaFirst = AppendCondition.none().replaceCriteria(TEST_CRITERIA).withMarker(marker);
+        AppendCondition markerFirst = AppendCondition.none().withMarker(marker).replaceCriteria(TEST_CRITERIA);
+
+        // then
+        assertThat(criteriaFirst).isEqualTo(markerFirst);
+        assertThat(criteriaFirst.consistencyMarker()).isEqualTo(marker);
+        assertThat(criteriaFirst.criteria()).isEqualTo(TEST_CRITERIA);
     }
 }

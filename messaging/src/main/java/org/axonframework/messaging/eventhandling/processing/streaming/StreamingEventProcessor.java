@@ -52,9 +52,13 @@ public interface StreamingEventProcessor extends EventProcessor {
 
     /**
      * Returns the unique identifier of the {@link TokenStore} used by this {@link StreamingEventProcessor}.
+     * <p>
+     * The identifier is resolved eagerly during {@link #start()} when the processor has been started. If called
+     * before {@link #start()} has completed, implementations may resolve the identifier lazily with a blocking call
+     * to the {@link TokenStore}.
      *
      * @return the unique identifier of the {@link TokenStore} used by this {@link StreamingEventProcessor}
-     * @throws UnableToRetrieveIdentifierException if the {@link TokenStore} was unable to retrieve it
+     * @throws UnableToRetrieveIdentifierException if the {@link TokenStore} was unable to retrieve the identifier
      */
     String getTokenStoreIdentifier();
 

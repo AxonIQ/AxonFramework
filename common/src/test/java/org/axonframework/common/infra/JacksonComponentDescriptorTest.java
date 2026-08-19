@@ -31,6 +31,11 @@ class JacksonComponentDescriptorTest extends ComponentDescriptorTestSuite {
         return new JacksonComponentDescriptor();
     }
 
+    @Override
+    String describeAsString(ComponentDescriptor testSubject) {
+        return ((JacksonComponentDescriptor) testSubject).describe();
+    }
+
     @BeforeEach
     void setUp() {
         testSubject = new JacksonComponentDescriptor();
@@ -131,7 +136,7 @@ class JacksonComponentDescriptorTest extends ComponentDescriptorTestSuite {
         testSubject.describeProperty("complexStructure", structure);
 
         // when
-        var result = testSubject.describe();
+        var result = describeAsString(testSubject);
 
         // then
         assertJsonMatchesPattern(
@@ -391,7 +396,7 @@ class JacksonComponentDescriptorTest extends ComponentDescriptorTestSuite {
                       "name": "Component2",
                       "dependency": {
                         "$ref": "%s",
-                        "_type": "org.axonframework.common.infra.ComponentDescriptorTestSuite$CircularReferencesTests$CircularComponent" 
+                        "_type": "org.axonframework.common.infra.ComponentDescriptorTestSuite$CircularReferencesTests$CircularComponent"
                       }
                     }
                   }

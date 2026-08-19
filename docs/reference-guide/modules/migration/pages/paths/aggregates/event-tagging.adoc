@@ -1,0 +1,47 @@
+= Event Tagging with `@EventTag`
+:navtitle: Event tagging
+
+In Axon Framework 4, the `@AggregateIdentifier` field on the aggregate was the single source of truth that linked events to their aggregate instance. Axon Framework 5 inverts this: the entity declares a `tagKey`, and every event the entity emits carries an explicit `@EventTag` whose key matches that `tagKey` and whose value is the entity identifier. The event store uses these tags to source the right events when reconstructing an entity.
+
+[NOTE]
+.Key shift
+====
+* `@AggregateIdentifier` is **no longer required** on the entity (also see xref:migration:paths/aggregates/configuration-migration.adoc[entity configuration migration]).
+* Each event must declare an `@EventTag` whose key matches the entity's `tagKey` and whose value is the entity identifier.
+* Without migrating to xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Consistency Boundaries (DCB)], **exactly one `@EventTag` per event is supported and required**, the one matching the entity it belongs to.
+====
+
+[source,java]
+----
+include::example$migration/paths/aggregates/eventtagging/explicitkey/Bike.java[tag=bike-entity,indent=0]
+include::example$migration/paths/aggregates/eventtagging/explicitkey/BikeRegisteredEvent.java[tag=bike-registered-event,indent=0]
+----
+<1> The entity declares a `tagKey` that the event store uses to locate its events. In Spring environments, use `@EventSourced(tagKey = "Bike")` instead.
+<2> Each event carries an `@EventTag` with the **same key** as the entity's `tagKey`. The tag value is derived by calling `toString()` on the annotated field.
+
+== `@EventTag` without an explicit key
+
+When `@EventTag` is used without specifying a `key`, the framework derives the key from the annotated member's name (the field name, or the getter name with `get` stripped). This is convenient when the field name already matches the entity's `tagKey`.
+
+[source,java]
+----
+include::example$migration/paths/aggregates/eventtagging/derivedkey/Bike.java[tag=bike-entity-derived-key,indent=0]
+include::example$migration/paths/aggregates/eventtagging/derivedkey/BikeRegisteredEvent.java[tag=bike-registered-event-derived-key,indent=0]
+----
+
+[TIP]
+====
+Pick a `tagKey` that conveys the *entity type* rather than the field name (for example, `"Bike"` instead of `"bikeId"`). It tends to read more naturally and stays stable even if the identifier field is later renamed. In that case, use `@EventTag(key = "Bike")` explicitly on the events.
+====
+
+== One tag per event (without DCB)
+
+For an architecture-neutral migration that keeps the existing aggregate model, every event must declare **exactly one** `@EventTag`, and it must match the entity it belongs to. Multiple tags on a single event become meaningful once you start adopting xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Consistency Boundaries (DCB)], where an event may be relevant to multiple entities and is therefore tagged with several keys.
+
+[source,java]
+----
+include::example$migration/paths/aggregates/eventtagging/singletag/BikeReturnedEvent.java[tag=bike-returned-event,indent=0]
+include::example$migration/paths/aggregates/eventtagging/singletag/BikeRequestedEvent.java[tag=bike-requested-event,indent=0]
+----
+
+For deeper reference material on tags, custom `TagResolver` implementations, and consistency boundary mechanics, see xref:events:event-publishing.adoc#event_tagging[Event tagging] in the events reference guide.

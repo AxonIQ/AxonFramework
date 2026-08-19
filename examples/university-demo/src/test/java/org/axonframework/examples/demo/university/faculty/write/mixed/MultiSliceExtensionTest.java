@@ -51,7 +51,7 @@ class MultiSliceExtensionTest {
 
     @Test
     @ProvidedAxonTestFixture(EnrollStudentInFacultyFixtureProvider.class)
-    public void givenStudentNotEnrolledInFactulty_WhenEnrollStudentInFaculty_ThenStudentEnrolledInFaculty(
+    public void givenStudentNotEnrolledInFaculty_WhenEnrollStudentInFaculty_ThenStudentEnrolledInFaculty(
             final AxonTestFixture fixture) {
         var studentId = StudentId.random();
         var firstName = "First Name";

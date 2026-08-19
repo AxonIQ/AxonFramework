@@ -17,7 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.Assert;
-import org.axonframework.common.FutureUtils;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.LegacyResources;
@@ -29,10 +29,13 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressContext;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.WrappedToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
@@ -47,6 +50,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -57,7 +61,6 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
-import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 /**
  * Defines the process of handling {@link EventMessage}s for a specific {@link Segment}. This entails validating if the
@@ -79,7 +82,7 @@ import static org.axonframework.common.FutureUtils.joinAndUnwrap;
  * @see Coordinator
  * @since 4.5
  */
-class WorkPackage {
+class WorkPackage implements SegmentProgressContext {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -96,19 +99,21 @@ class WorkPackage {
     private final long claimExtensionThreshold;
     private final Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
     private final Supplier<ProcessingContext> schedulingProcessingContextProvider;
-    private Runnable batchProcessedCallback;
+    @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
+    private final SegmentProgressStrategy progressStrategy;
 
     private TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
-    private TrackingToken lastConsumedToken;
-    private TrackingToken lastStoredToken;
+    private @Nullable TrackingToken lastStoredToken;
     private final AtomicLong nextClaimExtension;
     private final AtomicBoolean processingEvents;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
     private final AtomicBoolean scheduled = new AtomicBoolean();
-    private final AtomicReference<CompletableFuture<Exception>> abortFlag = new AtomicReference<>();
-    private final AtomicReference<Exception> abortException = new AtomicReference<>();
+    private final AtomicReference<@Nullable CompletableFuture<Throwable>> abortFlag = new AtomicReference<>();
+    private final AtomicReference<@Nullable Throwable> abortException = new AtomicReference<>();
+    private @Nullable Runnable batchProcessedCallback;
+    private volatile @Nullable TrackingToken lastConsumedToken;
 
     /**
      * Instantiate a Builder to be able to create a {@code WorkPackage}. This builder <b>does not</b> validate the
@@ -134,9 +139,15 @@ class WorkPackage {
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
         this.clock = builder.clock;
         this.lastConsumedToken = builder.initialToken;
+        // The claimed token is by definition the last position the token store accepted for this segment, so it is the
+        // reference the monotonicity guard in storeIfAdvanced must start from. Leaving it null would skip the guard on
+        // the first store of every claim cycle.
+        this.lastStoredToken = builder.initialToken;
         this.nextClaimExtension = new AtomicLong(now() + claimExtensionThreshold);
         this.processingEvents = new AtomicBoolean(false);
         this.schedulingProcessingContextProvider = builder.schedulingProcessingContextProvider;
+        // Created last: the factory only retains this context (as SegmentProgressContext); it must be fully initialized.
+        this.progressStrategy = builder.progressStrategyFactory.create(this);
     }
 
     private long now() {
@@ -255,15 +266,30 @@ class WorkPackage {
     }
 
     /**
+     * The given {@code eventEntry} should not be scheduled if the {@link TrackingToken} extracted from its context
+     * {@link TrackingToken#covers(TrackingToken)} is the last delivered token.
+     * <p>
+     * This validation ensures events that this work package already covered are ignored.
+     *
+     * @param eventEntry The event entry to validate whether it should be scheduled yes or no.
+     * @return {@code true} if the given {@code eventEntry} should not be scheduled, {@code false} otherwise.
+     */
+    private boolean shouldNotSchedule(MessageStream.Entry<? extends EventMessage> eventEntry) {
+        TrackingToken eventToken = TrackingToken.fromContext(eventEntry).orElse(null);
+        // Null check is done to solve potential NullPointerException.
+        return lastDeliveredToken != null && eventToken != null && lastDeliveredToken.covers(eventToken);
+    }
+
+    /**
      * Determines whether this {@code WorkPackage} can handle the given {@link MessageStream.Entry}. This method creates
      * a specialized {@link ProcessingContext} from the event entry to evaluate if the event should be processed by this
      * work package's {@link Segment}.
      * <p>
-     * The method extracts resources from the {@code eventEntry} that were set by the
-     * {@link StreamableEventSource} to make filtering decisions. Example: These
-     * resources include data like {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY}, which
-     * might be essential (while using the Aggreate based approach) for event sequencing since Axon Framework 5.0.0 no
-     * longer embeds aggregate identifiers directly in event messages.
+     * The method extracts resources from the {@code eventEntry} that were set by the {@link StreamableEventSource} to
+     * make filtering decisions. Example: These resources include data like
+     * {@link LegacyResources#AGGREGATE_IDENTIFIER_KEY}, which might be essential (while using the Aggreate based
+     * approach) for event sequencing since Axon Framework 5.0.0 no longer embeds aggregate identifiers directly in
+     * event messages.
      * <p>
      * The temporary {@link EventSchedulingProcessingContext} created here has limitations - it cannot access
      * configuration components or register lifecycle hooks. Its sole purpose is to provide resource access during event
@@ -292,21 +318,6 @@ class WorkPackage {
         return to;
     }
 
-    /**
-     * The given {@code eventEntry} should not be scheduled if the {@link TrackingToken} extracted from its context
-     * {@link TrackingToken#covers(TrackingToken)} the last delivered token.
-     * <p>
-     * This validation ensures events that this work package already covered are ignored.
-     *
-     * @param eventEntry The event entry to validate whether it should be scheduled yes or no.
-     * @return {@code true} if the given {@code eventEntry} should not be scheduled, {@code false} otherwise.
-     */
-    private boolean shouldNotSchedule(MessageStream.Entry<? extends EventMessage> eventEntry) {
-        TrackingToken eventToken = TrackingToken.fromContext(eventEntry).orElse(null);
-        // Null check is done to solve potential NullPointerException.
-        return lastDeliveredToken != null && eventToken != null && lastDeliveredToken.covers(eventToken);
-    }
-
     private boolean canHandle(EventMessage eventMessage, ProcessingContext processingContext) {
         try {
             return eventFilter.canHandle(eventMessage, processingContext, segment);
@@ -330,107 +341,197 @@ class WorkPackage {
             return;
         }
         logger.debug("Scheduling Work Package [{}]-[{}] to process events.", segment.getSegmentId(), name);
-
-        executorService.submit(() -> {
-            CompletableFuture<Exception> aborting = abortFlag.get();
-            if (aborting != null) {
-                logger.debug("Work Package [{}]-[{}] should be aborted. Will shutdown this work package.",
-                             segment.getSegmentId(), name);
-                segmentStatusUpdater.accept(previousStatus -> null);
-                aborting.complete(abortException.get());
-                return;
-            }
-
-            try {
-                processEvents();
-            } catch (Exception e) {
-                logger.warn("Error while processing batch in Work Package [{}]-[{}]. Aborting Work Package...",
-                            segment.getSegmentId(), name, e);
-                abort(e);
-            }
-            scheduled.set(false);
-            if (!processingQueue.isEmpty() || abortFlag.get() != null) {
-                logger.debug("Rescheduling Work Package [{}]-[{}] since there are events left.",
-                             segment.getSegmentId(), name);
-                scheduleWorker();
-            }
-        });
+        executorService.submit(this::runWorker);
     }
 
-    private void processEvents() {
-        List<EventMessage> eventBatch = new ArrayList<>();
+    private void runWorker() {
+        CompletableFuture<Throwable> aborting = abortFlag.get();
+        if (aborting != null) {
+            logger.debug("Work Package [{}]-[{}] should be aborted. Will shutdown this work package.",
+                         segment.getSegmentId(), name);
+            segmentStatusUpdater.accept(previousStatus -> null);
+            aborting.complete(abortException.get());
+            return;
+        }
+        processEvents().whenCompleteAsync((unused, e) -> onProcessingComplete(e), executorService);
+    }
+
+    private CompletableFuture<Void> processEvents() {
+        List<MessageStream.Entry<? extends EventMessage>> eventBatch = new ArrayList<>();
         while (!isAbortTriggered() && eventBatch.size() < batchSize && !processingQueue.isEmpty()) {
             ProcessingEntry entry = processingQueue.poll();
             lastConsumedToken = WrappedToken.advance(lastConsumedToken, entry.trackingToken());
-            entry.addToBatch(eventBatch);
+            entry.addToBatch(eventBatch, lastConsumedToken);
         }
 
         // Make sure all subsequent events with the same token (if non-null) as the last are added as well.
         // These are the result of upcasting and should always be processed in the same batch.
 
-        if (!eventBatch.isEmpty()) {
-            logger.debug("Work Package [{}]-[{}] is processing a batch of {} events.",
-                         segment.getSegmentId(), name, eventBatch.size());
-            try {
-                processingEvents.set(true);
-                var unitOfWork = unitOfWorkFactory.create();
-                unitOfWork.runOnPreInvocation(ctx -> {
-                    ctx.putResource(Segment.RESOURCE_KEY, segment);
-                    ctx.putResource(TrackingToken.RESOURCE_KEY, lastConsumedToken);
-                });
-
-                unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
-
-                unitOfWork.runOnPrepareCommit(ctx -> storeToken(lastConsumedToken, ctx));
-                unitOfWork.runOnAfterCommit(
-                        ctx -> {
-                            segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
-                            if (batchProcessedCallback != null) {
-                                batchProcessedCallback.run();
-                            }
-                        }
-                );
-                FutureUtils.joinAndUnwrap(unitOfWork.execute());
-            } finally {
-                processingEvents.set(false);
-            }
-        } else {
+        if (eventBatch.isEmpty()) {
+            // Nothing to handle. Either the strategy has out-of-band work to commit (e.g. a pending checkpoint request),
+            // in which case run a commit cycle in its own transaction; or perform periodic upkeep (catch-up store of an
+            // advanced-but-unstored token, then claim extension).
             segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
-            if (lastStoredToken != lastConsumedToken && now() > nextClaimExtension.get()) {
-                joinAndUnwrap(
-                        unitOfWorkFactory
-                                .create()
-                                .executeWithResult(context -> {
-                                    storeToken(lastConsumedToken, context);
-                                    return emptyCompletedFuture();
-                                })
-                );
-            } else {
-                extendClaimIfThresholdIsMet();
-            }
+            return progressStrategy.hasPendingWork()
+                    ? unitOfWorkFactory.create().executeWithResult(progressStrategy::onBatchCommit)
+                    : upkeepIfThresholdIsMet();
         }
+
+        logger.debug("Work Package [{}]-[{}] is processing a batch of {} events.",
+                     segment.getSegmentId(), name, eventBatch.size());
+        processingEvents.set(true);
+        var unitOfWork = unitOfWorkFactory.create();
+        unitOfWork.runOnPreInvocation(ctx -> {
+            ctx.putResource(Segment.RESOURCE_KEY, segment);
+            ctx.putResource(TrackingToken.BATCH_END_RESOURCE_KEY, lastConsumedToken);
+            progressStrategy.contributeBatchResources(ctx);
+        });
+        unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
+        // One transaction handles the batch AND persists this cycle's progress (if any).
+        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
+        unitOfWork.runOnAfterCommit(ctx -> {
+            segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
+            if (batchProcessedCallback != null) {
+                batchProcessedCallback.run();
+            }
+        });
+        CompletableFuture<Void> result;
+        try {
+            result = unitOfWork.execute();
+        } catch (Exception e) {
+            result = CompletableFuture.failedFuture(e);
+        }
+        return result.whenComplete((v, t) -> processingEvents.set(false));
+    }
+
+    private void onProcessingComplete(@Nullable Throwable e) {
+        if (e != null) {
+            Throwable cause = e instanceof CompletionException ce ? ce.getCause() : e;
+            logger.warn("Error while processing batch in Work Package [{}]-[{}]. Aborting Work Package...",
+                        segment.getSegmentId(), name, cause);
+            abort(cause);
+        }
+        scheduled.set(false);
+        // Re-check ALL outstanding state AFTER releasing the flag, including the strategy's pending out-of-band work
+        // (e.g. a checkpoint request). This closes the race where such a request arrives (and its scheduleWorker CAS
+        // loses) in the window after the worker consumed the previous one but before it cleared the scheduled flag.
+        if (!processingQueue.isEmpty() || abortFlag.get() != null || progressStrategy.hasPendingWork()) {
+            logger.debug("Rescheduling Work Package [{}]-[{}] since there are events or pending progress work left.",
+                         segment.getSegmentId(), name);
+            scheduleWorker();
+        }
+    }
+
+    /**
+     * Delegates to the {@link SegmentProgressStrategy} so it can act when this package's {@link Segment} is claimed (for
+     * example, hand a checkpoint trigger to self-checkpointing participants). Invoked by the {@link Coordinator} once the
+     * segment is claimed; an exception from the strategy fails the claim cycle.
+     */
+    void onSegmentClaimed() {
+        progressStrategy.onSegmentClaimed();
+    }
+
+    /**
+     * Delegates to the {@link SegmentProgressStrategy} to persist the final progress for a segment being released,
+     * within the given {@code ctx}. Invoked by the {@link Coordinator} (and the split/merge tasks) while the token-store
+     * claim is still held, before the claim is released. The default {@link TokenStoringProgressStrategy} is a no-op (the
+     * per-batch store already covered progress); a self-checkpointing strategy performs its final reconcile-and-store.
+     *
+     * @param ctx the processing context whose transaction the final store participates in
+     * @return a {@link CompletableFuture} completing when the final persistence (if any) has been applied
+     */
+    CompletableFuture<Void> onSegmentReleased(ProcessingContext ctx) {
+        return progressStrategy.onSegmentReleased(ctx);
+    }
+
+    /**
+     * Performs periodic idle upkeep when there is nothing to handle and the strategy has no out-of-band work: on the
+     * claim-extension beat, opens one transaction that lets the strategy persist any advanced-but-unstored progress (the
+     * default token-storing catch-up; a deferred strategy no-ops without a request), then extends the claim if it was
+     * not already refreshed by that store. When nothing is unstored the strategy is not invoked at all and only the
+     * claim is extended, so an idle segment never drives a strategy (and its participants) with an unchanged position.
+     * Off the beat it is a no-op, keeping the claim.
+     */
+    private CompletableFuture<Void> upkeepIfThresholdIsMet() {
+        if (now() <= nextClaimExtension.get()) {
+            return emptyCompletedFuture();
+        }
+        if (Objects.equals(lastConsumedToken, lastStoredToken)) {
+            return unitOfWorkFactory.create().executeWithResult(this::extendClaimIfThresholdIsMet);
+        }
+        return unitOfWorkFactory.create().executeWithResult(
+                ctx -> progressStrategy.onBatchCommit(ctx)
+                                       .thenCompose(unused -> extendClaimIfThresholdIsMet(ctx))
+        );
     }
 
     /**
      * Extend the claim of the {@link TrackingToken} owned by this {@code WorkPackage}, if the configurable
      * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold} is
-     * met.
+     * met. Opens its own {@link UnitOfWork}; used by the {@link Coordinator} when it extends claims on behalf of its
+     * packages.
      */
-    public void extendClaimIfThresholdIsMet() {
+    public CompletableFuture<Void> extendClaimIfThresholdIsMet() {
         if (now() > nextClaimExtension.get()) {
-            logger.debug("Work Package [{}]-[{}] will extend its token claim.", name, segment.getSegmentId());
-            joinAndUnwrap(unitOfWorkFactory.create().executeWithResult(
-                    context -> tokenStore.extendClaim(name, segment.getSegmentId(), context)
-            ));
-            nextClaimExtension.set(now() + claimExtensionThreshold);
+            return unitOfWorkFactory.create().executeWithResult(this::extendClaimIfThresholdIsMet);
         }
+        return emptyCompletedFuture();
     }
 
-    private void storeToken(TrackingToken token, ProcessingContext processingContext) {
+    /**
+     * Extends the claim within the given {@code context} if the claim-extension threshold is met. Skipped when a store
+     * in the same cycle already refreshed the deadline (the threshold is no longer met), so the idle upkeep cycle never
+     * both stores and extends.
+     */
+    private CompletableFuture<Void> extendClaimIfThresholdIsMet(ProcessingContext context) {
+        if (now() <= nextClaimExtension.get()) {
+            return emptyCompletedFuture();
+        }
+        logger.debug("Work Package [{}]-[{}] will extend its token claim.", name, segment.getSegmentId());
+        return tokenStore.extendClaim(name, segment.getSegmentId(), context)
+                         .thenRun(() -> nextClaimExtension.set(now() + claimExtensionThreshold));
+    }
+
+    @Override
+    public @Nullable TrackingToken lastConsumedToken() {
+        return lastConsumedToken;
+    }
+
+    @Override
+    public CompletableFuture<Void> persistProgress(@Nullable TrackingToken candidate, ProcessingContext context) {
+        return storeIfAdvanced(candidate, context);
+    }
+
+    /**
+     * Stores {@code safe}, keeping the stored {@link TrackingToken} monotonic. A {@code null} or already-stored token
+     * is ignored. A token that does not
+     * {@link TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken) cover} the last stored token on both
+     * ends of its range is ignored with a warning rather than persisted, so a misbehaving component can never rewind
+     * progress on any source, nor rewind the position streaming resumes from.
+     */
+    private CompletableFuture<Void> storeIfAdvanced(@Nullable TrackingToken safe, ProcessingContext ctx) {
+        if (safe == null || safe.equals(lastStoredToken)) {
+            return emptyCompletedFuture();
+        }
+        if (lastStoredToken != null && !TrackingTokenUtils.coversWhenUnwrapped(safe, lastStoredToken)) {
+            logger.warn(
+                    "Work Package [{}]-[{}] ignoring safe token [{}]; it does not advance beyond the stored token [{}].",
+                    name,
+                    segment.getSegmentId(),
+                    safe,
+                    lastStoredToken);
+            return emptyCompletedFuture();
+        }
+        return storeToken(safe, ctx);
+    }
+
+    private CompletableFuture<Void> storeToken(TrackingToken token, ProcessingContext processingContext) {
         logger.debug("Work Package [{}]-[{}] will store token [{}].", name, segment.getSegmentId(), token);
-        joinAndUnwrap(tokenStore.storeToken(token, name, segment.getSegmentId(), processingContext));
-        lastStoredToken = token;
-        nextClaimExtension.set(now() + claimExtensionThreshold);
+        return tokenStore.storeToken(token, name, segment.getSegmentId(), processingContext)
+                         .thenRun(() -> {
+                             lastStoredToken = token;
+                             nextClaimExtension.set(now() + claimExtensionThreshold);
+                         });
     }
 
     /**
@@ -481,8 +582,8 @@ class WorkPackage {
      * Indicates whether an abort has been triggered for this {@code WorkPackage}. When {@code true}, any events
      * scheduled for processing by this {@code WorkPackage} are likely to be ignored.
      * <p>
-     * Use {@link WorkPackage#abort(Exception)} (possibly with a {@code null} reason) to obtain a {@link CompletableFuture} with a
-     * reference to the abort reason.
+     * Use {@link WorkPackage#abort(Throwable)} (possibly with a {@code null} reason) to obtain a
+     * {@link CompletableFuture} with a reference to the abort reason.
      *
      * @return {@code true} if an abort was scheduled, otherwise {@code false}
      */
@@ -495,15 +596,18 @@ class WorkPackage {
      * abort reason once the {@code WorkPackage} has finished any processing that may had been started already.
      * <p>
      * If this {@code WorkPackage} was already aborted in another request, the returned {@code CompletableFuture} will
-     * complete with exception for the first request.
+     * complete with the first abort reason.
      * <p>
      * An aborted {@code WorkPackage} cannot be restarted.
      *
-     * @param abortReason the reason to request the {@code WorkPackage} to abort
+     * @param abortReason the reason to request the {@code WorkPackage} to abort, may be {@code null}
      * @return a {@link CompletableFuture} that completes with the first reason once the {@code WorkPackage} has stopped
      * processing
      */
-    public CompletableFuture<Exception> abort(Exception abortReason) {
+    public CompletableFuture<Throwable> abort(@Nullable Throwable abortReason) {
+        // Let the strategy deactivate any out-of-band trigger before the release sequence runs (e.g. a late
+        // requestCheckpoint becomes a no-op). The final safe token is taken solely from onSegmentReleased.
+        progressStrategy.onAbort();
         if (abortReason != null) {
             logger.debug("Abort request received for Work Package [{}]-[{}].",
                          name, segment.getSegmentId(), abortReason);
@@ -517,7 +621,7 @@ class WorkPackage {
             );
         }
 
-        CompletableFuture<Exception> abortTask = abortFlag.updateAndGet(
+        CompletableFuture<Throwable> abortTask = Objects.requireNonNull(abortFlag.updateAndGet(
                 currentFlag -> {
                     if (currentFlag == null) {
                         abortException.set(abortReason);
@@ -529,7 +633,7 @@ class WorkPackage {
                         return currentFlag;
                     }
                 }
-        );
+        ));
         // Reschedule the worker to ensure the abort flag is processed
         scheduleWorker();
         return abortTask;
@@ -581,13 +685,14 @@ class WorkPackage {
     interface BatchProcessor {
 
         /**
-         * Processes a batch of events in the processing context.
+         * Processes a batch of entries in the processing context.
          *
-         * @param events  The batch of event messages to be processed.
+         * @param entries  The batch of event messages to be processed.
          * @param context The processing context in which the event messages are processed.
          * @return A stream of messages resulting from the processing of the event messages.
          */
-        MessageStream.Empty<Message> process(List<? extends EventMessage> events, ProcessingContext context);
+        MessageStream.Empty<Message> process(List<MessageStream.Entry<? extends EventMessage>> entries,
+                                             ProcessingContext context);
     }
 
     /**
@@ -606,8 +711,10 @@ class WorkPackage {
         private @Nullable TrackingToken initialToken;
         private int batchSize = 1;
         private long claimExtensionThreshold = 5000;
+        private SegmentProgressStrategyFactory progressStrategyFactory = SegmentProgressStrategyFactory.tokenStoring();
         private @Nullable Consumer<UnaryOperator<TrackerStatus>> segmentStatusUpdater;
-        private Clock clock = GenericEventMessage.clock;
+        @Deprecated(forRemoval = true, since = "5.2.0")
+        private Clock clock = ClockUtils.get();
         private Supplier<ProcessingContext> schedulingProcessingContextProvider = () ->
                 new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
 
@@ -728,6 +835,19 @@ class WorkPackage {
         }
 
         /**
+         * The {@link SegmentProgressStrategyFactory} that creates this package's {@link SegmentProgressStrategy},
+         * deciding how the segment's progress is persisted. Defaults to
+         * {@link SegmentProgressStrategyFactory#tokenStoring()} (store the batch-end token every batch).
+         *
+         * @param progressStrategyFactory the factory creating this package's progress strategy
+         * @return the current Builder instance, for fluent interfacing
+         */
+        Builder progressStrategyFactory(SegmentProgressStrategyFactory progressStrategyFactory) {
+            this.progressStrategyFactory = progressStrategyFactory;
+            return this;
+        }
+
+        /**
          * Lambda to be invoked whenever the status of this package's {@code segment} changes.
          *
          * @param segmentStatusUpdater lambda to be invoked whenever the status of this package's {@code segment}
@@ -741,12 +861,13 @@ class WorkPackage {
 
         /**
          * Defines the {@link Clock} used for time dependent operations. For example used to update whenever this
-         * {@code WorkPackage} updated the {@link TrackingToken} claim last. Defaults to
-         * {@link GenericEventMessage#clock}.
+         * {@code WorkPackage} updated the {@link TrackingToken} claim last.
          *
          * @param clock the {@link Clock} used for time dependent operations
          * @return the current Builder instance, for fluent interfacing
+         * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
          */
+        @Deprecated(forRemoval = true, since = "5.2.0")
         Builder clock(Clock clock) {
             this.clock = clock;
             return this;
@@ -757,8 +878,7 @@ class WorkPackage {
          * this {@code WorkPackage}. The provided {@code ProcessingContext} is enriched with resources from the
          * {@link MessageStream.Entry} to evaluate whether the event can be handled by this package's {@link Segment}.
          * Currently, the only usage of the context is for
-         * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage,
-         * ProcessingContext)} execution.
+         * {@link EventHandlingComponent#sequenceIdentifierFor(EventMessage, ProcessingContext)} execution.
          *
          * @param schedulingProcessingContextProvider The {@link ProcessingContext} provider.
          * @return The current Builder instance, for fluent interfacing.
@@ -796,12 +916,28 @@ class WorkPackage {
         TrackingToken trackingToken();
 
         /**
-         * Add this entry's events to the {@code eventBatch}. Since tracking is handled at the UnitOfWork level, we only
-         * need to add the actual event messages to the batch.
+         * Add this entry's events to the {@code eventBatch}, overriding the raw stream token already present in the
+         * entry's context with the given {@code wrappedToken}.
+         * <p>
+         * The raw token stored in the entry's context is the position as reported by the event source (e.g. a plain
+         * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken}).
+         * That raw value is insufficient for correct per-event processing: {@code wrappedToken} is the result of
+         * {@link WrappedToken#advance(TrackingToken, TrackingToken)} applied to the previous batch position and this
+         * entry's raw token, so it encodes additional state — most importantly, during a replay it is a
+         * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken} wrapping the raw
+         * position. Without this override, replay-detection logic such as
+         * {@link
+         * org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#isReplay(TrackingToken)} and
+         * {@link
+         * org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken#concludesReplay(TrackingToken)}
+         * would always see a plain token and never recognise the replay boundary, causing all events in a batch to be
+         * mis-classified.
          *
-         * @param eventBatch The list of events to add this entry's events to.
+         * @param eventBatch   the list of events to add this entry's events to
+         * @param wrappedToken the result of {@link WrappedToken#advance} for this specific event; replaces the raw
+         *                     stream token in each event's context
          */
-        void addToBatch(List<EventMessage> eventBatch);
+        void addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
     }
 
     /**
@@ -809,15 +945,8 @@ class WorkPackage {
      * handled in this package. The combination constitutes to a processing entry the {@code WorkPackage} should
      * ingest.
      */
-    private static class DefaultProcessingEntry implements ProcessingEntry {
-
-        private final MessageStream.Entry<? extends EventMessage> eventEntry;
-        private final boolean canHandle;
-
-        public DefaultProcessingEntry(MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle) {
-            this.eventEntry = eventEntry;
-            this.canHandle = canHandle;
-        }
+    private record DefaultProcessingEntry(MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle)
+            implements ProcessingEntry {
 
         @Override
         public TrackingToken trackingToken() {
@@ -825,9 +954,12 @@ class WorkPackage {
         }
 
         @Override
-        public void addToBatch(List<EventMessage> eventBatch) {
+        public void addToBatch(
+                List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                TrackingToken wrappedToken
+        ) {
             if (canHandle) {
-                eventBatch.add(eventEntry.message());
+                eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
             }
         }
     }
@@ -854,8 +986,11 @@ class WorkPackage {
         }
 
         @Override
-        public void addToBatch(List<EventMessage> eventBatch) {
-            processingEntries.forEach(entry -> entry.addToBatch(eventBatch));
+        public void addToBatch(
+                List<MessageStream.Entry<? extends EventMessage>> eventBatch,
+                TrackingToken wrappedToken
+        ) {
+            processingEntries.forEach(entry -> entry.addToBatch(eventBatch, wrappedToken));
         }
     }
 }

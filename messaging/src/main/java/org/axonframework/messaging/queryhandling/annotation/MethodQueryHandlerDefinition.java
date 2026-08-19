@@ -25,7 +25,6 @@ import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.queryhandling.QueryMessage;
-import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -86,17 +85,6 @@ public class MethodQueryHandlerDefinition implements HandlerEnhancerDefinition {
                         original.unwrap(Member.class).orElse(null)
                 );
             }
-        }
-
-        @Override
-        public Object handleSync(Message message,
-                                 ProcessingContext context,
-                                 @Nullable T target) throws Exception {
-            Object result = super.handleSync(message, context, target);
-            if (result instanceof Optional) {
-                return ((Optional<?>) result).orElse(null);
-            }
-            return result;
         }
 
         private Type queryResultType(Method method) {

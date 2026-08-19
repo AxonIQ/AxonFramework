@@ -3,9 +3,16 @@
 Axon Framework provides extensive support for Spring Boot through its Spring Boot Starter extension.
 While Axon can be configured programmatically without Spring, the Spring Boot integration provides the easiest way to get started through automatic configuration.
 
+[NOTE]
+.Looking for the concrete implementation details?
+====
+This page covers getting started, supported versions, and event processor configuration.
+For how the Spring integration maps onto Axon's configuration API under the hood, including bean-to-component mapping, overriding auto-configured defaults, handler and entity detection, and lifecycle integration, see xref:configuration:spring.adoc[Spring Boot integration] in the Configuration chapter.
+====
+
 The following table shows which Spring Boot versions are supported by each Axon Framework version:
 
-[cols="2,1,1,1", options="header"]
+[cols="2,1,1,1",options="header"]
 |===
 |Axon Framework Version |Spring Boot 2 |Spring Boot 3 |Spring Boot 4
 
@@ -87,6 +94,10 @@ Other extensions can provide additional implementations:
 * PostgreSQL event store (via the PostgreSQL extension)
 * Reactive gateways for commands, events, and queries (via the xref:modules.adoc#axon-reactor[Reactor extension])
 
+ifdef::advanced-framework[]
+include::connector:partial$connection-security.adoc[]
+endif::[]
+
 == Component detection
 
 The Spring Boot Starter automatically detects Axon components in your application:
@@ -95,22 +106,19 @@ The Spring Boot Starter automatically detects Axon components in your applicatio
 * Classes annotated with `@EventSourced` are registered as entities
 * All detected components are wired with the appropriate buses and infrastructure
 
+See xref:configuration:spring.adoc#handling-component-detection[Message handler and entity detection] for how this detection works and an example combining all three handler types in a single bean.
+
 == Customization
 
-The auto-configuration is non-intrusive and only configures components that you haven't explicitly defined.
-You can override any auto-configured bean by defining your own in a `@Configuration` class.
+The auto-configuration is non-intrusive and only configures components that you haven't explicitly defined: you can override any auto-configured bean by defining your own in a `@Configuration` class.
+See xref:configuration:spring.adoc#customizing-axon-config-with-spring[Customizing Axon's configuration through Spring] for examples of replacing, decorating, and enhancing auto-configured components.
 
 For detailed configuration options, see the specific sections in this reference guide for commands, events, queries, and entities.
 
+[#event-processor-configuration]
 == Event processor configuration
 
-Spring Boot provides multiple approaches to configure event processors, ranging from simple properties-based configuration to programmatic type-safe configuration.
-
-=== Configuration approaches
-
-==== Properties-based configuration
-
-The simplest approach for basic configuration using `application.properties` or `application.yml`:
+The simplest way to configure an event processor is through `application.properties` or `application.yml`:
 
 [source,properties]
 ----
@@ -120,172 +128,7 @@ axon.eventhandling.processors.my-processor.batch-size=100
 axon.eventhandling.processors.my-processor.thread-count=16
 ----
 
-This approach is ideal for:
-
-* Simple processor configuration
-* Environment-specific settings (dev, test, prod)
-* Quick prototyping
-
-==== Programmatic configuration with `EventProcessorDefinition`
-
-For advanced configuration and type safety, use `EventProcessorDefinition` beans:
-
-[source,java]
-----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class EventProcessorConfig {
-
-    @Bean
-    public EventProcessorDefinition orderProcessor() {
-        return EventProcessorDefinition.pooledStreaming("order-processor")
-                .assigningHandlers(descriptor ->
-                    descriptor.beanName().startsWith("order"))
-                .customized(config -> config
-                    .initialSegmentCount(4)
-                    .batchSize(100));
-    }
-}
-----
-
-The `EventProcessorDefinition` API provides:
-
-* **Type-safe configuration** - Compile-time checking of configuration options
-* **Fluent API** - Chain configuration methods for readability
-* **Handler selection** - Define which event handlers belong to each processor using predicates
-* **Full configuration access** - All processor settings available programmatically
-* **IDE support** - Better autocompletion and refactoring support
-
-===== Handler selection
-
-The `assigningHandlers()` method provides access to an `EventHandlerDescriptor` with the following properties:
-
-* `beanName()` - The Spring bean name
-* `beanType()` - The event handler class (use for package-based selection)
-* `beanDefinition()` - The Spring bean definition
-* `component()` - The component builder
-
-This allows flexible handler assignment based on naming conventions, package structure, or custom criteria:
-
-[source,java]
-----
-// By bean name prefix
-.assigningHandlers(d -> d.beanName().startsWith("order"))
-
-// By package
-.assigningHandlers(d -> d.beanType().getPackageName().startsWith("com.example.orders"))
-
-// By bean name pattern
-.assigningHandlers(d -> d.beanName().contains("Handler"))
-----
-
-[#namespace-based-handler-selection]
-For easy matching of Event Handling Components to Event Processors purely based on the Event Processor name, you can use the `@Namespace` annotation in combination with the `EventHandlerSelector.matchesNamespaceOnType()`.
-
-The `@Namespace` annotation can be placed on the Event Handling Component, where the value of the annotation determines the Event Processor name it belongs to. Handlers will be automatically matched when defining an `EventProcessorDefinition` using the `EventHandlerSelector.matchesNamespaceOnType()` with the same name as defined in the `@Namespace`.
-
-Let's take a look at a concrete example:
-
-[source,java]
-----
-import org.axonframework.extension.spring.config.EventHandlerSelector;
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-
-@Bean
-public EventProcessorDefinition ordersProcessor() {
-    return EventProcessorDefinition.pooledStreaming("orders")
-            .assigningHandlers(EventHandlerSelector.matchesNamespaceOnType("orders"))
-            .notCustomized();
-}
-
-@Namespace("orders")
-public class OrderEventHandler {
-    // omitted event handlers for brevity
-}
-----
-
-With `@Namespace` on the `OrderEventHandler`, the `OrderEventHandler` signals it **belongs** to the Event Processor named `orders`. Note that the `@Namespace` annotation can be placed on a class (as shown above), on an enclosing class, on a `package-info.java` file, or on a `module-info.java` file. The `@Namespace` annotation is searched for in the order defined above.
-
-1. On the type
-2. On the enclosing class
-3. On the `package-info.java` file
-4. On the `module-info.java` file
-
-This allows you to use `@Namespace` to describe multiple event handlers belonging to a package, as shown below:
-
-[source,java]
-----
-@Namespace("orders")
-package com.example.orders;
-
-import org.axonframework.messaging.core.annotation.Namespace;
-----
-
-[TIP]
-.Convenience `EventProcessorDefinition` methods
-====
-For the common case of matching handlers by namespace, `EventProcessorDefinition` provides convenience methods that combine processor creation with `@Namespace`-based handler selection:
-
-[source,java]
-----
-// Equivalent to pooledStreaming("orders").assigningHandlers(matchesNamespaceOnType("orders"))
-EventProcessorDefinition.pooledStreamingMatching("orders")
-        .notCustomized();
-
-// Equivalent to subscribing("orders").assigningHandlers(matchesNamespaceOnType("orders"))
-EventProcessorDefinition.subscribingMatching("orders")
-        .notCustomized();
-----
-
-These methods use the processor name as the namespace to match, making it easy to organize processors by namespace or bounded context.
-====
-
-===== Configuration options
-
-Use `customized()` to customize processor settings, or `notCustomized()` when you only need handler assignment:
-
-[source,java]
-----
-// With custom configuration
-EventProcessorDefinition.pooledStreaming("custom-processor")
-    .assigningHandlers(descriptor -> descriptor.beanName().startsWith("custom"))
-    .customized(config -> config
-        .initialSegmentCount(16)
-        .batchSize(100)
-        .tokenClaimInterval(5000));
-
-// With default settings (only handler assignment)
-EventProcessorDefinition.pooledStreaming("default-processor")
-    .assigningHandlers(descriptor -> descriptor.beanName().startsWith("default"))
-    .notCustomized();
-----
-
-==== Configuration precedence
-
-When using multiple configuration approaches:
-
-1. `EventProcessorDefinition` beans take precedence over properties-based configuration
-2. If a handler matches multiple `EventProcessorDefinition` selectors, an `AxonConfigurationException` is thrown at startup
-3. Handlers not matched by any `EventProcessorDefinition` are assigned based on their package name (default behavior)
-
-To avoid conflicts, ensure each handler is matched by at most one `EventProcessorDefinition` using mutually exclusive selectors.
-
-==== When to use each approach
-
-Use **properties-based configuration** when:
-
-* Configuration is simple and doesn't require custom logic
-* Settings may vary per environment
-* You're prototyping or getting started
-
-Use **EventProcessorDefinition** when:
-
-* You need fine-grained control over handler assignment
-* Configuration requires conditional logic
-* Type safety and IDE support are important
-* You want to share configuration between environments programmatically
+This approach is ideal for simple processor configuration, environment-specific settings (dev, test, prod), and quick prototyping.
+For fine-grained, type-safe control over handler assignment through `EventProcessorDefinition` beans, namespace-based handler selection, and how properties-based and programmatic configuration interact, see xref:configuration:spring.adoc#event-processor-configuration[Event processor configuration] in the Configuration chapter.
 
 For comprehensive event processor configuration examples and detailed information, see xref:events:event-processors/streaming.adoc[Event Processors].

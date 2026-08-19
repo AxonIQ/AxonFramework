@@ -27,7 +27,6 @@ import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -52,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -482,8 +482,8 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
     @Test
     void sourcingAnEmptyEventStoreReturnsAnExpectedConsistencyMarker() {
         // given...
-        ConsistencyMarker testAggregateMarker = new AggregateBasedConsistencyMarker(TEST_AGGREGATE_ID, 0);
-        ConsistencyMarker otherAggregateMarker = new AggregateBasedConsistencyMarker(OTHER_AGGREGATE_ID, 0);
+        ConsistencyMarker testAggregateMarker = new AggregateBasedConsistencyMarker(TEST_AGGREGATE_ID, -1);
+        ConsistencyMarker otherAggregateMarker = new AggregateBasedConsistencyMarker(OTHER_AGGREGATE_ID, -1);
         ConsistencyMarker expectedMarker = testAggregateMarker.upperBound(otherAggregateMarker);
         // when...
         SourcingCondition testCondition =
@@ -496,6 +496,27 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
                     ))
                     .verifyComplete();
     }
+
+    /**
+     * Regression test for <a href="https://github.com/AxonIQ/AxonFramework/issues/4437">#4437</a>
+     */
+    @Test
+    void appendingFirstEventAfterSourcingEmptyStreamSucceeds() {
+        // given
+        SourcingCondition sourcingCondition = SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA);
+        AtomicReference<ConsistencyMarker> markerFromSource = new AtomicReference<>();
+        StepVerifier.create(FluxUtils.of(testSubject.source(sourcingCondition)))
+                    .assertNext(entry -> markerFromSource.set(entry.getResource(ConsistencyMarker.RESOURCE_KEY)))
+                    .verifyComplete();
+
+        // when
+        AppendCondition appendCondition = AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA)
+                                                         .withMarker(markerFromSource.get());
+        assertDoesNotThrow(
+                () -> appendEvents(appendCondition, taggedEventMessage("event-0", TEST_AGGREGATE_TAGS))
+        );
+    }
+
 
     @Test
     void transactionRejectedWithConflictingEventsInStore() {

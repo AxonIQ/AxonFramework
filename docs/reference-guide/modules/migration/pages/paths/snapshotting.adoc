@@ -1,0 +1,158 @@
+[.axoniq-feature]
+= Snapshotting Migration
+:navtitle: Snapshotting
+
+Axon Framework 5.1 restores snapshotting for event-sourced entities, but the API is no longer centered around `SnapshotTriggerDefinition`.
+Instead, snapshot creation is driven by `SnapshotPolicy` and configured on the `EventSourcedEntityModule`.
+
+This page covers the migration path from the Axon Framework 4 snapshotting model to the Axon Framework 5.1 model.
+For the conceptual background on how snapshotting works in Axon Framework 5, see the xref:tuning:snapshotting.adoc[Snapshotting reference documentation].
+
+[NOTE]
+====
+The most significant changes are:
+
+* `SnapshotTriggerDefinition` is replaced by `SnapshotPolicy`.
+* Snapshotting is configured as part of the `EventSourcedEntityModule`.
+* Snapshot storage is handled by a dedicated `SnapshotStore`.
+* In Axon Framework 5.1.0, the available stores are `InMemorySnapshotStore` and `AxonServerSnapshotStore`.
+====
+
+[#snapshot_trigger_definition_to_snapshot_policy]
+== `SnapshotTriggerDefinition` to `SnapshotPolicy`
+
+In Axon Framework 4, snapshot creation was typically configured through a `SnapshotTriggerDefinition`.
+In Axon Framework 5.1, snapshot decisions are made by a `SnapshotPolicy`, which can react to both individual events and the full sourcing result.
+
+[tabs]
+====
+Axon Framework 4::
++
+[source,java,role=axon4]
+----
+SnapshotTriggerDefinition triggerDefinition = new EventCountSnapshotTriggerDefinition(100);
+repository.setSnapshotTriggerDefinition(triggerDefinition);
+----
+
+Axon Framework 5.1::
++
+[source,java]
+----
+include::example$migration/paths/snapshotting/triggertopolicy/TriggerToPolicyConfiguration.java[tag=snapshot-trigger-to-policy,indent=0]
+----
+====
+
+The main migration step is to move the snapshot trigger out of repository-level configuration and into the entity module.
+That keeps snapshotting aligned with the rest of the entity configuration, including identifier resolution and criteria resolution.
+
+[#declarative_configuration]
+== Declarative configuration
+
+When you configure an entity declaratively, snapshotting is enabled by adding a `SnapshotPolicy` to the `EventSourcedEntityModule`.
+This is the recommended approach for applications that want explicit control over when snapshots are created.
+
+[source,java]
+----
+include::example$migration/paths/snapshotting/declarativeconfiguration/DeclarativeSnapshotConfiguration.java[tag=snapshot-declarative-configuration,indent=0]
+----
+
+This configuration keeps snapshotting local to the entity definition:
+
+* the `SnapshotPolicy` decides when a snapshot should be created
+* the `SnapshotStore` decides where snapshots are persisted
+* the entity module ties both concerns together
+
+If you are migrating an Axon Framework 4 application, this is the closest equivalent to configuring snapshot behavior on the aggregate repository.
+
+[#spring_boot_configuration]
+== Spring Boot configuration
+
+For Spring Boot applications, snapshotting can be enabled by adding `@Snapshotting` alongside the `@EventSourced` annotation on the entity class:
+
+[source,java]
+----
+include::example$migration/paths/snapshotting/springbootannotation/Account.java[tag=spring-boot-snapshotting-annotation,indent=0]
+----
+
+The annotation supports two threshold attributes:
+
+* `afterEvents`: trigger a snapshot after a fixed number of events have been applied during sourcing.
+* `afterSourcingTime`: trigger a snapshot when the total sourcing time exceeds the given ISO-8601 duration (for example, `"PT5S"` for five seconds).
+
+When both attributes are set, either condition independently triggers a snapshot.
+Use a bare `@Snapshotting` (no attributes) when the threshold is inherited from a higher-level annotation on an enclosing class, package, or module.
+See xref:tuning:snapshotting.adoc#_annotation_based_configuration[annotation-based configuration] for details.
+
+For more complex policies that require payload inspection, declare the entity as an explicit `EventSourcedEntityModule` bean and configure the `SnapshotPolicy` programmatically.
+Spring's component registry picks up `Module` beans automatically, so this integrates with the regular Spring Boot setup:
+
+[source,java,role=pseudocode]
+----
+@Configuration
+class AccountConfiguration {
+
+    @Bean
+    EventSourcedEntityModule<String, Account> accountModule() {
+        SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(250)
+                .or(SnapshotPolicy.whenEventMatches(
+                        msg -> msg.type().qualifiedName().equals(
+                                new QualifiedName(AccountClosed.class)
+                        )
+                ));
+        return EventSourcedEntityModule.declarative(String.class, Account.class)
+                .snapshotPolicy(snapshotPolicy)
+                .build();
+    }
+
+    @Bean
+    SnapshotStore snapshotStore(AxonServerConnectionManager connectionManager, EventConverter converter) {
+        return new AxonServerSnapshotStore(connectionManager.getConnection(), converter);
+    }
+}
+----
+
+[#snapshot_storage]
+== Snapshot storage
+
+Axon Framework 5.1 uses a dedicated `SnapshotStore` for persisting snapshots.
+Snapshots are stored separately from the regular event stream, and the snapshot store is responsible for loading the latest compatible snapshot for an entity.
+If no usable snapshot is available, the entity is reconstructed from the event stream.
+
+=== `InMemorySnapshotStore`
+
+Use `InMemorySnapshotStore` for tests and other ephemeral setups where snapshot persistence is not required.
+
+[.axoniq-feature]
+=== `AxonServerSnapshotStore`
+
+Use `AxonServerSnapshotStore` when you want persistent snapshot storage backed by Axon Server.
+
+[NOTE]
+====
+When migrating from Axon Framework 4, make sure your application no longer assumes snapshot persistence is part of the event store implementation itself.
+Snapshot storage is now an explicit dependency of the entity module.
+====
+
+[#reusing_existing_snapshots]
+== Reusing existing Axon Framework 4 snapshots
+
+The stores above only begin writing snapshots once your application runs on Axon Framework 5.
+The snapshots you already hold from Axon Framework 4 cannot be carried over, because the two versions locate a snapshot in the event stream with incompatible numbering:
+
+* *Aggregate-based storage* (the Axon Framework 4 model, and the aggregate-based storage engines in Axon Framework 5) numbers events per entity, each entity starting at 0.
+* *Dynamic Consistency Boundary (DCB) storage* numbers events context-wide, as a single global index shared by every event.
+
+An Axon Framework 4 snapshot is positioned only by its aggregate sequence number and carries no global index, so a DCB store has no way to know where in the global stream to resume.
+
+[IMPORTANT]
+====
+Existing Axon Framework 4 snapshots are therefore neither reusable in Axon Framework 5 nor migratable to a DCB context.
+Once a context is switched to DCB they are ignored entirely: affected entities rebuild from a full event replay, and fresh snapshots are written from then on.
+====
+
+This is not a correctness problem: a snapshot is only an optional cache, and every entity can be rebuilt from its event stream.
+It is a performance one, and the cost depends on your domain.
+Until fresh snapshots accumulate, each affected entity is sourced from its full history, so the first load after migration is slower.
+For short streams this is negligible, but an entity with a long stream, hundreds of thousands or millions of events, can suffer a significant response-time hit.
+There is no single answer here: assess the impact against your longest-lived entities and plan for the initial replay accordingly.
+For the storage engine choices that decide whether a context runs in aggregate-based or DCB mode, see the xref:migration:paths/event-store.adoc[Event Store migration].

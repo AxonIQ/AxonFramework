@@ -43,19 +43,19 @@ public class LoggingUpdateCheckerReporter implements UpdateCheckerReporter {
         boolean hasUpgrades = !updateCheckResponse.upgrades().isEmpty();
         boolean hasVulnerabilities = !updateCheckResponse.vulnerabilities().isEmpty();
         if (hasVulnerabilities) {
-            logger.error("AxonIQ has found the following vulnerabilities in your Axon libraries:");
+            logger.error("Axoniq has found the following vulnerabilities in your Axon libraries:");
             logVulnerabilities(updateCheckResponse);
 
             if (hasUpgrades) {
-                logger.info("Additionally, AxonIQ has found an upgrade(s) for your Axon libraries:");
+                logger.info("Additionally, Axoniq has found an upgrade(s) for your Axon libraries:");
                 logUpgrades(request, updateCheckResponse);
             }
         } else if (hasUpgrades) {
-            logger.info("AxonIQ has found the following dependency upgrade(s):");
+            logger.info("Axoniq has found the following dependency upgrade(s):");
             logUpgrades(request, updateCheckResponse);
             logger.info("No vulnerabilities have been found in your Axon libraries.");
         } else {
-            logger.info("All your AxonIQ libraries are up-to-date, no upgrades or vulnerabilities found.");
+            logger.info("All your Axoniq libraries are up-to-date, no upgrades or vulnerabilities found.");
         }
     }
 

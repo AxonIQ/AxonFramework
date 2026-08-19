@@ -25,10 +25,9 @@ For more information on how to configure and use the `PooledStreamingEventProces
 The `@ProcessingGroup` annotation has been removed in Axon Framework 5.
 Previously, this annotation was used to group event handling components into a single event processor.
 
-In Axon Framework 5, event handlers are registered directly to an event processor in the configuration.
-A replacement for `@ProcessingGroup` in the form of a "namespace" annotation is expected to be introduced soon.
+In Axon Framework 5, you can use the `@Namespace` annotation to xref:events:event-processors/index.adoc#autodetected_config[assign an event handling component to an event processor].
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 @ProcessingGroup("my-processor")
@@ -36,18 +35,15 @@ public class MyProjector {
     @EventHandler
     public void on(MyEvent event) { /* ... */ }
 }
-
-// AF5 - Declarative registration (Non-Spring)
-public void configure(MessagingConfigurer configurer) {
-    configurer.eventProcessing(
-        eventProcessing -> eventProcessing.pooledStreaming(
-            pooledStreaming -> pooledStreaming.defaultProcessor("my-processor",
-                components -> components.autodetected(cfg -> new MyProjector())
-            )
-        )
-    );
-}
 ----
+
+[source,java]
+----
+// AF5
+include::example$migration/paths/projectorseventprocessors/namespace/MyProjector.java[tag=namespace-projector,indent=0]
+----
+
+Alternatively, you can use the xref:events:event-processors/index.adoc#declarative_config[declarative configuration] to assign event handling components to processors.
 
 == Event processor configuration
 
@@ -57,26 +53,19 @@ The way event processors are configured has changed significantly to provide a m
 
 For non-Spring users, the old `EventProcessingConfigurer` (and `EventProcessingModule`) has been replaced by a new flow accessed through the `MessagingConfigurer#eventProcessing` method.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public void configure(Configurer configurer) {
     configurer.eventProcessing()
               .registerPooledStreamingEventProcessor("my-processor");
 }
+----
 
+[source,java]
+----
 // AF5
-public void configure(MessagingConfigurer configurer) {
-    configurer.eventProcessing(
-        eventProcessing -> eventProcessing.pooledStreaming(
-            pooledStreaming -> pooledStreaming.processor(
-                "my-processor",
-                module -> module.eventHandlingComponents(components -> components) // No components added in this simple example
-                                .notCustomized()
-            )
-        )
-    );
-}
+include::example$migration/paths/projectorseventprocessors/configuration/EventProcessorConfigurationExample.java[tag=event-processor-configuration,indent=0]
 ----
 
 === Spring users
@@ -88,7 +77,7 @@ This replaces the previous way of configuring processors through the `EventProce
 ====
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 import org.axonframework.config.ConfigurerModule;
 import org.axonframework.config.EventProcessingConfigurer;
@@ -121,24 +110,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public EventProcessorDefinition myProcessorDefinition() {
-        return EventProcessorDefinition.pooledStreaming("my-processor")
-                                       .assigningHandlers(
-                                               descriptor -> descriptor.beanType().getPackageName()
-                                                                       .startsWith("com.my.projectors")
-                                       )
-                                       .customized(config -> config.initialSegmentCount(8)
-                                                                   .batchSize(100));
-    }
-}
+include::example$migration/paths/projectorseventprocessors/springboot/AxonConfig.java[tag=spring-event-processor-definition,indent=0]
 ----
 ====
 
@@ -163,7 +135,7 @@ In your code, you can customize these settings by providing `EventProcessorSetti
 In Axon Framework 4, the `QueryUpdateEmitter` was often injected as a class-level field in projectors.
 In Axon Framework 5, the use of `QueryUpdateEmitter` is enforced as a parameter of message handlers (specifically query handlers and event handlers that emit updates).
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 public class MyProjector {
@@ -175,14 +147,12 @@ public class MyProjector {
         updateEmitter.emit(MyQuery.class, q -> true, new MyView());
     }
 }
+----
 
+[source,java]
+----
 // AF5
-public class MyProjector {
-    @EventHandler
-    public void on(MyEvent event, QueryUpdateEmitter updateEmitter) {
-        updateEmitter.emit(MyQuery.class, q -> true, new MyView());
-    }
-}
+include::example$migration/paths/projectorseventprocessors/queryupdateemitter/MyProjector.java[tag=query-update-emitter-parameter,indent=0]
 ----
 
 This change makes the dependency on the update emitter explicit for each handler and simplifies testing and component isolation.

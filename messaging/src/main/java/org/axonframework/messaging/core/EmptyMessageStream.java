@@ -17,7 +17,7 @@
 package org.axonframework.messaging.core;
 
 import org.axonframework.common.FutureUtils;
-import org.axonframework.messaging.core.MessageStream.Entry;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
@@ -51,7 +51,8 @@ class EmptyMessageStream<M extends Message> extends AbstractMessageStream<M> imp
     }
 
     @Override
-    public <R> CompletableFuture<R> reduce(R identity, BiFunction<R, ? super Entry<M>, R> accumulator) {
+    public <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
+                                                     BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator) {
         return (error().isPresent())
                 ? CompletableFuture.failedFuture(error().get())
                 : CompletableFuture.completedFuture(identity);

@@ -85,6 +85,9 @@ class EventSubscribers implements DescribableComponent {
      * Notifies all subscribers with the given events and processing context.
      * <p>
      * All subscriber futures are executed in parallel and the returned future completes when all of them complete.
+     * <p>
+     * A failing subscriber never stops the remaining subscribers from being notified. Whether it returns a failed
+     * future or throws, its failure is reported through the returned future.
      *
      * @param events  The list of events to notify subscribers about.
      * @param context The {@link ProcessingContext} associated with the events, may be {@code null}.
@@ -95,10 +98,22 @@ class EventSubscribers implements DescribableComponent {
             @Nullable ProcessingContext context
     ) {
         var consumeFutures = subscribers.stream()
-                                        .map(subscriber -> subscriber.apply(events, context))
+                                        .map(subscriber -> notify(subscriber, events, context))
                                         .toArray(CompletableFuture[]::new);
 
         return CompletableFuture.allOf(consumeFutures);
+    }
+
+    private static CompletableFuture<?> notify(
+            BiFunction<List<? extends EventMessage>, ProcessingContext, CompletableFuture<?>> subscriber,
+            List<? extends EventMessage> events,
+            @Nullable ProcessingContext context
+    ) {
+        try {
+            return subscriber.apply(events, context);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     @Override

@@ -22,8 +22,8 @@ Axon 5 includes fundamental architectural changes:
 
 ## Key Documents
 
-1. **`axon-5/api-changes.md`** - Comprehensive API changes documentation (very large file, read in sections)
-   - **NOTE:** This document mentions legacy components as usable, but the documentation policy is that legacy = not available
+1. **`axon-5/api-changes/`** - Comprehensive API changes documentation, split into focused per-topic files. Start at [`axon-5/api-changes/index.md`](../axon-5/api-changes/index.md) for the table of contents and load individual files (01–12) for the area you are migrating.
+   - **NOTE:** These documents mention legacy components as usable, but the documentation policy is that legacy = not available
 2. **`axon-5/`** - Other design documents describing the changes
 3. **`docs/changes-to-process.md`** - Master tracking document listing all reference guide files and the changes needed for each
 
@@ -31,7 +31,7 @@ Axon 5 includes fundamental architectural changes:
 
 1. Select a section from `changes-to-process.md` to work on
 2. Read the corresponding reference guide file in `docs/reference-guide/modules/`
-3. Consult `axon-5/api-changes.md` and other design docs for API details
+3. Consult `axon-5/api-changes/` (start with `index.md`) and other design docs for API details
 4. **IMPORTANT:** Always verify against actual code in the framework before making changes
 5. Update the reference guide file with the necessary changes
 6. Validate al code examples in the reference guide file using the framework code
@@ -155,7 +155,7 @@ In distributed systems, exceptions often lose value when crossing boundaries:
   2. Be permanently replaced by another mechanism
 - Do NOT document legacy package as if it's usable in Axon 5.0
 - Do NOT suggest users can use legacy components
-- **Important:** `api-changes.md` mentions legacy components as available, but for documentation purposes treat them as unavailable
+- **Important:** the `axon-5/api-changes/` files mention legacy components as available, but for documentation purposes treat them as unavailable
 - Focus documentation on alternatives and replacement mechanisms
 
 ### Components Not Available in Axon 5.0
@@ -312,6 +312,22 @@ These terms are exceptions to sentence-case rules in H2-H6 headings:
 - Remove annotation comments like TODO, FIXME, XXX, NOTE before committing
 - Watch for common misspellings (e.g., "poplar" instead of "popular")
 - Avoid overly long sentences (Vale may flag sentences that are too complex - break them into shorter, clearer sentences)
+
+### Em-dash prohibition
+**Never use em-dashes (`—`) in documentation.** Em-dashes read as machine-generated and make the text feel less human. Use alternative punctuation instead:
+- Replace `—` with a comma, colon, semicolon, or parentheses depending on the context
+- ✅ "The processor starts immediately, consuming from the head of the stream."
+- ✅ "The processor starts immediately (consuming from the head of the stream)."
+- ❌ "The processor starts immediately — consuming from the head of the stream."
+
+### ASCII-only text
+**All `.adoc` files must contain only ASCII characters.** Never use:
+- Curly/smart quotes: `"` `"` `'` `'` — use straight `"` and `'` instead
+- Em-dash: `—` — use a comma, colon, or parentheses instead (see above)
+- Ellipsis: `…` — use three dots `...` instead
+- Any other non-ASCII Unicode character
+
+**LF line endings only** — never use CR (`\r`) or CRLF. Configure your editor to write LF.
 
 ---
 

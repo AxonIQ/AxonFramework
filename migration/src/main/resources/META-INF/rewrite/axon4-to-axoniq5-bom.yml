@@ -1,0 +1,124 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axoniq Framework 5 BOM swap. Switches the imported BOM from the free
+# Axon Framework 5 BOM to the Axoniq commercial BOM.
+#
+# Source coords (both supported, for order-independence):
+#   - org.axonframework:axon-bom            (raw AF4 — when Axon4ToAxon5Bom hasn't run)
+#   - org.axonframework:axon-framework-bom  (post-Axon4ToAxon5Bom)
+# Target:
+#   - io.axoniq.framework:axoniq-framework-bom
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: io.axoniq.framework.migration.Axon4ToAxoniq5Bom
+displayName: Swap the BOM to Axoniq Framework 5 commercial
+description: >-
+  Replaces the imported `org.axonframework:axon-bom` (AF4) or
+  `org.axonframework:axon-framework-bom` (free AF5) in `<dependencyManagement>`
+  with the Axoniq Framework 5 commercial BOM `io.axoniq.framework:axoniq-framework-bom`.
+recipeList:
+  # Maven leg: BOM is imported via `<dependencyManagement>` with
+  # `<scope>import</scope><type>pom</type>` — `ChangeManagedDependencyGroupIdAndArtifactId`
+  # is the recipe that touches managed-only entries.
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  - org.openrewrite.maven.ChangeManagedDependencyGroupIdAndArtifactId:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  # Gradle leg (plain): `implementation(platform("g:a:v"))` /
+  # `api(platform(...))` — `gradle.ChangeDependency` covers these.
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  - org.openrewrite.gradle.ChangeDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  # Gradle leg (Spring DM plugin):
+  # `dependencyManagement { imports { mavenBom(...) } }` — only
+  # `gradle.ChangeManagedDependency` walks into Spring DM's DSL.
+  - org.openrewrite.gradle.ChangeManagedDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  - org.openrewrite.gradle.ChangeManagedDependency:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      newVersion: ${axoniq.version}
+  # Gradle leg (Groovy ext properties): bump AF4 version-pinning ext
+  # properties to the Axoniq Framework 5 commercial target. Mirrors the
+  # free leg's `ChangeExtraProperty` step; covers Groovy `ext.x = '...'` /
+  # `ext { x = '...' }` shapes via the `ExtraProperty` trait.
+  - org.openrewrite.gradle.ChangeExtraProperty:
+      key: axonFrameworkVersion
+      value: ${axoniq.version}
+  - org.openrewrite.gradle.ChangeExtraProperty:
+      key: axonVersion
+      value: ${axoniq.version}
+  # Gradle leg (Kotlin DSL with property indirection): rewrite the
+  # `mavenBom("g:a:${property(\"X\")}")` shape and the matching
+  # `extra["X"] = "..."` declaration in one pass. See the equivalent
+  # comment in `axon4-to-axon5-bom.yml` for why this can't be done with
+  # `gradle.ChangeManagedDependency` / `ChangeExtraProperty`. We invoke the
+  # custom recipe twice for AF4 → Axoniq5 (covering `axon-bom` → axoniq) and
+  # twice for AF5-free → Axoniq5 (covering `axon-framework-bom` → axoniq) to
+  # remain order-independent with the free `Axon4ToAxon5Bom` step.
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      extraPropertyKey: axonFrameworkVersion
+      newVersion: ${axoniq.version}
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      extraPropertyKey: axonVersion
+      newVersion: ${axoniq.version}
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      extraPropertyKey: axonFrameworkVersion
+      newVersion: ${axoniq.version}
+  - org.axonframework.migration.MigrateKotlinDslBomImport:
+      oldGroupId: org.axonframework
+      oldArtifactId: axon-framework-bom
+      newGroupId: io.axoniq.framework
+      newArtifactId: axoniq-framework-bom
+      extraPropertyKey: axonVersion
+      newVersion: ${axoniq.version}

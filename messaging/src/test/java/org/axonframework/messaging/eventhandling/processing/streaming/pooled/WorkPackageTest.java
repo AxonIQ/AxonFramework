@@ -19,9 +19,13 @@ package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 import org.jspecify.annotations.NonNull;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.TokenStoringProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.GapAwareTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -33,6 +37,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -46,6 +51,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
@@ -189,7 +195,7 @@ class WorkPackageTest {
         assertTrue(trackerStatusUpdates.get(0).isErrorState());
         assertNull(trackerStatusUpdates.get(1));
 
-        CompletableFuture<Exception> abortResult = testSubject.abort(null);
+        CompletableFuture<Throwable> abortResult = testSubject.abort(null);
         assertTrue(abortResult.isDone());
         assertTrue(abortResult.get().getClass().isAssignableFrom(IllegalStateException.class));
     }
@@ -213,7 +219,7 @@ class WorkPackageTest {
         assertTrue(trackerStatusUpdates.get(0).isErrorState());
         assertNull(trackerStatusUpdates.get(1));
 
-        CompletableFuture<Exception> abortResult = testSubject.abort(null);
+        CompletableFuture<Throwable> abortResult = testSubject.abort(null);
         assertTrue(abortResult.isDone());
         assertTrue(abortResult.get().getClass().isAssignableFrom(IllegalStateException.class));
     }
@@ -374,8 +380,150 @@ class WorkPackageTest {
     }
 
     @Test
+    void idleUpkeepDoesNotInvokeProgressStrategyWhenNothingIsUnstored() {
+        // given
+        // A spy is justified here: the assertion is that the idle-beat gate PREVENTS calls to the strategy.
+        AtomicReference<SegmentProgressStrategy> strategySpy = new AtomicReference<>();
+        // The short threshold ensures the claim-extension beat is due on every idle cycle.
+        WorkPackage testSubjectWithShortThreshold =
+                testSubjectBuilder.claimExtensionThreshold(1)
+                                  .progressStrategyFactory(context -> {
+                                      strategySpy.set(spy(new TokenStoringProgressStrategy(context)));
+                                      return strategySpy.get();
+                                  })
+                                  .build();
+        // Handle one event, so the consumed position is stored and no unstored progress remains.
+        var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L));
+        testSubjectWithShortThreshold.scheduleEvent(testEvent);
+        await().atMost(TIMEOUT).untilAsserted(() -> verify(tokenStore).storeToken(
+                eq(new GlobalSequenceTrackingToken(1L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        ));
+        clearInvocations(strategySpy.get());
+
+        // when: idle worker cycles run past the claim-extension beat
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            // Consciously trigger the WorkPackage again, to force it through WorkPackage#processEvents.
+            // This should be done inside the await, as the WorkPackage does not re-trigger itself.
+            testSubjectWithShortThreshold.scheduleWorker();
+            verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any());
+        });
+
+        // then: the claim was extended without driving the strategy at an unchanged position
+        verify(strategySpy.get(), never()).onBatchCommit(any());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenThatDoesNotAdvanceBeyondTheStoredToken() {
+        // given: the stored token has advanced to position 5
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a token that does not advance beyond the stored token is persisted
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(3L));
+
+        // then: the non-advancing token is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(new GlobalSequenceTrackingToken(3L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(5L), fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressIgnoresAMergedTokenThatRewindsTheResumePosition() {
+        // given: the stored token has advanced to position 600
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(600L));
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a merged range is persisted whose furthest half is ahead but which resumes from the start of the stream
+        TrackingToken rewinding =
+                MergedTrackingToken.merged(TrackingToken.FIRST, new GlobalSequenceTrackingToken(700L));
+        persistProgressInUnitOfWork(rewinding);
+
+        // then: the rewinding range is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(rewinding), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenWithoutAPositionInsteadOfFailing() {
+        // given: the stored token has advanced to position 600
+        persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(600L));
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+        clearInvocations(tokenStore);
+
+        // when: a freshly created reset token, which has no current position at all, is persisted
+        TrackingToken freshReset = ReplayToken.createReplayToken(new GlobalSequenceTrackingToken(600L));
+        persistProgressInUnitOfWork(freshReset);
+
+        // then: the token without a position is ignored, not stored, and the advanced token is retained
+        verify(tokenStore, never()).storeToken(
+                eq(freshReset), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any(ProcessingContext.class)
+        );
+        assertEquals(new GlobalSequenceTrackingToken(600L), fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressIgnoresATokenBehindTheClaimedTokenOnTheFirstStoreOfAClaim() {
+        // given: a segment whose durable progress sits at position 5, freshly claimed by a new work package
+        TrackingToken claimedToken = new GlobalSequenceTrackingToken(5L);
+        persistProgressInUnitOfWork(claimedToken);
+        assertEquals(claimedToken, fetchStoredToken());
+        WorkPackage freshlyClaimed = testSubjectBuilder.initialToken(claimedToken).build();
+        clearInvocations(tokenStore);
+
+        // when: the very first progress offered after the claim is behind the claimed position
+        persistProgressInUnitOfWork(freshlyClaimed, new GlobalSequenceTrackingToken(3L));
+
+        // then: it is ignored, so the claimed progress survives the first store of the claim cycle
+        verify(tokenStore, never()).storeToken(
+                eq(new GlobalSequenceTrackingToken(3L)), eq(PROCESSOR_NAME), eq(segment.getSegmentId()),
+                any(ProcessingContext.class)
+        );
+        assertEquals(claimedToken, fetchStoredToken());
+    }
+
+    @Test
+    void persistProgressStoresTheFirstAdvanceOfAClaimThatHasNotConsumedAnythingYet() {
+        // given: a segment claimed right after a reset, so the claimed token describes no consumed position yet. The
+        // raw token type is the one a JPA-backed event store hands out; its covers(..) rejects a null argument.
+        TrackingToken tokenAtReset = GapAwareTrackingToken.newInstance(5L, Collections.emptyList());
+        TrackingToken claimedToken = ReplayToken.createReplayToken(tokenAtReset);
+        WorkPackage freshlyClaimed = testSubjectBuilder.initialToken(claimedToken).build();
+
+        // when: the first progress offered after the claim advances into the replay
+        TrackingToken advanced = ReplayToken.createReplayToken(
+                tokenAtReset, GapAwareTrackingToken.newInstance(1L, Collections.emptyList())
+        );
+        persistProgressInUnitOfWork(freshlyClaimed, advanced);
+
+        // then: the advance is stored; the monotonicity guard has no position to compare against, so it stays inert
+        assertEquals(advanced, fetchStoredToken());
+    }
+
+    private void persistProgressInUnitOfWork(TrackingToken candidate) {
+        persistProgressInUnitOfWork(testSubject, candidate);
+    }
+
+    private void persistProgressInUnitOfWork(WorkPackage workPackage, TrackingToken candidate) {
+        FutureUtils.joinAndUnwrap(
+                UnitOfWorkTestUtils.SIMPLE_FACTORY.create()
+                                                  .executeWithResult(ctx -> workPackage.persistProgress(candidate, ctx))
+        );
+    }
+
+    private TrackingToken fetchStoredToken() {
+        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null));
+    }
+
+    @Test
     void scheduleWorkerForAbortedPackage() throws ExecutionException, InterruptedException {
-        CompletableFuture<Exception> result = testSubject.abort(null);
+        CompletableFuture<Throwable> result = testSubject.abort(null);
 
         testSubject.scheduleWorker();
 
@@ -414,7 +562,7 @@ class WorkPackageTest {
     void abortReturnsAbortReason() throws ExecutionException, InterruptedException {
         Exception expectedResult = new IllegalStateException();
 
-        CompletableFuture<Exception> result = testSubject.abort(expectedResult);
+        CompletableFuture<Throwable> result = testSubject.abort(expectedResult);
 
         await().atMost(TIMEOUT).untilAsserted(() -> assertTrue(result.isDone()));
         assertEquals(expectedResult, result.get());
@@ -426,7 +574,7 @@ class WorkPackageTest {
         Exception otherAbortReason = new IllegalArgumentException();
         testSubject.abort(originalAbortReason);
 
-        CompletableFuture<Exception> result = testSubject.abort(otherAbortReason);
+        CompletableFuture<Throwable> result = testSubject.abort(otherAbortReason);
 
         await().atMost(TIMEOUT).untilAsserted(() -> assertTrue(result.isDone()));
         assertEquals(originalAbortReason, result.get());
@@ -559,6 +707,224 @@ class WorkPackageTest {
         });
     }
 
+
+    @Nested
+    class WhenProcessingBatch {
+
+        @Test
+        void processBatchSurfacesPerEventTokenInEntryContext() {
+            // given — defer worker so all three scheduleEvent calls populate the queue before processing starts
+            List<Runnable> deferredWorkerTasks = new ArrayList<>();
+            doAnswer(inv -> {
+                deferredWorkerTasks.add(inv.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            }).when(executorService).submit(any(Runnable.class));
+
+            WorkPackage subject = testSubjectBuilder.batchSize(3).build();
+
+            // when
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-1"), globalTrackingTokenContext(1L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-2"), globalTrackingTokenContext(2L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-3"), globalTrackingTokenContext(3L)));
+            runDeferred(deferredWorkerTasks);
+
+            assertEquals(3, batchProcessor.getProcessedEvents().size());
+            ContextMessage event0 = batchProcessor.getProcessedEvents().get(0);
+            ContextMessage event1 = batchProcessor.getProcessedEvents().get(1);
+            ContextMessage event2 = batchProcessor.getProcessedEvents().get(2);
+
+            // then — each entry's context must carry its own token, not the batch-end token
+            assertThat(TrackingToken.fromContext(event0.context()))
+                    .hasValue(new GlobalSequenceTrackingToken(1L));
+            assertThat(TrackingToken.fromContext(event1.context()))
+                    .hasValue(new GlobalSequenceTrackingToken(2L));
+            assertThat(TrackingToken.fromContext(event2.context()))
+                    .hasValue(new GlobalSequenceTrackingToken(3L));
+        }
+
+        @Test
+        void processBatchExposesBatchEndTokenAsLastEventTokenInBatchContext() {
+            // given — defer worker so all three scheduleEvent calls populate the queue before processing starts
+            List<Runnable> deferredWorkerTasks = new ArrayList<>();
+            doAnswer(inv -> {
+                deferredWorkerTasks.add(inv.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            }).when(executorService).submit(any(Runnable.class));
+
+            List<TrackingToken> capturedBatchEndTokens = new ArrayList<>();
+            WorkPackage subject = testSubjectBuilder
+                    .batchSize(3)
+                    .batchProcessor((entries, ctx) -> {
+                        // capture the batch-end token once per event — all three must see the same value
+                        entries.forEach(e -> capturedBatchEndTokens.add(ctx.getResource(TrackingToken.BATCH_END_RESOURCE_KEY)));
+                        return MessageStream.empty();
+                    })
+                    .build();
+
+            // when
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-1"), globalTrackingTokenContext(1L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-2"), globalTrackingTokenContext(2L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-3"), globalTrackingTokenContext(3L)));
+            runDeferred(deferredWorkerTasks);
+
+            // then — each event in the batch sees the same batch-end token: the last event's position
+            TrackingToken expectedBatchEnd = new GlobalSequenceTrackingToken(3L);
+            assertThat(capturedBatchEndTokens)
+                    .hasSize(3)
+                    .containsOnly(expectedBatchEnd);
+        }
+
+        @Test
+        void processBatchSurfacesPerEventReplayTokenInEntryContext() {
+            // given — reset at position 3, so events at 1, 2, 3 are all replay events
+            // defer worker so all three events are in the queue before processing begins
+            List<Runnable> deferredWorkerTasks = new ArrayList<>();
+            doAnswer(inv -> {
+                deferredWorkerTasks.add(inv.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            }).when(executorService).submit(any(Runnable.class));
+
+            TrackingToken tokenAtReset = new GlobalSequenceTrackingToken(3L);
+            WorkPackage subject = testSubjectBuilder
+                    .initialToken(ReplayToken.createReplayToken(tokenAtReset))
+                    .batchSize(3)
+                    .build();
+
+            // when
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-1"), globalTrackingTokenContext(1L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-2"), globalTrackingTokenContext(2L)));
+            subject.scheduleEvent(new SimpleEntry<>(EventTestUtils.asEventMessage("event-3"), globalTrackingTokenContext(3L)));
+            runDeferred(deferredWorkerTasks);
+
+            // then — each entry's context must carry a ReplayToken advanced to its own position
+            assertEquals(3, batchProcessor.getProcessedEvents().size());
+            TrackingToken t0 = TrackingToken.fromContext(batchProcessor.getProcessedEvents().get(0).context()).get();
+            TrackingToken t1 = TrackingToken.fromContext(batchProcessor.getProcessedEvents().get(1).context()).get();
+            TrackingToken t2 = TrackingToken.fromContext(batchProcessor.getProcessedEvents().get(2).context()).get();
+
+            assertInstanceOf(ReplayToken.class, t0);
+            assertEquals(new GlobalSequenceTrackingToken(1L), ((ReplayToken) t0).getCurrentToken());
+            assertEquals(tokenAtReset, ((ReplayToken) t0).getTokenAtReset());
+
+            assertInstanceOf(ReplayToken.class, t1);
+            assertEquals(new GlobalSequenceTrackingToken(2L), ((ReplayToken) t1).getCurrentToken());
+            assertEquals(tokenAtReset, ((ReplayToken) t1).getTokenAtReset());
+
+            assertInstanceOf(ReplayToken.class, t2);
+            assertEquals(new GlobalSequenceTrackingToken(3L), ((ReplayToken) t2).getCurrentToken());
+            assertEquals(tokenAtReset, ((ReplayToken) t2).getTokenAtReset());
+        }
+
+        @Test
+        void processBatchExposesBatchEndTokenViaResourceKey() {
+            // given — use scheduleEvents (plural) to guarantee all three events are wrapped in one
+            // BatchProcessingEntry and therefore processed as a single batch
+            List<TrackingToken> capturedBatchEndTokens = new ArrayList<>();
+            WorkPackage subject = testSubjectBuilder
+                    .batchSize(3)
+                    .batchProcessor((entries, ctx) -> {
+                        capturedBatchEndTokens.add(ctx.getResource(TrackingToken.BATCH_END_RESOURCE_KEY));
+                        return MessageStream.empty();
+                    })
+                    .build();
+
+            TrackingToken sharedToken = new GlobalSequenceTrackingToken(3L);
+            Context sharedContext = trackingTokenContext(sharedToken);
+
+            // when — three events sharing one token are atomically enqueued as one batch
+            subject.scheduleEvents(List.of(
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("event-1"), sharedContext),
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("event-2"), sharedContext),
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("event-3"), sharedContext)
+            ));
+
+            // then — exactly one batch is processed and its BATCH_END equals the shared token
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                assertThat(capturedBatchEndTokens).hasSize(1);
+                assertThat(capturedBatchEndTokens.getFirst()).isEqualTo(sharedToken);
+            });
+        }
+    }
+
+    private static void runDeferred(List<Runnable> tasks) {
+        while (!tasks.isEmpty()) {
+            List<Runnable> snapshot = new ArrayList<>(tasks);
+            tasks.clear();
+            snapshot.forEach(Runnable::run);
+        }
+    }
+
+    @Nested
+    class ScheduleWorkerLifecycleTest {
+
+        @Test
+        void processingEventsIsFalseAfterSuccessfulProcessing() {
+            // given
+            TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
+            var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), trackingTokenContext(testToken));
+
+            // when
+            testSubject.scheduleEvent(testEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                verify(tokenStore).storeToken(any(), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any());
+                assertThat(testSubject.isProcessingEvents()).isFalse();
+            });
+        }
+
+        @Test
+        void processingEventsIsFalseAfterFailedProcessing() {
+            // given
+            TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
+            var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), trackingTokenContext(testToken));
+            batchProcessorPredicate = (events, token) -> {
+                throw new IllegalStateException("processing failure");
+            };
+
+            // when
+            testSubject.scheduleEvent(testEvent);
+
+            // then - wait for abort to be fully processed (trackerStatus set to null by abort handler)
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(trackerStatus).isNull());
+            assertThat(testSubject.isProcessingEvents()).isFalse();
+        }
+
+        @Test
+        void workerReschedulesWhenQueueHasRemainingEventsAfterBatch() {
+            // given - two events with different tokens; batchSize is 1 so each is processed separately
+            TrackingToken tokenOne = new GlobalSequenceTrackingToken(1L);
+            TrackingToken tokenTwo = new GlobalSequenceTrackingToken(2L);
+            var eventOne = new SimpleEntry<>(EventTestUtils.asEventMessage("event-one"), trackingTokenContext(tokenOne));
+            var eventTwo = new SimpleEntry<>(EventTestUtils.asEventMessage("event-two"), trackingTokenContext(tokenTwo));
+
+            // when
+            testSubject.scheduleEvent(eventOne);
+            testSubject.scheduleEvent(eventTwo);
+
+            // then - second event is only reachable if scheduleWorker reschedules after the first batch
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(batchProcessor.getProcessedEvents()).hasSize(2)
+            );
+        }
+
+        @Test
+        void tokenStoreFailureTriggersAbort() {
+            // given
+            TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
+            var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), trackingTokenContext(testToken));
+            doReturn(CompletableFuture.failedFuture(new RuntimeException("store failure")))
+                    .when(tokenStore).storeToken(any(), anyString(), anyInt(), any());
+
+            // when
+            testSubject.scheduleEvent(testEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(trackerStatus).isNull());
+            assertThat(testSubject.abort(null)).isDone();
+        }
+    }
+
     private static Context globalTrackingTokenContext(long globalIndex) {
         return trackingTokenContext(new GlobalSequenceTrackingToken(globalIndex));
     }
@@ -589,9 +955,10 @@ class WorkPackageTest {
         private final List<ContextMessage> processedEvents = new ArrayList<>();
 
         @Override
-        public MessageStream.Empty<Message> process(@NonNull List<? extends EventMessage> events, @NonNull ProcessingContext context) {
-            if (batchProcessorPredicate.test(events, TrackingToken.fromContext(context).orElse(null))) {
-                processedEvents.addAll(events.stream().map(m -> new ContextMessage(m, context)).toList());
+        public MessageStream.Empty<Message> process(@NonNull List<MessageStream.Entry<? extends EventMessage>> entries, @NonNull ProcessingContext context) {
+            List<? extends EventMessage> events = entries.stream().map(MessageStream.Entry::message).toList();
+            if (batchProcessorPredicate.test(events, context.getResource(TrackingToken.BATCH_END_RESOURCE_KEY))) {
+                processedEvents.addAll(entries.stream().map(e -> new ContextMessage(e.message(), e)).toList());
             }
             return MessageStream.empty();
         }

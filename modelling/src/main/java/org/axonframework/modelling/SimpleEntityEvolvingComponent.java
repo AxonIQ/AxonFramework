@@ -25,8 +25,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -47,6 +45,7 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final Map<QualifiedName, EntityEvolver<E>> entityEvolvers;
+    private final Set<QualifiedName> supportedEvents;
 
     /**
      * Constructs a {@code SimpleEntityEvolvingComponent} that evolves an entity of type {@code e} through
@@ -56,7 +55,10 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
      *                       through.
      */
     public SimpleEntityEvolvingComponent(Map<QualifiedName, EntityEvolver<E>> entityEvolvers) {
-        this.entityEvolvers = new HashMap<>(requireNonNull(entityEvolvers, "The entity evolvers cannot be null."));
+        this.entityEvolvers = Map.copyOf(
+                requireNonNull(entityEvolvers, "The entity evolvers cannot be null.")
+        );
+        this.supportedEvents = Set.copyOf(this.entityEvolvers.keySet());
     }
 
     @Override
@@ -78,11 +80,11 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
 
     @Override
     public Set<QualifiedName> supportedEvents() {
-        return Set.copyOf(entityEvolvers.keySet());
+        return supportedEvents;
     }
 
     @Override
     public void describeTo(ComponentDescriptor descriptor) {
-        descriptor.describeProperty("delegates", Collections.unmodifiableMap(entityEvolvers));
+        descriptor.describeProperty("delegates", entityEvolvers);
     }
 }

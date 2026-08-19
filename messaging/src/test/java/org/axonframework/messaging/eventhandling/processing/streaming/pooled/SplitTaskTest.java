@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -24,13 +25,18 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.junit.jupiter.api.*;
+import org.mockito.InOrder;
+import org.mockito.stubbing.Answer;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,7 +56,6 @@ class SplitTaskTest {
     private final WorkPackage workPackage = mock(WorkPackage.class);
     private final Map<Integer, java.time.Instant> releasesDeadlines = new HashMap<>();
     private CompletableFuture<Boolean> result;
-    private final java.time.Clock clock = java.time.Clock.systemUTC();
     private SplitTask testSubject;
 
     @BeforeEach
@@ -65,7 +70,7 @@ class SplitTaskTest {
                 releasesDeadlines,
                 tokenStore,
                 UnitOfWorkTestUtils.SIMPLE_FACTORY,
-                clock
+                ClockUtils.get()
         );
     }
 
@@ -80,13 +85,12 @@ class SplitTaskTest {
 
         when(workPackage.segment()).thenReturn(testSegmentToSplit);
         when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
+        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
                 .thenReturn(completedFuture(testTokenToSplit));
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))
                 .thenReturn(emptyCompletedFuture());
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(1, 1)), any()))
-                .thenReturn(emptyCompletedFuture());
-        when(tokenStore.releaseClaim(eq(PROCESSOR_NAME), anyInt(), any()))
                 .thenReturn(emptyCompletedFuture());
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
                 .thenReturn(emptyCompletedFuture());
@@ -104,9 +108,14 @@ class SplitTaskTest {
                                              eq(PROCESSOR_NAME),
                                              eq(expectedSplit.getSegment()),
                                              any());
-        verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME),
-                                        eq(expectedOriginal.getSegment().getSegmentId()),
-                                        any());
+        verify(tokenStore).deleteToken(eq(PROCESSOR_NAME),
+                                       eq(expectedOriginal.getSegment().getSegmentId()),
+                                       any());
+        verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // the aborted work package's final progress is flushed before the token is read, so both halves inherit it
+        InOrder releaseBeforeFetch = inOrder(workPackage, tokenStore);
+        releaseBeforeFetch.verify(workPackage).onSegmentReleased(any());
+        releaseBeforeFetch.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
@@ -128,8 +137,6 @@ class SplitTaskTest {
                 .thenReturn(emptyCompletedFuture());
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(1, 1)), any()))
                 .thenReturn(emptyCompletedFuture());
-        when(tokenStore.releaseClaim(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
-                .thenReturn(emptyCompletedFuture());
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
                 .thenReturn(emptyCompletedFuture());
 
@@ -144,9 +151,12 @@ class SplitTaskTest {
                                              eq(PROCESSOR_NAME),
                                              eq(expectedSplit.getSegment()),
                                              any());
-        verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME),
-                                        eq(expectedOriginal.getSegment().getSegmentId()),
-                                        any());
+        verify(tokenStore).deleteToken(eq(PROCESSOR_NAME),
+                                       eq(expectedOriginal.getSegment().getSegmentId()),
+                                       any());
+        verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // the segment was claimed from the token store, so there is no local work package progress to release
+        verify(workPackage, never()).onSegmentReleased(any());
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
@@ -183,10 +193,134 @@ class SplitTaskTest {
             .isInstanceOf(IllegalStateException.class);
     }
 
+    @Nested
+    class ReclaimBlock {
+
+        @Test
+        void runClearsTheBlockAfterASuccessfulSplit() {
+            // given
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenReturn(emptyCompletedFuture());
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(emptyCompletedFuture());
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runKeepsTheBlockInPlaceForEveryTokenStoreWriteOfTheSplit() {
+            // given - the block only prevents the Coordinator re-claiming a half-split segment if it outlives the
+            // token rewrite, so record whether it was still installed on each write the split performs
+            List<Integer> blockedSegmentsPerTokenWrite = new ArrayList<>();
+            Answer<CompletableFuture<Void>> recordBlockedSegments = invocation -> {
+                blockedSegmentsPerTokenWrite.addAll(releasesDeadlines.keySet());
+                return emptyCompletedFuture();
+            };
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenAnswer(recordBlockedSegments);
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenAnswer(recordBlockedSegments);
+
+            // when
+            testSubject.run();
+
+            // then - three writes (initialize new half, delete original, re-initialize original), block held on each
+            assertThat(result).isCompletedWithValue(true);
+            assertThat(blockedSegmentsPerTokenWrite).containsExactly(SEGMENT_ID, SEGMENT_ID, SEGMENT_ID);
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsTheBlockWhenTheSegmentCannotBeFetched() {
+            // given - the segment is owned elsewhere, so the split fails before any token is rewritten
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("owned elsewhere")));
+
+            // when
+            testSubject.run();
+
+            // then - a split that never happened must not keep the segment unclaimable
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+
+        @Test
+        void runClearsTheBlockWhenAbortingTheWorkPackageFails() {
+            // given
+            workPackages.put(SEGMENT_ID, workPackage);
+            when(workPackage.segment()).thenReturn(Segment.ROOT_SEGMENT);
+            when(workPackage.abort(null))
+                    .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("abort failed")));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedExceptionally();
+            assertThat(releasesDeadlines).isEmpty();
+        }
+    }
+
     @Test
     void description() {
         String result = testSubject.getDescription();
         assertNotNull(result);
         assertTrue(result.contains("Split"));
+    }
+
+    @Test
+    void runSplitsSegment_deleteTokenCalledBeforeReInitialization_andNoSeparateReleaseClaim()
+            throws ExecutionException, InterruptedException {
+        Segment testSegmentToSplit = Segment.ROOT_SEGMENT;
+        TrackingToken testTokenToSplit = new GlobalSequenceTrackingToken(0);
+
+        TrackerStatus[] expectedTokens = TrackerStatus.split(testSegmentToSplit, testTokenToSplit);
+        TrackerStatus expectedOriginal = expectedTokens[0]; // Segment(0, mask=1)
+        TrackerStatus expectedSplit   = expectedTokens[1]; // Segment(1, mask=1)
+
+        when(workPackage.segment()).thenReturn(testSegmentToSplit);
+        when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
+        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                .thenReturn(completedFuture(testTokenToSplit));
+        when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))
+                .thenReturn(emptyCompletedFuture());
+        when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(1, 1)), any()))
+                .thenReturn(emptyCompletedFuture());
+        when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
+                .thenReturn(emptyCompletedFuture());
+
+        workPackages.put(SEGMENT_ID, workPackage);
+
+        testSubject.run();
+
+        verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        verify(tokenStore).deleteToken(eq(PROCESSOR_NAME),
+                                       eq(Segment.ROOT_SEGMENT.getSegmentId()),
+                                       any());
+
+        InOrder inOrder = inOrder(tokenStore);
+        inOrder.verify(tokenStore).initializeSegment(
+                eq(expectedSplit.getTrackingToken()), eq(PROCESSOR_NAME), eq(expectedSplit.getSegment()), any());
+        inOrder.verify(tokenStore).deleteToken(
+                eq(PROCESSOR_NAME), eq(expectedOriginal.getSegment().getSegmentId()), any());
+        inOrder.verify(tokenStore).initializeSegment(
+                eq(expectedOriginal.getTrackingToken()), eq(PROCESSOR_NAME), eq(expectedOriginal.getSegment()), any());
+
+        assertTrue(result.isDone());
+        assertTrue(result.get());
     }
 }

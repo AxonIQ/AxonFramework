@@ -40,6 +40,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /**
  * Decorator around the {@link EventStore} intercepting all {@link EventMessage events} before they are
@@ -75,7 +76,6 @@ public class InterceptingEventStore implements EventStore {
     private final InterceptingEventBus delegateBus;
 
     private final Context.ResourceKey<EventStoreTransaction> delegateTransactionKey;
-    private final Context.ResourceKey<EventStoreTransaction> interceptingTransactionKey;
 
     /**
      * Constructs a {@code InterceptingEventStore}, delegating all operation to the given {@code delegate}.
@@ -90,7 +90,6 @@ public class InterceptingEventStore implements EventStore {
     public InterceptingEventStore(EventStore delegate,
                                   List<MessageDispatchInterceptor<? super EventMessage>> interceptors) {
         this.delegateTransactionKey = Context.ResourceKey.withLabel("delegateTransaction");
-        this.interceptingTransactionKey = Context.ResourceKey.withLabel("interceptingTransaction");
 
         this.delegate = Objects.requireNonNull(delegate, "The EventStore may not be null.");
         this.interceptors = Objects.requireNonNull(interceptors, "The dispatch interceptors must not be null.");
@@ -99,15 +98,17 @@ public class InterceptingEventStore implements EventStore {
         this.delegateBus = new InterceptingEventBus(delegate, interceptors);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The returned transaction is bound to the given {@code processingContext} and is therefore constructed anew on
+     * every invocation. Only the delegate transaction is shared for the processing session.
+     */
     @Override
     public EventStoreTransaction transaction(ProcessingContext processingContext) {
         // Set the delegate transaction to ensure the InterceptingAppender can reach the correct EventStoreTransaction.
         EventStoreTransaction delegateTransaction = getAndSetDelegateTransaction(processingContext);
-        // Set the intercepting transaction to ensure subsequent transaction operation receive the same intercepting transaction.
-        return processingContext.computeResourceIfAbsent(
-                interceptingTransactionKey,
-                () -> new InterceptingEventStoreTransaction(processingContext, delegateTransaction)
-        );
+        return new InterceptingEventStoreTransaction(processingContext, delegateTransaction);
     }
 
     /**
@@ -205,6 +206,11 @@ public class InterceptingEventStore implements EventStore {
         @Override
         public void appendEvent(EventMessage eventMessage) {
             interceptingAppender.interceptAndAppend(eventMessage, context);
+        }
+
+        @Override
+        public void overrideAppendCondition(UnaryOperator<AppendCondition> conditionOverride) {
+            delegate.overrideAppendCondition(conditionOverride);
         }
 
         @Override

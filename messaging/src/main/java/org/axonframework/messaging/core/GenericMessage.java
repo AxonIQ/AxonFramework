@@ -177,6 +177,11 @@ public class GenericMessage extends AbstractMessage {
     }
 
     @Override
+    public @Nullable <T> T payloadAs(TypeReference<T> type) {
+        return payloadAs(type.getType(), this.converter);
+    }
+
+    @Override
     @Nullable
     public <T> T payloadAs(Type type, @Nullable Converter converter) {
         //noinspection rawtypes,unchecked
@@ -186,6 +191,12 @@ public class GenericMessage extends AbstractMessage {
         }
 
         if (converter == null) {
+            if (TypeReference.fromType(type).getTypeAsClass().isAssignableFrom(payloadType())) {
+                // Without a converter the type arguments cannot be converted or validated. As the payload is already
+                // assignable to the requested type's erasure, return it as is instead of failing.
+                //noinspection unchecked
+                return (T) payload();
+            }
             throw new ConversionException("Cannot convert " + payloadType() + " to " + type + " without a converter.");
         }
         return convertedPayloads.convertIfAbsent(type, converter);

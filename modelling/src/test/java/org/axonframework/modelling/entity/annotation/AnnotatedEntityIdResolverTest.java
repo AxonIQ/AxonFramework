@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("deprecation") // Intentionally tests the deprecated AnnotatedEntityIdResolver.
 class AnnotatedEntityIdResolverTest {
 
     @Mock

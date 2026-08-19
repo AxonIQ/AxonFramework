@@ -34,7 +34,7 @@ This approach provides several advantages:
 The component in charge of deciding on the `MessageType`, is the `MessageTypeResolver`. The default `MessageTypeResolver` checks for message-specific annotation.
 These annotations are the `@Command`, `@Event`, or `@Query` annotation, which you can attach on your classes:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @Event(name = "OrderPlaced", version = "1.0")
 public class OrderPlacedEvent {
@@ -74,7 +74,7 @@ The `@Namespace` annotation can be applied at different levels:
 
 To automatically set the namespace for several messages inside the same package, we could annotate the `package-info.java` file as shown below:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @Namespace("orders")
 package com.example.orders.api;
@@ -107,23 +107,7 @@ This means different handlers can receive the same message in different Java rep
 
 [source,java]
 ----
-// Handler 1: Receives as domain object (OrderPlacedEvent is @Event annotated)
-@EventHandler
-public void handle(OrderPlacedEvent event) {
-    // Payload is converted to OrderPlacedEvent
-}
-
-// Handler 2: Receives as JSON (must specify messageType)
-@EventHandler(messageType = "com.example.orders.OrderPlaced")
-public void handle(JsonNode event) {
-    // Same message, converted to JsonNode
-}
-
-// Handler 3: Receives as Map (must specify messageType)
-@EventHandler(messageType = "com.example.orders.OrderPlaced")
-public void handle(Map<String, Object> event) {
-    // Same message, converted to Map
-}
+include::example$messagingconcepts/anatomymessage/PayloadRepresentations.java[tag=payload-representations,indent=0]
 ----
 
 Axon uses the message's `MessageType` to identify which handlers should receive the message, then converts the payload to whatever type each handler needs.
@@ -150,7 +134,7 @@ Use the message-specific annotations to define the name, namespace, and version 
 
 **For events:**
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 package com.example.events;
 
@@ -171,7 +155,7 @@ public class UserRegisteredEvent {
 
 **For commands:**
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 package com.example.commands;
 
@@ -183,7 +167,7 @@ public class RegisterUserCommand {
 
 **For queries:**
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 package com.example.queries;
 
@@ -205,7 +189,7 @@ The fallback for when that is not present too is the package name of the class.
 
 If you need custom logic to determine message types, you can implement the `MessageTypeResolver` interface:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -222,7 +206,7 @@ public class CustomMessageTypeResolver implements MessageTypeResolver {
 
 Then register it with your configuration:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 ApplicationConfigurer applicationConfigurer = /* The configurer that contains this Application's configuration */
 MessagingConfigurer.enhance(applicationConfigurer)
@@ -240,16 +224,7 @@ You can access the payload in different ways:
 
 [source,java]
 ----
-public void retrievePayload(Message message) {
-    // Get the payload as-is
-    Object payload = message.payload();
-
-    // Get the payload converted to a specific type
-    OrderPlacedEvent event = message.payloadAs(OrderPlacedEvent.class);
-
-    // Get the payload type
-    Class<?> type = message.payloadType();
-}
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=accessing-payload,indent=0]
 ----
 
 The `payloadAs(Class<T>)` method attempts to convert the message payload into the required type as you access it.
@@ -258,27 +233,21 @@ In cases where a message originates outside the JVM (Axon Server, Database, Stor
 
 [source,java]
 ----
-@EventHandler
-public void on(EventMessage event) {
-    // Converter is already attached — no need to pass it explicitly
-    OrderPlacedEvent order = event.payloadAs(OrderPlacedEvent.class);
-}
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=payload-conversion-aware,indent=0]
 ----
 
 If you need explicit control over conversion or if you are working with a message that was not produced by Axon's infrastructure, you can still supply a converter directly:
 
 [source,java]
 ----
-public void retrieveConvertedPayload(Message message, Converter converter) {
-    OrderPlacedEvent payload = message.payloadAs(OrderPlacedEvent.class, converter);
-}
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=explicit-converter,indent=0]
 ----
 
 When building custom infrastructure that produces `Message` instances (for example `GenericMessage`, `GenericCommandMessage`, `GenericEventMessage`, `GenericQueryMessage`, etc.), you can call `withConverter(Converter)` to attach the converter so downstream handlers benefit from the same automatic conversion:
 
 [source,java]
 ----
-GenericEventMessage messageWithConverter = rawMessage.withConverter(eventConverter);
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=attach-converter,indent=0]
 ----
 
 === Converting message payloads
@@ -287,13 +256,7 @@ If you need to convert a message's payload for downstream processing, use `withC
 
 [source,java]
 ----
-public void convertEventPayload(EventMessage event, Converter converter) {
-    // Create a new message with JSON payload
-    EventMessage jsonMessage = event.withConvertedPayload(
-            JsonNode.class,
-            converter
-    );
-}
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=convert-payload,indent=0]
 ----
 
 This creates a new `Message` instance with the converted payload, leaving the original message unchanged.
@@ -319,8 +282,7 @@ When more complex metadata value are required, you can use Axon's `Converter` to
 
 [source,java]
 ----
-Metadata metadata = Metadata.with("userId", "user-123") // <1>
-                            .and("traceId", "trace-456"); // <2>
+include::example$messagingconcepts/anatomymessage/WorkingWithMetadata.java[tag=creating-metadata,indent=0]
 ----
 
 <1> Creates a `Metadata` instance with a single key-value pair
@@ -333,20 +295,7 @@ To add metadata, you create a new message instance with the additional metadata:
 
 [source,java]
 ----
-EventMessage event = new GenericEventMessage(
-    messageType,
-    new OrderPlacedEvent(orderId, amount)
-);
-
-// Add metadata - creates a new message instance
-EventMessage eventWithMetadata = event.withMetadata(
-    Metadata.with("userId", "user-123")
-);
-
-// Add to existing metadata - merges with any existing entries
-EventMessage mergedMessage = eventWithMetadata.andMetadata(
-    Metadata.with("correlationId", "corr-789")
-);
+include::example$messagingconcepts/anatomymessage/WorkingWithMetadata.java[tag=adding-metadata,indent=0]
 ----
 
 The `withMetadata` method replaces all metadata with the given map.
@@ -358,9 +307,7 @@ Because metadata values must be Strings, you need to convert any non-String valu
 
 [source,java]
 ----
-// Convert numbers, booleans, etc. to String
-Metadata metadata = Metadata.with("count", String.valueOf(42))
-                            .and("enabled", String.valueOf(true));
+include::example$messagingconcepts/anatomymessage/WorkingWithMetadata.java[tag=metadata-string-values,indent=0]
 ----
 
 Know that you can always use Axon's `Converter` to convert the values!
@@ -377,13 +324,13 @@ For example:
 * A `CommandMessage` and `QueryMessage` provide a `priority()` used to signal the importance of the command/query with the handling system.
 
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 EventMessage event = // ...
 Instant occurredAt = event.timestamp();
 ----
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 CommandMessage command = // ...
 Optional<String> routingKey = command.routingKey();
@@ -403,7 +350,7 @@ Two messages with the same identifier represent the same conceptual message, eve
 
 [source,java]
 ----
-String id = message.identifier();
+include::example$messagingconcepts/anatomymessage/PayloadAccess.java[tag=message-identifier,indent=0]
 ----
 
 The identifier is automatically generated when you create a message, or you can provide a specific identifier through the message constructor.
@@ -419,19 +366,7 @@ While Axon typically creates messages for you based on method return values and 
 
 [source,java]
 ----
-public EventMessage constructEvent(String orderId,
-                                   double amount) {
-    // Create an event message
-    MessageType orderPlacedType = new MessageType(
-            new QualifiedName("com.example.orders", "OrderPlaced"),
-            "1.0"
-    );
-    return new GenericEventMessage(
-            orderPlacedType,
-            new OrderPlacedEvent(orderId, amount),
-            Metadata.with("userId", "user-123")
-    );
-}
+include::example$messagingconcepts/anatomymessage/CreatingMessages.java[tag=creating-messages,indent=0]
 ----
 
 [WARNING]

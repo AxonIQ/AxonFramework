@@ -10,6 +10,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -18,15 +19,15 @@ class ChangeCourseCapacityCommandHandler {
     @CommandHandler
     void handle(
             ChangeCourseCapacity command,
-            @InjectEntity State state,
+            @Nullable @InjectEntity State state,
             EventAppender eventAppender
     ) {
         var events = decide(command, state);
         eventAppender.append(events);
     }
 
-    private List<CourseCapacityChanged> decide(ChangeCourseCapacity command, State state) {
-        if (!state.created) {
+    private List<CourseCapacityChanged> decide(ChangeCourseCapacity command, @Nullable State state) {
+        if (state == null) {
             throw new IllegalStateException("Course with given id does not exist");
         }
         if (command.capacity() == state.capacity) {

@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.unitofwork;
 
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Context;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -83,7 +84,7 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
      * @return The new value associated with the {@code key}, or {@code null} when removed.
      */
     <T> T updateResource(ResourceKey<T> key,
-                         UnaryOperator<T> resourceUpdater);
+                         UnaryOperator<@Nullable T> resourceUpdater);
 
     /**
      * Register the given {@code instance} under the given {@code key} if no value is currently present.
@@ -99,9 +100,53 @@ public interface ProcessingContext extends ProcessingLifecycle, ApplicationConte
     /**
      * If no resource is present for the given {@code key}, the given {@code resourceSupplier} is used to supply the
      * instance to register under this {@code key}.
+     * <p>
+     * The {@code resourceSupplier} MUST NOT call {@link #computeResourceIfAbsent(ResourceKey, Supplier)} or
+     * {@link #putResourceIfAbsent(ResourceKey, Object)} on this {@code ProcessingContext}. The backing resource store
+     * rejects re-entrant structural modification and will throw {@link IllegalStateException} (surfacing as a
+     * "Recursive update"). This matters when stacking decorators that each cache their wrapped instance per
+     * {@code ProcessingContext}: resolve the dependency on the delegate <em>before</em> entering the supplier, rather
+     * than from within it.
+     * <p>
+     * <b>Warning:</b> never use this method for a resource whose construction closes over (holds a reference to)
+     * this {@code ProcessingContext} itself - construct a fresh instance directly on every call instead - unless
+     * {@code key} is guaranteed to be one of the resources every possible branch of this context overrides. A
+     * "branch" here is any {@code ProcessingContext} returned by {@link #withResource(ResourceKey, Object)}: a
+     * {@link ResourceOverridingProcessingContext} that overrides one specific resource key on top of a shared
+     * parent. Such a branch only intercepts {@code computeResourceIfAbsent} for its own overridden key; every other
+     * key falls through to the shared parent, ultimately the root context. If the supplied instance holds onto
+     * {@code context}, and {@code context} may be one of several sibling branches of a shared parent (for example,
+     * one branch per message being handled within a shared batch), the first branch to call this method gets its
+     * instance cached on the shared root, and every sibling branch that calls afterward receives that <em>same</em>
+     * stale instance back - silently operating against the wrong branch. For example, this is unsafe:
+     * <pre>{@code
+     * // UNSAFE: MyContextAwareGateway's constructor stores a reference to "context".
+     * static MyContextAwareGateway forContext(ProcessingContext context) {
+     *     return context.computeResourceIfAbsent(RESOURCE_KEY, () -> new MyContextAwareGateway(context));
+     * }
+     * }</pre>
+     * If {@code context} is a per-message branch of a batch, the second message to call {@code forContext} receives
+     * the first message's gateway back, closed over the first message's branch. Supply a fresh instance directly
+     * instead, bypassing this resource store entirely:
+     * <pre>{@code
+     * // SAFE: always supplies a fresh instance bound to whichever context is passed in.
+     * static MyContextAwareGateway forContext(ProcessingContext context) {
+     *     return new MyContextAwareGateway(context);
+     * }
+     * }</pre>
+     * <p>
+     * This method remains the correct choice when the cached value does <em>not</em> reference {@code context} and
+     * is genuinely meant to be shared for the whole processing session, regardless of how many branches exist. For
+     * example:
+     * <pre>{@code
+     * // SAFE: the cached ConcurrentHashMap never references "context", and is meant to be
+     * // shared across every branch of the same processing session.
+     * var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
+     * }</pre>
      *
      * @param key              The key to register the resource for.
-     * @param resourceSupplier The function to supply the resource to register.
+     * @param resourceSupplier The function to supply the resource to register. Must not call back into the resource
+     *                         store of this {@code ProcessingContext}.
      * @param <T>              The type of resource registered under given {@code key}.
      * @return The resource associated with the {@code key}.
      */

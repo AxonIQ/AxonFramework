@@ -101,7 +101,8 @@ class CorrelationDataInterceptorTest {
 
         verify(providerOne).correlationDataFor(TEST_MESSAGE);
         verify(providerTwo).correlationDataFor(TEST_MESSAGE);
-        verify(handlerInterceptorChain)
-                .proceed(TEST_MESSAGE, testContext.withResource(CORRELATION_DATA, expectedCorrelationData));
+        ArgumentCaptor<ProcessingContext> contextCaptor = ArgumentCaptor.forClass(ProcessingContext.class);
+        verify(handlerInterceptorChain).proceed(eq(TEST_MESSAGE), contextCaptor.capture());
+        assertThat(contextCaptor.getValue().getResource(CORRELATION_DATA)).isEqualTo(expectedCorrelationData);
     }
 }

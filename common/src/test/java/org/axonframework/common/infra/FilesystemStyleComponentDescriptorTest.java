@@ -32,6 +32,11 @@ class FilesystemStyleComponentDescriptorTest extends ComponentDescriptorTestSuit
     }
 
     @Override
+    String describeAsString(ComponentDescriptor testSubject) {
+        return ((FilesystemStyleComponentDescriptor) testSubject).describe();
+    }
+
+    @Override
     void assertDescribeNullString(String result) {
         var expected = """
                 /
@@ -100,7 +105,7 @@ class FilesystemStyleComponentDescriptorTest extends ComponentDescriptorTestSuit
         testSubject.describeProperty("container", container);
 
         // when
-        var result = testSubject.describe();
+        var result = describeAsString(testSubject);
 
         // then
         var expected = """
@@ -151,7 +156,7 @@ class FilesystemStyleComponentDescriptorTest extends ComponentDescriptorTestSuit
         testSubject.describeProperty("booleanValue", true);
 
         // when
-        var result = testSubject.describe();
+        var result = describeAsString(testSubject);
 
         // then
         var expected = """

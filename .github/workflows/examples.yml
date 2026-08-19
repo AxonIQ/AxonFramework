@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up JDK ${{ matrix.java-version }}
-        uses: actions/setup-java@v5.2.0
+        uses: actions/setup-java@v5.7.0
         with:
           distribution: 'zulu'
           java-version: ${{ matrix.java-version }}
@@ -36,6 +36,21 @@ jobs:
           server-id: central
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
+
+      # Security: this workflow MUST stay on the `pull_request` trigger and never move to
+      # `pull_request_target`. GitHub withholds repository secrets from fork pull requests on
+      # `pull_request`, so the license is only ever written for same-repository runs. The license
+      # content is never echoed, and the file it writes to is git-ignored.
+      - name: Write Axon Server test license
+        env:
+          AXON_SERVER_LICENSE: ${{ secrets.AXON_SERVER_LICENSE }}
+        run: |
+          if [ -n "$AXON_SERVER_LICENSE" ]; then
+            printf '%s' "$AXON_SERVER_LICENSE" > examples/university-multi-tenancy-examples/axon-server.license
+            echo "Axon Server test license written."
+          else
+            echo "No Axon Server license secret available (e.g. a fork PR); the multi-tenancy integration test will skip itself."
+          fi
 
       - name: Build whole project (tests skipped)
         run: |
@@ -45,7 +60,7 @@ jobs:
       - name: Run tests for examples only
         run: |
           ./mvnw -B -ntp -Pexamples verify \
-          -pl examples,examples/university-demo,examples/university-java,examples/university-java-springboot-3,examples/university-java-springboot-4 \
+          -pl examples,examples/university-demo,examples/university-demo-kotlin,examples/university-java,examples/university-java-springboot-3,examples/university-java-springboot-4,examples/university-multi-tenancy-examples,examples/university-multi-tenancy-examples/university-multi-tenancy-core,examples/university-multi-tenancy-examples/university-multi-tenancy-declarative,examples/university-multi-tenancy-examples/university-multi-tenancy-springboot \
           -Dcoverage \
           -Dstyle.color=always \
           -Dsurefire.rerunFailingTestsCount=5 \
@@ -57,6 +72,8 @@ jobs:
       - name: Create test summary
         uses: test-summary/action@v2
         with:
-          paths: "**/target/surefire-reports/TEST-*.xml"
+          paths: |
+            **/target/surefire-reports/TEST-*.xml
+            **/target/failsafe-reports/TEST-*.xml
           show: "fail, skip"
         if: always() # This allows the build step to fail -- due to failing tests -- but still produce a test summary.

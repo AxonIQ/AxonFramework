@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.child;
 import org.axonframework.modelling.entity.child.mock.RecordingChildEntity;
 import org.junit.jupiter.api.*;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -108,8 +109,15 @@ class FieldChildEntityFieldDefinitionTest {
         assertTrue(evolvedParentEntity.evolved);
     }
 
+    @Test
+    void fallsBackToFieldWhenSameNamedAccessorHasIncompatibleReturnType() {
+        ParentEntityWithIncompatibleGetter parentEntity = new ParentEntityWithIncompatibleGetter();
 
+        FieldChildEntityFieldDefinition<ParentEntityWithIncompatibleGetter, RecordingChildEntity> testSubject =
+                new FieldChildEntityFieldDefinition<>(ParentEntityWithIncompatibleGetter.class, "childEntity");
 
+        assertNull(testSubject.getChildValue(parentEntity));
+    }
 
     private static class ParentEntityWithOnlyField {
         private final RecordingChildEntity childEntity;
@@ -146,6 +154,17 @@ class FieldChildEntityFieldDefinitionTest {
 
         public ParentEntityWithEvolveMethod evolveChildEntity(RecordingChildEntity childEntity) {
             return new ParentEntityWithEvolveMethod(childEntity, true);
+        }
+    }
+
+    private static class ParentEntityWithIncompatibleGetter {
+
+        private RecordingChildEntity childEntity;
+
+        // Fluent-style, same name as the field, but wraps the value in Optional -- must not be
+        // mistaken for a same-typed getter.
+        public Optional<RecordingChildEntity> childEntity() {
+            return Optional.ofNullable(childEntity);
         }
     }
 

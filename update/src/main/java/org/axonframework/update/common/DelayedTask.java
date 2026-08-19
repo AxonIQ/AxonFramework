@@ -46,7 +46,7 @@ public class DelayedTask {
             throw new IllegalArgumentException("Delay must be non-negative.");
         }
         Objects.requireNonNull(runnable, "The runnable must not be null.");
-        this.thread = Thread.ofVirtual().name("AxonIQ").start(() -> {
+        this.thread = Thread.ofVirtual().name("Axoniq").start(() -> {
             try {
                 Thread.sleep(delay);
                 started = true;

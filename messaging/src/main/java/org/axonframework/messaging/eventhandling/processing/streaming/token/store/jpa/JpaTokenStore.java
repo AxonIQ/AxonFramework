@@ -18,7 +18,9 @@ package org.axonframework.messaging.eventhandling.processing.streaming.token.sto
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceException;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.conversion.Converter;
@@ -46,7 +48,6 @@ import java.util.stream.Collectors;
 import static java.lang.String.format;
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.DateTimeUtils.formatInstant;
-import static org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry.clock;
 
 /**
  * Implementation of a token store that uses JPA to save and load tokens. This implementation uses {@link TokenEntry}
@@ -120,7 +121,15 @@ public class JpaTokenStore implements TokenStore {
                 em.persist(new TokenEntry(processorName, segment, initialToken, converter));
             }
 
-            em.flush();
+            try {
+                em.flush();
+            } catch (PersistenceException e) {
+                // Another node initialized the same segments between the check above and this insert, so the insert
+                // violates the primary key. Report that as losing the check above does, rather than leaking the
+                // persistence provider's own exception type through the TokenStore contract.
+                throw new UnableToClaimTokenException(
+                        "Could not initialize segments. Some segments were already present.", e);
+            }
             return segments;
         });
     }
@@ -223,6 +232,11 @@ public class JpaTokenStore implements TokenStore {
             if (updates == 0) {
                 throw new UnableToClaimTokenException("Unable to remove token. It is not owned by " + nodeId);
             }
+            // Bulk JPQL DELETE bypasses the persistence context — evict stale state so subsequent
+            // em.persist() of a new entity with the same PK (e.g., re-initializing after split) doesn't
+            // throw NonUniqueObjectException.
+            em.flush();
+            em.clear();
         });
     }
 
@@ -257,7 +271,7 @@ public class JpaTokenStore implements TokenStore {
                             .setParameter(PROCESSOR_NAME_PARAM, processorName)
                             .setParameter(SEGMENT_PARAM, segment)
                             .setParameter(OWNER_PARAM, nodeId)
-                            .setParameter("timestamp", formatInstant(clock.instant()))
+                            .setParameter("timestamp", formatInstant(ClockUtils.instant()))
                             .executeUpdate();
 
             if (updates == 0) {

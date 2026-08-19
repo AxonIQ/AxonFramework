@@ -21,6 +21,7 @@ import org.axonframework.modelling.entity.child.EventTargetMatcher;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Member;
+import java.util.Map;
 
 import static java.lang.String.format;
 import static org.axonframework.common.ReflectionUtils.getMemberValueType;
@@ -49,7 +50,7 @@ public class RoutingKeyEventTargetMatcherDefinition implements EventTargetMatche
 
         // No routing key found, perhaps we are dealing with a single occurrence entity member.
         Class<?> memberValueType = getMemberValueType(member);
-        if (Iterable.class.isAssignableFrom(memberValueType)) {
+        if (Iterable.class.isAssignableFrom(memberValueType) || Map.class.isAssignableFrom(memberValueType)) {
             throw new AxonConfigurationException(
                     format("Member [%s] of type [%s] is a collection type, but the child does not define a routing key. "
                                    + "Please set the \"routingKey\" property on the @EntityMember annotation "

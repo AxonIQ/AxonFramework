@@ -7,16 +7,18 @@ Event handling in Axon Framework involves several infrastructure components that
 
 This page covers the key infrastructure components you'll work with:
 
-* **<<event_gateway,Event gateway>>** - Provides a convenient API for publishing events.
-* **<<event_appender,Event appender>>** - Appends events within message handlers and entities.
-* **<<event_bus,Event bus>>** - Dispatches events to subscribed event handlers.
-* **<<event_store,Event store>>** - Persists events and provides event sourcing capabilities.
-* **<<event_storage_engine,Event storage engine>>** - Handles the low-level persistence of events.
+* **<<event_gateway,Event gateway>>**: Provides a convenient API for publishing events.
+* **<<event_appender,Event appender>>**: Appends events within message handlers and entities.
+* **<<event_bus,Event bus>>**: Dispatches events to subscribed event handlers.
+* **<<event_store,Event store>>**: Persists events and provides event sourcing capabilities.
+* **<<event_storage_engine,Event storage engine>>**: Handles the low-level persistence of events.
 
 Next to the infrastructure components, this chapter contains a section for:
 
 * **<<configuring_event_conversion,Event conversion>>**
+ifdef::advanced-framework[]
 * **<<distributing_events,Distributing events>>**
+endif::[]
 
 For more details on event stores specifically, see the xref:events:event-store-internals.adoc[event store internals] page.
 
@@ -78,17 +80,17 @@ The `EventStorageEngine` is the interface responsible for the actual storage and
 Axon Framework provides several implementations, each suited to different use cases and deployment scenarios:
 
 ifdef::advanced-framework[]
-include::axoniq-server-connector:partial$event-storage-engines-listing.adoc[]
+include::connector:partial$event-storage-engines-listing.adoc[]
 endif::[]
-* **`AggregateBasedJpaEventStorageEngine`** - Stores events in a JPA-compatible database.
+* **`AggregateBasedJpaEventStorageEngine`**: Stores events in a JPA-compatible database.
 Organizes events by aggregate identifier and sequence number.
 Useful when Axon Server is not available.
-* **`InMemoryEventStorageEngine`** - Stores events in memory.
+* **`InMemoryEventStorageEngine`**: Stores events in memory.
 Ideal for testing and short-lived tools.
 Not suitable for production use.
 
 ifdef::advanced-framework[]
-include::axoniq-server-connector:partial$event-storage-engines.adoc[]
+include::connector:partial$event-storage-engines.adoc[]
 endif::[]
 
 [#aggregatebasedjpaeventstorageengine]
@@ -158,24 +160,7 @@ If you have a persistence unit called `"myPersistenceUnit"` which you wish to us
 
 [source,java]
 ----
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import org.axonframework.common.jpa.EntityManagerProvider;
-
-public class MyEntityManagerProvider implements EntityManagerProvider {
-
-    private EntityManager entityManager;
-
-    @Override
-    public EntityManager getEntityManager() {
-        return entityManager;
-    }
-
-    @PersistenceContext(unitName = "myPersistenceUnit")
-    public void setEntityManager(EntityManager entityManager) {
-        this.entityManager = entityManager;
-    }
-}
+include::example$events/infrastructure/jpa/MyEntityManagerProvider.java[tag=custom-entity-manager-provider,indent=0]
 ----
 
 With your persistence details in place, you are able to configure the `AggregateBasedJpaEventStorageEngine` as the `EventStorageEngine` of your Axon application:
@@ -188,31 +173,7 @@ Configuration API::
 
 [source,java]
 ----
-import org.axonframework.common.jpa.EntityManagerProvider;
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(
-            EventSourcingConfigurer configurer,
-            EntityManagerProvider entityManagerProvider,
-            TransactionManager transactionManager,
-            EventConverter eventConverter
-    ) {
-        configurer.registerEventStorageEngine(
-                config -> new AggregateBasedJpaEventStorageEngine(
-                        entityManagerProvider,
-                        transactionManager,
-                        eventConverter,
-                        // The AggregateBasedJpaEventStorageEngineConfiguration lambda allows for further customization.
-                        engineConfig -> engineConfig
-                )
-        );
-    }
-}
+include::example$events/infrastructure/jpa/configapi/AxonConfig.java[tag=jpa-storage-engine-configapi,indent=0]
 ----
 --
 
@@ -222,29 +183,7 @@ Spring Boot::
 
 [source,java]
 ----
-import org.axonframework.common.jpa.EntityManagerProvider;
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
-import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.springframework.context.annotation.Bean;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public EventStorageEngine storageEngine(EntityManagerProvider entityManagerProvider,
-                                            TransactionManager transactionManager,
-                                            EventConverter eventConverter) {
-        return new AggregateBasedJpaEventStorageEngine(
-                entityManagerProvider,
-                transactionManager,
-                eventConverter,
-                // The AggregateBasedJpaEventStorageEngineConfiguration lambda allows for further customization.
-                engineConfig -> engineConfig
-        );
-    }
-}
+include::example$events/infrastructure/jpa/springboot/AxonConfig.java[tag=jpa-storage-engine-springboot,indent=0]
 ----
 --
 ======
@@ -275,15 +214,7 @@ Configuration API::
 --
 [source,java]
 ----
-import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-
-public class AxonConfig {
-
-    public void configureStorageEngine(EventSourcingConfigurer configurer) {
-        configurer.registerEventStorageEngine(config -> new InMemoryEventStorageEngine());
-    }
-}
+include::example$events/infrastructure/inmemory/configapi/AxonConfig.java[tag=inmemory-storage-engine-configapi,indent=0]
 ----
 --
 
@@ -292,17 +223,7 @@ Spring Boot::
 --
 [source,java]
 ----
-import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
-import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public EventStorageEngine storageEngine() {
-        return new InMemoryEventStorageEngine();
-    }
-}
+include::example$events/infrastructure/inmemory/springboot/AxonConfig.java[tag=inmemory-storage-engine-springboot,indent=0]
 ----
 --
 ====
@@ -342,6 +263,6 @@ If no explicit `EventConverter` is configured, events are converted using the me
 For more details on different converter options and layers, see xref:ROOT:conversion.adoc#converter_configuration_levels[here]
 
 ifdef::advanced-framework[]
-include::axoniq-server-connector:partial$distributing-events.adoc[]
+include::connector:partial$distributing-events.adoc[]
 endif::[]
 

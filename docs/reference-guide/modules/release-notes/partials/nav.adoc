@@ -1,6 +1,7 @@
 * xref:release-notes:README.adoc[]
-** xref:release-notes:major-releases.adoc[]
-** xref:release-notes:minor-releases.adoc[]
+** Axon Framework
+*** xref:release-notes:major-releases.adoc[]
+*** xref:release-notes:minor-releases.adoc[]
 ifdef::advanced-framework[]
 include::advanced-release-notes:partial$nav.adoc[]
 endif::[]

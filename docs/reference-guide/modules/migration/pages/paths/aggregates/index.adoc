@@ -19,6 +19,9 @@ No more command handling constructors.
 xref:migration:paths/aggregates/index.adoc#eventappender-instead-of-aggregatelifecycle[EventAppender vs. AggregateLifecycle]::
 Do not use static/thread local references any more.
 
+xref:migration:paths/aggregates/event-tagging.adoc[Event tagging with @EventTag]::
+How events are now linked to their entity through `@EventTag` instead of `@AggregateIdentifier`.
+
 xref:migration:paths/aggregates/index.adoc#entitycreator-annotation[The @EntityCreator annotation]::
 Required for entity construction.
 
@@ -38,40 +41,7 @@ Axon Framework 5::
 +
 [source,java]
 ----
-@EventSourcedEntity // <1>
-public class GiftCard {
-
-    private String cardId;
-    private int remainingValue;
-
-    @EntityCreator // <2>
-    public GiftCard() {
-    }
-
-    @CommandHandler // <3>
-    public static void handle(IssueCardCommand cmd, EventAppender eventAppender) {
-        eventAppender.append(new CardIssuedEvent(cmd.cardId(), cmd.amount()));
-    }
-
-    @CommandHandler // <4>
-    public void handle(RedeemCardCommand cmd, EventAppender eventAppender) {
-        if (cmd.amount() > remainingValue) {
-            throw new IllegalStateException("Insufficient funds");
-        }
-        eventAppender.append(new CardRedeemedEvent(cardId, cmd.amount()));
-    }
-
-    @EventSourcingHandler // <5>
-    public void on(CardIssuedEvent event) {
-        this.cardId = event.cardId();
-        this.remainingValue = event.amount();
-    }
-
-    @EventSourcingHandler
-    public void on(CardRedeemedEvent event) {
-        this.remainingValue -= event.amount();
-    }
-}
+include::example$migration/paths/aggregates/index/simpleexample/GiftCard.java[tag=simple-example,indent=0]
 ----
 <1> `@EventSourcedEntity` replaces `@Aggregate` (or `@AggregateRoot`).
 <2> `@EntityCreator` is mandatory and replaces the `@CommandHandler` constructor for instantiation.
@@ -81,7 +51,7 @@ public class GiftCard {
 
 Axon Framework 4::
 +
-[source,java]
+[source,java,role=axon4]
 ----
 @AggregateRoot // <1>
 public class GiftCard {
@@ -171,7 +141,7 @@ These methods are combined with the [anchor=entitycreator-annotation]#@EntityCre
 
 The identifier is then typically set in the `@EventSourcingHandler` of the creation event or injected into the `@EntityCreator`.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // AF4
 @Aggregate
@@ -184,20 +154,11 @@ public class GiftCard {
         apply(new CardIssuedEvent(cmd.getCardId(), cmd.getAmount()));
     }
 }
+----
 
-// AF5
-@EventSourcedEntity
-public class GiftCard {
-    private String cardId; // No annotation needed on the field
-
-    @EntityCreator
-    public GiftCard() { } // <1>
-
-    @CommandHandler
-    public static void handle(IssueCardCommand cmd, EventAppender eventAppender) {
-        eventAppender.append(new CardIssuedEvent(cmd.cardId(), cmd.amount()));
-    }
-}
+[source,java]
+----
+include::example$migration/paths/aggregates/index/entitycreatorstatic/GiftCard.java[tag=entity-creator-static,indent=0]
 ----
 <1> When using a no-arg `@EntityCreator`, the framework instantiates the entity, and the identifier is typically set in the `@EventSourcingHandler` of the creation event.
 
@@ -211,8 +172,7 @@ There are three common patterns for using `@EntityCreator` that you can apply to
 +
 [source,java]
 ----
-@EntityCreator
-public GiftCard() { }
+include::example$migration/paths/aggregates/index/entitycreatorpatterns/noargument/GiftCard.java[tag=entity-creator-noarg,indent=0]
 ----
 Axon creates an empty instance. The identifier and other relevant states are then initialized in the `@EventSourcingHandler` of the first event.
 
@@ -220,10 +180,7 @@ Axon creates an empty instance. The identifier and other relevant states are the
 +
 [source,java]
 ----
-@EntityCreator
-public GiftCard(@InjectEntityId String cardId) {
-    this.cardId = cardId;
-}
+include::example$migration/paths/aggregates/index/entitycreatorpatterns/identifier/GiftCard.java[tag=entity-creator-identifier,indent=0]
 ----
 Axon resolves the identifier from the first event and injects it into the constructor. Note the mandatory `@InjectEntityId` annotation.
 
@@ -231,11 +188,7 @@ Axon resolves the identifier from the first event and injects it into the constr
 +
 [source,java]
 ----
-@EntityCreator
-public GiftCard(CardIssuedEvent event) {
-    this.cardId = event.cardId();
-    this.remainingValue = event.amount();
-}
+include::example$migration/paths/aggregates/index/entitycreatorpatterns/firstevent/GiftCard.java[tag=entity-creator-firstevent,indent=0]
 ----
 Axon uses the first event's payload to construct the initial instance directly.
 
@@ -245,19 +198,18 @@ Axon uses the first event's payload to construct the initial instance directly.
 
 The `AggregateLifecycle.apply()` method is replaced by the `EventAppender` interface, which is passed as a parameter to your command handling methods. This makes the dependency on the event publishing mechanism explicit. This decision is documented in more detail in the xref:migration:solved-architecture-choices.adoc#remove_threadlocal_usage[ThreadLocal usage prevents proper asynchronous and reactive programming] section.
 
-[source,java]
+[source,java,role=axon4]
 ----
 // Axon Framework 4
 @CommandHandler
 public void handle(RedeemCardCommand cmd) {
     AggregateLifecycle.apply(new CardRedeemedEvent(id, cmd.getAmount()));
 }
+----
 
-// Axon Framework 5
-@CommandHandler
-public void handle(RedeemCardCommand cmd, EventAppender eventAppender) {
-    eventAppender.append(new CardRedeemedEvent(id, cmd.amount()));
-}
+[source,java]
+----
+include::example$migration/paths/aggregates/index/eventappender/GiftCard.java[tag=event-appender,indent=0]
 ----
 
 === Removal of `@CreationPolicy`
@@ -270,39 +222,37 @@ The recommended flow is to use a **static `@CommandHandler`** for creation. If t
 +
 [source,java]
 ----
-@CommandHandler
-public static void handle(IssueGiftCard cmd, EventAppender eventAppender) {
-    eventAppender.append(new GiftCardIssued(cmd.cardId(), cmd.amount()));
-}
+include::example$migration/paths/aggregates/index/creationpolicyalways/GiftCard.java[tag=creation-policy-always,indent=0]
 ----
 
 * *`CreationPolicy.CREATE_IF_MISSING`*
 +
-If you need "only create if missing" logic, you can implement it within the static handler by checking for the existence of an optional state parameter.
+If you need "only create if missing" logic, you can implement it within the static handler by checking for the existence of an optional state parameter. The renewed support is documented in more detail xref:commands:entities/stateful-command-handler.adoc#missing_injected_entity[here]. For convenience-sake, here's an immediate sample showing the injection of a nullable `GiftCard`:
 +
 [source,java]
 ----
-@CommandHandler
-public static void handle(IssueGiftCard cmd,
-                          EventAppender eventAppender, 
-                          @InjectState @Nullable GiftCard giftCard) {
-    if (giftCard != null) {
-        throw new IllegalStateException("GiftCard already exists");
-    }
-    eventAppender.append(new GiftCardIssued(cmd.cardId(), cmd.amount()));
-}
+include::example$migration/paths/aggregates/index/creationpolicycreateifmissing/GiftCard.java[tag=creation-policy-create-if-missing,indent=0]
+----
++
+Alternatively, if you want to keep the create-if-missing logic on an **instance** command handler, closer to how `@CreationPolicy(CREATE_IF_MISSING)` worked in Axon Framework 4, annotate a no-argument or identifier-based `@EntityCreator` with `@ForcedEntityCreator`. Axon then always constructs the entity, even when it does not yet exist, so the instance handler receives a non-null entity and can decide for itself whether to append the event that establishes its existence.
++
+[source,java]
+----
+include::example$migration/paths/aggregates/index/forcedentitycreator/GiftCard.java[tag=forced-entity-creator-create-if-missing,indent=0]
 ----
 
 * *`CreationPolicy.NEVER`*
 +
-New entites are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
+New entities are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
 
 [#see-also]
 == See also
 
-For more information on the new modeling patterns, including how to use the `@EventCriteriaBuilder` and immutable entities, please refer to:
+For more information on command handling and modeling patterns in Axon Framework 5, refer to:
 
-- xref:commands:command-handlers.adoc#stateful-command-handlers[Stateful Command Handlers]
+- xref:commands:entities/index.adoc[Entities]: stateful command handlers that enforce business rules using prior state
+- xref:commands:entities/stateful-command-handler.adoc[Stateful command handlers]: how to structure handlers by use case using Vertical Slice Architecture
 - xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Architecture Principles: Moving away from Aggregates]
 - xref:events:event-store-internals.adoc[Event Store Internals and DCB]
-- link:https://www.axoniq.io/blog/dcb-in-af-5[Dynamic Consistency Boundary Blog Post]
+- xref:commands:command-handlers.adoc[Command handlers]: stateless command handlers that need no prior state
+- link:https://www.axoniq.io/blog/dcb-in-af-5[Dynamic Consistency Boundary Blog Post,role=external,window=_blank]

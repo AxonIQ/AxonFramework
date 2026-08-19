@@ -54,24 +54,6 @@
         </dependency>
         <dependency>
             <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy-aggregate</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy-saga</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework</groupId>
             <artifactId>axon-messaging</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
@@ -103,12 +85,6 @@
         <dependency>
             <groupId>org.axonframework.extensions.spring</groupId>
             <artifactId>axon-spring-boot-autoconfigure</artifactId>
-            <version>${project.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework.extensions.tracing</groupId>
-            <artifactId>axon-tracing-opentelemetry</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
         </dependency>

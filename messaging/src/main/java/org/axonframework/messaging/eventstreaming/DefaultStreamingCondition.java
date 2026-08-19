@@ -39,6 +39,11 @@ record DefaultStreamingCondition(
     }
 
     @Override
+    public StreamingCondition withCriteria(EventCriteria criteria) {
+        return new DefaultStreamingCondition(position, criteria);
+    }
+
+    @Override
     public StreamingCondition or(EventCriteria criteria) {
         return new DefaultStreamingCondition(this.position, this.criteria.or(criteria));
     }

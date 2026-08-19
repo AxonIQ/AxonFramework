@@ -23,6 +23,7 @@ import org.junit.jupiter.api.*;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -1323,6 +1324,88 @@ public abstract class MessageStreamTest<M extends Message> {
         assertNotNull(first.getNow(null));
 
         verify(mock).close();
+    }
+
+    @Nested
+    class Collect {
+
+        @Test
+        void shouldCollectMessagesIntoContainer() {
+            // given
+            Assumptions.assumeTrue(isBoundedStream());
+            M first = createRandomMessage();
+            M second = createRandomMessage();
+            MessageStream<M> testSubject = completedTestSubject(List.of(first, second));
+
+            // when
+            var result = testSubject.collect(ArrayList::new, List::add);
+
+            // then
+            assertTrue(result.isDone());
+            assertThat(result.join()).containsExactly(first, second);
+        }
+
+        @Test
+        void shouldReturnEmptyContainerForEmptyStream() {
+            // given
+            Assumptions.assumeTrue(isBoundedStream());
+            MessageStream<M> testSubject = completedTestSubject(List.of());
+
+            // when
+            var result = testSubject.collect(ArrayList::new, List::add);
+
+            // then
+            assertTrue(result.isDone());
+            assertThat(result.join()).isEmpty();
+        }
+
+        @Test
+        void errorInAccumulatorLeadsToFailedFuture() {
+            // given
+            RuntimeException expected = new RuntimeException("oops");
+            MessageStream<M> testSubject = completedTestSubject(List.of(createRandomMessage()));
+
+            // when
+            var result = testSubject.collect(ArrayList::new, (list, message) -> { throw expected; });
+
+            // then
+            assertTrue(result.isCompletedExceptionally());
+            assertEquals(expected, result.exceptionNow());
+        }
+
+        @Test
+        void shouldNotCollectForEmptyFailingStream() {
+            // given
+            Assumptions.assumeTrue(isBoundedStream());
+            AtomicBoolean invoked = new AtomicBoolean();
+            RuntimeException expected = new RuntimeException("oops");
+            MessageStream<M> testSubject = failingTestSubject(List.of(), expected);
+
+            // when
+            var result = testSubject.collect(ArrayList::new, (list, message) -> invoked.set(true));
+
+            // then
+            assertTrue(result.isCompletedExceptionally());
+            assertEquals(expected, result.exceptionNow());
+            assertFalse(invoked.get());
+        }
+
+        @Test
+        void shouldCompleteExceptionallyAfterCollectingForFailedStream() {
+            // given
+            AtomicBoolean invoked = new AtomicBoolean();
+            RuntimeException expected = new RuntimeException("oops");
+            MessageStream<M> testSubject =
+                    failingTestSubject(List.of(createRandomMessage(), createRandomMessage()), expected);
+
+            // when
+            var result = testSubject.collect(ArrayList::new, (list, message) -> invoked.set(true));
+
+            // then
+            assertTrue(result.isCompletedExceptionally());
+            assertEquals(expected, result.exceptionNow());
+            assertTrue(invoked.get());
+        }
     }
 
     @Nested

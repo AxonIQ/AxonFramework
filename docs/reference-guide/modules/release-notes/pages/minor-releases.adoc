@@ -3,6 +3,196 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+[#release_5_3]
+== Release 5.3
+
+=== Release 5.3.1
+
+==== Enhancements
+
+- Dedicated `@EntityCreator` annotation enforcing entity creation regardless of existence (link:https://github.com/AxonIQ/AxonFramework/pull/4933[PR #4933], by @smcvb)
+- Cache `AnnotationMessageTypeResolver` annotation look-ups | Pre-compute entity event routing (link:https://github.com/AxonIQ/AxonFramework/pull/4931[PR #4931], by @MateuszNaKodach)
+- Implement lowerBound on the aggregate-based consistency marker (link:https://github.com/AxonIQ/AxonFramework/issues/4815[#4815], link:https://github.com/AxonIQ/AxonFramework/pull/4928[PR #4928], by @schananas)
+- Match segments against pre-resolved sequence identifiers (link:https://github.com/AxonIQ/AxonFramework/issues/4797[#4797], link:https://github.com/AxonIQ/AxonFramework/pull/4923[PR #4923], by @MateuszNaKodach)
+- Add GHA to automate releases (link:https://github.com/AxonIQ/AxonFramework/pull/4922[PR #4922], by @corradom)
+- Leave the processor token-store name unset by default (link:https://github.com/AxonIQ/AxonFramework/issues/4809[#4809], link:https://github.com/AxonIQ/AxonFramework/pull/4909[PR #4909], by @schananas)
+- Clear the re-claim block when a split or merge fails (link:https://github.com/AxonIQ/AxonFramework/issues/4798[#4798], link:https://github.com/AxonIQ/AxonFramework/pull/4908[PR #4908], by @schananas)
+
+==== Bug fixes
+
+- `SegmentChangeListner#onSegmentClaimed` has token parameter | Unify `initializeTokenSegments` failure behavior (link:https://github.com/AxonIQ/AxonFramework/issues/4924[#4924], link:https://github.com/AxonIQ/AxonFramework/pull/4946[PR #4946], by @schananas)
+- Correctly support `@EventSourced` annotation for polymorphic entities (link:https://github.com/AxonIQ/AxonFramework/issues/4906[#4906], link:https://github.com/AxonIQ/AxonFramework/pull/4944[PR #4944], by @smcvb)
+- Convert message handlers to right MessageStream cardinality (link:https://github.com/AxonIQ/AxonFramework/pull/4943[PR #4943], by @CodeDrivenMitch)
+- Fix broken link to entity-creator.adoc in stateful-command-handler.adoc (link:https://github.com/AxonIQ/AxonFramework/pull/4938[PR #4938], by @corradom)
+- Return `ManagedEntity` from `Repository` and provided to `@InjectEntity` annotated parameters at all times (link:https://github.com/AxonIQ/AxonFramework/pull/4936[PR #4936], by @smcvb)
+- Release the token claim after the segment release listeners (link:https://github.com/AxonIQ/AxonFramework/issues/4924[#4924], link:https://github.com/AxonIQ/AxonFramework/pull/4935[PR #4935], by @schananas)
+- Ensure `HierarchicalStateManager` supports Entity-subtype search (link:https://github.com/AxonIQ/AxonFramework/issues/4904[#4904], link:https://github.com/AxonIQ/AxonFramework/pull/4932[PR #4932], by @smcvb)
+- Fall back to the event identifier when a sequencing policy resolves nothing (link:https://github.com/AxonIQ/AxonFramework/issues/4797[#4797], link:https://github.com/AxonIQ/AxonFramework/pull/4914[PR #4914], by @schananas)
+- Resolve the reset converter only when there is a reset context (link:https://github.com/AxonIQ/AxonFramework/issues/4796[#4796], link:https://github.com/AxonIQ/AxonFramework/pull/4913[PR #4913], by @schananas)
+- Preserve assignable payloads without a converter (link:https://github.com/AxonIQ/AxonFramework/issues/4874[#4874], link:https://github.com/AxonIQ/AxonFramework/pull/4912[PR #4912], by @MateuszNaKodach)
+- Make a batch of appended events visible atomically in the in-memory store (link:https://github.com/AxonIQ/AxonFramework/issues/4824[#4824], link:https://github.com/AxonIQ/AxonFramework/pull/4911[PR #4911], by @schananas)
+- Keep the work package's stored token monotonic from the first store of a claim (link:https://github.com/AxonIQ/AxonFramework/issues/4801[#4801], link:https://github.com/AxonIQ/AxonFramework/issues/4836[#4836], link:https://github.com/AxonIQ/AxonFramework/pull/4910[PR #4910], by @schananas)
+- Adopt a concurrently created config token instead of failing to start (link:https://github.com/AxonIQ/AxonFramework/issues/4802[#4802], link:https://github.com/AxonIQ/AxonFramework/pull/4907[PR #4907], by @schananas)
+- Recognise the broadcast sentinel by identity instead of by value (link:https://github.com/AxonIQ/AxonFramework/issues/4800[#4800], link:https://github.com/AxonIQ/AxonFramework/pull/4903[PR #4903], by @schananas)
+- Align the autoconfigured JPA gap defaults with the core defaults (link:https://github.com/AxonIQ/AxonFramework/issues/4799[#4799], link:https://github.com/AxonIQ/AxonFramework/pull/4902[PR #4902], by @schananas)
+
+==== Documentation
+
+- Add PostgreSQL known-issue link in Token Store section (link:https://github.com/AxonIQ/AxonFramework/pull/4947[PR #4947], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/corradom[@corradom]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/schananas[@schananas]
+- link:https://github.com/smcvb[@smcvb]
+
+[#release_5_2]
+== Release 5.2
+
+=== Release 5.2.3
+
+==== Bug fixes
+
+- Back off before reopening a stream whose source failed (link:https://github.com/AxonIQ/AxonFramework/issues/4839[#4839], link:https://github.com/AxonIQ/AxonFramework/pull/4840[PR #4840], by @laura-devriendt-lemon)
+- Fix bug where publish future could complete before events are visible (link:https://github.com/AxonIQ/AxonFramework/pull/4850[PR #4850], by @hjohn)
+- Invoke `MessageStream` callbacks outside the stream lock (link:https://github.com/AxonIQ/AxonFramework/pull/4868[PR #4868], by @CodeDrivenMitch)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/laura-devriendt-lemon[@laura-devriendt-lemon]
+
+=== Release 5.2.2
+
+==== Bug fixes
+
+- Reopen the event stream when its source completed it link:https://github.com/AxonIQ/AxonFramework/pull/4785[#4785]
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+
+=== Release 5.2.1
+
+==== Bug fixes
+
+- Validate return and parameter type against field type (PR link:https://github.com/AxonIQ/AxonFramework/pull/4780[#4780], by @smcvb)
+- Only deduplicate fluent accessors for records (PR link:https://github.com/AxonIQ/AxonFramework/pull/4779[#4779], by @smcvb)
+- Active entities should only receive tag-matching events during command handling phase ([link:https://github.com/AxonIQ/AxonFramework/issues/4766[#4766], [PR link:https://github.com/AxonIQ/AxonFramework/pull/4773[#4773], by @MateuszNaKodach)
+- Resolve incorrect event routing in heterogeneous Sequencing Policy setup among Event Handling Components (PR link:https://github.com/AxonIQ/AxonFramework/pull/4771[#4771], by @MateuszNaKodach)
+- Only resolve replay context during an active replay (PR link:https://github.com/AxonIQ/AxonFramework/pull/4754[#4754], by @abuijze)
+- Do not report rolled-back events in AxonTestFixture (PR link:https://github.com/AxonIQ/AxonFramework/pull/4749[#4749], by @abuijze)
+
+==== Documentation
+
+- Fix navigation item for the dataprotection-extension migration path (PR link:https://github.com/AxonIQ/AxonFramework/pull/4741[#4741], by @hatzlj)
+- Include AF 5.2.0 release notes (PR link:https://github.com/AxonIQ/AxonFramework/pull/4734[#4734], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/smcvb[@smcvb]
+
+[#release_5_1]
+== Release 5.1
+
+=== Release 5.1.2
+
+==== Features
+
+- feat(migration): preserve AF4 `MessageOriginProvider` metadata key names in AF5 link:https://github.com/AxonIQ/AxonFramework/pull/4613[#4613]
+
+==== Enhancements
+
+- [#3195] feat(migration): fix Kotlin OpenRewrite migration gaps link:https://github.com/AxonIQ/AxonFramework/pull/4605[#4605]
+
+==== Bug fixes
+
+- [#4643 | Port] `AggregateBasedJpaEventStorageEngine#stream` loops until `StreamingCondition` matching events are retrieved link:https://github.com/AxonIQ/AxonFramework/pull/4686[#4686]
+- [#4625 | Port] Introduce the `EventTypeResolver` for `EventStorageEngines` | Allows for default versions link:https://github.com/AxonIQ/AxonFramework/pull/4672[#4672]
+- [#4634 |  Port] Register the Micrometer `MetricsConfigurationEnhancer` only once when using Spring Boot link:https://github.com/AxonIQ/AxonFramework/pull/4671[#4671]
+- Port (5.1.x): [#4647] Propagate all entry resources to per-event ProcessingContext link:https://github.com/AxonIQ/AxonFramework/pull/4670[#4670]
+- fix(messaging): disposing a Flux does not close the underlying subscription query link:https://github.com/AxonIQ/AxonFramework/pull/4667[#4667]
+- Avoid costly stack walk on every task start in AxonTimeLimitedTask link:https://github.com/AxonIQ/AxonFramework/pull/4655[#4655]
+- fix(migration): honor skipTests property link:https://github.com/AxonIQ/AxonFramework/pull/4631[#4631]
+- Align `QualifiedName#(Class)` outcome with annotated approach for nested classes link:https://github.com/AxonIQ/AxonFramework/pull/4630[#4630]
+- test(eventsourcing): assert event metadata is preserved when sourcing aggregate-based events link:https://github.com/AxonIQ/AxonFramework/pull/4628[#4628]
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+- link:https://github.com/smcvb[@smcvb]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/hatzlj[@hatzlj]
+
+=== Release 5.1.1
+
+==== Features
+
+* link:https://github.com/AxonIQ/AxonFramework/pull/4581[#4581] Port `EventStoreTransaction` - allow overriding `AppendCondition` calculated from sourcing (link:https://github.com/AxonIQ/AxonFramework/issues/4291[#4291])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4553[#4553] Add Snapshotting annotation support (link:https://github.com/AxonIQ/AxonFramework/issues/4306[#4306])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4549[#4549] Introduce OpenRewrite script to help with migration from Axon Framework 4.x to Axon Framework 5.x (link:https://github.com/AxonIQ/AxonFramework/issues/3195[#3195])
+
+==== Enhancements
+
+* link:https://github.com/AxonIQ/AxonFramework/pull/4604[#4604] Set expected `axoniq.version` to `5.1.1`
+* link:https://github.com/AxonIQ/AxonFramework/pull/4599[#4599] Add OpenRewrite recipes to migrate `SnapshotTriggerDefinition` into `@Snapshotting` annotation (link:https://github.com/AxonIQ/AxonFramework/issues/3195[#3195])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4598[#4598] Account for async snapshot storage in `SnapshottingEntityLifecycleHandlerTestSuite`
+* link:https://github.com/AxonIQ/AxonFramework/pull/4571[#4571] Align test naming with Maven defaults (link:https://github.com/AxonIQ/AxonFramework/issues/4425[#4425])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4526[#4526] Fix `fromFuture` to return empty stream when future completes with `null` (link:https://github.com/AxonIQ/AxonFramework/issues/4516[#4516])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4521[#4521] Fix `fromFuture` to return empty stream when future completes with `null` (link:https://github.com/AxonIQ/AxonFramework/issues/4516[#4516])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4498[#4498] Make `MessageStream` improvements and add `MessageStreamTestSuite`
+* link:https://github.com/AxonIQ/AxonFramework/pull/4460[#4460] Rework snapshotting to allow single request snapshot and events streams
+
+==== Bug fixes
+
+* link:https://github.com/AxonIQ/AxonFramework/pull/4610[#4610] Remove migration BOM tests failing due to chicken-and-egg problem
+* link:https://github.com/AxonIQ/AxonFramework/pull/4608[#4608] Copy AF4 dependencies during generate-test-resources
+* link:https://github.com/AxonIQ/AxonFramework/pull/4607[#4607] Combine all `ListAppender`-using snapshotting tests into a single `@Nested` class
+* link:https://github.com/AxonIQ/AxonFramework/pull/4606[#4606] Move AF4 dependencies inside profile for `axon-migration` module
+* link:https://github.com/AxonIQ/AxonFramework/pull/4603[#4603] Validate `ProcessingContext` is committed in `SimpleQueryBus` on `emitUpdate`, `completeSubscriptions`, and `completeSubscriptionsExceptionally` invocations (link:https://github.com/AxonIQ/AxonFramework/issues/4594[#4594])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4587[#4587] Fix `SplitTask` leaving token store inconsistent after segment split (link:https://github.com/AxonIQ/AxonFramework/issues/4583[#4583])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4578[#4578] Remove `describe` method from `ComponentDescriptor` interface
+* link:https://github.com/AxonIQ/AxonFramework/pull/4576[#4576] Fix migration paths documentation: update annotation from `@InjectState` to `@InjectEntity` in GiftCard example
+* link:https://github.com/AxonIQ/AxonFramework/pull/4567[#4567] Fix duplicate command handler registration when subtype overrides handler (link:https://github.com/AxonIQ/AxonFramework/issues/3934[#3934])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4566[#4566] Fix Axon auto-configuration with graceful shutdown test (link:https://github.com/AxonIQ/AxonFramework/issues/3310[#3310])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4565[#4565] Align test naming with Maven Surefire/Failsafe defaults (link:https://github.com/AxonIQ/AxonFramework/issues/4425[#4425])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4537[#4537] Port `TrackingToken` per event in `ProcessingContext` from axon-5.1.x branch (link:https://github.com/AxonIQ/AxonFramework/pull/4510[#4510])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4510[#4510] Fix `PooledStreamingEventProcessor`/`WorkPackage` - `TrackingToken` in `ProcessingContext` per event, not per batch (link:https://github.com/AxonIQ/AxonFramework/issues/4323[#4323])
+* link:https://github.com/AxonIQ/AxonFramework/pull/4388[#4388] Allow for commands without an entity to succeed (link:https://github.com/AxonIQ/AxonFramework/issues/4362[#4362])
+
+==== Dependency upgrades
+
+* link:https://github.com/AxonIQ/AxonFramework/pull/4504[#4504] Update Axon Server image version
+
+==== Contributors
+
+We'd like to thank all the contributors who worked on this release!
+
+* link:https://github.com/abuijze[abuijze]
+* link:https://github.com/hatzlj[hatzlj]
+* link:https://github.com/hjohn[hjohn]
+* link:https://github.com/jangalinski[jangalinski]
+* link:https://github.com/laura-devriendt-lemon[laura-devriendt-lemon]
+* link:https://github.com/MateuszNaKodach[MateuszNaKodach]
+* link:https://github.com/smcvb[smcvb]
+
 [#release_5_0]
 == Release 5.0
 

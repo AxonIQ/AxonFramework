@@ -34,6 +34,8 @@ import org.axonframework.messaging.commandhandling.gateway.ConvertingCommandGate
 import org.axonframework.messaging.commandhandling.gateway.DefaultCommandGateway;
 import org.axonframework.messaging.commandhandling.interception.CommandSequencingInterceptor;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
+import org.axonframework.messaging.commandhandling.retry.RetryingCommandBus;
+import org.axonframework.messaging.core.retry.RetryScheduler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.ConfigurationApplicationContext;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
@@ -115,9 +117,12 @@ import java.util.List;
  *     <li>Registers a {@link DefaultMessageMonitorRegistry} for class {@link MessageMonitorRegistry}</li>
  * </ul>
  * <p>
- * Furthermore, this enhancer will decorate the:
+* Furthermore, this enhancer will decorate the following components:
  * <ul>
  *     <li>The {@link CommandGateway} in a {@link ConvertingCommandGateway} with the present {@link MessageConverter}.</li>
+ *     <li>The {@link CommandBus} is a {@link RetryingCommandBus} <b>if</b> a {@link RetryScheduler} is present in the
+ *     registry. The {@link RetryingCommandBus} is applied outside the {@link InterceptingCommandBus} so that retries
+ *     also traverse the interceptor chain.</li>
  *     <li>The {@link CommandBus} in a {@link InterceptingCommandBus} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry} or
  *     {@link MessageHandlerInterceptor MessageHandlerInterceptors} present in the {@link HandlerInterceptorRegistry}.</li>
@@ -393,6 +398,13 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
                         delegate,
                         config.getComponent(MessageConverter.class)
                 )
+        );
+        registry.registerDecorator(
+                CommandBus.class,
+                RetryingCommandBus.DECORATION_ORDER,
+                (config, name, delegate) -> config.getOptionalComponent(RetryScheduler.class)
+                        .<CommandBus>map(retryScheduler -> new RetryingCommandBus(delegate, retryScheduler))
+                        .orElse(delegate)
         );
         registry.registerDecorator(
                 CommandBus.class,

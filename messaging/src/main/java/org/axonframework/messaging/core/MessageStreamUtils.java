@@ -17,6 +17,7 @@
 package org.axonframework.messaging.core;
 
 import org.axonframework.common.annotation.Internal;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -70,31 +71,31 @@ public abstract class MessageStreamUtils {
      * @param <R>         The type of result expected from the reduction operation.
      * @return A {@code CompletableFuture} that completes with the result of the reduction operation.
      */
-    public static <M extends Message, R> CompletableFuture<R> reduce(MessageStream<M> source,
-                                                                     R identity,
-                                                                     BiFunction<R, ? super MessageStream.Entry<M>, R> accumulator) {
-        Reducer<M, R> reducer = new Reducer<>(source, identity, accumulator);
+    public static <M extends Message, R> CompletableFuture<@Nullable R> reduce(MessageStream<M> source,
+                                                                               @Nullable R identity,
+                                                                               BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator) {
+        var reducer = new Reducer<>(source, identity, accumulator);
         source.setCallback(reducer::process);
         return reducer.result();
     }
 
     private static class Reducer<M extends Message, R> {
 
-        private final CompletableFuture<R> result = new CompletableFuture<>();
+        private final CompletableFuture<@Nullable R> result = new CompletableFuture<>();
         private final MessageStream<M> source;
-        private final BiFunction<R, ? super MessageStream.Entry<M>, R> accumulator;
+        private final BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator;
         private final AtomicBoolean processingGate = new AtomicBoolean(false);
 
-        private final AtomicReference<R> intermediateResult;
+        private final AtomicReference<@Nullable R> intermediateResult;
 
-        public Reducer(MessageStream<M> source, R identity,
-                       BiFunction<R, ? super MessageStream.Entry<M>, R> accumulator) {
+        public Reducer(MessageStream<M> source, @Nullable R identity,
+                       BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator) {
             this.source = source;
             this.intermediateResult = new AtomicReference<>(identity);
             this.accumulator = accumulator;
         }
 
-        public CompletableFuture<R> result() {
+        public CompletableFuture<@Nullable R> result() {
             return result;
         }
 

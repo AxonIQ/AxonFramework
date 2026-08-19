@@ -35,6 +35,8 @@ import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.commandhandling.gateway.ConvertingCommandGateway;
 import org.axonframework.messaging.commandhandling.interception.CommandSequencingInterceptor;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
+import org.axonframework.messaging.commandhandling.retry.RetryingCommandBus;
+import org.axonframework.messaging.core.retry.RetryScheduler;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -358,6 +360,32 @@ class MessagingConfigurationDefaultsTest {
         MessagingConfigurer configurer = MessagingConfigurer.create();
         Configuration resultConfig = configurer.build();
         assertInstanceOf(ConvertingCommandGateway.class, resultConfig.getComponent(CommandGateway.class));
+    }
+
+    @Test
+    void decoratesCommandBusAsRetryingCommandBusWhenRetrySchedulerIsPresent() {
+        // given
+        RetryScheduler retryScheduler = mock(RetryScheduler.class);
+        ApplicationConfigurer configurer = MessagingConfigurer.enhance(new DefaultAxonApplication());
+        configurer.componentRegistry(cr -> cr.registerComponent(RetryScheduler.class, c -> retryScheduler));
+
+        // when
+        Configuration resultConfig = configurer.build();
+
+        // then
+        assertThat(resultConfig.getComponent(CommandBus.class)).isInstanceOf(RetryingCommandBus.class);
+    }
+
+    @Test
+    void doesNotDecorateCommandBusAsRetryingCommandBusWhenNoRetrySchedulerIsPresent() {
+        // given
+        ApplicationConfigurer configurer = MessagingConfigurer.enhance(new DefaultAxonApplication());
+
+        // when
+        Configuration resultConfig = configurer.build();
+
+        // then
+        assertThat(resultConfig.getComponent(CommandBus.class)).isNotInstanceOf(RetryingCommandBus.class);
     }
 
     @Test

@@ -20,12 +20,14 @@ import org.axonframework.common.ObjectUtils;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.AnnotatedMessageHandlingMemberDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.sequencing.MetadataSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
@@ -236,6 +238,28 @@ class MethodSequencingPolicyEventHandlerDefinitionTest {
     }
 
     @Nested
+    class ExceptionHandlerNotWrapped {
+
+        @Test
+        void exceptionHandlerWithClassLevelPolicyNotWrapped() {
+            MessageHandlingMember<EventHandlerWithExceptionHandler> handler = createHandler(
+                    EventHandlerWithExceptionHandler.class, "onError", IllegalStateException.class
+            );
+            MessageHandlingMember<EventHandlerWithExceptionHandler> wrappedHandler = testSubject.wrapHandler(handler);
+
+            // ExceptionHandler methods should NOT be wrapped, as the class-level policy only applies to
+            // event payload handlers and cannot be constructed against the exception type
+            assertSame(handler, wrappedHandler);
+        }
+
+        @Test
+        void inspectionOfClassWithPropertyPolicyAndExceptionHandlerSucceeds() {
+            // Reproduces issue #4705: inspection failed with "Failed to create SequencingPolicy instance: null"
+            assertDoesNotThrow(() -> AnnotatedHandlerInspector.inspectType(EventHandlerWithExceptionHandler.class));
+        }
+    }
+
+    @Nested
     class MetaAnnotationSupport {
 
         @Test
@@ -402,6 +426,30 @@ class MethodSequencingPolicyEventHandlerDefinitionTest {
         @ResetHandler
         @org.axonframework.messaging.core.annotation.SequencingPolicy(type = SequentialPolicy.class)
         void onReset() {
+        }
+    }
+
+    // Test event record with a property for the class-level PropertySequencingPolicy
+    public record SomethingHappened(String key) {
+
+    }
+
+    // Test class with class-level property-based SequencingPolicy and an ExceptionHandler - the ExceptionHandler
+    // should NOT be wrapped, as the exception type does not carry the sequencing property (issue #4705)
+    @org.axonframework.messaging.core.annotation.SequencingPolicy(
+            type = PropertySequencingPolicy.class,
+            parameters = {"key"}
+    )
+    static class EventHandlerWithExceptionHandler {
+
+        @SuppressWarnings("unused")
+        @EventHandler
+        void handle(SomethingHappened event) {
+        }
+
+        @SuppressWarnings("unused")
+        @ExceptionHandler(resultType = IllegalStateException.class)
+        void onError(IllegalStateException exception) {
         }
     }
 

@@ -26,9 +26,13 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Comp
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateCustomer;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
+import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
+import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableCertification;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableCustomer;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableEmployee;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutablePerson;
@@ -90,20 +94,36 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                         })
                 .build();
 
+        // Certification is the map-based child-model of Employee
+        EntityMetamodel<MutableCertification> certificationMetamodel = ConcreteEntityMetamodel
+                .forEntityClass(MutableCertification.class)
+                .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
+                        MutableCertification.class, eventConverter, typeResolver
+                ))
+                .instanceCommandHandler(typeResolver.resolveOrThrow(RevokeCertificationCommand.class).qualifiedName(),
+                                        (command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            RevokeCertificationCommand convertedPayload =
+                                                    command.payloadAs(RevokeCertificationCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        })
+                .build();
+
         // Employee is a concrete entity type
         EntityMetamodel<MutableEmployee> employeeMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableEmployee.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
                         MutableEmployee.class, eventConverter, typeResolver
                 ))
-                .instanceCommandHandler(typeResolver.resolveOrThrow(CreateEmployee.class).qualifiedName(),
-                                        ((command, entity, context) -> {
-                                            EventAppender eventAppender = EventAppender.forContext(context);
-                                            CreateEmployee convertedPayload =
-                                                    command.payloadAs(CreateEmployee.class);
-                                            entity.handle(convertedPayload, eventAppender);
-                                            return MessageStream.empty().cast();
-                                        }))
+                .creationalCommandHandler(typeResolver.resolveOrThrow(CreateEmployee.class).qualifiedName(),
+                                          ((command, context) -> {
+                                              MutableEmployee.handle(
+                                                      command.payloadAs(CreateEmployee.class),
+                                                      EventAppender.forContext(context)
+                                              );
+                                              return MessageStream.empty().cast();
+                                          }))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(AssignTaskCommand.class).qualifiedName(),
                                         ((command, entity, context) -> {
                                             EventAppender eventAppender = EventAppender.forContext(context);
@@ -112,6 +132,48 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                             entity.handle(convertedPayload, eventAppender);
                                             return MessageStream.empty().cast();
                                         }))
+                .instanceCommandHandler(typeResolver.resolveOrThrow(GrantCertificationCommand.class).qualifiedName(),
+                                        ((command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            GrantCertificationCommand convertedPayload =
+                                                    command.payloadAs(GrantCertificationCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        }))
+                .addChild(EntityChildMetamodel
+                                  .<String, MutableCertification, MutableEmployee>map(
+                                          MutableEmployee.class, certificationMetamodel
+                                  )
+                                  .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterSetter(
+                                          MutableEmployee::getCertifications, MutableEmployee::setCertifications
+                                  ))
+                                  .commandTargetResolver((candidates, commandMessage, ctx) -> {
+                                      if (commandMessage.type().name().equals(RevokeCertificationCommand.class.getName())) {
+                                          RevokeCertificationCommand convertedPayload = commandMessage.payloadAs(
+                                                  RevokeCertificationCommand.class);
+                                          Objects.requireNonNull(convertedPayload,
+                                                                 "RevokeCertificationCommand payload cannot be null");
+                                          return candidates.stream()
+                                                           .filter(cert -> cert.getCertificationName().equals(
+                                                                   convertedPayload.certificationName()
+                                                           ))
+                                                           .findFirst()
+                                                           .orElse(null);
+                                      }
+                                      return null;
+                                  })
+                                  .eventTargetMatcher((o, eventMessage, ctx) -> {
+                                      if (eventMessage.type().name().equals(CertificationRevoked.class.getName())) {
+                                          CertificationRevoked certificationRevoked =
+                                                  eventConverter.convertPayload(eventMessage, CertificationRevoked.class);
+                                          Objects.requireNonNull(certificationRevoked,
+                                                                 "CertificationRevoked event payload cannot be null");
+                                          return o.getCertificationName().equals(certificationRevoked.certificationName());
+                                      }
+                                      return false;
+                                  })
+                                  .build()
+                )
                 .addChild(EntityChildMetamodel
                                   .list(MutableEmployee.class, taskMetamodel)
                                   .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterSetter(
@@ -159,15 +221,16 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
                         MutableCustomer.class, eventConverter, typeResolver
                 ))
-                .instanceCommandHandler(
+                .creationalCommandHandler(
                         typeResolver.resolveOrThrow(CreateCustomer.class).qualifiedName(),
-                        ((command, entity, context) -> {
-                            EventAppender eventAppender = EventAppender.forContext(context);
-                            CreateCustomer convertedPayload =
-                                    command.payloadAs(CreateCustomer.class);
-                            entity.handle(convertedPayload, eventAppender);
+                        ((command, context) -> {
+                            MutableCustomer.handle(
+                                    command.payloadAs(CreateCustomer.class),
+                                    EventAppender.forContext(context)
+                            );
                             return MessageStream.empty().cast();
-                        }))
+                        })
+                )
                 .build();
 
         // Person is the polymorphic entity type

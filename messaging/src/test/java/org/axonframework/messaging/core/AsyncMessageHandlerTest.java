@@ -379,7 +379,7 @@ class AsyncMessageHandlerTest {
             @Test
             void returningCompletableFutureShouldUseItsResult() {
                 commandBus.subscribe(
-                        new QualifiedName(CheckIfPrime.class.getName()),
+                        new QualifiedName(CheckIfPrime.class),
                         (command, context) -> {
                             CommandResultMessage value = new GenericCommandResultMessage(
                                     null, isPrime(((CheckIfPrime) command.payload()).value())
@@ -395,7 +395,7 @@ class AsyncMessageHandlerTest {
             @Test
             void returningMonoShouldUseItsResult() {
                 commandBus.subscribe(
-                        new QualifiedName(CheckIfPrime.class.getName()),
+                        new QualifiedName(CheckIfPrime.class),
                         (command, context) -> {
                             CommandResultMessage data = new GenericCommandResultMessage(
                                     null, isPrime(((CheckIfPrime) command.payload()).value())
@@ -411,7 +411,7 @@ class AsyncMessageHandlerTest {
             @Test
             void returningBooleanShouldUseResult() {
                 commandBus.subscribe(
-                        new QualifiedName(CheckIfPrime.class.getName()),
+                        new QualifiedName(CheckIfPrime.class),
                         (command, context) -> MessageStream.just(new GenericCommandResultMessage(
                                 null, isPrime(((CheckIfPrime) command.payload()).value())
                         ))

@@ -8,15 +8,33 @@ include::events:partial$nav.adoc[]
 
 include::queries:partial$nav.adoc[]
 
+ifdef::workflows[]
+include::workflows:partial$nav.adoc[]
+endif::[]
+
 include::testing:partial$nav.adoc[]
 
 * xref:ROOT:conversion.adoc[]
+
+ifdef::data-protection[]
+include::data-protection:partial$nav.adoc[]
+endif::[]
+
+ifdef::advanced-framework[]
+include::multi-tenancy:partial$nav.adoc[]
+endif::[]
 
 include::tuning:partial$nav.adoc[]
 
 include::monitoring:partial$nav.adoc[]
 
+include::configuration:partial$nav.adoc[]
+
 * xref:ROOT:spring-boot-integration.adoc[]
+
+ifdef::advanced-framework[]
+include::ROOT:partial$nav-framework-comparison.adoc[]
+endif::[]
 
 * xref:ROOT:modules.adoc[]
 

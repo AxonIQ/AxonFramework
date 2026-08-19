@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
@@ -31,12 +32,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.EventProcessor;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
+import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
@@ -74,7 +75,7 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@link MaxSegmentProvider} (used by {@link PooledStreamingEventProcessor#maxCapacity()}) defaults to {@link MaxSegmentProvider#maxShort()}.</li>
  *     <li>The {@code claimExtensionThreshold} defaults to {@code 5000} milliseconds.</li>
  *     <li>The {@code batchSize} defaults to {@code 1}.</li>
- *     <li>The {@link Clock} defaults to {@link GenericEventMessage#clock}.</li>
+ *     <li>The {@link Clock} defaults to {@link ClockUtils#get()}.</li>
  *     <li>The {@code coordinatorExtendsClaims} defaults to a {@code false}.</li>
  * </ul>
  * The following fields of this configuration are <b>hard requirements</b> and as such should be provided:
@@ -102,7 +103,8 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private MaxSegmentProvider maxSegmentProvider = MaxSegmentProvider.maxShort();
     private long claimExtensionThreshold = 5000;
     private int batchSize = 1;
-    private Clock clock = GenericEventMessage.clock;
+    @Deprecated(forRemoval = true, since = "5.2.0")
+    private Clock clock = ClockUtils.get();
     private boolean coordinatorExtendsClaims = false;
     private Function<Set<QualifiedName>, EventCriteria> eventCriteriaProvider =
             (supportedEvents) -> EventCriteria.havingAnyTag().andBeingOneOfTypes(supportedEvents);
@@ -111,6 +113,10 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private Supplier<ProcessingContext> schedulingProcessingContextProvider =
             () -> new EventSchedulingProcessingContext(EmptyApplicationContext.INSTANCE);
     private final List<SegmentChangeListener> segmentChangeListeners = new ArrayList<>();
+    // Selects the per-segment progress-persistence strategy from a processor's components. Defaults to storing the
+    // batch-end token; advanced selectors (such as self-checkpointing detection) are installed through this property.
+    private Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder =
+            components -> SegmentProgressStrategyFactory.tokenStoring();
 
     /**
      * Constructs a new {@code PooledStreamingEventProcessorConfiguration} copying properties from the given
@@ -383,11 +389,13 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Defines the {@link Clock} used for time dependent operation by this {@link EventProcessor}. Used by the
      * {@link Coordinator} and {@link WorkPackage} threads to decide when to perform certain tasks, like updating
      * {@link TrackingToken} claims or when to unmark a {@link Segment} as "unclaimable". Defaults to
-     * {@link GenericEventMessage#clock}.
+     * {@link ClockUtils#get()}.
      *
      * @param clock The {@link Clock} used for time dependent operation by this {@link EventProcessor}.
      * @return The current instance, for fluent interfacing.
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public PooledStreamingEventProcessorConfiguration clock(Clock clock) {
         assertNonNull(clock, "Clock may not be null");
         this.clock = clock;
@@ -489,11 +497,34 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         return this;
     }
 
+    /**
+     * Sets the function selecting the {@link SegmentProgressStrategyFactory} for a processor from its
+     * {@link EventHandlingComponent}s. The selected factory decides, per segment, how the stored {@link TrackingToken}
+     * advances; it is applied to every {@link WorkPackage} the processor spawns. Defaults to a selector that stores the
+     * batch-end token every batch.
+     *
+     * @param progressStrategyFactoryBuilder the function mapping a processor's components to a progress-strategy
+     *                                        factory
+     * @return The current instance, for fluent interfacing.
+     */
+    @Internal
+    public PooledStreamingEventProcessorConfiguration progressStrategyFactoryBuilder(
+            Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder
+    ) {
+        assertNonNull(progressStrategyFactoryBuilder, "The progress strategy factory builder may not be null");
+        this.progressStrategyFactoryBuilder = progressStrategyFactoryBuilder;
+        return this;
+    }
+
     @Override
     protected void validate() throws AxonConfigurationException {
         super.validate();
-        assertNonNull(eventSource, "The StreamableEventSource is a hard requirement and should be provided");
-        assertNonNull(tokenStore, "The TokenStore is a hard requirement and should be provided");
+        assertNonNull(eventSource,
+                      "The StreamableEventSource is a hard requirement for event processor '" + processorName
+                              + "' and should be provided. Set it through this configuration's eventSource method.");
+        assertNonNull(tokenStore,
+                      "The TokenStore is a hard requirement for event processor '" + processorName
+                              + "' and should be provided. Set it through this configuration's tokenStore method.");
         assertNonNull(unitOfWorkFactory, "The UnitOfWorkFactory is a hard requirement and should be provided");
         assertNonNull(
                 coordinatorExecutor,
@@ -608,7 +639,9 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Returns the {@link Clock} used for time-dependent operations.
      *
      * @return The {@link Clock} for this processor.
+     * @deprecated Use {@link ClockUtils#set(Clock)} if you have to provide a non-default {@link Clock} instance.
      */
+    @Deprecated(forRemoval = true, since = "5.2.0")
     public Clock clock() {
         return clock;
     }
@@ -682,6 +715,17 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
                                      .reduce(SegmentChangeListener.noOp(), SegmentChangeListener::andThen);
     }
 
+    /**
+     * Returns the function selecting the {@link SegmentProgressStrategyFactory} for a processor from its
+     * {@link EventHandlingComponent}s.
+     *
+     * @return the progress-strategy factory selector.
+     */
+    @Internal
+    public Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder() {
+        return progressStrategyFactoryBuilder;
+    }
+
     @Override
     public <T extends ConfigurationExtension<?>> PooledStreamingEventProcessorConfiguration extend(
             Class<T> extensionType,
@@ -708,6 +752,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         descriptor.describeProperty("coordinatorExtendsClaims", coordinatorExtendsClaims);
         descriptor.describeProperty("eventCriteriaProvider", eventCriteriaProvider);
         descriptor.describeProperty("segmentChangeListeners", segmentChangeListeners);
+        descriptor.describeProperty("progressStrategyFactoryBuilder", progressStrategyFactoryBuilder);
         descriptor.describeProperty("schedulingProcessingContextProvider", schedulingProcessingContextProvider);
         descriptor.describeProperty("ignoredMessageHandler", ignoredMessageHandler);
     }

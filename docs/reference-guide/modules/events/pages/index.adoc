@@ -5,6 +5,7 @@ Events are messages that communicate that something has happened in the business
 They represent facts about the past that cannot be changed.
 Other parts of the application, or even other applications, can react to these events.
 
+[#core-concepts]
 == Core concepts
 
 The list below quickly mentions the core concepts that come into play when thinking about events. For more detail, be sure to read the other sections within this chapter.

@@ -28,6 +28,7 @@ import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.common.util.MockException;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
@@ -49,6 +50,8 @@ class DefaultCommandGatewayTest {
 
     private static final MessageTypeResolver TEST_MESSAGE_NAME_RESOLVER =
             payloadType -> Optional.of(new MessageType(payloadType.getSimpleName()));
+
+    private static final Metadata TEST_METADATA = Metadata.with("key", "value");
 
     private CommandBus mockCommandBus;
 
@@ -252,6 +255,147 @@ class DefaultCommandGatewayTest {
         TestPayload payload = new TestPayload();
         // when/then...
         assertThatThrownBy(() -> testSubject.sendAndWait(payload, String.class)).isInstanceOf(MockException.class);
+    }
+
+    @Nested
+    class SendWithMetadata {
+
+        @Test
+        void sendWithMetadataAttachesMetadataToDispatchedCommand() {
+            // given
+            TestPayload payload = new TestPayload();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            testSubject.send(payload, TEST_METADATA);
+
+            // then
+            assertDispatchedWithMetadata(payload, null);
+        }
+
+        @Test
+        void sendWithMetadataAndContextAttachesMetadataAndPassesAlongContext() {
+            // given
+            TestPayload payload = new TestPayload();
+            ProcessingContext testContext = new StubProcessingContext();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            testSubject.send(payload, TEST_METADATA, testContext);
+
+            // then
+            assertDispatchedWithMetadata(payload, testContext);
+        }
+
+        @Test
+        void sendForResultTypeWithMetadataAttachesMetadataToDispatchedCommand() throws Exception {
+            // given
+            TestPayload payload = new TestPayload();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            CompletableFuture<String> result = testSubject.send(payload, String.class, TEST_METADATA, null);
+
+            // then
+            assertThat(result.get()).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, null);
+        }
+
+        @Test
+        void sendForResultTypeWithMetadataAndContextAttachesMetadataAndPassesAlongContext() throws Exception {
+            // given
+            TestPayload payload = new TestPayload();
+            ProcessingContext testContext = new StubProcessingContext();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            CompletableFuture<String> result = testSubject.send(payload, String.class, TEST_METADATA, testContext);
+
+            // then
+            assertThat(result.get()).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, testContext);
+        }
+    }
+
+    @Nested
+    class SendAndWaitWithMetadata {
+
+        @Test
+        void sendAndWaitWithMetadataAttachesMetadataAndReturnsExpectedResult() {
+            // given
+            TestPayload payload = new TestPayload();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            Object result = testSubject.sendAndWait(payload, Object.class, TEST_METADATA, null);
+
+            // then
+            assertThat(result).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, null);
+        }
+
+        @Test
+        void sendAndWaitWithMetadataAndContextAttachesMetadataAndPassesAlongContext() {
+            // given
+            TestPayload payload = new TestPayload();
+            ProcessingContext testContext = new StubProcessingContext();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            Object result = testSubject.sendAndWait(payload, Object.class, TEST_METADATA, testContext);
+
+            // then
+            assertThat(result).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, testContext);
+        }
+
+        @Test
+        void sendAndWaitForResultTypeWithMetadataAttachesMetadataAndReturnsExpectedResult() {
+            // given
+            TestPayload payload = new TestPayload();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            String result = testSubject.sendAndWait(payload, String.class, TEST_METADATA, null);
+
+            // then
+            assertThat(result).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, null);
+        }
+
+        @Test
+        void sendAndWaitForResultTypeWithMetadataAndContextAttachesMetadataAndPassesAlongContext() {
+            // given
+            TestPayload payload = new TestPayload();
+            ProcessingContext testContext = new StubProcessingContext();
+            arrangeSuccessfulDispatch("OK");
+
+            // when
+            String result = testSubject.sendAndWait(payload, String.class, TEST_METADATA, testContext);
+
+            // then
+            assertThat(result).isEqualTo("OK");
+            assertDispatchedWithMetadata(payload, testContext);
+        }
+    }
+
+    private void arrangeSuccessfulDispatch(String expectedResult) {
+        when(mockCommandBus.dispatch(any(), any())).thenAnswer(i -> CompletableFuture.completedFuture(
+                new GenericCommandResultMessage(new MessageType("result"), expectedResult)
+        ));
+    }
+
+    /**
+     * Verifies a single command was dispatched carrying the given {@code payload} and the shared test metadata, with
+     * the given {@code expectedContext} (or {@code null} for none).
+     */
+    private void assertDispatchedWithMetadata(TestPayload payload, @Nullable ProcessingContext expectedContext) {
+        ArgumentCaptor<CommandMessage> commandCaptor = ArgumentCaptor.forClass(CommandMessage.class);
+        verify(mockCommandBus).dispatch(commandCaptor.capture(),
+                                        expectedContext == null ? isNull() : eq(expectedContext));
+        CommandMessage dispatched = commandCaptor.getValue();
+        assertThat(dispatched.payload()).isEqualTo(payload);
+        assertThat(dispatched.metadata().get("key")).isEqualTo("value");
     }
 
     private static class TestPayload {

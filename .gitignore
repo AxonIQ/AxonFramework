@@ -23,12 +23,19 @@ axon.iws
 # documentation's local bulid
 docs/_playbook/build
 
+# Python bytecode cache (docs/_samples/bin/compare-snippets.py)
+__pycache__/
+
 # Claude Code
 .claude/settings.local.json
 .ai/temp
 
 # AI ASSISTANT - Kiro
 .kiro
+
+# Spec-kit (local use only, not committed, testing out)
+.specify/
+.claude/skills/speckit-*/
 
 # AI ASSISTANT - Cursor
 .vscode

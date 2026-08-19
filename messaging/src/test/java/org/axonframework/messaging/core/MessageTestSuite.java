@@ -25,6 +25,7 @@ import org.axonframework.conversion.Converter;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Type;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,12 @@ public abstract class MessageTestSuite<M extends Message> {
     private static final TypeReference<byte[]> BYTE_ARRAY_TYPE_REF = new TypeReference<>() {
     };
     private static final TypeReference<String> STRING_TYPE_REFERENCE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<Integer>> PARAMETERIZED_LIST_TYPE_REF = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Object>> PARAMETERIZED_MAP_TYPE_REF = new TypeReference<>() {
+    };
+    private static final TypeReference<List<String>[]> PARAMETERIZED_ARRAY_TYPE_REF = new TypeReference<>() {
     };
 
     /**
@@ -240,6 +247,105 @@ public abstract class MessageTestSuite<M extends Message> {
 
         assertThatThrownBy(() -> testSubject.payloadAs(BYTE_ARRAY_TYPE_REF, null))
                 .isExactlyInstanceOf(ConversionException.class);
+    }
+
+    @Test
+    void payloadAsWithParameterizedTypeReferencePassesFullGenericTypeToConverter() {
+        // given
+        List<String> testPayload = List.of("a", "b");
+        List<Integer> convertedPayload = List.of(1, 2);
+        Converter stubbedConverter = spy(CONVERTER);
+        // Only a converter invocation with the full generic type returns the converted payload.
+        doReturn(convertedPayload).when(stubbedConverter).convert(testPayload, PARAMETERIZED_LIST_TYPE_REF.getType());
+
+        M testSubject = buildMessage(testPayload);
+
+        // when
+        List<Integer> result = testSubject.payloadAs(PARAMETERIZED_LIST_TYPE_REF, stubbedConverter);
+
+        // then
+        assertThat(result).isSameAs(convertedPayload);
+    }
+
+    @Test
+    void payloadAsWithParameterizedTypeReferenceWithoutConverterReturnsPayloadWhenRawTypeIsAssignable() {
+        // given
+        Map<String, Object> testPayload = Map.of("key", "value");
+
+        M testSubject = buildMessage(testPayload);
+
+        // when
+        Map<String, Object> result = testSubject.payloadAs(PARAMETERIZED_MAP_TYPE_REF, null);
+
+        // then
+        assertThat(result).isSameAs(testPayload);
+    }
+
+    @Test
+    void payloadAsWithParameterizedTypeReferenceOnMessageWithoutConverterReturnsPayloadWhenRawTypeIsAssignable() {
+        // given
+        Map<String, Object> testPayload = Map.of("key", "value");
+
+        M testSubject = buildMessage(testPayload);
+
+        // when
+        Map<String, Object> result = testSubject.payloadAs(PARAMETERIZED_MAP_TYPE_REF);
+
+        // then
+        assertThat(result).isSameAs(testPayload);
+    }
+
+    @Test
+    void payloadAsWithParameterizedTypeReferenceWithoutConverterThrowsWhenRawTypeIsNotAssignable() {
+        // given
+        M testSubject = buildMessage(STRING_PAYLOAD);
+
+        // when / then
+        assertThatThrownBy(() -> testSubject.payloadAs(PARAMETERIZED_LIST_TYPE_REF, null))
+                .isExactlyInstanceOf(ConversionException.class);
+    }
+
+    @Test
+    void payloadAsWithGenericArrayTypeReferenceWithoutConverterReturnsPayloadWhenErasedTypeIsAssignable() {
+        // given
+        @SuppressWarnings("unchecked")
+        List<String>[] testPayload = new List[]{List.of("a")};
+
+        M testSubject = buildMessage(testPayload);
+
+        // when
+        List<String>[] result = testSubject.payloadAs(PARAMETERIZED_ARRAY_TYPE_REF, null);
+
+        // then
+        assertThat(result).isSameAs(testPayload);
+    }
+
+    @Test
+    void payloadAsWithGenericArrayTypeReferenceWithoutConverterThrowsWhenErasedTypeIsNotAssignable() {
+        // given
+        M testSubject = buildMessage(STRING_PAYLOAD);
+
+        // when / then
+        assertThatThrownBy(() -> testSubject.payloadAs(PARAMETERIZED_ARRAY_TYPE_REF, null))
+                .isExactlyInstanceOf(ConversionException.class);
+    }
+
+    @Test
+    void payloadAsWithTypeVariableTypeReferenceWithoutConverterReturnsPayloadAsIs() {
+        // given
+        // A type variable erases to its bound, Object in this case, to which any payload is assignable.
+        M testSubject = buildMessage(STRING_PAYLOAD);
+
+        // when
+        String result = testSubject.payloadAs(MessageTestSuite.<String>typeVariableTypeReference(), null);
+
+        // then
+        assertThat(result).isSameAs(STRING_PAYLOAD);
+    }
+
+    private static <X> TypeReference<X> typeVariableTypeReference() {
+        return new TypeReference<>() {
+        };
     }
 
     @Test

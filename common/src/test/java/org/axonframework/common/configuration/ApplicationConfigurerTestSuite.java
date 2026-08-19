@@ -533,7 +533,6 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertSame(namedComponent, result.get("named"));
         }
 
-        // fixme: null / FQCN Spring Registry
         @Test
         void getComponentsReturnsComponentsMatchingSubtypes() {
             // given
@@ -1202,43 +1201,6 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             buildConfiguration();
 
             assertEquals(1, counter.get());
-        }
-
-        @Disabled("TODO why should this test ever preserve the order? I reversed the assumption - ")
-        @Test
-        void registeredEnhancersAreInvokedBasedOnInverseInsertOrder() {
-            //noinspection Convert2Lambda - Cannot be lambda, as spying doesn't work otherwise.
-            ConfigurationEnhancer enhancerOne = spy(new ConfigurationEnhancer() {
-
-                @Override
-                public void enhance(@NonNull ComponentRegistry registry) {
-                    // Not important, so do nothing.
-                }
-            });
-            //noinspection Convert2Lambda - Cannot be lambda, as spying doesn't work otherwise.
-            ConfigurationEnhancer enhancerTwo = spy(new ConfigurationEnhancer() {
-                @Override
-                public void enhance(@NonNull ComponentRegistry registry) {
-                    // Not important, so do nothing.
-                }
-            });
-            //noinspection Convert2Lambda - Cannot be lambda, as spying doesn't work otherwise.
-            ConfigurationEnhancer enhancerThree = spy(new ConfigurationEnhancer() {
-
-                @Override
-                public void enhance(@NonNull ComponentRegistry registry) {
-                    // Not important, so do nothing.
-                }
-            });
-            testSubject.componentRegistry(cr -> cr.registerEnhancer(enhancerOne).registerEnhancer(enhancerTwo)
-                                                  .registerEnhancer(enhancerThree));
-
-            buildConfiguration();
-
-            InOrder enhancementOrder = inOrder(enhancerThree, enhancerTwo, enhancerOne);
-            enhancementOrder.verify(enhancerThree).enhance(any());
-            enhancementOrder.verify(enhancerTwo).enhance(any());
-            enhancementOrder.verify(enhancerOne).enhance(any());
         }
 
         @Test

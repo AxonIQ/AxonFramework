@@ -15,7 +15,7 @@ Axon Framework uses a flexible approach to message identification and conversion
 
 === Message type vs Java class
 
-Messages in Axon Framework are identified by their `MessageType` (as described in the xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
+Messages in Axon Framework are identified by their `MessageType` (as described in the xref:messaging-concepts:anatomy-message.adoc[Anatomy of a Message] chapter), which consists of:
 
 * A `QualifiedName` - The fully qualified business name of the message, consisting of:
 ** A `namespace` (defaults to the package name of the message class)
@@ -28,7 +28,7 @@ This approach means that:
 * Different handlers can receive the same message in different Java types
 * The Java class is one possible representation of a message, not its sole identifier
 
-For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:axon-framework-reference:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
+For example, a message with qualified name `com.example.events.UserRegistered` and version "1.0" is the same message regardless of whether it's represented as a `UserRegisteredEvent` class in one service or a `UserCreatedEvent` class in another, as long as both specify the same `MessageType`. When you want to learn more about how Axon resolves the `MessageType`, be sure to read xref:messaging-concepts:anatomy-message.adoc#message_type_resolution[this] section.
 
 === Payload conversion at handling time
 
@@ -40,7 +40,7 @@ This happens independently for each handler, meaning different handlers can rece
 
 For example, consider an event stored as JSON:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 package com.example.events;
 
@@ -58,11 +58,7 @@ One event handler might process this as the full `UserRegisteredEvent` object:
 
 [source,java]
 ----
-@EventHandler //<1>
-public void on(UserRegisteredEvent event) {
-    // Receives the full object
-    userRepository.save(new User(event.getUserId(), event.getEmail()));
-}
+include::example$root/conversion/messagetypes/UserRegistrationHandlers.java[tag=full-object-handler,indent=0]
 ----
 
 <1> The `@EventHandler` annotation doesn't need to specify the event name, since the `UserRegisteredEvent` is annotated with `@Event` and contains the message type information.
@@ -71,13 +67,7 @@ While another handler might only need it as JSON:
 
 [source,java]
 ----
-@EventHandler(eventName = "com.example.events.UserRegistered") //<1>
-public void on(JsonNode event) {
-    // Receives the same event as a JsonNode
-    // Must use the fully qualified name (namespace + name)
-    String userId = event.get("userId").asText();
-    // Process using JSON directly
-}
+include::example$root/conversion/messagetypes/UserRegistrationHandlers.java[tag=json-node-handler,indent=0]
 ----
 
 Both handlers process the same event, but each receives it in the format most convenient for their needs.
@@ -102,19 +92,14 @@ For example, the following handler receives the raw event message and converts i
 
 [source,java]
 ----
-@EventHandler
-public void on(EventMessage<?> event) {
-    // Works without passing a converter — Axon attached one when loading the event
-    UserRegisteredEvent payload = event.payloadAs(UserRegisteredEvent.class);
-    userRepository.save(new User(payload.getUserId(), payload.getEmail()));
-}
+include::example$root/conversion/messagetypes/UserRegistrationHandlers.java[tag=converted-payload-handler,indent=0]
 ----
 
 When building custom infrastructure that produces `Message` instances, call `withConverter(Converter)` before the message reaches any handler to enable the same behavior:
 
 [source,java]
 ----
-GenericEventMessage messageWithConverter = rawMessage.withConverter(eventConverter);
+include::example$root/conversion/messagetypes/ConverterAttachment.java[tag=attach-converter-to-message,indent=0]
 ----
 
 This ensures all downstream code like command handlers, event processors, dead-letter queue processors and query handlers can convert the payload without requiring the converter to be passed explicitly.
@@ -215,16 +200,20 @@ The `JacksonConverter` uses a default `ObjectMapper` configuration. You are free
 
 [source,java]
 ----
-public Converter customJacksonConverter() {
-    ObjectMapper customMapper = new ObjectMapper()
-            .findAndRegisterModules()
-            .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
-
-    return new JacksonConverter(customMapper);
-}
+include::example$root/conversion/implementations/jackson/CustomJacksonConverter.java[tag=custom-jackson-converter,indent=0]
 ----
 
 TIP: If you have not migrated to Jackson 3 yet, Axon Framework also provides a `Jackson2Converter` in the `org.axonframework.conversion.jackson2` package. This converter uses the Jackson 2 library (`com.fasterxml.jackson`) and works identically to the `JacksonConverter`.
+
+[#jackson3_converter_final_fields_note]
+[IMPORTANT]
+====
+Jackson 3 changed the default deserializing `final` fields (see https://github.com/FasterXML/jackson-databind/issues/4552[the original Jackson GitHub issue] for details).
+This prevents `final` fields from being deserialized, which (for example) might affect usages of Kotlin `val` properties for message payloads (because they are `final` by default).
+
+When upgrading to Jackson 3, be sure to check if any of your payloads that get serialized using the `JacksonConverter` (that is using Jackson 3 under the hood) are affected by this change.
+If so, you can either set the Jackson 3 feature `ALLOW_FINAL_FIELDS_AS_MUTATORS` to `true`, or adjust your payload representation in code as necessary.
+====
 
 ==== XML support
 
@@ -232,12 +221,7 @@ If you need to serialize to XML format instead of JSON, you can configure the `J
 
 [source,java]
 ----
-public Converter xmlBasedJacksonConverter() {
-    XmlMapper xmlMapper = new XmlMapper();
-    xmlMapper.findAndRegisterModules();
-
-    return new JacksonConverter(xmlMapper);
-}
+include::example$root/conversion/implementations/jackson/XmlJacksonConverter.java[tag=xml-jackson-converter,indent=0]
 ----
 
 You'll need to add the `jackson-dataformat-xml` dependency to your project:
@@ -267,12 +251,7 @@ To use Avro, you need to configure a `SchemaStore`:
 
 [source,java]
 ----
-public Converter buildAvroConverter(SchemaStore schemaStore) {
-    return new AvroConverter(
-            schemaStore,
-            config -> config  // Customize configuration here
-    );
-}
+include::example$root/conversion/implementations/avro/AvroConverterExample.java[tag=build-avro-converter,indent=0]
 ----
 
 The Avro converter requires a `SchemaStore` to resolve schemas for all messages being processed.
@@ -287,25 +266,7 @@ You can implement your own converter by implementing the `Converter` interface:
 
 [source,java]
 ----
-public class MyCustomConverter implements Converter {
-
-    @Override
-    public boolean canConvert(Type sourceType, Type targetType) {
-        // Determine if conversion is possible
-        return /* ... */;
-    }
-
-    @Override
-    public <T> T convert(Object input, Type targetType) {
-        // Perform the conversion
-        return /* ... */;
-    }
-
-    @Override
-    public void describeTo(@Nonnull ComponentDescriptor descriptor) {
-        descriptor.describeProperty("someCustomProperty", "SomeValue");
-    }
-}
+include::example$root/conversion/implementations/custom/MyCustomConverter.java[tag=custom-converter,indent=0]
 ----
 
 [#configuring_converters]
@@ -317,37 +278,7 @@ To configure converters, use the `MessagingConfigurer` and register components t
 
 [source,java]
 ----
-import org.axonframework.conversion.DelegatingGeneralConverter;
-import org.axonframework.conversion.GeneralConverter;
-import org.axonframework.conversion.jackson.JacksonConverter;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
-import org.axonframework.messaging.core.conversion.MessageConverter;
-import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-class AxonConfig {
-
-    public void converterConfiguration(MessagingConfigurer configurer) {
-
-        configurer
-                // Register the general converter
-                .componentRegistry(cr -> cr.registerComponent(
-                        GeneralConverter.class,
-                        config -> new DelegatingGeneralConverter(new JacksonConverter())
-                ))
-                // Register the message converter (wraps the general converter)
-                .componentRegistry(cr -> cr.registerComponent(
-                        MessageConverter.class,
-                        config -> new DelegatingMessageConverter(config.getComponent(GeneralConverter.class))
-                ))
-                // Register the event converter (wraps the message converter)
-                .componentRegistry(cr -> cr.registerComponent(
-                        EventConverter.class,
-                        config -> new DelegatingEventConverter(config.getComponent(MessageConverter.class))
-                ));
-    }
-}
+include::example$root/conversion/configuration/plainjava/AxonConfig.java[tag=converter-configuration,indent=0]
 ----
 
 **Note:** If you don't explicitly configure converters, Axon Framework automatically registers:
@@ -364,24 +295,7 @@ In Spring environments, there are a number of ways to configure Axon's `Converte
 
 [source,java]
 ----
-@Configuration
-public class ConverterConfiguration {
-
-   @Bean
-   public GeneralConverter converter() {
-       return new DelegatingGeneralConverter(new JacksonConverter());
-   }
-
-   @Bean
-   public MessageConverter messageConverter(Converter converter) {
-      return new DelegatingMessageConverter(converter);
-   }
-
-   @Bean
-   public EventConverter eventConverter(MessageConverter messageConverter) {
-      return new DelegatingEventConverter(messageConverter);
-   }
-}
+include::example$root/conversion/configuration/springboot/ConverterConfiguration.java[tag=converter-configuration-springboot,indent=0]
 ----
 
 ==== Using application properties
@@ -414,30 +328,7 @@ To use Avro for events while keeping Jackson for other messages:
 
 [source,java]
 ----
-import org.apache.avro.message.SchemaStore;
-import org.axonframework.conversion.avro.AvroConverter;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-
-class AxonConfig {
-
-    public void configureAvroConverterForEvents(MessagingConfigurer configurer,
-                                                SchemaStore schemaStore) {
-        // Use Avro for event conversion
-        configurer.componentRegistry(cr -> cr.registerComponent(
-                EventConverter.class,
-                config -> {
-                    AvroConverter avroConverter = new AvroConverter(
-                            schemaStore,
-                            cfg -> cfg  // Customize configuration
-                    );
-                    return new DelegatingEventConverter(avroConverter);
-                }
-        ));
-    }
-}
-
+include::example$root/conversion/configuration/avroevents/AxonConfig.java[tag=avro-events-configuration,indent=0]
 ----
 
 == Converter tuning
@@ -459,16 +350,7 @@ Both `JacksonConverter` and `AvroConverter` support lenient deserialization.
 
 [source,java]
 ----
-public class ConverterConfiguration {
-
-    public GeneralConverter buildConverter() {
-        return new DelegatingGeneralConverter(
-                new JacksonConverter(new ObjectMapper()
-                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-                    .findAndRegisterModules())
-            );
-    }
-}
+include::example$root/conversion/tuning/lenient/ConverterConfiguration.java[tag=lenient-jackson-converter,indent=0]
 ----
 
 ==== AvroConverter
@@ -486,27 +368,14 @@ The recommended approach is to use the `@JsonTypeInfo` annotation:
 
 [source,java]
 ----
-public class MyEvent {
-    @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS)
-    private List<Item> items;
-    // constructors, getters, setters...
-}
+include::example$root/conversion/tuning/generics/MyEvent.java[tag=json-type-info-field,indent=0]
 ----
 
 Alternatively, you can configure the `ObjectMapper` to enable default typing:
 
 [source,java]
 ----
-ObjectMapper mapper = new ObjectMapper()
-    .activateDefaultTyping(
-        BasicPolymorphicTypeValidator.builder()
-            .allowIfBaseType(Object.class)
-            .build(),
-        ObjectMapper.DefaultTyping.NON_FINAL,
-        JsonTypeInfo.As.PROPERTY
-    );
-
-JacksonConverter converter = new JacksonConverter(mapper);
+include::example$root/conversion/tuning/generics/DefaultTypingExample.java[tag=default-typing-object-mapper,indent=0]
 ----
 
 **Note:** Be aware of the security implications of enabling default typing, as described in Jackson's https://github.com/FasterXML/jackson-docs/wiki/JacksonPolymorphicDeserialization[Polymorphic Deserialization] documentation.
@@ -530,34 +399,12 @@ If Axon doesn't provide the content type conversion you need, implement the `Con
 
 [source,java]
 ----
-public class MyContentTypeConverter implements ContentTypeConverter<MySourceType, MyTargetType> {
-
-    @Override
-    public Class<MySourceType> expectedSourceType() {
-        return MySourceType.class;
-    }
-
-    @Override
-    public Class<MyTargetType> targetType() {
-        return MyTargetType.class;
-    }
-
-    @Override
-    public MyTargetType convert(MySourceType original) {
-        // Perform conversion
-        return /* ... */;
-    }
-}
+include::example$root/conversion/tuning/contenttype/MyContentTypeConverter.java[tag=custom-content-type-converter,indent=0]
 ----
 
 Register your custom content type converter with your main converter:
 
 [source,java]
 ----
-public GeneralConverter converterWithCustomContentTypeConverter() {
-    ChainingContentTypeConverter contentTypeConverter = new ChainingContentTypeConverter();
-    contentTypeConverter.registerConverter(new MyContentTypeConverter());
-
-    return new DelegatingGeneralConverter(new JacksonConverter(new ObjectMapper(), contentTypeConverter));
-}
+include::example$root/conversion/tuning/contenttype/ContentTypeConverterRegistration.java[tag=register-custom-content-type-converter,indent=0]
 ----

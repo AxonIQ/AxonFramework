@@ -24,13 +24,14 @@ import org.axonframework.modelling.entity.child.EventTargetMatcher;
 import org.axonframework.modelling.entity.child.SingleEntityChildMetamodel;
 
 import java.lang.reflect.Member;
+import java.util.Map;
 
 import static org.axonframework.common.ReflectionUtils.getMemberValueType;
 
 /**
  * {@link EntityChildModelDefinition} that creates {@link EntityChildMetamodel} instances for child entities that are
- * represented as a single entity (not iterable). It resolves the child type from the member's type and creates a
- * {@link SingleEntityChildMetamodel} accordingly.
+ * represented as a single entity (not iterable, and not a {@link Map}). It resolves the child type from the member's
+ * type and creates a {@link SingleEntityChildMetamodel} accordingly.
  * <p>
  * Before version 5.0.0, this class was known as the
  * {@code org.axonframework.modelling.command.inspection.AggregateMemberAnnotatedChildEntityDefinition}. The class has
@@ -43,7 +44,7 @@ public class SingleEntityChildModelDefinition extends AbstractEntityChildModelDe
 
     @Override
     protected boolean isMemberTypeSupported(Class<?> memberType) {
-        return !Iterable.class.isAssignableFrom(memberType);
+        return !Iterable.class.isAssignableFrom(memberType) && !Map.class.isAssignableFrom(memberType);
     }
 
     @Override

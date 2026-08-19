@@ -32,7 +32,11 @@ import org.axonframework.modelling.configuration.EntityMetamodelConfigurationBui
 import org.axonframework.modelling.configuration.EntityModule;
 import org.axonframework.modelling.entity.EntityCommandHandlingComponent;
 import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.repository.Repository;
+
+import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * An expansion of the {@link EntityModule}, specifically for event-sourced entities. When constructed, either
@@ -129,6 +133,22 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * @return The {@link EntityFactoryPhase} phase of this builder, for a fluent API.
          */
         EntityFactoryPhase<ID, E> messagingModel(EntityMetamodelConfigurationBuilder<E> metamodelFactory);
+
+        /**
+         * Registers a messaging metamodel factory that does not require the {@link org.axonframework.common.configuration.Configuration}.
+         * <p>
+         * Convenience overload for callers that only need the {@link EntityMetamodelBuilder}.
+         *
+         * @param metamodelFactory a factory constructing the {@link EntityMetamodel} from the
+         *                         {@link EntityMetamodelBuilder}
+         * @return the {@link EntityFactoryPhase} phase of this builder, for a fluent API
+         */
+        default EntityFactoryPhase<ID, E> messagingModel(
+                Function<EntityMetamodelBuilder<E>, EntityMetamodel<E>> metamodelFactory
+        ) {
+            Objects.requireNonNull(metamodelFactory, "The metamodelFactory cannot be null.");
+            return messagingModel((configuration, builder) -> metamodelFactory.apply(builder));
+        }
     }
 
     /**
@@ -155,6 +175,21 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
         CriteriaResolverPhase<ID, E> entityFactory(
                 ComponentBuilder<EventSourcedEntityFactory<ID, E>> entityFactory
         );
+
+        /**
+         * Registers the given {@link EventSourcedEntityFactory} as the factory for the event-sourced entity being
+         * built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the factory.
+         *
+         * @param entityFactory the {@link EventSourcedEntityFactory} for the event-sourced entity
+         * @return the {@link CriteriaResolverPhase} phase of this builder, for a fluent API
+         */
+        default CriteriaResolverPhase<ID, E> entityFactory(EventSourcedEntityFactory<ID, E> entityFactory) {
+            Objects.requireNonNull(entityFactory, "The entity factory cannot be null.");
+            return entityFactory(configuration -> entityFactory);
+        }
     }
 
     /**
@@ -183,6 +218,20 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
          */
         OptionalPhase<ID, E> criteriaResolver(ComponentBuilder<CriteriaResolver<ID>> criteriaResolver);
+
+        /**
+         * Registers the given {@link CriteriaResolver} for the event-sourced entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the resolver.
+         *
+         * @param criteriaResolver the {@link CriteriaResolver} for the event-sourced entity
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         */
+        default OptionalPhase<ID, E> criteriaResolver(CriteriaResolver<ID> criteriaResolver) {
+            Objects.requireNonNull(criteriaResolver, "The criteria resolver cannot be null.");
+            return criteriaResolver(configuration -> criteriaResolver);
+        }
     }
 
     /**
@@ -208,6 +257,20 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
         OptionalPhase<ID, E> entityIdResolver(ComponentBuilder<EntityIdResolver<ID>> entityIdResolver);
 
         /**
+         * Registers an optional {@link EntityIdResolver} for the event-sourced entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the resolver.
+         *
+         * @param entityIdResolver the {@link EntityIdResolver} for the event-sourced entity
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         */
+        default OptionalPhase<ID, E> entityIdResolver(EntityIdResolver<ID> entityIdResolver) {
+            Objects.requireNonNull(entityIdResolver, "The entity ID resolver cannot be null.");
+            return entityIdResolver(configuration -> entityIdResolver);
+        }
+
+        /**
          * Registers an optional {@link ComponentBuilder} of a {@link SnapshotPolicy} for the
          * event-sourced entity being built. The snapshot policy determines under which conditions
          * the entity state should be snapshotted during sourcing.
@@ -217,5 +280,20 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * @return The {@link OptionalPhase} phase of this builder, for a fluent API.
          */
         OptionalPhase<ID, E> snapshotPolicy(ComponentBuilder<SnapshotPolicy> snapshotPolicy);
+
+        /**
+         * Registers an optional {@link SnapshotPolicy} for the event-sourced entity being built.
+         * <p>
+         * Convenience overload for callers that do not need the {@link org.axonframework.common.configuration.Configuration}
+         * to construct the policy.
+         *
+         * @param snapshotPolicy the {@link SnapshotPolicy} for the event-sourced entity
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         */
+        default OptionalPhase<ID, E> snapshotPolicy(SnapshotPolicy snapshotPolicy) {
+            Objects.requireNonNull(snapshotPolicy, "The snapshotPolicy cannot be null.");
+            ComponentBuilder<SnapshotPolicy> builder = configuration -> snapshotPolicy;
+            return snapshotPolicy(builder);
+        }
     }
 }

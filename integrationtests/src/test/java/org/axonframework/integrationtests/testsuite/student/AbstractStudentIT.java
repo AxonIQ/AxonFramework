@@ -22,7 +22,7 @@ import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.AbstractIntegrationTest;
+import org.axonframework.integrationtests.testsuite.AbstractIT;
 import org.axonframework.integrationtests.testsuite.student.events.StudentEnrolledEvent;
 import org.axonframework.integrationtests.testsuite.student.state.Course;
 import org.axonframework.integrationtests.testsuite.student.state.Student;
@@ -55,7 +55,7 @@ import java.util.Objects;
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
  */
-public abstract class AbstractStudentIT extends AbstractIntegrationTest {
+public abstract class AbstractStudentIT extends AbstractIT {
 
     protected static final GenericCommandResultMessage SUCCESSFUL_COMMAND_RESULT =
             new GenericCommandResultMessage(new MessageType("empty"), "successful");

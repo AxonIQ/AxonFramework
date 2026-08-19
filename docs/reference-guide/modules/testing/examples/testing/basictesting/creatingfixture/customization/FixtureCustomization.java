@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package testing.basictesting.creatingfixture.customization;
+
+import testing.basictesting.fixtures.Account;
+
+import java.time.Instant;
+
+// tag::fixture-with-customization-import[]
+import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.test.fixture.AxonTestFixture;
+import org.junit.jupiter.api.*;
+
+// end::fixture-with-customization-import[]
+
+// Illustrative event type only used to demonstrate registerIgnoredField(); not shown in the documentation.
+record MyEvent(String eventId, Instant timestamp) {
+
+}
+
+// tag::fixture-with-customization[]
+class AccountTest {
+
+    private AxonTestFixture fixture;
+
+    @BeforeEach
+    void setUp() {
+        EventSourcingConfigurer configurer =
+                EventSourcingConfigurer.create()
+                                       .registerEntity(EventSourcedEntityModule.autodetected(
+                                           String.class, Account.class
+                                       ));
+        fixture = AxonTestFixture.with(
+                configurer,
+                customization -> customization.registerIgnoredField(MyEvent.class, "timestamp")
+                                              .registerIgnoredField(MyEvent.class, "eventId")
+        );
+    }
+
+    @AfterEach
+    void tearDown() {
+        fixture.stop();  // Always stop the fixture!
+    }
+    // tests...
+}
+// end::fixture-with-customization[]

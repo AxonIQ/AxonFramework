@@ -16,9 +16,11 @@
 
 package org.axonframework.modelling.entity;
 
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
-import org.axonframework.common.infra.DescribableComponent;
+import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -38,6 +40,18 @@ import java.util.Set;
  * @since 5.0.0
  */
 public interface EntityMetamodel<E> extends EntityEvolver<E>, DescribableComponent {
+
+    /**
+     * A {@link org.axonframework.messaging.core.Context.ResourceKey} for a {@code boolean} signaling when
+     * {@link #handleCreate(CommandMessage, ProcessingContext)} is invoked <b>without</b> trying to load the entity
+     * first.
+     * <p>
+     * This flag might be used downstream to derive the information required to correctly store the created entity.
+     *
+     * @since 5.1.1
+     */
+    @Internal
+    Context.ResourceKey<Boolean> CREATE_WITHOUT_LOAD = Context.ResourceKey.withLabel("createWithoutLoad");
 
     /**
      * Starts a new {@link EntityMetamodelBuilder} for the given entity type. The builder can be used to add command

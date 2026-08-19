@@ -34,34 +34,7 @@ If you do need to use the `CommandBus` directly, you must manually create a `Com
 
 [source,java]
 ----
-private CommandBus commandBus; // <1>
-
-public void dispatchCommands() {
-    // <2>
-    MessageType commandType = new MessageType(IssueCardCommand.class);
-    IssueCardCommand payload = new IssueCardCommand(UUID.randomUUID().toString(), 100, "shopId");
-    CommandMessage commandMessage = new GenericCommandMessage(commandType, payload);
-
-    // <3>
-    CompletableFuture<CommandResultMessage> resultFuture = commandBus.dispatch(
-            commandMessage,
-            null // <4>
-    );
-
-    // <5>
-    resultFuture.whenComplete((resultMsg, exception) -> {
-        if (exception != null) {
-            // Handle exception
-        } else if (resultMsg.isExceptional()) {
-            Throwable throwable = resultMsg.exceptionResult();
-            // Handle command execution failure
-        } else {
-            String commandResult = resultMsg.getPayload();
-            // Handle successful result
-        }
-    });
-}
-// omitted class and constructor
+include::example$commands/commanddispatchers/CommandBusDispatchExample.java[tag=dispatching-with-commandbus,indent=0]
 ----
 
 The command dispatching example above exemplifies several important aspects:
@@ -81,7 +54,7 @@ If you are dispatching from within a message handler and have access to a `Proce
 See the <<command-dispatcher,CommandDispatcher>> section for a more convenient approach when dispatching from handlers.
 
 <5> Use the `CompletableFuture#whenComplete` method (or other `CompletableFuture` methods) to handle the result.
-The `CommandResultMessage` provides the API to verify whether command execution was exceptional or successful.
+When command handling fails, the `CompletableFuture` completes exceptionally; on success, the `CommandResultMessage` carries the result of the command handler.
 
 [TIP]
 ====
@@ -110,25 +83,7 @@ The `send` methods return immediately without waiting for command handling to co
 
 [source,java]
 ----
-private CommandGateway commandGateway; // <1>
-
-public void sendCommand() {
-    String cardId = UUID.randomUUID().toString();
-
-    // <2>
-    CommandResult result = commandGateway.send(new IssueCardCommand(cardId, 100, "shopId"));
-
-    // <3>
-    result.onSuccess(String.class, cardNumber -> {
-        System.out.println("Card issued with number: " + cardNumber);
-    }).onError(exception -> {
-        System.err.println("Command failed: " + exception.getMessage());
-    });
-
-    // <4>
-    CompletableFuture<String> futureResult = result.resultAs(String.class);
-}
-// omitted class and constructor
+include::example$commands/commanddispatchers/AsyncSendExample.java[tag=async-send,indent=0]
 ----
 
 <1> The `CommandGateway` interface providing the functionality to dispatch command messages.
@@ -152,17 +107,7 @@ The `CommandGateway` provides several variants of the `send` method:
 
 [source,java]
 ----
-// Send with metadata
-CommandResult result = commandGateway.send(command, Metadata.with("userId", "12345"));
-
-// Send with ProcessingContext (when dispatching from within a handler)
-CommandResult result = commandGateway.send(command, processingContext);
-
-// Send with both metadata and ProcessingContext
-CommandResult result = commandGateway.send(command, metadata, processingContext);
-
-// Send and get CompletableFuture directly
-CompletableFuture<String> future = commandGateway.send(command, String.class);
+include::example$commands/commanddispatchers/SendVariantsExample.java[tags=send-with-metadata;send-with-context;send-with-metadata-and-context;send-and-get-future,indent=0]
 ----
 
 When dispatching from outside a message handler (for example, from an HTTP endpoint), use the variants without `ProcessingContext` or pass `null`.
@@ -180,18 +125,7 @@ For scenarios where you need to wait for the command result before continuing, u
 
 [source,java]
 ----
-private CommandGateway commandGateway;
-
-public void sendCommandAndWaitOnResult() {
-    IssueCardCommand commandPayload = new IssueCardCommand(UUID.randomUUID().toString(), 100, "shopId");
-
-    // <1>
-    String result = commandGateway.sendAndWait(commandPayload, String.class);
-
-    // <2>
-    Object genericResult = commandGateway.sendAndWait(commandPayload);
-}
-// omitted class and constructor
+include::example$commands/commanddispatchers/SendAndWaitExample.java[tag=send-and-wait,indent=0]
 ----
 
 <1> The `CommandGateway#sendAndWait(Object, Class)` method takes the command object and the expected result type.
@@ -211,7 +145,7 @@ For most use cases, the asynchronous `send` methods are preferred.
 [TIP]
 .Reactive command dispatching
 ====
-If your application uses Project Reactor (for example, Spring WebFlux), the xref:axon-framework-reference:ROOT:modules.adoc#axon-reactor[Reactor extension] provides a `ReactorCommandGateway` that returns `Mono<R>` instead of `CompletableFuture`.
+If your application uses Project Reactor (for example, Spring WebFlux), the xref:ROOT:modules.adoc#axon-reactor[Reactor extension] provides a `ReactorCommandGateway` that returns `Mono<R>` instead of `CompletableFuture`.
 Reactive dispatch interceptors run inside the Reactor subscription, enabling access to Reactor context such as `ReactiveSecurityContextHolder`.
 ====
 
@@ -235,18 +169,7 @@ The `CommandDispatcher` can be injected as a parameter in any message handler:
 
 [source,java]
 ----
-@EventSourced
-public class GiftCard {
-
-    @CommandHandler
-    public void handle(RedeemCardCommand command, EventAppender eventAppender, CommandDispatcher dispatcher) { // <1>
-        // Validate and apply event
-        eventAppender.append(new CardRedeemedEvent(command.cardId(), command.amount()));
-
-        // Dispatch another command using the dispatcher
-        dispatcher.send(new SendThankYouEmailCommand(command.cardId())); // <2>
-    }
-}
+include::example$commands/commanddispatchers/GiftCard.java[tag=injecting-command-dispatcher,indent=0]
 ----
 
 <1> The `CommandDispatcher` is injected as a parameter alongside the command.
@@ -260,23 +183,7 @@ The `CommandDispatcher` provides a simple API for dispatching commands:
 
 [source,java]
 ----
-// Send command and get CommandResult
-CommandResult result = dispatcher.send(command);
-
-// Send command with metadata
-CommandResult result = dispatcher.send(command, metadata);
-
-// Send command and get CompletableFuture with expected type
-CompletableFuture<String> future = dispatcher.send(command, String.class);
-
-// Attach handlers to the result
-dispatcher.send(command)
-         .onSuccess(String.class, cardNumber -> {
-             // Handle success
-         })
-         .onError(exception -> {
-             // Handle error
-         });
+include::example$commands/commanddispatchers/DispatcherApiExample.java[tags=dispatcher-send;dispatcher-send-metadata;dispatcher-send-future;dispatcher-send-handlers,indent=0]
 ----
 
 Notice that the `CommandDispatcher` API does *not* have a `ProcessingContext` parameter.
@@ -340,9 +247,7 @@ The simplest way to specify a routing key is using the `routingKey` attribute on
 
 [source,java]
 ----
-@Command(routingKey = "cardId") // <1>
-public record IssueCardCommand(String cardId, int amount, String shopId) {
-}
+include::example$commands/commanddispatchers/IssueCardCommand.java[tag=routing-key-with-command,indent=0]
 ----
 
 <1> The `routingKey` attribute specifies which property of the command should be used as the routing key.
@@ -376,15 +281,7 @@ You can register a custom `RoutingStrategy` using the configuration API:
 
 [source,java]
 ----
-// Using Configuration API
-public ApplicationConfigurer configureRouting(ApplicationConfigurer configurer) {
-    return configurer.messagingConfigurer(messagingConfigurer ->
-        messagingConfigurer.registerComponent(
-            RoutingStrategy.class,
-            config -> new MetadataRoutingStrategy("tenantId") // <1>
-        )
-    );
-}
+include::example$commands/commanddispatchers/RoutingConfigurationExample.java[tag=custom-routing-strategy-config,indent=0]
 ----
 
 <1> This example uses `MetadataRoutingStrategy` to extract the routing key from metadata with key `"tenantId"`.
@@ -393,14 +290,7 @@ When using Spring Boot, you can register a custom `RoutingStrategy` as a Spring 
 
 [source,java]
 ----
-@Configuration
-public class AxonConfig {
-
-    @Bean
-    public RoutingStrategy routingStrategy() {
-        return new MetadataRoutingStrategy("tenantId"); // <1>
-    }
-}
+include::example$commands/commanddispatchers/AxonConfig.java[tag=spring-routing-strategy,indent=0]
 ----
 
 <1> Spring Boot auto-configuration will automatically detect and use this `RoutingStrategy`.
@@ -409,15 +299,7 @@ You can also implement your own `RoutingStrategy` for completely custom routing 
 
 [source,java]
 ----
-public class CustomRoutingStrategy implements RoutingStrategy {
-
-    @Override
-    public String getRoutingKey(CommandMessage command) {
-        // Custom logic to determine routing key
-        MyCommand payload = command.payload();
-        return payload.tenantId() + ":" + payload.entityId(); // <1>
-    }
-}
+include::example$commands/commanddispatchers/CustomRoutingStrategy.java[tag=custom-routing-strategy,indent=0]
 ----
 
 <1> This example creates a composite routing key from multiple properties.

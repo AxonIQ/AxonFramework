@@ -22,15 +22,17 @@ import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPosition;
+import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
 import org.axonframework.eventsourcing.eventstore.TaggedEventMessage;
+import org.axonframework.eventsourcing.eventstore.TerminalEventMessage;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventsCondition;
@@ -61,6 +63,10 @@ import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK
 
 /**
  * Thread-safe {@link EventStorageEngine} implementation storing events in memory.
+ * <p>
+ * A committed batch becomes visible to consumers as a whole. Events are stored one at a time, but the position up to
+ * which readers may advance is published once, after the last event of the batch is stored, so a reader sourcing or
+ * streaming during a commit observes either none of that batch or all of it.
  *
  * @author Allard Buijze
  * @author Rene de Waele
@@ -77,6 +83,12 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
     private final NavigableMap<Long, TaggedEventMessage<? extends EventMessage>> eventStorage =
             new ConcurrentSkipListMap<>();
     private final long offset;
+    /**
+     * Highest position that is fully committed, and thus visible to consumers. Advanced once per committed batch,
+     * after every event of that batch is in {@code eventStorage}, so that a reader never observes part of a batch.
+     * {@code -1} means nothing is visible yet.
+     */
+    private final AtomicLong lastVisiblePosition = new AtomicLong(-1);
     private final ReentrantLock appendLock = new ReentrantLock();
     private final Set<MapBackedMessageStream> openStreams = new CopyOnWriteArraySet<>();
 
@@ -140,6 +152,10 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
                                   .reduce(ConsistencyMarker::upperBound)
                                   .orElse(ConsistencyMarker.ORIGIN);
 
+                    // Publish the batch with a single position advance, once every event of it is stored. Readers are
+                    // bounded by this position, so they see either none of the batch or all of it, never a prefix.
+                    lastVisiblePosition.set(eventStorage.isEmpty() ? -1 : eventStorage.lastKey());
+
                     openStreams.forEach(m -> m.callback().run());
                     return CompletableFuture.completedFuture(newLatest);
                 } finally {
@@ -163,6 +179,14 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
         return eventStorage.isEmpty() ? 0 : eventStorage.lastKey() + 1;
     }
 
+    /**
+     * Indicates whether the event at the given {@code position} belongs to a batch that finished committing, and may
+     * therefore be handed to a consumer.
+     */
+    private boolean isVisible(long position) {
+        return position <= lastVisiblePosition.get() && eventStorage.containsKey(position);
+    }
+
     private boolean containsConflicts(AppendCondition condition) {
         if (Objects.equals(condition.consistencyMarker(), ConsistencyMarker.INFINITY)) {
             return WITHOUT_MARKER;
@@ -178,17 +202,21 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
     }
 
     @Override
-    public MessageStream<EventMessage> source(SourcingCondition condition) {
+    public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (logger.isDebugEnabled()) {
             logger.debug("Start sourcing events with condition [{}].", condition);
         }
 
         // Get start position and ensure it is within valid bounds for this implementation:
-        long start = Math.max(0, GlobalIndexPosition.toIndex(condition.start()));
+        long start = switch (condition.strategy()) {
+            case SourcingStrategy.Absolute(Position position) -> Math.max(0, GlobalIndexPosition.toIndex(position));
+            default -> throw new UnsupportedOperationException("Unsupported sourcing strategy: " + condition.strategy());
+        };
 
-        // Set end to the CURRENT last position, to reflect it's a finite stream.
+        // Set end to the CURRENT last visible position, to reflect it's a finite stream. Taking the last visible
+        // position rather than the last stored one keeps the end of the stream on a batch boundary.
         MapBackedMessageStream messageStream = new MapBackedSourcingEventMessageStream(
-                start, eventStorage.isEmpty() ? -1 : eventStorage.lastKey(), condition
+                start, lastVisiblePosition.get(), condition
         );
         openStreams.add(messageStream);
         return messageStream;
@@ -219,7 +247,7 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
         }
 
         return CompletableFuture.completedFuture(
-                eventStorage.isEmpty()
+                lastVisiblePosition.get() < 0
                         ? new GlobalSequenceTrackingToken(offset - 1)
                         : new GlobalSequenceTrackingToken(eventStorage.firstKey())
         );
@@ -231,10 +259,11 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
             logger.debug("Operation latestToken() is invoked.");
         }
 
+        long visiblePosition = lastVisiblePosition.get();
         return CompletableFuture.completedFuture(
-                eventStorage.isEmpty()
+                visiblePosition < 0
                         ? new GlobalSequenceTrackingToken(offset - 1)
-                        : new GlobalSequenceTrackingToken(eventStorage.lastKey() + 1)
+                        : new GlobalSequenceTrackingToken(visiblePosition + 1)
         );
     }
 
@@ -244,7 +273,8 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
             logger.debug("Operation tokenAt() is invoked with Instant [{}].", at);
         }
 
-        return eventStorage.entrySet()
+        return eventStorage.headMap(lastVisiblePosition.get(), true)
+                           .entrySet()
                            .stream()
                            .filter(positionToEventEntry -> {
                                EventMessage event = positionToEventEntry.getValue().event();
@@ -286,7 +316,7 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
             long currentPosition = this.position.get();
             long lookupPosition = Math.max(0, currentPosition);
             while (lookupPosition <= this.end
-                    && eventStorage.containsKey(lookupPosition)
+                    && isVisible(lookupPosition)
                     && this.position.compareAndSet(currentPosition, lookupPosition + 1)) {
                 TaggedEventMessage<?> nextEvent = eventStorage.get(lookupPosition);
                 if (match(nextEvent, this.condition)) {
@@ -303,7 +333,7 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
         @Override
         public Optional<Entry<EventMessage>> peek() {
             long currentPosition = Math.max(0, this.position.get());
-            while (currentPosition <= this.end && eventStorage.containsKey(currentPosition)) {
+            while (currentPosition <= this.end && isVisible(currentPosition)) {
                 TaggedEventMessage<?> nextEvent = eventStorage.get(currentPosition);
                 if (match(nextEvent, this.condition)) {
                     Context context = Context.empty();
@@ -339,7 +369,7 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
         @Override
         public boolean hasNextAvailable() {
             long currentPosition = Math.max(0, this.position.get());
-            return currentPosition <= this.end && eventStorage.containsKey(currentPosition);
+            return currentPosition <= this.end && isVisible(currentPosition);
         }
 
         @Override

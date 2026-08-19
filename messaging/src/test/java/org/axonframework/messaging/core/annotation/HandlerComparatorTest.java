@@ -162,11 +162,6 @@ class HandlerComparatorTest {
         }
 
         @Override
-        public Object handleSync(@NonNull Message message, @NonNull ProcessingContext context, Object target) {
-            throw new UnsupportedOperationException("Not implemented yet");
-        }
-
-        @Override
         public @NonNull MessageStream<?> handle(@NonNull Message message, @NonNull ProcessingContext context,
                                        @Nullable Object target) {
             throw new UnsupportedOperationException("Not implemented yet");
@@ -202,11 +197,6 @@ class HandlerComparatorTest {
         @Override
         public boolean canHandleMessageType(@NonNull Class<? extends Message> messageType) {
             throw new UnsupportedOperationException("Not implemented (yet)");
-        }
-
-        @Override
-        public @NonNull Object handleSync(@NonNull Message message, @NonNull ProcessingContext context, Object target) {
-            throw new UnsupportedOperationException("Not implemented yet");
         }
 
         @Override

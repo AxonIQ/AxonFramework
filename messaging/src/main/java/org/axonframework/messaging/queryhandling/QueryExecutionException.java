@@ -15,38 +15,43 @@
  */
 package org.axonframework.messaging.queryhandling;
 
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.HandlerExecutionException;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Exception indicating that the execution of a Query Handler has resulted in an exception.
  * <p/>
- * By default, a stack trace is not generated for this exception. However, the stack trace creation can be enforced explicitly
- * via the constructor accepting the {@code writableStackTrace} parameter.
+ * By default, a stack trace is not generated for this exception. However, the stack trace creation can be enforced
+ * explicitly via the constructor accepting the {@code writableStackTrace} parameter.
  *
  * @author Marc Gathier
- * @since 3.1
+ * @since 3.1.0
  */
 public class QueryExecutionException extends HandlerExecutionException {
 
     /**
      * Initializes the exception with given {@code message} and {@code cause}
      *
-     * @param message Message explaining the context of the error
-     * @param cause   The underlying cause of the invocation failure
+     * @param message message explaining the context of the error
+     * @param cause   the underlying cause of the invocation failure
      */
-    public QueryExecutionException(String message, @Nullable Throwable cause) {
+    public QueryExecutionException(String message,
+                                   @Nullable Throwable cause) {
         super(message, cause);
     }
 
     /**
      * Initializes the exception with given {@code message}, {@code cause} and {@code details}.
      *
-     * @param message Message explaining the context of the error
-     * @param cause   The underlying cause of the invocation failure
-     * @param details An object providing more error details (may be {@code null})
+     * @param message message explaining the context of the error
+     * @param cause   the underlying cause of the invocation failure
+     * @param details an object providing more error details (might be {@code null})
      */
-    public QueryExecutionException(String message, Throwable cause, Object details) {
+    public QueryExecutionException(String message,
+                                   Throwable cause,
+                                   @Nullable Object details) {
         super(message, cause, details);
     }
 
@@ -54,12 +59,42 @@ public class QueryExecutionException extends HandlerExecutionException {
      * Initializes the exception with given {@code message}, {@code cause}, {@code details} and
      * {@code writableStackTrace}
      *
-     * @param message            Message explaining the context of the error
-     * @param cause              The underlying cause of the invocation failure
-     * @param details            An object providing more error details (may be {@code null})
-     * @param writableStackTrace Whether the stack trace should be generated ({@code true}) or not ({@code false})
+     * @param message            message explaining the context of the error
+     * @param cause              the underlying cause of the invocation failure
+     * @param details            an object providing more error details (might be {@code null})
+     * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
      */
-    public QueryExecutionException(String message, Throwable cause, Object details, boolean writableStackTrace) {
+    public QueryExecutionException(String message,
+                                   Throwable cause,
+                                   @Nullable Object details,
+                                   boolean writableStackTrace) {
         super(message, cause, details, writableStackTrace);
+    }
+
+    /**
+     * Initializes the exception with given {@code message}, {@code cause}, {@code details}, a {@code converter}, and
+     * {@code writableStackTrace}.
+     * <p/>
+     * This constructor is used by messaging infrastructure to attach a {@link Converter} when reconstructing
+     * {@code details} from raw data received over an infrastructure boundary (for example, a query dispatched through
+     * Axon Server). It is not meant to be used directly by application code, which typically already has the details
+     * object in its final form and can use {@link #QueryExecutionException(String, Throwable, Object)} instead.
+     *
+     * @param message            message explaining the context of the error
+     * @param cause              the underlying cause of the invocation failure
+     * @param details            an object providing more error details, potentially raw data awaiting conversion (may
+     *                           be {@code null})
+     * @param converter          the {@link Converter} to lazily apply when {@link #getDetails(Class)} is called with a
+     *                           type {@code details} does not already match, or {@code null} if no such conversion is
+     *                           available
+     * @param writableStackTrace whether the stack trace should be generated ({@code true}) or not ({@code false})
+     */
+    @Internal
+    public QueryExecutionException(String message,
+                                   Throwable cause,
+                                   @Nullable Object details,
+                                   @Nullable Converter converter,
+                                   boolean writableStackTrace) {
+        super(message, cause, details, converter, writableStackTrace);
     }
 }

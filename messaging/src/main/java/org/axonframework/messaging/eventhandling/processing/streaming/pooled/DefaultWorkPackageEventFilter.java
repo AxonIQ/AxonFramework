@@ -24,6 +24,7 @@ import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorC
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentMatcher;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -32,7 +33,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Default implementation of a {@link WorkPackage.EventFilter} that filters events based on the
@@ -70,6 +70,11 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
      * Indicates whether the processor can/should handle the given {@code eventMessage} for the given {@code segment}.
      * <p>
      * This implementation will delegate the decision to the {@link EventHandlingComponent}.
+     * <p>
+     * When any of the components returns the {@link SequencingPolicy#BROADCAST} instance itself as the sequence
+     * identifier for the given {@code eventMessage}, segment matching is skipped and the event is handled by every
+     * segment. The comparison is by identity, so an identifier that merely carries the same value as data is matched
+     * against the segment like any other.
      *
      * @param eventMessage The message for which to identify if the processor can handle it.
      * @param segment      The segment for which the event should be processed.
@@ -104,9 +109,12 @@ class DefaultWorkPackageEventFilter implements WorkPackage.EventFilter {
             }
 
             var sequenceIdentifiers = eventHandlingComponents.sequenceIdentifiersFor(eventMessage, context);
-            return sequenceIdentifiers.stream().anyMatch(identifier -> new SegmentMatcher(
-                    (e, ctx) -> Optional.of(identifier)).matches(segment, eventMessage, context)
-            );
+            // The sentinel inherits Object's identity equals, so this lookup resolves by identity: a sequence
+            // identifier that merely reads "BROADCAST" as data shares the sentinel's hash bucket but never matches it.
+            if (sequenceIdentifiers.contains(SequencingPolicy.BROADCAST)) {
+                return true;
+            }
+            return sequenceIdentifiers.stream().anyMatch(identifier -> SegmentMatcher.matches(segment, identifier));
         } catch (Exception e) {
             errorHandler.handleError(
                     new ErrorContext(eventProcessor, e, Collections.singletonList(eventMessage), context)

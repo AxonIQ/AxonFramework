@@ -1,0 +1,363 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Messaging module renames: command/event/query handling cores, the EventSink
+# rename, MetaData casing fix, UnitOfWork relocation, interceptor moves.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.axonframework.migration.Axon4ToAxon5Messaging
+displayName: Apply Axon Framework 5 messaging module renames
+description: >-
+  Migrates the messaging core (command, event, query handling) from
+  `org.axonframework.{command,event,query}handling` into the
+  `org.axonframework.messaging.*` namespace, relocates handler & interceptor
+  annotations into their `.annotation.*` subpackages, renames `EventBus` to
+  `EventSink`, fixes `MetaData` casing to `Metadata`, relocates the
+  top-level messaging API (`Message`, `Metadata`, `UnitOfWork`,
+  `MessageHandlerInterceptor`, `MessageHandlerInterceptorChain`,
+  `correlation.*`) into `messaging.core.*`, moves the sequencing policy
+  package out of `eventhandling.async` into `messaging.core.sequencing`,
+  relocates `tokenstore` and the replay/reset annotations under their AF5
+  subpackages, and moves `QueryGateway` into its own gateway subpackage.
+recipeList:
+  # ── Package-prefix moves: bus/gateway/exception classes shift wholesale ──
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.commandhandling
+      newPackageName: org.axonframework.messaging.commandhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.eventhandling
+      newPackageName: org.axonframework.messaging.eventhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.queryhandling
+      newPackageName: org.axonframework.messaging.queryhandling
+      recursive: true
+
+  # ── Handler annotations moved into `.annotation.*` subpackages ──────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.commandhandling.CommandHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.commandhandling.annotation.CommandHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.annotation.EventHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.annotation.QueryHandler
+
+  # ── Interceptor annotations & impls relocated under messaging.core.* ────
+  # MessageDispatchInterceptor (the interface) moves from the flat AF4
+  # `messaging` package into AF5's `messaging.core`, alongside the rest of
+  # the dispatch/handle interception SPI.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.MessageDispatchInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageDispatchInterceptor
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.interceptors.MessageHandlerInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.interceptors.MessageHandlerInterceptor
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.interceptors.ExceptionHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.interceptors.ExceptionHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.interceptors.ResultHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.interceptors.ResultHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.interceptors.LoggingInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.interception.LoggingInterceptor
+
+  # ── EventBus → EventSink (rename, not just relocation) ──────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventBus
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventSink
+
+  # ── Event handling: error handler relocated ─────────────────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.PropagatingErrorHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler
+
+  # ── Replay / reset annotations relocated under .replay.annotation ───────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.DisallowReplay
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.replay.annotation.DisallowReplay
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.ResetHandler
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.replay.annotation.ResetHandler
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.ReplayToken
+      newFullyQualifiedTypeName: org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken
+
+  # ── Token store relocated under processing.streaming.token.store ────────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.eventhandling.tokenstore
+      newPackageName: org.axonframework.messaging.eventhandling.processing.streaming.token.store
+      recursive: true
+
+  # ── Sequencing policy moved out of `eventhandling.async` into core ──────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.eventhandling.async
+      newPackageName: org.axonframework.messaging.core.sequencing
+      recursive: true
+  # AF5 changed `SequencingPolicy.sequenceIdentifierFor` to take a second
+  # `ProcessingContext` argument and return `Optional<Object>`. AF4 lambdas
+  # of the shape `e -> body` no longer compile; this rewrites them to
+  # `(e, ctx) -> Optional.ofNullable(body)`.
+  - org.axonframework.migration.MigrateSequencingPolicyLambda
+
+  # ── Query gateway moved into its own gateway subpackage ─────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryGateway
+      newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.gateway.QueryGateway
+
+  # ── Unwrap ResponseTypes wrappers on AF5-shape `query(payload, ResponseType)` calls ─
+  # AF5 dropped the `ResponseType` SPI; the gateway accepts `Class<R>` directly and
+  # exposes `queryMany(...)` for multi-response queries. The recipe is deliberately
+  # narrow: it only fires on the two-argument typed-payload form, so 3-argument
+  # `query(String, Object, ResponseType)` AF4 sites are left intact for the
+  # per-construct skill to handle (those need new typed query message classes,
+  # which a recipe cannot synthesise).
+  - org.axonframework.migration.Axon4ToAxon5QueryResponseTypes
+
+  # AF5 dropped the `org.axonframework.messaging.responsetypes` package outright;
+  # any import targeting it is dead code once references are gone. The Maven
+  # `rewrite-maven-plugin` does not currently expose `RemoveImport` (a visitor)
+  # as a declarative recipe, so we fall back to `RemoveUnusedImports` — it only
+  # removes imports that genuinely have no reference left in the file, so a
+  # 3-argument `query(String, Object, ResponseTypes.instanceOf(...))` AF4
+  # fingerprint (which the per-construct query-gateway skill must rewrite)
+  # keeps the import. Acts as a backstop to the inline `maybeRemoveImport`
+  # calls inside `Axon4ToAxon5QueryResponseTypes` so files where the unwrap
+  # doesn't fire (recipe ran in an earlier cycle, or an external rewrite
+  # dropped the last reference) still get cleaned up. Side benefit: prunes
+  # any other stale imports left over by sibling recipes in this composition.
+  - org.openrewrite.java.RemoveUnusedImports
+
+  # ── EventProcessor lifecycle method rename: shutDown() → shutdown() ─────
+  # AF5 normalised the `EventProcessor` lifecycle method names to camelCase. The
+  # AF4 FQN form is listed first; the AF5 FQN form is listed second so the rename
+  # also fires on call sites whose receiver type binding has already been moved
+  # by the surrounding `ChangePackage` rules.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventProcessor shutDown()
+      newMethodName: shutdown
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventProcessor shutDown()
+      newMethodName: shutdown
+      matchOverrides: true
+
+  # ── Correlation providers moved under messaging.core.correlation ────────
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.messaging.correlation
+      newPackageName: org.axonframework.messaging.core.correlation
+      recursive: true
+
+  # ── MetaData casing fix and core relocations ────────────────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.MetaData
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.Metadata
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.annotation.MetaDataValue
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.annotation.MetadataValue
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.unitofwork.UnitOfWork
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.unitofwork.UnitOfWork
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.InterceptorChain
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageHandlerInterceptorChain
+
+  # ── Top-level messaging API types moved into `core` ─────────────────────
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.Message
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.Message
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.messaging.MessageHandlerInterceptor
+      newFullyQualifiedTypeName: org.axonframework.messaging.core.MessageHandlerInterceptor
+
+  # ── Strip the dropped payload type parameter from message types ─────────
+  # AF5 dropped the {@code <T>} payload parameter from Message / EventMessage /
+  # CommandMessage / QueryMessage / QueryResponseMessage / ResultMessage. Any
+  # AF4 source that wrote {@code EventMessage<?>} or {@code CommandMessage<Foo>}
+  # would not compile against AF5 raw types; this strips the angle brackets
+  # in place. Other usages (variables, fields, parameters, generic bounds,
+  # method return types) are all reached via the LST's ParameterizedType node.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.core.Message
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.eventhandling.EventMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.commandhandling.CommandMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryResponseMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.ResultMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.messaging.core.unitofwork.UnitOfWork
+
+  # ── Interceptor implementations: signature rewrite, body left alone ─────
+  # AF4 `MessageHandlerInterceptor.handle(UoW, InterceptorChain) → Object`
+  # becomes AF5
+  # `interceptOnHandle(M, ProcessingContext, MessageHandlerInterceptorChain<M>) → MessageStream<?>`
+  # (and likewise for the dispatch interceptor). The signature rewrite is
+  # deterministic; the method body is intentionally NOT touched because the
+  # lifecycle-hook semantics (`onCommit` vs `runOnAfterCommit`, no equivalent
+  # for `onRollback`) differ in ways a blind rewrite would get wrong. The
+  # dropped `unitOfWork`/`interceptorChain`/`messages` references in the body
+  # become compile errors — the desired outcome, since they surface every
+  # call site that needs review. A class-level `// TODO #LLM` comment points
+  # to the migration path doc. Runs AFTER the FQN renames above so the AF5
+  # supertypes are visible.
+  - org.axonframework.migration.MigrateMessageInterceptorSignatures
+
+  # ── Message accessor renames: drop the AF4 `get` prefix, fix MetaData → Metadata ─
+  # AF5 dropped JavaBean prefixes on Message accessors and renamed the metadata
+  # methods from `MetaData` to `Metadata`. `matchOverrides: true` makes the
+  # rename apply on subtype call-sites (EventMessage / CommandMessage / etc.).
+  #
+  # Each rename has TWO `ChangeMethodName` entries — one against the AF4 type
+  # FQN (`org.axonframework.messaging.Message`, `org.axonframework.eventhandling.EventMessage`)
+  # and one against the AF5 type FQN (`org.axonframework.messaging.core.Message`,
+  # `org.axonframework.messaging.eventhandling.EventMessage`). This is because
+  # the prior `ChangePackage` step in this recipe rewrites *some* type
+  # references in the LST to the AF5 FQN before `ChangeMethodName` runs, but
+  # not all (the rebinding is incomplete for some method-call receivers).
+  # Running both ensures the rename fires regardless of which type the call
+  # site is currently bound to.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  # EventMessage / CommandMessage / QueryMessage redeclare `getIdentifier` as an
+  # `@Override`, and `matchOverrides: true` on the supertype pattern doesn't
+  # always rebind those call sites — list the subtypes explicitly.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage getIdentifier()
+      newMethodName: identifier
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getMetaData()
+      newMethodName: metadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getMetaData()
+      newMethodName: metadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getPayload()
+      newMethodName: payload
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getPayload()
+      newMethodName: payload
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message getPayloadType()
+      newMethodName: payloadType
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message getPayloadType()
+      newMethodName: payloadType
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  # EventMessage/CommandMessage/QueryMessage redeclare withMetaData/andMetaData
+  # with covariant returns — same matchOverrides quirk as getIdentifier.
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.commandhandling.CommandMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.commandhandling.CommandMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.queryhandling.QueryMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.queryhandling.QueryMessage withMetaData(java.util.Map)
+      newMethodName: withMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.Message andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.core.Message andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.commandhandling.CommandMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.commandhandling.CommandMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.queryhandling.QueryMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.queryhandling.QueryMessage andMetaData(java.util.Map)
+      newMethodName: andMetadata
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.eventhandling.EventMessage getTimestamp()
+      newMethodName: timestamp
+      matchOverrides: true
+  - org.openrewrite.java.ChangeMethodName:
+      methodPattern: org.axonframework.messaging.eventhandling.EventMessage getTimestamp()
+      newMethodName: timestamp
+      matchOverrides: true
+
+  # ── Inside @EventHandler methods, swap class-level CommandGateway for method-param CommandDispatcher ─
+  # Runs after the package renames so that the recipe sees the AF5 FQNs of `@EventHandler` and
+  # `CommandGateway`. Anything outside the supported body shapes (single dispatch / try/catch with one
+  # dispatch per branch) is left untouched so the build still surfaces those call sites for the human.
+  - org.axonframework.migration.MigrateCommandGatewayInEventHandler

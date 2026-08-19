@@ -24,7 +24,13 @@ import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.CommandHandlingExceptionHandler;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
+import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.MessageHandlingExceptionHandler;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -181,6 +187,17 @@ public interface CommandHandlingModule extends Module, ModuleBuilder<CommandHand
         );
 
         /**
+         * Registers an interceptor to be applied to the command handling component assembled by this module. Multiple
+         * calls accumulate interceptors in registration order.
+         *
+         * @param interceptorBuilder builder for the interceptor to apply
+         * @return the command handler phase of this builder, for a fluent API
+         */
+        CommandHandlerPhase intercepted(
+                ComponentBuilder<MessageHandlerInterceptor<? super CommandMessage>> interceptorBuilder
+        );
+
+        /**
          * Registers the given {@code handlingComponentBuilder} as an {@link AnnotatedCommandHandlingComponent} within
          * this module.
          * <p>
@@ -204,6 +221,41 @@ public interface CommandHandlingModule extends Module, ModuleBuilder<CommandHand
                     c.getComponent(MessageTypeResolver.class),
                     c.getComponent(MessageConverter.class)
             ));
+        }
+
+        /**
+         * Wraps the command handling component with the exception handler built by the given {@code handlerBuilder}.
+         * When a command handler throws, the exception handler is invoked. Return
+         * {@link MessageStream#empty()} to suppress the error, {@link MessageStream#failed(Throwable)} to propagate
+         * it, or a stream with a {@link CommandResultMessage} to substitute a result.
+         * <p>
+         * Accepts either a {@link CommandHandlingExceptionHandler} (which narrows the return type for substituting a
+         * {@link CommandResultMessage}) or a generic {@link MessageHandlingExceptionHandler} typed at any supertype of
+         * {@link CommandMessage}, allowing a single handler implementation (such as a logger) to be reused across
+         * command, event, and query phases.
+         * <p>
+         * Multiple calls accumulate handlers; later-registered handlers are applied closer to the handler and see
+         * exceptions first.
+         *
+         * @param handlerBuilder builder for the exception handler to apply to the command handling component
+         * @return this phase for further configuration
+         */
+        default CommandHandlerPhase withExceptionHandler(
+                ComponentBuilder<? extends MessageHandlingExceptionHandler<? super CommandMessage>> handlerBuilder) {
+            requireNonNull(handlerBuilder, "The exception handler builder must not be null.");
+            return intercepted(c -> {
+                MessageHandlingExceptionHandler<? super CommandMessage> handler = handlerBuilder.build(c);
+                return (message, context, chain) ->
+                        chain.proceed(message, context)
+                             .cast()
+                             .onErrorContinue(error -> {
+                                 try {
+                                     return handler.handle(message, context, error);
+                                 } catch (Exception e) {
+                                     return MessageStream.failed(e);
+                                 }
+                             });
+            });
         }
     }
 }

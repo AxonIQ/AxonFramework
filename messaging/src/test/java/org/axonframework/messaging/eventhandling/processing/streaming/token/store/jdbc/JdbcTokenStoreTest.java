@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.token.store.jdbc;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.common.jdbc.ConnectionExecutor;
 import org.axonframework.conversion.TestConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -48,8 +49,13 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,7 +106,7 @@ class JdbcTokenStoreTest {
 
     @AfterEach
     void tearDown() {
-        JdbcTokenEntry.clock = Clock.systemUTC();
+        ClockUtils.reset();
     }
 
     @Test
@@ -422,7 +428,7 @@ class JdbcTokenStoreTest {
 
         transactionManager.executeInTransaction(
                 () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, null)));
-        JdbcTokenEntry.clock = Clock.offset(Clock.systemUTC(), Duration.ofHours(1));
+        ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofHours(1)));
         TrackingToken token = transactionManager.fetchInTransaction(
                 () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, null)));
         assertNull(token);
@@ -542,7 +548,7 @@ class JdbcTokenStoreTest {
                 () -> {
                     try (PreparedStatement ps = dataSource.getConnection()
                                                           .prepareStatement(
-                                                                  "INSERT INTO TokenEntry(processorName, segment, mask, tokenType, token) VALUES(?, ?, ?, ?, ?)");) {
+                                                                  "INSERT INTO TokenEntry(processorName, segment, mask, tokenType, token) VALUES(?, ?, ?, ?, ?)")) {
                         ps.setString(1, "__config");
                         ps.setInt(2, 0);
                         ps.setInt(3, 0);
@@ -591,6 +597,44 @@ class JdbcTokenStoreTest {
             TrackingToken actual = joinAndUnwrap(tokenStore.fetchToken("multi", 0, null));
             assertEquals(new GlobalSequenceTrackingToken(1), actual);
         });
+    }
+
+    @Nested
+    class ConcurrentIdentifierInitialization {
+
+        @Test
+        void everyProcessResolvesTheSameIdentifierWhenTheyAskTogether() throws Exception {
+            // given four processes about to ask an empty token table for its identifier at the same instant
+            int processCount = 4;
+            CyclicBarrier release = new CyclicBarrier(processCount);
+            CountDownLatch done = new CountDownLatch(processCount);
+            List<String> identifiers = Collections.synchronizedList(new ArrayList<>());
+            List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+            for (int process = 0; process < processCount; process++) {
+                Thread thread = new Thread(() -> {
+                    try {
+                        release.await(30, TimeUnit.SECONDS);
+                        identifiers.add(transactionManager.fetchInTransaction(
+                                () -> joinAndUnwrap(tokenStore.retrieveStorageIdentifier(createProcessingContext()))
+                        ));
+                    } catch (Throwable failure) {
+                        failures.add(failure);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+                thread.setDaemon(true);
+                thread.start();
+            }
+
+            // when they have all been released and have all answered
+            assertThat(done.await(60, TimeUnit.SECONDS)).isTrue();
+
+            // then none of them failed, and they agree on the single identifier the table now holds
+            assertThat(failures).isEmpty();
+            assertThat(identifiers).hasSize(processCount);
+            assertThat(Set.copyOf(identifiers)).hasSize(1);
+        }
     }
 
     private ProcessingContext createProcessingContext() {

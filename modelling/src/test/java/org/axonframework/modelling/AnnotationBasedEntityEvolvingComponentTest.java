@@ -16,10 +16,13 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
@@ -27,6 +30,7 @@ import org.axonframework.messaging.core.annotation.SourceId;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.annotation.Event;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.annotation.SequenceNumber;
 import org.axonframework.messaging.eventhandling.annotation.Timestamp;
@@ -38,12 +42,15 @@ import org.junit.jupiter.api.*;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Optional;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector.inspectType;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link AnnotationBasedEntityEvolvingComponent}.
@@ -165,7 +172,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @Test
         void resolvesTimestamps() {
             var timestamp = Instant.now();
-            GenericEventMessage.clock = Clock.fixed(timestamp, ZoneId.systemDefault());
+            ClockUtils.set(Clock.fixed(timestamp, ZoneId.systemDefault()));
 
             // given
             var state = new TestState();
@@ -181,12 +188,34 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         @AfterEach
         void afterEach() {
-            GenericEventMessage.clock = Clock.systemUTC();
+            ClockUtils.reset();
         }
     }
 
     @Nested
     class HandlerInvocationRules {
+
+        @Test
+        void invokesAllEventHandlersResolvingToTheSameEventName() {
+            // given
+            var sharedEventType = new MessageType("shared-event");
+            MessageTypeResolver sharedTypeResolver = payloadType -> Optional.of(sharedEventType);
+            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(TestState.class,
+                                                                                     converter,
+                                                                                     sharedTypeResolver);
+            var state = new TestState();
+            var event = new GenericEventMessage(sharedEventType,
+                                                0,
+                                                Metadata.with("sampleKey", "sampleValue"));
+            var context = StubProcessingContext.forMessage(event, "id", 0, "test");
+
+            // when
+            state = eventSourcedComponent.evolve(state, event, context);
+
+            // then
+            assertTrue(state.objectHandlerInvoked);
+            assertEquals(2, state.handledCount);
+        }
 
         @Test
         void doNotHandleNotDeclaredEventType() {
@@ -365,6 +394,95 @@ class AnnotationBasedEntityEvolvingComponentTest {
     }
 
     @Nested
+    class MessageTypeResolutionCaching {
+
+        @Test
+        void resolvesHandlerPayloadTypesOnlyDuringInitialization() {
+            // given - TestState declares two handlers (Object and Integer payloads)
+            var resolver = spy(new ClassBasedMessageTypeResolver());
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(TestState.class, converter, resolver);
+            var state = new TestState();
+            verify(resolver).resolveOrThrow(Object.class);
+            verify(resolver).resolveOrThrow(Integer.class);
+            clearInvocations(resolver);
+
+            // when - evolving multiple events of the same type
+            for (int sequence = 0; sequence < 3; sequence++) {
+                var event = createEvent(sequence);
+                var context = StubProcessingContext.forMessage(event, "id", sequence, "test");
+                state = evolver.evolve(state, event, context);
+            }
+
+            // then - all events are handled, while message types were resolved only when building the handler index
+            assertThat(state.handledCount).isEqualTo(3);
+            verifyNoInteractions(resolver);
+        }
+    }
+
+    @Nested
+    class EventNameResolution {
+
+        @Test
+        void usesResolvedMessageTypeForHandlingAndSupportedEvents() {
+            // given
+            var resolver = new AnnotationMessageTypeResolver();
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(RenamedEventState.class, converter, resolver);
+            var state = new RenamedEventState();
+            var eventType = resolver.resolveOrThrow(RenamedEvent.class);
+            var event = new GenericEventMessage(eventType, new RenamedEvent());
+
+            // when
+            evolver.evolve(state, event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(state.handledCount).isEqualTo(1);
+            assertThat(evolver.supportedEvents()).containsExactly(eventType.qualifiedName());
+        }
+
+        @Test
+        void explicitHandlerEventNameTakesPrecedenceOverPayloadType() {
+            // given
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(ExplicitNameState.class,
+                                                                        converter,
+                                                                        messageTypeResolver);
+            var state = new ExplicitNameState();
+            var event = new GenericEventMessage(new MessageType("explicit-event"), "payload");
+
+            // when
+            evolver.evolve(state, event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(state.handledCount).isEqualTo(1);
+            assertThat(evolver.supportedEvents()).containsExactly(event.type().qualifiedName());
+        }
+
+        @Event(name = "renamed-event", version = "1")
+        private record RenamedEvent() {
+
+        }
+
+        private static class RenamedEventState {
+
+            private int handledCount;
+
+            @EventHandler
+            void handle(RenamedEvent event) {
+                handledCount++;
+            }
+        }
+
+        private static class ExplicitNameState {
+
+            private int handledCount;
+
+            @EventHandler(eventName = "explicit-event")
+            void handle(String event) {
+                handledCount++;
+            }
+        }
+    }
+
+    @Nested
     class PolymorphicEntitySupport {
 
         // Sealed interface where the ENTITY ITSELF is polymorphic (not state inside)
@@ -397,14 +515,28 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         }
 
-        private static final EntityEvolver<Course> COURSE_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-                Course.class,
-                inspectType(Course.class, ClasspathParameterResolverFactory.forClass(Course.class),
-                            ClasspathHandlerDefinition.forClass(Course.class),
-                            Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)),
-                converter,
-                messageTypeResolver
-        );
+        private static final EntityEvolvingComponent<Course> COURSE_EVOLVER =
+                new AnnotationBasedEntityEvolvingComponent<>(
+                        Course.class,
+                        inspectType(
+                                Course.class,
+                                new AnnotationMessageTypeResolver(),
+                                ClasspathParameterResolverFactory.forClass(Course.class),
+                                ClasspathHandlerDefinition.forClass(Course.class),
+                                Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
+                        ),
+                        converter,
+                        messageTypeResolver
+                );
+
+        @Test
+        void supportedEventsIncludesHandlersFromAllPolymorphicEntityTypes() {
+            assertThat(COURSE_EVOLVER.supportedEvents())
+                    .containsExactlyInAnyOrder(
+                            messageTypeResolver.resolveOrThrow(String.class).qualifiedName(),
+                            messageTypeResolver.resolveOrThrow(Integer.class).qualifiedName()
+                    );
+        }
 
         @Test
         void evolvesPolymorphicEntityFromInitialToCreatedType() {

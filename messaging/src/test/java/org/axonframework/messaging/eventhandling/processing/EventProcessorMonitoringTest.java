@@ -33,6 +33,8 @@ import org.axonframework.messaging.monitoring.interception.MonitoringEventHandle
 import org.junit.jupiter.api.*;
 
 import java.util.HashSet;
+import org.axonframework.messaging.core.SimpleEntry;
+import org.axonframework.messaging.core.Context;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -128,7 +130,7 @@ class EventProcessorMonitoringTest {
                 throws ExecutionException, InterruptedException, TimeoutException {
             var unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
             unitOfWork.executeWithResult(ctx -> processorEventHandlingComponents
-                    .handle(eventMessages, ctx)
+                    .handle(eventMessages.stream().<MessageStream.Entry<? extends EventMessage>>map(e -> new SimpleEntry<>(e, Context.empty())).toList(), ctx)
                     .asCompletableFuture()
             ).get(2, TimeUnit.SECONDS);
         }

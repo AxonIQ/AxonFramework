@@ -92,8 +92,8 @@ In Axon Framework 4.x, extensions existed, but they often felt like companions r
 With Axon Framework 5, the story changes.
 The extensions aren't afterthoughts or legacy components—they're integral to the ecosystem, rebuilt from the ground up to embrace the async-native architecture and all the philosophical improvements that Axon Framework 5 introduces.
 
+[.axoniq-feature]
 === Why this matters: the PostgreSQL extension for Axon Framework 5
-// TODO Axoniq feature
 
 Not every organization runs specialized event stores.
 Many teams have PostgreSQL at their core—a battle-tested, reliable relational database that's already part of their infrastructure.

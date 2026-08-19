@@ -16,8 +16,6 @@
 
 package org.axonframework.messaging.core;
 
-import org.axonframework.messaging.core.MessageStream.Entry;
-
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;

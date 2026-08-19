@@ -1,0 +1,46 @@
+= Entities
+:navtitle: Entities
+
+In Axon Framework, an entity is a stateful component on the command side that accumulates state from prior commands and uses it to enforce business rules when handling new ones.
+Axon supports **event-sourced entities**, where state is rebuilt by replaying a sequence of events.
+If you are new to event sourcing, see xref:events:index.adoc#core-concepts[Events core concepts] for an introduction.
+
+== When to use entities
+
+Use an entity when a command needs state established by earlier commands:
+
+* "A course cannot accept more students than its capacity": the handler needs to know how many are enrolled.
+* "A bank account cannot go below zero": the handler needs the current balance.
+* "An order can only be cancelled if it has not shipped": the handler needs the order status.
+
+== When not to use entities
+
+Do not use an entity when the command can be validated without reading prior state:
+
+* Sending a notification.
+* Creating a resource with a client-supplied identifier, with no existing state to check.
+* Forwarding a command to an external system that owns the state.
+
+These are xref:commands:command-handlers.adoc#stateless-command-handlers[stateless command handlers]: simpler and cheaper to run.
+If you are adding an entity only to hold a flag that is set once and never changes, that is a signal the command may not need an entity.
+
+== Subsections
+
+[cols="<,<"]
+|===
+|Sub-section |Purpose
+
+|xref:commands:entities/event-sourced-entity.adoc[Event-sourced entities]
+|How to define and configure an event-sourced entity: creational and instance command handlers, event sourcing handlers, `@EntityCreator` patterns, and the declarative approach.
+
+|xref:commands:entities/stateful-command-handler.adoc[Stateful command handlers]
+|How to keep command handling logic in a dedicated class separate from the entity, using `@InjectEntity` to receive entity state as a parameter.
+This is the recommended approach for Vertical Slice Architecture.
+
+|xref:commands:entities/entity-hierarchies.adoc[Entity hierarchies]
+|How to structure a parent entity that owns child entities, including command and event routing, single vs. collection children, and custom routing strategies.
+
+|xref:commands:entities/entity-polymorphism.adoc[Polymorphic entities]
+|How to model multiple concrete entity types sharing a common abstract parent, with type selection at creation time.
+|===
+

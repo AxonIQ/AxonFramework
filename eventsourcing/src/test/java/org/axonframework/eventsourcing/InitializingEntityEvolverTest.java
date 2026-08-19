@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.EntityEvolver;
+import org.axonframework.modelling.repository.EntityNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,7 +54,7 @@ class InitializingEntityEvolverTest {
 
     @Test
     void initializeShouldThrowExceptionWhenFactoryReturnsNull() {
-        assertThatThrownBy(() -> evolver.initialize(1001, context)).isInstanceOf(EntityMissingAfterLoadOrCreateException.class);
+        assertThatThrownBy(() -> evolver.initialize(1001, context)).isInstanceOf(EntityNotFoundException.class);
     }
 
     @Test

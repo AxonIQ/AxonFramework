@@ -16,10 +16,10 @@
 
 package org.axonframework.modelling.entity.annotation;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.conversion.ConversionException;
@@ -45,6 +45,7 @@ import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.PolymorphicEntityMetamodel;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,6 +60,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 import static org.axonframework.common.ReflectionUtils.collectMethodsAndFields;
@@ -82,12 +84,19 @@ import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspec
  * annotated methods and fields, but the AnnotatedEntityModel dropped aggregate versioning (conflict resolution), no
  * longer required an id in the entity, and creates a declarative metamodel instead of relying on reflection at
  * runtime.
+ * <p>
+ * This class is marked {@link Internal} because it is an annotation-scanning implementation detail: it is built by the
+ * framework from the entity class and exposes reflection-specific behavior (such as
+ * {@link #getExpectedRepresentation(QualifiedName)}) that is not part of the {@link EntityMetamodel} contract. Users
+ * should interact with entities through the {@code EntityMetamodel} interface, which can be freely decorated or
+ * replaced, rather than depending on this concrete type.
  *
  * @param <E> The type of entity this metamodel describes.
  * @author Mitchell Herrijgers
  * @author Allard Buijze
  * @since 3.1.0
  */
+@Internal
 public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, DescribableComponent {
 
     private static final Logger logger = LoggerFactory.getLogger(AnnotatedEntityMetamodel.class);
@@ -251,7 +260,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
 
     private EntityMetamodel<E> initializeConcreteModel(Class<E> entityType) {
         EntityMetamodelBuilder<E> builder = EntityMetamodel.forEntityType(entityType);
-        AnnotatedHandlerInspector<E> inspected = inspectType(entityType, parameterResolverFactory);
+        AnnotatedHandlerInspector<E> inspected = inspectType(entityType, messageTypeResolver, parameterResolverFactory);
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
                                                                            inspected,
                                                                            eventConverter,
@@ -265,14 +274,11 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                                               Set<Class<? extends E>> concreteTypes) {
         // #3784: inspection of concrete (sub) types does not work with EntityMembers, that's why we need to
         // differentiate here.
-        var hasMemberEntities = !ReflectionUtils.collectMatchingMethodsAndFields(entityType, isAnnotatedWith(EntityMember.class))
-                                                .isEmpty() || concreteTypes.stream()
-                                                                           .anyMatch(concreteType -> !ReflectionUtils.collectMatchingMethodsAndFields(
-                                                                                                                             concreteType,
-                                                                                                                             isAnnotatedWith(EntityMember.class))
-                                                                                                                     .isEmpty());
+        var hasMemberEntities = hasEntityMembers(entityType) || concreteTypes.stream()
+                                                                             .anyMatch(this::hasEntityMembers);
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType,
+                messageTypeResolver,
                 parameterResolverFactory,
                 ClasspathHandlerDefinition.forClass(entityType),
                 hasMemberEntities ? Collections.emptySet() : concreteTypes
@@ -298,20 +304,24 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         return builder.build();
     }
 
+    private boolean hasEntityMembers(Class<?> type) {
+        return !ReflectionUtils.collectMatchingMethodsAndFields(type, isAnnotatedWith(EntityMember.class)).isEmpty();
+    }
+
     private LinkedList<QualifiedName> initializeDetectedHandlers(
             EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected
     ) {
         LinkedList<QualifiedName> registeredCommands = new LinkedList<>();
-        inspected.getHandlers(entityType).stream()
-                 .filter(h -> h.canHandleMessageType(CommandMessage.class)
-                         || h.canHandleMessageType(EventMessage.class))
-                 .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
-                 .forEach(handler -> {
+        Stream.concat(inspected.getUniqueHandlers(entityType, CommandMessage.class).stream(),
+                      inspected.getUniqueHandlers(entityType, EventMessage.class).stream())
+              .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
+              .forEach(handler -> {
                      QualifiedName qualifiedName = messageTypeResolver.resolveOrThrow(handler.payloadType())
                                                                       .qualifiedName();
                      if (commandsToSkip.contains(qualifiedName)) {
                          logger.debug(
-                                 "Skipping registration of command handler for [{}] on [{}] (already registered by parent)",
+                                 "Skipping registration of command handler for [{}] on [{}] "
+                                         + "(already registered by parent)",
                                  qualifiedName,
                                  entityType);
                          return;
@@ -349,9 +359,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private void addPayloadTypeFromHandler(QualifiedName qualifiedName, MessageHandlingMember<?> handler) {
         if (payloadTypes.containsKey(qualifiedName) && !payloadTypes.get(qualifiedName).equals(handler.payloadType())) {
             throw new AxonConfigurationException(
-                    "The scanned message handler methods expect different payload types for the same message type. Message of qualified name ["
-                            + qualifiedName + "] declares both [" + payloadTypes.get(qualifiedName) + "] and ["
-                            + handler.payloadType() + "] as wanted representations");
+                    "The scanned message handler methods expect different payload types for the same message type. "
+                            + "Message of qualified name [" + qualifiedName + "] declares both ["
+                            + payloadTypes.get(qualifiedName) + "] and [" + handler.payloadType()
+                            + "] as wanted representations");
         }
         logger.debug("Discovered payload type [{}] for message type [{}] on entity [{}]",
                      handler.payloadType().getName(),

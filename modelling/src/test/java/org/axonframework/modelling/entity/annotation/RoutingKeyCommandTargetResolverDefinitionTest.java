@@ -27,6 +27,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.*;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -78,10 +79,51 @@ class RoutingKeyCommandTargetResolverDefinitionTest {
     }
 
     @Test
-    void doesNotAllowRoutingKeyMismatchBetweenMessageAndEntity() throws NoSuchFieldException {
+    void doesNotAllowRoutingKeyMismatchBetweenMessageAndListEntity() throws NoSuchFieldException {
         CommandTargetResolver<ChildEntity> result = definition.createCommandTargetResolver(
                 childEntityMetamodel,
                 ListChildEntityWithNonMatchingRoutingKey.class.getDeclaredField("child")
+        );
+
+        MessageType messageType = new MessageType(TestCommand.class);
+        //noinspection unchecked,rawtypes
+        when(childEntityMetamodel.getExpectedRepresentation(messageType.qualifiedName()))
+                .thenReturn((Class) TestCommand.class);
+
+        assertThatThrownBy(() -> result.getTargetChildEntity(
+                List.of(new ChildEntity()),
+                new GenericCommandMessage(messageType, new TestCommand("someValue")),
+                new StubProcessingContext()
+        )).isInstanceOf(UnknownRoutingKeyException.class);
+    }
+
+    @Test
+    void doesNotAllowMissingRoutingKeyOnMapTypeMember() {
+        assertThatThrownBy(
+                () -> definition.createCommandTargetResolver(
+                        childEntityMetamodel,
+                        MapChildEntityWithoutRoutingKey.class.getDeclaredField("child")
+                ),
+                "Expected AxonConfigurationException when no routing key is present on a Map type member"
+        ).isInstanceOf(AxonConfigurationException.class);
+    }
+
+    @Test
+    void returnsMatcherForMapChildEntityWithRoutingKey() throws NoSuchFieldException {
+        CommandTargetResolver<ChildEntity> result = definition.createCommandTargetResolver(
+                childEntityMetamodel,
+                MapChildEntityWithRoutingKey.class.getDeclaredField("child")
+        );
+
+        assertThat(result).isNotNull()
+                          .isNotEqualTo(CommandTargetResolver.MATCH_ANY());
+    }
+
+    @Test
+    void doesNotAllowRoutingKeyMismatchBetweenMessageAndMapEntity() throws NoSuchFieldException {
+        CommandTargetResolver<ChildEntity> result = definition.createCommandTargetResolver(
+                childEntityMetamodel,
+                MapChildEntityWithNonMatchingRoutingKey.class.getDeclaredField("child")
         );
 
         MessageType messageType = new MessageType(TestCommand.class);
@@ -122,6 +164,27 @@ class RoutingKeyCommandTargetResolverDefinitionTest {
         @SuppressWarnings("unused")
         @EntityMember(routingKey = "incorrect")
         private List<ChildEntity> child;
+    }
+
+    static class MapChildEntityWithoutRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember
+        private Map<String, ChildEntity> child;
+    }
+
+    static class MapChildEntityWithRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember(routingKey = "key")
+        private Map<String, ChildEntity> child;
+    }
+
+    static class MapChildEntityWithNonMatchingRoutingKey {
+
+        @SuppressWarnings("unused")
+        @EntityMember(routingKey = "incorrect")
+        private Map<String, ChildEntity> child;
     }
 
     static class ChildEntity {

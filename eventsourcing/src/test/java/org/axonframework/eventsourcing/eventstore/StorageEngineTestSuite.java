@@ -24,7 +24,6 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.TerminalEventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -251,8 +250,7 @@ public abstract class StorageEngineTestSuite<ESE extends EventStorageEngine> {
 
         // then ...
         await("Await commit").pollDelay(Duration.ofMillis(50))
-                             .atMost(Duration.ofSeconds(5))
-                             .untilAsserted(result::isDone);
+                             .until(result::isDone);
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AppendEventsTransactionRejectedException.class, result.exceptionNow());
     }

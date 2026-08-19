@@ -17,15 +17,14 @@ These interceptors are always invoked on the thread that dispatches the message.
 [[dispatch-interceptor]]
 The `MessageDispatchInterceptor` interface defines a single method:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface MessageDispatchInterceptor<M extends Message> {
 
-    @Nonnull
     MessageStream<?> interceptOnDispatch(
-            @Nonnull M message,
+            M message,
             @Nullable ProcessingContext context,
-            @Nonnull MessageDispatchInterceptorChain<M> interceptorChain
+            MessageDispatchInterceptorChain<M> interceptorChain
     );
 }
 ----
@@ -36,15 +35,14 @@ Interceptors can even block message processing altogether, for example for secur
 [[handler-interceptor]]
 The `MessageHandlerInterceptor` interface also defines a single method:
 
-[source,java]
+[source,java,role=api-excerpt]
 ----
 public interface MessageHandlerInterceptor<M extends Message> {
 
-    @Nonnull
     MessageStream<?> interceptOnHandle(
-            @Nonnull M message,
-            @Nonnull ProcessingContext context,
-            @Nonnull MessageHandlerInterceptorChain<M> interceptorChain
+            M message,
+            ProcessingContext context,
+            MessageHandlerInterceptorChain<M> interceptorChain
     );
 }
 ----
@@ -66,20 +64,17 @@ As a `ProcessingContext` is only active when handling a message, a dispatch inte
 == Generic message interceptors
 
 The sections below describe dispatch and handler interceptors for the specific types of message Axon Framework supports. However, you can register a generic `Message` interceptor with Axon, which will automatically be attached to all message-specific dispatching or handling components:
-[source, jave]
+[source,java]
 ----
-public void registerMessageHandlerInterceptor(MessagingConfigurer configurer) {
-    configurer.registerMessageHandlerInterceptor(
-            // The LoggingInterceptor is provided by Axon out of the box.
-            config -> new LoggingInterceptor<>()
-    );
-}
+include::example$messagingconcepts/messageintercepting/generic/GenericInterceptorConfig.java[tag=register-generic-handler,indent=0]
 ----
 
 [TIP]
-.Component-specific interceptors
+.Component-level interceptors
 ====
-Besides being able to register interceptors for your buses and processors, you are able to register them for specific handling components. Please check xref:component-message-intercepting.adoc[this] chapter for more details on this.
+Besides registering interceptors on buses and processors, you can apply interceptors to a specific handling component.
+This lets you scope cross-cutting logic to a single component class using annotated methods or declarative module configuration.
+See xref:component-message-intercepting.adoc[Component message intercepting] for details.
 ====
 
 [[command-interceptors]]
@@ -98,59 +93,21 @@ Let's create a dispatch interceptor that logs each command:
 
 [source,java]
 ----
-public class CommandLoggingDispatchInterceptor
-        implements MessageDispatchInterceptor<CommandMessage> {
-
-    private static final Logger logger =
-            LoggerFactory.getLogger(CommandLoggingDispatchInterceptor.class);
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(
-            CommandMessage command,
-            ProcessingContext context,
-            MessageDispatchInterceptorChain<CommandMessage> chain
-    ) {
-
-        logger.info("Dispatching command: {}", command.type());
-
-        // Proceed with the chain
-        return chain.proceed(command, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/command/CommandLoggingDispatchInterceptor.java[tag=command-dispatch-logging,indent=0]
 ----
 
 You can also modify the message before dispatching:
 
 [source,java]
 ----
-public class MetadataEnrichingInterceptor
-        implements MessageDispatchInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(
-            CommandMessage command,
-            ProcessingContext context,
-            MessageDispatchInterceptorChain<CommandMessage> chain
-    ) {
-        // Add metadata
-        CommandMessage enrichedCommand = command.andMetadata(
-            Metadata.with("timestamp", String.valueOf(System.currentTimeMillis()))
-        );
-
-        return chain.proceed(enrichedCommand, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/command/MetadataEnrichingInterceptor.java[tag=command-dispatch-metadata,indent=0]
 ----
 
 Register the interceptor with a `CommandBus`:
 
 [source,java]
 ----
-public void registerCommandDispatchInterceptor(MessagingConfigurer configurer) {
-    configurer.registerCommandDispatchInterceptor(
-            config -> new CommandLoggingDispatchInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/command/CommandInterceptorConfig.java[tag=register-command-dispatch,indent=0]
 ----
 
 ==== Structural validation
@@ -185,74 +142,21 @@ Let's create a handler interceptor that performs authorization:
 
 [source,java]
 ----
-public class AuthorizationInterceptor
-        implements MessageHandlerInterceptor<CommandMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            CommandMessage command,
-            ProcessingContext context,
-            MessageHandlerInterceptorChain<CommandMessage> chain
-    ) {
-
-        String userId = command.metadata().get("userId");
-
-        if (userId == null) {
-            throw new SecurityException("No user ID in metadata");
-        }
-
-        if (!"authorized-user".equals(userId)) {
-            throw new SecurityException("User not authorized");
-        }
-
-        // User is authorized, proceed
-        return chain.proceed(command, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/command/AuthorizationInterceptor.java[tag=command-handler-authorization,indent=0]
 ----
 
 You can also perform actions after handling by using the `ProcessingContext`:
 
 [source,java]
 ----
-public class LoggingInterceptor
-        implements MessageHandlerInterceptor<CommandMessage> {
-
-    private static final Logger logger =
-            LoggerFactory.getLogger(LoggingInterceptor.class);
-
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            CommandMessage command,
-            ProcessingContext context,
-            MessageHandlerInterceptorChain<CommandMessage> chain
-    ) {
-        logger.info("Before handling: {}", command.type());
-
-        // Register action to run after successful handling
-        context.whenComplete(ctx -> {
-            logger.info("Successfully handled: {}", command.type());
-        });
-
-        // Register error handler
-        context.onError((ctx, phase, error) -> {
-            logger.error("Error handling {}: {}", command.type(), error.getMessage());
-        });
-
-        return chain.proceed(command, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/command/LoggingInterceptor.java[tag=command-handler-logging,indent=0]
 ----
 
 Register the interceptor with a `CommandBus`:
 
 [source,java]
 ----
-public void registerCommandHandlerInterceptor(MessagingConfigurer configurer) {
-    configurer.registerCommandHandlerInterceptor(
-            config -> new AuthorizationInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/command/CommandInterceptorConfig.java[tag=register-command-handler,indent=0]
 ----
 
 [TIP]
@@ -275,34 +179,14 @@ These interceptors are always invoked on the thread that published the event.
 
 [source,java]
 ----
-public class EventLoggingDispatchInterceptor
-        implements MessageDispatchInterceptor<EventMessage> {
-
-    private static final Logger logger =
-            LoggerFactory.getLogger(EventLoggingDispatchInterceptor.class);
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(
-            EventMessage event,
-            ProcessingContext context,
-            MessageDispatchInterceptorChain<EventMessage> chain
-    ) {
-
-        logger.info("Publishing event: {}", event.type());
-        return chain.proceed(event, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/event/EventLoggingDispatchInterceptor.java[tag=event-dispatch-logging,indent=0]
 ----
 
 Below we have an example on how to register an `EventMessage`-specific `MessageDispatchInterceptor` with Axon:
 
 [source,java]
 ----
-public void registerEventDispatchInterceptor(MessagingConfigurer configurer) {
-    configurer.registerEventDispatchInterceptor(
-            config -> new EventLoggingDispatchInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/event/EventInterceptorConfig.java[tag=register-event-dispatch,indent=0]
 ----
 
 [[event-handler-interceptors]]
@@ -312,34 +196,14 @@ Event handler interceptors can take action both before and after event handling.
 
 [source,java]
 ----
-public class EventSecurityInterceptor
-        implements MessageHandlerInterceptor<EventMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            EventMessage event,
-            ProcessingContext context,
-            MessageHandlerInterceptorChain<EventMessage> chain
-    ) {
-        String userId = event.metadata().get("userId");
-        if (userId == null || !"authorized-user".equals(userId)) {
-            throw new SecurityException("Unauthorized event");
-        }
-
-        return chain.proceed(event, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/event/EventSecurityInterceptor.java[tag=event-handler-security,indent=0]
 ----
 
 To register the `EventSecurityInterceptor` as a `EventMessage`-specific `MessageHandlerInterceptor`, you can utilize the `MessagingConfigurer` as follows:
 
 [source,java]
 ----
-public void registerEventHandlerInterceptor(MessagingConfigurer configurer) {
-    configurer.registerEventHandlerInterceptor(
-            config -> new EventSecurityInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/event/EventInterceptorConfig.java[tag=register-event-handler,indent=0]
 ----
 
 == Query interceptors
@@ -354,34 +218,14 @@ They have the ability to alter the message by adding metadata or block the handl
 
 [source,java]
 ----
-public class QueryLoggingDispatchInterceptor
-        implements MessageDispatchInterceptor<QueryMessage> {
-
-    private static final Logger logger =
-            LoggerFactory.getLogger(QueryLoggingDispatchInterceptor.class);
-
-    @Override
-    public MessageStream<?> interceptOnDispatch(
-            QueryMessage query,
-            ProcessingContext context,
-            MessageDispatchInterceptorChain<QueryMessage> chain
-    ) {
-
-        logger.info("Dispatching query: {}", query.type());
-        return chain.proceed(query, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/query/QueryLoggingDispatchInterceptor.java[tag=query-dispatch-logging,indent=0]
 ----
 
 Below we have an example on how to register an `QueryMessage`-specific `MessageDispatchInterceptor` with Axon:
 
 [source,java]
 ----
-public void registerQueryDispatchInterceptor(MessagingConfigurer configurer) {
-    configurer.registerQueryDispatchInterceptor(
-            config -> new QueryLoggingDispatchInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/query/QueryInterceptorConfig.java[tag=register-query-dispatch,indent=0]
 ----
 
 ==== Structural validation
@@ -409,46 +253,26 @@ Query handler interceptors can take action both before and after query processin
 
 [source,java]
 ----
-public class QuerySecurityInterceptor
-        implements MessageHandlerInterceptor<QueryMessage> {
-
-    @Override
-    public MessageStream<?> interceptOnHandle(
-            QueryMessage query,
-            ProcessingContext context,
-            MessageHandlerInterceptorChain<QueryMessage> chain
-    ) {
-        String userId = query.metadata().get("userId");
-        if (userId == null || !"authorized-user".equals(userId)) {
-            throw new SecurityException("Unauthorized query");
-        }
-
-        return chain.proceed(query, context);
-    }
-}
+include::example$messagingconcepts/messageintercepting/query/QuerySecurityInterceptor.java[tag=query-handler-security,indent=0]
 ----
 
 To register the `QuerySecurityInterceptor` as a `QueryMessage`-specific `MessageHandlerInterceptor`, you can utilize the `MessagingConfigurer` as follows:
 
 [source,java]
 ----
-public void registerQueryHandlerInterceptor(MessagingConfigurer configurer) {
-    configurer.registerQueryHandlerInterceptor(
-            config -> new QuerySecurityInterceptor()
-    );
-}
+include::example$messagingconcepts/messageintercepting/query/QueryInterceptorConfig.java[tag=register-query-handler,indent=0]
 ----
 
 [[reactive-dispatch-interceptors]]
 == Reactor dispatch interceptors
 
-When using the xref:axon-framework-reference:ROOT:modules.adoc#axon-reactor[Reactor extension], reactor gateways provide their own interceptor type: `ReactorMessageDispatchInterceptor`.
+When using the xref:ROOT:modules.adoc#axon-reactor[Reactor extension], reactor gateways provide their own interceptor type: `ReactorMessageDispatchInterceptor`.
 Unlike the standard `MessageDispatchInterceptor`, the reactor variant runs inside the Reactor subscription chain.
 This means interceptors can access Reactor context using `Mono.deferContextual()`, enabling integration with reactive context holders such as Spring Security's `ReactiveSecurityContextHolder`.
 
 The following example shows a reactor dispatch interceptor that extracts the authenticated user from Reactor context and attaches it as metadata:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 public class SecurityReactorInterceptor
         implements ReactorMessageDispatchInterceptor<CommandMessage> {
@@ -486,7 +310,7 @@ Spring Boot::
 Declare the interceptor as a Spring bean.
 The Reactor auto-configuration discovers `ReactorMessageDispatchInterceptor` beans and registers them on the `ReactorDispatchInterceptorRegistry`.
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 @Bean
 ReactorMessageDispatchInterceptor<CommandMessage> securityInterceptor() {
@@ -500,7 +324,7 @@ Configuration API::
 --
 Decorate the `ReactorDispatchInterceptorRegistry` component to register interceptors:
 
-[source,java]
+[source,java,role=pseudocode]
 ----
 configurer.componentRegistry(cr -> cr.registerDecorator(
         ReactorDispatchInterceptorRegistry.class,
@@ -517,11 +341,7 @@ Handlers can then read it using `@MetadataValue`:
 
 [source,java]
 ----
-@CommandHandler
-public void handle(MyCommand command,
-                   @MetadataValue(value = "userId", required = false) String userId) {
-    // userId was extracted from Reactor context by the dispatch interceptor
-}
+include::example$messagingconcepts/messageintercepting/metadata/MetadataReadingHandler.java[tag=metadata-value-handler,indent=0]
 ----
 
 [NOTE]
