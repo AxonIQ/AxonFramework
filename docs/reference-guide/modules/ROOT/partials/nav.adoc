@@ -28,6 +28,8 @@ include::tuning:partial$nav.adoc[]
 
 include::monitoring:partial$nav.adoc[]
 
+include::configuration:partial$nav.adoc[]
+
 * xref:ROOT:spring-boot-integration.adoc[]
 
 ifdef::advanced-framework[]
