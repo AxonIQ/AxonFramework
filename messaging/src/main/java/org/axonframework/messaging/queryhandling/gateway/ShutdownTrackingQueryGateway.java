@@ -45,7 +45,7 @@ import java.util.function.Function;
  * <pre>{@code
  * MessagingConfigurer.create()
  *     .queryGateway("reporting", g -> g
- *         .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately())
+ *         .cancellingSubscriptionQueryOnShutdown()
  *     );
  * }</pre>
  * When using a dependency injection framework, a {@code ShutdownTrackingQueryGateway} can also be
@@ -56,7 +56,7 @@ import java.util.function.Function;
  * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track} instead.
  *
  * @author Allard Buijze
- * @since 5.2.0
+ * @since 5.3.2
  */
 public class ShutdownTrackingQueryGateway implements QueryGateway {
 

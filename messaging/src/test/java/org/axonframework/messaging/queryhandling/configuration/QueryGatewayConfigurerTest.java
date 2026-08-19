@@ -24,7 +24,10 @@ import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating {@link QueryGatewayConfigurer}.
@@ -32,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueryGatewayConfigurerTest {
 
     @Nested
-    class WhenNoShutdownSpecIsConfigured {
+    class WhenNoShutdownCancellationIsConfigured {
 
         @Test
         void buildDefinition_producesDefinitionWithCorrectName() {
@@ -66,13 +69,13 @@ class QueryGatewayConfigurerTest {
     }
 
     @Nested
-    class WhenSubscriptionShutdownSpecIsConfigured {
+    class WhenSubscriptionShutdownCancellationIsConfigured {
 
         @Test
         void buildDefinition_producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
-                    .cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately);
+                    .cancellingSubscriptionQueryOnShutdown();
             ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
 
             // when
@@ -81,19 +84,19 @@ class QueryGatewayConfigurerTest {
                                                           .build();
             QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
 
-            // then: wrapped because a subscription shutdown spec was set
+            // then: wrapped because subscription shutdown cancellation was set
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
         }
     }
 
     @Nested
-    class WhenStreamingShutdownSpecIsConfigured {
+    class WhenStreamingShutdownCancellationIsConfigured {
 
         @Test
         void buildDefinition_producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
-                    .cancellingStreamingQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately);
+                    .cancellingStreamingQueryOnShutdown();
             ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
 
             // when
@@ -102,20 +105,20 @@ class QueryGatewayConfigurerTest {
                                                           .build();
             QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
 
-            // then: wrapped because a streaming shutdown spec was set
+            // then: wrapped because streaming shutdown cancellation was set
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
         }
     }
 
     @Nested
-    class WhenBothShutdownSpecsAreConfigured {
+    class WhenBothShutdownCancellationsAreConfigured {
 
         @Test
         void buildDefinition_producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
-                    .cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately)
-                    .cancellingStreamingQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately);
+                    .cancellingSubscriptionQueryOnShutdown()
+                    .cancellingStreamingQueryOnShutdown();
             ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
 
             // when
@@ -124,8 +127,92 @@ class QueryGatewayConfigurerTest {
                                                           .build();
             QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
 
-            // then: wrapped because both shutdown specs were set
+            // then: wrapped because both shutdown cancellations were set
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
+        }
+    }
+    @Nested
+    class WhenShutdownCancellationIsConfiguredWithAGracePeriod {
+
+        @Test
+        void buildDefinition_producesShutdownTrackingGateway() {
+            // given
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
+                    .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
+                    .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5));
+            ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
+
+            // when
+            AxonConfiguration config = MessagingConfigurer.create()
+                                                          .componentRegistry(cr -> cr.registerComponent(definition))
+                                                          .build();
+            QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
+
+            // then
+            assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
+        }
+
+        @Test
+        void cancellingSubscriptionQueryOnShutdown_rejectsNullGracePeriod() {
+            // given
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
+
+            // when / then
+            assertThatThrownBy(() -> configurer.cancellingSubscriptionQueryOnShutdown((Duration) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        void cancellingStreamingQueryOnShutdown_rejectsNullGracePeriod() {
+            // given
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
+
+            // when / then
+            assertThatThrownBy(() -> configurer.cancellingStreamingQueryOnShutdown((Duration) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+    }
+
+    @Nested
+    class WhenAnExplicitShutdownManagerIsProvided {
+
+        @Test
+        void buildDefinition_producesShutdownTrackingGatewayUsingThatManager() {
+            // given: a single manager shared between both query types
+            QueryShutdownManager sharedManager = QueryShutdownManager.closeImmediately();
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
+                    .cancellingSubscriptionQueryOnShutdown(sharedManager)
+                    .cancellingStreamingQueryOnShutdown(sharedManager);
+            ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
+
+            // when
+            AxonConfiguration config = MessagingConfigurer.create()
+                                                          .componentRegistry(cr -> cr.registerComponent(definition))
+                                                          .build();
+            QueryGateway gateway = config.getComponent(QueryGateway.class, "reporting");
+
+            // then
+            assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
+        }
+
+        @Test
+        void cancellingSubscriptionQueryOnShutdown_rejectsNullManager() {
+            // given
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
+
+            // when / then
+            assertThatThrownBy(() -> configurer.cancellingSubscriptionQueryOnShutdown((QueryShutdownManager) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        void cancellingStreamingQueryOnShutdown_rejectsNullManager() {
+            // given
+            QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
+
+            // when / then
+            assertThatThrownBy(() -> configurer.cancellingStreamingQueryOnShutdown((QueryShutdownManager) null))
+                    .isInstanceOf(NullPointerException.class);
         }
     }
 }

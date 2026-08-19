@@ -694,15 +694,15 @@ public class MessagingConfigurer implements ApplicationConfigurer {
      * {@link org.axonframework.messaging.core.MessageTypeResolver},
      * {@link org.axonframework.messaging.queryhandling.QueryPriorityCalculator}, and
      * {@link org.axonframework.messaging.core.conversion.MessageConverter}), and is optionally wrapped with a
-     * {@link org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway} when shutdown specs are
-     * configured on the provided {@link QueryGatewayConfigurer}.
+     * {@link org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway} when shutdown
+     * cancellation is configured on the provided {@link QueryGatewayConfigurer}.
      * <p>
      * Example:
      * <pre>{@code
      * MessagingConfigurer.create()
      *     .queryGateway("reporting", g -> g
-     *         .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(10)))
-     *         .cancellingStreamingQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(5)))
+     *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
+     *         .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5))
      *     );
      * }</pre>
      *

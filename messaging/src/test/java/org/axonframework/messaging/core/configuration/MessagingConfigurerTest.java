@@ -57,7 +57,6 @@ import org.axonframework.messaging.queryhandling.QueryBus;
 import org.axonframework.messaging.queryhandling.QueryBusTestUtils;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
-import org.axonframework.messaging.queryhandling.QueryShutdownManager;
 import org.axonframework.messaging.queryhandling.gateway.DefaultQueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway;
@@ -459,10 +458,10 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         }
 
         @Test
-        void queryGateway_withShutdownSpec_wrapsInShutdownTrackingGateway() {
+        void queryGateway_withShutdownCancellation_wrapsInShutdownTrackingGateway() {
             // given / when
             Configuration result = testSubject.queryGateway("reporting", g ->
-                    g.cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.Spec::closeImmediately)
+                    g.cancellingSubscriptionQueryOnShutdown()
             ).build();
 
             // then: gateway is wrapped with shutdown tracking

@@ -64,7 +64,7 @@ import java.util.concurrent.TimeUnit;
  * <pre>{@code
  * MessagingConfigurer.create()
  *     .queryGateway("sse", g -> g
- *         .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(10))));
+ *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10)));
  * }</pre>
  * For standalone use with call-site tracking, create the manager directly and register it with
  * Axon's lifecycle using {@link #registerShutdown(LifecycleRegistry)}:
@@ -88,7 +88,7 @@ import java.util.concurrent.TimeUnit;
  * }</pre>
  *
  * @author Allard Buijze
- * @since 5.2.0
+ * @since 5.3.2
  */
 public class QueryShutdownManager {
 
@@ -232,57 +232,5 @@ public class QueryShutdownManager {
 
     private record TrackedItem(Runnable closeAction, CompletableFuture<Void> completion) {
 
-    }
-
-    /**
-     * Entry point for creating a {@link QueryShutdownManager} through the
-     * {@link org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfigurer} API.
-     * <p>
-     * A {@code Spec} instance is supplied as the argument to the configuration lambda passed to
-     * {@link org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfigurer#cancellingSubscriptionQueryOnShutdown}
-     * or
-     * {@link org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfigurer#cancellingStreamingQueryOnShutdown}.
-     * Its methods each produce a fully configured {@link QueryShutdownManager}:
-     * <pre>{@code
-     * MessagingConfigurer.create()
-     *     .queryGateway("sse", g -> g
-     *         .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(10))));
-     * }</pre>
-     *
-     * @since 5.2.0
-     */
-    public static class Spec {
-
-        /**
-         * Creates a {@link QueryShutdownManager} that closes all active query streams immediately
-         * when {@link QueryShutdownManager#shutdown()} is called.
-         *
-         * @return a new manager configured to close immediately on shutdown
-         */
-        public QueryShutdownManager closeImmediately() {
-            return QueryShutdownManager.closeImmediately();
-        }
-
-        /**
-         * Creates a {@link QueryShutdownManager} that waits up to the given {@code gracePeriod}
-         * for active query streams to complete naturally before force-closing any remaining ones.
-         *
-         * @param gracePeriod the maximum time to wait for natural completion before force-closing
-         * @return a new manager configured to wait before closing on shutdown
-         */
-        public QueryShutdownManager withGracePeriod(Duration gracePeriod) {
-            return QueryShutdownManager.withGracePeriod(gracePeriod);
-        }
-
-        /**
-         * Creates a {@link QueryShutdownManager} that waits up to the given number of seconds for
-         * active query streams to complete naturally before force-closing any remaining ones.
-         *
-         * @param seconds the maximum number of seconds to wait for natural completion before force-closing
-         * @return a new manager configured to wait before closing on shutdown
-         */
-        public QueryShutdownManager withGracePeriod(long seconds) {
-            return withGracePeriod(Duration.ofSeconds(seconds));
-        }
     }
 }

@@ -29,11 +29,11 @@ import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.axonframework.messaging.queryhandling.gateway.ShutdownTrackingQueryGateway;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
 /**
  * Factory for creating a named {@link QueryGateway} component with optional shutdown-tracking
@@ -45,26 +45,26 @@ import java.util.function.Function;
  * name. The gateway starts from a bare {@link DefaultQueryGateway} that shares infrastructure
  * with the main configuration (same {@link QueryBus}, {@link MessageTypeResolver},
  * {@link QueryPriorityCalculator}, and {@link MessageConverter}), and is optionally wrapped in a
- * {@link ShutdownTrackingQueryGateway} when shutdown specs are configured.
+ * {@link ShutdownTrackingQueryGateway} when shutdown cancellation is configured.
  * <p>
  * This configurer is not intended to be instantiated directly. Access it via
  * {@link MessagingConfigurer#queryGateway(String, java.util.function.Consumer)}:
  * <pre>{@code
  * MessagingConfigurer.create()
  *     .queryGateway("reporting", g -> g
- *         .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(10)))
- *         .cancellingStreamingQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(5)))
+ *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
+ *         .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5))
  *     );
  * }</pre>
  *
  * @author Allard Buijze
- * @since 5.2.0
+ * @since 5.3.2
  */
 public class QueryGatewayConfigurer {
 
     private final String name;
-    private @Nullable Function<QueryShutdownManager.Spec, QueryShutdownManager> subscriptionQueryShutdownSpec;
-    private @Nullable Function<QueryShutdownManager.Spec, QueryShutdownManager> streamingQueryShutdownSpec;
+    private @Nullable QueryShutdownManager subscriptionQueryShutdownManager;
+    private @Nullable QueryShutdownManager streamingQueryShutdownManager;
 
     /**
      * Creates a new {@code QueryGatewayConfigurer} that will register the gateway under the given
@@ -99,49 +99,117 @@ public class QueryGatewayConfigurer {
     }
 
     /**
-     * Configures all subscription queries dispatched through this gateway to be automatically
-     * cancelled when the application shuts down.
+     * Configures all subscription queries dispatched through this gateway to be cancelled
+     * immediately when the application shuts down.
      * <p>
-     * The {@code specFn} receives a {@link QueryShutdownManager.Spec} and must return the
-     * configured manager. With this option set, callers do not need to wrap subscription query
-     * results with {@link QueryShutdownManager#track} manually; the gateway handles tracking
-     * for every dispatched subscription query automatically.
+     * With this option set, callers do not need to wrap subscription query results with
+     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * dispatched subscription query automatically.
      * <p>
-     * The created manager's {@link QueryShutdownManager#shutdown()} is called at
-     * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
      *
-     * @param specFn a function that receives a {@link QueryShutdownManager.Spec} and returns
-     *               the configured manager
      * @return this configurer, for fluent chaining
      */
-    public QueryGatewayConfigurer cancellingSubscriptionQueryOnShutdown(
-            Function<QueryShutdownManager.Spec, QueryShutdownManager> specFn) {
-        this.subscriptionQueryShutdownSpec = Objects.requireNonNull(specFn, "specFn must not be null");
+    public QueryGatewayConfigurer cancellingSubscriptionQueryOnShutdown() {
+        return cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.closeImmediately());
+    }
+
+    /**
+     * Configures all subscription queries dispatched through this gateway to be cancelled when the
+     * application shuts down, waiting up to the given {@code gracePeriod} for them to complete
+     * naturally first.
+     * <p>
+     * With this option set, callers do not need to wrap subscription query results with
+     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * dispatched subscription query automatically.
+     * <p>
+     * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     *
+     * @param gracePeriod the maximum time to wait for natural completion before force-closing
+     * @return this configurer, for fluent chaining
+     */
+    public QueryGatewayConfigurer cancellingSubscriptionQueryOnShutdown(Duration gracePeriod) {
+        Objects.requireNonNull(gracePeriod, "gracePeriod must not be null");
+        return cancellingSubscriptionQueryOnShutdown(QueryShutdownManager.withGracePeriod(gracePeriod));
+    }
+
+    /**
+     * Configures all subscription queries dispatched through this gateway to be tracked by the
+     * given {@code shutdownManager}, cancelling them according to that manager's policy when the
+     * application shuts down.
+     * <p>
+     * Use this overload to share a single {@link QueryShutdownManager} between several gateways,
+     * or when the manager is also used for call-site tracking through
+     * {@link QueryShutdownManager#track}.
+     * <p>
+     * The given manager's {@link QueryShutdownManager#shutdown()} is called at
+     * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     *
+     * @param shutdownManager the manager to track dispatched subscription queries with
+     * @return this configurer, for fluent chaining
+     */
+    public QueryGatewayConfigurer cancellingSubscriptionQueryOnShutdown(QueryShutdownManager shutdownManager) {
+        this.subscriptionQueryShutdownManager =
+                Objects.requireNonNull(shutdownManager, "shutdownManager must not be null");
         return this;
     }
 
     /**
-     * Configures all streaming queries dispatched through this gateway to be automatically
-     * cancelled when the application shuts down.
+     * Configures all streaming queries dispatched through this gateway to be cancelled immediately
+     * when the application shuts down.
      * <p>
-     * The {@code specFn} receives a {@link QueryShutdownManager.Spec} and must return the
-     * configured manager. With this option set, callers do not need to wrap streaming query
-     * results with {@link QueryShutdownManager#track} manually; the gateway handles tracking
-     * for every dispatched streaming query automatically.
+     * With this option set, callers do not need to wrap streaming query results with
+     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * dispatched streaming query automatically.
      * <p>
-     * A grace-period policy is typically appropriate here, as streaming queries are finite by
-     * nature and expected to complete shortly after shutdown begins.
-     * <p>
-     * The created manager's {@link QueryShutdownManager#shutdown()} is called at
-     * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
      *
-     * @param specFn a function that receives a {@link QueryShutdownManager.Spec} and returns
-     *               the configured manager
      * @return this configurer, for fluent chaining
      */
-    public QueryGatewayConfigurer cancellingStreamingQueryOnShutdown(
-            Function<QueryShutdownManager.Spec, QueryShutdownManager> specFn) {
-        this.streamingQueryShutdownSpec = Objects.requireNonNull(specFn, "specFn must not be null");
+    public QueryGatewayConfigurer cancellingStreamingQueryOnShutdown() {
+        return cancellingStreamingQueryOnShutdown(QueryShutdownManager.closeImmediately());
+    }
+
+    /**
+     * Configures all streaming queries dispatched through this gateway to be cancelled when the
+     * application shuts down, waiting up to the given {@code gracePeriod} for them to complete
+     * naturally first.
+     * <p>
+     * A grace period is typically appropriate here, as streaming queries are finite by nature and
+     * expected to complete shortly after shutdown begins.
+     * <p>
+     * With this option set, callers do not need to wrap streaming query results with
+     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * dispatched streaming query automatically.
+     * <p>
+     * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     *
+     * @param gracePeriod the maximum time to wait for natural completion before force-closing
+     * @return this configurer, for fluent chaining
+     */
+    public QueryGatewayConfigurer cancellingStreamingQueryOnShutdown(Duration gracePeriod) {
+        Objects.requireNonNull(gracePeriod, "gracePeriod must not be null");
+        return cancellingStreamingQueryOnShutdown(QueryShutdownManager.withGracePeriod(gracePeriod));
+    }
+
+    /**
+     * Configures all streaming queries dispatched through this gateway to be tracked by the given
+     * {@code shutdownManager}, cancelling them according to that manager's policy when the
+     * application shuts down.
+     * <p>
+     * Use this overload to share a single {@link QueryShutdownManager} between several gateways,
+     * or when the manager is also used for call-site tracking through
+     * {@link QueryShutdownManager#track}.
+     * <p>
+     * The given manager's {@link QueryShutdownManager#shutdown()} is called at
+     * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
+     *
+     * @param shutdownManager the manager to track dispatched streaming queries with
+     * @return this configurer, for fluent chaining
+     */
+    public QueryGatewayConfigurer cancellingStreamingQueryOnShutdown(QueryShutdownManager shutdownManager) {
+        this.streamingQueryShutdownManager =
+                Objects.requireNonNull(shutdownManager, "shutdownManager must not be null");
         return this;
     }
 
@@ -150,8 +218,8 @@ public class QueryGatewayConfigurer {
      * configurer's name.
      * <p>
      * The produced definition constructs a {@link DefaultQueryGateway} from shared infrastructure
-     * and wraps it in a {@link ShutdownTrackingQueryGateway} if any shutdown spec was configured.
-     * When shutdown specs are present, the corresponding managers are shut down at
+     * and wraps it in a {@link ShutdownTrackingQueryGateway} if shutdown cancellation was
+     * configured. The corresponding managers are then shut down at
      * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
      * <p>
      * This method is called by {@link MessagingConfigurer} and is not intended to be called
@@ -160,10 +228,8 @@ public class QueryGatewayConfigurer {
      * @return a {@link ComponentDefinition} for the named {@link QueryGateway}
      */
     public ComponentDefinition<QueryGateway> buildDefinition() {
-        QueryShutdownManager subscriptionManager = subscriptionQueryShutdownSpec != null
-                ? subscriptionQueryShutdownSpec.apply(new QueryShutdownManager.Spec()) : null;
-        QueryShutdownManager streamingManager = streamingQueryShutdownSpec != null
-                ? streamingQueryShutdownSpec.apply(new QueryShutdownManager.Spec()) : null;
+        QueryShutdownManager subscriptionManager = subscriptionQueryShutdownManager;
+        QueryShutdownManager streamingManager = streamingQueryShutdownManager;
 
         ComponentDefinition<QueryGateway> definition =
                 ComponentDefinition.ofTypeAndName(QueryGateway.class, name)
