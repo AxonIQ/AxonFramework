@@ -3,16 +3,16 @@
 
 Axon Framework 5 restructures the configuration system, splitting the monolithic `Configurer` into focused configurers and replacing the `ConfigurerModule` with the `ConfigurationEnhancer`.
 
-This path covers the migration of configuration-related code from Axon Framework 4 to Axon Framework 5.
+This path covers the migration of configuration-related code from Axon Framework 4 to Axon Framework 5. For extensive details on how the configuration work in Axon Framework 5, please check out the xref:configuration:index.adoc[Configuration chapter].
 
 [NOTE]
 ====
 The most significant changes are:
 
-* **Configurer split**: The single `Configurer` has been replaced by `MessagingConfigurer`, `ModellingConfigurer`, and `EventSourcingConfigurer`
-* **ConfigurerModule replacement**: `ConfigurerModule` has been replaced by `ConfigurationEnhancer`, which operates on a `ComponentRegistry`
-* **Component registration**: Several component-specific `Configurer` registration methods have been replaced for generic registration methods on the `ComponentRegistry`
-* **Lifecycle registration**: Lifecycle handlers are now registered through the `LifecycleRegistry`
+* **Configurer split**: The single `Configurer` has been replaced by `MessagingConfigurer`, `ModellingConfigurer`, and `EventSourcingConfigurer`, as explained in more detail xref:configuration:configurer.adoc[here]
+* **ConfigurerModule replacement**: `ConfigurerModule` has been replaced by `ConfigurationEnhancer`, which operates on a xref:configuration:registries.adoc#component-registry[`ComponentRegistry`]
+* **Component registration**: Several component-specific `Configurer` registration methods have been replaced for generic registration methods on the xref:configuration:registries.adoc#component-registry[`ComponentRegistry`]
+* **Lifecycle registration**: Lifecycle handlers are now registered through the xref:configuration:registries.adoc#lifecycle-registry[`LifecycleRegistry`]
 ====
 
 [#configurer_adjustments]
@@ -82,7 +82,7 @@ The `ConfigurerModule` interface from Axon Framework 4 allowed modules to hook i
 This feature was especially useful for Axon applications that integrate with <<spring_boot_configuration,Spring>>, as it allows for a hook to customize the configuration.
 In Axon Framework 5, this concept has been renamed and slightly adjusted to the `ConfigurationEnhancer`.
 
-Largest difference between both, is that the latter deals with the `ComponentRegistry` (used under the hood by the `ApplicationConfigurer` as defined <<configurer_adjustments,here>>).
+Largest difference between both, is that the latter deals with the xref:configuration:registries.adoc#component-registry[`ComponentRegistry`] (used under the hood by the `ApplicationConfigurer` as defined <<configurer_adjustments,here>>).
 The `ConfigurationEnhancer` has an `order()` method, just as the `ConfigurerModule.` did, which dictates the order in which the module acts on the configurer directly.
 Furthermore, just as the `ConfigurerModule`, the `ConfigurationEnhancer` can be registered through the Service Loader mechanism, directly with the configurer, or as a Spring bean.
 
@@ -126,7 +126,7 @@ Registration methods for these reside on their respective `ApplicationConfigurer
 As such, the `CommandBus` has a dedicated registration method on the `MessagingConfigurer`, whereas the `EventStore` has one on the `EventSourcingConfigurer`.
 
 If you are unable to find the specific registration methods, do not worry.
-At the core of Axon's configuration sits the `ComponentRegistry` with its generic registration operation.
+At the core of Axon's configuration sits the xref:configuration:registries.adoc#component-registry[`ComponentRegistry`] with its generic registration operation.
 The specific registration methods are thus just convenience methods, or syntactic sugar, overlaying the `ComponentRegistry`.
 
 Let's look at some configuration solutions in Axon Framework 4 to see what they should look like in Axon Framework 5:
@@ -181,7 +181,7 @@ include::example$migration/paths/configuration/componentdefinition/AxonApp.java[
 == Lifecycle handler registration
 
 In Axon Framework 4, lifecycle handlers like `onStart` or `onShutdown` were registered directly on the `Configurer`.
-In Axon Framework 5, these have moved to the `LifecycleRegistry`, accessible from any configurer via the `lifecycleRegistry` method:
+In Axon Framework 5, these have moved to the xref:configuration:registries.adoc#lifecycle-registry[`LifecycleRegistry`], accessible from any configurer via the `lifecycleRegistry` method:
 
 [tabs]
 ====

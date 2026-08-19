@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing;
 
 import org.axonframework.common.configuration.ComponentRegistry;
+import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 
@@ -28,6 +29,6 @@ import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 public class InMemorySnapshottingEntityLifecycleHandlerIT extends SnapshottingEntityLifecycleHandlerTestSuite {
     @Override
     protected void registerComponents(ComponentRegistry registry) {
-        registry.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore());
+        registry.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore(c.getComponent(Converter.class)));
     }
 }
