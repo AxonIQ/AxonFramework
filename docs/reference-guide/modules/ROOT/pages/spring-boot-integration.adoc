@@ -100,7 +100,12 @@ endif::[]
 
 == Component detection
 
-The Spring Boot Starter automatically detects methods annotated with `@CommandHandler`, `@EventHandler`, or `@QueryHandler`, as well as classes annotated with `@EventSourced`, wiring each to the appropriate bus or infrastructure without further configuration.
+The Spring Boot Starter automatically detects Axon components in your application:
+
+* Methods on Spring beans that are annotated with `@CommandHandler`, `@EventHandler`, or `@QueryHandler` are automatically registered
+* Classes annotated with `@EventSourced` are registered as entities
+* All detected components are wired with the appropriate buses and infrastructure
+
 See xref:configuration:spring.adoc#handling-component-detection[Message handler and entity detection] for how this detection works and an example combining all three handler types in a single bean.
 
 == Customization
