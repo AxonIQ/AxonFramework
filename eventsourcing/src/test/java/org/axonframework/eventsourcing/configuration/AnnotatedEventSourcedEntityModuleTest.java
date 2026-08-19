@@ -22,6 +22,7 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
@@ -35,10 +36,26 @@ import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
 import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
+import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.annotation.EntityMember;
 import org.axonframework.modelling.repository.Repository;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -52,6 +69,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.HashSet;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -472,6 +490,132 @@ class AnnotatedEventSourcedEntityModuleTest {
         @Snapshotting
         record EnclosedCourse(CourseId id) {
             @EntityCreator public EnclosedCourse {}
+        }
+    }
+
+    /**
+     * Tests that a {@link HandlerDefinition}/{@link HandlerEnhancerDefinition} explicitly passed to
+     * {@link AnnotatedEntityMetamodel}'s static factories is applied uniformly to concrete, polymorphic, concrete
+     * subtype, and child entity handlers, rather than only some of them.
+     */
+    @Nested
+    class HandlerDefinitionPropagation {
+
+        private final ParameterResolverFactory parameterResolverFactory =
+                ClasspathParameterResolverFactory.forClass(getClass());
+        private final MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
+        private final MessageConverter messageConverter = new DelegatingMessageConverter(new JacksonConverter());
+        private final EventConverter eventConverter = new DelegatingEventConverter(new JacksonConverter());
+
+        @Test
+        void configuredHandlerEnhancerDefinitionWrapsConcreteEntityHandlers() {
+            // given
+            RecordingHandlerEnhancerDefinition recordingEnhancer = new RecordingHandlerEnhancerDefinition();
+            HandlerDefinition handlerDefinition = MultiHandlerDefinition.ordered(
+                    recordingEnhancer, ClasspathHandlerDefinition.forClass(getClass())
+            );
+
+            // when
+            AnnotatedEntityMetamodel.forConcreteType(
+                    SimpleTodoItem.class, parameterResolverFactory, handlerDefinition,
+                    messageTypeResolver, messageConverter, eventConverter
+            );
+
+            // then
+            assertThat(recordingEnhancer.wrappedDeclaringClasses()).contains(SimpleTodoItem.class);
+        }
+
+        @Test
+        void configuredHandlerEnhancerDefinitionWrapsPolymorphicParentConcreteSubtypeAndChildEntityHandlers() {
+            // given
+            RecordingHandlerEnhancerDefinition recordingEnhancer = new RecordingHandlerEnhancerDefinition();
+            HandlerDefinition handlerDefinition = MultiHandlerDefinition.ordered(
+                    recordingEnhancer, ClasspathHandlerDefinition.forClass(getClass())
+            );
+
+            // when
+            AnnotatedEntityMetamodel.forPolymorphicType(
+                    SimpleProject.class,
+                    Set.of(SimpleProject.InternalProject.class, SimpleProject.OpenSourceProject.class),
+                    parameterResolverFactory, handlerDefinition, messageTypeResolver, messageConverter, eventConverter
+            );
+
+            // then
+            assertThat(recordingEnhancer.wrappedDeclaringClasses())
+                    .as("polymorphic parent, concrete subtype, and child entity handlers should all be wrapped")
+                    .contains(SimpleProject.class, SimpleProject.OpenSourceProject.class, ProjectDeveloper.class);
+        }
+
+        static class SimpleTodoItem {
+
+            private String description;
+
+            @CommandHandler
+            public void handle(CreateTodoItem command) {
+                this.description = command.description();
+            }
+        }
+
+        record CreateTodoItem(String description) {
+
+        }
+
+        abstract static class SimpleProject {
+
+            @EntityMember(routingKey = "email")
+            private ProjectDeveloper developer;
+
+            @CommandHandler
+            public void handle(RenameProject command) {
+                // No-op: this test only checks handler creation/wrapping, not command handling.
+            }
+
+            static class InternalProject extends SimpleProject {
+
+            }
+
+            static class OpenSourceProject extends SimpleProject {
+
+                @CommandHandler
+                public void handle(AssignMaintainer command) {
+                    // No-op: this test only checks handler creation/wrapping, not command handling.
+                }
+            }
+        }
+
+        record ProjectDeveloper(String email) {
+
+            @CommandHandler
+            public void handle(ChangeDeveloperEmail command) {
+                // No-op: this test only checks handler creation/wrapping, not command handling.
+            }
+        }
+
+        record RenameProject(String projectId, String name) {
+
+        }
+
+        record AssignMaintainer(String projectId, String email) {
+
+        }
+
+        record ChangeDeveloperEmail(String email, String newEmail) {
+
+        }
+
+        private static class RecordingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
+
+            private final Set<Class<?>> wrappedDeclaringClasses = new HashSet<>();
+
+            @Override
+            public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+                wrappedDeclaringClasses.add(original.declaringClass());
+                return original;
+            }
+
+            Set<Class<?>> wrappedDeclaringClasses() {
+                return wrappedDeclaringClasses;
+            }
         }
     }
 }
