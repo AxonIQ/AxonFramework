@@ -20,6 +20,7 @@ import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.lifecycle.LifecycleHandlerInvocationException;
 import org.axonframework.eventsourcing.CriteriaResolver;
+import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
@@ -177,6 +178,26 @@ class SimpleEventSourcedEntityModuleTest {
                                           .criteriaResolver(c -> testCriteriaResolver)
                                           .snapshotPolicy((ComponentBuilder<SnapshotPolicy>) null)
         );
+    }
+
+    @Test
+    void appendCriteriaResolverRejectsNullAndDuplicateDefinitions() {
+        // given
+        EventSourcedEntityModule.OptionalPhase<CourseId, Course> phase =
+                EventSourcedEntityModule.declarative(CourseId.class, Course.class)
+                                        .messagingModel((c, b) -> testEntityModel)
+                                        .entityFactory(c -> testEntityFactory)
+                                        .criteriaResolver(c -> testCriteriaResolver);
+        CommandAppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
+
+        // when / then
+        assertThatThrownBy(() -> phase.appendCriteriaResolver((CommandAppendCriteriaResolver) null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("command append criteria resolver");
+        phase.appendCriteriaResolver(resolver);
+        assertThatThrownBy(() -> phase.appendCriteriaResolver(resolver))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Append criteria have already been configured");
     }
 
     @Test

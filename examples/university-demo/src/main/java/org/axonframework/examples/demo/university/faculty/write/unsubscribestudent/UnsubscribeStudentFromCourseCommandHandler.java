@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.demo.university.faculty.write.unsubscribestudent;
 
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
@@ -52,6 +53,22 @@ class UnsubscribeStudentFromCourseCommandHandler {
         }
         var events = decide(command, state);
         eventAppender.append(events);
+    }
+
+    /**
+     * Narrows the consistency boundary of this decision to the events that can actually invalidate it.
+     * <p>
+     * This decision rests on the student still being subscribed. Only a concurrent
+     * {@code StudentUnsubscribedFromCourse} can make that false, turning this unsubscription into a duplicate. A
+     * concurrent {@code StudentSubscribedToCourse} leaves the student subscribed, so it cannot invalidate the decision
+     * and is left out.
+     * <p>
+     * Note the mirror image of the subscribe side, which guards {@code StudentSubscribedToCourse} instead: the same two
+     * event types, and which of them threatens the invariant depends on the command, not on the entity.
+     */
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(UnsubscribeStudentFromCourse command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria.replaceEventTypes(StudentUnsubscribedFromCourse.class);
     }
 
     private List<StudentUnsubscribedFromCourse> decide(UnsubscribeStudentFromCourse command, State state) {

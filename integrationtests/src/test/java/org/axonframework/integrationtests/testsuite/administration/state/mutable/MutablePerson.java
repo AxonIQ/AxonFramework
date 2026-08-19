@@ -16,18 +16,23 @@
 
 package org.axonframework.integrationtests.testsuite.administration.state.mutable;
 
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.events.EmailAddressChanged;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @EventSourcedEntity(
         concreteTypes = {
@@ -36,6 +41,8 @@ import org.axonframework.integrationtests.testsuite.administration.events.EmailA
         }
 )
 public abstract class MutablePerson {
+
+    private static final List<Class<?>> appendCriteriaCommands = new CopyOnWriteArrayList<>();
 
     protected PersonIdentifier identifier;
     protected String emailAddress;
@@ -70,5 +77,19 @@ public abstract class MutablePerson {
     @EventCriteriaBuilder
     static EventCriteria eventCriteria(PersonIdentifier identifier) {
         return EventCriteria.havingTags("Person", identifier.key());
+    }
+
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(CommandMessage command, EventCriteria sourcingCriteria) {
+        appendCriteriaCommands.add(command.payloadType());
+        return sourcingCriteria;
+    }
+
+    public static void resetAppendCriteriaCommands() {
+        appendCriteriaCommands.clear();
+    }
+
+    public static List<Class<?>> appendCriteriaCommands() {
+        return List.copyOf(appendCriteriaCommands);
     }
 }

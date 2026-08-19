@@ -17,8 +17,12 @@
 package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.GenericCommandMessage;
+import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -26,6 +30,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
@@ -378,6 +383,45 @@ class DefaultEventStoreTransactionTest {
                     .containsExactlyInAnyOrderEntriesOf(Map.of(FIRST_AGGREGATE_ID, 3L, SECOND_AGGREGATE_ID, 7L));
         }
 
+        @Test
+        void rejectsChangedAppendCriteriaForAnAggregateBasedConsistencyMarker() {
+            // given
+            EventCriteria unrelatedCriteria = EventCriteria.havingTags(new Tag("other", "boundary"));
+            EventStore eventStore = new StorageEngineBackedEventStore(
+                    aggregateStorageEngine,
+                    new SimpleEventBus(),
+                    event -> Set.of(new Tag("aggregateIdentifier", (String) event.payload()))
+            );
+            var commandName = new org.axonframework.messaging.core.QualifiedName("test.ChangeAggregate");
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("aggregate-handler");
+            delegate.subscribe(commandName, (command, context) -> {
+                EventStoreTransaction transaction = eventStore.transaction(context);
+                FluxUtils.of(transaction.source(sourcingConditionFor(FIRST_AGGREGATE_ID))).blockLast();
+                transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
+                    delegate,
+                    eventStore,
+                    (command, context, sourcingCriteria) -> unrelatedCriteria
+            );
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> component.handle(
+                    new GenericCommandMessage(new MessageType(commandName), FIRST_AGGREGATE_ID), context
+            ));
+
+            // then
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasStackTraceContaining("aggregate-based consistency marker")
+                    // the message points at the two ways out, so a reader knows what to change
+                    .hasStackTraceContaining("return the supplied sourcing criteria unchanged")
+                    .hasStackTraceContaining("move the entity to a tag-based event store");
+        }
+
         private EventStoreTransaction aggregateBasedTransactionFor(ProcessingContext context) {
             return context.computeResourceIfAbsent(
                     testEventStoreTransactionKey,
@@ -546,6 +590,86 @@ class DefaultEventStoreTransactionTest {
 
     @Nested
     class OverrideAppendCondition {
+
+        @Test
+        void oneSourcingOperationProducesItsCriteriaAsTheAppendCriteria() {
+            // given
+            EventCriteria sourcingCriteria = EventCriteria.havingTags(new Tag("account", "one"));
+            var receivedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(sourcingCriteria))).blockLast();
+                transaction.overrideAppendCondition(condition -> {
+                    receivedCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCondition.get().criteria()).isEqualTo(sourcingCriteria);
+        }
+
+        @Test
+        void severalSourcingOperationsProduceTheOrUnionAsAppendCriteria() {
+            // given
+            EventCriteria firstCriteria = EventCriteria.havingTags(new Tag("account", "one"));
+            EventCriteria secondCriteria = EventCriteria.havingTags(new Tag("customer", "two"));
+            var receivedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(firstCriteria))).blockLast();
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(secondCriteria))).blockLast();
+                transaction.overrideAppendCondition(condition -> {
+                    receivedCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(receivedCondition.get().criteria().flatten())
+                    .containsExactlyInAnyOrderElementsOf(firstCriteria.or(secondCriteria).flatten());
+        }
+
+        @Test
+        void severalSourcingOperationsRetainTheLowestConsistencyMarker() {
+            // given
+            Tag firstTag = new Tag("account", "one");
+            Tag secondTag = new Tag("customer", "two");
+            EventCriteria firstCriteria = EventCriteria.havingTags(firstTag);
+            EventCriteria secondCriteria = EventCriteria.havingTags(secondTag);
+            ConsistencyMarker firstMarker = appendTaggedEvent(firstTag);
+            var receivedCondition = new AtomicReference<AppendCondition>();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> {
+                EventStoreTransaction transaction = defaultEventStoreTransactionFor(context);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(firstCriteria))).blockLast();
+                appendTaggedEvent(secondTag);
+                FluxUtils.of(transaction.source(SourcingCondition.conditionFor(secondCriteria))).blockLast();
+                transaction.overrideAppendCondition(condition -> {
+                    receivedCondition.set(condition);
+                    return condition;
+                });
+                transaction.appendEvent(eventMessage(0));
+            });
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(AppendEventsTransactionRejectedException.class);
+
+            // then
+            assertThat(receivedCondition.get().consistencyMarker()).isEqualTo(firstMarker);
+        }
 
         @Test
         void overrideWithoutSourcingReceivesNoCondition() {
@@ -751,6 +875,25 @@ class DefaultEventStoreTransactionTest {
 
     private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext) {
         return defaultEventStoreTransactionFor(processingContext, m -> Set.of(AGGREGATE_ID_TAG));
+    }
+
+    private ConsistencyMarker appendTaggedEvent(Tag tag) {
+        AppendTransaction<Object> appendTransaction = eventStorageEngine.appendEvents(
+                AppendCondition.none(),
+                processingContext,
+                new GenericTaggedEventMessage<>(
+                        new GenericEventMessage(new MessageType(String.class), "my payload"),
+                        Set.of(tag)
+                )
+        ).thenApply(this::castAppendTransaction).join();
+        return appendTransaction.commit()
+                                .thenCompose(ignored -> appendTransaction.afterCommit(ignored))
+                                .join();
+    }
+
+    @SuppressWarnings("unchecked")
+    private AppendTransaction<Object> castAppendTransaction(AppendTransaction<?> transaction) {
+        return (AppendTransaction<Object>) transaction;
     }
 
     private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext,

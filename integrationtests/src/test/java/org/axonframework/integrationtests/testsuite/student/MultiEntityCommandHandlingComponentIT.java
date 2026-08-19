@@ -16,6 +16,7 @@
 
 package org.axonframework.integrationtests.testsuite.student;
 
+import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.integrationtests.testsuite.student.commands.AssignMentorCommand;
 import org.axonframework.integrationtests.testsuite.student.commands.EnrollStudentToCourseCommand;
 import org.axonframework.integrationtests.testsuite.student.events.MentorAssignedToStudentEvent;
@@ -23,6 +24,7 @@ import org.axonframework.integrationtests.testsuite.student.events.StudentEnroll
 import org.axonframework.integrationtests.testsuite.student.state.Course;
 import org.axonframework.integrationtests.testsuite.student.state.Student;
 import org.axonframework.messaging.commandhandling.CommandExecutionException;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -30,6 +32,8 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.EntityIdResolutionException;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
@@ -39,7 +43,9 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -134,7 +140,30 @@ public abstract class MultiEntityCommandHandlingComponentIT extends AbstractComm
                 .hasMessageContaining("Mentor already assigned to a mentee");
     }
 
+    @Test
+    void appendCriteriaBuilderReceivesTheUnionFromEveryInjectedEntity() {
+        // given
+        MultiModelAnnotatedCommandHandler.receivedSourcingCriteria.set(null);
+        registerCommandHandlers(handlerPhase -> handlerPhase.autodetectedCommandHandlingComponent(
+                c -> new MultiModelAnnotatedCommandHandler()
+        ));
+        startApp();
+
+        // when
+        enrollStudentToCourse(student1, course1);
+
+        // then
+        assertThat(MultiModelAnnotatedCommandHandler.receivedSourcingCriteria.get().flatten())
+                .containsExactlyInAnyOrderElementsOf(
+                        EventCriteria.havingTags(new Tag("Student", student1))
+                                     .or(EventCriteria.havingTags(new Tag("Course", course1)))
+                                     .flatten()
+                );
+    }
+
     private static class MultiModelAnnotatedCommandHandler {
+
+        private static final AtomicReference<EventCriteria> receivedSourcingCriteria = new AtomicReference<>();
 
         @SuppressWarnings("unused")
         @CommandHandler
@@ -174,6 +203,12 @@ public abstract class MultiEntityCommandHandlingComponentIT extends AbstractComm
             eventAppender.append(
                     new MentorAssignedToStudentEvent(mentor.getId(), mentee.entity().getId())
             );
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria appendCriteria(CommandMessage command, EventCriteria sourcingCriteria) {
+            receivedSourcingCriteria.set(sourcingCriteria);
+            return sourcingCriteria;
         }
 
         public static class MentorIdResolver implements EntityIdResolver<String> {

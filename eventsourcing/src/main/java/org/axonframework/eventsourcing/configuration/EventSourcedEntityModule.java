@@ -18,6 +18,7 @@ package org.axonframework.eventsourcing.configuration;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ModuleBuilder;
+import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
@@ -268,6 +269,39 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
         default OptionalPhase<ID, E> entityIdResolver(EntityIdResolver<ID> entityIdResolver) {
             Objects.requireNonNull(entityIdResolver, "The entity ID resolver cannot be null.");
             return entityIdResolver(configuration -> entityIdResolver);
+        }
+
+        /**
+         * Configures one command append-criteria resolver for every command handled by this entity module's command
+         * handling component.
+         * <p>
+         * The resolver is invoked separately for each command that appends events and receives the complete sourcing
+         * criteria accumulated by that command's transaction. Its result is the complete append criteria.
+         *
+         * @param appendCriteriaResolver a builder of the component-level command append-criteria resolver
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         * @throws UnsupportedOperationException if the module implementation does not support command append criteria
+         */
+        default OptionalPhase<ID, E> appendCriteriaResolver(
+                ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver
+        ) {
+            throw new UnsupportedOperationException(
+                    "This event-sourced entity module does not support command append criteria."
+            );
+        }
+
+        /**
+         * Configures one command append-criteria resolver for every command handled by this entity module's command
+         * handling component.
+         *
+         * @param appendCriteriaResolver the component-level command append-criteria resolver
+         * @return the {@link OptionalPhase} phase of this builder, for a fluent API
+         */
+        default OptionalPhase<ID, E> appendCriteriaResolver(
+                CommandAppendCriteriaResolver appendCriteriaResolver
+        ) {
+            Objects.requireNonNull(appendCriteriaResolver, "The command append criteria resolver cannot be null.");
+            return appendCriteriaResolver(configuration -> appendCriteriaResolver);
         }
 
         /**

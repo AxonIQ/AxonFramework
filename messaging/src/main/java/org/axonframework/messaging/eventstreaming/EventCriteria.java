@@ -292,6 +292,63 @@ public sealed interface EventCriteria
     }
 
     /**
+     * Replaces the event types on every branch of this criteria with the given {@code types}. Each branch's tags and
+     * the criteria's OR semantics are preserved. Existing type restrictions are replaced, so the resulting type set
+     * may be either narrower or broader than the original set.
+     * <p>
+     * Unlike the builder-style
+     * {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, this operation applies to an already complete
+     * criteria rather than only the branch currently being built. An empty set clears existing type restrictions,
+     * allowing any event type that matches a branch's tags.
+     *
+     * @param types the event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @since 5.4.0
+     */
+    default EventCriteria replaceEventTypes(Set<QualifiedName> types) {
+        Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
+        if (!hasCriteria()) {
+            return havingAnyTag().andBeingOneOfTypes(requestedTypes);
+        }
+        return mapEachCriterion(criterion -> havingTags(criterion.tags()).andBeingOneOfTypes(requestedTypes));
+    }
+
+    /**
+     * Replaces the event types on every branch of this criteria with the given fully qualified names.
+     *
+     * @param types the fully qualified event type names used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #replaceEventTypes(Set)
+     * @since 5.4.0
+     */
+    default EventCriteria replaceEventTypes(String... types) {
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return replaceEventTypes(Arrays.stream(types)
+                                       .map(QualifiedName::new)
+                                       .collect(Collectors.toSet()));
+    }
+
+    /**
+     * Replaces the event types on every branch of this criteria with qualified names derived from the given Java event
+     * {@code type} and any {@code additionalTypes}.
+     *
+     * @param type the first Java event type used by every branch of the resulting criteria
+     * @param additionalTypes any additional Java event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #replaceEventTypes(Set)
+     * @since 5.4.0
+     */
+    default EventCriteria replaceEventTypes(Class<?> type, Class<?>... additionalTypes) {
+        Objects.requireNonNull(type, "The type cannot be null.");
+        Objects.requireNonNull(additionalTypes, "The additional types cannot be null.");
+        Set<QualifiedName> types = Arrays.stream(additionalTypes)
+                                         .map(QualifiedName::new)
+                                         .collect(Collectors.toCollection(HashSet::new));
+        types.add(new QualifiedName(type));
+        return replaceEventTypes(types);
+    }
+
+    /**
      * Indicates whether the given {@code type} and {@code tags} matches the types and tags defined in this or these
      * criteria. If no types are defined, any given {@code type} will be considered a match.
      *
