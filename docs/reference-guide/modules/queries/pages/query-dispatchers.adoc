@@ -322,24 +322,18 @@ Two shutdown policies are available:
   naturally, then force-closes any that remain.
   Streaming queries are finite by nature, so a short grace period is usually appropriate.
 
-To configure a policy, pass a lambda to the relevant method on `QueryGatewayConfigurer` (for gateway-level tracking) or create a `QueryShutdownManager` directly (for call-site tracking):
+To configure a policy, call the relevant method on `QueryGatewayConfigurer` (for gateway-level tracking) or create a `QueryShutdownManager` directly (for call-site tracking):
 
 [source,java]
 ----
-// Close immediately
-QueryShutdownManager.closeImmediately();
-
-// Wait with grace period
-QueryShutdownManager.withGracePeriod(Duration.ofSeconds(30));
+include::example$queries/querydispatchers/shutdown/ShutdownPolicyExample.java[tag=shutdown-policies,indent=0]
 ----
 
 When using a standalone manager for call-site tracking, register it with Axon's lifecycle:
 
 [source,java]
 ----
-QueryShutdownManager manager = QueryShutdownManager.closeImmediately();
-MessagingConfigurer.create()
-    .lifecycleRegistry(manager::registerShutdown);
+include::example$queries/querydispatchers/shutdown/ShutdownPolicyExample.java[tag=standalone-manager-lifecycle,indent=0]
 ----
 
 This ensures `manager.shutdown()` is called at the correct phase during application shutdown.
@@ -355,14 +349,7 @@ Retrieve it from the configuration by that name:
 
 [source,java]
 ----
-AxonConfiguration config = MessagingConfigurer.create()
-    .queryGateway("sse", g -> g
-        .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately()) // <1>
-        .cancellingStreamingQueryOnShutdown(c -> c.withGracePeriod(Duration.ofSeconds(5))) // <2>
-    )
-    .build();
-
-QueryGateway sseGateway = config.getComponent(QueryGateway.class, "sse"); // <3>
+include::example$queries/querydispatchers/shutdown/GatewayTrackingExample.java[tag=gateway-level-tracking,indent=0]
 ----
 
 <1> All subscription queries dispatched through this gateway are automatically tracked and closed immediately on shutdown.
@@ -373,21 +360,21 @@ When no shutdown tracking is needed, use `withDefaults()` to register a plain ga
 
 [source,java]
 ----
-MessagingConfigurer.create()
-    .queryGateway("reporting", QueryGatewayConfigurer::withDefaults);
+include::example$queries/querydispatchers/shutdown/GatewayTrackingExample.java[tag=plain-named-gateway,indent=0]
 ----
 
 Multiple gateways with different policies can be registered in the same configuration:
 
 [source,java]
 ----
-MessagingConfigurer.create()
-    .queryGateway("sse", g -> g
-        .cancellingSubscriptionQueryOnShutdown(c -> c.closeImmediately())
-    )
-    .queryGateway("internal", g -> g
-        .cancellingSubscriptionQueryOnShutdown(c -> c.withGracePeriod(30))
-    );
+include::example$queries/querydispatchers/shutdown/GatewayTrackingExample.java[tag=multiple-gateways,indent=0]
+----
+
+To share a single manager between several gateways, or to combine gateway-level tracking with the call-site tracking described below, pass a `QueryShutdownManager` instance instead of a policy:
+
+[source,java]
+----
+include::example$queries/querydispatchers/shutdown/GatewayTrackingExample.java[tag=shared-manager,indent=0]
 ----
 
 [[registering-query-streams-for-shutdown]]
@@ -397,25 +384,11 @@ When the gateway-level option is not used, the manager provides two `track()` me
 
 [source,java]
 ----
-@Autowired
-QueryShutdownManager shutdownManager;
-
-// Via QueryGateway (returns Publisher<T>):
-@GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public Publisher<MyDto> stream() {
-    return shutdownManager.track( // <1>
-        queryGateway.subscriptionQuery(new MyQuery(), MyDto.class)
-    );
-}
-
-// Via QueryBus directly (returns MessageStream<T>):
-MessageStream<QueryResponseMessage> stream = shutdownManager.track(
-    queryBus.subscriptionQuery(queryMessage, null, 100) // <2>
-);
+include::example$queries/querydispatchers/shutdown/TrackingCallSiteExample.java[tag=track-call-sites,indent=0]
 ----
 
 <1> Wrap the result of `subscriptionQuery` with `track()`, which returns a `Publisher<T>` that participates in the manager's shutdown.
-<2> For direct `QueryBus` users, wrap the `MessageStream` with `track()` and use the returned wrapper. `queryMessage` must be a `QueryMessage` instance.
+<2> For direct `QueryBus` users, wrap the `MessageStream` with `track()` and use the returned wrapper.
 
 In both cases, the caller must use the returned wrapper instead of the original.
 When a tracked stream completes naturally (stream sealed, subscriber cancels), it deregisters itself automatically.
@@ -428,10 +401,7 @@ are cancelled at the same moment the web server stops accepting new connections:
 
 [source,java]
 ----
-@Bean
-public QueryShutdownManager queryShutdownManager() {
-    return QueryShutdownManager.closeImmediately();
-}
+include::example$queries/querydispatchers/shutdown/springboot/QueryShutdownConfiguration.java[tag=query-shutdown-manager-bean,indent=0]
 ----
 
 For gateway-level tracking, declare a named `QueryGateway` bean directly.
@@ -440,15 +410,7 @@ so the named gateway is available everywhere Axon resolves components:
 
 [source,java]
 ----
-@Bean
-public QueryGateway sseGateway(QueryBus queryBus,
-                               MessageTypeResolver resolver,
-                               QueryPriorityCalculator calculator,
-                               MessageConverter converter,
-                               QueryShutdownManager shutdownManager) { // <1>
-    DefaultQueryGateway base = new DefaultQueryGateway(queryBus, resolver, calculator, converter);
-    return new ShutdownTrackingQueryGateway(base, shutdownManager, shutdownManager); // <2>
-}
+include::example$queries/querydispatchers/shutdown/springboot/QueryShutdownConfiguration.java[tag=named-gateway-bean,indent=0]
 ----
 
 <1> Inject the `QueryShutdownManager` bean declared above. Spring's `@Qualifier` selects the right one when multiple managers are defined.
@@ -463,8 +425,7 @@ For programmatic (non-Spring) configuration, register the manager with the `Mess
 
 [source,java]
 ----
-QueryShutdownManager manager = QueryShutdownManager.withGracePeriod(Duration.ofSeconds(5));
-configurer.lifecycleRegistry(manager::registerShutdown);
+include::example$queries/querydispatchers/shutdown/ManualLifecycleExample.java[tag=manual-lifecycle,indent=0]
 ----
 
 When neither `MessagingConfigurer` nor Spring Boot is available, call `shutdown()` directly from whatever lifecycle mechanism the application provides.

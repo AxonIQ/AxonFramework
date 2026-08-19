@@ -227,6 +227,27 @@ grep -r "xref:.*old-filename.adoc" docs/reference-guide/
 - Release notes pages - Will be updated in separate task
 
 ### Code Examples
+
+- **Java code samples must be externalized, never inline.** Sample sources live in the Antora
+  `examples` directory of the documentation component
+  (`docs/<guide>/modules/<module>/examples`) and are pulled into pages through tagged regions:
+  ```adoc
+  [source,java]
+  ----
+  include::example$queries/querydispatchers/MyExample.java[tag=my-tag,indent=0]
+  ----
+  ```
+  The `docs/_samples` module compiles all of them as part of the default Maven reactor, so an API
+  change that breaks a documented sample breaks the build. Read `docs/_samples/README.md` before
+  adding or editing samples - it covers the package-per-page convention, tag naming, multi-fragment
+  blocks, and the `role=axon4` / `role=pseudocode` escape hatches for intentionally non-compiling
+  code. Verify with:
+  ```bash
+  ./mvnw -pl docs/_samples test-compile
+  python3 docs/_samples/bin/compare-snippets.py <page.adoc> HEAD
+  ```
+  Every difference `compare-snippets.py` reports must be intentional: keep sample indentation
+  matching the rendered block, not the framework's chain-alignment style.
 - **Always provide code samples where appropriate** - this was a weak spot in previous documentation
 - Show both **Spring configuration** and **plain Java configuration** examples
 - Spring examples should use:
