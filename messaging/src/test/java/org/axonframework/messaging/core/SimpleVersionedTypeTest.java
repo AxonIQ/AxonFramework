@@ -33,35 +33,35 @@ class SimpleVersionedTypeTest {
 
     @Test
     void messageTypeIsAVersionedType() {
-        SimpleVersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = VersionedType.of(QUALIFIED_NAME, VERSION);
 
         assertInstanceOf(VersionedType.class, versionedType);
     }
 
     @Test
     void versionedTypeReturnsQualifiedName() {
-        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = VersionedType.of(QUALIFIED_NAME, VERSION);
 
         assertEquals(QUALIFIED_NAME, versionedType.qualifiedName());
     }
 
     @Test
     void versionedTypeReturnsVersion() {
-        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = VersionedType.of(QUALIFIED_NAME, VERSION);
 
         assertEquals(VERSION, versionedType.version());
     }
 
     @Test
     void versionedTypeReturnsName() {
-        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME, VERSION);
+        VersionedType versionedType = VersionedType.of(QUALIFIED_NAME, VERSION);
 
         assertEquals(NAME, versionedType.name());
     }
 
     @Test
     void versionedTypeWithDefaultVersion() {
-        VersionedType versionedType = new SimpleVersionedType(QUALIFIED_NAME);
+        VersionedType versionedType = VersionedType.of(QUALIFIED_NAME);
 
         assertEquals(QUALIFIED_NAME, versionedType.qualifiedName());
         assertEquals(SimpleVersionedType.DEFAULT_VERSION, versionedType.version());
@@ -69,7 +69,7 @@ class SimpleVersionedTypeTest {
 
     @Test
     void versionedTypeFromClassConstructor() {
-        VersionedType versionedType = new SimpleVersionedType(SimpleVersionedTypeTest.class.getName(), VERSION);
+        VersionedType versionedType = VersionedType.of(SimpleVersionedTypeTest.class.getName(), VERSION);
 
         assertEquals(new QualifiedName(SimpleVersionedTypeTest.class), versionedType.qualifiedName());
         assertEquals(VERSION, versionedType.version());

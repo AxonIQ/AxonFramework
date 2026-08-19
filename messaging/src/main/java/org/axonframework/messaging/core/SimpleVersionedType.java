@@ -29,7 +29,7 @@ import static java.util.Objects.requireNonNull;
  * @author Ishaan Bhela
  * @since 5.4.0
  */
-public record SimpleVersionedType(QualifiedName qualifiedName, String version) implements VersionedType {
+record SimpleVersionedType(QualifiedName qualifiedName, String version) implements VersionedType {
 
     /**
      * The default version when none is given. Set to {@code 0.0.1}.
@@ -38,15 +38,13 @@ public record SimpleVersionedType(QualifiedName qualifiedName, String version) i
 
     /**
      * Constructor validating that the given {@code qualifiedName} is non-null, and that {@code version} is
-     * non-null and not blank.
+     * non-null, not blank, and does not contain the {@link VersionedType#VERSION_DELIMITER}.
      */
     public SimpleVersionedType {
         requireNonNull(qualifiedName, "The qualifiedName cannot be null.");
         requireNonNull(version, "The version cannot be null.");
 
-        if (version.isBlank()) {
-            throw new IllegalArgumentException("The version cannot be blank.");
-        }
+        VersionedType.validateVersion(version);
     }
 
     /**
