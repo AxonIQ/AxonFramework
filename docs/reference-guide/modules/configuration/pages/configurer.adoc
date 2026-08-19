@@ -271,7 +271,7 @@ Head to xref:registries.adoc[Component registry and lifecycle registry] for thei
 ====
 
 [#component-identification]
-== Identifying components: class, name, or TypeReference
+== Identifying components: class, name, or type-reference
 
 Every `Component` and `ComponentDecorator` is matched against an identifier made up of a declared type and an optional name.
 Depending on what you are registering, you reach for that identifier through a `Class`, a `Class` plus a `String` name, or, for a component with a generic declared type, a `TypeReference`.

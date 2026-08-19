@@ -100,7 +100,7 @@ This pattern is used throughout Axon Framework to apply cross-cutting concerns s
 Because such a conditional check only sees what has been registered so far, its outcome depends on the xref:#how-enhancers-work[order] in which enhancers run: the same conditional enhancer can find (or fail to find) the component it checks for depending on whether it runs before or after the enhancer that registers it.
 Give a conditional enhancer an explicit `order()` value whenever it needs to run after the enhancer it depends on.
 
-== Automatic discovery via ServiceLoader
+== Automatic discovery via `ServiceLoader`
 
 Axon Framework discovers `ConfigurationEnhancer` implementations automatically through the Java `ServiceLoader` mechanism.
 If you add an entry to `META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer` in your JAR, your enhancer is registered without any explicit call to `registerEnhancer`.
