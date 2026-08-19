@@ -1,4 +1,4 @@
-* xref:configuration:index.adoc[Overview]
+* xref:configuration:index.adoc[Configuration API]
 ** xref:configuration:configurer.adoc[Application configurers]
 ** xref:configuration:registries.adoc[Component registry and lifecycle registry]
 ** xref:configuration:configuration-enhancer.adoc[Configuration enhancers]
