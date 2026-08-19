@@ -13,6 +13,12 @@ Any of these components can be registered globally with the `ApplicationConfigur
 
 Although Axon Framework sports its own configuration API, those who prefer automated dependency injection tooling should be happy to know there's full integration with tools like xref:spring.adoc[Spring], with other options present on the roadmap.
 
+[IMPORTANT]
+.Doesn't Spring take care of the configuration for me?
+Yes, it does.
+Hence, if you combine Axon Framework with xref:spring.adoc[Spring], the majority of what's explained in this chapter is completely redundant for you.
+Hence, only read the other sections if you require more customization or simply are curious how this works.
+
 Getting started boils down to picking the xref:configurer.adoc#configurers[`ApplicationConfigurer`] that matches your application:
 
 [tabs]
