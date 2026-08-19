@@ -59,7 +59,7 @@ include::example$configuration/component-factory/PreRegisteredPrecedenceExample.
 In this example, requesting `EventStorageEngine` with name `"storageEngine@billing"` returns the explicitly registered `InMemoryEventStorageEngine`.
 The factory is only invoked for names that have no matching explicit registration.
 
-== Implementing a ComponentFactory
+== Implementing a `ComponentFactory`
 
 A `ComponentFactory<C>` must implement three methods:
 
