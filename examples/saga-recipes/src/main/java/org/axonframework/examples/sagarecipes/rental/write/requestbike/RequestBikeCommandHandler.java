@@ -45,7 +45,7 @@ import java.util.Objects;
  * which is what a Dynamic Consistency Boundary is for.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @Component
 public class RequestBikeCommandHandler {
