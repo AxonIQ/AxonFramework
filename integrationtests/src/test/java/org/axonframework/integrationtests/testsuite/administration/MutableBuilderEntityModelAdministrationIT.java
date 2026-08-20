@@ -32,6 +32,7 @@ import org.axonframework.integrationtests.testsuite.administration.common.Person
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
+import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableTask;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableCertification;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableCustomer;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableEmployee;
@@ -40,6 +41,9 @@ import org.axonframework.integrationtests.testsuite.administration.state.mutable
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableTask;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -60,13 +64,19 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
     EntityMetamodel<MutablePerson> buildEntityMetamodel(Configuration configuration,
                                                         EntityMetamodelBuilder<MutablePerson> builder) {
         MessageTypeResolver typeResolver = configuration.getComponent(MessageTypeResolver.class);
+        ParameterResolverFactory parameterResolverFactory = configuration.getComponent(ParameterResolverFactory.class);
+        HandlerDefinition handlerDefinition = configuration.getComponent(HandlerDefinition.class);
         EventConverter eventConverter = configuration.getComponent(EventConverter.class);
 
         // Task is the list-based child-model of Employee
         EntityMetamodel<MutableTask> taskMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableTask.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutableTask.class, eventConverter, typeResolver
+                        MutableTask.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(CompleteTaskCommand.class).qualifiedName(),
                                         (command, entity, context) -> {
@@ -82,7 +92,11 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         EntityMetamodel<MutableSalaryInformation> salaryInformationMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableSalaryInformation.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutableSalaryInformation.class, eventConverter, typeResolver
+                        MutableSalaryInformation.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(GiveRaise.class).qualifiedName(),
                                         (command, entity, context) -> {
@@ -98,7 +112,11 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         EntityMetamodel<MutableCertification> certificationMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableCertification.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutableCertification.class, eventConverter, typeResolver
+                        MutableCertification.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(RevokeCertificationCommand.class).qualifiedName(),
                                         (command, entity, context) -> {
@@ -114,7 +132,11 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         EntityMetamodel<MutableEmployee> employeeMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableEmployee.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutableEmployee.class, eventConverter, typeResolver
+                        MutableEmployee.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .creationalCommandHandler(typeResolver.resolveOrThrow(CreateEmployee.class).qualifiedName(),
                                           ((command, context) -> {
@@ -219,7 +241,11 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         EntityMetamodel<MutableCustomer> customerMetamodel = ConcreteEntityMetamodel
                 .forEntityClass(MutableCustomer.class)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutableCustomer.class, eventConverter, typeResolver
+                        MutableCustomer.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .creationalCommandHandler(
                         typeResolver.resolveOrThrow(CreateCustomer.class).qualifiedName(),
@@ -239,7 +265,11 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                 .addConcreteType(employeeMetamodel)
                 .addConcreteType(customerMetamodel)
                 .entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                        MutablePerson.class, eventConverter, typeResolver
+                        MutablePerson.class,
+                        eventConverter,
+                        typeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
                 ))
                 .instanceCommandHandler(typeResolver.resolveOrThrow(ChangeEmailAddress.class).qualifiedName(),
                                         (command, entity, context) -> {
