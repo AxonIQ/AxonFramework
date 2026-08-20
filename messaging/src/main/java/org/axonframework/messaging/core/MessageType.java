@@ -52,7 +52,7 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@link QualifiedName#QualifiedName(String) QualifiedName's name} and in {@link #version}, since either
      * containing this separator would make that representation ambiguous to parse back.
      */
-    static final String VERSION_DELIMITER = VersionedType.VERSION_DELIMITER;
+    public static final String VERSION_DELIMITER = VersionedType.VERSION_DELIMITER;
 
     /**
      * Pattern identifying a single valid segment of a {@code MessageType}'s String representation - either the
@@ -77,7 +77,7 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
         requireNonNull(qualifiedName, "The qualifiedName cannot be null.");
         requireNonNull(version, "The version is unsupported because it is null.");
 
-        VersionedType.validateVersion(version);
+        SimpleVersionedType.validateVersion(version);
     }
 
     /**

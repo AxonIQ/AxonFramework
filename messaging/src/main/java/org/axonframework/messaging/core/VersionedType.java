@@ -76,24 +76,6 @@ public interface VersionedType {
     }
 
     /**
-     * Validates that the given {@code version} is not blank and does not contain the {@link #VERSION_DELIMITER}.
-     *
-     * @param version The version string to validate.
-     * @throws IllegalArgumentException if the version is blank or contains the delimiter.
-     */
-    static void validateVersion(String version) {
-        if (version.isBlank()) {
-            throw new IllegalArgumentException("The version cannot be blank.");
-        }
-        if (version.contains(VERSION_DELIMITER)) {
-            throw new IllegalArgumentException(
-                    "The version [" + version + "] is unsupported because it contains \""
-                            + VERSION_DELIMITER + "\", which is reserved as the separator in VersionedType's "
-                            + "String representation."
-            );
-        }
-    }
-    /**
      * Returns the {@link QualifiedName} of this versioned type.
      *
      * @return the qualified name, never {@code null}
