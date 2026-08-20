@@ -1,0 +1,23 @@
+# Test configuration. Shadows the main application.yml on the test classpath.
+#
+# Tests run entirely in memory: no Axon Server, no docker-compose. The in-memory event storage engine is a
+# Dynamic Consistency Boundary store, so the multi-tag criteria this example relies on behave the same way
+# they do against Axon Server.
+spring:
+  docker:
+    compose:
+      enabled: false
+  main:
+    web-application-type: none
+axon:
+  converter:
+    general: jackson
+  axonserver:
+    enabled: false
+saga:
+  recipe: injectentity
+  deadline:
+    payment-timeout: PT30S
+    # Long enough that the scheduled sweep never fires during a test. Tests drive the sweeper directly
+    # instead, because AxonTestFixture cannot manipulate time.
+    sweep-interval: PT1H

@@ -69,6 +69,7 @@
         <module>university-demo-kotlin</module>
         <module>university-message-transformation</module>
         <module>university-multi-tenancy-examples</module>
+        <module>saga-recipes</module>
     </modules>
 
     <build>
