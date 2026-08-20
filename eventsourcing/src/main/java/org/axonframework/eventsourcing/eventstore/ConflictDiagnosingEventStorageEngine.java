@@ -37,7 +37,7 @@ import java.util.concurrent.CompletableFuture;
  * It does so by sourcing the same {@link AppendCondition#criteria() criteria} used for the rejected append, starting
  * from the violated {@link AppendCondition#consistencyMarker() consistency marker}, and taking the first event
  * returned. Any event returned by that lookup matches the criteria beyond the marker, which is exactly what an append
- * rejection reports - so the lookup always identifies a genuine conflicting event, regardless of how many criteria
+ * rejection reports. The lookup always identifies a genuine conflicting event, regardless of how many criteria
  * the condition combines, and without needing any storage-engine-specific knowledge of how the conflict was detected.
  * Only the first match is fetched, closing the underlying read as soon as it is found, since a single example is
  * enough to confirm and reproduce a conflict.
