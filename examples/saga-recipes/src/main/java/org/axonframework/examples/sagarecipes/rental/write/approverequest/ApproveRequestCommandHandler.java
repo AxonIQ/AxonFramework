@@ -41,7 +41,7 @@ import java.util.Objects;
  * different renter, appends nothing and reports success.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @Component
 public class ApproveRequestCommandHandler {

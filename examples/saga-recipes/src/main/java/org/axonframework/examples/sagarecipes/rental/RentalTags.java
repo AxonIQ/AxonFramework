@@ -28,7 +28,7 @@ package org.axonframework.examples.sagarecipes.rental;
  * why it is present from the start even though only one slice currently uses it.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public final class RentalTags {
 

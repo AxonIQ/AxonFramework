@@ -41,7 +41,7 @@ import java.util.Objects;
  * the saga to send more than once.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @Component
 public class RejectRequestCommandHandler {

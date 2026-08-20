@@ -25,7 +25,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * @param bikeId   the bike being returned
  * @param location where it was left
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record ReturnBike(@TargetEntityId BikeId bikeId, String location) {
 

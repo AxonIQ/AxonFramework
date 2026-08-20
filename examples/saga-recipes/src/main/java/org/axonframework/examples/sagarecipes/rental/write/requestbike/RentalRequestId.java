@@ -29,7 +29,7 @@ import org.axonframework.examples.sagarecipes.rental.BikeId;
  * @param bikeId the bike being requested
  * @param renter the person requesting it
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record RentalRequestId(BikeId bikeId, String renter) {
 

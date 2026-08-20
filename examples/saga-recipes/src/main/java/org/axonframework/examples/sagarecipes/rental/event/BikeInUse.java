@@ -30,7 +30,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param renter   who has it
  * @param rentalId the request that was approved
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record BikeInUse(
         @EventTag(key = RentalTags.BIKE_ID) BikeId bikeId,

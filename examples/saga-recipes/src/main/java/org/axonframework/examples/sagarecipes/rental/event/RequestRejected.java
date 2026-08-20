@@ -31,7 +31,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param renter   who had requested it
  * @param rentalId the request that was rejected
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record RequestRejected(
         @EventTag(key = RentalTags.BIKE_ID) BikeId bikeId,

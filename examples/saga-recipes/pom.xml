@@ -34,13 +34,34 @@
     </description>
 
     <properties>
-        <spring.boot.version>4.1.0</spring.boot.version>
+        <!--
+        Spring Boot 4.1.0 is deliberately skipped. Combined with JPA and the Axon starter it deadlocks on a
+        circular reference between applicationTaskExecutor and Axon's UnitOfWorkFactory; 4.1.1 resolves it.
+        -->
+        <spring.boot.version>4.1.1</spring.boot.version>
         <jackson.version>3.2.1</jackson.version>
         <archunit.version>1.5.0</archunit.version>
+        <!--
+        Overrides the 5.3.0 pinned for the other examples. The Axoniq Framework artifacts follow this branch's
+        own release line, so that the commercial starter and the framework built here stay in step.
+        -->
+        <axoniq-framework.version>5.4.0-SNAPSHOT</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!--
+            Imported first, and ahead of the Axoniq Framework BOM inherited from the examples parent, so every
+            org.axonframework artifact resolves to the version built from this branch. The Axoniq BOM pins a
+            released Axon Framework instead, which would silently test the example against a different build.
+            -->
+            <dependency>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-framework-bom</artifactId>
+                <version>${project.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
             <!-- Jackson 3 BOM before Spring Boot to ensure jackson-annotations
                  is at the version required by Jackson 3 (not the older one managed by Spring Boot). -->
             <dependency>
@@ -68,6 +89,10 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jackson</artifactId>
         </dependency>
         <dependency>
@@ -83,6 +108,12 @@
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axon-server-connector</artifactId>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
         </dependency>
 
         <!-- Testing -->

@@ -1,4 +1,12 @@
 spring:
+  autoconfigure:
+    # This example needs a Dynamic Consistency Boundary event store. The request-bike slice tags events with
+    # bikeId, rentalId and renter at once, and the saga recipes correlate rental and payment events by tag.
+    # The aggregate-based JPA engine rejects multiple tags per event outright, and it is ordered ahead of the
+    # in-memory engine, so leaving it enabled makes every multi-tag append fail with
+    # TooManyTagsOnEventMessageException. JPA itself is still used, for the tracking token store and for the
+    # process state of the repository recipe.
+    exclude: org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
   docker:
     compose:
       file: file:examples/docker-compose.yaml
