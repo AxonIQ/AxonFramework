@@ -17,11 +17,12 @@
 package org.axonframework.messaging.core.timeout;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlerTimeout;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.queryhandling.QueryMessage;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Inspects message handler and wraps it in a {@link TimeoutWrappedMessageHandlingMember} if the handler should have a
@@ -40,11 +41,12 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
     private final HandlerTimeoutConfiguration configuration;
 
     /**
-     * Creates a new {@link HandlerTimeoutHandlerEnhancerDefinition} with the given configuration. This configuration
-     * will be used as default, but can be overridden by the {@link MessageHandlerTimeout} annotation for individual
-     * message handlers.
+     * Creates a new {@code HandlerTimeoutHandlerEnhancerDefinition} with the given configuration.
+     * <p>
+     * This configuration will be used as default, but can be overridden by the {@link MessageHandlerTimeout} annotation
+     * for individual message handlers.
      *
-     * @param configuration The configuration for the timeout settings
+     * @param configuration the configuration for the timeout settings
      */
     public HandlerTimeoutHandlerEnhancerDefinition(HandlerTimeoutConfiguration configuration) {
         this.configuration = configuration;
@@ -52,7 +54,7 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        TaskTimeoutSettings config = getConfigurationForMember(original);
+        TaskTimeoutSettings config = timeoutConfigFor(original);
         if (config == null) {
             // Unknown type of message. Don't enhance the handler.
             return original;
@@ -75,10 +77,10 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
      * Gets the attribute or the {@link MessageHandlerTimeout} annotation or the default value if the attribute is not
      * present or invalid.
      *
-     * @param original The original message handler
-     * @param name     The name of the attribute
-     * @param fallback The default value
-     * @return The attribute value or the default value
+     * @param original the original message handler
+     * @param name     the name of the attribute
+     * @param fallback the default value
+     * @return the attribute value or the default value
      */
     private int getAttribute(MessageHandlingMember<?> original, String name, int fallback) {
         return (int) original.attribute("MessageHandlerTimeout." + name)
@@ -87,21 +89,24 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
     }
 
     /**
-     * Gets the configuration for the given message handler, based on the message type it can handle.
+     * Resolve the {@link TaskTimeoutSettings} for the given {@code member}, based on the
+     * {@link org.axonframework.messaging.core.Message} type it can handles.
+     * <p>
+     * Resolves to {@code null} when the {@code Mesasge} type is not known.
      *
-     * @param original The original message handler
-     * @return The configuration for the message handler
+     * @param member the message handling member to resolve the {@link TaskTimeoutSettings} for
+     * @return the task-timeout configuration for the given {@code member}, or {@code null} for an unknown
+     * {@link org.axonframework.messaging.core.Message} type
      */
-    private TaskTimeoutSettings getConfigurationForMember(
-            MessageHandlingMember<?> original
-    ) {
-        if (original.canHandleMessageType(EventMessage.class)) {
+    @Nullable
+    private TaskTimeoutSettings timeoutConfigFor(MessageHandlingMember<?> member) {
+        if (member.canHandleMessageType(EventMessage.class)) {
             return configuration.getEvents();
         }
-        if (original.canHandleMessageType(CommandMessage.class)) {
+        if (member.canHandleMessageType(CommandMessage.class)) {
             return configuration.getCommands();
         }
-        if (original.canHandleMessageType(QueryMessage.class)) {
+        if (member.canHandleMessageType(QueryMessage.class)) {
             return configuration.getQueries();
         }
         return null;

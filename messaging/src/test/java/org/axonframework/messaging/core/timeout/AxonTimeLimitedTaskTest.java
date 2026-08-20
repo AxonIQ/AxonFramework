@@ -34,8 +34,7 @@ class AxonTimeLimitedTaskTest {
     @AfterEach
     void tearDown() throws InterruptedException {
         //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
-        AxonTaskJanitor.INSTANCE
-                .awaitTermination(250, TimeUnit.MILLISECONDS);
+        AxonTaskJanitor.INSTANCE.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test

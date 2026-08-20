@@ -16,7 +16,9 @@
 package org.axonframework.messaging.core.timeout;
 
 /**
- * Configuration properties for a task timeout. Used in other parts of the configuration.
+ * Configuration properties for a task timeout.
+ * <p>
+ * Used in other parts of the configuration.
  *
  * @author Mitchell Herrijgers
  * @since 4.11.0
@@ -27,6 +29,7 @@ public class TaskTimeoutSettings {
      * The timeout of the message handler in milliseconds.
      */
     private int timeoutMs = -1;
+
     /**
      * The threshold in milliseconds after which a warning is logged. Setting this to a value higher than
      * {@code timeout} will disable warnings.
@@ -39,24 +42,27 @@ public class TaskTimeoutSettings {
     private int warningIntervalMs = -1;
 
     /**
-     * Creates a new {@link TaskTimeoutSettings} with the provided timeout settings.
-     *
-     * @param timeoutMs          the timeout in milliseconds
-     * @param warningThresholdMs the threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                           higher than or equal to {@code timeout} will disable warnings.
-     * @param warningIntervalMs  the interval in milliseconds between warnings
-     */
-    public TaskTimeoutSettings(int timeoutMs, int warningThresholdMs, int warningIntervalMs) {
-        this.timeoutMs = timeoutMs;
-        this.warningThresholdMs = warningThresholdMs;
-        this.warningIntervalMs = warningIntervalMs;
-    }
-
-    /**
-     * Creates a new {@link TaskTimeoutSettings} with default timeout settings.
+     * Creates a new {@code TaskTimeoutSettings} with default timeout settings.
+     * <p>
      * This means all timeouts are disabled.
      */
     public TaskTimeoutSettings() {
+    }
+
+    /**
+     * Creates a new {@code TaskTimeoutSettings} with the provided timeout settings.
+     *
+     * @param timeoutMs          the timeout in milliseconds
+     * @param warningThresholdMs the threshold in milliseconds after which a warning is logged. Setting this to a value
+     *                           higher than or equal to {@code timeout} will disable warnings
+     * @param warningIntervalMs  the interval in milliseconds between warnings
+     */
+    public TaskTimeoutSettings(int timeoutMs,
+                               int warningThresholdMs,
+                               int warningIntervalMs) {
+        this.timeoutMs = timeoutMs;
+        this.warningThresholdMs = warningThresholdMs;
+        this.warningIntervalMs = warningIntervalMs;
     }
 
     /**
@@ -78,8 +84,9 @@ public class TaskTimeoutSettings {
     }
 
     /**
-     * Returns the threshold in milliseconds after which a warning is logged. Setting this to a value higher than
-     * {@code timeout} will disable warnings.
+     * Returns the threshold in milliseconds after which a warning is logged.
+     * <p>
+     * Setting this to a value higher than {@code timeout} will disable warnings.
      *
      * @return the threshold in milliseconds after which a warning is logged
      */
@@ -88,8 +95,9 @@ public class TaskTimeoutSettings {
     }
 
     /**
-     * Sets the threshold in milliseconds after which a warning is logged. Setting this to a value higher than
-     * or equal to {@code timeout} will disable warnings.
+     * Sets the threshold in milliseconds after which a warning is logged.
+     * <p>
+     * Setting this to a value higher than or equal to {@code timeout} will disable warnings.
      *
      * @param warningThresholdMs the threshold in milliseconds after which a warning is logged
      */
@@ -113,5 +121,15 @@ public class TaskTimeoutSettings {
      */
     public void setWarningIntervalMs(int warningIntervalMs) {
         this.warningIntervalMs = warningIntervalMs;
+    }
+
+    /**
+     * Returns whether these settings are disabled, meaning neither a timeout nor a warning is configured.
+     *
+     * @return {@code true} if both {@link #getTimeoutMs()} and {@link #getWarningThresholdMs()} are negative,
+     * {@code false} otherwise
+     */
+    public boolean isDisabled() {
+        return timeoutMs < 0 && warningThresholdMs < 0;
     }
 }

@@ -17,8 +17,9 @@
 package org.axonframework.messaging.core.timeout;
 
 /**
- * Configuration for the timeout settings of message handlers. Each specific message type can have its own timeout
- * settings.
+ * Configuration for the timeout settings of message handlers.
+ * <p>
+ * Each specific message type can have its own timeout settings.
  *
  * @author Mitchell Herrijgers
  * @since 4.11.0
@@ -41,23 +42,22 @@ public class HandlerTimeoutConfiguration {
     private final TaskTimeoutSettings queries;
 
     /**
-     * Creates a new {@link HandlerTimeoutConfiguration} with default timeout settings. This means all message handlers
-     * have their timeouts disabled.
+     * Creates a new {@code HandlerTimeoutConfiguration} with default timeout settings.
+     * <p>
+     * This means all message handlers have their timeouts disabled.
      */
     public HandlerTimeoutConfiguration() {
         this(new TaskTimeoutSettings(),
-             new TaskTimeoutSettings(),
              new TaskTimeoutSettings(),
              new TaskTimeoutSettings());
     }
 
     /**
-     * Creates a new {@link HandlerTimeoutConfiguration} with the given timeout settings.
+     * Creates a new {@code HandlerTimeoutConfiguration} with the given timeout settings.
      *
-     * @param events    the timeout settings for events
-     * @param commands  the timeout settings for commands
-     * @param queries   the timeout settings for queries
-     * @param deadlines the timeout settings for deadlines
+     * @param events   the timeout settings for events
+     * @param commands the timeout settings for commands
+     * @param queries  the timeout settings for queries
      */
     public HandlerTimeoutConfiguration(TaskTimeoutSettings events,
                                        TaskTimeoutSettings commands,

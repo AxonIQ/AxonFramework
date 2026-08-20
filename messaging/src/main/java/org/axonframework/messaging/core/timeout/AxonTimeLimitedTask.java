@@ -15,17 +15,21 @@
  */
 package org.axonframework.messaging.core.timeout;
 
+import org.axonframework.common.BuilderUtils;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
+import java.util.Objects;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Represents a task with a timeout. The task will be interrupted when the {@code timeout} is reached. If the
- * {@code warningThreshold} is lower than the timeout, warnings will be logged at the configured {@code warningInterval}
- * until the timeout is reached. All times are in milliseconds.
+ * Represents a task with a timeout.
+ * <p>
+ * The task will be interrupted when the {@code timeout} is reached. If the {@code warningThreshold} is lower than the
+ * timeout, warnings will be logged at the configured {@code warningInterval} until the timeout is reached. All times
+ * are in milliseconds.
  * <p>
  * Warning logging will include the task's name, the current time taken by the task and its remaining time to execute.
  * The stack trace of the thread handling the message will also be included in the log, up to the point where the task
@@ -40,57 +44,64 @@ import java.util.concurrent.TimeUnit;
  */
 class AxonTimeLimitedTask {
 
-    private final Thread thread;
+    private final String taskName;
     private final int timeout;
     private final int warningThreshold;
     private final int warningInterval;
-    private final String taskName;
     private final ScheduledExecutorService scheduledExecutorService;
     private final Logger logger;
     @Nullable
     private final String callerClassName; // stored as name to avoid getName() on every stack frame check
+
+    private final Thread thread;
     private boolean completed = false;
     private boolean interrupted = false;
     private boolean interruptedExternally = false;
     private long startTimeMs = -1;
+    @Nullable
     private Future<?> currentScheduledFuture = null;
 
 
     /**
-     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
      * {@code warningThreshold} and {@code warningInterval}. Runs the provided task on the current thread after
      * scheduling a timeout and warnings on another thread.
      * <p>
      * If you wish to provide a logger of your own, or your own {@code scheduledExecutorService}, use
      * {@link #AxonTimeLimitedTask(String, int, int, int, ScheduledExecutorService, Logger)}.
      *
-     * @param taskName         The task's name to be included in the logging
-     * @param timeout          The timeout in milliseconds
-     * @param warningThreshold The threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         equal or higher than {@code timeout} will disable warnings.
-     * @param warningInterval  The interval in milliseconds between warnings.
+     * @param taskName         the task's name to be included in the logging
+     * @param timeout          the timeout in milliseconds
+     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
+     *                         equal or higher than {@code timeout} will disable warnings
+     * @param warningInterval  the interval in milliseconds between warnings
      */
     public AxonTimeLimitedTask(String taskName,
                                int timeout,
                                int warningThreshold,
                                int warningInterval) {
-        this(taskName, timeout, warningThreshold, warningInterval, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null);
+        this(taskName,
+             timeout,
+             warningThreshold,
+             warningInterval,
+             AxonTaskJanitor.INSTANCE,
+             AxonTaskJanitor.LOGGER,
+             null);
     }
 
     /**
-     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
      * {@code warningThreshold} and {@code warningInterval}. Runs the provided task on the current thread after
      * scheduling a timeout and warnings on another thread.
      * <p>
      * The {@code callerClass} is used to trim the stack trace in timeout/warning logs, cutting off framework internals
-     * below the caller. If you do not need trimming, use
-     * {@link #AxonTimeLimitedTask(String, int, int, int)}.
+     * below the caller. If you do not need trimming, use {@link #AxonTimeLimitedTask(String, int, int, int)}.
      *
-     * @param taskName         The task's name to be included in the logging
-     * @param timeout          The timeout in milliseconds
-     * @param warningThreshold The threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         equal or higher than {@code timeout} will disable warnings.
-     * @param warningInterval  The interval in milliseconds between warnings.
+     * @param taskName         the task's name to be included in the logging
+     * @param timeout          the timeout in milliseconds
+     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
+     *                         equal or higher than {@code timeout} will disable warnings
+     * @param warningInterval  the interval in milliseconds between warnings
      * @param callerClass      the class of the direct caller, used to trim the stack trace in timeout/warning logs
      */
     public AxonTimeLimitedTask(String taskName,
@@ -104,12 +115,11 @@ class AxonTimeLimitedTask {
              warningInterval,
              AxonTaskJanitor.INSTANCE,
              AxonTaskJanitor.LOGGER,
-             callerClass
-        );
+             callerClass);
     }
 
     /**
-     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
      * {@code warningThreshold} and {@code warningInterval}. For scheduling, the provided
      * {@code scheduledExecutorService} will be used. To log warnings and errors, the provided {@code logger} will be
      * used. Runs the provided task on the current thread after scheduling a timeout and warnings on the provided
@@ -119,11 +129,11 @@ class AxonTimeLimitedTask {
      * {@link #AxonTimeLimitedTask(String, int, int, int)}.
      * <p>
      *
-     * @param taskName                 The task's name to be included in the logging
-     * @param timeout                  The timeout in milliseconds
-     * @param warningThreshold         The threshold in milliseconds after which a warning is logged. Setting this to a
-     *                                 value equal or higher than {@code timeout} will disable warnings.
-     * @param warningInterval          The interval in milliseconds between warnings.
+     * @param taskName                 the task's name to be included in the logging
+     * @param timeout                  the timeout in milliseconds
+     * @param warningThreshold         the threshold in milliseconds after which a warning is logged. Setting this to a
+     *                                 value equal or higher than {@code timeout} will disable warnings
+     * @param warningInterval          the interval in milliseconds between warnings
      * @param scheduledExecutorService the executor service to schedule the timeout and warnings
      * @param logger                   the logger to log the warnings and errors
      */
@@ -137,7 +147,7 @@ class AxonTimeLimitedTask {
     }
 
     /**
-     * Creates a new {@link AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
+     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
      * {@code warningThreshold} and {@code warningInterval}. For scheduling, the provided
      * {@code scheduledExecutorService} will be used. To log warnings and errors, the provided {@code logger} will be
      * used.
@@ -146,11 +156,11 @@ class AxonTimeLimitedTask {
      * below the caller. If you do not need trimming, use
      * {@link #AxonTimeLimitedTask(String, int, int, int, ScheduledExecutorService, Logger)}.
      *
-     * @param taskName                 The task's name to be included in the logging
-     * @param timeout                  The timeout in milliseconds
-     * @param warningThreshold         The threshold in milliseconds after which a warning is logged. Setting this to a
-     *                                 value equal or higher than {@code timeout} will disable warnings.
-     * @param warningInterval          The interval in milliseconds between warnings.
+     * @param taskName                 the task's name to be included in the logging
+     * @param timeout                  the timeout in milliseconds
+     * @param warningThreshold         the threshold in milliseconds after which a warning is logged. Setting this to a
+     *                                 value equal or higher than {@code timeout} will disable warnings
+     * @param warningInterval          the interval in milliseconds between warnings
      * @param scheduledExecutorService the executor service to schedule the timeout and warnings
      * @param logger                   the logger to log the warnings and errors
      * @param callerClass              the class of the direct caller, used to trim the stack trace in timeout/warning
@@ -162,25 +172,26 @@ class AxonTimeLimitedTask {
                                int warningInterval,
                                ScheduledExecutorService scheduledExecutorService,
                                Logger logger,
-                               Class<?> callerClass) {
-        if (taskName == null || taskName.isEmpty()) {
-            throw new IllegalArgumentException("Task name cannot be null or empty");
-        }
+                               @Nullable Class<?> callerClass) {
+        BuilderUtils.assertNonEmpty(taskName, "The task name may not be empty or null.");
         this.taskName = taskName;
         this.timeout = timeout;
         this.warningThreshold = warningThreshold;
         this.warningInterval = warningInterval;
-        this.scheduledExecutorService = scheduledExecutorService;
-        this.logger = logger;
+        this.scheduledExecutorService = Objects.requireNonNull(
+                scheduledExecutorService, "The scheduled executor service may not be null."
+        );
+        this.logger = Objects.requireNonNull(logger, "The logger may not be null.");
         this.callerClassName = callerClass != null ? callerClass.getName() : null;
         this.thread = Thread.currentThread();
     }
 
     /**
-     * Starts the task, scheduling the first warning or immediate interrupt. Once the task is completed, the
-     * {@link #complete()} method should be called. At completion, the caller should also call
-     * {@link #ensureNoInterruptionWasSwallowed()} to ensure that any swallowed interruptions are properly handled. In
-     * addition, any exceptions thrown during the handling of the message should be passed to
+     * Starts the task, scheduling the first warning or immediate interrupt.
+     * <p>
+     * Once the task is completed, the {@link #complete()} method should be called. At completion, the caller should
+     * also call {@link #ensureNoInterruptionWasSwallowed()} to ensure that any swallowed interruptions are properly
+     * handled. In addition, any exceptions thrown during the handling of the message should be passed to
      * {@link #detectInterruptionInsteadOfException(Exception)} to ensure that the proper error status is restored.
      */
     public void start() {
@@ -212,8 +223,9 @@ class AxonTimeLimitedTask {
 
     /**
      * Even though the task was processed successfully, it might have been interrupted while processing, and the
-     * exception might have been caught and swallowed by a lower component. This happens, for example, by the
-     * {@code LoggingErrorHandler} , which is the default in event processors.
+     * exception might have been caught and swallowed by a lower component.
+     * <p>
+     * This happens, for example, by the {@code LoggingErrorHandler} , which is the default in event processors.
      * <p>
      * This function checks if the task was interrupted, and if so, it throws an {@link AxonTimeoutException} to
      * indicate that the processing was aborted due to a timeout. If the task was not interrupted, it checks if the
@@ -226,7 +238,8 @@ class AxonTimeLimitedTask {
     public void ensureNoInterruptionWasSwallowed() throws InterruptedException {
         if (isInterrupted()) {
             AxonTaskJanitor.LOGGER.info(
-                    "Task [{}] was completed successfully, but was interrupted by the janitor because it was processing for too long. The exception was swallowed by a lower component. Throwing TimeoutException.",
+                    "Task [{}] was completed successfully, but was interrupted by the janitor because it was processing for too long. "
+                            + "The exception was swallowed by a lower component. Throwing TimeoutException.",
                     getTaskName()
             );
             //noinspection ResultOfMethodCallIgnored
@@ -242,11 +255,12 @@ class AxonTimeLimitedTask {
     }
 
     /**
-     * If an exception is thrown during the handling of the message and it bubbles up, we check if the thread was
-     * interrupted. If it was, we check if the task was interrupted as well. If both hold true, that must mean the
-     * exception was caused by the interruption of the task, and a {@link AxonTimeoutException} is returned to indicate
-     * that the processing was aborted due to a timeout. If the thread was not interrupted, the
-     * original exception is returned.
+     * If an exception is thrown during the handling of the message, and it bubbles up, we check if the thread was
+     * interrupted.
+     * <p>
+     * If it was, we check if the task was interrupted as well. If both hold true, that must mean the exception was
+     * caused by the interruption of the task, and a {@link AxonTimeoutException} is returned to indicate that the
+     * processing was aborted due to a timeout. If the thread was not interrupted, the original exception is returned.
      * <p>
      * This might happen if someone catches the {@link InterruptedException} and wraps it using a different exception,
      * or throws a different exception altogether.
@@ -280,9 +294,7 @@ class AxonTimeLimitedTask {
      */
     private void scheduleImmediateInterrupt() {
         if (logger.isTraceEnabled()) {
-            logger.trace("{} will be interrupted after [{}ms]",
-                         taskName,
-                         timeout);
+            logger.trace("{} will be interrupted after [{}ms]", taskName, timeout);
         }
         scheduleInterrupt(timeout);
     }
@@ -293,11 +305,8 @@ class AxonTimeLimitedTask {
      */
     private void scheduleFirstWarning() {
         if (logger.isTraceEnabled()) {
-            logger.trace(
-                    "{} will be interrupted in [{}ms]. First warning will be issued in [{}ms].",
-                    taskName,
-                    timeout,
-                    warningThreshold);
+            logger.trace("{} will be interrupted in [{}ms]. First warning will be issued in [{}ms].",
+                         taskName, timeout, warningThreshold);
         }
         scheduleWarning(warningThreshold);
     }
@@ -310,27 +319,35 @@ class AxonTimeLimitedTask {
      * @param timeout The time in milliseconds before the warning should be scheduled
      */
     private void scheduleWarning(long timeout) {
-        currentScheduledFuture = scheduledExecutorService.schedule(() -> {
-            if (!completed) {
-                scheduleWarningOrInterrupt();
-            }
-        }, timeout, TimeUnit.MILLISECONDS);
+        currentScheduledFuture = scheduledExecutorService.schedule(
+                () -> {
+                    if (!completed) {
+                        scheduleWarningOrInterrupt();
+                    }
+                },
+                timeout,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     /**
-     * Schedules either a warning or interrupt, after the first warning has been issued. Which of the two is scheduled
-     * depends on the time taken so far. If the remaining time is less than the warning interval, an interrupt is
-     * scheduled. Otherwise, a warning is scheduled.
+     * Schedules either a warning or interrupt, after the first warning has been issued.
+     * <p>
+     * Which of the two is scheduled depends on the time taken so far. If the remaining time is less than the warning
+     * interval, an interrupt is scheduled. Otherwise, a warning is scheduled.
      */
     private void scheduleWarningOrInterrupt() {
         long takenTime = System.currentTimeMillis() - startTimeMs;
-        logger.warn(
-                "{} on thread [{}] is taking a long time to process. Current time: [{}ms]. Will be interrupted in [{}ms].\nStacktrace of current thread:\n{}",
-                taskName,
-                thread.getName(),
-                takenTime,
-                timeout - takenTime,
-                getCurrentStackTrace());
+        logger.warn("""
+                            {} on thread [{}] is taking a long time to process. Current time: [{}ms]. \
+                            Will be interrupted in [{}ms].
+                            Stacktrace of current thread:
+                            {}""",
+                    taskName,
+                    thread.getName(),
+                    takenTime,
+                    timeout - takenTime,
+                    getCurrentStackTrace());
         if (takenTime + warningInterval < timeout) {
             scheduleWarning(warningInterval);
         } else {
@@ -341,7 +358,7 @@ class AxonTimeLimitedTask {
     /**
      * Schedules an interrupt to the thread handling the message.
      *
-     * @param remainingTimeout The time in milliseconds before the interrupt should be scheduled
+     * @param remainingTimeout the time in milliseconds before the interrupt should be scheduled
      */
     private void scheduleInterrupt(long remainingTimeout) {
         currentScheduledFuture = scheduledExecutorService.schedule(() -> {
@@ -361,14 +378,14 @@ class AxonTimeLimitedTask {
      * Returns the current stack trace of the thread handling the message. Cuts off the stack trace at the point where
      * the original {@link #start()} method was called.
      *
-     * @return The current stack trace of the thread handling the message
+     * @return the current stack trace of the thread handling the message
      */
     private String getCurrentStackTrace() {
         StackTraceElement[] stackTrace = thread.getStackTrace();
         StringBuilder sb = new StringBuilder();
         for (StackTraceElement element : stackTrace) {
             sb.append(element).append("\n");
-            if (callerClassName != null && element.getClassName().equals(callerClassName)) {
+            if (element.getClassName().equals(callerClassName)) {
                 break;
             }
         }
@@ -398,7 +415,7 @@ class AxonTimeLimitedTask {
     /**
      * Returns the name of the task. This is used in logging to identify the task.
      *
-     * @return The name of the task.
+     * @return the name of the task
      */
     public String getTaskName() {
         return taskName;
