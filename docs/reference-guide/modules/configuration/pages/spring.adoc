@@ -1,0 +1,265 @@
+= Spring Boot Integration
+
+The Axon Framework Spring Boot extension maps Axon's configuration API onto the Spring Application Context.
+It provides auto-configuration so that, in most cases, adding the starter dependency is all that is needed to get a fully configured Axon application.
+This page explains how the Spring integration builds on the same concepts described in the rest of this chapter.
+
+For setup instructions, Spring Boot version support, and event processor-specific configuration, see
+xref:ROOT:spring-boot-integration.adoc[Spring Boot integration].
+
+== How Spring uses the configuration API
+
+The Spring integration does not bypass the configuration API: it implements it.
+In practice, this means the Spring `ApplicationContext` and Axon's `Configuration` share the same set of components: any infrastructure component Axon provides (the `CommandBus`, `EventStore`, `QueryBus`, and so on) is automatically made available as a Spring bean, injectable like any other bean.
+
+The reverse also holds.
+If you declare your own `@Bean` of a matching infrastructure type, Axon picks it up and uses it instead of its own default, no further wiring required:
+
+[source,java]
+----
+include::example$configuration/spring/AxonConfig.java[tag=command-bus-bean-example]
+----
+
+You rarely need to register message handlers or entities yourself either.
+Methods annotated with `@CommandHandler`, `@EventHandler`, or `@QueryHandler` on any Spring bean, and classes annotated with `@EventSourced`, are discovered automatically and registered as `Modules`, out of the box.
+See xref:#handling-component-detection[Component detection] and xref:module.adoc[Modules] for the details.
+
+[#customizing-axon-config-with-spring]
+== Customizing Axon's configuration through Spring
+
+The auto-configuration only registers components that have not been defined explicitly.
+To replace a default component, define a `@Bean` of the matching type in any `@Configuration` class:
+
+[source,java]
+----
+include::example$configuration/spring/ReplaceQueryBusExample.java[tag=replace-query-bus-bean-example]
+----
+
+Spring's standard bean override mechanism means the default `QueryBus` provided by Axon Framework is never created.
+Thus, your bean becomes the one Axon uses instead.
+
+To decorate a component, declare a `DecoratorDefinition` as a Spring bean.
+The `SpringComponentRegistry` discovers all `DecoratorDefinition` beans in the Application Context automatically and registers them, so no manual `componentRegistry` access is needed:
+
+[source,java]
+----
+include::example$configuration/spring/TracingConfig.java[tag=customizing-decorator-example]
+----
+
+For more expanded configuration integration, we recommend registering a `ConfigurationEnhancer` as a Spring bean instead.
+The Spring integration discovers all `ConfigurationEnhancer` beans in the Application Context automatically and applies them during configuration.
+The example below expands on the tracing-decoration example, but now through a `ConfigurationEnhancer`:
+
+[source,java]
+----
+include::example$configuration/spring/TracingEnhancer.java[tag=tracing-enhancer-bean-example]
+----
+
+[#handling-component-detection]
+== Message handler and entity detection
+
+The Spring Boot Starter automatically detects Axon components in the Application Context:
+
+* Methods annotated with `@CommandHandler`, `@EventHandler`, or `@QueryHandler` on any Spring bean are registered as message handlers with the appropriate bus.
+* Classes annotated with `@EventSourced` are registered as event-sourced entities.
+
+A single `@Component` can combine all three handler types; Axon discovers each annotated method independently:
+
+[source,java]
+----
+include::example$configuration/spring/GiftCardHandler.java[tag=message-handling-component-example]
+----
+
+Handler discovery happens through `MessageHandlerConfigurer` and `MessageHandlerLookup`, which scan the bean factory for beans implementing `CommandHandlingComponent`, `EventHandlingComponent`, or `QueryHandlingComponent`, as well as beans with annotated handler methods.
+Discovered handlers are wrapped into a `CommandHandlingModule` and `QueryHandlingModule`, and discovered `@EventSourced` entities into an `EventSourcedEntityModule`, each registered on the `ComponentRegistry` the same way a manually built xref:module.adoc[Module] would be.
+
+[#axon-properties]
+== Axon properties
+
+Besides beans, decorators, and enhancers, several parts of the auto-configuration can be tuned directly through `application.properties` or `application.yml`, without writing any code:
+
+[cols="1,2"]
+|===
+|Property |What it does
+
+|`axon.axonserver.enabled`
+|Enables or disables the Axon Server connector integration. Defaults to `true` when the connector is on the classpath.
+
+|`axon.eventhandling.processors.<name>.*`
+|Configures an individual event processor: mode, initial segment count, batch size, thread count, and more. See xref:#event-processor-configuration[Event processor configuration] below for the full reference.
+
+|`axon.eventhandling.tokenstore.claim-timeout`
+|How long a streaming event processor waits before forcing a claim on a token segment that has not been updated.
+
+|`axon.eventstorage.jpa.*`
+|Tuning for the JPA-based event storage engine: batch size, gap cleaning threshold, gap timeout, and polling interval.
+
+|`axon.converter.general` / `axon.converter.messages` / `axon.converter.events`
+|Selects the `Converter` implementation used for general data (such as snapshots), message payloads, and event payloads respectively.
+
+|`axon.timeout.*`
+|Enables and tunes timeouts for transactions and message handlers (commands, events, queries, and deadlines).
+
+|`axon.tracing.*`
+|Enables and tunes OpenTelemetry-based tracing for Axon's infrastructure components. See xref:monitoring:tracing.adoc[Tracing] for the full property reference.
+
+|`axon.update-check.disabled` / `axon.update-check.url`
+|Disables Axon's startup update-check ping, or points it at a different URL.
+|===
+
+[#event-processor-configuration]
+== Event processor configuration
+
+Spring Boot provides two approaches to configure event processors: properties-based configuration, covered as part of getting started in xref:ROOT:spring-boot-integration.adoc#event-processor-configuration[Event processor configuration], and programmatic, type-safe configuration through `EventProcessorDefinition` beans, covered below.
+
+Reach for properties-based configuration when the configuration is simple and doesn't require custom logic, settings vary per environment, or you're still prototyping.
+A simple property-based setup looks as follows:
+
+[source,properties]
+----
+axon.eventhandling.processors.my-processor.mode=pooled-streaming
+axon.eventhandling.processors.my-processor.initial-segment-count=4
+----
+
+Reach for `EventProcessorDefinition` beans instead when you need fine-grained control over handler assignment, the configuration requires conditional logic, type safety and IDE support matter, or you want to share configuration between environments programmatically.
+Here is what such a bean looks like:
+
+[source,java]
+----
+include::example$configuration/spring/EventProcessorConfig.java[tag=order-processor-definition,indent=0]
+----
+
+The `EventProcessorDefinition` API provides:
+
+* **Type-safe configuration** - Compile-time checking of configuration options
+* **Fluent API** - Chain configuration methods for readability
+* **Handler selection** - Define which event handlers belong to each processor using predicates
+* **Full configuration access** - All processor settings available programmatically
+* **IDE support** - Better autocompletion and refactoring support
+
+=== Handler selection
+
+The `assigningHandlers()` method provides access to an `EventHandlerDescriptor` with the following properties:
+
+* `beanName()` - The Spring bean name
+* `beanType()` - The event handler class (use for package-based selection)
+* `beanDefinition()` - The Spring bean definition
+* `component()` - The component builder
+
+This allows flexible handler assignment based on naming conventions, package structure, or custom criteria:
+
+[source,java]
+----
+include::example$configuration/spring/HandlerSelectionExamples.java[tag=handler-selection-examples]
+----
+
+[#namespace-based-handler-selection]
+For easy matching of Event Handling Components to Event Processors purely based on the Event Processor name, you can use the `@Namespace` annotation in combination with the `EventHandlerSelector.matchesNamespaceOnType()`.
+
+The `@Namespace` annotation can be placed on the Event Handling Component, where the value of the annotation determines the Event Processor name it belongs to.
+Handlers will be automatically matched when defining an `EventProcessorDefinition` using the `EventHandlerSelector.matchesNamespaceOnType()` with the same name as defined in the `@Namespace`.
+
+Let's take a look at a concrete example:
+
+[source,java]
+----
+include::example$configuration/spring/NamespaceBasedProcessorConfig.java[tags=namespace-processor-import;namespace-processor;namespace-event-handler,indent=0]
+----
+
+With `@Namespace` on the `OrderEventHandler`, the `OrderEventHandler` signals it **belongs** to the Event Processor named `orders`.
+Note that the `@Namespace` annotation can be placed on a class (as shown above), on an enclosing class, on a `package-info.java` file, or on a `module-info.java` file.
+The `@Namespace` annotation is searched for in the order defined above.
+
+1. On the type
+2. On the enclosing class
+3. On the `package-info.java` file
+4. On the `module-info.java` file
+
+This allows you to use `@Namespace` to describe multiple event handlers belonging to a package, as shown below:
+
+[source,java,role=pseudocode]
+----
+@Namespace("orders")
+package com.example.orders;
+
+import org.axonframework.messaging.core.annotation.Namespace;
+----
+
+[TIP]
+.Convenience `EventProcessorDefinition` methods
+====
+For the common case of matching handlers by namespace, `EventProcessorDefinition` provides convenience methods that combine processor creation with `@Namespace`-based handler selection:
+
+[source,java]
+----
+include::example$configuration/spring/EventProcessorDefinitionExamples.java[tag=namespace-convenience-methods,indent=0]
+----
+
+These methods use the processor name as the namespace to match, making it easy to organize processors by namespace or bounded context.
+====
+
+==== Configuration options
+
+Use `customized()` to customize processor settings, or `notCustomized()` when you only need handler assignment:
+
+[source,java]
+----
+include::example$configuration/spring/EventProcessorDefinitionExamples.java[tag=event-processor-configuration-options,indent=0]
+----
+
+==== Configuration precedence
+
+When using multiple configuration approaches:
+
+1. `EventProcessorDefinition` beans take precedence over properties-based configuration
+2. If a handler matches multiple `EventProcessorDefinition` selectors, an `AxonConfigurationException` is thrown at startup
+3. Handlers not matched by any `EventProcessorDefinition` are assigned based on their package name (default behavior)
+
+To avoid conflicts, ensure each handler is matched by at most one `EventProcessorDefinition` using mutually exclusive selectors.
+
+For comprehensive event processor configuration examples and detailed information, see xref:events:event-processors/streaming.adoc[Event Processors].
+
+[#spring-and-axon-impl-details]
+== Implementation details
+
+The classes below are what make the behavior above possible.
+You will not typically interact with them directly, but they are useful to know when diagnosing configuration issues:
+
+`SpringAxonApplication`::
+A Spring `@Component` that implements `ApplicationConfigurer`.
+It holds a `SpringComponentRegistry` and a `SpringLifecycleRegistry` and delegates to them when `componentRegistry(...)` or `lifecycleRegistry(...)` are called.
+It is the Spring equivalent of `DefaultAxonApplication` used in plain Java setup.
+
+`SpringComponentRegistry`::
+A Spring `BeanPostProcessor` and `BeanFactoryPostProcessor` that implements xref:registries.adoc#component-registry[`ComponentRegistry`].
+It connects Axon's component model to the Spring bean lifecycle.
+Registrations made through `registerComponent`, `registerDecorator`, and `registerEnhancer` are all stored here and applied when Spring initializes beans.
+
+`SpringLifecycleRegistry`::
+A xref:registries.adoc#lifecycle-registry[`LifecycleRegistry`] backed by Spring's `SmartLifecycle` mechanism.
+`onStart` handlers are invoked during Spring's context startup phase; `onShutdown` handlers are invoked during Spring's context close phase.
+
+Because `SpringAxonApplication` implements `ApplicationConfigurer`, you can use the same `MessagingConfigurer`, `ModellingConfigurer`, or `EventSourcingConfigurer` wrapping pattern in a Spring context.
+The `SpringAxonApplication` bean is the root configurer that gets wrapped.
+
+The `SpringComponentRegistry` makes the behavior described above possible in two ways.
+As a `BeanPostProcessor`, it checks, right after Spring creates a bean, whether any registered decorator or enhancer targets that bean's type; if so, the decorator is applied and the wrapped instance is used in place of the original, so the standard Axon decorator mechanism works seamlessly for Spring-managed beans.
+As a `BeanFactoryPostProcessor`, it allows the resulting `Configuration` to look up any bean from the Spring `ApplicationContext`, not just those explicitly registered with the `ComponentRegistry`.
+This is what makes the `CommandBus` bean shown above available to Axon: it is treated as the registered `CommandBus` component, and any decorator registered through the `ComponentRegistry` (or through a `ConfigurationEnhancer`) is applied on top of it.
+
+=== Lifecycle integration
+
+Spring's `SmartLifecycle` drives Axon startup and shutdown when using the Spring Boot Starter.
+The `SpringLifecycleStartHandler` and `SpringLifecycleShutdownHandler` integrate Axon's lifecycle phases with Spring's context lifecycle:
+
+* On context startup: Axon's lifecycle phases run in ascending phase order.
+* On context shutdown: Axon's lifecycle phases run in descending phase order (reverse startup order).
+
+This means calling `AxonConfiguration#start()` is not required and has no effect in a Spring application.
+The lifecycle is managed entirely by the Spring context.
+
+=== Modules in Spring
+
+xref:module.adoc[`Module`] implementations registered via `componentRegistry` work identically in Spring: the `SpringComponentRegistry` treats module registrations the same as in plain Java, preserving the same one-way visibility between a module and its parent.
+
+Axon's built-in modules (for example, the event processor modules registered through `EventProcessorDefinition`) use this mechanism to keep event processor infrastructure isolated from the application's root configuration.

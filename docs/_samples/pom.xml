@@ -166,6 +166,7 @@
                             <sources>
                                 <source>${project.basedir}/../reference-guide/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/commands/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/configuration/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/events/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/messaging-concepts/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/monitoring/examples</source>

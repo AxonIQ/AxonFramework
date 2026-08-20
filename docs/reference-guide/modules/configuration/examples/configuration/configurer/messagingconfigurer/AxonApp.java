@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package configuration.configurer.messagingconfigurer;
+
+// tag::messaging-configurer-example[]
+import org.axonframework.messaging.commandhandling.SimpleCommandBus;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.axonframework.messaging.eventhandling.SimpleEventBus;
+import org.axonframework.messaging.queryhandling.SimpleQueryBus;
+
+class AxonApp {
+
+    public static void main(String[] args) {
+        MessagingConfigurer.create()
+                           .registerCommandBus(config -> new SimpleCommandBus(
+                                   config.getComponent(UnitOfWorkFactory.class)
+                           ))
+                           .registerEventSink(config -> new SimpleEventBus())
+                           .registerQueryBus(config -> new SimpleQueryBus(
+                                   config.getComponent(UnitOfWorkFactory.class)
+                           ));
+    }
+}
+// end::messaging-configurer-example[]
