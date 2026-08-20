@@ -4,11 +4,28 @@
 # Dynamic Consistency Boundary store, so the multi-tag criteria this example relies on behave the same way
 # they do against Axon Server.
 spring:
+  autoconfigure:
+    # This example needs a Dynamic Consistency Boundary event store. The request-bike slice tags events with
+    # bikeId, rentalId and renter at once, and the saga recipes correlate rental and payment events by tag.
+    # The aggregate-based JPA engine rejects multiple tags per event outright, and it is ordered ahead of the
+    # in-memory engine, so leaving it enabled makes every multi-tag append fail with
+    # TooManyTagsOnEventMessageException. JPA itself is still used, for the tracking token store and for the
+    # process state of the repository recipe.
+    exclude: org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
   docker:
     compose:
       enabled: false
   main:
     web-application-type: none
+  datasource:
+    url: jdbc:h2:mem:sagarecipes-test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
 axon:
   converter:
     general: jackson

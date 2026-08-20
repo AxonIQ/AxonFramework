@@ -29,7 +29,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param rentalId the request being closed out
  * @param location where the bike was left
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record BikeReturned(
         @EventTag(key = RentalTags.BIKE_ID) BikeId bikeId,

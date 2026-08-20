@@ -35,7 +35,7 @@ import org.springframework.stereotype.Component;
  * a second event.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @Component
 public class RegisterBikeCommandHandler {

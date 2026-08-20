@@ -30,13 +30,16 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Scheduling is enabled because the deadline replacement in {@code saga.deadline} sweeps overdue payments on a fixed
  * delay. Axon Framework 5 has no {@code DeadlineManager}, so a scheduled projection takes its place.
  * <p>
- * There is deliberately no JPA here. The two components that keep their own state, the repository recipe and the
- * pending-payment to-do list, use in-memory stores so the example stays about sagas rather than about persistence.
- * Both document what a production implementation has to do instead: commit in the same transaction as the tracking
- * token.
+ * JPA backs the two components that keep state of their own, the repository recipe and the pending-payment to-do
+ * list, so both can commit in the same transaction as the tracking token. That property is the whole point of the
+ * repository recipe, and an in-memory map could not demonstrate it.
+ * <p>
+ * Note that no {@code @EntityScan} is declared. Spring Boot already registers entities under this package, and
+ * Axon's {@code JpaAutoConfiguration} adds its own through {@code @RegisterDefaultEntities}. Declaring
+ * {@code @EntityScan} here would replace both sets rather than add to them.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @SpringBootApplication
 @EnableScheduling

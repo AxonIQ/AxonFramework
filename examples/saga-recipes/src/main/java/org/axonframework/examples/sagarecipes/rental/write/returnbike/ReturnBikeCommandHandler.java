@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  * is a requirement wherever delivery is at-least-once, not a blanket rule for every handler.
  *
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 @Component
 public class ReturnBikeCommandHandler {

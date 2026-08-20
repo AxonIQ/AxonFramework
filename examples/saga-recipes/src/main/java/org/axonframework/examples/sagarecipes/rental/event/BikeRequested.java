@@ -32,7 +32,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param renter   who is requesting it
  * @param rentalId identifies this request for the rest of its lifetime
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record BikeRequested(
         @EventTag(key = RentalTags.BIKE_ID) BikeId bikeId,

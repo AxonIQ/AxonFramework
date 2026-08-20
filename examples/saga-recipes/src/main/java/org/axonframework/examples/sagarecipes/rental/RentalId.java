@@ -32,7 +32,7 @@ import java.util.UUID;
  *
  * @param raw the raw string representation
  * @author Axon Framework
- * @since 5.3.0
+ * @since 5.4.0
  */
 public record RentalId(String raw) {
 
