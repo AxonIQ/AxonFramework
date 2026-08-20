@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.core.timeout;
 
+import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
@@ -40,6 +41,9 @@ import org.axonframework.messaging.core.configuration.reflection.HandlerEnhancer
  * @see HandlerTimeoutHandlerEnhancerDefinition
  * @since 5.4.0
  */
+@RegistrationScope("Register the decorator once at the root; do not re-invoke in child module registries. The "
+        + "DecoratorDefinition is copied down and reaches module-built components on its own. Re-invoking per "
+        + "nesting level would register the decorator again, wrapping every handler with a timeout twice.")
 public class HandlerTimeoutConfigurationEnhancer implements ConfigurationEnhancer {
 
     @Override
