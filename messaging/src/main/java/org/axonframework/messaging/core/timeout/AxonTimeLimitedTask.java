@@ -54,12 +54,16 @@ class AxonTimeLimitedTask {
     private final String callerClassName; // stored as name to avoid getName() on every stack frame check
 
     private final Thread thread;
-    private boolean completed = false;
-    private boolean interrupted = false;
-    private boolean interruptedExternally = false;
+    // These fields are written by the janitor thread (scheduled warnings/interrupts) and read by the handling
+    // thread (or vice versa), so they must be volatile to guarantee cross-thread visibility. Without it, a write
+    // from one thread is not guaranteed to be observed by the other, allowing a fired timeout to be misreported
+    // as a bare InterruptedException instead of the intended AxonTimeoutException.
+    private volatile boolean completed = false;
+    private volatile boolean interrupted = false;
+    private volatile boolean interruptedExternally = false;
     private long startTimeMs = -1;
     @Nullable
-    private Future<?> currentScheduledFuture = null;
+    private volatile Future<?> currentScheduledFuture = null;
 
 
     /**
