@@ -32,10 +32,10 @@ class SimpleVersionedTypeTest {
     private static final String VERSION = "2.0.0";
 
     @Test
-    void messageTypeIsAVersionedType() {
+    void factoryMethodReturnsSimpleVersionedType() {
         VersionedType versionedType = VersionedType.of(QUALIFIED_NAME, VERSION);
 
-        assertInstanceOf(VersionedType.class, versionedType);
+        assertInstanceOf(SimpleVersionedType.class, versionedType);
     }
 
     @Test
@@ -73,5 +73,20 @@ class SimpleVersionedTypeTest {
 
         assertEquals(new QualifiedName(SimpleVersionedTypeTest.class), versionedType.qualifiedName());
         assertEquals(VERSION, versionedType.version());
+    }
+
+    @Test
+    void versionedTypeThrowsNullPointerExceptionForNullVersion() {
+        assertThrows(NullPointerException.class, () -> VersionedType.of(QUALIFIED_NAME, null));
+    }
+
+    @Test
+    void versionedTypeThrowsIllegalArgumentExceptionForBlankVersion() {
+        assertThrows(IllegalArgumentException.class, () -> VersionedType.of(QUALIFIED_NAME, "   "));
+    }
+
+    @Test
+    void versionedTypeThrowsIllegalArgumentExceptionForVersionWithDelimiter() {
+        assertThrows(IllegalArgumentException.class, () -> VersionedType.of(QUALIFIED_NAME, "1.0#beta"));
     }
 }
