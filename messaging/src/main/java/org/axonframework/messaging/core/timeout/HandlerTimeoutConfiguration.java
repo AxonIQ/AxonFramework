@@ -41,11 +41,6 @@ public class HandlerTimeoutConfiguration {
     private final TaskTimeoutSettings queries;
 
     /**
-     * Timeout settings for deadline messages.
-     */
-    private final TaskTimeoutSettings deadlines;
-
-    /**
      * Creates a new {@link HandlerTimeoutConfiguration} with default timeout settings. This means all message handlers
      * have their timeouts disabled.
      */
@@ -66,12 +61,10 @@ public class HandlerTimeoutConfiguration {
      */
     public HandlerTimeoutConfiguration(TaskTimeoutSettings events,
                                        TaskTimeoutSettings commands,
-                                       TaskTimeoutSettings queries,
-                                       TaskTimeoutSettings deadlines) {
+                                       TaskTimeoutSettings queries) {
         this.events = events;
         this.commands = commands;
         this.queries = queries;
-        this.deadlines = deadlines;
     }
 
     /**
@@ -99,14 +92,5 @@ public class HandlerTimeoutConfiguration {
      */
     public TaskTimeoutSettings getQueries() {
         return queries;
-    }
-
-    /**
-     * Retrieves the timeout settings for deadlines.
-     *
-     * @return the timeout settings for deadlines
-     */
-    public TaskTimeoutSettings getDeadlines() {
-        return deadlines;
     }
 }

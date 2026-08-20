@@ -131,13 +131,6 @@ public class TimeoutProperties {
         private TaskTimeoutSettings queries = new TaskTimeoutSettings(30000, 10000, 1000);
 
         /**
-         * Timeout configuration for deadline handlers. Defaults to 30-second timeout, 10-second warning threshold and a
-         * warning interval of 1 second.
-         */
-        @NestedConfigurationProperty
-        private TaskTimeoutSettings deadlines = new TaskTimeoutSettings(30000, 10000, 1000);
-
-        /**
          * The timeout configuration for event handlers. Defaults to 30-second timeout, 10-second warning threshold and
          * a warning interval of 1 second.
          *
@@ -195,31 +188,12 @@ public class TimeoutProperties {
         }
 
         /**
-         * The timeout configuration for deadline handlers. Defaults to 30-second timeout, 10-second warning threshold
-         * and a warning interval of 1 second.
-         *
-         * @return the timeout configuration for deadline handlers
-         */
-        public TaskTimeoutSettings getDeadlines() {
-            return deadlines;
-        }
-
-        /**
-         * Sets the timeout configuration for deadline handlers.
-         *
-         * @param deadlines the timeout configuration for deadline handlers
-         */
-        public void setDeadlines(TaskTimeoutSettings deadlines) {
-            this.deadlines = deadlines;
-        }
-
-        /**
          * Converts this configuration to a {@link HandlerTimeoutConfiguration}.
          *
          * @return the {@link HandlerTimeoutConfiguration} based on this configuration
          */
         public HandlerTimeoutConfiguration toMessageHandlerTimeoutConfiguration() {
-            return new HandlerTimeoutConfiguration(events, commands, queries, deadlines);
+            return new HandlerTimeoutConfiguration(events, commands, queries);
         }
     }
 
@@ -239,13 +213,6 @@ public class TimeoutProperties {
          */
         @NestedConfigurationProperty
         private TaskTimeoutSettings queryBus = new TaskTimeoutSettings(60000, 10000, 1000);
-
-        /**
-         * Timeout settings for deadlines. Defaults to 60-second timeout, 10-second warning threshold and a warning
-         * interval of 1 second. This timeout is used for the entire deadline handling process.
-         */
-        @NestedConfigurationProperty
-        private TaskTimeoutSettings deadline = new TaskTimeoutSettings(60000, 10000, 1000);
 
         /**
          * Timeout settings for all event processors, unless a more specific setting is registered via the
@@ -297,25 +264,6 @@ public class TimeoutProperties {
          */
         public void setQueryBus(TaskTimeoutSettings queryBus) {
             this.queryBus = queryBus;
-        }
-
-        /**
-         * Timeout settings for deadlines. Defaults to 60-second timeout, 10-second warning threshold and a warning
-         * interval of 1 second. This timeout is used for the entire deadline handling process.
-         *
-         * @return the timeout settings for deadlines
-         */
-        public TaskTimeoutSettings getDeadline() {
-            return deadline;
-        }
-
-        /**
-         * Sets the timeout settings for deadlines.
-         *
-         * @param deadline the timeout settings for deadlines
-         */
-        public void setDeadline(TaskTimeoutSettings deadline) {
-            this.deadline = deadline;
         }
 
         /**

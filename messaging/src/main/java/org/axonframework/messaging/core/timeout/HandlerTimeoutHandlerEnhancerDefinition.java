@@ -104,10 +104,6 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
         if (original.canHandleMessageType(QueryMessage.class)) {
             return configuration.getQueries();
         }
-        // TODO #3065
-        //if (original.canHandleMessageType(DeadlineMessage.class)) {
-        //    return configuration.getDeadlines();
-        //}
         return null;
     }
 }
