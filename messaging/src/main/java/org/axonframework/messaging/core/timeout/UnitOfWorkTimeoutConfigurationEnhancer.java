@@ -20,6 +20,7 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.HandlerInterceptorRegistry;
 import org.jspecify.annotations.Nullable;
 
@@ -43,6 +44,15 @@ import org.jspecify.annotations.Nullable;
  * @since 5.4.0
  */
 public class UnitOfWorkTimeoutConfigurationEnhancer implements ConfigurationEnhancer {
+
+    /**
+     * The order of {@code this} enhancer compared to others, equal to
+     * {@link MessagingConfigurationDefaults#ENHANCER_ORDER} minus 10.
+     * <p>
+     * This value ensure the interceptors set by this enhancer are quickly followed by any default interceptors set by
+     * the {@link MessagingConfigurationDefaults}, still leaving some room for customization by the user.
+     */
+    public static final int ENHANCER_ORDER = MessagingConfigurationDefaults.ENHANCER_ORDER - 10_000;
 
     @Override
     public void enhance(ComponentRegistry registry) {
@@ -68,7 +78,7 @@ public class UnitOfWorkTimeoutConfigurationEnhancer implements ConfigurationEnha
 
     @Override
     public int order() {
-        return Integer.MIN_VALUE;
+        return ENHANCER_ORDER;
     }
 
     @Nullable
