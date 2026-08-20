@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.annotation;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.commandhandling.DuplicateCommandHandlerSubscriptionException;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.SimpleResourceParameterResolverFactory;
@@ -84,6 +85,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
         assertThatCode(() -> AnnotatedEntityMetamodel.forConcreteType(
                 entityType,
                 parameterResolverFactory,
+                ClasspathHandlerDefinition.forClass(getClass()),
                 new ClassBasedMessageTypeResolver(),
                 new DelegatingMessageConverter(new JacksonConverter()),
                 new DelegatingEventConverter(new JacksonConverter())
@@ -120,6 +122,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
         assertThatThrownBy(() -> AnnotatedEntityMetamodel.forConcreteType(
                 entityType,
                 parameterResolverFactory,
+                ClasspathHandlerDefinition.forClass(getClass()),
                 new ClassBasedMessageTypeResolver(),
                 new DelegatingMessageConverter(new JacksonConverter()),
                 new DelegatingEventConverter(new JacksonConverter())
@@ -139,6 +142,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypePublicBasePublic.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -186,6 +190,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypePublicBaseProtected.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -232,6 +237,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypeProtectedBaseProtected.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -278,6 +284,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypePublicBasePackagePrivate.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -324,6 +331,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypeProtectedBasePackagePrivate.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -369,6 +377,7 @@ class AnnotatedEntityMetamodelCommandHandlerInheritanceTest {
             return AnnotatedEntityMetamodel.forConcreteType(
                     SubtypePackagePrivateBasePackagePrivate.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
