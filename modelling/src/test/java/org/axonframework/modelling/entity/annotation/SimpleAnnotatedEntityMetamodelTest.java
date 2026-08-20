@@ -42,6 +42,7 @@ class SimpleAnnotatedEntityMetamodelTest extends AbstractAnnotatedEntityMetamode
         return AnnotatedEntityMetamodel.forConcreteType(
                 TodoItem.class,
                 parameterResolverFactory,
+                handlerDefinition,
                 messageTypeResolver,
                 messageConverter,
                 eventConverter
