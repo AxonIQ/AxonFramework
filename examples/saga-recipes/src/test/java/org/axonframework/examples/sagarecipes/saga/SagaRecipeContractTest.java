@@ -27,10 +27,11 @@ import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRegistered;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
+import org.axonframework.examples.sagarecipes.rental.event.BikeInUse;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.examples.sagarecipes.rental.write.approverequest.ApproveRequest;
 import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectRequest;
-import org.axonframework.examples.sagarecipes.saga.deadline.PaymentsAwaitingConfirmation;
+import org.axonframework.examples.sagarecipes.saga.shared.CancelRentalPayment;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.test.fixture.AxonTestFixture;
@@ -38,7 +39,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -68,13 +68,6 @@ public abstract class SagaRecipeContractTest {
 
     @Autowired
     protected AxonTestFixture fixture;
-
-    /**
-     * The deadline replacement. Not part of any recipe: it dispatches a command every recipe handles, so the timeout
-     * belongs in the shared contract rather than being proven against one implementation.
-     */
-    @Autowired
-    protected PaymentsAwaitingConfirmation paymentsAwaitingConfirmation;
 
     /**
      * Unique per test: the renter is a tag, and the event store is shared across the whole run.
@@ -220,37 +213,37 @@ public abstract class SagaRecipeContractTest {
     /**
      * Axon Framework 4: {@code shouldRejectPaymentWhenNotConfirmedIn30Seconds}, which used a scheduled deadline.
      * <p>
-     * The longest path in the module, and the one that ties everything together: the sweeper asks the process to give
-     * up, the process asks the payment context to call the payment off, and the resulting cancellation brings the
-     * rental context back to a released bike. Every recipe has to carry that chain.
-     * <p>
-     * No clock is manipulated and nothing sleeps. The sweeper takes the moment to judge against as an argument, which
-     * is the entire reason it was written that way.
+     * The process's side of a timeout: it is asked to give up, and the bike ends up released. What decides that the
+     * moment has come is not the process's concern, which is why nothing here mentions a clock or a sweep. The
+     * component that notices overdue payments is tested on its own, in {@code PaymentsAwaitingConfirmationTest}.
      */
     @Test
-    void givenPaymentNotConfirmed_whenTimeoutElapses_thenRequestRejected() {
-        // given a payment prepared and left unpaid
+    void givenPaymentNotConfirmed_whenAskedToGiveUp_thenRequestRejected() {
+        // given a payment was asked for and never arrived
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
         var reference = RentalPaymentReference.forRental(rentalId);
-        var preparedAt = Instant.now();
 
+        // The payment is not published here: the process asks for it, and the payment context creates it. That
+        // matters, because waiting for PreparePayment is what tells us the process has noticed this rental. The
+        // recipes that record their own progress do so asynchronously, and asking one to give up before it has
+        // noticed would find nothing to give up on.
         fixture.given()
                .events(new BikeRegistered(bikeId, "city", "Vilnius"),
-                       new BikeRequested(bikeId, renter, rentalId),
-                       new PaymentPrepared(PaymentId.random(), RentalPricing.PRICE, reference));
-
-        // when the sweep runs at a moment past the timeout, and then the bike ends up released
-        // The sweep is driven inside the await on purpose. It is a pure reader, and cancelling is idempotent, so
-        // running it repeatedly while the projection catches up is not a workaround but a property worth showing.
-        fixture.given()
-               .noPriorActivity()
+                       new BikeRequested(bikeId, renter, rentalId))
                .then()
-               .await(result -> {
-                   paymentsAwaitingConfirmation.cancelOverduePayments(preparedAt.plus(Duration.ofHours(1)));
-                   result.commandsSatisfy(commands -> SagaRecipeAssertions.assertDispatched(
-                           commands, new RejectRequest(bikeId, renter)
-                   ));
-               }, TIMEOUT);
+               .await(result -> result.commandsSatisfy(commands -> SagaRecipeAssertions.assertDispatched(
+                       commands, new PreparePayment(reference, RentalPricing.PRICE)
+               )), TIMEOUT)
+               .and()
+               // when
+               .when()
+               .command(new CancelRentalPayment(rentalId))
+               // then
+               .then()
+               .success()
+               .await(result -> result.commandsSatisfy(
+                       commands -> SagaRecipeAssertions.assertDispatched(commands, new RejectRequest(bikeId, renter))
+               ), TIMEOUT);
     }
 }
