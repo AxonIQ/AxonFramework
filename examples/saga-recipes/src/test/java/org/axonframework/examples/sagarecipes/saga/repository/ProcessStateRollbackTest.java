@@ -59,7 +59,13 @@ import static org.awaitility.Awaitility.await;
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-@AxonSpringBootTest(properties = "saga.recipe=repository")
+@AxonSpringBootTest(properties = {
+        "saga.recipe=repository",
+        // A rejected batch is retried only after the coordinator's next attempt to claim a token, which by default
+        // is five seconds away. This test is the only one that waits for a retry, and at the default it spends
+        // almost all its time asleep. The key "..default" applies to every processor in this context.
+        "axon.eventhandling.processors[..default].token-claim-interval=200"
+})
 class ProcessStateRollbackTest {
 
     /**
@@ -94,16 +100,17 @@ class ProcessStateRollbackTest {
                .atMost(Duration.ofSeconds(10))
                .until(() -> rejectedPayments.count() >= 1);
 
-        // and the rejected step left no row behind, and still has none after the retries that follow
-        await().alias("the process state staying absent after a rejected step")
-               .during(Duration.ofSeconds(2))
-               .atMost(Duration.ofSeconds(5))
-               .untilAsserted(() -> assertThat(repository.findById(rentalId.raw())).isEmpty());
+        // and the rejected step committed nothing. No waiting is needed to know that: the row was written inside
+        // the unit of work, so it was never visible to a reader outside it and never will be.
+        assertThat(repository.findById(rentalId.raw())).isEmpty();
 
         // and the event kept coming back, which it can only do while the tracking token stays where it was
         await().alias("the event being redelivered")
                .atMost(Duration.ofSeconds(10))
                .until(() -> rejectedPayments.count() >= 2);
+
+        // and a second attempt, which had every chance to leave something behind, also stored nothing
+        assertThat(repository.findById(rentalId.raw())).isEmpty();
     }
 
     /**
