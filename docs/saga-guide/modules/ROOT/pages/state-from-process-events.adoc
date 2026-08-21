@@ -10,7 +10,7 @@ whether that suited it or not; this is the option version 5 opens up by taking t
 Two situations make this the right choice, and both are common.
 
 The first is integration with something you do not own. Deriving state from
-xref:sagas:state-from-domain-events.adoc[domain events] needs the other context's events in your store, carrying a tag
+xref::state-from-domain-events.adoc[domain events] needs the other context's events in your store, carrying a tag
 you can select on. Against a payment provider that merely calls you back, that is impossible. This process reads only
 its own events, so it needs nothing from the other side beyond being told that something happened.
 
@@ -119,6 +119,6 @@ a|
 
 == Where next
 
-If the audit trail is not worth the machinery and you own both contexts, xref:sagas:state-from-domain-events.adoc[state
+If the audit trail is not worth the machinery and you own both contexts, xref::state-from-domain-events.adoc[state
 derived from domain events] does the same job with less. If the process is really several independent reactions, see
-xref:sagas:automation-slices.adoc[automation slices].
+xref::automation-slices.adoc[automation slices].

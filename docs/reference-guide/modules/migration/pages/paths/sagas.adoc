@@ -7,7 +7,7 @@ association values, and no `SagaTestFixture`. The `DeadlineManager` and `@Deadli
 
 That sounds like a gap, and for running sagas it currently is. For new ones it is not: the shapes a saga took are
 written directly, with the same building blocks as everything else, and the
-xref:sagas:index.adoc[Sagas and Process Managers] guide describes four of them in detail.
+xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes four of them in detail.
 
 [IMPORTANT]
 .Read this before planning a migration
@@ -51,7 +51,7 @@ If you are writing *new* processes, nothing is blocking you.
 
 | `DeadlineManager`, `@DeadlineHandler`
 | A projection of outstanding work plus a scheduled sweep that sends a command. See
-xref:sagas:deadlines.adoc[deadlines].
+xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 
 | `DeadlineManager.cancelAllWithinScope(...)`
 | Nothing. Nothing is scheduled, so nothing has to be cancelled.
@@ -74,15 +74,15 @@ choosing where to keep state, because it decides which approaches are even avail
 [#choosing]
 == Choosing a replacement
 
-The xref:sagas:index.adoc#choosing[guide] compares the four approaches properly. In short:
+The xref:saga-guide:ROOT:index.adoc#choosing[guide] compares the four approaches properly. In short:
 
-* xref:sagas:state-in-a-repository.adoc[State in a repository] is the closest to what you have and the smallest step.
+* xref:saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to what you have and the smallest step.
 Start here if you are porting an existing saga.
-* xref:sagas:state-from-domain-events.adoc[State derived from domain events] stores nothing, if both contexts write to
+* xref:saga-guide:ROOT:state-from-domain-events.adoc[State derived from domain events] stores nothing, if both contexts write to
 one event store and their events carry a tag you can select on.
-* xref:sagas:state-from-process-events.adoc[State from the process's own events] suits integration with systems whose
+* xref:saga-guide:ROOT:state-from-process-events.adoc[State from the process's own events] suits integration with systems whose
 events are not yours, and gives an audit trail of the process.
-* xref:sagas:automation-slices.adoc[Automation slices] break the process into independent reactions, which fits
+* xref:saga-guide:ROOT:automation-slices.adoc[Automation slices] break the process into independent reactions, which fits
 Vertical Slice Architecture and Event Modelling.
 
 [#deadlines]
@@ -104,7 +104,7 @@ outstanding work. The choice of a command rather than an event is the part worth
 * Nothing is scheduled, so nothing has to be cancelled. Every `cancelAllWithinScope` call in an `@EndSaga` method can
   be deleted rather than translated.
 
-The full pattern, including where it gets harder, is on the xref:sagas:deadlines.adoc[deadlines] page.
+The full pattern, including where it gets harder, is on the xref:saga-guide:ROOT:deadlines.adoc[deadlines] page.
 
 [#strategy]
 == Migrating an application with running sagas
@@ -140,7 +140,7 @@ How long that takes is the length of your longest process, so measure it rather 
 Both implementations are live during the drain, which means the trigger event is handled twice: once by the old saga
 for instances that already exist, and once by the new one. Make sure the commands the process sends are idempotent
 before you start, which they should be regardless. See
-xref:sagas:index.adoc#two-rules[the two rules] in the guide.
+xref:saga-guide:ROOT:index.adoc#two-rules[the two rules] in the guide.
 
 If double-sending is unacceptable for a particular step, gate the new implementation on the absence of a version 4
 saga for that correlation value until the drain completes.
@@ -174,7 +174,7 @@ about, then assert on the command the process sends.
 | No equivalent. Assert on the observable outcome, or on your own state if the approach keeps any.
 
 | `whenTimeElapses(duration)`
-| No equivalent. Structure the timeout so it can be invoked directly; see xref:sagas:deadlines.adoc[deadlines].
+| No equivalent. Structure the timeout so it can be invoked directly; see xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 |===
 
 The absence of `expectActiveSagas` is worth a moment. It asserted on framework-managed bookkeeping, which no longer

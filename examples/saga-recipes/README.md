@@ -3,9 +3,8 @@
 Four ways to implement an Axon Framework 4 Saga in Axon Framework 5, applied to the same business process, with one
 shared test proving they are interchangeable.
 
-The reference guide describes these approaches in prose: see
-[Sagas and Process Managers](https://docs.axoniq.io/axon-framework-reference/development/sagas/). This module is the
-running code behind it.
+The approaches are described in prose in the
+[Sagas and Process Managers guide](https://docs.axoniq.io/saga-guide/). This module is the running code behind it.
 
 ## The process
 

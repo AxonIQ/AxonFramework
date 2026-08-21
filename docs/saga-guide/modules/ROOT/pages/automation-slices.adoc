@@ -123,6 +123,6 @@ not.
 == Where next
 
 If the process turns out to need a shared view of its own progress, see
-xref:sagas:state-in-a-repository.adoc[state in a repository] or
-xref:sagas:state-from-process-events.adoc[state from the process's own events]. For the timeout slice, see
-xref:sagas:deadlines.adoc[deadlines].
+xref::state-in-a-repository.adoc[state in a repository] or
+xref::state-from-process-events.adoc[state from the process's own events]. For the timeout slice, see
+xref::deadlines.adoc[deadlines].

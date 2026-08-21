@@ -76,7 +76,7 @@ The projection is written only by event handlers. The sweep only reads and dispa
 
 That split is what makes the pattern safe. The list cannot drift from the event stream, because nothing else writes to
 it, and the sweep has no state of its own to keep in step with anything. This is the same hazard that
-xref:sagas:state-in-a-repository.adoc#ordering[keeping process state in a repository] has to work around by care,
+xref::state-in-a-repository.adoc#ordering[keeping process state in a repository] has to work around by care,
 avoided here by construction.
 ====
 
