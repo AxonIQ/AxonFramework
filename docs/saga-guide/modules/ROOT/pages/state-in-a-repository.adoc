@@ -2,12 +2,11 @@
 :navtitle: State in a repository
 :reftext: State in a repository
 
-The process keeps what it needs to remember in a table of its own. This is the closest shape to an Axon Framework 4
-saga, the easiest to arrive at from an existing one, and the right place to start if you are unsure.
+The process keeps what it needs to remember in a table of its own. It is the most familiar of the approaches and the
+right place to start if you are unsure.
 
-The difference from version 4 is the schema. A `SagaStore` serialized the whole saga instance into an opaque blob, so
-the only way to ask it anything was to load and deserialize it. Here the columns are ordinary columns: you can query
-them, index them, report on them, and join them.
+The state is an ordinary record with ordinary columns, which is the whole point: you can query it, index it, report on
+it, and join it. A process whose progress somebody will eventually ask about wants exactly that.
 
 == When to use it
 
@@ -111,7 +110,7 @@ depends on whether anyone will ask.
 | Good | Not so good
 
 a|
-* Familiar coming from version 4, and the smallest migration step.
+* The most familiar shape, and the fewest new ideas to take on.
 * State is queryable, indexable and reportable.
 * Works regardless of where the events it reacts to come from.
 * No requirement on tags, event stores, or ownership of the other context.
