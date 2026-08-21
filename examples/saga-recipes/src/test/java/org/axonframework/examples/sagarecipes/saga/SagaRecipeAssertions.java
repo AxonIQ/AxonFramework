@@ -18,6 +18,9 @@ package org.axonframework.examples.sagarecipes.saga;
 
 import org.axonframework.examples.sagarecipes.payment.PaymentReference;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentPrepared;
+import org.axonframework.examples.sagarecipes.rental.RentalId;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentProcessCompleted;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentRequested;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -40,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public final class SagaRecipeAssertions {
 
     private static final QualifiedName PAYMENT_PREPARED = new QualifiedName(PaymentPrepared.class);
+    private static final QualifiedName RENTAL_PAYMENT_REQUESTED = new QualifiedName(RentalPaymentRequested.class);
 
     /**
      * Asserts that the process dispatched the given command.
@@ -84,6 +88,39 @@ public final class SagaRecipeAssertions {
         assertThat(prepared)
                 .describedAs("a redelivered trigger must not create a second payment for the same reference")
                 .hasSize(1);
+    }
+
+    /**
+     * Asserts that the process appended an event of its own for the given rental.
+     * <p>
+     * Only the recipes that record their own facts can satisfy this, which is exactly why it lives outside the shared
+     * contract.
+     *
+     * @param events    every event recorded so far
+     * @param eventType the process event that should have been appended
+     * @param rentalId  the rental it should concern
+     */
+    public static void assertProcessEventAppended(
+            List<EventMessage> events,
+            Class<?> eventType,
+            RentalId rentalId
+    ) {
+        var expected = new QualifiedName(eventType);
+        var appended = events.stream()
+                             .filter(event -> expected.equals(event.type().qualifiedName()))
+                             .filter(event -> rentalIdOf(event).equals(rentalId))
+                             .toList();
+
+        assertThat(appended)
+                .describedAs("the process should have recorded a %s for %s", eventType.getSimpleName(), rentalId)
+                .hasSize(1);
+    }
+
+    private static RentalId rentalIdOf(EventMessage event) {
+        if (RENTAL_PAYMENT_REQUESTED.equals(event.type().qualifiedName())) {
+            return event.payloadAs(RentalPaymentRequested.class).rentalId();
+        }
+        return event.payloadAs(RentalPaymentProcessCompleted.class).rentalId();
     }
 
     private static List<Object> payloadsOf(List<CommandMessage> commands) {
