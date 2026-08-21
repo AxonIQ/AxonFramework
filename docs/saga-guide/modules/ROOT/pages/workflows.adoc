@@ -1,0 +1,50 @@
+= Process Management with Axoniq Framework Workflows
+:navtitle: Axoniq Framework Workflows
+
+Axoniq Framework provides a Workflow Engine for first-class, durable process orchestration.
+Instead of assembling a Process Manager from event handlers, a repository, and a scheduler, you write the process as a workflow with durable steps and explicit waits.
+The engine records workflow progress and restores it after a restart.
+
+[IMPORTANT]
+====
+Workflows are part of Axoniq Framework, not the open source Axon Framework APIs.
+They are a Preview feature and are not intended for production use.
+Check the current availability and licensing conditions before selecting this approach.
+====
+
+== When to choose a workflow
+
+Choose a workflow when the process itself deserves a first-class lifecycle and your project can use Axoniq Framework.
+It is particularly useful when the process:
+
+* waits for several external events;
+* runs steps sequentially or in parallel;
+* needs durable process state and an audit trail;
+* contains explicit failure, cancellation, compensation, or timeout paths; or
+* would otherwise require substantial custom Process Manager infrastructure.
+
+The Workflow Engine supplies primitives for executing steps, waiting for events, managing durable payload, combining concurrent results, and completing, failing, or cancelling a workflow.
+This is a different abstraction from the xref:automation-slices.adoc[automation-slice approach].
+An automation slice models one independent `Event -> Automation -> Command` reaction.
+A workflow models the end-to-end control flow and lifecycle in one durable definition.
+
+== Preserve domain boundaries
+
+A workflow coordinates consistency boundaries.
+It should not replace them.
+Its steps send commands or call idempotent app operations, while the target entity remains responsible for business invariants.
+Keep correlation values explicit and avoid teaching one bounded context about another merely to simplify the workflow.
+
+Workflow steps have at-least-once execution semantics.
+If a step action completes but its completion event is not stored, recovery can execute that action again.
+The same idempotency rule used by the Process Manager recipes therefore applies to workflow actions.
+
+== Time-driven steps
+
+The Workflow Engine can suspend a workflow while it waits for an event or sleeps for a duration.
+That is the natural choice when time is part of a workflow that already runs in the engine.
+
+For Process Managers built from open source Axon Framework components, use the xref:timeouts.adoc[timeout projection] described in this guide.
+It changes an elapsed-time signal into an ordinary idempotent command so that the target consistency boundary decides whether the action is still valid.
+
+For the Workflow Engine API, lifecycle, testing, and current limitations, see link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Axoniq Framework Workflows].

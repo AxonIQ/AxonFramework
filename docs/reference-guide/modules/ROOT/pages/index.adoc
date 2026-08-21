@@ -43,7 +43,6 @@ A summary of the various chapters is given below.
 |xref:messaging-concepts:index.adoc[Messaging Concepts] |Conceptual overview of "Messages" and all concepts relating to it
 |xref:commands:index.adoc[Commands] |Chapter dedicated to dispatching commands, handling commands, and drafting Command Models / Entities
 |xref:events:index.adoc[Events] |Chapter dedicated to publishing and handling events, and all the specifics surrounding Event Processing
-|xref:sagas:index.adoc[Sagas and Process Managers] |Guide to coordinating business processes across consistency boundaries
 |xref:queries:index.adoc[Queries] |Chapter dedicated to dispatching and handling queries
 |xref:testing:index.adoc[Testing] |Testing capabilities provided by the Framework
 |xref:conversion.adoc[Conversion] |Details on the conversion capabilities of Framework

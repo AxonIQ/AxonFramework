@@ -1,0 +1,15 @@
+name: saga-guide
+title: Saga Pattern and Process Managers
+version:
+  axon-(?<version>+({0..9}).+({0..9})).*: $<version>
+  '*': development
+start_page: ROOT:index.adoc
+
+asciidoc:
+  attributes:
+    component_description: How to implement the Saga Pattern and Process Managers with Axon Framework 5
+    type: guide
+    group: axon-framework
+
+nav:
+  - modules/nav.adoc

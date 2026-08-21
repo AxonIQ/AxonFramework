@@ -4,8 +4,8 @@
 Axon Framework 5 does not contain the Axon Framework 4 Saga infrastructure.
 There is no `@Saga`, `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle`, `SagaStore`, or `DeadlineManager` replacement with the same storage model.
 
-For new business processes, implement the Saga Pattern as a Process Manager using regular Axon Framework 5 components.
-The xref:sagas:index.adoc[Saga Pattern and Process Managers] guide compares five working approaches and provides a shared replacement for deadlines.
+For new business processes, implement the Saga Pattern as a Process Manager using regular Axon Framework 5 components, or evaluate the Workflow Engine provided by Axoniq Framework.
+The xref:saga-guide::index.adoc[Saga Pattern and Process Managers guide] compares open source Process Manager approaches with Axoniq Framework Workflows and provides a shared replacement for deadlines.
 
 [WARNING]
 ====
@@ -22,11 +22,11 @@ Applications that must transfer active Saga state or pending deadlines should wa
 
 |`@Saga`
 |Regular event-handling and command-handling component
-|Choose an explicit state model from xref:sagas:index.adoc#choosing-implementation[the Process Manager decision table].
+|Choose an explicit state model from xref:saga-guide::index.adoc#choosing-implementation[the Process Manager decision table].
 
 |`SagaStore`
 |Private repository, existing domain events, or process-owned events
-|Start with xref:sagas:repository.adoc[a private repository]. It is the closest operational model, but its schema belongs to the app.
+|Start with xref:saga-guide::repository.adoc[a private repository]. It is the closest operational model, but its schema belongs to the app.
 
 |`@StartSaga`
 |An event handler that creates or derives process state
@@ -93,7 +93,7 @@ The target command handler remains authoritative and ignores cancellation after 
 
 This timeout projection is independent of the Process Manager state recipe.
 The same `CancelRentalPayment` command can also be sent by an operator, REST endpoint, test, or external scheduler.
-See xref:sagas:timeouts.adoc[Replacing Saga deadlines with a timeout projection] for the complete pattern and its multi-instance and replay considerations.
+See xref:saga-guide::timeouts.adoc[Replacing Saga deadlines with a timeout projection] for the complete pattern and its multi-instance and replay considerations.
 
 Already scheduled Axon Framework 4 deadlines cannot be converted into timeout-projection rows automatically.
 Keep their Axon Framework 4 deadline infrastructure active until they fire or wait for a supported data-migration mechanism.

@@ -2,7 +2,7 @@
 :navtitle: Direct Event Append
 
 An event handler may append a process event directly with `EventAppender`.
-This removes the recording command from xref:sagas:process-events.adoc[the command-recorded approach] while preserving the same process event stream and observable behavior.
+This removes the recording command from xref:process-events.adoc[the command-recorded approach] while preserving the same process event stream and observable behavior.
 
 == Append only after success
 
@@ -40,6 +40,6 @@ Choose direct appending when:
 * The team accepts an event without a preceding command.
 * The wider batch conflict scope is acceptable.
 
-Prefer xref:sagas:process-events.adoc[recording commands] when command-to-event traceability and independently repairable write slices matter more than reducing code.
+Prefer xref:process-events.adoc[recording commands] when command-to-event traceability and independently repairable write slices matter more than reducing code.
 
 The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/eventsourcedappend[`saga/eventsourcedappend`].

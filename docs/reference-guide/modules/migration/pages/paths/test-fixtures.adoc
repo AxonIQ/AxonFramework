@@ -11,7 +11,7 @@ If you are curious about more details on the `AxonTestFixture`, be sure to read 
 ====
 There is no dedicated `SagaTestFixture` in Axon Framework 5.
 Process Managers are regular event-handling and command-handling components, so test them through `AxonTestFixture` using the same application configuration as production.
-See xref:sagas:index.adoc[Saga Pattern and Process Managers] for the available implementation approaches.
+See the xref:saga-guide::index.adoc[Saga Pattern and Process Managers guide] for the available implementation approaches.
 ====
 
 == Why the change?

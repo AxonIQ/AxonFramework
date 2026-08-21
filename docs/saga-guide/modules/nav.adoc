@@ -1,0 +1,8 @@
+* xref::index.adoc[]
+** xref::repository.adoc[]
+** xref::event-derived-state.adoc[]
+** xref::process-events.adoc[]
+** xref::direct-event-append.adoc[]
+** xref::automation-slices.adoc[]
+** xref::workflows.adoc[]
+** xref::timeouts.adoc[]

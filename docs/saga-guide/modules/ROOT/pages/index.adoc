@@ -9,9 +9,10 @@ A _Process Manager_ coordinates such a process by reacting to events and dispatc
 This pattern is also commonly called the _Saga Pattern_.
 Each process instance manages one business transaction, remembers only the information needed for later steps, and can take compensating actions when the process cannot complete normally.
 
-Axon Framework 5 does not prescribe a Saga service provider interface, Saga Store, or Saga lifecycle annotations.
-A Process Manager is built from regular event handlers, command handlers, event-sourced entities, and app-owned persistence.
-This makes the state model an explicit design choice.
+The open source Axon Framework 5 APIs do not prescribe a Saga service provider interface, Saga Store, or Saga lifecycle annotations.
+A Process Manager can be built from regular event handlers, command handlers, event-sourced entities, and app-owned persistence.
+Axoniq Framework also provides a dedicated Workflow Engine.
+This guide helps you choose between those options.
 
 The pages in this guide use the runnable link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes[`saga-recipes` example].
 It implements the same bike-rental payment process in five ways.
@@ -33,39 +34,46 @@ The Process Manager remembers the `bikeId` and `renter` needed after payment set
 |===
 |Approach |State |Recommended when |Advantages |Costs
 
-|xref:sagas:repository.adoc[Private repository]
+|xref:repository.adoc[Private repository]
 |App-owned database row
 |Start here. Use it when you want a direct replacement for an Axon Framework 4 Saga or must coordinate events from systems you cannot event-source.
 |Familiar persistence, explicit schema, straightforward lifecycle, works with external systems
 |Adds a state store; repository state and target commands are not one distributed transaction
 
-|xref:sagas:event-derived-state.adoc[State derived from domain events]
+|xref:event-derived-state.adoc[State derived from domain events]
 |Re-sourced from existing events
 |Both bounded contexts share an event store and their events contain enough information to reconstruct progress.
 |No Process Manager writes, no cleanup, excellent retry behavior
 |Reads the event store for every reaction; cannot remember side effects that produce no event
 
-|xref:sagas:process-events.adoc[Process-owned events through commands]
+|xref:process-events.adoc[Process-owned events through commands]
 |Dedicated process event stream
 |You need an audit trail of process decisions, or source events come from an external system.
 |Auditable, conventional command-to-event write slices, repairable by resending commands
 |More message types and an extra command for each recorded step
 
-|xref:sagas:direct-event-append.adoc[Process-owned events appended by event handlers]
+|xref:direct-event-append.adoc[Process-owned events appended by event handlers]
 |Dedicated process event stream
 |You need process events and atomic recording with the processor token, and accept direct event appends.
 |Less code than command-recorded events; process event and token commit together
 |Breaks the command-to-event convention; broader batch conflict surface
 
-|xref:sagas:automation-slices.adoc[Vertical automation slices]
+|xref:automation-slices.adoc[Vertical automation slices]
 |Tracking token plus slice-private lookups
 |Your app follows Vertical Slice Architecture or Event Modeling and process steps should evolve independently.
 |Small focused components, little or no state, independent tests
 |No central lifecycle; related slices need explicit processor assignment and operational coordination
+
+|xref:workflows.adoc[Axoniq Framework Workflows]
+|Workflow payload and engine-owned events
+|Axoniq Framework is available to your project and you need a first-class durable workflow abstraction.
+|Explicit workflow lifecycle, durable steps, event waits, orchestration, and built-in process audit trail
+|Preview API; separate Axoniq Framework availability and licensing; step actions still require idempotency
 |===
 
-The private repository is the recommended default.
-Move to another approach only when its state or audit model solves a concrete requirement.
+For an open source Axon Framework app, the private repository is the recommended default.
+If your project uses Axoniq Framework and accepts the current Preview status, consider its Workflow Engine before implementing the infrastructure yourself.
+Move to another approach only when its state, audit, or architecture model solves a concrete requirement.
 
 == Keep bounded contexts independent
 
@@ -119,7 +127,7 @@ The runnable recipes use Spring Boot.
 `@Component` makes annotated event and command handlers available for autodetection, while `@Namespace` controls processor assignment when several components form one process.
 
 Without Spring, register the same object as an autodetected command-handling component and as an autodetected event-handling component on a pooled streaming processor.
-See xref:commands:configuration.adoc[Command configuration] and xref:events:event-handlers.adoc#registering_event_handlers[registering event handlers] for the configuration API.
+See xref:axon-framework-reference:commands:configuration.adoc[Command configuration] and xref:axon-framework-reference:events:event-handlers.adoc#registering_event_handlers[registering event handlers] for the configuration API.
 The state and reliability patterns on the following pages do not depend on Spring.
 
 == Testing the observable process
@@ -132,4 +140,4 @@ Recipe-specific tests then verify details such as repository rows or process-own
 Event processors run asynchronously in the fixture, so event-driven assertions must await their outcome.
 For timeout projections, call the plain method that accepts `Instant now` with synthetic time instead of sleeping.
 
-See xref:sagas:timeouts.adoc[Replacing deadlines] for time-driven process steps that work with every state approach.
+See xref:timeouts.adoc[Replacing deadlines] for time-driven process steps that work with every state approach.
