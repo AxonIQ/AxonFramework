@@ -39,9 +39,10 @@ Axon-specific.
 include::example$sagas/staterepository/RentalPaymentProcess.java[tag=process,indent=0]
 ----
 <1> The idempotency check. A redelivered `BikeRequested` must not ask for payment a second time.
-<2> An ordinary repository call in an ordinary method. It commits with the tracking token, for the reason below.
-<3> Returning the result of the dispatch is what makes the processor await the command and leave the tracking token
-where it is if it failed.
+<2> An ordinary repository call in an ordinary method. It commits with the tracking token, and rolls back with it,
+for the reason below.
+<3> Returning the result of the dispatch is what makes the processor await the command. A failed command fails the
+handler, which rolls the transaction back and leaves the tracking token where it was.
 <4> Ending the process by forgetting it.
 
 There is no ceremony here, and the absence is worth explaining, because storing process state alongside a tracking
@@ -66,7 +67,9 @@ does. No `@Transactional`, no `runOnPrepareCommit`, no callback.
 == Why the write comes first
 
 Purely so that it happens on the handler's own thread, where the transaction is bound. Ordering carries no correctness
-weight here: a failed dispatch fails the handler, and the row rolls back with everything else.
+weight here, because a failed command takes the write with it: the handler fails, the transaction rolls back, the row
+is gone as though it had never been written, and the tracking token stays put so the event is redelivered. The
+redelivery finds no row, so the guard lets it through and the process tries again from the top.
 
 What does break is deferring the write until after the command has answered:
 

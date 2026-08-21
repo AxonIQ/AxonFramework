@@ -88,8 +88,10 @@ way to find out.
 
 They commit together without any effort on your part when the write happens inside the unit of work: with a
 `PlatformTransactionManager` present, the handler runs in a transaction that commits alongside the token, so an
-ordinary repository call in an ordinary handler is already atomic with it. What breaks the property is moving the write
-out of the handler, typically into a callback on the command's future, which runs on a thread with nothing bound to it.
+ordinary repository call in an ordinary handler is already atomic with it. That holds on the failure path too, which is
+the half worth remembering: a command that fails fails the handler, the transaction rolls back, and the write is undone
+along with the token. What breaks the property is moving the write out of the handler, typically into a callback on the
+command's future, which runs on a thread with nothing bound to it.
 
 Ordering the write against the dispatch is a smaller question than it looks, and
 xref::state-in-a-repository.adoc#ordering[the repository page] works it through.
