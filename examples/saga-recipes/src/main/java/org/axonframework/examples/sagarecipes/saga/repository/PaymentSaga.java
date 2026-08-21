@@ -34,9 +34,7 @@ import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -46,20 +44,27 @@ import java.util.concurrent.CompletableFuture;
 /**
  * The rental payment process, remembering what it needs in a table of its own.
  * <p>
- * The closest of the recipes to an Axon Framework 4 saga, and the one that has to be most careful. Two things happen
- * per step now, dispatching a command and writing a row, and no transaction spans both.
+ * The closest of the recipes to an Axon Framework 4 saga. Two things happen per step, writing a row and dispatching a
+ * command, and getting them to agree is this recipe's whole difficulty.
  * <p>
- * <b>The ordering rule.</b> Dispatch first, record only once the command has actually succeeded. The reverse order is
- * a real and quiet bug: if the dispatch fails after the row was written, the handler fails, the tracking token does
- * not advance, the event is redelivered, and the row now says the work is done. The process is wedged forever having
- * never asked for payment. {@code PaymentSagaTransactionalityTest} pins this.
+ * <b>Where the transaction comes from.</b> Nowhere in this class, which is the point. When a
+ * {@link org.springframework.transaction.PlatformTransactionManager} is on the classpath, Axon Framework wraps every
+ * unit of work in a transaction that begins before the handler is invoked and commits alongside the tracking token.
+ * The write below is an ordinary call in an ordinary method, and it lands in that transaction because the handler runs
+ * inside it. Row and token commit together, or neither does. No {@code @Transactional}, no deferral, no callback.
  * <p>
- * <b>Why the write is deferred.</b> {@code runOnPrepareCommit} puts the save in the unit of work that also stores the
- * tracking token, so the two commit together. Writing directly from the callback that completes the command's future
- * would be wrong twice: that callback may run on a thread with no transaction bound to it, and it would run whether
- * or not the batch later commits.
+ * <b>Why the write comes first.</b> Purely so it happens on the handler's own thread, where the transaction is bound.
+ * Ordering carries no correctness weight here: a failed dispatch rolls the row back with the rest of the unit of work.
+ * Deferring the write until after the command succeeded is what forces it out of the transaction and into a callback
+ * running on whichever thread completed the command's future, and that is a step no state-storing saga needs to take.
  * <p>
- * <b>Returning the future is load-bearing.</b> It is what makes the processor await the command and leave the token
+ * The exception is a process that cannot know what to store until the command has answered. Version 4's saga was in
+ * exactly that position, having to keep the {@code paymentId} that {@code PaymentPreparedEvent} handed back. This one
+ * is not: the payment reference is derived from the rental identifier, so everything worth storing is already in hand
+ * before the command is sent.
+ * <p>
+ * <b>Returning the future is load-bearing.</b> A {@link CommandDispatcher} hands back a future immediately and does
+ * not enlist with the unit of work, so returning it is what makes the processor await the command and leave the token
  * where it is on failure. Drop the {@code return} and this silently becomes fire-and-forget: the token advances, the
  * command is lost, and the process waits forever. That is what replaces version 4's {@code retryPayment} deadline.
  * <p>
@@ -86,22 +91,17 @@ public class PaymentSaga {
      *
      * @param event      the event that started this process
      * @param dispatcher dispatches the resulting command
-     * @param context    the unit of work this event is handled in
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher, ProcessingContext context) {
+    public CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher) {
         if (find(event.rentalId()).filter(PaymentSagaState::paymentRequested).isPresent()) {
             return CompletableFuture.completedFuture(null);
         }
+        repository.save(PaymentSagaState.paymentRequested(event.rentalId(), event.bikeId(), event.renter()));
         var reference = RentalPaymentReference.forRental(event.rentalId());
         return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
-                         .getResultMessage()
-                         .thenRun(() -> context.runOnPrepareCommit(ignored -> repository.save(
-                                 PaymentSagaState.paymentRequested(event.rentalId(),
-                                                                   event.bikeId(),
-                                                                   event.renter())
-                         )));
+                         .getResultMessage();
     }
 
     /**
@@ -109,19 +109,18 @@ public class PaymentSaga {
      *
      * @param event      the payment that came in
      * @param dispatcher dispatches the resulting command
-     * @param context    the unit of work this event is handled in
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher, ProcessingContext context) {
+    public CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher) {
         var state = activeProcessFor(event.paymentReference());
         if (state.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
         var process = state.get();
+        finish(process);
         return dispatcher.send(new ApproveRequest(process.bikeId(), process.renter()))
-                         .getResultMessage()
-                         .thenRun(() -> context.runOnPrepareCommit(ignored -> finish(process)));
+                         .getResultMessage();
     }
 
     /**
@@ -129,12 +128,11 @@ public class PaymentSaga {
      *
      * @param event      the refusal
      * @param dispatcher dispatches the resulting command
-     * @param context    the unit of work this event is handled in
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(PaymentRejected event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return rejectRequest(event.paymentReference(), dispatcher, context);
+    public CompletableFuture<?> on(PaymentRejected event, CommandDispatcher dispatcher) {
+        return rejectRequest(event.paymentReference(), dispatcher);
     }
 
     /**
@@ -142,12 +140,11 @@ public class PaymentSaga {
      *
      * @param event      the cancellation
      * @param dispatcher dispatches the resulting command
-     * @param context    the unit of work this event is handled in
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(PaymentCancelled event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return rejectRequest(event.paymentReference(), dispatcher, context);
+    public CompletableFuture<?> on(PaymentCancelled event, CommandDispatcher dispatcher) {
+        return rejectRequest(event.paymentReference(), dispatcher);
     }
 
     /**
@@ -155,19 +152,18 @@ public class PaymentSaga {
      *
      * @param event      the rejection
      * @param dispatcher dispatches the resulting command
-     * @param context    the unit of work this event is handled in
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(RequestRejected event, CommandDispatcher dispatcher, ProcessingContext context) {
+    public CompletableFuture<?> on(RequestRejected event, CommandDispatcher dispatcher) {
         var state = find(event.rentalId()).filter(process -> !process.paymentSettled());
         if (state.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
         var process = state.get();
+        finish(process);
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId())))
-                         .getResultMessage()
-                         .thenRun(() -> context.runOnPrepareCommit(ignored -> finish(process)));
+                         .getResultMessage();
     }
 
     /**
@@ -186,19 +182,15 @@ public class PaymentSaga {
                          .getResultMessage();
     }
 
-    private CompletableFuture<?> rejectRequest(
-            PaymentReference reference,
-            CommandDispatcher dispatcher,
-            ProcessingContext context
-    ) {
+    private CompletableFuture<?> rejectRequest(PaymentReference reference, CommandDispatcher dispatcher) {
         var state = activeProcessFor(reference);
         if (state.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
         var process = state.get();
+        finish(process);
         return dispatcher.send(new RejectRequest(process.bikeId(), process.renter()))
-                         .getResultMessage()
-                         .thenRun(() -> context.runOnPrepareCommit(ignored -> finish(process)));
+                         .getResultMessage();
     }
 
     private Optional<PaymentSagaState> activeProcessFor(PaymentReference reference) {
@@ -212,8 +204,7 @@ public class PaymentSaga {
     /**
      * Ends the process by forgetting it. See the class documentation for why deleting is safe here.
      */
-    private @Nullable Void finish(PaymentSagaState process) {
+    private void finish(PaymentSagaState process) {
         repository.deleteById(process.rentalId().raw());
-        return null;
     }
 }
