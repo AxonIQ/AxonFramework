@@ -6,6 +6,8 @@ include::commands:partial$nav.adoc[]
 
 include::events:partial$nav.adoc[]
 
+include::sagas:partial$nav.adoc[]
+
 include::queries:partial$nav.adoc[]
 
 ifdef::workflows[]
