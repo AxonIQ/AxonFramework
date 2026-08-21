@@ -1,0 +1,16 @@
+spring:
+  autoconfigure:
+    exclude: org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
+  datasource:
+    url: jdbc:h2:mem:${random.uuid};DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+  jpa:
+    open-in-view: false
+  docker:
+    compose:
+      enabled: false
+axon:
+  axonserver:
+    enabled: false
+saga:
+  deadline:
+    initial-delay: PT1H
