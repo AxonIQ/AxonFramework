@@ -32,7 +32,11 @@ axon:
   axonserver:
     enabled: false
 saga:
-  recipe: injectentity
+  # No recipe by default. A slice test exercises one slice, and an active process would react to the events its
+  # given phase publishes and append more of its own. The recipe contract test switches a recipe on explicitly,
+  # through @AxonSpringBootTest(properties = "saga.recipe=..."), which also gives each recipe its own cached
+  # Spring context.
+  recipe: none
   deadline:
     payment-timeout: PT30S
     # Long enough that the scheduled sweep never fires during a test. Tests drive the sweeper directly
