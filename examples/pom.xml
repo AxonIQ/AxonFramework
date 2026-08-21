@@ -39,6 +39,7 @@
         to be stated here explicitly, managed centrally so example modules declare it version-free.
         -->
         <axoniq-platform-framework-client.version>5.2.0</axoniq-platform-framework-client.version>
+        <axoniq-framework.version>5.3.1</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
@@ -48,7 +49,7 @@
             <dependency>
                 <groupId>io.axoniq.framework</groupId>
                 <artifactId>axoniq-framework-bom</artifactId>
-                <version>${revision}</version>
+                <version>${axoniq-framework.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
