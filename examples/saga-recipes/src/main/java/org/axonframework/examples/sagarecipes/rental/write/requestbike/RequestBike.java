@@ -35,12 +35,12 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 public record RequestBike(BikeId bikeId, String renter, RentalId rentalId) {
 
     /**
-     * Routes this command to the composite decision model spanning the bike and the renter.
+     * Routes this command to the composite decision model spanning the bike, the renter and this request.
      *
      * @return the identifier of the decision model this command targets
      */
     @TargetEntityId
-    public RentalRequestId rentalRequestId() {
-        return new RentalRequestId(bikeId, renter);
+    RentalRequestId rentalRequestId() {
+        return new RentalRequestId(bikeId, renter, rentalId);
     }
 }
