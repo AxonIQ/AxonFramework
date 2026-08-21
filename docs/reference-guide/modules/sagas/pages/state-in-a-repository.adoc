@@ -1,0 +1,130 @@
+= State in a Repository
+:navtitle: State in a repository
+:reftext: State in a repository
+
+The process keeps what it needs to remember in a table of its own. This is the closest shape to an Axon Framework 4
+saga, the easiest to arrive at from an existing one, and the right place to start if you are unsure.
+
+The difference from version 4 is the schema. A `SagaStore` serialized the whole saga instance into an opaque blob, so
+the only way to ask it anything was to load and deserialize it. Here the columns are ordinary columns: you can query
+them, index them, report on them, and join them.
+
+== When to use it
+
+Use this when the process genuinely has to remember something, and either you want that memory queryable or the events
+it reacts to are not all in an event store you own.
+
+It is the only approach with no prerequisites at all beyond a place to write. If the payment side is a third-party
+provider whose events you merely receive, this still works, where
+xref:sagas:state-from-domain-events.adoc[deriving state from domain events] cannot.
+
+== The state
+
+Only one thing forces this process to remember anything: the command that confirms a rental targets the bike and names
+the renter, and no entity in either context is keyed by a rental. Nothing else can tell the process which bike to
+approve when payment arrives.
+
+[source,java]
+----
+include::example$sagas/staterepository/RentalPaymentProcess.java[tag=state,indent=0]
+----
+
+In a Spring application this is stored through an ordinary Spring Data repository. Nothing about it is
+Axon-specific.
+
+== The process
+
+[source,java]
+----
+include::example$sagas/staterepository/RentalPaymentProcess.java[tag=process,indent=0]
+----
+<1> The idempotency check. A redelivered `BikeRequested` must not ask for payment a second time.
+<2> Returning the result of the dispatch is what makes the processor await the command and leave the tracking token
+where it is if it failed.
+<3> The write happens only after the command succeeded, and is deferred into the unit of work that also stores the
+token.
+<4> Ending the process by forgetting it.
+
+Three of those four callouts are about ordering and transactions. That is the price of this approach, and it is worth
+being explicit about why each is written the way it is.
+
+[#ordering]
+== Why dispatch comes before the write
+
+Writing the row first and dispatching second looks equivalent and is not. If the dispatch fails, the handler fails, the
+token is not committed and the event is redelivered. The row now says payment was already asked for, so the guard on
+the next delivery skips the work. The process is wedged permanently, having never asked for payment, and nothing in the
+logs points at the row that caused it.
+
+Dispatching first has no such failure mode. If the command fails, nothing was written, the redelivery tries again. If
+the command succeeded but the commit did not, the redelivery sends the command again, and the receiver's idempotency
+absorbs it.
+
+[#transaction]
+== Why the write is deferred to the commit
+
+The obvious way to write after a successful dispatch is a callback on the command's future:
+
+[source,java]
+----
+// Do not do this
+return dispatcher.send(command)
+                 .getResultMessage()
+                 .thenRun(() -> repository.save(state));
+----
+
+That callback may run on a thread with no transaction bound to it, and it runs whether or not the batch later commits.
+Registering the save on the processing context instead puts it in the same unit of work that stores the tracking
+token, so the two commit together:
+
+[source,java]
+----
+return dispatcher.send(command)
+                 .getResultMessage()
+                 .thenRun(() -> context.runOnPrepareCommit(ignored -> repository.save(state)));
+----
+
+This is the single most important detail on this page. A process whose state can commit without its token, or the
+reverse, will drift, and the drift only shows up under failure.
+
+[#ending]
+== Ending the process
+
+Deleting the row is the simplest way to end, and it is what the sample does. It is safe here for a specific reason:
+every command this process sends is idempotent, so a redelivery arriving after the row is gone restarts the process,
+re-dispatches, and the receiving context declines to append anything.
+
+If that were not true, deleting would be unsafe, and you would keep a tombstone row instead:
+
+[source,java]
+----
+process.markCompleted();
+repository.save(process);
+----
+
+Keeping the row also gives you a queryable history of processes that ran, which deletion throws away. Which you want
+depends on whether anyone will ask.
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* Familiar coming from version 4, and the smallest migration step.
+* State is queryable, indexable and reportable.
+* Works regardless of where the events it reacts to come from.
+* No requirement on tags, event stores, or ownership of the other context.
+
+a|
+* Two effects per step, so the ordering and transaction rules must be observed by hand.
+* The state is a second source of truth that can drift from the events.
+* Ending is a decision you have to make and get right.
+|===
+
+== Where next
+
+If the state you are storing turns out to be derivable from events you already own, the process can stop storing
+anything: see xref:sagas:state-from-domain-events.adoc[state derived from domain events]. If you want a record of what
+the process itself did rather than only its outcomes, see
+xref:sagas:state-from-process-events.adoc[state from the process's own events].

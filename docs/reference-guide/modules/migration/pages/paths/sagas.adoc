@@ -1,0 +1,189 @@
+= Saga Migration
+:navtitle: Sagas
+:reftext: Saga migration
+
+Axon Framework 5 has no `Saga` construct. There is no `@Saga` stereotype, no `SagaStore`, no `SagaRepository`, no
+association values, and no `SagaTestFixture`. The `DeadlineManager` and `@DeadlineHandler` are gone with them.
+
+That sounds like a gap, and for running sagas it currently is. For new ones it is not: the shapes a saga took are
+written directly, with the same building blocks as everything else, and the
+xref:sagas:index.adoc[Sagas and Process Managers] guide describes four of them in detail.
+
+[IMPORTANT]
+.Read this before planning a migration
+====
+*State migration is not available yet.* There is no tooling to convert the contents of an Axon Framework 4 `SagaStore`
+into any Axon Framework 5 representation, and no tooling to carry scheduled deadlines across.
+
+If you have sagas *in flight*, or deadlines scheduled to fire, you cannot move them to Axon Framework 5 today. See
+<<strategy>> for how to migrate anyway, by letting the old ones finish where they are.
+
+If you are writing *new* processes, nothing is blocking you.
+====
+
+[#what-maps-to-what]
+== What maps to what
+
+[cols="1,2",options="header"]
+|===
+| Axon Framework 4 | Axon Framework 5
+
+| `@Saga`
+| An ordinary component with `@EventHandler` methods. Nothing marks it as special.
+
+| `@SagaEventHandler(associationProperty = "...")`
+| `@EventHandler`. Correlation is resolved by the entity identifier, a property, or your own `EntityIdResolver`.
+
+| `@StartSaga`
+| Nothing. The first event that concerns a process either creates its state or finds none, depending on the approach.
+
+| `@EndSaga`
+| Depends on the approach: delete the row, append a completion event, or nothing at all when state is derived.
+
+| `SagaLifecycle.associateWith(...)`
+| A tag on the event, or a derived correlation value. See the tip below.
+
+| `SagaLifecycle.end()`
+| Whatever the chosen approach records as "finished".
+
+| `SagaStore`, `SagaRepository`
+| A repository of your own, an event-sourced entity, or nothing.
+
+| `DeadlineManager`, `@DeadlineHandler`
+| A projection of outstanding work plus a scheduled sweep that sends a command. See
+xref:sagas:deadlines.adoc[deadlines].
+
+| `DeadlineManager.cancelAllWithinScope(...)`
+| Nothing. Nothing is scheduled, so nothing has to be cancelled.
+
+| `SagaTestFixture`
+| `AxonTestFixture`, publishing events in the given phase and asserting on dispatched commands.
+|===
+
+[TIP]
+.Association values are often unnecessary
+====
+Version 4 sagas commonly held state purely to remember an identifier. `SagaLifecycle.associateWith("paymentReference",
+event.rentalReference())` existed so a later payment event could find the saga again.
+
+If the correlation is derivable, the whole mechanism disappears: compute the payment reference from the rental
+identifier, and the process needs no association and no stored mapping in either direction. Check for this before
+choosing where to keep state, because it decides which approaches are even available to you.
+====
+
+[#choosing]
+== Choosing a replacement
+
+The xref:sagas:index.adoc#choosing[guide] compares the four approaches properly. In short:
+
+* xref:sagas:state-in-a-repository.adoc[State in a repository] is the closest to what you have and the smallest step.
+Start here if you are porting an existing saga.
+* xref:sagas:state-from-domain-events.adoc[State derived from domain events] stores nothing, if both contexts write to
+one event store and their events carry a tag you can select on.
+* xref:sagas:state-from-process-events.adoc[State from the process's own events] suits integration with systems whose
+events are not yours, and gives an audit trail of the process.
+* xref:sagas:automation-slices.adoc[Automation slices] break the process into independent reactions, which fits
+Vertical Slice Architecture and Event Modelling.
+
+[#deadlines]
+== Deadlines, and why the timeout became a command
+
+Version 4 scheduled a callback into the saga's own future. There is no equivalent, and the replacement is deliberately
+shaped differently rather than being a like-for-like substitute.
+
+The timeout becomes a *command* asking the process to give up, sent by a scheduled sweep over a projection of
+outstanding work. The choice of a command rather than an event is the part worth understanding when migrating:
+
+* The elapsing of a timeout is not, by itself, a fact about the business. It is a *request* to abandon something, and
+  the process may decline, because the payment arrived a moment ago. A request with a receiver entitled to say no is a
+  command.
+* Publishing a `PaymentTimedOut` event would assert as settled something that has not been decided, and leaves no
+  natural place to decide it. An event also has no result, so nothing can reject it.
+* A command can be sent by anyone: an operator, a support tool, a REST endpoint or a test. That is what makes the
+  timeout path testable without waiting, which a scheduled callback never was.
+* Nothing is scheduled, so nothing has to be cancelled. Every `cancelAllWithinScope` call in an `@EndSaga` method can
+  be deleted rather than translated.
+
+The full pattern, including where it gets harder, is on the xref:sagas:deadlines.adoc[deadlines] page.
+
+[#strategy]
+== Migrating an application with running sagas
+
+Because saga state cannot be carried across, migrate by *drainage* rather than conversion. The old sagas finish where
+they are, and the new implementation takes over new work.
+
+. *Stop starting new sagas in Axon Framework 4.* Remove the `@StartSaga` annotation from the version 4 saga. Existing
+instances keep receiving their events and run to completion; no new ones are created.
++
+[source,java]
+----
+@Saga
+public class PaymentSaga {
+
+    // @StartSaga  <1>
+    @SagaEventHandler(associationProperty = "bikeId")
+    public void on(BikeRequestedEvent event) {
+        // ...
+    }
+}
+----
+<1> Removing this is the whole trick. The saga can still advance and still end; it just cannot begin.
+
+. *Implement the process in Axon Framework 5* using one of the approaches above, and let it handle the same trigger
+event.
+. *Wait for the old instances to drain.* Query the `SagaStore` for active instances and watch the count fall to zero.
+How long that takes is the length of your longest process, so measure it rather than guessing.
+. *Retire the version 4 saga* once nothing is left, together with its `SagaStore` table and its deadline scheduler.
+
+[NOTE]
+====
+Both implementations are live during the drain, which means the trigger event is handled twice: once by the old saga
+for instances that already exist, and once by the new one. Make sure the commands the process sends are idempotent
+before you start, which they should be regardless. See
+xref:sagas:index.adoc#two-rules[the two rules] in the guide.
+
+If double-sending is unacceptable for a particular step, gate the new implementation on the absence of a version 4
+saga for that correlation value until the drain completes.
+====
+
+Scheduled deadlines drain the same way, provided the version 4 deadline manager keeps running until the last saga
+ends. Do not decommission it early.
+
+== Testing
+
+`SagaTestFixture` has no replacement. Use `AxonTestFixture`: publish the events leading up to the moment you care
+about, then assert on the command the process sends.
+
+[cols="1,2",options="header"]
+|===
+| `SagaTestFixture` | `AxonTestFixture`
+
+| `givenNoPriorActivity()`
+| `given().noPriorActivity()`
+
+| `givenAPublished(event)` / `andThenAPublished(event)`
+| `given().events(event, ...)`
+
+| `whenPublishingA(event)`
+| `when().event(event)`, or include it in `given().events(...)` and assert with `await`
+
+| `expectDispatchedCommands(command)`
+| `then().await(result -> result.commandsSatisfy(...))`
+
+| `expectActiveSagas(n)`
+| No equivalent. Assert on the observable outcome, or on your own state if the approach keeps any.
+
+| `whenTimeElapses(duration)`
+| No equivalent. Structure the timeout so it can be invoked directly; see xref:sagas:deadlines.adoc[deadlines].
+|===
+
+The absence of `expectActiveSagas` is worth a moment. It asserted on framework-managed bookkeeping, which no longer
+exists. Assert on what the process *did* instead, which is a better test in any case.
+
+== A worked example
+
+`examples/saga-recipes` in the
+link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank] implements
+the bike-rental payment saga from the version 4 sample application in every approach described here. One shared
+contract test runs the same scenarios against all of them, and its scenarios mirror the version 4 `PaymentSagaTest`
+method for method, which makes it a practical reference when porting your own tests.

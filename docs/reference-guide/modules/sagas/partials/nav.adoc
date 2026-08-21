@@ -1,0 +1,7 @@
+
+* xref:sagas:index.adoc[]
+** xref:sagas:state-in-a-repository.adoc[]
+** xref:sagas:state-from-domain-events.adoc[]
+** xref:sagas:state-from-process-events.adoc[]
+** xref:sagas:automation-slices.adoc[]
+** xref:sagas:deadlines.adoc[]

@@ -1,0 +1,142 @@
+= Deadlines
+:navtitle: Deadlines
+:reftext: Deadlines
+
+Most long-running processes need to give up eventually. A payment that never arrives, an approval nobody grants, a
+confirmation that never comes: something has to notice and act.
+
+Axon Framework 4 expressed that with a `DeadlineManager` and a `@DeadlineHandler` method, scheduling a callback into
+the saga's own future. Axon Framework 5 has no such component. This page describes what to do instead.
+
+== The shape of the replacement
+
+A deadline is two things pretending to be one: a record of work that is outstanding, and something that periodically
+notices when a piece of it has waited too long. Separating them gives you both without a scheduler that understands
+your domain.
+
+* A *projection* of outstanding work, built purely from events.
+* A *sweep* that reads that projection and sends a command.
+
+[#a-command-not-an-event]
+== Why the timeout becomes a command
+
+This is the design decision worth understanding, because it is the one that differs most from version 4.
+
+A version 4 deadline fired a callback *inside* the saga. It was invisible from outside, could only be triggered by
+waiting, and had a scope that had to be cancelled when the saga ended, which is what
+`DeadlineManager.cancelAllWithinScope` was for.
+
+The replacement is an ordinary command that asks the process to give up:
+
+[source,java]
+----
+include::example$sagas/shared/RentalPaymentApi.java[tag=cancel-rental-payment,indent=0]
+----
+
+A command rather than an event, and the distinction matters. An event says something happened; the fact that a
+timeout elapsed is not, by itself, a fact about the business. What the sweep wants is to *ask* the process to give up,
+and the process may well decline because the payment arrived a moment ago. That is a request, which is a command, and
+it has a receiver entitled to say no.
+
+Publishing a `PaymentTimedOut` event instead would assert as fact something that has not been decided, and would leave
+no natural place to decide it. It also loses the ability to reject: an event has no result.
+
+Three things follow from expressing the timeout as a command, and all three are improvements:
+
+* *Anyone can send it.* An operator, a support tool, a REST endpoint or a test, not only the scheduler.
+* *It is testable without waiting.* This is why the sample can test a fifteen-minute timeout in milliseconds.
+* *Cancellation disappears.* Nothing is scheduled, so nothing has to be unscheduled when the process ends. The
+  version 4 habit of cancelling deadlines on `@EndSaga` has no counterpart, because the command simply finds nothing
+  to do.
+
+== The to-do list
+
+Rows appear when work becomes outstanding and disappear when it settles, driven only by events:
+
+[source,java]
+----
+include::example$sagas/deadlines/PaymentsAwaitingConfirmation.java[tag=sweeper,indent=0]
+----
+<1> The moment the work became outstanding comes from the event message, not from the clock.
+<2> Every way the work can settle removes the row. Missing one leaves the sweep cancelling something forever.
+<3> The scheduled trigger, deliberately holding no logic.
+<4> The work, taking the moment to judge against as an argument.
+
+[source,java]
+----
+include::example$sagas/deadlines/PaymentsAwaitingConfirmation.java[tag=todo-list,indent=0]
+----
+<1> Index the column the sweep filters on.
+<2> Filter in the query. Loading everything and filtering in memory works in a demo and falls over in production.
+
+[IMPORTANT]
+.Writes come from events, reads come from the schedule
+====
+The projection is written only by event handlers. The sweep only reads and dispatches.
+
+That split is what makes the pattern safe. The list cannot drift from the event stream, because nothing else writes to
+it, and the sweep has no state of its own to keep in step with anything. This is the same hazard that
+xref:sagas:state-in-a-repository.adoc#ordering[keeping process state in a repository] has to work around by care,
+avoided here by construction.
+====
+
+== Testing a timeout
+
+`AxonTestFixture` cannot manipulate time, which is exactly why the work is a method taking `Instant` rather than
+logic inside the `@Scheduled` method. The test calls it with a moment of its choosing:
+
+[source,java]
+----
+fixture.given()
+       .events(new BikeRequested(bikeId, renter, rentalId),
+               new PaymentPrepared(paymentId, PRICE, paymentReferenceFor(rentalId)));
+
+fixture.given()
+       .noPriorActivity()
+       .then()
+       .await(result -> {
+           sweeper.cancelOverduePayments(Instant.now().plus(Duration.ofHours(1))); // <1>
+           result.commandsSatisfy(commands -> assertThat(payloadsOf(commands))
+                   .contains(new RejectRequest(bikeId, renter)));
+       }, Duration.ofSeconds(5));
+----
+<1> Driving the sweep inside the `await` is deliberate. It is a pure reader and the command it sends is idempotent, so
+running it repeatedly while the projection catches up is not a workaround but a demonstration.
+
+Nothing sleeps, and a fifteen-minute timeout is tested in milliseconds.
+
+[#caveats]
+== Where this pattern gets harder
+
+The naive version looks simpler than it is. These are worth knowing before you rely on it.
+
+Every instance sweeps::
+`@Scheduled` runs on all of them, so three instances dispatch each cancellation three times. Harmless when the command
+is idempotent, but wasteful. Production deployments want a lock or a leader election.
+
+A replay rebuilds the list with original timestamps::
+Every historical outstanding item briefly looks overdue and is swept. This is survivable only because the receiver
+ignores a cancellation of something already settled. The pattern leans on idempotency harder than it first appears.
+
+Precision is the poll interval::
+Fine for "give up after fifteen minutes". Not suitable for "act at 09:00:00 exactly". If you need precision, use a
+real scheduler and have it send the same command.
+
+The query must stay a query::
+Filtering at the database on an indexed column, never loading everything and filtering in memory.
+
+The honest summary: this replaces a deadline *manager* with a deadline *projection*. It is simple, replayable and
+needs no new infrastructure, but it is approximate in time and duplicated across instances, and it is acceptable only
+because every command it sends can be sent twice.
+
+== Alternatives
+
+If a scheduled projection does not fit, the command is still the right target and only the trigger changes.
+
+* An external scheduler, such as Quartz or a cloud scheduler, sending the same command.
+* A message broker's delayed delivery, if you already run one.
+* link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Axoniq Framework Workflows,role=external,window=_blank],
+  which handles waiting as a first-class concern. It is available as a preview and requires a licence for production
+  use.
+
+Because the timeout is a command, swapping the trigger changes nothing about the process itself.
