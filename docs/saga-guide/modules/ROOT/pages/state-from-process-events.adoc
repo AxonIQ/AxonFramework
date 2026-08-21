@@ -2,8 +2,8 @@
 :navtitle: State from process events
 :reftext: State from the process's own events
 
-The process writes down what it does, and sources itself from those facts. An Axon Framework 4 saga was state-sourced
-whether that suited it or not; this is the option version 5 opens up by taking that decision back.
+The process writes down what it does, and sources itself from those facts. It is the only approach that leaves a
+record of the process itself rather than only of the entities it drove.
 
 == When to use it
 
@@ -29,9 +29,8 @@ whatever the process will need later:
 include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=process-events,indent=0]
 ----
 
-The completion event is the version 5 equivalent of `@EndSaga`, with one difference worth noticing: ending is a fact
-the process records rather than a life cycle callback the framework performs. Once written, every handler
-short-circuits on it.
+Ending is a fact the process records, not a callback anything performs on its behalf. Once the completion event is
+written, every handler short-circuits on it.
 
 == The decision model
 

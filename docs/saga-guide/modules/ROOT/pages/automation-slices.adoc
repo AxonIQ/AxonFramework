@@ -95,8 +95,8 @@ Nothing in this arrangement notices when a rental is rejected for reasons of its
 "when request rejected, then cancel payment", a rental turned down on other grounds leaves a payment outstanding
 forever.
 
-In Axon Framework 4 that cleanup was often implicit, a `cancelAllWithinScope` call inside `@EndSaga`. Here it is a
-slice like any other, which makes it visible on the model and testable on its own.
+Cleanup like this is easy to leave implicit, buried in whatever code decides the process is over. Here it is a slice
+like any other, which makes it visible on the model and testable on its own.
 
 == Trade-offs
 

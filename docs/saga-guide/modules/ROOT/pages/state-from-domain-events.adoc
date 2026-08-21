@@ -46,8 +46,8 @@ surface. Include an event type only if an evolve method actually reacts to it.
 include::example$sagas/statedomainevents/RentalPaymentProcess.java[tag=process,indent=0]
 ----
 <1> The entity is nullable because a process that has not started yet has no events, and therefore no entity.
-<2> The bike and the renter are read back from `BikeRequested`. This single line is the whole approach: the state a
-version 4 saga had to store is recovered from an event that already exists.
+<2> The bike and the renter are read back from `BikeRequested`. This single line is the whole approach: what another
+process would have to store is recovered from an event that already exists.
 
 [#one-effect]
 == Why this is the safest shape
@@ -112,7 +112,8 @@ a|
 There is nothing to end. Being finished is a predicate over events that already exist, `state.requestSettled` in the
 sample, rather than a fact anyone records. Nothing to delete and nothing to clean up.
 
-This is worth noticing when migrating: `@EndSaga` has no equivalent here, and needs none.
+That is not an omission. This approach has no life cycle to manage because it never held anything that a life cycle
+would have governed.
 
 == Where next
 

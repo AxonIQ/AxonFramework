@@ -6,31 +6,49 @@ Some business processes are longer than a single decision. A rental is not paid 
 requested, an order is not shipped the instant it is placed, and a booking is not confirmed the moment it is made.
 These processes span more than one entity, often more than one bounded context, and they take time.
 
-Axon Framework 4 gave that shape a name and a construct: the `@Saga`. A saga was described as a special kind of event
-handler, one that manages a business transaction spanning several aggregates, remembering what it has seen so far and
-deciding what should happen next. That description is still exactly right. What has changed is that Axon Framework 5
-no longer ships one particular implementation of it.
+The name for such a process is a *saga*, or a *process manager*: an event handler that manages a business transaction
+spanning several entities, remembering what it has seen so far and deciding what should happen next.
 
-== Why there is no Saga class in Axon Framework 5
+Axon Framework has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
+at a time than bundled together:
 
-An Axon Framework 4 saga made three decisions on your behalf, and they were not separable:
+* *Where its state lives*, if it needs any. A blob nobody can query, a table with real columns, its own events, or
+  nothing at all.
+* *How an incoming event is correlated* to the process it concerns. A stored mapping, a tag, or a value the process
+  computes.
+* *What starting and finishing mean*. A row appearing and disappearing, an event recording that it is over, or nothing
+  because being finished is a question you ask of the events.
 
-* State was *state-sourced*. The saga instance was serialized into a `SagaStore` as an opaque blob, so the only way to
-  ask a question of it was to load and deserialize it.
-* Correlation went through *association values*, maintained with `SagaLifecycle.associateWith(...)`.
-* Life cycle was framework-managed, through `@StartSaga` and `@EndSaga`.
+Those decisions pull in different directions for different processes. A process that has to be reported on wants
+columns; a process whose correlation is derivable needs no mapping at all; a process that is really a handful of
+independent reactions has no life cycle to manage.
 
-Those defaults suit some processes well and others badly. A process that needs to be queried, reported on, or joined
-against wants columns rather than a blob. A process whose correlation is derivable does not need association values at
-all. A process that is really a handful of independent reactions does not need a life cycle.
+So a process is written with the same building blocks as everything else: event handlers that react, command handlers
+that decide, and whichever form of state the process actually needs. This page describes the shapes that combination
+takes, and when to reach for each.
 
-Axon Framework 5 hands each of those decisions back to you. A process is written with the same building blocks as
-everything else: event handlers that react, command handlers that decide, and whichever form of state the process
-actually needs. This page describes the shapes that combination takes, and when to reach for each.
+[NOTE]
+.Coming from Axon Framework 4
+====
+This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
+the xref:axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
+version 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
+while you write their replacement, and covers testing and the drainage strategy. This guide does not repeat any of
+that.
+====
 
-There is a fifth option, xref::workflows.adoc[Workflows], which takes the opposite approach: the process is written
-as a single method that reads top to bottom, and the framework persists the position within it. It is part of Axoniq
-Framework rather than Axon Framework, is in preview, and requires a licence, so it is discussed separately.
+[TIP]
+.Reach for Workflows first if you can
+====
+xref::workflows.adoc[Workflows] are the recommended way to orchestrate a process, and the first thing to consider. The
+flow is written as a single method that reads top to bottom, so the code is close to ordinary imperative code, and the
+position within it is persisted for you: no state to keep, no correlation to derive, and no deadline pattern to build.
+
+Two things stop that from being the only answer. Workflows are part of Axoniq Framework and need a licence, and they
+are available as a preview rather than a production release. If you are on Axon Framework, or cannot yet depend on a
+preview, the approaches on this page are a complete answer rather than a consolation: each needs nothing beyond Axon
+Framework, and each is proven by the same contract test in the example module.
+====
 
 [#two-rules]
 == Two rules that apply to every approach
@@ -74,8 +92,8 @@ The order that works is: dispatch, wait for success, then record.
 ====
 Returning the `CompletableFuture` from the event handler is what makes the processor wait for the command and leave
 the token where it is on failure. Dropping the `return` turns the whole thing into fire-and-forget: the token advances,
-the command is lost, and the process waits forever. This is also what replaces the version 4 practice of scheduling a
-retry deadline.
+the command is lost, and the process waits forever. Retrying is the processor's job, and returning the future is how
+you give it back.
 ====
 
 Note that two of the approaches below sidestep this rule entirely, because they never record anything of their own.
@@ -83,12 +101,21 @@ Note that two of the approaches below sidestep this rule entirely, because they 
 [#choosing]
 == Choosing an approach
 
+Workflows come first because they are the recommended answer where they are available. The four below are ordered by
+how little they ask of you, not by elegance.
+
 [cols="1,2,2,2",options="header"]
 |===
 | Approach | Good for | Costs | Requires
 
+| xref::workflows.adoc[[.advanced-framework]#Workflows#]
+| Orchestration in general, and anything genuinely complicated in particular: many steps, real branching,
+compensation, or waiting that matters. The flow is written as a flow.
+| A dependency and a licence, and it is a preview rather than a production release.
+| Axoniq Framework.
+
 | xref::state-in-a-repository.adoc[State in a repository]
-| The first thing to try. Familiar from version 4, queryable, and works no matter where the events it reacts to come
+| The first thing to try. Ordinary, queryable state, and it works no matter where the events it reacts to come
 from.
 | Two things happen per step, so the ordering rule above has to be observed by hand.
 | A store you can write to in the processor's transaction.
@@ -109,28 +136,26 @@ whose events are not yours.
 thing.
 | No single place describes the process any more. Only an event model shows it whole.
 | Nothing. Most slices need no state at all.
-
-| xref::workflows.adoc[Workflows]
-| Processes that are genuinely complicated: many steps, real branching, compensation, or waiting that matters. The
-flow is written as a flow.
-| A dependency and a licence. Overkill for a process of three reactions.
-| Axoniq Framework, currently in preview.
 |===
 
-If you are migrating an existing version 4 saga and want the smallest step, start with
-xref::state-in-a-repository.adoc[state in a repository]: it is the closest to what you have. If you are writing
-something new and already structure your application in vertical slices, start at the other end with
-xref::automation-slices.adoc[automation slices], and reach for a process class only when you find you need one.
+So: if you are on Axoniq Framework and can accept a preview, write the process as a
+xref::workflows.adoc[[.advanced-framework]#workflow#] and stop reading here. Everything after this point is what to do
+when that is not available to you, and none of it is a workaround.
+
+Among the four, if you want the smallest step and the fewest new ideas, start with
+xref::state-in-a-repository.adoc[state in a repository]. If you already structure your application in vertical slices,
+start at the other end with xref::automation-slices.adoc[automation slices], and reach for a process class only when
+you find you need one.
 
 [TIP]
 .Try removing the need for state first
 ====
-Before choosing where to keep process state, check whether you need any. A large share of version 4 sagas kept state
-purely to remember an identifier they could have computed.
+Before choosing where to keep process state, check whether you need any. A common reason a process keeps state at all
+is to remember an identifier it could have computed.
 
-If the process can derive its correlation, for example by using the rental identifier as the payment reference, then
-both directions are free: outbound it computes the reference, inbound it reads the reference off the event. Several of
-the approaches below become dramatically simpler, and two of them become possible at all, because of that one choice.
+If the process can derive one side's correlation value from the other's, both directions are free: outbound it computes
+the value the receiver expects, inbound it reads that same value straight off the event. Several of the approaches
+below become dramatically simpler, and two of them become possible at all, because of that one choice.
 ====
 
 [#example]
@@ -138,8 +163,7 @@ the approaches below become dramatically simpler, and two of them become possibl
 
 Every page in this section implements the same process, so the approaches can be compared line for line: a renter asks
 for a bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the
-request is turned down and the bike released. It is the bike rental process from the Axon Framework 4 sample
-application, which makes it a useful reference point when migrating.
+request is turned down and the bike released.
 
 The full, runnable source lives in `examples/saga-recipes` in the
 link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank]. Every
