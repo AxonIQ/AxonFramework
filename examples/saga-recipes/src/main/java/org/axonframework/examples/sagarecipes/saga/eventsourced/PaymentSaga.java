@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.injectentity;
+package org.axonframework.examples.sagarecipes.saga.eventsourced;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-import org.axonframework.examples.sagarecipes.payment.PaymentTags;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
-import org.axonframework.examples.sagarecipes.payment.event.PaymentPrepared;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
 import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
 import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
-import org.axonframework.examples.sagarecipes.rental.event.BikeInUse;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.examples.sagarecipes.rental.write.approverequest.ApproveRequest;
 import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectRequest;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentProcessCompleted;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentProcessCompleted.Outcome;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentRequested;
 import org.axonframework.examples.sagarecipes.saga.shared.CancelRentalPayment;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentIdResolver;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
@@ -44,6 +44,7 @@ import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
@@ -54,53 +55,62 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The rental payment process, holding no state of its own.
+ * The rental payment process, event-sourced from events of its own.
  * <p>
- * Whatever this process needs to know is already recorded somewhere, so rather than keeping a copy it rebuilds the
- * answer on demand from the events both contexts have already written. There is no saga store, no repository and no
- * process event: the {@link State} below is event-sourced on the fly, for one rental, each time a handler runs.
+ * An Axon Framework 4 saga was state-sourced whether you wanted it or not: the framework serialized the instance into
+ * a saga store. Version 5 takes that decision back, and one of the options it opens up is for the process to be
+ * event-sourced like anything else, from facts it writes itself.
  * <p>
- * <b>What this buys.</b> Only one thing can go wrong per handler, because there is only one effect. Nothing is
- * written by the process itself, so the ordering hazard that recipes keeping their own state have to work around
- * simply cannot arise. If a command fails, no event is appended, the tracking token stays where it is, and the
- * redelivery rebuilds an identical decision model and tries again.
+ * <b>Why bother, given the derived-state recipe exists.</b> That one rebuilds its answer from the two contexts'
+ * events, which requires them to be in your store and to carry a tag you can select on. Against a payment provider
+ * whose events are not yours, that is impossible. This process reads only its own events, so it needs nothing from
+ * the other side beyond being told that something happened. It also leaves an audit trail of the process itself,
+ * which neither of the other two recipes can produce.
  * <p>
- * <b>What it costs.</b> The process is readable only through its outcomes. A step that produces no event, an e-mail
- * or an outbound call, leaves no trace here and cannot be tracked. It also requires that both contexts write to one
- * event store and that their events carry a tag this process can select on. Against a payment provider whose events
- * are not yours to source, this recipe is simply unavailable, and the event-sourced recipe applies instead.
+ * <b>Why the extra command.</b> Recording goes through {@link RecordPaymentRequested} rather than being appended
+ * here, so that every event still comes from a command and the process's own write stays visible on an event model
+ * as a write slice. The price is a second dispatch per step, and {@code saga.eventsourcedappend} is the same recipe
+ * without it.
  * <p>
- * <b>How it ends.</b> It does not, in the sense of writing anything. Being finished is a question asked of the
- * events, {@link State#requestSettled}, rather than a fact recorded anywhere. Nothing to delete, nothing to clean up.
+ * <b>The ordering rule is unchanged.</b> Dispatch the real work first, record only once it succeeded. Only the medium
+ * differs from the repository recipe: an event instead of a row.
+ * <p>
+ * <b>How it ends.</b> {@link RentalPaymentProcessCompleted} is appended, and every handler short-circuits on it
+ * afterwards. This is what {@code @EndSaga} used to do, expressed as a fact rather than a callback.
  *
  * @author Axon Framework
  * @since 5.4.0
  */
 @Component
-@ConditionalOnProperty(name = "saga.recipe", havingValue = "injectentity")
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "eventsourced")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
 public class PaymentSaga {
 
     /**
-     * Asks for payment as soon as a bike is requested.
+     * Asks for payment as soon as a bike is requested, and only then records that it did.
      *
-     * @param command    the event that started this process
-     * @param state      the process so far, or {@code null} if this is its first event
-     * @param dispatcher dispatches the resulting command
-     * @return completes when the dispatched command has been handled
+     * @param event      the event that started this process
+     * @param state      the process so far, or {@code null} if it has recorded nothing yet
+     * @param dispatcher dispatches the resulting commands
+     * @return completes when both dispatched commands have been handled
      */
     @EventHandler
     public CompletableFuture<?> on(
-            BikeRequested command,
+            BikeRequested event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
     ) {
-        if (state != null && state.paymentRequested) {
+        if (state != null) {
             return CompletableFuture.completedFuture(null);
         }
-        var reference = RentalPaymentReference.forRental(command.rentalId());
+        var reference = RentalPaymentReference.forRental(event.rentalId());
         return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
-                         .getResultMessage();
+                         .getResultMessage()
+                         .thenCompose(ignored -> dispatcher.send(new RecordPaymentRequested(event.rentalId(),
+                                                                                            event.bikeId(),
+                                                                                            event.renter(),
+                                                                                            RentalPricing.PRICE))
+                                                           .getResultMessage());
     }
 
     /**
@@ -108,8 +118,8 @@ public class PaymentSaga {
      *
      * @param event      the payment that came in
      * @param state      the process so far
-     * @param dispatcher dispatches the resulting command
-     * @return completes when the dispatched command has been handled
+     * @param dispatcher dispatches the resulting commands
+     * @return completes when both dispatched commands have been handled
      */
     @EventHandler
     public CompletableFuture<?> on(
@@ -117,13 +127,12 @@ public class PaymentSaga {
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
     ) {
-        if (state == null || state.requestSettled) {
+        if (state == null || state.completed) {
             return CompletableFuture.completedFuture(null);
         }
-        // The bike and the renter are read back from BikeRequested. This is the whole recipe in one line: the state
-        // an Axon Framework 4 saga had to store is recovered from events that already exist.
         return dispatcher.send(new ApproveRequest(state.bikeId, state.renter))
-                         .getResultMessage();
+                         .getResultMessage()
+                         .thenCompose(ignored -> complete(state, Outcome.APPROVED, dispatcher));
     }
 
     /**
@@ -131,8 +140,8 @@ public class PaymentSaga {
      *
      * @param event      the refusal
      * @param state      the process so far
-     * @param dispatcher dispatches the resulting command
-     * @return completes when the dispatched command has been handled
+     * @param dispatcher dispatches the resulting commands
+     * @return completes when both dispatched commands have been handled
      */
     @EventHandler
     public CompletableFuture<?> on(
@@ -148,8 +157,8 @@ public class PaymentSaga {
      *
      * @param event      the cancellation
      * @param state      the process so far
-     * @param dispatcher dispatches the resulting command
-     * @return completes when the dispatched command has been handled
+     * @param dispatcher dispatches the resulting commands
+     * @return completes when both dispatched commands have been handled
      */
     @EventHandler
     public CompletableFuture<?> on(
@@ -162,14 +171,11 @@ public class PaymentSaga {
 
     /**
      * Calls off the payment when the request is turned down for reasons of its own.
-     * <p>
-     * This is the compensating direction, and it replaces version 4's {@code cancelAllWithinScope}: without it a
-     * rental rejected on other grounds would leave a payment outstanding forever.
      *
      * @param event      the rejection
      * @param state      the process so far
-     * @param dispatcher dispatches the resulting command
-     * @return completes when the dispatched command has been handled
+     * @param dispatcher dispatches the resulting commands
+     * @return completes when both dispatched commands have been handled
      */
     @EventHandler
     public CompletableFuture<?> on(
@@ -177,18 +183,16 @@ public class PaymentSaga {
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
     ) {
-        if (state == null || state.paymentSettled) {
+        if (state == null || state.completed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId())))
-                         .getResultMessage();
+                         .getResultMessage()
+                         .thenCompose(ignored -> complete(state, Outcome.REJECTED, dispatcher));
     }
 
     /**
-     * Gives up waiting for payment, unless it already arrived.
-     * <p>
-     * The process checks first because it can see that giving up is pointless, but the payment context checks again,
-     * and that second check is the one that holds under a race.
+     * Gives up waiting for payment, unless the process already finished.
      *
      * @param command    the request to give up
      * @param state      the process so far
@@ -201,97 +205,101 @@ public class PaymentSaga {
             @InjectEntity @Nullable State state,
             CommandDispatcher dispatcher
     ) {
-        if (state == null || state.paymentSettled) {
+        if (state == null || state.completed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId())))
                          .getResultMessage();
     }
 
+    /**
+     * Writes down that payment was asked for. The only writer of that fact.
+     *
+     * @param command  the record to write
+     * @param state    the process so far
+     * @param appender appends the resulting event
+     */
+    @CommandHandler
+    public void handle(RecordPaymentRequested command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state != null) {
+            return;
+        }
+        appender.append(new RentalPaymentRequested(command.rentalId(),
+                                                   command.bikeId(),
+                                                   command.renter(),
+                                                   command.amount()));
+    }
+
+    /**
+     * Writes down that the process finished. The only writer of that fact.
+     *
+     * @param command  the record to write
+     * @param state    the process so far
+     * @param appender appends the resulting event
+     */
+    @CommandHandler
+    public void handle(RecordProcessCompleted command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state == null || state.completed) {
+            return;
+        }
+        appender.append(new RentalPaymentProcessCompleted(command.rentalId(), command.outcome()));
+    }
+
     private CompletableFuture<?> rejectRequest(@Nullable State state, CommandDispatcher dispatcher) {
-        if (state == null || state.requestSettled) {
+        if (state == null || state.completed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new RejectRequest(state.bikeId, state.renter))
+                         .getResultMessage()
+                         .thenCompose(ignored -> complete(state, Outcome.REJECTED, dispatcher));
+    }
+
+    private CompletableFuture<?> complete(State state, Outcome outcome, CommandDispatcher dispatcher) {
+        return dispatcher.send(new RecordProcessCompleted(state.rentalId, outcome))
                          .getResultMessage();
     }
 
     /**
-     * The process, reconstructed from events that already exist.
+     * The process, sourced from its own events and nothing else.
      * <p>
-     * Note where the two contexts meet. Rental events are selected by the {@code rentalId} tag; payment events by the
-     * {@code paymentReference} tag, whose value happens to be that same rental identifier. The payment context has no
-     * idea, and the rental context has no idea. Knowing it is exactly what this package is for.
+     * Compare the derived-state recipe, whose criteria spans both contexts. This one selects only what the process
+     * itself wrote, which is exactly why it works when the other side's events are out of reach.
      */
     // Conditional in its own right: a nested class is not covered by the condition on its outer class, so
     // without this every recipe's entity would be registered at once and Spring would reject the second
     // one for deriving the same bean name.
-    @ConditionalOnProperty(name = "saga.recipe", havingValue = "injectentity")
+    @ConditionalOnProperty(name = "saga.recipe", havingValue = "eventsourced")
     @EventSourced(idType = RentalId.class)
     static class State {
 
-        private BikeId bikeId;
-        private String renter;
-        private boolean paymentRequested;
-        private boolean paymentSettled;
-        private boolean requestSettled;
+        private final RentalId rentalId;
+        private final BikeId bikeId;
+        private final String renter;
+        private boolean completed;
 
         @EntityCreator
-        State(BikeRequested event) {
+        State(RentalPaymentRequested event) {
+            this.rentalId = event.rentalId();
             this.bikeId = event.bikeId();
             this.renter = event.renter();
         }
 
         @EventSourcingHandler
-        void evolve(PaymentPrepared event) {
-            this.paymentRequested = true;
-        }
-
-        @EventSourcingHandler
-        void evolve(PaymentConfirmed event) {
-            this.paymentSettled = true;
-        }
-
-        @EventSourcingHandler
-        void evolve(PaymentRejected event) {
-            this.paymentSettled = true;
-        }
-
-        @EventSourcingHandler
-        void evolve(PaymentCancelled event) {
-            this.paymentSettled = true;
-        }
-
-        @EventSourcingHandler
-        void evolve(BikeInUse event) {
-            this.requestSettled = true;
-        }
-
-        @EventSourcingHandler
-        void evolve(RequestRejected event) {
-            this.requestSettled = true;
+        void evolve(RentalPaymentProcessCompleted event) {
+            this.completed = true;
         }
 
         /**
-         * Selects one rental's events from both contexts at once.
+         * Selects this process's own events, and only those.
          *
          * @param rentalId the rental this process concerns
-         * @return the criteria selecting exactly the events this process depends on
+         * @return the criteria selecting exactly the events this process wrote
          */
         @EventCriteriaBuilder
         private static EventCriteria criteria(RentalId rentalId) {
-            return EventCriteria.either(
-                    EventCriteria.havingTags(Tag.of(RentalTags.RENTAL_ID, rentalId.raw()))
-                                 .andBeingOneOfTypes(BikeRequested.class.getName(),
-                                                     BikeInUse.class.getName(),
-                                                     RequestRejected.class.getName()),
-                    EventCriteria.havingTags(Tag.of(PaymentTags.PAYMENT_REFERENCE,
-                                                    RentalPaymentReference.forRental(rentalId).raw()))
-                                 .andBeingOneOfTypes(PaymentPrepared.class.getName(),
-                                                     PaymentConfirmed.class.getName(),
-                                                     PaymentRejected.class.getName(),
-                                                     PaymentCancelled.class.getName())
-            );
+            return EventCriteria.havingTags(Tag.of(RentalTags.RENTAL_ID, rentalId.raw()))
+                                .andBeingOneOfTypes(RentalPaymentRequested.class.getName(),
+                                                    RentalPaymentProcessCompleted.class.getName());
         }
     }
 }

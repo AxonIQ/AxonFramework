@@ -17,6 +17,7 @@
 package org.axonframework.examples.sagarecipes.saga.shared;
 
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.examples.sagarecipes.payment.Amount;
 import org.axonframework.examples.sagarecipes.payment.PaymentId;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
@@ -27,14 +28,14 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.event.BikeInUse;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRegistered;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
-import org.axonframework.extension.springboot.test.AxonSpringBootTest;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -50,14 +51,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code GenericMessage} short-circuits {@code payloadAs} when the requested type is already assignable from the
  * payload, so a test using objects would never invoke the converter and would pass even if conversion were
  * impossible in production, where events arrive from the store as bytes.
+ * <p>
+ * No Spring context is involved. The policy depends on nothing from the application, and keeping it out of the shared
+ * context also keeps it clear of the pause-and-restart behaviour of Spring's test context cache.
  */
-@AxonSpringBootTest
 class RentalPaymentSequencingPolicyTest {
+
+    private static final String AXON_SERVER_ENHANCER =
+            "io.axoniq.framework.axonserver.connector.configuration.AxonServerConfigurationEnhancer";
 
     private final RentalPaymentSequencingPolicy policy = new RentalPaymentSequencingPolicy();
 
-    @Autowired
     private AxonConfiguration configuration;
+
+    @BeforeEach
+    void startConfiguration() {
+        configuration = EventSourcingConfigurer.create()
+                                               .componentRegistry(registry -> registry.disableEnhancer(
+                                                       AXON_SERVER_ENHANCER))
+                                               .start();
+    }
+
+    @AfterEach
+    void stopConfiguration() {
+        configuration.shutdown();
+    }
 
     @Test
     void givenRentalAndPaymentEventsOfOneProcess_thenSequenceIdentifiersAreEqual() {
