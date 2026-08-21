@@ -78,7 +78,7 @@ import java.util.concurrent.CompletableFuture;
  * <b>How it ends.</b> {@link RentalPaymentProcessCompleted} is appended, and every handler short-circuits on it
  * afterwards. This is what {@code @EndSaga} used to do, expressed as a fact rather than a callback.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

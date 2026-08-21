@@ -31,7 +31,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param bikeId   the bike being requested
  * @param renter   who is requesting it
  * @param rentalId identifies this request for the rest of its lifetime
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record BikeRequested(

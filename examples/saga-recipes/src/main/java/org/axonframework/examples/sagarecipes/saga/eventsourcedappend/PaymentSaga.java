@@ -82,7 +82,7 @@ import java.util.concurrent.CompletableFuture;
  * handler that appends without having sourced anything gets an unconditional append condition and therefore no
  * optimistic concurrency at all, silently.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

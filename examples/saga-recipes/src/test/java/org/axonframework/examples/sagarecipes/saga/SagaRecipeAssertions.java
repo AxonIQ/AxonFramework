@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * use. Asserting on the exact recorded list would therefore make each test depend on how many ran before it. Since
  * every test works with freshly generated identifiers, filtering to its own messages is both precise and stable.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public final class SagaRecipeAssertions {

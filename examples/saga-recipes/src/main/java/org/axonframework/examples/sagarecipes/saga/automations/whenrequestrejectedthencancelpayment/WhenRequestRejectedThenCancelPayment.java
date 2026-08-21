@@ -37,7 +37,7 @@ import java.util.concurrent.CompletableFuture;
  * Stateless like its counterpart. Cancelling a payment that already settled, or that was never prepared, is a silent
  * success in the payment context, so this slice can send the command without knowing which case it is in.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

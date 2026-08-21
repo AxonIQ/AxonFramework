@@ -26,7 +26,7 @@ import org.springframework.stereotype.Repository;
  * Conditional on the same property as the process itself, so the table is only in play when this recipe is the one
  * running.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Repository

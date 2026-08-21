@@ -32,7 +32,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  *
  * @param rentalId the rental whose process finished
  * @param outcome  how it turned out
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RentalPaymentProcessCompleted(

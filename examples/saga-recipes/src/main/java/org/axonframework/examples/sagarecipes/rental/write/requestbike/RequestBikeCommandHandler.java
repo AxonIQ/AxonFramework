@@ -45,7 +45,7 @@ import java.util.Objects;
  * renter must not already hold a bike. It therefore sources across two tags and appends against the union of both,
  * which is what a Dynamic Consistency Boundary is for.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

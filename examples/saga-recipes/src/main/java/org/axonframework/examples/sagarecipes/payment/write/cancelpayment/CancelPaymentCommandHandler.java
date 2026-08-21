@@ -47,7 +47,7 @@ import org.springframework.stereotype.Component;
  *     the payment not to be outstanding, and it is not.</li>
  * </ul>
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

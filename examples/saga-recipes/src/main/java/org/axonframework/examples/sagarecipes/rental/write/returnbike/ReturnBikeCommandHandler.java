@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  * from a person, exactly once, so a bike that is not in use is a genuine mistake and is reported as one. Idempotency
  * is a requirement wherever delivery is at-least-once, not a blanket rule for every handler.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

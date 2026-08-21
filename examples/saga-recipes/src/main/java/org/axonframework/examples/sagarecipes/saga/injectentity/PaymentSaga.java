@@ -73,7 +73,7 @@ import java.util.concurrent.CompletableFuture;
  * <b>How it ends.</b> It does not, in the sense of writing anything. Being finished is a question asked of the
  * events, {@link State#requestSettled}, rather than a fact recorded anywhere. Nothing to delete, nothing to clean up.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

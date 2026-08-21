@@ -50,7 +50,7 @@ import java.util.Map;
  *     correctly carries no sequencing requirement.</li>
  * </ul>
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public class RentalPaymentSequencingPolicy extends QualifiedNameRoutingSequencingPolicy {

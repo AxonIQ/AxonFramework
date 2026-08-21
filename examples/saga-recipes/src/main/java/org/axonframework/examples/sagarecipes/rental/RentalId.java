@@ -31,7 +31,7 @@ import java.util.UUID;
  * the process is the saga. See the module README for why that matters.
  *
  * @param raw the raw string representation
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RentalId(String raw) {

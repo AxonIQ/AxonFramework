@@ -67,7 +67,7 @@ import java.util.concurrent.CompletableFuture;
  * idempotent: a redelivery after deletion restarts the process, re-dispatches, and the rental context declines to
  * append anything. Without that, a tombstone row would be needed instead.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

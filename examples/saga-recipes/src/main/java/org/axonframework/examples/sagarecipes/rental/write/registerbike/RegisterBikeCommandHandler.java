@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  * is idempotent this way, because an event processor delivers at least once and a retried command must not produce
  * a second event.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

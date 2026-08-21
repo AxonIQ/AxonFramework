@@ -26,7 +26,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  *
  * @param bikeId the bike to release
  * @param renter who had reserved it
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RejectRequest(@TargetEntityId BikeId bikeId, String renter) {

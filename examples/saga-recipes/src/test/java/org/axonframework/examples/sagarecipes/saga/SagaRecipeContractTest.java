@@ -54,7 +54,7 @@ import java.util.UUID;
  * put them side by side, with two cases version 4 never had: a redelivered trigger and a timeout that arrives too
  * late.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public abstract class SagaRecipeContractTest {

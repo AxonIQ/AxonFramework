@@ -26,7 +26,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * paying, and the payment identifier is what they were handed. Keeps the Axon Framework 4 signature.
  *
  * @param paymentId the payment that was paid
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record ConfirmPayment(@TargetEntityId PaymentId paymentId) {

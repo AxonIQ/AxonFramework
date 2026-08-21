@@ -38,7 +38,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Axon's {@code JpaAutoConfiguration} adds its own through {@code @RegisterDefaultEntities}. Declaring
  * {@code @EntityScan} here would replace both sets rather than add to them.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @SpringBootApplication

@@ -30,7 +30,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  *
  * @param paymentReference the caller's own key for this payment
  * @param amount           how much is to be paid
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record PreparePayment(@TargetEntityId PaymentReference paymentReference, Amount amount) {
