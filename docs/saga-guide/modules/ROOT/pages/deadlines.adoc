@@ -79,28 +79,75 @@ avoided here by construction.
 
 == Testing a timeout
 
-`AxonTestFixture` cannot manipulate time, which is exactly why the work is a method taking `Instant` rather than
-logic inside the `@Scheduled` method. The test calls it with a moment of its choosing:
+`AxonTestFixture` cannot manipulate time, which is exactly why the work is a method taking `Instant` rather than logic
+inside the `@Scheduled` method. That also splits the testing into two halves that fail for different reasons, and are
+worth keeping apart.
+
+=== The sweep
+
+Does it notice overdue work, and leave the rest alone? Because the projection removes a row when the payment settles,
+the row disappearing is the observable proof that the sweep reached the payment context:
 
 [source,java]
 ----
-fixture.given()
-       .events(new BikeRequested(bikeId, renter, rentalId),
-               new PaymentPrepared(paymentId, PRICE, paymentReferenceFor(rentalId)));
+@Test
+void givenOverduePayment_whenSweeping_thenItIsCalledOffAndLeavesTheList() {
+    // given a payment that has been outstanding for a while
+    var reference = someReference();
+    fixture.given()
+           .events(new PaymentPrepared(PaymentId.random(), PRICE, reference));
+    awaitListed(reference);
 
-fixture.given()
-       .noPriorActivity()
-       .then()
-       .await(result -> {
-           sweeper.cancelOverduePayments(Instant.now().plus(Duration.ofHours(1))); // <1>
-           result.commandsSatisfy(commands -> assertThat(payloadsOf(commands))
-                   .contains(new RejectRequest(bikeId, renter)));
-       }, Duration.ofSeconds(5));
+    // when judged from far enough in the future
+    sweeper.cancelOverduePayments(Instant.now().plus(Duration.ofHours(1))); // <1>
+
+    // then the payment was called off, which is what takes it off the list again
+    awaitNotListed(reference);
+}
 ----
-<1> Driving the sweep inside the `await` is deliberate. It is a pure reader and the command it sends is idempotent, so
-running it repeatedly while the projection catches up is not a workaround but a demonstration.
+<1> No clock is faked and nothing sleeps. A fifteen-minute timeout is tested in microseconds.
 
-Nothing sleeps, and a fifteen-minute timeout is tested in milliseconds.
+[NOTE]
+====
+A sweep acts on *every* overdue item it finds, including ones other tests are relying on. Give a test class that
+sweeps its own event store, which under Spring means a property set no other test class shares, so it gets a context
+of its own.
+====
+
+=== The process
+
+Does it do the right thing when asked to give up? That is a different question, with no clock in it at all, so the
+test says nothing about sweeping:
+
+[source,java]
+----
+@Test
+void givenPaymentNotConfirmed_whenAskedToGiveUp_thenRequestRejected() {
+    // given a payment was asked for and never arrived
+    fixture.given()
+           .events(new BikeRegistered(bikeId, "city", "Vilnius"),
+                   new BikeRequested(bikeId, renter, rentalId))
+           .then()
+           .await(result -> result.commandsSatisfy(commands -> assertDispatched(
+                   commands, new PreparePayment(reference, PRICE)
+           )), TIMEOUT) // <1>
+           .and()
+           .when()
+           .command(new CancelRentalPayment(rentalId)) // <2>
+           .then()
+           .success()
+           .await(result -> result.commandsSatisfy(
+                   commands -> assertDispatched(commands, new RejectRequest(bikeId, renter))
+           ), TIMEOUT);
+}
+----
+<1> The payment is not published by the test: the process asks for it, and the payment context creates it. Waiting for
+that command is what tells us the process has noticed this rental, which matters because the approaches that record
+their own progress do so asynchronously. Asking one to give up before it has noticed would find nothing to give up on.
+<2> Giving up is the *when*, because that is the action under test.
+
+Splitting the two is worth the extra test. A single test driving the sweep and asserting on the released bike passes
+or fails for at least three different reasons, and tells you nothing about which.
 
 [#caveats]
 == Where this pattern gets harder
