@@ -31,7 +31,7 @@ takes, and when to reach for each.
 .Coming from Axon Framework 4
 ====
 This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
-the xref:axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
+the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
 version 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
 while you write their replacement, and covers testing and the drainage strategy. This guide does not repeat any of
 that.

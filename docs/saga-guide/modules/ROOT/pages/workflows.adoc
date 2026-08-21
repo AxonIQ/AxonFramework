@@ -80,5 +80,5 @@ If you expect to adopt workflows later, that is an argument for keeping the proc
 == Replacing a process that is already running
 
 If you are replacing an existing process rather than writing a new one, the
-xref:axon-framework-reference:migration:paths/sagas.adoc#workflows[saga migration path] covers how the pieces
+xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc#workflows[saga migration path] covers how the pieces
 translate, and why a process already under way has to finish before a workflow can take over from it.
