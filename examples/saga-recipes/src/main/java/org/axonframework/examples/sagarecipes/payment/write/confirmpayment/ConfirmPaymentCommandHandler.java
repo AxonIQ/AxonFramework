@@ -54,7 +54,7 @@ public class ConfirmPaymentCommandHandler {
      * @throws IllegalStateException if no payment exists for the given identifier
      */
     @CommandHandler
-    public void handle(ConfirmPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(ConfirmPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null) {
             throw new IllegalStateException("Payment does not exist");
         }
@@ -72,7 +72,7 @@ public class ConfirmPaymentCommandHandler {
      * the caller's key flowing through the whole lifecycle without this context ever interpreting it.
      */
     @EventSourced(idType = PaymentId.class, tagKey = PaymentTags.PAYMENT_ID)
-    static class State {
+    private static class State {
 
         private PaymentReference paymentReference;
         private boolean settled;

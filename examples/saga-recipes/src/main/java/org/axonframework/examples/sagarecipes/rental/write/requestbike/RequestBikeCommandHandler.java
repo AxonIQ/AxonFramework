@@ -59,7 +59,7 @@ public class RequestBikeCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RequestBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(RequestBike command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null || !state.bikeRegistered) {
             throw new IllegalStateException("Bike is not registered");
         }
@@ -87,7 +87,7 @@ public class RequestBikeCommandHandler {
      * {@code null} the same way it treats a bike with no registration event.
      */
     @EventSourced(idType = RentalRequestId.class)
-    static class State {
+    private static class State {
 
         private final RentalRequestId id;
 

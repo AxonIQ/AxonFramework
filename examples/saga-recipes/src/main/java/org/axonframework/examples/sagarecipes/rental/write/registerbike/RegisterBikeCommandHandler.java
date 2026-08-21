@@ -51,7 +51,7 @@ public class RegisterBikeCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RegisterBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(RegisterBike command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state != null) {
             return;
         }
@@ -65,7 +65,7 @@ public class RegisterBikeCommandHandler {
      * slice owns the narrowest consistency boundary its own rule needs.
      */
     @EventSourced(idType = BikeId.class)
-    static class State {
+    private static class State {
 
         @EntityCreator
         State(BikeRegistered event) {

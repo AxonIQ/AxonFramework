@@ -55,7 +55,7 @@ public class ReturnBikeCommandHandler {
      * @throws IllegalStateException if the bike is not currently in use
      */
     @CommandHandler
-    public void handle(ReturnBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(ReturnBike command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null || !state.inUse) {
             throw new IllegalStateException("Bike is not in use");
         }
@@ -69,7 +69,7 @@ public class ReturnBikeCommandHandler {
      * {@code BikeInUse} and {@code BikeReturned} matter here.
      */
     @EventSourced(idType = BikeId.class)
-    static class State {
+    private static class State {
 
         private boolean inUse;
         private String renter;
