@@ -58,7 +58,7 @@ public class PreparePaymentCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(PreparePayment command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(PreparePayment command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state != null) {
             return;
         }
@@ -74,7 +74,7 @@ public class PreparePaymentCommandHandler {
      * the conflict surface as narrow as the rule allows.
      */
     @EventSourced(idType = PaymentReference.class, tagKey = PaymentTags.PAYMENT_REFERENCE)
-    static class State {
+    private static class State {
 
         @EntityCreator
         State(PaymentPrepared event) {
