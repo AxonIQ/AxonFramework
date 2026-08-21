@@ -5,8 +5,8 @@
 Most long-running processes need to give up eventually. A payment that never arrives, an approval nobody grants, a
 confirmation that never comes: something has to notice and act.
 
-Axon Framework 4 expressed that with a `DeadlineManager` and a `@DeadlineHandler` method, scheduling a callback into
-the saga's own future. Axon Framework 5 has no such component. This page describes what to do instead.
+Nothing schedules a callback into a process's own future for you, and this page describes what to do instead. The
+result needs no scheduling infrastructure that understands your domain, and it is easier to test than a timer.
 
 == The shape of the replacement
 
@@ -20,13 +20,11 @@ your domain.
 [#a-command-not-an-event]
 == Why the timeout becomes a command
 
-This is the design decision worth understanding, because it is the one that differs most from version 4.
+This is the design decision worth understanding, and it is the one that repays the most thought.
 
-A version 4 deadline fired a callback *inside* the saga. It was invisible from outside, could only be triggered by
-waiting, and had a scope that had to be cancelled when the saga ended, which is what
-`DeadlineManager.cancelAllWithinScope` was for.
-
-The replacement is an ordinary command that asks the process to give up:
+A timer that fires *inside* a process is invisible from outside it, can only be triggered by waiting, and has to be
+unscheduled when the process ends. None of that is necessary. Use an ordinary command that asks the process to give
+up:
 
 [source,java]
 ----
@@ -45,9 +43,8 @@ Three things follow from expressing the timeout as a command, and all three are 
 
 * *Anyone can send it.* An operator, a support tool, a REST endpoint or a test, not only the scheduler.
 * *It is testable without waiting.* This is why the sample can test a fifteen-minute timeout in milliseconds.
-* *Cancellation disappears.* Nothing is scheduled, so nothing has to be unscheduled when the process ends. The
-  version 4 habit of cancelling deadlines on `@EndSaga` has no counterpart, because the command simply finds nothing
-  to do.
+* *Cancellation disappears.* Nothing is scheduled, so nothing has to be unscheduled when the process ends. A command
+  that arrives after the process is over simply finds nothing to do.
 
 == The to-do list
 
