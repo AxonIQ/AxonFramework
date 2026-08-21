@@ -52,17 +52,18 @@ process would have to store is recovered from an event that already exists.
 [#one-effect]
 == Why this is the safest shape
 
-Compare this to xref::state-in-a-repository.adoc[keeping state in a repository]. There, two things happen per
-step, and the ordering between them has to be right. Here only one thing happens: a command is dispatched.
+Compare this to xref::state-in-a-repository.adoc[keeping state in a repository]. There, a row is written and a
+command dispatched, and they agree only because a transaction spans them. Here only one thing happens: a command is
+dispatched.
 
-That difference removes an entire class of bug rather than requiring care around it:
+That difference removes an entire class of bug rather than relying on configuration to prevent it:
 
 * If the command fails, no event is appended, the tracking token stays where it is, and the redelivery rebuilds an
   identical decision model and tries again.
 * If the command succeeded but the commit did not, the redelivery re-dispatches and the receiver's idempotency absorbs
   it.
 
-There is no ordering to get wrong, because there is nothing to order.
+There is nothing to keep in step, because there is no second place anything is written.
 
 [#id-resolution]
 == Resolving which process an event belongs to
@@ -94,7 +95,7 @@ production fails.
 
 a|
 * Nothing is stored, so nothing can drift.
-* One effect per handler, so the ordering rule does not apply.
+* One effect per handler, so nothing can commit out of step with the tracking token.
 * No life cycle to manage: being finished is a question asked of the events.
 * No schema, no migration, no cleanup.
 

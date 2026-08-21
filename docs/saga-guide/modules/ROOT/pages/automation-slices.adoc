@@ -50,11 +50,13 @@ and the renter, so this slice has to look them up:
 ----
 include::example$sagas/automationslices/AutomationSlices.java[tag=with-lookup,indent=0]
 ----
-<1> The lookup is injected like any other entity.
-<2> A three-line decision model, selecting the single event that answers the question.
+<1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
+policy is enough and no custom policy is needed.
+<2> The lookup is injected like any other entity.
+<3> A three-line decision model, selecting the single event that answers the question.
 
-This is still one effect. The lookup is a read, so there is nothing that could fall out of step with the tracking
-token, and the ordering rule that the state-keeping approaches must observe does not apply.
+This is still one effect. The lookup is a read, so nothing is written that could fall out of step with the tracking
+token, and no transaction has to span anything.
 
 [NOTE]
 .Slices do not share lookups
