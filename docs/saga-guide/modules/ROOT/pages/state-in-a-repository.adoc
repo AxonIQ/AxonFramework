@@ -16,7 +16,7 @@ it reacts to are not all in an event store you own.
 
 It is the only approach with no prerequisites at all beyond a place to write. If the payment side is a third-party
 provider whose events you merely receive, this still works, where
-xref:sagas:state-from-domain-events.adoc[deriving state from domain events] cannot.
+xref::state-from-domain-events.adoc[deriving state from domain events] cannot.
 
 == The state
 
@@ -125,6 +125,6 @@ a|
 == Where next
 
 If the state you are storing turns out to be derivable from events you already own, the process can stop storing
-anything: see xref:sagas:state-from-domain-events.adoc[state derived from domain events]. If you want a record of what
+anything: see xref::state-from-domain-events.adoc[state derived from domain events]. If you want a record of what
 the process itself did rather than only its outcomes, see
-xref:sagas:state-from-process-events.adoc[state from the process's own events].
+xref::state-from-process-events.adoc[state from the process's own events].

@@ -182,7 +182,7 @@
                                 <source>${project.basedir}/../reference-guide/modules/messaging-concepts/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/monitoring/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/queries/examples</source>
-                                <source>${project.basedir}/../reference-guide/modules/sagas/examples</source>
+                                <source>${project.basedir}/../saga-guide/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/tuning/examples</source>
                                 <source>${project.basedir}/../getting-started/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../identifier-generation-guide/modules/ROOT/examples</source>

@@ -28,13 +28,9 @@ Axon Framework 5 hands each of those decisions back to you. A process is written
 everything else: event handlers that react, command handlers that decide, and whichever form of state the process
 actually needs. This page describes the shapes that combination takes, and when to reach for each.
 
-[NOTE]
-====
-Axoniq Framework will introduce link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Workflows,role=external,window=_blank]
-as a first-class replacement for the version 4 saga. It is available as a preview and requires an Axoniq licence for
-production use. The approaches on these pages need neither, and remain appropriate for processes that do not warrant a
-dedicated workflow engine.
-====
+There is a fifth option, xref::workflows.adoc[Workflows], which takes the opposite approach: the process is written
+as a single method that reads top to bottom, and the framework persists the position within it. It is part of Axoniq
+Framework rather than Axon Framework, is in preview, and requires a licence, so it is discussed separately.
 
 [#two-rules]
 == Two rules that apply to every approach
@@ -91,34 +87,40 @@ Note that two of the approaches below sidestep this rule entirely, because they 
 |===
 | Approach | Good for | Costs | Requires
 
-| xref:sagas:state-in-a-repository.adoc[State in a repository]
+| xref::state-in-a-repository.adoc[State in a repository]
 | The first thing to try. Familiar from version 4, queryable, and works no matter where the events it reacts to come
 from.
 | Two things happen per step, so the ordering rule above has to be observed by hand.
 | A store you can write to in the processor's transaction.
 
-| xref:sagas:state-from-domain-events.adoc[State derived from domain events]
+| xref::state-from-domain-events.adoc[State derived from domain events]
 | Processes whose state is already implied by events you own. Stores nothing, so nothing can fall out of step.
 | Invisible: a step that produces no event leaves no trace. One extra read per event.
 | One event store, and a tag on the correlated events of both contexts.
 
-| xref:sagas:state-from-process-events.adoc[State from the process's own events]
+| xref::state-from-process-events.adoc[State from the process's own events]
 | Long or regulated processes where you want an audit trail of the process itself, and for integrating with systems
 whose events are not yours.
 | The most machinery of the four: its own events, and either an extra command or an append from an event handler.
 | Nothing beyond an event store of your own.
 
-| xref:sagas:automation-slices.adoc[Automation slices]
+| xref::automation-slices.adoc[Automation slices]
 | Vertical Slice Architecture and Event Modelling. The best transactional profile, since each slice does exactly one
 thing.
 | No single place describes the process any more. Only an event model shows it whole.
 | Nothing. Most slices need no state at all.
+
+| xref::workflows.adoc[Workflows]
+| Processes that are genuinely complicated: many steps, real branching, compensation, or waiting that matters. The
+flow is written as a flow.
+| A dependency and a licence. Overkill for a process of three reactions.
+| Axoniq Framework, currently in preview.
 |===
 
 If you are migrating an existing version 4 saga and want the smallest step, start with
-xref:sagas:state-in-a-repository.adoc[state in a repository]: it is the closest to what you have. If you are writing
+xref::state-in-a-repository.adoc[state in a repository]: it is the closest to what you have. If you are writing
 something new and already structure your application in vertical slices, start at the other end with
-xref:sagas:automation-slices.adoc[automation slices], and reach for a process class only when you find you need one.
+xref::automation-slices.adoc[automation slices], and reach for a process class only when you find you need one.
 
 [TIP]
 .Try removing the need for state first
@@ -216,4 +218,4 @@ recorded list, because the recording command bus accumulates across every test s
 reset by a `when` phase that event-driven scenarios do not use. And keep correlation values unique per test, since a
 value used as a tag makes one test's events visible to another test's criteria.
 
-For the timeout path, see xref:sagas:deadlines.adoc[deadlines].
+For the timeout path, see xref::deadlines.adoc[deadlines].
