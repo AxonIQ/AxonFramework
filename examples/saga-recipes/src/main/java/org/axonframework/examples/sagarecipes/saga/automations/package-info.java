@@ -1,0 +1,51 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * The rental payment process, taken apart.
+ * <p>
+ * The other recipes keep the process in one class. This one asks whether it needs to be a thing at all, and answers
+ * no: what looked like a saga is a handful of independent reactions, each a slice of its own in the Event Modelling
+ * sense of "when this happens, do that".
+ * <p>
+ * Each slice is a to-do list. The important observation is how few of them need somewhere to keep it:
+ * <ul>
+ *     <li>{@code whenbikerequestedthenpreparepayment} and {@code whenrequestrejectedthencancelpayment} are
+ *     completely stateless. The trigger event carries everything the command needs, so the processor's tracking
+ *     token <em>is</em> the to-do list: everything before it is done, everything after it is not.</li>
+ *     <li>{@code whencancelrentalpaymentthencancelpayment} is stateless for a different reason. It could check
+ *     whether cancelling is still worthwhile, but the payment context checks anyway, and that check is the one that
+ *     holds under a race. Asking twice would only duplicate a decision that is not this slice's to make.</li>
+ *     <li>The three slices triggered by payment events cannot be stateless. A payment event carries only the
+ *     reference, and approving or rejecting a request needs the bike and the renter, so each keeps a small lookup of
+ *     its own. Slices are independent, so none of them shares another's.</li>
+ * </ul>
+ * <p>
+ * The transactional profile is the best of any recipe: every slice has exactly one effect. The lookups are reads, not
+ * writes, so there is no second thing that could fall out of step with the tracking token, and the ordering rule the
+ * other recipes have to observe simply does not apply.
+ * <p>
+ * What this costs is a whole view of the process. No single file describes the rental payment flow any more; it lives
+ * in the arrangement of six slices, and only an event model shows it as one thing. That is a real trade, and whether
+ * it is worth making depends on whether the process is something people reason about as a unit.
+ * <p>
+ * Note that ending does not arise here. There is nothing to end, because there was never anything running: each slice
+ * reacts and stops.
+ *
+ * @author Axon Framework
+ * @since 5.4.0
+ */
+package org.axonframework.examples.sagarecipes.saga.automations;
