@@ -19,7 +19,6 @@ package sagas.staterepository;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.stereotype.Component;
 import sagas.shared.RentalPaymentApi.ApproveRequest;
@@ -35,7 +34,7 @@ import static sagas.shared.RentalPaymentApi.paymentReferenceFor;
 import static sagas.shared.RentalPaymentApi.rentalIdFor;
 
 /**
- * Keeping the process state in a table of your own: the most familiar shape for anyone coming from Axon Framework 4.
+ * Keeping the process state in a table of your own: the most familiar of the shapes a process can take.
  */
 // tag::process[]
 @Component
@@ -48,30 +47,28 @@ public class RentalPaymentProcess {
     }
 
     @EventHandler
-    public CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher, ProcessingContext context) {
+    public CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher) {
         if (repository.findById(event.rentalId()).isPresent()) {
             return CompletableFuture.completedFuture(null); // <1>
         }
+        repository.save(new RentalPaymentProcessState( // <2>
+                event.rentalId(), event.bikeId(), event.renter()
+        ));
         return dispatcher.send(new PreparePayment(paymentReferenceFor(event.rentalId()), PRICE))
-                         .getResultMessage() // <2>
-                         .thenRun(() -> context.runOnPrepareCommit(ignored -> repository.save( // <3>
-                                 new RentalPaymentProcessState(event.rentalId(), event.bikeId(), event.renter())
-                         )));
+                         .getResultMessage(); // <3>
     }
 
     @EventHandler
-    public CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher, ProcessingContext context) {
+    public CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher) {
         Optional<RentalPaymentProcessState> state =
                 repository.findById(rentalIdFor(event.paymentReference()));
         if (state.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
         RentalPaymentProcessState process = state.get();
+        repository.deleteById(process.rentalId()); // <4>
         return dispatcher.send(new ApproveRequest(process.bikeId(), process.renter()))
-                         .getResultMessage()
-                         .thenRun(() -> context.runOnPrepareCommit(
-                                 ignored -> repository.deleteById(process.rentalId()) // <4>
-                         ));
+                         .getResultMessage();
     }
 }
 // end::process[]

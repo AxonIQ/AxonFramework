@@ -80,13 +80,19 @@ A useful trick is to make the receiver's decision model naturally exclusive. If 
 reference rather than by an identifier the payment mints, then "prepare a payment for this reference" cannot happen
 twice, and no guard has to be remembered.
 
-=== Progress must not be recorded before the command succeeds
+=== Recorded progress must commit with the tracking token
 
-There is no transaction spanning "dispatch a command" and "write down that I dispatched it". Recording first is a
-quiet and permanent bug: the dispatch fails, the handler fails, the token is not committed, the event is redelivered,
-and the recorded progress now makes the process skip the work it never did.
+A process that remembers anything is writing in two places: its own state, and the token that says which events it has
+seen. If those two can commit independently, the process drifts, and it drifts only under failure, which is the worst
+way to find out.
 
-The order that works is: dispatch, wait for success, then record.
+They commit together without any effort on your part when the write happens inside the unit of work: with a
+`PlatformTransactionManager` present, the handler runs in a transaction that commits alongside the token, so an
+ordinary repository call in an ordinary handler is already atomic with it. What breaks the property is moving the write
+out of the handler, typically into a callback on the command's future, which runs on a thread with nothing bound to it.
+
+Ordering the write against the dispatch is a smaller question than it looks, and
+xref::state-in-a-repository.adoc#ordering[the repository page] works it through.
 
 [IMPORTANT]
 ====
@@ -117,7 +123,7 @@ compensation, or waiting that matters. The flow is written as a flow.
 | xref::state-in-a-repository.adoc[State in a repository]
 | The first thing to try. Ordinary, queryable state, and it works no matter where the events it reacts to come
 from.
-| Two things happen per step, so the ordering rule above has to be observed by hand.
+| Two things happen per step, and they commit together only because a transaction manager is there to make them.
 | A store you can write to in the processor's transaction.
 
 | xref::state-from-domain-events.adoc[State derived from domain events]
