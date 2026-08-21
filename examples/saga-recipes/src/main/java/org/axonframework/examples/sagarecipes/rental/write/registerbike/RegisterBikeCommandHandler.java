@@ -16,7 +16,7 @@
 
 package org.axonframework.examples.sagarecipes.rental.write.registerbike;
 
-import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
@@ -24,7 +24,10 @@ import org.axonframework.examples.sagarecipes.rental.event.BikeRegistered;
 import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,12 +47,12 @@ public class RegisterBikeCommandHandler {
      * Registers the bike, unless it is already known.
      *
      * @param command  the command to handle
-     * @param state    the decision model for the targeted bike
+     * @param state    the bike, or {@code null} if it has not been registered yet
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RegisterBike command, @InjectEntity State state, EventAppender appender) {
-        if (state.registered) {
+    public void handle(RegisterBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state != null) {
             return;
         }
         appender.append(new BikeRegistered(command.bikeId(), command.bikeType(), command.location()));
@@ -61,18 +64,24 @@ public class RegisterBikeCommandHandler {
      * Deliberately minimal. Other slices in this context source the same bike with different fields, because each
      * slice owns the narrowest consistency boundary its own rule needs.
      */
-    @EventSourced(idType = BikeId.class, tagKey = RentalTags.BIKE_ID)
+    @EventSourced(idType = BikeId.class)
     static class State {
 
-        private boolean registered;
-
         @EntityCreator
-        State() {
+        State(BikeRegistered event) {
         }
 
-        @EventSourcingHandler
-        void evolve(BikeRegistered event) {
-            this.registered = true;
+        /**
+         * Registration cares about nothing but registration. Everything a bike goes through afterwards is another
+         * slice's concern.
+         *
+         * @param bikeId the bike this decision concerns
+         * @return the criteria selecting exactly the events this decision depends on
+         */
+        @EventCriteriaBuilder
+        private static EventCriteria criteria(BikeId bikeId) {
+            return EventCriteria.havingTags(Tag.of(RentalTags.BIKE_ID, bikeId.raw()))
+                                .andBeingOneOfTypes(BikeRegistered.class.getName());
         }
     }
 }

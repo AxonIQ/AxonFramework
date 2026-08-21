@@ -29,14 +29,20 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.UUID;
+
 @AxonSpringBootTest
 class RequestBikeCommandHandlerTest {
 
-    private static final String RENTER = "alice";
-    private static final String OTHER_RENTER = "bob";
-
     @Autowired
     private AxonTestFixture fixture;
+
+    /**
+     * Unique per test. The renter is a tag, so reusing a fixed name would let one test's events satisfy or violate
+     * another test's rules: the Spring context, and with it the event store, is shared across the whole run.
+     */
+    private final String renter = "renter-" + UUID.randomUUID();
+    private final String otherRenter = "renter-" + UUID.randomUUID();
 
     @Test
     void givenAvailableBike_whenRequestBike_thenBikeRequested() {
@@ -48,10 +54,10 @@ class RequestBikeCommandHandlerTest {
         fixture.given()
                .events(new BikeRegistered(bikeId, "city", "Vilnius"))
                .when()
-               .command(new RequestBike(bikeId, RENTER, rentalId))
+               .command(new RequestBike(bikeId, renter, rentalId))
                .then()
                .success()
-               .events(new BikeRequested(bikeId, RENTER, rentalId));
+               .events(new BikeRequested(bikeId, renter, rentalId));
     }
 
     @Test
@@ -63,7 +69,7 @@ class RequestBikeCommandHandlerTest {
         fixture.given()
                .noPriorActivity()
                .when()
-               .command(new RequestBike(bikeId, RENTER, RentalId.random()))
+               .command(new RequestBike(bikeId, renter, RentalId.random()))
                .then()
                .exception(IllegalStateException.class, "Bike is not registered");
     }
@@ -80,9 +86,9 @@ class RequestBikeCommandHandlerTest {
             // when / then a redelivered command must not reserve the bike a second time
             fixture.given()
                    .events(new BikeRegistered(bikeId, "city", "Vilnius"),
-                           new BikeRequested(bikeId, RENTER, rentalId))
+                           new BikeRequested(bikeId, renter, rentalId))
                    .when()
-                   .command(new RequestBike(bikeId, RENTER, rentalId))
+                   .command(new RequestBike(bikeId, renter, rentalId))
                    .then()
                    .success()
                    .noEvents();
@@ -106,9 +112,9 @@ class RequestBikeCommandHandlerTest {
             fixture.given()
                    .events(new BikeRegistered(bikeA, "city", "Vilnius"),
                            new BikeRegistered(bikeB, "city", "Vilnius"),
-                           new BikeRequested(bikeA, RENTER, RentalId.random()))
+                           new BikeRequested(bikeA, renter, RentalId.random()))
                    .when()
-                   .command(new RequestBike(bikeB, RENTER, RentalId.random()))
+                   .command(new RequestBike(bikeB, renter, RentalId.random()))
                    .then()
                    .exception(IllegalStateException.class, "Renter already holds a bike");
         }
@@ -125,14 +131,14 @@ class RequestBikeCommandHandlerTest {
             fixture.given()
                    .events(new BikeRegistered(bikeA, "city", "Vilnius"),
                            new BikeRegistered(bikeB, "city", "Vilnius"),
-                           new BikeRequested(bikeA, RENTER, previousRental),
-                           new BikeInUse(bikeA, RENTER, previousRental),
-                           new BikeReturned(bikeA, RENTER, previousRental, "Vilnius"))
+                           new BikeRequested(bikeA, renter, previousRental),
+                           new BikeInUse(bikeA, renter, previousRental),
+                           new BikeReturned(bikeA, renter, previousRental, "Vilnius"))
                    .when()
-                   .command(new RequestBike(bikeB, RENTER, newRental))
+                   .command(new RequestBike(bikeB, renter, newRental))
                    .then()
                    .success()
-                   .events(new BikeRequested(bikeB, RENTER, newRental));
+                   .events(new BikeRequested(bikeB, renter, newRental));
         }
 
         @Test
@@ -147,13 +153,13 @@ class RequestBikeCommandHandlerTest {
             fixture.given()
                    .events(new BikeRegistered(bikeA, "city", "Vilnius"),
                            new BikeRegistered(bikeB, "city", "Vilnius"),
-                           new BikeRequested(bikeA, RENTER, rejectedRental),
-                           new RequestRejected(bikeA, RENTER, rejectedRental))
+                           new BikeRequested(bikeA, renter, rejectedRental),
+                           new RequestRejected(bikeA, renter, rejectedRental))
                    .when()
-                   .command(new RequestBike(bikeB, RENTER, newRental))
+                   .command(new RequestBike(bikeB, renter, newRental))
                    .then()
                    .success()
-                   .events(new BikeRequested(bikeB, RENTER, newRental));
+                   .events(new BikeRequested(bikeB, renter, newRental));
         }
 
         @Test
@@ -164,9 +170,9 @@ class RequestBikeCommandHandlerTest {
             // when / then
             fixture.given()
                    .events(new BikeRegistered(bikeId, "city", "Vilnius"),
-                           new BikeRequested(bikeId, OTHER_RENTER, RentalId.random()))
+                           new BikeRequested(bikeId, otherRenter, RentalId.random()))
                    .when()
-                   .command(new RequestBike(bikeId, RENTER, RentalId.random()))
+                   .command(new RequestBike(bikeId, renter, RentalId.random()))
                    .then()
                    .exception(IllegalStateException.class, "Bike is already rented");
         }

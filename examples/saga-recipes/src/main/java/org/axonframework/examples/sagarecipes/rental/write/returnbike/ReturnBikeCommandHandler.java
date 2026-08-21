@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.sagarecipes.rental.write.returnbike;
 
+import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
@@ -26,7 +27,10 @@ import org.axonframework.examples.sagarecipes.rental.event.BikeReturned;
 import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -46,13 +50,13 @@ public class ReturnBikeCommandHandler {
      * Returns the bike.
      *
      * @param command  the command to handle
-     * @param state    the decision model for the targeted bike
+     * @param state    the bike's rental, or {@code null} if the bike has never been in use
      * @param appender appends the resulting event
      * @throws IllegalStateException if the bike is not currently in use
      */
     @CommandHandler
-    public void handle(ReturnBike command, @InjectEntity State state, EventAppender appender) {
-        if (!state.inUse) {
+    public void handle(ReturnBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state == null || !state.inUse) {
             throw new IllegalStateException("Bike is not in use");
         }
         appender.append(new BikeReturned(command.bikeId(), state.renter, state.activeRental, command.location()));
@@ -64,7 +68,7 @@ public class ReturnBikeCommandHandler {
      * Narrower than the neighbouring slices: a merely requested bike cannot be returned, so only
      * {@code BikeInUse} and {@code BikeReturned} matter here.
      */
-    @EventSourced(idType = BikeId.class, tagKey = RentalTags.BIKE_ID)
+    @EventSourced(idType = BikeId.class)
     static class State {
 
         private boolean inUse;
@@ -72,7 +76,10 @@ public class ReturnBikeCommandHandler {
         private RentalId activeRental;
 
         @EntityCreator
-        State() {
+        State(BikeInUse event) {
+            this.inUse = true;
+            this.renter = event.renter();
+            this.activeRental = event.rentalId();
         }
 
         @EventSourcingHandler
@@ -87,6 +94,20 @@ public class ReturnBikeCommandHandler {
             this.inUse = false;
             this.renter = null;
             this.activeRental = null;
+        }
+
+        /**
+         * A bike can only be returned once it is out on a confirmed rental, so nothing before {@code BikeInUse}
+         * matters. This is the narrowest boundary of any slice in this context.
+         *
+         * @param bikeId the bike this decision concerns
+         * @return the criteria selecting exactly the events this decision depends on
+         */
+        @EventCriteriaBuilder
+        private static EventCriteria criteria(BikeId bikeId) {
+            return EventCriteria.havingTags(Tag.of(RentalTags.BIKE_ID, bikeId.raw()))
+                                .andBeingOneOfTypes(BikeInUse.class.getName(),
+                                                    BikeReturned.class.getName());
         }
     }
 }
