@@ -60,12 +60,13 @@ public class AutomationSlices {
 
     // tag::with-lookup[]
     @Component
+    @SequencingPolicy(type = PropertySequencingPolicy.class, parameters = "paymentReference") // <1>
     public static class WhenPaymentConfirmedThenApproveRequest {
 
         @EventHandler
         public CompletableFuture<?> react(
                 PaymentConfirmed event,
-                @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable RequestedRental rental, // <1>
+                @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable RequestedRental rental, // <2>
                 CommandDispatcher dispatcher
         ) {
             if (rental == null) {
@@ -76,7 +77,7 @@ public class AutomationSlices {
         }
 
         @EventSourced(idType = String.class)
-        static class RequestedRental { // <2>
+        static class RequestedRental { // <3>
 
             String bikeId;
             String renter;

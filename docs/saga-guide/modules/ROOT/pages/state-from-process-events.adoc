@@ -97,7 +97,8 @@ Choose the command if you follow Event Modelling and want every event to have a 
 recording step to be independently re-sendable. Choose the direct append if you value the smaller amount of code and
 are comfortable that an event appears without a command.
 
-The ordering rule is identical either way: do the work, then record it. Only the medium changes.
+Either way the recording follows the work, because the event asserts that the work happened. Appending it before
+the command succeeded would record something that is not yet true. Only the medium changes.
 
 == Trade-offs
 
@@ -113,7 +114,7 @@ a|
 a|
 * The most machinery of the four approaches.
 * Either an extra command per step, or an event without a command behind it.
-* The ordering rule applies, exactly as it does with a repository.
+* Every step records a fact, so the recording has to follow the command that makes it true.
 |===
 
 == Where next
