@@ -33,6 +33,7 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
@@ -54,16 +55,16 @@ public class RequestBikeCommandHandler {
      * Reserves the bike, unless this exact request was already handled or a rule forbids it.
      *
      * @param command  the command to handle
-     * @param state    the decision model spanning the bike and the renter
+     * @param state    the decision model spanning the bike and the renter, or {@code null} if neither has any history
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RequestBike command, @InjectEntity State state, EventAppender appender) {
+    public void handle(RequestBike command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state == null || !state.bikeRegistered) {
+            throw new IllegalStateException("Bike is not registered");
+        }
         if (state.alreadyRequested(command.rentalId())) {
             return;
-        }
-        if (!state.bikeRegistered) {
-            throw new IllegalStateException("Bike is not registered");
         }
         if (!state.bikeAvailable) {
             throw new IllegalStateException("Bike is already rented");
@@ -80,6 +81,10 @@ public class RequestBikeCommandHandler {
      * The entity learns its own identifier through {@link InjectEntityId}, which is what lets a single evolve method
      * tell "an event about my bike" apart from "an event about my renter". Both criterions feed one stream, so the
      * event itself cannot say which of the two selected it.
+     * <p>
+     * A plain {@code @EntityCreator} is only invoked once the stream holds at least one selected event, so an
+     * untouched bike and renter yield no entity at all. The handler therefore takes a nullable parameter and treats
+     * {@code null} the same way it treats a bike with no registration event.
      */
     @EventSourced(idType = RentalRequestId.class)
     static class State {

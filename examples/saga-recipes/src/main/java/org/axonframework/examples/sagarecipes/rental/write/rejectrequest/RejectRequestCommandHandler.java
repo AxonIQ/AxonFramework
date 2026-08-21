@@ -16,6 +16,7 @@
 
 package org.axonframework.examples.sagarecipes.rental.write.rejectrequest;
 
+import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
@@ -28,7 +29,10 @@ import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
@@ -50,12 +54,12 @@ public class RejectRequestCommandHandler {
      * Releases the bike, unless the reservation is already settled or held by someone else.
      *
      * @param command  the command to handle
-     * @param state    the decision model for the targeted bike
+     * @param state    the bike's reservation, or {@code null} if the bike was never requested
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RejectRequest command, @InjectEntity State state, EventAppender appender) {
-        if (!Objects.equals(state.reservedBy, command.renter()) || state.reservationConfirmed) {
+    public void handle(RejectRequest command, @InjectEntity @Nullable State state, EventAppender appender) {
+        if (state == null || !Objects.equals(state.reservedBy, command.renter()) || state.reservationConfirmed) {
             return;
         }
         appender.append(new RequestRejected(command.bikeId(), command.renter(), state.activeRental));
@@ -65,7 +69,7 @@ public class RejectRequestCommandHandler {
      * Decision model for this slice: who holds the bike, under which rental, and whether the reservation was already
      * confirmed.
      */
-    @EventSourced(idType = BikeId.class, tagKey = RentalTags.BIKE_ID)
+    @EventSourced(idType = BikeId.class)
     static class State {
 
         private String reservedBy;
@@ -73,7 +77,9 @@ public class RejectRequestCommandHandler {
         private boolean reservationConfirmed;
 
         @EntityCreator
-        State() {
+        State(BikeRequested event) {
+            this.reservedBy = event.renter();
+            this.activeRental = event.rentalId();
         }
 
         @EventSourcingHandler
@@ -102,6 +108,23 @@ public class RejectRequestCommandHandler {
             this.reservedBy = null;
             this.activeRental = null;
             this.reservationConfirmed = false;
+        }
+
+        /**
+         * Only the reservation matters here. {@code BikeRegistered} is deliberately excluded: whether the bike was
+         * ever added to the fleet has no bearing on this decision, and sourcing it would both widen the conflict
+         * surface and make the registration event the first one the entity would have to be created from.
+         *
+         * @param bikeId the bike this decision concerns
+         * @return the criteria selecting exactly the events this decision depends on
+         */
+        @EventCriteriaBuilder
+        private static EventCriteria criteria(BikeId bikeId) {
+            return EventCriteria.havingTags(Tag.of(RentalTags.BIKE_ID, bikeId.raw()))
+                                .andBeingOneOfTypes(BikeRequested.class.getName(),
+                                                    BikeInUse.class.getName(),
+                                                    RequestRejected.class.getName(),
+                                                    BikeReturned.class.getName());
         }
     }
 }
