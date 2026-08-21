@@ -19,9 +19,9 @@ package org.axonframework.examples.sagarecipes.saga.automations.whenrequestrejec
 import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
-import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
+import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -42,7 +42,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
-@SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
+@SequencingPolicy(type = PropertySequencingPolicy.class, parameters = "rentalId")
 public class WhenRequestRejectedThenCancelPayment {
 
     /**
