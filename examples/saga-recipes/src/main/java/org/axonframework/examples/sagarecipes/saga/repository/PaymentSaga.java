@@ -16,7 +16,6 @@ import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencin
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -36,30 +35,31 @@ public class PaymentSaga {
     }
 
     @EventHandler
-    CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher, ProcessingContext context) {
+    CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher) {
         var existing = repository.findById(event.rentalId().raw()).orElse(null);
         if (existing != null && existing.paymentRequested()) {
             return CompletableFuture.completedFuture(null);
         }
-        context.runOnPrepareCommit(ignored -> repository.save(PaymentSagaState.paymentRequested(
-                event.rentalId(), event.bikeId(), event.renter())));
+        // This write joins the processor's Spring transaction. Returning the command future below delays that
+        // transaction's commit; a failed command therefore rolls back both this row and the tracking token.
+        repository.save(PaymentSagaState.paymentRequested(event.rentalId(), event.bikeId(), event.renter()));
         return dispatcher.send(new PreparePayment(RentalPaymentReference.forRental(event.rentalId()), PRICE),
                                Object.class);
     }
 
     @EventHandler
-    CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return settle(RentalPaymentReference.toRental(event.paymentReference()), true, dispatcher, context);
+    CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher) {
+        return settle(RentalPaymentReference.toRental(event.paymentReference()), true, dispatcher);
     }
 
     @EventHandler
-    CompletableFuture<?> on(PaymentRejected event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return settle(RentalPaymentReference.toRental(event.paymentReference()), false, dispatcher, context);
+    CompletableFuture<?> on(PaymentRejected event, CommandDispatcher dispatcher) {
+        return settle(RentalPaymentReference.toRental(event.paymentReference()), false, dispatcher);
     }
 
     @EventHandler
-    CompletableFuture<?> on(PaymentCancelled event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return settle(RentalPaymentReference.toRental(event.paymentReference()), false, dispatcher, context);
+    CompletableFuture<?> on(PaymentCancelled event, CommandDispatcher dispatcher) {
+        return settle(RentalPaymentReference.toRental(event.paymentReference()), false, dispatcher);
     }
 
     @EventHandler
@@ -74,13 +74,13 @@ public class PaymentSaga {
                                                  "not confirmed in time"), Object.class);
     }
 
-    private CompletableFuture<?> settle(RentalId rentalId, boolean approved, CommandDispatcher dispatcher,
-                                        ProcessingContext context) {
+    private CompletableFuture<?> settle(RentalId rentalId, boolean approved, CommandDispatcher dispatcher) {
         var state = repository.findById(rentalId.raw()).orElse(null);
         if (state == null) {
             return CompletableFuture.completedFuture(null);
         }
-        context.runOnPrepareCommit(ignored -> repository.deleteById(rentalId.raw()));
+        // As above, deletion remains provisional until the returned command future succeeds.
+        repository.deleteById(rentalId.raw());
         Object command = approved
                 ? new ApproveRequest(state.bikeId(), state.renter())
                 : new RejectRequest(state.bikeId(), state.renter());

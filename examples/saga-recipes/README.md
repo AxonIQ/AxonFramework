@@ -25,9 +25,10 @@ The module has three sibling contexts:
 3. Process progress is recorded only after the dispatched command succeeds. A failed handler must not advance its
    tracking token or leave process state claiming that work happened.
 
-The repository recipe schedules its JPA mutation for the event unit of work's prepare-commit phase. This is safer than
-putting a repository call in `CompletableFuture.thenRun`: a future may complete on another thread, while Spring's JPA
-transaction is thread-bound.
+The repository recipe mutates JPA state in the handler and returns the dispatched command's future. Axon's Spring
+transaction manager keeps the repository mutation and tracking-token update in one transaction, waits for that future,
+and rolls both back when the command fails. A repository call in `CompletableFuture.thenRun` would be unsafe because
+that continuation may execute on another thread, while Spring's JPA transaction is thread-bound.
 
 ## Two domain entities, not three
 
@@ -72,9 +73,10 @@ process step.
 
 ### Repository
 
-`saga/repository` stores the `rentalId`, `bikeId`, and `renter` in a schema owned by the process. A row is created only in
-prepare-commit after `PreparePayment` succeeds. Approval or rejection deletes it only after the target command succeeds.
-A tombstone would be preferable if target commands were not idempotent.
+`saga/repository` stores the `rentalId`, `bikeId`, and `renter` in a schema owned by the process. It writes or deletes the
+row before dispatching the next command, but the event processor transaction commits that mutation only after the
+returned command future succeeds. A command failure rolls the mutation back together with the tracking token. A
+tombstone would be preferable if target commands were not idempotent.
 
 ### Inject entity
 
