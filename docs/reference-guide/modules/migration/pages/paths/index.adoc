@@ -17,6 +17,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 * xref:migration:paths/event-store.adoc[Event Store migration]
 * xref:migration:paths/snapshotting.adoc[Snapshot migration]
 * xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
+* xref:migration:paths/sagas.adoc[Saga and Deadline migration]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]
 * xref:migration:paths/interceptors.adoc[Interceptor migration]
@@ -298,7 +299,7 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
 
 As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
 
-- **Saga & Deadline Overhaul**: Sagas and Deadlines do not have a native "async-native" replacement yet. A full redesign is in progress.
+- **Saga and Deadline infrastructure**: The Axon Framework 4 Saga and Deadline APIs do not have direct replacements. New processes can use xref:sagas:index.adoc[Process Manager patterns], but migration of active Saga state and already scheduled deadlines is not available. See xref:migration:paths/sagas.adoc[the Saga and Deadline migration path].
 - **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
 - **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
 - **Annotated Features (Coming in 5.2.0)**:

@@ -1,0 +1,119 @@
+= Saga and Deadline Migration
+:navtitle: Sagas and Deadlines
+
+Axon Framework 5 does not contain the Axon Framework 4 Saga infrastructure.
+There is no `@Saga`, `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle`, `SagaStore`, or `DeadlineManager` replacement with the same storage model.
+
+For new business processes, implement the Saga Pattern as a Process Manager using regular Axon Framework 5 components.
+The xref:sagas:index.adoc[Saga Pattern and Process Managers] guide compares five working approaches and provides a shared replacement for deadlines.
+
+[WARNING]
+====
+Migration of existing Saga Store entries and already scheduled deadlines is not available yet.
+Do not move a running Saga instance or deadline to Axon Framework 5 by copying its database rows.
+Applications that must transfer active Saga state or pending deadlines should wait for a supported data-migration path or keep the Axon Framework 4 runtime responsible for those instances until they finish.
+====
+
+== Mapping Saga concepts
+
+[cols="2,3,4",options="header"]
+|===
+|Axon Framework 4 |Axon Framework 5 |Guidance
+
+|`@Saga`
+|Regular event-handling and command-handling component
+|Choose an explicit state model from xref:sagas:index.adoc#choosing-implementation[the Process Manager decision table].
+
+|`SagaStore`
+|Private repository, existing domain events, or process-owned events
+|Start with xref:sagas:repository.adoc[a private repository]. It is the closest operational model, but its schema belongs to the app.
+
+|`@StartSaga`
+|An event handler that creates or derives process state
+|The start event creates a repository row, leads to the first process event, or becomes work on an automation slice's tracking token.
+
+|`@SagaEventHandler(associationProperty = "...")`
+|`@EventHandler` plus event tags and explicit correlation
+|Put a stable process identifier on correlated events. Use `@EventCriteriaBuilder` when reconstructing state from more than one tag.
+
+|`SagaLifecycle.associateWith`
+|A stable reference mapping or process-owned lookup
+|Prefer a deterministic mapping when one identifier can be derived from the other. Persist a lookup only when derivation is impossible.
+
+|`@EndSaga` or `SagaLifecycle.end()`
+|Delete a repository row, retain a completion event, or evaluate a completion predicate
+|The correct lifecycle representation depends on the selected state model.
+
+|Saga instance fields
+|Repository columns, event-derived state, or process-owned events
+|Store only information required by later process steps.
+
+|`SagaTestFixture`
+|`AxonTestFixture`
+|Test observable commands and events. Use one shared contract to compare alternative Process Manager implementations.
+|===
+
+== Migrating new Saga instances gradually
+
+You can move the creation of new process instances before migrating already-running Saga data.
+
+. Deploy the Axon Framework 5 Process Manager and initialize its streaming processor at the migration cutover position. Do not replay historical start events into it unless duplicate starts are explicitly safe.
+. Remove `@StartSaga` from the start-event handler in the Axon Framework 4 Saga.
+. Keep `@SagaEventHandler` on that method and on subsequent handlers. Existing Saga instances remain associated and can continue receiving events.
+. Let existing Axon Framework 4 Saga instances reach `@EndSaga` naturally.
+. Route new start events to the Axon Framework 5 Process Manager.
+. Retire the Axon Framework 4 Saga infrastructure only after no active instances remain.
+
+Removing `@StartSaga` prevents new Axon Framework 4 instances from being created.
+It does not delete existing instances or remove their association values.
+
+[IMPORTANT]
+====
+Run both implementations only with an explicit processor cutover strategy.
+If the new processor starts at the beginning of the stream, it can interpret historical start events as new work and duplicate business actions.
+====
+
+== Replacing Saga deadlines
+
+Axon Framework 4 scheduled a named deadline in the scope of a Saga and invoked an `@DeadlineHandler` later.
+It could cancel the schedule by identifier or with `cancelAllWithinScope`.
+
+In Axon Framework 5, separate the _request to act_ from the _mechanism that decides when to request it_:
+
+. Define an ordinary idempotent command, such as `CancelRentalPayment(rentalId)`.
+. Handle that command at the Process Manager boundary.
+. Project events such as `PaymentPrepared` into a table of pending work.
+. Remove pending work on every terminal event.
+. Let a scheduled reader dispatch the command for overdue rows.
+
+The replacement is a command rather than an event because reaching a time threshold expresses intent.
+It asks the consistency boundary to attempt cancellation.
+It does not prove that cancellation occurred.
+The target command handler remains authoritative and ignores cancellation after payment has settled.
+
+This timeout projection is independent of the Process Manager state recipe.
+The same `CancelRentalPayment` command can also be sent by an operator, REST endpoint, test, or external scheduler.
+See xref:sagas:timeouts.adoc[Replacing Saga deadlines with a timeout projection] for the complete pattern and its multi-instance and replay considerations.
+
+Already scheduled Axon Framework 4 deadlines cannot be converted into timeout-projection rows automatically.
+Keep their Axon Framework 4 deadline infrastructure active until they fire or wait for a supported data-migration mechanism.
+
+== Replacing retry deadlines
+
+Some Axon Framework 4 Sagas scheduled a short retry deadline after command dispatch failed.
+An Axon Framework 5 event handler can usually remove that deadline by returning the command's `CompletableFuture`.
+
+The event processor waits for the future.
+If the command fails, the tracking token does not advance and the event is delivered again according to the processor's retry behavior.
+Do not turn the dispatch into fire-and-forget work.
+
+== Data compatibility
+
+An Axon Framework 4 Saga Store contains serialized Saga instances and association rows whose format belongs to the old Saga infrastructure.
+The Axon Framework 5 alternatives use app-owned repository schemas or event streams with different lifecycle semantics.
+There is no general one-to-one transformation.
+
+The same limitation applies to pending deadlines: their serialized scope, payload, and schedule metadata do not map automatically to a timeout projection.
+Treat code migration for new instances and runtime-data migration for existing instances as separate projects.
+
+For comparison with the previous programming model, see the Axon Framework 4 documentation for link:https://docs.axoniq.io/axon-framework-reference/4.11/sagas/implementation/[Saga implementation], link:https://docs.axoniq.io/axon-framework-reference/4.11/sagas/associations/[Saga associations], and link:https://docs.axoniq.io/axon-framework-reference/4.12/deadlines/deadline-managers/[Deadline Managers].

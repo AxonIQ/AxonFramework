@@ -1,0 +1,59 @@
+= Process Manager with a Private Repository
+:navtitle: Private Repository
+
+Use a private repository when you want a direct and familiar Process Manager implementation.
+This is the closest replacement for an Axon Framework 4 Saga Store. The state and schema belong to your app.
+
+The bike-rental process stores one row containing `rentalId`, `bikeId`, `renter`, and process status.
+The row starts when `BikeRequested` is handled and is deleted after the rental request is approved or rejected.
+
+== Implementing the handler
+
+[source,java]
+----
+include::example$sagas/repository/RepositoryPaymentProcess.java[tag=repository-process,indent=0]
+----
+
+The repository mutation executes synchronously on the processor thread.
+The returned command future delays completion of the event handler.
+With Spring transaction management configured for the processor, the JPA mutation and tracking-token update participate in the processor transaction.
+A failed command causes that transaction to roll back.
+
+Do not move the repository call into `thenRun` or another asynchronous continuation.
+Spring's JPA transaction is thread-bound, and the continuation may execute on another thread.
+
+== Understanding the remaining failure window
+
+There is no distributed transaction between the Process Manager database and a target command handler.
+Consider this sequence:
+
+. The target command succeeds and commits its event.
+. The Process Manager transaction fails before its row or token commits.
+. The original event is delivered again.
+. The Process Manager dispatches the command again.
+
+This is why the target command must be idempotent.
+The repeated command observes that its outcome already exists and succeeds without appending another event.
+The Process Manager can then commit its own state and token.
+
+Adding `@Transactional` to the handler does not create a distributed transaction with another service or command handler.
+It can define the local database boundary, but idempotent target commands are still required.
+
+== Ending the process
+
+Deleting the row is equivalent to ending the lifecycle.
+Deletion is safe when all target commands are idempotent: delivery after deletion may reconstruct the process and dispatch a command again, but the target absorbs the duplicate.
+
+If duplicate target commands cannot be made safe, retain a tombstone such as `status = COMPLETED` instead of deleting the row.
+The tombstone prevents completed processes from starting again at the cost of permanent state.
+
+== When to choose this approach
+
+Choose a private repository when:
+
+* You are replacing an Axon Framework 4 Saga and want a direct mental model.
+* One or more correlated systems do not share your event store.
+* The process must remember non-event side effects or external identifiers.
+* Your team prefers ordinary database operations over event-sourced process state.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/repository[`saga/repository`].

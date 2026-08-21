@@ -9,11 +9,9 @@ If you are curious about more details on the `AxonTestFixture`, be sure to read 
 
 [NOTE]
 ====
-The `SagaTestFixture` does not have an Axon Framework 5 replacement yet.
-Once available, process testing will also go through the `AxonTestFixture`.
-
-Note that simple sagas can already be written and tested in Axon Framework 5, as an automation.
-Check out our xref:axon-framework-5-getting-started::implement-stateful-event-handler.adoc[getting started] for an example on how to do this.
+There is no dedicated `SagaTestFixture` in Axon Framework 5.
+Process Managers are regular event-handling and command-handling components, so test them through `AxonTestFixture` using the same application configuration as production.
+See xref:sagas:index.adoc[Saga Pattern and Process Managers] for the available implementation approaches.
 ====
 
 == Why the change?
@@ -21,7 +19,7 @@ Check out our xref:axon-framework-5-getting-started::implement-stateful-event-ha
 The previous test fixtures had several limitations:
 
 1. **Configuration duplication**: It was easy to miss parts of the application configuration when setting up test fixtures.
-Users had to manually register components like parameter resolvers, handler definitions, and resources—separately from their production configuration.
+Users had to manually register components like parameter resolvers, handler definitions, and resources separately from their production configuration.
 
 2. **Limited scope**: Testing was restricted to aggregates and sagas.
 Event handling components (projectors/projections) had no testing support, for example.
@@ -381,7 +379,7 @@ Axon Framework 4 provided Hamcrest-based matchers for validation in the <<then,t
 Methods like `expectEventsMatching()` and `expectResultMessageMatching()` allowed complex assertions using matchers such as `exactSequenceOf()`, `payloadsMatching()`, and `messageWithPayload()` provided by the framework.
 
 Axon Framework 5 replaces this approach with `Consumer` and `Predicate`-based methods, like `eventsSatisfy()` and `eventsMatch()`.
-This design allows you to choose your own assertion or matching library—whether that's AssertJ, Hamcrest, Truth, or plain JUnit assertions.
+This design allows you to choose your own assertion or matching library, whether that's AssertJ, Hamcrest, Truth, or plain JUnit assertions.
 The example below shows how matcher-based validation in Axon Framework 4 maps to the new approach in Axon Framework 5:
 
 [tabs]

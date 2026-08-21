@@ -1,0 +1,74 @@
+= Replacing Saga Deadlines with a Timeout Projection
+:navtitle: Replacing Deadlines
+
+Axon Framework 5 does not provide `DeadlineManager` or `@DeadlineHandler`.
+Model a time-driven process step as an ordinary command and let a scheduling mechanism decide when to dispatch it.
+
+In the bike-rental process, `CancelRentalPayment(rentalId)` is the stable boundary.
+It can be dispatched by a scheduled sweeper, an operator, a REST endpoint, or a test.
+Every Process Manager recipe handles the same command and translates it to the payment context's `CancelPayment` command.
+
+== Why use a command instead of a timeout event?
+
+An event states that something happened.
+Reaching a point in time does not by itself prove that cancellation happened.
+It requests an attempt to cancel.
+A command represents that intent and lets the payment consistency boundary decide whether cancellation is still valid.
+
+This distinction is essential in a race with payment confirmation.
+The Process Manager may skip a cancellation when its view already shows confirmation, but the authoritative guard belongs to `CancelPayment`.
+If payment is already settled, the command succeeds without appending an event.
+
+== Build a deadline projection
+
+Project prepared payments into a table of pending work and remove them when payment settles:
+
+[source,java]
+----
+include::example$sagas/timeouts/PaymentsAwaitingConfirmation.java[tag=deadline-projection,indent=0]
+----
+
+The scheduled method only reads the to-do list and dispatches commands:
+
+[source,java]
+----
+include::example$sagas/timeouts/PaymentsAwaitingConfirmation.java[tag=deadline-sweeper,indent=0]
+----
+
+Writes to the pending table come only from events.
+The schedule never marks a row as handled itself.
+This makes the list replayable and avoids coordinating a scheduler write with command dispatch.
+
+== Operational characteristics
+
+[cols="2,3,3",options="header"]
+|===
+|Characteristic |Consequence |Mitigation
+
+|Every app instance runs `@Scheduled`
+|Several instances may dispatch the same command.
+|Make the command idempotent. Add leader election or a distributed lock when duplicate work is expensive.
+
+|Replay uses original event timestamps
+|Historical pending rows may immediately look overdue.
+|Idempotent cancellation lets settled payments self-heal. Pause sweeping during controlled rebuilds when necessary.
+
+|Polling precision
+|Execution occurs within approximately one sweep interval after the timeout.
+|Use a dedicated scheduler when exact trigger time is a requirement.
+
+|Growing pending table
+|A full scan becomes expensive.
+|Index the due-time column and query overdue rows in the database.
+|===
+
+This pattern replaces a deadline manager with a deadline projection.
+It is simple, testable, and requires no scheduler-specific process state, but its timing is approximate.
+
+== Testing without waiting
+
+Keep the annotated scheduler method as one line of glue and move its work into a method that accepts `Instant now`.
+Tests can project a `PaymentPrepared`, call `cancelOverduePayments` with synthetic time, and assert that `CancelRentalPayment` was dispatched.
+No sleeping or mutable global clock is required.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/deadline[`saga/deadline`].

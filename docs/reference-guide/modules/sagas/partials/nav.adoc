@@ -1,0 +1,7 @@
+* xref:sagas:index.adoc[]
+** xref:sagas:repository.adoc[]
+** xref:sagas:event-derived-state.adoc[]
+** xref:sagas:process-events.adoc[]
+** xref:sagas:direct-event-append.adoc[]
+** xref:sagas:automation-slices.adoc[]
+** xref:sagas:timeouts.adoc[]

@@ -1,0 +1,45 @@
+= Event-Sourced Process Manager with Direct Event Appends
+:navtitle: Direct Event Append
+
+An event handler may append a process event directly with `EventAppender`.
+This removes the recording command from xref:sagas:process-events.adoc[the command-recorded approach] while preserving the same process event stream and observable behavior.
+
+== Append only after success
+
+[source,java]
+----
+include::example$sagas/directappend/DirectAppendPaymentProcess.java[tag=direct-event-append,indent=0]
+----
+
+The handler first sources the process state.
+That sourcing contributes an append condition to the processor transaction.
+After `PreparePayment` succeeds, the process event is appended and committed with the processor's tracking token.
+
+[WARNING]
+====
+Appending from an event handler without sourcing relevant state produces an unconditional append.
+There is then no optimistic concurrency protection for the process stream.
+====
+
+== Transaction and conflict behavior
+
+Direct appending makes the process event and tracking-token update atomic within the event processor transaction.
+It does not make the target command part of that transaction.
+The target must remain idempotent in case it commits before the processor transaction rolls back.
+
+All sourcing performed by a processor batch contributes to the batch append condition.
+This can create a wider conflict surface than recording through a separate command.
+One append-condition conflict fails and retries the entire batch.
+
+== Trade-offs
+
+Choose direct appending when:
+
+* Process-owned events are valuable.
+* Atomic recording with the processor token matters.
+* The team accepts an event without a preceding command.
+* The wider batch conflict scope is acceptable.
+
+Prefer xref:sagas:process-events.adoc[recording commands] when command-to-event traceability and independently repairable write slices matter more than reducing code.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/eventsourcedappend[`saga/eventsourcedappend`].

@@ -1,0 +1,55 @@
+= Process Manager State Derived from Domain Events
+:navtitle: Event-Derived State
+
+A Process Manager does not always need its own state store.
+When all relevant outcomes already exist as events, an event-sourced state model can reconstruct process state on demand.
+
+This approach is particularly effective with Dynamic Consistency Boundaries (DCB).
+An `@EventCriteriaBuilder` can select rental events by `rentalId` and payment events by the payment context's independent `paymentReference` tag.
+The two bounded contexts remain unaware of each other.
+
+== Defining process state
+
+[source,java]
+----
+include::example$sagas/eventderived/EventDerivedPaymentProcess.java[tag=event-derived-state,indent=0]
+----
+
+The criteria is deliberately narrow.
+It includes only event types that affect this state model.
+Every event that sets a flag and every event that clears or settles it must be included.
+
+== Loading and using the state
+
+[source,java]
+----
+include::example$sagas/eventderived/EventDerivedPaymentProcess.java[tag=event-derived-handler,indent=0]
+----
+
+An event handler does not have a command target identifier from which `@InjectEntity` can automatically resolve this state.
+The handler therefore loads it through `StateManager` with the process identifier derived from the payment reference.
+Command handlers such as `CancelRentalPayment` can use `@Nullable @InjectEntity` directly because the command carries `@TargetEntityId`.
+
+If the target command fails, no process-owned state has changed and the token does not advance.
+On redelivery, the same domain events reconstruct the same state and the command is attempted again.
+If the command previously committed but the processor did not, the target command's idempotency guard absorbs the duplicate.
+
+== Lifecycle
+
+There is no row or process stream to delete.
+Lifecycle is represented by a predicate such as `requestSettled`.
+Completed processes remain reconstructable from their domain history.
+
+== Trade-offs
+
+Choose event-derived state when:
+
+* All correlated events are available from one event store.
+* Their tags support a narrow process-specific criterion.
+* Domain events contain all information needed by later commands.
+* You do not need a separate audit trail of process decisions.
+
+Do not choose it when events come only from a third-party API or broker that the state model cannot source.
+It also cannot remember work that produces no event, such as an email or arbitrary HTTP call.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/injectentity[`saga/injectentity`].

@@ -1,0 +1,65 @@
+= Process Manager as Vertical Automation Slices
+:navtitle: Automation Slices
+
+Event Modeling represents automation as `Event -> Automation -> Command`.
+With Vertical Slice Architecture, each reaction becomes a small event-handling component instead of a method on one central Process Manager class.
+
+Each slice is a to-do list.
+The event processor's tracking token records how far that list has progressed.
+A slice needs additional state only when its trigger event does not contain everything required by the outgoing command.
+
+== Stateless automation
+
+`BikeRequested` contains the rental identifier needed to prepare a payment, so this slice needs no state model:
+
+[source,java]
+----
+include::example$sagas/automations/AutomationSlices.java[tag=stateless-automation,indent=0]
+----
+
+Returning the command future prevents the token from advancing until payment preparation succeeds.
+
+== Automation with a private lookup
+
+`PaymentConfirmed` carries a payment reference, but `ApproveRequest` needs `bikeId` and `renter`.
+That slice owns a minimal event-sourced lookup derived from `BikeRequested`:
+
+[source,java]
+----
+include::example$sagas/automations/AutomationSlices.java[tag=automation-with-lookup,indent=0]
+----
+
+Do not share one slice's private lookup with other slices merely to reduce a few lines of code.
+Independent state models let each automation select exactly the events it needs and evolve without coupling.
+
+== Assign related slices to a processor
+
+Spring derives an event processor name from an event-handling component's package when there is no explicit assignment.
+Automation classes in separate vertical-slice packages would therefore receive separate processors by default.
+
+Annotate the event-driven slices with a shared namespace when they should share one processor and tracking token.
+Both preceding examples use `@Namespace("rental-payment-automations")` for this reason.
+Apply the same process-aware `@SequencingPolicy` to every event-driven slice.
+
+Java package annotations do not propagate to child packages.
+Place `@Namespace` on each component or on each exact package containing a component.
+A command-only slice does not need processor assignment.
+
+A shared processor does not turn separate event-handling components into one in-memory state machine.
+Sequencing is maintained per event-handling component.
+Use causally ordered events, returned futures, and idempotent target commands instead of relying on cross-component invocation order.
+
+== Trade-offs
+
+Automation slices are suitable when:
+
+* The codebase follows Vertical Slice Architecture or Event Modeling.
+* Process steps should be deployed and tested as focused reactions.
+* Most trigger events already contain the outgoing command data.
+* A central start/end lifecycle is not required.
+
+They cost more components and require deliberate processor assignment.
+Operationally, grouping slices means a failure in one slice can hold back their shared processor.
+Separate processors provide stronger failure isolation but maintain separate tokens.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/automations[`saga/automations`].

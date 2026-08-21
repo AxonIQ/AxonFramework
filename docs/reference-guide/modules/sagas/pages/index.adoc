@@ -1,0 +1,135 @@
+= Saga Pattern and Process Managers
+:navtitle: Sagas and Process Managers
+
+A business process often spans more than one consistency boundary.
+For example, renting a bike starts a payment, a confirmed payment approves the rental request, and a rejected payment releases the bike.
+No single entity should own all of those decisions.
+
+A _Process Manager_ coordinates such a process by reacting to events and dispatching commands.
+This pattern is also commonly called the _Saga Pattern_.
+Each process instance manages one business transaction, remembers only the information needed for later steps, and can take compensating actions when the process cannot complete normally.
+
+Axon Framework 5 does not prescribe a Saga service provider interface, Saga Store, or Saga lifecycle annotations.
+A Process Manager is built from regular event handlers, command handlers, event-sourced entities, and app-owned persistence.
+This makes the state model an explicit design choice.
+
+The pages in this guide use the runnable link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes[`saga-recipes` example].
+It implements the same bike-rental payment process in five ways.
+
+== Before creating a process manager
+
+First ask whether the process should be a domain entity.
+If commands can target a `Rental` entity by `rentalId`, that entity may already provide the identity, state, and consistency boundary the process needs.
+A separate Process Manager is most useful when the process coordinates existing boundaries and must remember information that no single entity owns.
+
+The bike-rental example deliberately has only two domain entities: `Bike` and `Payment`.
+The rental is the process.
+The Process Manager remembers the `bikeId` and `renter` needed after payment settles.
+
+[[choosing-implementation]]
+== Choosing an implementation
+
+[cols="2,2,3,3,3",options="header"]
+|===
+|Approach |State |Recommended when |Advantages |Costs
+
+|xref:sagas:repository.adoc[Private repository]
+|App-owned database row
+|Start here. Use it when you want a direct replacement for an Axon Framework 4 Saga or must coordinate events from systems you cannot event-source.
+|Familiar persistence, explicit schema, straightforward lifecycle, works with external systems
+|Adds a state store; repository state and target commands are not one distributed transaction
+
+|xref:sagas:event-derived-state.adoc[State derived from domain events]
+|Re-sourced from existing events
+|Both bounded contexts share an event store and their events contain enough information to reconstruct progress.
+|No Process Manager writes, no cleanup, excellent retry behavior
+|Reads the event store for every reaction; cannot remember side effects that produce no event
+
+|xref:sagas:process-events.adoc[Process-owned events through commands]
+|Dedicated process event stream
+|You need an audit trail of process decisions, or source events come from an external system.
+|Auditable, conventional command-to-event write slices, repairable by resending commands
+|More message types and an extra command for each recorded step
+
+|xref:sagas:direct-event-append.adoc[Process-owned events appended by event handlers]
+|Dedicated process event stream
+|You need process events and atomic recording with the processor token, and accept direct event appends.
+|Less code than command-recorded events; process event and token commit together
+|Breaks the command-to-event convention; broader batch conflict surface
+
+|xref:sagas:automation-slices.adoc[Vertical automation slices]
+|Tracking token plus slice-private lookups
+|Your app follows Vertical Slice Architecture or Event Modeling and process steps should evolve independently.
+|Small focused components, little or no state, independent tests
+|No central lifecycle; related slices need explicit processor assignment and operational coordination
+|===
+
+The private repository is the recommended default.
+Move to another approach only when its state or audit model solves a concrete requirement.
+
+== Keep bounded contexts independent
+
+The payment context in the example is generic.
+It accepts an opaque `paymentReference`, stores it, and echoes it on payment events.
+It never imports rental types or interprets the reference.
+Only the Process Manager maps a `RentalId` to a `PaymentReference`.
+
+This separation is important: the Process Manager exists precisely because it is the component that knows both sides.
+Moving rental knowledge into Payment removes the boundary the process is meant to coordinate.
+
+Payment also has its own `paymentId`.
+The payer uses that identifier to confirm or reject a payment, while the caller uses `paymentReference` to prepare or cancel it.
+This resembles a bank transaction identifier and the invoice reference entered by the sender.
+Keeping both identifiers lets Payment remain generic and lets the Process Manager correlate replies without exposing rental concepts to Payment.
+
+== Reliability rules
+
+Apply these rules to every approach:
+
+. **Make target command handlers idempotent.** Event processors provide at-least-once delivery. Repeating an already completed command must succeed without appending another event.
+. **Return asynchronous command results from event handlers.** The processor must wait for the command before committing its tracking token.
+. **Record progress only as part of a successful step.** A retry must never observe state that says a command succeeded when it actually failed.
+. **Correlate all events of one process consistently.** Use the same canonical value when events from different contexts use different identifier types.
+
+[source,java]
+----
+include::example$sagas/repository/RepositoryPaymentProcess.java[tag=return-command-future,indent=0]
+----
+
+Returning the `CompletableFuture` is load-bearing.
+If the command fails, the handler fails and the token does not advance.
+If the handler uses fire-and-forget dispatch, the token can advance while the command is lost.
+
+== Correlation and sequencing
+
+Axon Framework 4 associated Saga instances with event properties.
+In Axon Framework 5, put a stable process identifier on correlated events as an event tag.
+An event-sourced state model can then select the relevant history with an `@EventCriteriaBuilder`.
+
+The example's rental events carry `rentalId`, while payment events carry an independent `paymentReference`.
+`RentalPaymentReference` converts between them without teaching the payment context about rentals.
+
+When a processor handles events from both contexts, its sequencing policy extracts the same raw `String` from both identifier types.
+The example routes first by the event's `QualifiedName`, then converts only to the matching concrete payload type.
+This matters when stored event payloads arrive as `byte[]` rather than already-instantiated Java objects.
+
+== Registering a process manager
+
+The runnable recipes use Spring Boot.
+`@Component` makes annotated event and command handlers available for autodetection, while `@Namespace` controls processor assignment when several components form one process.
+
+Without Spring, register the same object as an autodetected command-handling component and as an autodetected event-handling component on a pooled streaming processor.
+See xref:commands:configuration.adoc[Command configuration] and xref:events:event-handlers.adoc#registering_event_handlers[registering event handlers] for the configuration API.
+The state and reliability patterns on the following pages do not depend on Spring.
+
+== Testing the observable process
+
+Use `AxonTestFixture` with the same configuration as the app.
+Assert commands and events crossing bounded-context boundaries instead of private repository methods or state fields.
+The runnable example defines one contract and executes it against all five implementations.
+Recipe-specific tests then verify details such as repository rows or process-owned events.
+
+Event processors run asynchronously in the fixture, so event-driven assertions must await their outcome.
+For timeout projections, call the plain method that accepts `Instant now` with synthetic time instead of sleeping.
+
+See xref:sagas:timeouts.adoc[Replacing deadlines] for time-driven process steps that work with every state approach.

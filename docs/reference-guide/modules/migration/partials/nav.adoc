@@ -13,6 +13,7 @@
 **** xref:migration:paths/aggregates/multi-entity-migration.adoc[]
 **** xref:migration:paths/aggregates/polymorphism-migration.adoc[]
 *** xref:migration:paths/projectors-event-processors.adoc[]
+*** xref:migration:paths/sagas.adoc[]
 *** xref:migration:paths/event-store.adoc[]
 *** xref:migration:paths/snapshotting.adoc[[.advanced-framework]#Snapshotting#]
 *** xref:migration:paths/test-fixtures.adoc[]

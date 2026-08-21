@@ -1,0 +1,56 @@
+= Event-Sourced Process Manager with Recording Commands
+:navtitle: Process Events through Commands
+
+A Process Manager can own an event stream that records its decisions.
+This makes the process auditable independently of the bounded contexts it coordinates.
+It also works when source events come from an external provider and cannot be used to reconstruct state.
+
+The bike-rental example records `RentalPaymentRequested` and `RentalPaymentProcessCompleted`.
+These events carry the `bikeId` and `renter` needed by later steps.
+
+== Record progress through commands
+
+[source,java]
+----
+include::example$sagas/processevents/CommandRecordedPaymentProcess.java[tag=record-process-step,indent=0]
+----
+
+The command that performs the business step is dispatched first.
+Only after it succeeds does the Process Manager dispatch `RecordPaymentRequested`.
+The recording command has its own idempotent write handler:
+
+[source,java]
+----
+include::example$sagas/processevents/CommandRecordedPaymentProcess.java[tag=record-command-handler,indent=0]
+----
+
+The state model reads only process-owned events:
+
+[source,java]
+----
+include::example$sagas/processevents/CommandRecordedPaymentProcess.java[tag=process-event-state,indent=0]
+----
+
+== Ending the process
+
+Append a completion event instead of deleting state.
+Every event and command handler checks the completion flag and returns successfully when the process has already ended.
+This is the equivalent of a durable lifecycle tombstone.
+
+== Trade-offs
+
+This approach provides:
+
+* An audit trail that explains what the Process Manager decided.
+* Independence from the event stores of coordinated systems.
+* Conventional command-to-event write slices.
+* A repair mechanism: resend a recording command when process state is missing.
+
+The cost is an additional command and handler for each recorded process fact.
+The target command and recording command use separate transactions.
+Idempotent target commands make the failure window safe: a retry repeats the target as a no-op, then records the missing process event.
+
+Ensure the Process Manager's event processor does not subscribe to its own process events unless it intentionally reacts to them.
+Otherwise, it can consume its own output and create a feedback loop.
+
+The complete implementation is in link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/eventsourced[`saga/eventsourced`].
