@@ -25,7 +25,7 @@ import org.axonframework.examples.sagarecipes.payment.Amount;
  * for is part of running the process: the rental context does not know it is paid for, and the payment context is
  * told the amount rather than working it out.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public final class RentalPricing {

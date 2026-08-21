@@ -39,7 +39,7 @@ import org.springframework.stereotype.Component;
  * Compare Axon Framework 4, where the handler minted a payment identifier unconditionally: a retry there produced a
  * second payment for the same rental, and nothing in the model prevented it.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

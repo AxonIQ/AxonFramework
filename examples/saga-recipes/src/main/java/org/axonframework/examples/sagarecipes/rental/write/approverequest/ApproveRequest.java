@@ -27,7 +27,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  *
  * @param bikeId the bike whose reservation is being confirmed
  * @param renter who reserved it
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record ApproveRequest(@TargetEntityId BikeId bikeId, String renter) {

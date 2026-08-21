@@ -45,7 +45,7 @@
  * differently: delete a row, append a completion event, or simply let a predicate over existing events answer the
  * question. Axon Framework 4 had one answer, {@code @EndSaga}, because it had one way of holding state.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 package org.axonframework.examples.sagarecipes.saga;

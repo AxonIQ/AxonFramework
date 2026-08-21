@@ -34,7 +34,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
  * all: no entity in either context is keyed by a rental, so nothing else can tell the process which bike to approve
  * once payment arrives.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Entity

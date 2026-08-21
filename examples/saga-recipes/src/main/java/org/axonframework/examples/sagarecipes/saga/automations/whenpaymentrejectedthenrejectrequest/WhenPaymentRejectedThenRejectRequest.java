@@ -53,7 +53,7 @@ import java.util.concurrent.CompletableFuture;
  * Note that the lookup is private to this slice. Two neighbouring slices keep the same one, and that duplication is
  * the point: slices are independent, and sharing would couple them.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

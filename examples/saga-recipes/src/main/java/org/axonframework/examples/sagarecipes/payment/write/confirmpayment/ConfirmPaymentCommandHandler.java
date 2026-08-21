@@ -39,7 +39,7 @@ import org.springframework.stereotype.Component;
  * success, so the race between a late confirmation and a timeout cancellation has a defined winner: whichever
  * settles first.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

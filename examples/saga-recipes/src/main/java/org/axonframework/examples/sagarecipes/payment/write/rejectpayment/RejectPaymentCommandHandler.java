@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  * <p>
  * Mirrors {@code ConfirmPaymentCommandHandler}: same guard, opposite outcome.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

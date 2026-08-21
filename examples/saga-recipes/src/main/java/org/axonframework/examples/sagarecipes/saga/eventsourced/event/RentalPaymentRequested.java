@@ -36,7 +36,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param bikeId   the bike it concerns
  * @param renter   who is renting
  * @param amount   what was asked for
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RentalPaymentRequested(

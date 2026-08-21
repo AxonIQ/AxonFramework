@@ -35,7 +35,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
  * no state. Should a rental ever need a second payment attempt, the derivation would have to include the attempt
  * number rather than being abandoned.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public final class RentalPaymentReference {

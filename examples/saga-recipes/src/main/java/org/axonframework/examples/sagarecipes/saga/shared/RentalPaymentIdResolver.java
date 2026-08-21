@@ -48,7 +48,7 @@ import java.util.function.BiFunction;
  * converted exactly once, to its own concrete type. Converting to a shared supertype would work in memory and fail
  * against a real event store, where the payload arrives as bytes.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public class RentalPaymentIdResolver implements EntityIdResolver<RentalId> {

@@ -38,7 +38,7 @@ import java.util.concurrent.CompletableFuture;
  * So the whole slice is a translation: a rental-shaped request becomes a payment-shaped one. That is all an
  * automation ever is.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

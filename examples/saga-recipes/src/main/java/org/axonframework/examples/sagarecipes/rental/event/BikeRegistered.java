@@ -29,7 +29,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param bikeId   the bike that was registered
  * @param bikeType the kind of bike, for example {@code city} or {@code mountain}
  * @param location where the bike was placed
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record BikeRegistered(

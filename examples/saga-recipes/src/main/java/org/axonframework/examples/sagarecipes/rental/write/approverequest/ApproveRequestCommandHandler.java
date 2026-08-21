@@ -44,7 +44,7 @@ import java.util.Objects;
  * unchanged, and it is what makes redelivery harmless: a request that is no longer pending, or that belongs to a
  * different renter, appends nothing and reports success.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

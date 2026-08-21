@@ -45,7 +45,7 @@ import java.util.Optional;
  * Returning {@link Optional#empty()} for an unmapped name tells the processor that the message carries no sequencing
  * requirement, which is the correct answer for an event this saga does not handle.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public class QualifiedNameRoutingSequencingPolicy implements SequencingPolicy<Message> {
