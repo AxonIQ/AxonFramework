@@ -19,10 +19,10 @@ package org.axonframework.examples.sagarecipes.saga.automations.whenbikerequeste
 import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
-import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
+import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -44,7 +44,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
-@SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
+@SequencingPolicy(type = PropertySequencingPolicy.class, parameters = "rentalId")
 public class WhenBikeRequestedThenPreparePayment {
 
     /**
