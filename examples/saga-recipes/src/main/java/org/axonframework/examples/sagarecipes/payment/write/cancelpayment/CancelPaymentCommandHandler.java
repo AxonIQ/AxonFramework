@@ -61,7 +61,7 @@ public class CancelPaymentCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(CancelPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(CancelPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null || state.settled) {
             return;
         }
@@ -75,7 +75,7 @@ public class CancelPaymentCommandHandler {
      * caller address a payment whose identity it was never told.
      */
     @EventSourced(idType = PaymentReference.class, tagKey = PaymentTags.PAYMENT_REFERENCE)
-    static class State {
+    private static class State {
 
         private PaymentId paymentId;
         private boolean settled;

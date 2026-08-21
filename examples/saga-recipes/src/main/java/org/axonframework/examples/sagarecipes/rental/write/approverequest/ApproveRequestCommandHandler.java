@@ -58,7 +58,7 @@ public class ApproveRequestCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(ApproveRequest command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(ApproveRequest command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null || !Objects.equals(state.reservedBy, command.renter()) || state.reservationConfirmed) {
             return;
         }
@@ -74,7 +74,7 @@ public class ApproveRequestCommandHandler {
      * most of the saga's reason to hold state.
      */
     @EventSourced(idType = BikeId.class)
-    static class State {
+    private static class State {
 
         private String reservedBy;
         private RentalId activeRental;

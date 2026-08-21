@@ -90,7 +90,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(
+    CompletableFuture<?> on(
             BikeRequested command,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
@@ -112,7 +112,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(
+    CompletableFuture<?> on(
             PaymentConfirmed event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
@@ -135,7 +135,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(
+    CompletableFuture<?> on(
             PaymentRejected event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
@@ -152,7 +152,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(
+    CompletableFuture<?> on(
             PaymentCancelled event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
@@ -172,7 +172,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> on(
+    CompletableFuture<?> on(
             RequestRejected event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
@@ -196,7 +196,7 @@ public class PaymentSaga {
      * @return completes when the dispatched command has been handled
      */
     @CommandHandler
-    public CompletableFuture<?> handle(
+    CompletableFuture<?> handle(
             CancelRentalPayment command,
             @InjectEntity @Nullable State state,
             CommandDispatcher dispatcher
@@ -228,7 +228,7 @@ public class PaymentSaga {
     // one for deriving the same bean name.
     @ConditionalOnProperty(name = "saga.recipe", havingValue = "injectentity")
     @EventSourced(idType = RentalId.class)
-    static class State {
+    private static class State {
 
         private BikeId bikeId;
         private String renter;

@@ -52,7 +52,7 @@ public class RejectPaymentCommandHandler {
      * @throws IllegalStateException if no payment exists for the given identifier
      */
     @CommandHandler
-    public void handle(RejectPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(RejectPayment command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null) {
             throw new IllegalStateException("Payment does not exist");
         }
@@ -67,7 +67,7 @@ public class RejectPaymentCommandHandler {
      * back on the outgoing event.
      */
     @EventSourced(idType = PaymentId.class, tagKey = PaymentTags.PAYMENT_ID)
-    static class State {
+    private static class State {
 
         private PaymentReference paymentReference;
         private boolean settled;

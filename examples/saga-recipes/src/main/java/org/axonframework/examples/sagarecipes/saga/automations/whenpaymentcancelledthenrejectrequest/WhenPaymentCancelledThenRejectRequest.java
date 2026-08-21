@@ -70,7 +70,7 @@ public class WhenPaymentCancelledThenRejectRequest {
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> react(
+    CompletableFuture<?> react(
             PaymentCancelled event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable RequestedRental rental,
             CommandDispatcher dispatcher
@@ -87,7 +87,7 @@ public class WhenPaymentCancelledThenRejectRequest {
      */
     @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
     @EventSourced(idType = RentalId.class)
-    static class RequestedRental {
+    private static class RequestedRental {
 
         private final BikeId bikeId;
         private final String renter;

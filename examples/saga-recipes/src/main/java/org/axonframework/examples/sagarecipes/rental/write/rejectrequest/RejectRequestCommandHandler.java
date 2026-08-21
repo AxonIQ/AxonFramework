@@ -58,7 +58,7 @@ public class RejectRequestCommandHandler {
      * @param appender appends the resulting event
      */
     @CommandHandler
-    public void handle(RejectRequest command, @InjectEntity @Nullable State state, EventAppender appender) {
+    void handle(RejectRequest command, @InjectEntity @Nullable State state, EventAppender appender) {
         if (state == null || !Objects.equals(state.reservedBy, command.renter()) || state.reservationConfirmed) {
             return;
         }
@@ -70,7 +70,7 @@ public class RejectRequestCommandHandler {
      * confirmed.
      */
     @EventSourced(idType = BikeId.class)
-    static class State {
+    private static class State {
 
         private String reservedBy;
         private RentalId activeRental;
