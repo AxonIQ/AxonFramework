@@ -1,0 +1,124 @@
+= State From the Process's Own Events
+:navtitle: State from process events
+:reftext: State from the process's own events
+
+The process writes down what it does, and sources itself from those facts. It is the only approach that leaves a
+record of the process itself rather than only of the entities it drove.
+
+== When to use it
+
+Two situations make this the right choice, and both are common.
+
+The first is integration with something you do not own. Deriving state from
+xref::state-from-domain-events.adoc[domain events] needs the other context's events in your store, carrying a tag
+you can select on. Against a payment provider that merely calls you back, that is impossible. This process reads only
+its own events, so it needs nothing from the other side beyond being told that something happened.
+
+The second is when the process itself is worth recording. A repository row is deleted when the process ends, and
+derived state was never written at all, so neither can answer "how did this rental turn out, and how long did it
+take". A process that writes its own events can, and for long-running or regulated processes that history is often the
+point.
+
+== The process's own events
+
+These describe the process, not the domain it coordinates. They are tagged with the correlation identifier and carry
+whatever the process will need later:
+
+[source,java]
+----
+include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=process-events,indent=0]
+----
+
+Ending is a fact the process records, not a callback anything performs on its behalf. Once the completion event is
+written, every handler short-circuits on it.
+
+== The decision model
+
+[source,java]
+----
+include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=state,indent=0]
+----
+<1> The criteria selects only what the process itself wrote. This is precisely why the approach survives when the
+other context's events are out of reach.
+
+== Recording what the process did
+
+There are two ways to append those events, and they differ only in mechanism. Both are shown here because the choice
+is a real one, and because the sample module ships both and proves them interchangeable with the same tests.
+
+=== Through a command
+
+Every event is produced by a command, which keeps the process's own write visible on an event model as a write slice
+rather than hidden inside an event handler:
+
+[source,java]
+----
+include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=translating,indent=0]
+----
+<1> The real work first.
+<2> Recording only once it succeeded, as a second command.
+<3> The command handler is the only writer of the process's own events, and is itself idempotent.
+
+The cost is a second dispatch per step, and a command that exists only to record a fact. That is a fair thing to be
+suspicious of; it buys modelling discipline rather than behaviour.
+
+=== By appending directly
+
+An event handler may append events itself. `EventAppender` is a supported parameter for event handlers, needs nothing
+pre-attached to the processing context, and works on a pooled streaming processor:
+
+[source,java]
+----
+include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=appending,indent=0]
+----
+<1> The appender is injected like any other handler parameter.
+<2> Half the code of the command-translating version, and the append joins the same event store transaction that the
+work package commits alongside the tracking token.
+
+That last point sounds decisive and mostly is not. Recording becomes atomic with the token, which neither the
+repository approach nor the command-translating one manages. But because the command being recorded is idempotent, the
+window the others leave open costs nothing: a retry re-dispatches it as a no-op and then records. Atomic recording
+earns its keep only when the target command cannot be made idempotent, and at that point there is a larger problem to
+solve.
+
+[WARNING]
+====
+Appending is safe here only because the handler sourced an entity first. A handler that appends without having sourced
+anything gets an unconditional append condition, and therefore no optimistic concurrency at all, silently.
+
+Note also that the append condition is batch-wide: everything sourced across the batch is combined into one, so the
+conflict surface is wider than the per-command condition of the command-translating version, and a single conflict
+fails the whole batch.
+====
+
+=== Which to choose
+
+Choose the command if you follow Event Modelling and want every event to have a command behind it, or if you want the
+recording step to be independently re-sendable. Choose the direct append if you value the smaller amount of code and
+are comfortable that an event appears without a command.
+
+Either way the recording follows the work, because the event asserts that the work happened. Appending it before
+the command succeeded would record something that is not yet true. Only the medium changes.
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* Works when the other context's events are not yours to source.
+* Produces an audit trail of the process itself, which no other approach does.
+* Has a real, explicit end.
+* No second store: the process lives in the event store like everything else.
+
+a|
+* The most machinery of the four approaches.
+* Either an extra command per step, or an event without a command behind it.
+* Every step records a fact, so the recording has to follow the command that makes it true.
+|===
+
+== Where next
+
+If the audit trail is not worth the machinery and you own both contexts, xref::state-from-domain-events.adoc[state
+derived from domain events] does the same job with less. If the process is really several independent reactions, see
+xref::automation-slices.adoc[automation slices].

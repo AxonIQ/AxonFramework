@@ -1,0 +1,84 @@
+= Workflows
+:navtitle: Workflows
+:reftext: Workflows
+
+Every approach on the preceding pages builds a process out of parts you assemble yourself: an event handler, some form
+of state, a command. Workflows take the opposite position. The process is written as a single method that reads
+top to bottom, and the machinery that lets it survive a restart is provided rather than assembled.
+
+*This is the recommended way to orchestrate a business process, and the first option to consider.* Orchestration is
+what a workflow is for, and writing the flow as a flow removes most of what the other pages spend their length on. The
+reason those pages exist is that a workflow is not available to everyone:
+
+* Workflows are part of Axoniq Framework, not Axon Framework, and require an Axoniq licence for production use.
+* They are available as a preview rather than a production release.
+
+If either of those rules them out for you, pick one of the approaches on the preceding pages. They are complete
+solutions using nothing beyond Axon Framework, not stopgaps waiting for a licence.
+
+Consult the
+link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Workflows documentation,role=external,window=_blank]
+for the API and current status.
+
+== What changes
+
+The approaches on the other pages are all *reactive*. Each event arrives independently, the process reconstructs
+enough context to decide what to do, and the flow between steps exists only in the reader's head or on an event model.
+That is why so much of this guide is about state: reconstructing context is the work.
+
+A workflow inverts that. The sequence is written as a sequence, and waiting is an ordinary statement rather than the
+end of one handler and the start of another. Where a reactive process spreads "ask for payment, then wait, then
+approve or reject" across three handlers and a stored correlation, a workflow expresses it as three lines.
+
+That is the headline: the code is close to ordinary imperative code, in a place where the framework usually asks you
+to think in reactions. What you give up is not correctness but choice, since the persistence of the flow's position is
+no longer yours to design.
+
+The consequences follow from that inversion:
+
+* *The process is legible.* One method describes the whole flow, which is what people usually want when they ask where
+  the process is.
+* *State stops being your problem.* No repository, no derived model, no process events. The position within the
+  flow is the state, and it is persisted for you.
+* *Waiting becomes a first-class concept.* A timeout is part of the flow rather than a projection and a sweep, so
+  xref::deadlines.adoc[the deadline pattern] is not needed.
+* *You take on a dependency and a licence.* This is the trade, and it is the reason the other four approaches exist.
+
+== When it is the right answer
+
+Whenever it is available to you, and especially when the process itself is the complicated part: many steps, real
+branching, several compensating paths, or waiting that matters. Those are the cases where the reactive approaches
+spread one idea thinly across many files and the shape becomes hard to see.
+
+Availability is the question that decides it in practice, and it decides it before any judgement about the process:
+
+* If you cannot take an Axoniq licence, the question is settled. The other approaches need nothing beyond Axon
+  Framework.
+* If you are on Axon Framework rather than Axoniq Framework, workflows are not available to you today, and something
+  from the preceding pages is what you will write.
+* If a preview dependency is not acceptable in your production build, the same applies until the release lands.
+
+Where a workflow is available, the one case for still choosing something else is a process small enough that the flow
+was never in doubt. A rental that asks for payment and reacts to the answer is three reactions, and expressing it as a
+workflow buys legibility it did not lack. The bike rental example used throughout these pages is deliberately at that
+scale, which is why it is not written as a workflow here. That is a weak preference, not a rule: if you have workflows
+and you like them, use them for the small processes too.
+
+== Relationship to the other approaches
+
+Workflows are not one more entry on the same list so much as a different axis. The four other approaches differ in
+*where the process keeps its state*; a workflow differs in *who reconstructs the flow*.
+
+That has a practical consequence worth planning for. A process written as
+xref::automation-slices.adoc[automation slices] is the furthest from a workflow, because it deliberately has no centre;
+converting it later means gathering the slices back into one flow. A process written as
+xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
+progress as facts, which is much the same information a workflow persists on your behalf.
+
+If you expect to adopt workflows later, that is an argument for keeping the process in one class now.
+
+== Replacing a process that is already running
+
+If you are replacing an existing process rather than writing a new one, the
+xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc#workflows[saga migration path] covers how the pieces
+translate, and why a process already under way has to finish before a workflow can take over from it.

@@ -1,0 +1,130 @@
+= Automation Slices
+:navtitle: Automation slices
+:reftext: Automation slices
+
+The other approaches keep the process in one class. This one asks whether it needs to be a thing at all.
+
+Often the answer is no. What looks like a saga is a handful of independent reactions, each of the form "when this
+happens, do that". In Event Modelling those are automation slices, drawn between an event and the command it triggers.
+In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists.
+
+== When to use it
+
+Use this if you already structure your application in vertical slices, or if you model with Event Modelling and the
+process appears on the model as a series of automations rather than as one box.
+
+It is also the approach with the best transactional profile, so it is worth considering even when the process does feel
+like one thing.
+
+[TIP]
+====
+Start here for new processes. A process class is easy to introduce later if you find you need one, whereas a process
+class written up front tends to accumulate responsibilities that were never really shared.
+====
+
+== A slice with no state
+
+The most instructive slice is the one that needs nothing:
+
+[source,java]
+----
+include::example$sagas/automationslices/AutomationSlices.java[tag=stateless,indent=0]
+----
+<1> Events of one rental are handled in order; different rentals still run in parallel.
+<2> Returning the result makes the processor await the command and leave the token where it is on failure.
+
+There is no check for whether payment was already asked for. There is nowhere to check, and no need: the reference is
+derived from the rental, and the payment context refuses to prepare a second payment under a reference it already
+knows. Idempotency lives where the decision lives.
+
+That leaves the processor's tracking token as the entire to-do list. Everything before it has been done, everything
+after it has not, and a redelivery is harmless. No state object, no schema, no cleanup.
+
+[#lookups]
+== A slice that needs a lookup
+
+Not every slice can be stateless. A payment event carries only the reference, while approving a request needs the bike
+and the renter, so this slice has to look them up:
+
+[source,java]
+----
+include::example$sagas/automationslices/AutomationSlices.java[tag=with-lookup,indent=0]
+----
+<1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
+policy is enough and no custom policy is needed.
+<2> The lookup is injected like any other entity.
+<3> A three-line decision model, selecting the single event that answers the question.
+
+This is still one effect. The lookup is a read, so nothing is written that could fall out of step with the tracking
+token, and no transaction has to span anything.
+
+[NOTE]
+.Slices do not share lookups
+====
+If three slices need the same lookup, each keeps its own. That duplication is deliberate: slices are independent, and
+a shared lookup couples them, so a change made for one slice can break another. If the duplication becomes genuinely
+painful, that is a signal the slices are really one thing, and a process class may be the better shape after all.
+====
+
+== The whole process
+
+The rental payment process decomposes into six slices, and the split between stateless and not is the interesting
+part:
+
+[cols="2,1,1",options="header"]
+|===
+| Slice | Triggered by | State
+
+| When bike requested, then prepare payment | `BikeRequested` | none
+| When request rejected, then cancel payment | `RequestRejected` | none
+| When payment confirmed, then approve request | `PaymentConfirmed` | lookup
+| When payment rejected, then reject request | `PaymentRejected` | lookup
+| When payment cancelled, then reject request | `PaymentCancelled` | lookup
+| When cancel rental payment, then cancel payment | `CancelRentalPayment` command | none
+|===
+
+The rental-triggered slices are stateless because the trigger event carries everything the command needs. The
+payment-triggered ones are not, because a payment event knows only the reference.
+
+The last slice is stateless for a different and more interesting reason. It could check whether cancelling is still
+worthwhile before passing the request on, and deliberately does not: that is a question about the payment, the payment
+context answers it authoritatively, and a check here could only ever be a stale copy of that answer. Duplicating a
+decision that is not yours to make adds no safety and can add confusion.
+
+== Compensation
+
+Nothing in this arrangement notices when a rental is rejected for reasons of its own, unless a slice says so. Without
+"when request rejected, then cancel payment", a rental turned down on other grounds leaves a payment outstanding
+forever.
+
+Cleanup like this is easy to leave implicit, buried in whatever code decides the process is over. Here it is a slice
+like any other, which makes it visible on the model and testable on its own.
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* The best transactional profile: every slice does exactly one thing.
+* Most slices need no state at all.
+* Nothing to end, because nothing was ever running.
+* Slices are independently testable, deployable and deletable.
+
+a|
+* No single place describes the process. Only an event model shows it whole.
+* A reader has to find six files to understand one flow.
+* Duplication between slices that need the same lookup.
+|===
+
+That first drawback is the real one. If the process is something people reason about as a unit, discuss as a unit, and
+draw on a whiteboard as a unit, then scattering it across six files hides something important. If it is really a set of
+independent rules that happen to concern the same identifier, this arrangement tells the truth and a process class does
+not.
+
+== Where next
+
+If the process turns out to need a shared view of its own progress, see
+xref::state-in-a-repository.adoc[state in a repository] or
+xref::state-from-process-events.adoc[state from the process's own events]. For the timeout slice, see
+xref::deadlines.adoc[deadlines].

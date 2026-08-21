@@ -24,30 +24,41 @@
         <version>${revision}</version>
     </parent>
 
-    <artifactId>university-java-springboot-4</artifactId>
+    <artifactId>saga-recipes</artifactId>
 
-    <name>Axon Example - Java/SpringBoot 4 - University</name>
-    <description>Spring Boot Example application for demo and integration testing.</description>
+    <name>Axon Example - Java/SpringBoot 4 - Saga Recipes</name>
+    <description>
+        Four approaches to implementing an Axon Framework 4 Saga in Axon Framework 5, applied to the bike-rental
+        payment process. Demonstrates process state held in a repository, derived through @InjectEntity, event-sourced
+        from the process's own events, and decomposed into automation slices.
+    </description>
 
     <properties>
         <!--
-        Do not go back to 4.1.0. Combined with JPA and the Axon starter it fails to start the application
-        context, deadlocking on a circular reference between applicationTaskExecutor and Axon's
-        UnitOfWorkFactory. Spring Boot 4.1.1 resolves it.
+        Spring Boot 4.1.0 is deliberately skipped. Combined with JPA and the Axon starter it deadlocks on a
+        circular reference between applicationTaskExecutor and Axon's UnitOfWorkFactory; 4.1.1 resolves it.
         -->
         <spring.boot.version>4.1.1</spring.boot.version>
-        <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
-        <testcontainers.version>2.0.5</testcontainers.version>
         <jackson.version>3.2.1</jackson.version>
+        <archunit.version>1.5.0</archunit.version>
+        <!--
+        Overrides the 5.3.0 pinned for the other examples. The Axoniq Framework artifacts follow this branch's
+        own release line, so that the commercial starter and the framework built here stay in step.
+        -->
+        <axoniq-framework.version>5.4.0-SNAPSHOT</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- test containers first, since spring would overwrite it otherwise -->
+            <!--
+            Imported first, and ahead of the Axoniq Framework BOM inherited from the examples parent, so every
+            org.axonframework artifact resolves to the version built from this branch. The Axoniq BOM pins a
+            released Axon Framework instead, which would silently test the example against a different build.
+            -->
             <dependency>
-                <groupId>org.testcontainers</groupId>
-                <artifactId>testcontainers-bom</artifactId>
-                <version>${testcontainers.version}</version>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-framework-bom</artifactId>
+                <version>${project.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
@@ -71,10 +82,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-        </dependency>
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -82,20 +89,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -105,12 +99,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-docker-compose</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-            <version>${springdoc-openapi.version}</version>
-        </dependency>
-
 
         <!-- Axon -->
         <dependency>
@@ -122,22 +110,6 @@
             <artifactId>axon-server-connector</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-test</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.axonframework.extensions.spring</groupId>
-            <artifactId>axon-spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-testcontainer</artifactId>
-            <scope>test</scope>
-        </dependency>
-
         <!-- Database -->
         <dependency>
             <groupId>com.h2database</groupId>
@@ -146,28 +118,29 @@
 
         <!-- Testing -->
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-test</artifactId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-testcontainers</artifactId>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -1,0 +1,253 @@
+= Sagas and Process Managers
+:navtitle: Sagas
+:reftext: Sagas
+
+Some business processes are longer than a single decision. A rental is not paid for in the same breath as it is
+requested, an order is not shipped the instant it is placed, and a booking is not confirmed the moment it is made.
+These processes span more than one entity, often more than one bounded context, and they take time.
+
+The name for such a process is a *saga*, or a *process manager*: an event handler that manages a business transaction
+spanning several entities, remembering what it has seen so far and deciding what should happen next.
+
+Axon Framework has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
+at a time than bundled together:
+
+* *Where its state lives*, if it needs any. A blob nobody can query, a table with real columns, its own events, or
+  nothing at all.
+* *How an incoming event is correlated* to the process it concerns. A stored mapping, a tag, or a value the process
+  computes.
+* *What starting and finishing mean*. A row appearing and disappearing, an event recording that it is over, or nothing
+  because being finished is a question you ask of the events.
+
+Those decisions pull in different directions for different processes. A process that has to be reported on wants
+columns; a process whose correlation is derivable needs no mapping at all; a process that is really a handful of
+independent reactions has no life cycle to manage.
+
+So a process is written with the same building blocks as everything else: event handlers that react, command handlers
+that decide, and whichever form of state the process actually needs. This page describes the shapes that combination
+takes, and when to reach for each.
+
+[NOTE]
+.Coming from Axon Framework 4
+====
+This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
+the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
+version 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
+while you write their replacement, and covers testing and the drainage strategy. This guide does not repeat any of
+that.
+====
+
+[TIP]
+.Reach for Workflows first if you can
+====
+xref::workflows.adoc[Workflows] are the recommended way to orchestrate a process, and the first thing to consider. The
+flow is written as a single method that reads top to bottom, so the code is close to ordinary imperative code, and the
+position within it is persisted for you: no state to keep, no correlation to derive, and no deadline pattern to build.
+
+Two things stop that from being the only answer. Workflows are part of Axoniq Framework and need a licence, and they
+are available as a preview rather than a production release. If you are on Axon Framework, or cannot yet depend on a
+preview, the approaches on this page are a complete answer rather than a consolation: each needs nothing beyond Axon
+Framework, and each is proven by the same contract test in the example module.
+====
+
+[#two-rules]
+== Two rules that apply to every approach
+
+Whatever shape you choose, a process reacts to events and sends commands. That combination has two consequences you
+cannot design away, and most process bugs are a violation of one of them.
+
+=== Commands a process sends must be idempotent
+
+An event processor delivers at least once. If the tracking token is not committed, the event arrives again, and the
+process reacts again. Every command it sends will therefore sometimes be sent twice.
+
+The fix belongs in the receiver, not the sender. Approving an already-approved request, or cancelling an
+already-settled payment, should append nothing and report success:
+
+[source,java]
+----
+@CommandHandler
+void handle(ApproveRequest command, @InjectEntity @Nullable Bike bike, EventAppender appender) {
+    if (bike == null || !Objects.equals(bike.reservedBy(), command.renter()) || bike.reservationConfirmed()) {
+        return; // <1>
+    }
+    appender.append(new BikeInUse(command.bikeId(), command.renter(), bike.rentalId()));
+}
+----
+<1> Silently doing nothing is the point. A redelivery must be indistinguishable from the first delivery.
+
+A useful trick is to make the receiver's decision model naturally exclusive. If a payment is keyed by the caller's own
+reference rather than by an identifier the payment mints, then "prepare a payment for this reference" cannot happen
+twice, and no guard has to be remembered.
+
+=== Recorded progress must commit with the tracking token
+
+A process that remembers anything is writing in two places: its own state, and the token that says which events it has
+seen. If those two can commit independently, the process drifts, and it drifts only under failure, which is the worst
+way to find out.
+
+They commit together without any effort on your part when the write happens inside the unit of work: with a
+`PlatformTransactionManager` present, the handler runs in a transaction that commits alongside the token, so an
+ordinary repository call in an ordinary handler is already atomic with it. That holds on the failure path too, which is
+the half worth remembering: a command that fails fails the handler, the transaction rolls back, and the write is undone
+along with the token. What breaks the property is moving the write out of the handler, typically into a callback on the
+command's future, which runs on a thread with nothing bound to it.
+
+Ordering the write against the dispatch is a smaller question than it looks, and
+xref::state-in-a-repository.adoc#ordering[the repository page] works it through.
+
+[IMPORTANT]
+====
+Returning the `CompletableFuture` from the event handler is what makes the processor wait for the command and leave
+the token where it is on failure. Dropping the `return` turns the whole thing into fire-and-forget: the token advances,
+the command is lost, and the process waits forever. Retrying is the processor's job, and returning the future is how
+you give it back.
+====
+
+Note that two of the approaches below sidestep this rule entirely, because they never record anything of their own.
+
+[#choosing]
+== Choosing an approach
+
+Workflows come first because they are the recommended answer where they are available. The four below are ordered by
+how little they ask of you, not by elegance.
+
+[cols="1,2,2,2",options="header"]
+|===
+| Approach | Good for | Costs | Requires
+
+| xref::workflows.adoc[[.advanced-framework]#Workflows#]
+| Orchestration in general, and anything genuinely complicated in particular: many steps, real branching,
+compensation, or waiting that matters. The flow is written as a flow.
+| A dependency and a licence, and it is a preview rather than a production release.
+| Axoniq Framework.
+
+| xref::state-in-a-repository.adoc[State in a repository]
+| The first thing to try. Ordinary, queryable state, and it works no matter where the events it reacts to come
+from.
+| Two things happen per step, and they commit together only because a transaction manager is there to make them.
+| A store you can write to in the processor's transaction.
+
+| xref::state-from-domain-events.adoc[State derived from domain events]
+| Processes whose state is already implied by events you own. Stores nothing, so nothing can fall out of step.
+| Invisible: a step that produces no event leaves no trace. One extra read per event.
+| One event store, and a tag on the correlated events of both contexts.
+
+| xref::state-from-process-events.adoc[State from the process's own events]
+| Long or regulated processes where you want an audit trail of the process itself, and for integrating with systems
+whose events are not yours.
+| The most machinery of the four: its own events, and either an extra command or an append from an event handler.
+| Nothing beyond an event store of your own.
+
+| xref::automation-slices.adoc[Automation slices]
+| Vertical Slice Architecture and Event Modelling. The best transactional profile, since each slice does exactly one
+thing.
+| No single place describes the process any more. Only an event model shows it whole.
+| Nothing. Most slices need no state at all.
+|===
+
+So: if you are on Axoniq Framework and can accept a preview, write the process as a
+xref::workflows.adoc[[.advanced-framework]#workflow#] and stop reading here. Everything after this point is what to do
+when that is not available to you, and none of it is a workaround.
+
+Among the four, if you want the smallest step and the fewest new ideas, start with
+xref::state-in-a-repository.adoc[state in a repository]. If you already structure your application in vertical slices,
+start at the other end with xref::automation-slices.adoc[automation slices], and reach for a process class only when
+you find you need one.
+
+[TIP]
+.Try removing the need for state first
+====
+Before choosing where to keep process state, check whether you need any. A common reason a process keeps state at all
+is to remember an identifier it could have computed.
+
+If the process can derive one side's correlation value from the other's, both directions are free: outbound it computes
+the value the receiver expects, inbound it reads that same value straight off the event. Several of the approaches
+below become dramatically simpler, and two of them become possible at all, because of that one choice.
+====
+
+[#example]
+== A worked example
+
+Every page in this section implements the same process, so the approaches can be compared line for line: a renter asks
+for a bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the
+request is turned down and the bike released.
+
+The full, runnable source lives in `examples/saga-recipes` in the
+link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank]. Every
+approach there is exercised by one shared contract test, so they are demonstrably interchangeable rather than merely
+claimed to be.
+
+Two contexts are involved, and they know nothing about each other:
+
+[source,java]
+----
+include::example$sagas/shared/RentalPaymentApi.java[tag=rental-events,indent=0]
+----
+
+[source,java]
+----
+include::example$sagas/shared/RentalPaymentApi.java[tag=payment-events,indent=0]
+----
+<1> The payment context stores and echoes the caller's reference without ever interpreting it. It has no idea rentals
+exist, which is what leaves room for a process to be the only thing that knows both sides.
+
+[#sequencing]
+== Sequencing
+
+A pooled streaming event processor handles many processes concurrently. Events belonging to *one* process must still
+be handled in order, or a `PaymentPrepared` can still be in flight while the `PaymentConfirmed` that supersedes it is
+already being processed.
+
+Where every event a component handles carries the correlation under the same property name, that is one annotation:
+
+[source,java]
+----
+include::example$sagas/automationslices/AutomationSlices.java[tag=stateless,indent=0]
+----
+<1> All events of one rental are handled sequentially; different rentals still run in parallel.
+<2> Returning the result is what makes the processor await the command.
+
+Where a component handles events from two contexts that name the correlation differently, no single
+`PropertySequencingPolicy` spans them. Write a policy that routes on the message's `QualifiedName` and delegates to a
+typed policy per event type; the example module contains one.
+
+[WARNING]
+====
+Two mistakes in such a policy are easy to make and hard to see.
+
+Extract the *raw* correlation value, not a typed wrapper. Returning `RentalId` from one side and `PaymentReference`
+from the other means the two never compare equal, so the contexts land in separate sequences and the policy silently
+does nothing.
+
+Target *concrete* payload types, never a shared supertype. Converting to an interface works in memory, where the
+payload is already an object, and fails against a real event store, where it arrives as bytes no converter can turn
+into an interface. A test using plain objects will not catch this.
+====
+
+[#testing]
+== Testing
+
+`AxonTestFixture` tests a process without any special support. Publish the events that lead up to the moment you care
+about, then assert on the command the process sends:
+
+[source,java]
+----
+fixture.given()
+       .events(new BikeRequested(bikeId, renter, rentalId),
+               new PaymentPrepared(paymentId, PRICE, paymentReferenceFor(rentalId)),
+               new PaymentConfirmed(paymentId, paymentReferenceFor(rentalId)))
+       .then()
+       .await(result -> result.commandsSatisfy( // <1>
+               commands -> assertThat(payloadsOf(commands)).contains(new ApproveRequest(bikeId, renter))
+       ), Duration.ofSeconds(5));
+----
+<1> `await` is required: a pooled streaming processor runs on its own threads, so the command has not been sent yet
+when the given phase returns.
+
+Two details save time. Filter assertions to the identifiers the test generated rather than asserting on the exact
+recorded list, because the recording command bus accumulates across every test sharing a Spring context and is only
+reset by a `when` phase that event-driven scenarios do not use. And keep correlation values unique per test, since a
+value used as a tag makes one test's events visible to another test's criteria.
+
+For the timeout path, see xref::deadlines.adoc[deadlines].

@@ -1,0 +1,123 @@
+= State Derived From Domain Events
+:navtitle: State from domain events
+:reftext: State derived from domain events
+
+The process stores nothing. Everything it needs to know has already been recorded by one context or the other, so
+instead of keeping a copy it rebuilds the answer from those events each time a handler runs.
+
+This is the approach a Dynamic Consistency Boundary makes possible. The decision model is an ordinary
+event-sourced entity, except that its criteria spans two contexts instead of one.
+
+== When to use it
+
+Use this when both contexts write to one event store, their events carry a tag the process can select on, and the
+process's state really is implied by events that already exist.
+
+That is a real set of conditions, and it is worth checking honestly. If the payment side is a third-party provider
+whose events you merely receive, this approach is unavailable and
+xref::state-from-process-events.adoc[the process's own events] applies instead.
+
+When the conditions do hold, this is the approach with the fewest ways to go wrong.
+
+== The decision model
+
+[source,java]
+----
+include::example$sagas/statedomainevents/RentalPaymentProcess.java[tag=state,indent=0]
+----
+<1> Rental events are selected by the rental tag.
+<2> Payment events are selected by the payment context's own reference tag, whose value happens to be the rental
+identifier.
+
+That pair of criterions is where the two contexts meet, and it is the only place in the application where they do. The
+rental context does not know payments exist; the payment context treats the reference as an opaque string. Holding
+that one piece of knowledge is what makes this class the process.
+
+[TIP]
+====
+Keep the criteria as narrow as the decision allows. Every event type listed widens both the read and the conflict
+surface. Include an event type only if an evolve method actually reacts to it.
+====
+
+== The process
+
+[source,java]
+----
+include::example$sagas/statedomainevents/RentalPaymentProcess.java[tag=process,indent=0]
+----
+<1> The entity is nullable because a process that has not started yet has no events, and therefore no entity.
+<2> The bike and the renter are read back from `BikeRequested`. This single line is the whole approach: what another
+process would have to store is recovered from an event that already exists.
+
+[#one-effect]
+== Why this is the safest shape
+
+Compare this to xref::state-in-a-repository.adoc[keeping state in a repository]. There, a row is written and a
+command dispatched, and they agree only because a transaction spans them. Here only one thing happens: a command is
+dispatched.
+
+That difference removes an entire class of bug rather than relying on configuration to prevent it:
+
+* If the command fails, no event is appended, the tracking token stays where it is, and the redelivery rebuilds an
+  identical decision model and tries again.
+* If the command succeeded but the commit did not, the redelivery re-dispatches and the receiver's idempotency absorbs
+  it.
+
+There is nothing to keep in step, because there is no second place anything is written.
+
+[#id-resolution]
+== Resolving which process an event belongs to
+
+The one piece of machinery this approach needs is a way to work out which process an incoming event concerns. Rental
+events carry `rentalId`; payment events carry `paymentReference`. Neither the `idProperty` shortcut nor the default
+`@TargetEntityId` lookup spans that difference, so the process resolves the identifier itself:
+
+[source,java]
+----
+include::example$sagas/statedomainevents/RentalPaymentIdResolver.java[tag=resolver,indent=0]
+----
+<1> Routing on the qualified name reads nothing from the payload, so an event this process does not handle costs
+nothing.
+<2> Each event is then converted exactly once, to its own concrete type.
+
+[WARNING]
+====
+Do not be tempted to convert to a shared supertype and read the correlation from that. It works in memory, where the
+payload is already an object and `payloadAs` short-circuits, and it fails against a real event store, where the
+payload arrives as bytes that no converter can turn into an interface. A test built from plain objects will pass while
+production fails.
+====
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* Nothing is stored, so nothing can drift.
+* One effect per handler, so nothing can commit out of step with the tracking token.
+* No life cycle to manage: being finished is a question asked of the events.
+* No schema, no migration, no cleanup.
+
+a|
+* Requires one event store, a tag on the correlated events, and ownership of both contexts.
+* Records only outcomes. A step that produces no event, such as sending an e-mail, leaves no trace and cannot be
+  tracked.
+* One event-store read per handled event.
+* Needs an identifier resolver when the contexts name their correlation differently.
+|===
+
+[#ending]
+== Ending the process
+
+There is nothing to end. Being finished is a predicate over events that already exist, `state.requestSettled` in the
+sample, rather than a fact anyone records. Nothing to delete and nothing to clean up.
+
+That is not an omission. This approach has no life cycle to manage because it never held anything that a life cycle
+would have governed.
+
+== Where next
+
+If the process must record steps that produce no domain event, or you need an audit trail of the process itself, move
+to xref::state-from-process-events.adoc[state from the process's own events]. If the process turns out to be
+several unrelated reactions rather than one thing, see xref::automation-slices.adoc[automation slices].

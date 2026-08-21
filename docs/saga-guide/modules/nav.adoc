@@ -1,0 +1,7 @@
+* xref::index.adoc[]
+* xref::state-in-a-repository.adoc[]
+* xref::state-from-domain-events.adoc[]
+* xref::state-from-process-events.adoc[]
+* xref::automation-slices.adoc[]
+* xref::workflows.adoc[[.advanced-framework]#Workflows#]
+* xref::deadlines.adoc[]
