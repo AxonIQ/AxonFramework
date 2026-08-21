@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController("rejectPaymentController")
 @RequestMapping("/payments/{paymentId}/reject")
 class Controller {
@@ -19,9 +21,11 @@ class Controller {
     }
 
     @PostMapping
-    ResponseEntity<Void> reject(@PathVariable("paymentId") String paymentId, @RequestBody Request request) {
-        commandGateway.sendAndWait(new RejectPayment(PaymentId.of(paymentId), request.reason()));
-        return ResponseEntity.accepted().build();
+    CompletableFuture<ResponseEntity<Void>> reject(@PathVariable("paymentId") String paymentId,
+                                                    @RequestBody Request request) {
+        var command = new RejectPayment(PaymentId.of(paymentId), request.reason());
+        return commandGateway.send(command).getResultMessage()
+                             .thenApply(ignored -> ResponseEntity.accepted().build());
     }
 
     record Request(String reason) {

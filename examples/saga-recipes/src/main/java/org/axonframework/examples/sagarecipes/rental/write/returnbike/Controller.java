@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController("returnBikeController")
 @RequestMapping("/bikes/{bikeId}/return")
 class Controller {
@@ -19,9 +21,11 @@ class Controller {
     }
 
     @PostMapping
-    ResponseEntity<Void> returnBike(@PathVariable("bikeId") String bikeId, @RequestBody Request request) {
-        commandGateway.sendAndWait(new ReturnBike(BikeId.of(bikeId), request.location()));
-        return ResponseEntity.accepted().build();
+    CompletableFuture<ResponseEntity<Void>> returnBike(@PathVariable("bikeId") String bikeId,
+                                                        @RequestBody Request request) {
+        var command = new ReturnBike(BikeId.of(bikeId), request.location());
+        return commandGateway.send(command).getResultMessage()
+                             .thenApply(ignored -> ResponseEntity.accepted().build());
     }
 
     record Request(String location) {

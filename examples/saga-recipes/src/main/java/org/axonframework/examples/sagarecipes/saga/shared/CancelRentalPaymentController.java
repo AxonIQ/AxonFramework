@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController
 @RequestMapping("/rentals/{rentalId}/cancel-payment")
 class CancelRentalPaymentController {
@@ -18,8 +20,9 @@ class CancelRentalPaymentController {
     }
 
     @PostMapping
-    ResponseEntity<Void> cancel(@PathVariable("rentalId") String rentalId) {
-        commandGateway.sendAndWait(new CancelRentalPayment(RentalId.of(rentalId)));
-        return ResponseEntity.accepted().build();
+    CompletableFuture<ResponseEntity<Void>> cancel(@PathVariable("rentalId") String rentalId) {
+        var command = new CancelRentalPayment(RentalId.of(rentalId));
+        return commandGateway.send(command).getResultMessage()
+                             .thenApply(ignored -> ResponseEntity.accepted().build());
     }
 }

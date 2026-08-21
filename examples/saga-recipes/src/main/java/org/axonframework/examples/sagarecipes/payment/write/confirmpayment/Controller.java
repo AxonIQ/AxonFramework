@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController("confirmPaymentController")
 @RequestMapping("/payments/{paymentId}/confirm")
 class Controller {
@@ -18,8 +20,9 @@ class Controller {
     }
 
     @PostMapping
-    ResponseEntity<Void> confirm(@PathVariable("paymentId") String paymentId) {
-        commandGateway.sendAndWait(new ConfirmPayment(PaymentId.of(paymentId)));
-        return ResponseEntity.accepted().build();
+    CompletableFuture<ResponseEntity<Void>> confirm(@PathVariable("paymentId") String paymentId) {
+        var command = new ConfirmPayment(PaymentId.of(paymentId));
+        return commandGateway.send(command).getResultMessage()
+                             .thenApply(ignored -> ResponseEntity.accepted().build());
     }
 }
