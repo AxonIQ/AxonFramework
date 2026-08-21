@@ -43,7 +43,7 @@
  * has to be remembered. It also means the saga can address an existing payment with a key it already knows, so it
  * never has to store the generated payment identifier the way an Axon Framework 4 saga did.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 package org.axonframework.examples.sagarecipes.payment;

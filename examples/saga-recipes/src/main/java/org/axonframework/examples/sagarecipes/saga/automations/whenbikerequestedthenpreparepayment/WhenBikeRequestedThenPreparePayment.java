@@ -39,7 +39,7 @@ import java.util.concurrent.CompletableFuture;
  * That leaves the processor's tracking token as the entire to-do list. Everything before it has been asked for,
  * everything after it has not, and a redelivery is harmless.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component

@@ -29,7 +29,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * @param bikeId   the bike now in use
  * @param renter   who has it
  * @param rentalId the request that was approved
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record BikeInUse(

@@ -25,7 +25,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  *
  * @param rentalId the rental whose process finished
  * @param outcome  how it turned out
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RecordProcessCompleted(@TargetEntityId RentalId rentalId, Outcome outcome) {

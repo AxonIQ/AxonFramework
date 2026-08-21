@@ -27,7 +27,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * equivalent command took a payment identifier and the saga therefore had to remember one.
  *
  * @param paymentReference the caller's own key for the payment to call off
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record CancelPayment(@TargetEntityId PaymentReference paymentReference) {

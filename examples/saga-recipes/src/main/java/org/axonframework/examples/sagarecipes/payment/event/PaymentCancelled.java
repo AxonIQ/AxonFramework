@@ -29,7 +29,7 @@ import org.axonframework.examples.sagarecipes.payment.PaymentTags;
  *
  * @param paymentId        the payment that was called off
  * @param paymentReference the caller's own key, echoed but never interpreted
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record PaymentCancelled(

@@ -25,7 +25,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * @param bikeId   the bike to register
  * @param bikeType the kind of bike, for example {@code city} or {@code mountain}
  * @param location where the bike is placed
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RegisterBike(

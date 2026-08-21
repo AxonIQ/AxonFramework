@@ -23,7 +23,7 @@ package org.axonframework.examples.sagarecipes.payment;
  * is not what this example is about.
  *
  * @param value the amount to pay, always positive
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record Amount(int value) {

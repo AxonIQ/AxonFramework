@@ -24,7 +24,7 @@ package org.axonframework.examples.sagarecipes.payment;
  * selects on this key has to know that its own correlation identifier was passed in as the reference, which is
  * exactly the knowledge a saga is supposed to own.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public final class PaymentTags {

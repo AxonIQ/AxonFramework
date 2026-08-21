@@ -45,7 +45,7 @@
  * Note that ending does not arise here. There is nothing to end, because there was never anything running: each slice
  * reacts and stops.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 package org.axonframework.examples.sagarecipes.saga.automations;

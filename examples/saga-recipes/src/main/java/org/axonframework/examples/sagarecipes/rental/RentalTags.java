@@ -27,7 +27,7 @@ package org.axonframework.examples.sagarecipes.rental;
  * {@link #RENTER} costs nothing to add now and cannot be added retroactively to an existing event stream, which is
  * why it is present from the start even though only one slice currently uses it.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public final class RentalTags {

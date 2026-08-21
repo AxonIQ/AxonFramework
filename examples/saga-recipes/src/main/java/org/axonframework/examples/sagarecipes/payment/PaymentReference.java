@@ -31,7 +31,7 @@ import org.jspecify.annotations.NonNull;
  * itself.
  *
  * @param raw the raw string representation
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record PaymentReference(String raw) {

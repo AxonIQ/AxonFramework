@@ -31,7 +31,7 @@ import org.axonframework.examples.sagarecipes.payment.PaymentTags;
  * @param paymentId        the identity this context minted for the payment
  * @param amount           how much is to be paid
  * @param paymentReference the caller's own key, echoed but never interpreted
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record PaymentPrepared(

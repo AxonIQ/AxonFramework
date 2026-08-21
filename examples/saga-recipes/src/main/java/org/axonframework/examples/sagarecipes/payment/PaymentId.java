@@ -30,7 +30,7 @@ import java.util.UUID;
  * never has to remember a generated value.
  *
  * @param raw the raw string representation
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record PaymentId(String raw) {

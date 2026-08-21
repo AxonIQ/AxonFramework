@@ -25,7 +25,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * Like {@code ConfirmPayment}, this comes from the paying side, so it targets the payment identifier.
  *
  * @param paymentId the payment that was refused
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RejectPayment(@TargetEntityId PaymentId paymentId) {

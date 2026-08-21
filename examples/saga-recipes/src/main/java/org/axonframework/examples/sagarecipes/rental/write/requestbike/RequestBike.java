@@ -29,7 +29,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * @param bikeId   the bike being requested
  * @param renter   who is requesting it
  * @param rentalId identifies this request, chosen by the caller
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record RequestBike(BikeId bikeId, String renter, RentalId rentalId) {

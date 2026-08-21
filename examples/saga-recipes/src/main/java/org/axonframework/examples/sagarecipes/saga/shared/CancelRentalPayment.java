@@ -35,7 +35,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * actually holds under a race.
  *
  * @param rentalId the rental whose payment should be given up on
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record CancelRentalPayment(@TargetEntityId RentalId rentalId) {

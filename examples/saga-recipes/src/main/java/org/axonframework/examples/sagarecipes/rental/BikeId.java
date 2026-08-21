@@ -27,7 +27,7 @@ import java.util.UUID;
  * saga has to remember it precisely because no other entity does, which is what each recipe solves differently.
  *
  * @param raw the raw string representation
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 public record BikeId(String raw) {

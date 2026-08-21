@@ -44,7 +44,7 @@ import java.util.Objects;
  * settled, or that belongs to another renter, appends nothing and reports success, which is what makes it safe for
  * the saga to send more than once.
  *
- * @author Axon Framework
+ * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component
