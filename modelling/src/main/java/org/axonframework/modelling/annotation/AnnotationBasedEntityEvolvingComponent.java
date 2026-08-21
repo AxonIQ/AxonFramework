@@ -23,7 +23,9 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -70,7 +72,12 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
      * @param entityType          The type of entity this instance will handle state changes for.
      * @param converter           The converter to use for converting event payloads to the handler's expected type.
      * @param messageTypeResolver The resolver to use for resolving the event message type.
+     * @deprecated in favor of
+     * {@link #AnnotationBasedEntityEvolvingComponent(Class, EventConverter, MessageTypeResolver,
+     * ParameterResolverFactory, HandlerDefinition)} since this allows for clean customization of the
+     * {@link ParameterResolverFactory} and {@link HandlerDefinition}, which this constructor does not
      */
+    @Deprecated(since = "5.3.2", forRemoval = true)
     public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver) {
@@ -83,6 +90,34 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
              ),
              converter,
              messageTypeResolver);
+    }
+
+    /**
+     * Initialize a new annotation-based {@link EntityEvolver}.
+     *
+     * @param entityType               the type of entity this instance will handle state changes for
+     * @param converter                the converter to use for converting event payloads to the handler's expected
+     *                                 type
+     * @param messageTypeResolver      the resolver to use for resolving the event message type
+     * @param parameterResolverFactory the resolver factory to use during detection of the annotated model
+     * @param handlerDefinition        the handler definition used to create concrete handlers of the annotated model
+     */
+    public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
+                                                  EventConverter converter,
+                                                  MessageTypeResolver messageTypeResolver,
+                                                  ParameterResolverFactory parameterResolverFactory,
+                                                  HandlerDefinition handlerDefinition) {
+        this(
+                entityType,
+                AnnotatedHandlerInspector.inspectType(
+                        entityType,
+                        messageTypeResolver,
+                        parameterResolverFactory,
+                        handlerDefinition
+                ),
+                converter,
+                messageTypeResolver
+        );
     }
 
     /**

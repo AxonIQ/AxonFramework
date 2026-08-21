@@ -79,7 +79,12 @@ class ExceptionHandlerTest {
         invokedExceptionHandlers = new ArrayList<>();
 
         messageHandlingComponent = new ExceptionHandlingComponent(invokedHandler, invokedExceptionHandlers);
-        inspector = AnnotatedHandlerInspector.inspectType(ExceptionHandlingComponent.class);
+        inspector = AnnotatedHandlerInspector.inspectType(
+                ExceptionHandlingComponent.class,
+                new AnnotationMessageTypeResolver(),
+                ClasspathParameterResolverFactory.forClass(ExceptionHandlingComponent.class),
+                ClasspathHandlerDefinition.forClass(ExceptionHandlingComponent.class)
+        );
     }
 
     @Test
