@@ -43,34 +43,7 @@ jobs:
         run: |
           ./mvnw -B -U -ntp -Dstyle.color=always -Possrh -Pintegration-test -Djacoco.skip=true clean verify \
           -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
-          -Dparallel=classes -DthreadCount=1 -DforkCount=2 &
-          MVN_PID=$!
-
-          # Watchdog: the job has a 30m hard timeout that cancels everything with zero
-          # diagnostics. If the build is still running well past when it should finish,
-          # dump thread stacks of every JVM so a hang (e.g. a forked test JVM that never
-          # exits) is diagnosable from the run log instead of a silent cancellation.
-          (
-            sleep 1080
-            if kill -0 "$MVN_PID" 2>/dev/null; then
-              echo "::warning::Build still running after 18m - dumping thread stacks for diagnosis"
-              for p in $(jps -q); do
-                echo "--- Thread dump for pid $p ---"
-                jstack -l "$p" 2>&1 || jcmd "$p" Thread.print 2>&1 || true
-              done
-              sleep 300
-              if kill -0 "$MVN_PID" 2>/dev/null; then
-                echo "::error::Build still stuck 5m after diagnosis - killing to fail fast"
-                kill -9 "$MVN_PID" 2>/dev/null || true
-              fi
-            fi
-          ) &
-          WATCHDOG_PID=$!
-
-          wait "$MVN_PID"
-          MVN_EXIT=$?
-          kill "$WATCHDOG_PID" 2>/dev/null || true
-          exit "$MVN_EXIT"
+          -Dparallel=classes -DthreadCount=1 -DforkCount=2
 
       - name: Build with Coverage reports
         if: matrix.sonar-enabled
