@@ -12,6 +12,7 @@ import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
 import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -23,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+@Namespace("rental-payment-automations")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
 class WhenPaymentCancelledThenRejectRequest {
     @EventHandler

@@ -5,6 +5,7 @@ import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -16,6 +17,7 @@ import static org.axonframework.examples.sagarecipes.saga.shared.SagaConstants.P
 
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+@Namespace("rental-payment-automations")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
 class WhenBikeRequestedThenPreparePayment {
     @EventHandler
