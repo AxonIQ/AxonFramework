@@ -4,9 +4,9 @@ This example ports the bike-rental payment saga from Axon Framework 4 and implem
 Axon Framework 5 does not prescribe a Saga SPI, SagaStore, DeadlineManager, or SagaTestFixture. A migration can
 therefore choose the state model that fits the process instead of automatically storing an opaque saga blob.
 
-The runnable application uses Spring Boot 4.1.1 and Axon Framework 5.3.1. Empty decision models use
-`@ForcedEntityCreator`, which is required for create-if-missing command handlers such as `PreparePayment`; a plain
-no-argument `@EntityCreator` only creates state after a matching first event.
+The runnable application uses Spring Boot 4.1.1 and Axon Framework 5.3.1. Create-if-missing handlers such as
+`PreparePayment` use `@Nullable @InjectEntity`: `null` means no matching first event exists, while a non-null entity is
+the idempotency marker. The ordinary `@EntityCreator` is used only when there is event history to source.
 
 The module has three sibling contexts:
 

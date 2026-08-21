@@ -1,7 +1,7 @@
 package org.axonframework.examples.sagarecipes.saga.eventsourced;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
@@ -29,6 +29,7 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -43,7 +44,7 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher, ProcessingContext context) {
         return load(event.rentalId(), context).thenCompose(state -> {
-            if (state.paymentRequested || state.completed) {
+            if (state != null && (state.paymentRequested || state.completed)) {
                 return CompletableFuture.completedFuture(null);
             }
             return dispatcher.send(new PreparePayment(RentalPaymentReference.forRental(event.rentalId()), PRICE),
@@ -73,7 +74,7 @@ public class PaymentSaga {
 
     @EventHandler
     CompletableFuture<?> on(RequestRejected event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return load(event.rentalId(), context).thenCompose(state -> state.completed
+        return load(event.rentalId(), context).thenCompose(state -> state != null && state.completed
                 ? CompletableFuture.completedFuture(null)
                 : dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId()),
                                                     "rental request rejected"), Object.class)
@@ -82,9 +83,10 @@ public class PaymentSaga {
     }
 
     @CommandHandler
-    CompletableFuture<?> handle(CancelRentalPayment command, @InjectEntity CommandRecordedState state,
+    CompletableFuture<?> handle(CancelRentalPayment command,
+                                @Nullable @InjectEntity CommandRecordedState state,
                                 CommandDispatcher dispatcher) {
-        if (state.completed) {
+        if (state != null && state.completed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId()),
@@ -92,16 +94,20 @@ public class PaymentSaga {
     }
 
     @CommandHandler
-    void handle(RecordPaymentRequested command, @InjectEntity CommandRecordedState state, EventAppender appender) {
-        if (!state.paymentRequested && !state.completed) {
+    void handle(RecordPaymentRequested command,
+                @Nullable @InjectEntity CommandRecordedState state,
+                EventAppender appender) {
+        if (state == null || (!state.paymentRequested && !state.completed)) {
             appender.append(new RentalPaymentRequested(command.rentalId(), command.bikeId(), command.renter(),
                                                        command.amount()));
         }
     }
 
     @CommandHandler
-    void handle(RecordProcessCompleted command, @InjectEntity CommandRecordedState state, EventAppender appender) {
-        if (!state.completed) {
+    void handle(RecordProcessCompleted command,
+                @Nullable @InjectEntity CommandRecordedState state,
+                EventAppender appender) {
+        if (state == null || !state.completed) {
             appender.append(new RentalPaymentProcessCompleted(command.rentalId(), command.outcome()));
         }
     }
@@ -109,6 +115,10 @@ public class PaymentSaga {
     private CompletableFuture<?> complete(RentalId id, Outcome outcome, boolean approve,
                                           CommandDispatcher dispatcher, ProcessingContext context) {
         return load(id, context).thenCompose(state -> {
+            if (state == null) {
+                return CompletableFuture.failedFuture(
+                        new IllegalStateException("Payment process state is not available for rental " + id));
+            }
             if (state.completed) {
                 return CompletableFuture.completedFuture(null);
             }
@@ -121,9 +131,8 @@ public class PaymentSaga {
         });
     }
 
-    private CompletableFuture<CommandRecordedState> load(RentalId id, ProcessingContext context) {
-        return context.component(StateManager.class).loadEntity(CommandRecordedState.class, id, context)
-                      .thenApply(state -> state == null ? new CommandRecordedState() : state);
+    private CompletableFuture<@Nullable CommandRecordedState> load(RentalId id, ProcessingContext context) {
+        return context.component(StateManager.class).loadEntity(CommandRecordedState.class, id, context);
     }
 
     @EventSourced(tagKey = RentalTags.RENTAL_ID, idType = RentalId.class)
@@ -132,7 +141,7 @@ public class PaymentSaga {
         private String renter;
         private boolean paymentRequested;
         private boolean completed;
-        @ForcedEntityCreator CommandRecordedState() { }
+        @EntityCreator CommandRecordedState() { }
         @EventSourcingHandler void evolve(RentalPaymentRequested event) {
             bikeId = event.bikeId(); renter = event.renter(); paymentRequested = true;
         }

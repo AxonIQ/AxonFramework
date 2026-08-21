@@ -2,7 +2,7 @@ package org.axonframework.examples.sagarecipes.saga.injectentity;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.PaymentTags;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
@@ -31,6 +31,7 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -44,7 +45,7 @@ import static org.axonframework.examples.sagarecipes.saga.shared.SagaConstants.P
 public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher, ProcessingContext context) {
-        return load(event.rentalId(), context).thenCompose(state -> state.paymentRequested
+        return load(event.rentalId(), context).thenCompose(state -> state != null && state.paymentRequested
                 ? CompletableFuture.completedFuture(null)
                 : dispatcher.send(new PreparePayment(RentalPaymentReference.forRental(event.rentalId()), PRICE),
                                   Object.class));
@@ -53,7 +54,10 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(PaymentConfirmed event, CommandDispatcher dispatcher, ProcessingContext context) {
         return load(RentalPaymentReference.toRental(event.paymentReference()), context).thenCompose(state ->
-                state.requestSettled
+                state == null
+                        ? CompletableFuture.failedFuture(new IllegalStateException(
+                                "Rental request state is not available for payment " + event.paymentReference()))
+                        : state.requestSettled
                         ? CompletableFuture.completedFuture(null)
                         : dispatcher.send(new ApproveRequest(state.bikeId, state.renter), Object.class));
     }
@@ -75,9 +79,9 @@ public class PaymentSaga {
     }
 
     @CommandHandler
-    CompletableFuture<?> handle(CancelRentalPayment command, @InjectEntity InjectEntityState state,
+    CompletableFuture<?> handle(CancelRentalPayment command, @Nullable @InjectEntity InjectEntityState state,
                                 CommandDispatcher dispatcher) {
-        if (state.paymentConfirmed) {
+        if (state != null && state.paymentConfirmed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId()),
@@ -85,14 +89,19 @@ public class PaymentSaga {
     }
 
     private CompletableFuture<?> reject(RentalId id, CommandDispatcher dispatcher, ProcessingContext context) {
-        return load(id, context).thenCompose(state -> state.requestSettled
-                ? CompletableFuture.completedFuture(null)
-                : dispatcher.send(new RejectRequest(state.bikeId, state.renter), Object.class));
+        return load(id, context).thenCompose(state -> {
+            if (state == null) {
+                return CompletableFuture.failedFuture(
+                        new IllegalStateException("Rental request state is not available for rental " + id));
+            }
+            return state.requestSettled
+                    ? CompletableFuture.completedFuture(null)
+                    : dispatcher.send(new RejectRequest(state.bikeId, state.renter), Object.class);
+        });
     }
 
-    private CompletableFuture<InjectEntityState> load(RentalId id, ProcessingContext context) {
-        return context.component(StateManager.class).loadEntity(InjectEntityState.class, id, context)
-                      .thenApply(state -> state == null ? new InjectEntityState() : state);
+    private CompletableFuture<@Nullable InjectEntityState> load(RentalId id, ProcessingContext context) {
+        return context.component(StateManager.class).loadEntity(InjectEntityState.class, id, context);
     }
 
     @EventSourced(idType = RentalId.class)
@@ -103,7 +112,7 @@ public class PaymentSaga {
         private boolean paymentConfirmed;
         private boolean requestSettled;
 
-        @ForcedEntityCreator InjectEntityState() { }
+        @EntityCreator InjectEntityState() { }
         @EventSourcingHandler void evolve(BikeRequested event) { bikeId = event.bikeId(); renter = event.renter(); }
         @EventSourcingHandler void evolve(PaymentPrepared event) { paymentRequested = true; }
         @EventSourcingHandler void evolve(PaymentConfirmed event) { paymentConfirmed = true; }

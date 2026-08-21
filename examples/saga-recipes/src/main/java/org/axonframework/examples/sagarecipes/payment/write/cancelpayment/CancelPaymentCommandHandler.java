@@ -1,7 +1,7 @@
 package org.axonframework.examples.sagarecipes.payment.write.cancelpayment;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.PaymentId;
 import org.axonframework.examples.sagarecipes.payment.PaymentReference;
 import org.axonframework.examples.sagarecipes.payment.PaymentTags;
@@ -27,8 +27,8 @@ class CancelPaymentCommandHandler {
     @EventSourced(tagKey = PaymentTags.PAYMENT_REFERENCE, idType = PaymentReference.class)
     static class Payment {
         private PaymentId paymentId;
-        private Status status = Status.NONE;
-        @ForcedEntityCreator Payment() { }
+        private Status status;
+        @EntityCreator Payment() { }
         @EventSourcingHandler void evolve(PaymentPrepared event) {
             paymentId = event.paymentId();
             status = Status.PREPARED;
@@ -37,5 +37,5 @@ class CancelPaymentCommandHandler {
         @EventSourcingHandler void evolve(PaymentRejected event) { status = Status.SETTLED; }
         @EventSourcingHandler void evolve(PaymentCancelled event) { status = Status.SETTLED; }
     }
-    enum Status { NONE, PREPARED, SETTLED }
+    enum Status { PREPARED, SETTLED }
 }

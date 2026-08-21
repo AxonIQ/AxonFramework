@@ -2,7 +2,7 @@ package org.axonframework.examples.sagarecipes.rental.write.requestbike;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
@@ -42,7 +42,7 @@ class RequestBikeCommandHandler {
         private RentalId activeRentalId;
         private boolean renterHoldsABike;
 
-        @ForcedEntityCreator
+        @EntityCreator
         State(@InjectEntityId RentalRequestId id) {
             this.id = id;
         }

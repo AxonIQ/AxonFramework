@@ -1,7 +1,7 @@
 package org.axonframework.examples.sagarecipes.saga.automations.whenpaymentcancelledthenrejectrequest;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
@@ -29,16 +29,17 @@ class WhenPaymentCancelledThenRejectRequest {
     CompletableFuture<?> react(PaymentCancelled event, CommandDispatcher dispatcher, ProcessingContext context) {
         RentalId id = RentalPaymentReference.toRental(event.paymentReference());
         return context.component(StateManager.class).loadEntity(RequestedRental.class, id, context)
-                      .thenApply(rental -> rental == null ? new RequestedRental() : rental)
-                      .thenCompose(rental -> dispatcher.send(new RejectRequest(rental.bikeId, rental.renter),
-                                                             Object.class));
+                      .thenCompose(rental -> rental == null
+                              ? CompletableFuture.failedFuture(new IllegalStateException(
+                                      "Rental request state is not available for rental " + id))
+                              : dispatcher.send(new RejectRequest(rental.bikeId, rental.renter), Object.class));
     }
 
     @EventSourced(tagKey = RentalTags.RENTAL_ID, idType = RentalId.class)
     static class RequestedRental {
         private BikeId bikeId;
         private String renter;
-        @ForcedEntityCreator RequestedRental() { }
+        @EntityCreator RequestedRental() { }
         @EventSourcingHandler void evolve(BikeRequested event) { bikeId = event.bikeId(); renter = event.renter(); }
     }
 }

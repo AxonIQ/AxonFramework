@@ -1,7 +1,7 @@
 package org.axonframework.examples.sagarecipes.rental.write.returnbike;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
@@ -32,7 +32,7 @@ class ReturnBikeCommandHandler {
         private String renter;
         private RentalId rentalId;
 
-        @ForcedEntityCreator Bike() { }
+        @EntityCreator Bike() { }
         @EventSourcingHandler void evolve(BikeRegistered event) { available = true; }
         @EventSourcingHandler void evolve(BikeRequested event) {
             available = false;

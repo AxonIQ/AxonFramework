@@ -1,7 +1,7 @@
 package org.axonframework.examples.sagarecipes.rental.write.rejectrequest;
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
@@ -33,7 +33,7 @@ class RejectRequestCommandHandler {
         private RentalId rentalId;
         private boolean confirmed;
 
-        @ForcedEntityCreator Bike() { }
+        @EntityCreator Bike() { }
         @EventSourcingHandler void evolve(BikeRequested event) {
             renter = event.renter();
             rentalId = event.rentalId();

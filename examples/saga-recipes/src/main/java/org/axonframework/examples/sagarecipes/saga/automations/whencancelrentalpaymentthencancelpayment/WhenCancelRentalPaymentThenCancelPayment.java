@@ -2,7 +2,7 @@ package org.axonframework.examples.sagarecipes.saga.automations.whencancelrental
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.PaymentTags;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentPrepared;
@@ -16,6 +16,7 @@ import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -25,9 +26,9 @@ import java.util.concurrent.CompletableFuture;
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
 class WhenCancelRentalPaymentThenCancelPayment {
     @CommandHandler
-    CompletableFuture<?> react(CancelRentalPayment command, @InjectEntity PaymentState state,
+    CompletableFuture<?> react(CancelRentalPayment command, @Nullable @InjectEntity PaymentState state,
                                CommandDispatcher dispatcher) {
-        if (state.confirmed) {
+        if (state != null && state.confirmed) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId()),
@@ -37,7 +38,7 @@ class WhenCancelRentalPaymentThenCancelPayment {
     @EventSourced(idType = RentalId.class)
     static class PaymentState {
         private boolean confirmed;
-        @ForcedEntityCreator PaymentState() { }
+        @EntityCreator PaymentState() { }
         @EventSourcingHandler void evolve(PaymentPrepared event) { }
         @EventSourcingHandler void evolve(PaymentConfirmed event) { confirmed = true; }
         @EventCriteriaBuilder static EventCriteria criteria(RentalId id) {
