@@ -93,6 +93,44 @@ class RequestBikeCommandHandlerTest {
                    .success()
                    .noEvents();
         }
+
+        @Test
+        void givenRequestAlreadyHandledAndRentalFinished_whenRequestBikeAgain_thenNoEventsAndSuccess() {
+            // given the rental this command asks for already ran its full course
+            var bikeId = BikeId.random();
+            var rentalId = RentalId.random();
+
+            // when / then the bike is free again, but this request was already handled and must not repeat
+            fixture.given()
+                   .events(new BikeRegistered(bikeId, "city", "Vilnius"),
+                           new BikeRequested(bikeId, renter, rentalId),
+                           new BikeInUse(bikeId, renter, rentalId),
+                           new BikeReturned(bikeId, renter, rentalId, "Vilnius"))
+                   .when()
+                   .command(new RequestBike(bikeId, renter, rentalId))
+                   .then()
+                   .success()
+                   .noEvents();
+        }
+
+        @Test
+        void givenRequestAlreadyHandledOnAnotherBike_whenRequestBike_thenNoEventsAndSuccess() {
+            // given this rental id was already used, for a different bike
+            var bikeA = BikeId.random();
+            var bikeB = BikeId.random();
+            var rentalId = RentalId.random();
+
+            // when / then the rental id is the caller's idempotency key, so reusing it means "the same request"
+            fixture.given()
+                   .events(new BikeRegistered(bikeA, "city", "Vilnius"),
+                           new BikeRegistered(bikeB, "city", "Vilnius"),
+                           new BikeRequested(bikeA, otherRenter, rentalId))
+                   .when()
+                   .command(new RequestBike(bikeB, renter, rentalId))
+                   .then()
+                   .success()
+                   .noEvents();
+        }
     }
 
     /**
