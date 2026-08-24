@@ -243,6 +243,19 @@
         </profile>
 
         <profile>
+            <id>spring-boot-compatibility</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+                <property>
+                    <name>spring-boot-compatibility</name>
+                </property>
+            </activation>
+            <modules>
+                <module>extensions/spring/spring-boot-compatibility-tests</module>
+            </modules>
+        </profile>
+
+        <profile>
             <id>javadoc</id>
             <build>
                 <plugins>
