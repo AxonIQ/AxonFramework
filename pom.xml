@@ -39,6 +39,9 @@
 
         <module>integrationtests</module>
 
+        <module>stash/legacy</module>
+        <module>stash/legacy-saga</module>
+
         <module>docs/_samples</module>
 
     </modules>
@@ -179,6 +182,8 @@
                          (first module wins), so this must be excluded here rather than on that module's own pom. -->
                     <excludeArtifacts>
                         <excludeArtifact>axon-docs-samples</excludeArtifact>
+                        <excludeArtifact>axon-legacy</excludeArtifact>
+                        <excludeArtifact>axon-legacy-saga</excludeArtifact>
                     </excludeArtifacts>
                 </configuration>
             </plugin>
