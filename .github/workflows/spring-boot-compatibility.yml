@@ -1,0 +1,79 @@
+name: Spring Boot Compatibility Matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'extensions/spring/**'
+      - '.github/workflows/spring-boot-compatibility.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.module }} @ Spring Boot ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: spring-boot-3
+            version: 3.5.16
+            allow-failure: false
+          - module: spring-boot-4
+            version: 4.0.8
+            allow-failure: false
+          # Spring Boot 4.1.0 shipped with a bug causing BeanCurrentlyInCreationException on
+          # applicationTaskExecutor whenever an app also has an Axon command/event/query handler
+          # (JpaBaseConfiguration#entityManagerFactoryBuilder() started resolving all
+          # AsyncTaskExecutor beans, racing Axon's own handler registration). Fixed upstream in
+          # Spring Boot 4.1.1 - this entry is intentionally kept, expected to permanently fail,
+          # as a regression witness proving this matrix would catch the bug's return.
+          - module: spring-boot-4
+            version: 4.1.0
+            allow-failure: true
+          - module: spring-boot-4
+            version: 4.1.1
+            allow-failure: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'zulu'
+          java-version: 21
+          cache: "maven"
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Build whole project (tests skipped)
+        run: |
+          ./mvnw -B -U -ntp -Pspring-boot-compatibility clean install -DskipTests \
+          -Dstyle.color=always
+
+      # No -am here: the previous step already installed the whole reactor (including
+      # axon-spring-boot-compatibility-tests-common) into the local repo, so this only needs to
+      # rebuild the one targeted module against the overridden Spring Boot version.
+      - name: Run ${{ matrix.module }} against Spring Boot ${{ matrix.version }}
+        continue-on-error: ${{ matrix.allow-failure }}
+        run: |
+          ./mvnw -B -ntp -Pspring-boot-compatibility verify \
+          -pl extensions/spring/spring-boot-compatibility-tests/${{ matrix.module }} \
+          -Dspring.boot.version=${{ matrix.version }} \
+          -Dstyle.color=always \
+          -Dsurefire.rerunFailingTestsCount=5
+
+      - name: Create test summary
+        uses: test-summary/action@v2
+        with:
+          paths: |
+            **/target/surefire-reports/TEST-*.xml
+          show: "fail, skip"
+        if: always() # This allows the build step to fail -- due to failing tests -- but still produce a test summary.
