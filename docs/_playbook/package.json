@@ -6,7 +6,7 @@
     "@antora/site-generator": "^3.2.0-rc.3",
     "@asciidoctor/tabs": "^1.0.0-beta.6",
     "@axoniq/antora-vale-extension": "^0.1.2",
-    "asciidoctor-kroki": "^0.18.1",
+    "asciidoctor-kroki": "^1.0.1",
     "chokidar": "^5.0.0",
     "express": "^5.2.1"
   },
