@@ -70,7 +70,7 @@
         <slf4j.version>2.0.18</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.7</dropwizard.metrics.version>
-        <micrometer.version>1.17.0</micrometer.version>
+        <micrometer.version>1.17.1</micrometer.version>
         <!-- Other -->
         <byte-buddy.version>1.18.12</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
@@ -78,10 +78,10 @@
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
         <javassist.version>3.32.0-GA</javassist.version>
         <eaio-uuid.version>3.2</eaio-uuid.version>
-        <equalsverifier.version>4.5</equalsverifier.version>
+        <equalsverifier.version>4.5.1</equalsverifier.version>
         <!-- Reactive -->
         <context-propagation.version>1.2.1</context-propagation.version>
-        <projectreactor.version>3.8.6</projectreactor.version>
+        <projectreactor.version>3.8.7</projectreactor.version>
         <reactive.streams.spec.version>1.0.4</reactive.streams.spec.version>
         <!-- Conversion -->
         <avro.version>1.12.2</avro.version>
@@ -91,7 +91,7 @@
         <jackson2.version>2.22.2</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <jobrunr.version>8.8.1</jobrunr.version>
+        <jobrunr.version>8.8.2</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
