@@ -25,8 +25,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * <p>
  * Deliberately carries no payment identifier: this context mints its own. What the caller supplies is its own key,
  * which doubles as the idempotency key, so a retried command reaches the same payment instead of creating a second
- * one. This is Axon Framework 4's {@code PreparePaymentCommand}, whose {@code paymentReference} served the same
- * purpose.
+ * one. The bike rental sample application calls this {@code PreparePaymentCommand}, and its {@code paymentReference}
+ * serves the same purpose.
  *
  * @param paymentReference the caller's own key for this payment
  * @param amount           how much is to be paid

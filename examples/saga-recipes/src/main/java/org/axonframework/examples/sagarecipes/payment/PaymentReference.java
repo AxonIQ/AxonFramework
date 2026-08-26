@@ -23,7 +23,7 @@ import org.jspecify.annotations.NonNull;
  * <p>
  * Whatever the caller puts in here is stored and echoed back on every payment event, and never interpreted. It could
  * be an invoice number, an order identifier or, in this example, a rental identifier; the payment context cannot
- * tell and must not care. This is Axon Framework 4's {@code paymentReference}, unchanged.
+ * tell and must not care. The bike rental sample application calls this a {@code paymentReference}.
  * <p>
  * The decision model for preparing and cancelling a payment is keyed by this value rather than by
  * {@link PaymentId}. That makes preparing a payment idempotent by construction, since a second attempt with the same

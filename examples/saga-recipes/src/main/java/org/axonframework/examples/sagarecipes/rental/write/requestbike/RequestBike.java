@@ -23,8 +23,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 /**
  * Asks for a bike on behalf of a renter.
  * <p>
- * The caller supplies the {@code rentalId}. Axon Framework 4 minted it inside the handler, which made a retried
- * request produce a second reservation; supplying it makes this command idempotent.
+ * The caller supplies the {@code rentalId}. Minting it inside the handler, as the bike rental sample application does,
+ * makes a retried request produce a second reservation; supplying it makes this command idempotent.
  *
  * @param bikeId   the bike being requested
  * @param renter   who is requesting it

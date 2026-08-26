@@ -36,8 +36,8 @@ import org.springframework.stereotype.Component;
  * appends nothing. Two commands racing for the same reference cannot both win either, because the Dynamic
  * Consistency Boundary append condition covers exactly the events this decision read.
  * <p>
- * Compare Axon Framework 4, where the handler minted a payment identifier unconditionally: a retry there produced a
- * second payment for the same rental, and nothing in the model prevented it.
+ * Minting a payment identifier unconditionally would produce a second payment for the same rental on every retry, with
+ * nothing in the model to prevent it.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

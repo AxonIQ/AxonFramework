@@ -27,7 +27,6 @@ import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRegistered;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
-import org.axonframework.examples.sagarecipes.rental.event.BikeInUse;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.examples.sagarecipes.rental.write.approverequest.ApproveRequest;
 import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectRequest;
@@ -52,9 +51,9 @@ import java.util.UUID;
  * payment boundaries</b>. Nothing about repositories, entities or process events belongs here, because those are
  * exactly what the recipes disagree about. Recipe-specific expectations go in the subclass.
  * <p>
- * The scenarios mirror Axon Framework 4's own {@code PaymentSagaTest} method for method, so the migration guide can
- * put them side by side, with two cases version 4 never had: a redelivered trigger and a timeout that arrives too
- * late.
+ * The scenarios mirror the bike rental sample application's own {@code PaymentSagaTest} method for method, so the
+ * migration guide can put them side by side, with two cases that suite never had: a redelivered trigger and a timeout
+ * that arrives too late.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -75,7 +74,7 @@ public abstract class SagaRecipeContractTest {
     protected final String renter = "renter-" + UUID.randomUUID();
 
     /**
-     * Axon Framework 4: {@code shouldStartSagaOnBikeRequested}.
+     * The bike rental sample application calls this {@code shouldStartSagaOnBikeRequested}.
      */
     @Test
     void givenBikeRequested_thenPaymentIsPrepared() {
@@ -95,7 +94,7 @@ public abstract class SagaRecipeContractTest {
     }
 
     /**
-     * Axon Framework 4: {@code shouldAcceptRequestOnPaymentConfirmed}.
+     * The bike rental sample application calls this {@code shouldAcceptRequestOnPaymentConfirmed}.
      */
     @Test
     void givenPaymentConfirmed_thenRequestApproved() {
@@ -118,7 +117,7 @@ public abstract class SagaRecipeContractTest {
     }
 
     /**
-     * Axon Framework 4: {@code shouldRejectRequestOnPaymentRejected}.
+     * The bike rental sample application calls this {@code shouldRejectRequestOnPaymentRejected}.
      */
     @Test
     void givenPaymentRejected_thenRequestRejected() {
@@ -164,8 +163,8 @@ public abstract class SagaRecipeContractTest {
     }
 
     /**
-     * Axon Framework 4: {@code shouldEndSagaWhenRequestIsRejected}, which cancelled the deadline. Here the process
-     * has to actively call off the payment, or it would stay outstanding forever.
+     * The bike rental sample application calls this {@code shouldEndSagaWhenRequestIsRejected}, and cancels a
+     * deadline. Here the process has to actively call off the payment, or it would stay outstanding forever.
      */
     @Test
     void givenRequestRejectedOnOtherGrounds_thenPaymentIsCancelled() {
@@ -187,8 +186,8 @@ public abstract class SagaRecipeContractTest {
     }
 
     /**
-     * Not in the version 4 test suite, and the case its saga would have got wrong: it minted a payment identifier
-     * unconditionally, so a redelivered trigger created a second payment for the same rental.
+     * Not in the bike rental sample application's test suite, and the case its saga would have got wrong: it minted
+     * a payment identifier unconditionally, so a redelivered trigger created a second payment for the same rental.
      */
     @Test
     void givenPaymentAlreadyPrepared_whenBikeRequestedIsRedelivered_thenNoSecondPreparePayment() {
@@ -211,7 +210,8 @@ public abstract class SagaRecipeContractTest {
     }
 
     /**
-     * Axon Framework 4: {@code shouldRejectPaymentWhenNotConfirmedIn30Seconds}, which used a scheduled deadline.
+     * The bike rental sample application calls this {@code shouldRejectPaymentWhenNotConfirmedIn30Seconds}, and
+     * drives it from a scheduled deadline.
      * <p>
      * The process's side of a timeout: it is asked to give up, and the bike ends up released. What decides that the
      * moment has come is not the process's concern, which is why nothing here mentions a clock or a sweep. The

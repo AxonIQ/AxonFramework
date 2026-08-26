@@ -23,8 +23,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * Calls off a payment that nobody has paid yet.
  * <p>
  * Targets the caller's reference rather than the payment identifier, because it comes from whoever ordered the
- * payment, and that party knows the key it chose. This is the improvement over Axon Framework 4, where the
- * equivalent command took a payment identifier and the saga therefore had to remember one.
+ * payment, and that party knows the key it chose. An equivalent command taking a payment identifier would force the
+ * saga to remember one.
  *
  * @param paymentReference the caller's own key for the payment to call off
  * @author Mateusz Nowak

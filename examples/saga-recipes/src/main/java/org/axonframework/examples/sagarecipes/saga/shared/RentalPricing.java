@@ -21,7 +21,7 @@ import org.axonframework.examples.sagarecipes.payment.Amount;
 /**
  * What a rental costs.
  * <p>
- * A flat rate, exactly as in the Axon Framework 4 demo. Pricing lives with the saga because deciding how much to ask
+ * A flat rate, as in the bike rental sample application. Pricing lives with the saga because deciding how much to ask
  * for is part of running the process: the rental context does not know it is paid for, and the payment context is
  * told the amount rather than working it out.
  *

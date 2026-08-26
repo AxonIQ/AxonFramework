@@ -23,7 +23,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * Records that a payment was paid.
  * <p>
  * Targets the payment identifier rather than the caller's reference, because this command comes from whoever is
- * paying, and the payment identifier is what they were handed. Keeps the Axon Framework 4 signature.
+ * paying, and the payment identifier is what they were handed.
  *
  * @param paymentId the payment that was paid
  * @author Mateusz Nowak

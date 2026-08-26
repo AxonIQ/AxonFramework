@@ -25,10 +25,9 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
 /**
  * What the process remembers about one rental.
  * <p>
- * This is the nearest thing in the module to an Axon Framework 4 {@code SagaEntry}, with one difference that matters:
- * the schema is yours. Version 4 serialized the whole saga instance into an opaque blob, so the only way to ask a
- * question of it was to deserialize it. Here the columns are ordinary columns and can be queried, indexed and
- * reported on.
+ * The nearest thing in the module to a saga store entry, with one difference that matters: the schema is yours. A
+ * saga store serializes the whole instance into an opaque blob, so the only way to ask a question of it is to
+ * deserialize it. Here the columns are ordinary columns and can be queried, indexed and reported on.
  * <p>
  * The fields worth noticing are {@code bikeId} and {@code renter}. They are the reason this process needs storage at
  * all: no entity in either context is keyed by a rental, so nothing else can tell the process which bike to approve

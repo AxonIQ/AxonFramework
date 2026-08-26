@@ -38,12 +38,12 @@
  *     recorded progress now makes the process skip the work it never did.</li>
  *     <li><b>The handler must return its {@code CompletableFuture}.</b> That is what makes the processor wait for the
  *     command and leave the token where it is on failure. Dropping the {@code return} turns the whole thing into
- *     fire-and-forget, silently, and is what replaces Axon Framework 4's {@code retryPayment} deadline.</li>
+ *     fire-and-forget, silently, and it is what removes any need to schedule a retry.</li>
  * </ol>
  * <p>
  * Note what is <em>not</em> in this list. Ending the process is not a rule but a choice, and each recipe makes it
  * differently: delete a row, append a completion event, or simply let a predicate over existing events answer the
- * question. Axon Framework 4 had one answer, {@code @EndSaga}, because it had one way of holding state.
+ * question, and a framework offering one way of holding state can only offer one answer.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

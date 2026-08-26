@@ -24,7 +24,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
 /**
  * The rental request was approved and the renter now has the bike.
  * <p>
- * Keeps the Axon Framework 4 name. This is the successful end of the rental payment process.
+ * Keeps the name used by the bike rental sample application. This is the successful end of the rental payment process.
  *
  * @param bikeId   the bike now in use
  * @param renter   who has it
