@@ -65,7 +65,7 @@ token looks like it should need some.
 
 One thing the sample leaves out for brevity: this class handles events from both sides, which name their
 correlation differently, so it needs a sequencing policy that spans them. See
-xref::index.adoc#sequencing[sequencing] in the overview.
+xref::sequencing.adoc[sequencing].
 
 [#transaction]
 == Where the transaction comes from

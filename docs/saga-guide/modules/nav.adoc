@@ -4,4 +4,5 @@
 * xref::state-in-a-repository.adoc[]
 * xref::state-from-context-events.adoc[]
 * xref::state-from-process-events.adoc[]
+* xref::sequencing.adoc[]
 * xref::deadlines.adoc[]

@@ -2,9 +2,10 @@
 :navtitle: Long-running processes
 :reftext: Long-running processes
 
-A *saga*, or *process manager*, drives a business transaction that cannot be a transaction. It spans several
-components and often several systems, and it takes as long as the business takes, which may be seconds, days, or weeks.
-Nothing can hold a lock for that long or across that many owners, so nothing can roll it back either.
+A *saga*, or *process manager*, coordinates a business process that no single transaction can guarantee. It spans
+several components and often several systems, and it takes as long as the business takes, which may be seconds, days,
+or weeks. Nothing can hold a lock for that long or across that many owners, so each step commits on its own and nothing
+can roll the whole process back.
 
 Booking a trip is the classic example. A flight, a hotel and a car have to be reserved, each held by a different
 component, and if the hotel comes back unavailable an hour later the flight is already booked. Undoing it is not a
@@ -16,15 +17,16 @@ its payment is, an order is not shipped until stock and payment both agree, and 
 first charge clears. In Axon Framework such a process is an event handler: it remembers what it has seen so far and
 decides what should happen next.
 
-Axon Framework has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
+Axon Framework (since 5.0.0) has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
 at a time than bundled together:
 
 * *Where its state lives*, if it needs any. A blob nobody can query, a table with real columns, its own events, or
   nothing at all.
 * *How an incoming event is correlated* to the process it concerns. A stored mapping, a tag, or a value the process
   computes.
-* *What starting and finishing mean*. A row appearing and disappearing, an event recording that it is over, or nothing
-  because being finished is a question you ask of the events.
+* *What starting and finishing mean*. A command dispatched to begin and end it, most commonly; a row appearing and
+  disappearing; an event recording that it is over; or nothing, because being finished is a question you ask of the
+  events.
 
 Those decisions pull in different directions for different processes. A process that has to be reported on wants
 columns; a process whose correlation is derivable needs no mapping at all; a process that is really a handful of
@@ -54,8 +56,9 @@ event store context. That is what allows a process to source both.
 *The constraint that follows.* An event-sourced entity is sourced from one context. `EventCriteria` selects tags and
 types within a context, and there is no criteria that spans two, so a process cannot inject an entity assembled from
 events in more than one context. Where the other side of the process lives in a different Axon Server context, or in a
-system that is not an Axon event store at all, the approaches that rebuild state from its events are unavailable, and
-the "Works across" column in <<state-approaches,the table below>> is reporting that constraint.
+system that is not an Axon event store at all, xref::state-from-context-events.adoc[state from context events] is
+unavailable, since it is the only approach that assembles an entity across both sides; the "Works across" column in
+<<state-approaches,the table below>> is reporting that constraint.
 ====
 
 [NOTE]
@@ -115,8 +118,9 @@ public CompletableFuture<?> react(BikeRequested event, CommandDispatcher dispatc
 }
 ----
 
-There is nothing to remember. The processor's tracking token is the entire record of what has been done: everything
-before it has happened, everything after it has not. If your whole "process" looks like this, write the handler and
+There is nothing to remember. The processor's
+xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tracking token]
+is the entire record of what has been done: everything before it has happened, everything after it has not. If your whole "process" looks like this, write the handler and
 stop here.
 
 It stops being a reaction the moment the decision depends on *something that happened earlier*. Consider approving a
@@ -321,8 +325,8 @@ Every page in this section implements the same process, so the approaches can be
 for a bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the
 request is turned down and the bike released.
 
-.The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank]
-image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board]
+.The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
+image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board,link=self,window=_blank]
 
 Read the model left to right. The blue stickies are commands, the orange ones events, the green ones information a
 reader can see, and the purple ones automations: the process reacting to something and sending a command because of it.
@@ -366,35 +370,10 @@ exist, which is what leaves room for a process to be the only thing that knows b
 [#sequencing]
 == Sequencing
 
-A pooled streaming event processor handles many processes concurrently. Events belonging to *one* process must still
-be handled in order, or a `PaymentPrepared` can still be in flight while the `PaymentConfirmed` that supersedes it is
-already being processed.
-
-Where every event a component handles carries the correlation under the same property name, that is one annotation:
-
-[source,java]
-----
-include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0]
-----
-<1> All events of one rental are handled sequentially; different rentals still run in parallel.
-<2> Returning the result is what makes the processor await the command.
-
-Where a component handles events from two bounded contexts that name the correlation differently, no single
-`PropertySequencingPolicy` spans them. Write a policy that routes on the message's `QualifiedName` and delegates to a
-typed policy per event type; the example module contains one.
-
-[WARNING]
-====
-Two mistakes in such a policy are easy to make and hard to see.
-
-Extract the *raw* correlation value, not a typed wrapper. Returning `RentalId` from one side and `PaymentReference`
-from the other means the two never compare equal, so the two sides land in separate sequences and the policy silently
-does nothing.
-
-Target *concrete* payload types, never a shared supertype. Converting to an interface works in memory, where the
-payload is already an object, and fails against a real event store, where it arrives as bytes no converter can turn
-into an interface. A test using plain objects will not catch this.
-====
+A pooled streaming event processor handles many processes at once, so events belonging to *one* process must be kept
+in order while different instances run in parallel. Getting that wrong lets a `PaymentPrepared` still be in flight
+while the `PaymentConfirmed` that supersedes it is already handled. How to configure it, including the case where two
+bounded contexts name the correlation differently, is on xref::sequencing.adoc[its own page].
 
 [#testing]
 == Testing
