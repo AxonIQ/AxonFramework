@@ -8,6 +8,13 @@ confirmation that never comes: something has to notice and act.
 Nothing schedules a callback into a process's own future for you, and this page describes what to do instead. The
 result needs no scheduling infrastructure that understands your domain, and it is easier to test than a timer.
 
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and none of
+this page applies: waiting is an ordinary statement in the flow, so a timeout is written where it happens rather than
+built out of a projection and a sweep.
+====
+
 == The shape of the replacement
 
 A deadline is two things pretending to be one: a record of work that is outstanding, and something that periodically

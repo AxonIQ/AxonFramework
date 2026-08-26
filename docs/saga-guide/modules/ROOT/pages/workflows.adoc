@@ -2,8 +2,8 @@
 :navtitle: Workflows
 :reftext: Workflows
 
-Every approach on the preceding pages builds a process out of parts you assemble yourself: an event handler, some form
-of state, a command. Workflows take the opposite position. The process is written as a single method that reads
+Every other approach in this guide builds a process out of parts you assemble yourself: an event handler, some form of
+state, a command. Workflows take the opposite position. The process is written as a single method that reads
 top to bottom, and the machinery that lets it survive a restart is provided rather than assembled.
 
 *This is the recommended way to orchestrate a business process, and the first option to consider.* Orchestration is
@@ -13,7 +13,7 @@ reason those pages exist is that a workflow is not available to everyone:
 * Workflows are part of Axoniq Framework, not Axon Framework, and require an Axoniq licence for production use.
 * They are available as a preview rather than a production release.
 
-If either of those rules them out for you, pick one of the approaches on the preceding pages. They are complete
+If either of those rules them out for you, pick one of the approaches on the following pages. They are complete
 solutions using nothing beyond Axon Framework, not stopgaps waiting for a licence.
 
 Consult the
@@ -46,28 +46,30 @@ The consequences follow from that inversion:
 
 == When it is the right answer
 
-Whenever it is available to you, and especially when the process itself is the complicated part: many steps, real
-branching, several compensating paths, or waiting that matters. Those are the cases where the reactive approaches
-spread one idea thinly across many files and the shape becomes hard to see.
+Whenever it is available to you. The recommendation does not depend on the size or shape of the process, and there is
+no threshold below which one of the other approaches becomes the better choice.
 
-Availability is the question that decides it in practice, and it decides it before any judgement about the process:
+The reason it holds for small processes too is that processes grow. Adding a step to a workflow is adding a line in the
+middle of a method. Adding one to any of the other approaches means a new handler, a piece of state to carry the new
+information, and a correlation to get right, all of it spread across files. A process written as a workflow starts
+easier and stays easier, and the gap widens with every step.
+
+Availability is therefore the only question, and it is decided before any judgement about the process:
 
 * If you cannot take an Axoniq licence, the question is settled. The other approaches need nothing beyond Axon
   Framework.
 * If you are on Axon Framework rather than Axoniq Framework, workflows are not available to you today, and something
-  from the preceding pages is what you will write.
+  from the following pages is what you will write.
 * If a preview dependency is not acceptable in your production build, the same applies until the release lands.
 
-Where a workflow is available, the one case for still choosing something else is a process small enough that the flow
-was never in doubt. A rental that asks for payment and reacts to the answer is three reactions, and expressing it as a
-workflow buys legibility it did not lack. The bike rental example used throughout these pages is deliberately at that
-scale, which is why it is not written as a workflow here. That is a weak preference, not a rule: if you have workflows
-and you like them, use them for the small processes too.
+The bike rental example running through the rest of this guide is deliberately not written as a workflow. That is so
+the other approaches can be compared line for line against the same process, not a suggestion that a process this small
+is better off without one.
 
 == Relationship to the other approaches
 
-Workflows are not one more entry on the same list so much as a different axis. The four other approaches differ in
-*where the process keeps its state*; a workflow differs in *who reconstructs the flow*.
+Workflows are not one more entry on the same list so much as a different axis. The other approaches differ in where the
+process lives and how it keeps its state; a workflow differs in *who reconstructs the flow*.
 
 That has a practical consequence worth planning for. A process written as
 xref::automation-slices.adoc[automation slices] is the furthest from a workflow, because it deliberately has no centre;

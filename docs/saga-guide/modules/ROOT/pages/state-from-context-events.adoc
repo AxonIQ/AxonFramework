@@ -1,4 +1,4 @@
-= State From Context Events
+= State from Context Events
 :navtitle: State from context events
 :reftext: State from context events
 
@@ -15,6 +15,12 @@ The process rebuilds its state from events the contexts themselves wrote, which 
 one event store, and a tag it can select on. If any part of the process waits on something whose events are not yours,
 this approach is unavailable, and xref::state-from-process-events.adoc[state from process events] is the one that
 replaces it.
+====
+
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and they ask
+nothing of the events at all: no shared event store, no tag to select on. This page is what to write when they are not.
 ====
 
 == When to use it

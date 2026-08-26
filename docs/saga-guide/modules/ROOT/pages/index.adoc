@@ -40,9 +40,11 @@ that.
 [TIP]
 .Reach for Workflows first if you can
 ====
-xref::workflows.adoc[Workflows] are the recommended way to orchestrate a process, and the first thing to consider. The
-flow is written as a single method that reads top to bottom, so the code is close to ordinary imperative code, and the
-position within it is persisted for you: no state to keep, no correlation to derive, and no deadline pattern to build.
+xref::workflows.adoc[[.advanced-framework]#Workflows#] are the recommended way to orchestrate a process, whatever the
+process looks like. The flow is written as a single method that reads top to bottom, so the code is close to ordinary
+imperative code, and the position within it is persisted for you: no state to keep, no correlation to derive, and no
+deadline pattern to build. Extending it later is a line in the middle of a method rather than another handler and
+another piece of state, which is why the recommendation holds for small processes as much as large ones.
 
 Two things stop that from being the only answer. Workflows are part of Axoniq Framework and need a licence, and they
 are available as a preview rather than a production release. If you are on Axon Framework, or cannot yet depend on a
@@ -183,6 +185,14 @@ flowchart TD
     HOWSTATE --> PROCESS
 ----
 
+xref::workflows.adoc[[.advanced-framework]#Workflows#] come first because they are the recommended answer wherever they
+are available, and that recommendation does not depend on the process. They are the most advanced of the options and
+the easiest to write, and the gap widens as the process grows: adding a step is adding a line, where every other
+approach makes it a new handler, a new piece of state, and a new correlation to get right.
+
+The approaches after them are ordered by how little they ask of you, not by elegance. Each is a complete answer
+needing nothing beyond Axon Framework, and the same contract test in the example module holds for all of them.
+
 === Where the process lives
 
 [cols="1,2,2",options="header"]
@@ -190,8 +200,9 @@ flowchart TD
 | Approach | Good for | Costs
 
 | xref::workflows.adoc[[.advanced-framework]#Workflows#]
-| Orchestration in general, and anything genuinely complicated in particular: many steps, real branching,
-compensation, or waiting that matters. The flow is written as a flow, and no state is yours to keep.
+| *Any process, and the recommended answer wherever it is available.* The flow is written as a flow, no state is yours
+to keep, and extending it later is a line rather than a new handler. Many steps, branching, compensation and waiting
+are where the difference is largest, but there is no size below which something else is preferable.
 | A dependency and a licence, and it is a preview rather than a production release.
 
 | xref::automation-slices.adoc[Automation slices]

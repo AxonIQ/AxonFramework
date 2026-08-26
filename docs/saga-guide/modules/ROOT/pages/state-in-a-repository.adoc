@@ -16,6 +16,13 @@ with the fewest prerequisites: it works just as well when the events it reacts t
 context, another team's service, or a third-party provider.
 ====
 
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer: the position
+within the flow is the state, so there is no table to design and nothing to keep in step with the tracking token. This
+page is what to write when they are not.
+====
+
 == When to use it
 
 Use this when the process genuinely has to remember something, and either you want that memory queryable or the events
