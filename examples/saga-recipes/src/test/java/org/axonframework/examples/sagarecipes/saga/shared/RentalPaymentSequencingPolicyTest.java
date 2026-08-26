@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -78,7 +79,7 @@ class RentalPaymentSequencingPolicyTest {
     }
 
     @Test
-    void givenRentalAndPaymentEventsOfOneProcess_thenSequenceIdentifiersAreEqual() {
+    void givenRentalAndPaymentEventsOfOneProcessThenSequenceIdentifiersAreEqual() {
         // given the two contexts keep the correlation under different property names
         var rentalId = RentalId.random();
         var reference = RentalPaymentReference.forRental(rentalId);
@@ -94,7 +95,7 @@ class RentalPaymentSequencingPolicyTest {
     }
 
     @Test
-    void givenEveryHandledEventType_thenAllResolveToTheSameSequenceIdentifier() {
+    void givenEveryHandledEventTypeThenAllResolveToTheSameSequenceIdentifier() {
         // given one rental seen through all the event types the saga reacts to
         var rentalId = RentalId.random();
         var bikeId = BikeId.random();
@@ -111,7 +112,7 @@ class RentalPaymentSequencingPolicyTest {
     }
 
     @Test
-    void givenDifferentRentals_thenSequenceIdentifiersDiffer() {
+    void givenDifferentRentalsThenSequenceIdentifiersDiffer() {
         // given two unrelated rentals, which must be free to be handled concurrently
         var first = new BikeRequested(BikeId.random(), "alice", RentalId.random());
         var second = new BikeRequested(BikeId.random(), "bob", RentalId.random());
@@ -125,7 +126,7 @@ class RentalPaymentSequencingPolicyTest {
      * it however it likes.
      */
     @Test
-    void givenUnmappedEvent_thenNoSequenceIdentifier() {
+    void givenUnmappedEventThenNoSequenceIdentifier() {
         // given a bike registration, which happens before any rental exists
 
         // when / then
@@ -146,6 +147,7 @@ class RentalPaymentSequencingPolicyTest {
                             .create()
                             .executeWithResult(context -> CompletableFuture.completedFuture(
                                     policy.sequenceIdentifierFor(serialized, context)))
+                            .orTimeout(5, TimeUnit.SECONDS)
                             .join();
     }
 }

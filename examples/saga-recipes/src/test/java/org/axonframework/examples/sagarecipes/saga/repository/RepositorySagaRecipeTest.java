@@ -38,14 +38,14 @@ import static org.awaitility.Awaitility.await;
 class RepositorySagaRecipeTest extends SagaRecipeContractTest {
 
     @Autowired
-    private PaymentSagaStateRepository repository;
+    private PaymentProcessStateRepository repository;
 
     /**
      * Recipe-specific, so it lives here rather than in the shared contract. The row must record the bike and the
      * renter, because nothing else in the system can tell the process which bike to approve later.
      */
     @Test
-    void givenBikeRequested_thenTheProcessRemembersTheBikeAndRenter() {
+    void givenBikeRequestedThenTheProcessRemembersTheBikeAndRenter() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();

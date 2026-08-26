@@ -26,7 +26,7 @@
 
     <artifactId>saga-recipes</artifactId>
 
-    <name>Axon Example - Java/SpringBoot 4 - Saga Recipes</name>
+    <name>Axon Example - Saga Recipes</name>
     <description>
         Four approaches to implementing an Axon Framework 4 Saga in Axon Framework 5, applied to the bike-rental
         payment process. Demonstrates process state held in a repository, derived through @InjectEntity, event-sourced

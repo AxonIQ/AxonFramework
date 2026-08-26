@@ -40,7 +40,7 @@ class PreparePaymentCommandHandlerTest {
     private AxonTestFixture fixture;
 
     @Test
-    void givenNoPayment_whenPreparePayment_thenPaymentPrepared() {
+    void givenNoPaymentWhenPreparePaymentThenPaymentPrepared() {
         // given
         var reference = PaymentReference.of("rental-1");
 
@@ -69,7 +69,7 @@ class PreparePaymentCommandHandlerTest {
          * for the same rental.
          */
         @Test
-        void givenPaymentAlreadyPrepared_whenPreparePaymentForSameReference_thenNoEventsAndSuccess() {
+        void givenPaymentAlreadyPreparedWhenPreparePaymentForSameReferenceThenNoEventsAndSuccess() {
             // given a payment already exists for this reference
             var reference = PaymentReference.of("rental-2");
 
@@ -84,7 +84,7 @@ class PreparePaymentCommandHandlerTest {
         }
 
         @Test
-        void givenPaymentForAnotherReference_whenPreparePayment_thenStillPrepared() {
+        void givenPaymentForAnotherReferenceWhenPreparePaymentThenStillPrepared() {
             // given a payment exists, but under a different reference
             var otherReference = PaymentReference.of("rental-3");
             var reference = PaymentReference.of("rental-4");

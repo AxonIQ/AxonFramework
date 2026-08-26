@@ -73,7 +73,7 @@ class PaymentsAwaitingConfirmationTest {
     private PaymentsAwaitingConfirmation sweeper;
 
     @Test
-    void givenPaymentPrepared_thenItJoinsTheToDoList() {
+    void givenPaymentPreparedThenItJoinsTheToDoList() {
         // given
         var reference = someReference();
 
@@ -92,7 +92,7 @@ class PaymentsAwaitingConfirmationTest {
     class SettlingRemovesItFromTheList {
 
         @Test
-        void givenPaymentConfirmed_thenItLeavesTheToDoList() {
+        void givenPaymentConfirmedThenItLeavesTheToDoList() {
             // given
             var reference = someReference();
             var paymentId = PaymentId.random();
@@ -108,7 +108,7 @@ class PaymentsAwaitingConfirmationTest {
         }
 
         @Test
-        void givenPaymentRejected_thenItLeavesTheToDoList() {
+        void givenPaymentRejectedThenItLeavesTheToDoList() {
             // given
             var reference = someReference();
             var paymentId = PaymentId.random();
@@ -124,7 +124,7 @@ class PaymentsAwaitingConfirmationTest {
         }
 
         @Test
-        void givenPaymentCancelled_thenItLeavesTheToDoList() {
+        void givenPaymentCancelledThenItLeavesTheToDoList() {
             // given
             var reference = someReference();
             var paymentId = PaymentId.random();
@@ -151,7 +151,7 @@ class PaymentsAwaitingConfirmationTest {
     class Sweeping {
 
         @Test
-        void givenOverduePayment_whenSweeping_thenItIsCalledOffAndLeavesTheList() {
+        void givenOverduePaymentWhenSweepingThenItIsCalledOffAndLeavesTheList() {
             // given a payment that has been outstanding for a while
             var reference = someReference();
             fixture.given()
@@ -166,7 +166,7 @@ class PaymentsAwaitingConfirmationTest {
         }
 
         @Test
-        void givenPaymentWithinItsTimeout_whenSweeping_thenItIsLeftAlone() {
+        void givenPaymentWithinItsTimeoutWhenSweepingThenItIsLeftAlone() {
             // given a payment prepared just now
             var reference = someReference();
             fixture.given()
@@ -187,7 +187,7 @@ class PaymentsAwaitingConfirmationTest {
          * harmless. The scheduled trigger relies on that, and so does every instance in a cluster.
          */
         @Test
-        void givenAlreadySweptPayment_whenSweepingAgain_thenNothingBreaks() {
+        void givenAlreadySweptPaymentWhenSweepingAgainThenNothingBreaks() {
             // given a payment already called off by an earlier pass
             var reference = someReference();
             fixture.given()

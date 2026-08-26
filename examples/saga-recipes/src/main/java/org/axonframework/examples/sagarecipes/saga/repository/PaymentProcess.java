@@ -78,11 +78,11 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "repository")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
-public class PaymentSaga {
+public class PaymentProcess {
 
-    private final PaymentSagaStateRepository repository;
+    private final PaymentProcessStateRepository repository;
 
-    PaymentSaga(PaymentSagaStateRepository repository) {
+    PaymentProcess(PaymentProcessStateRepository repository) {
         this.repository = repository;
     }
 
@@ -95,10 +95,10 @@ public class PaymentSaga {
      */
     @EventHandler
     public CompletableFuture<?> on(BikeRequested event, CommandDispatcher dispatcher) {
-        if (find(event.rentalId()).filter(PaymentSagaState::paymentRequested).isPresent()) {
+        if (find(event.rentalId()).filter(PaymentProcessState::paymentRequested).isPresent()) {
             return CompletableFuture.completedFuture(null);
         }
-        repository.save(PaymentSagaState.paymentRequested(event.rentalId(), event.bikeId(), event.renter()));
+        repository.save(PaymentProcessState.paymentRequested(event.rentalId(), event.bikeId(), event.renter()));
         var reference = RentalPaymentReference.forRental(event.rentalId());
         return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
                          .getResultMessage();
@@ -193,18 +193,18 @@ public class PaymentSaga {
                          .getResultMessage();
     }
 
-    private Optional<PaymentSagaState> activeProcessFor(PaymentReference reference) {
+    private Optional<PaymentProcessState> activeProcessFor(PaymentReference reference) {
         return find(RentalPaymentReference.toRental(reference)).filter(process -> !process.requestSettled());
     }
 
-    private Optional<PaymentSagaState> find(RentalId rentalId) {
+    private Optional<PaymentProcessState> find(RentalId rentalId) {
         return repository.findById(rentalId.raw());
     }
 
     /**
      * Ends the process by forgetting it. See the class documentation for why deleting is safe here.
      */
-    private void finish(PaymentSagaState process) {
+    private void finish(PaymentProcessState process) {
         repository.deleteById(process.rentalId().raw());
     }
 }

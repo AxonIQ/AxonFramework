@@ -34,7 +34,7 @@ class RegisterBikeCommandHandlerTest {
      * injected entity this would fail rather than register the bike.
      */
     @Test
-    void givenNoBike_whenRegisterBike_thenBikeRegistered() {
+    void givenNoBikeWhenRegisterBikeThenBikeRegistered() {
         // given
         var bikeId = BikeId.random();
 
@@ -49,7 +49,7 @@ class RegisterBikeCommandHandlerTest {
     }
 
     @Test
-    void givenRegisteredBike_whenRegisterBikeAgain_thenNoEventsAndSuccess() {
+    void givenRegisteredBikeWhenRegisterBikeAgainThenNoEventsAndSuccess() {
         // given
         var bikeId = BikeId.random();
 

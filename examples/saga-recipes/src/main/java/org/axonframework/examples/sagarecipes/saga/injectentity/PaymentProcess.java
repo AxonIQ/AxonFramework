@@ -79,26 +79,26 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "injectentity")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
-public class PaymentSaga {
+public class PaymentProcess {
 
     /**
      * Asks for payment as soon as a bike is requested.
      *
-     * @param command    the event that started this process
+     * @param event      the event that started this process
      * @param state      the process so far, or {@code null} if this is its first event
      * @param dispatcher dispatches the resulting command
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
     CompletableFuture<?> on(
-            BikeRequested command,
+            BikeRequested event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
             CommandDispatcher dispatcher
     ) {
         if (state != null && state.paymentRequested) {
             return CompletableFuture.completedFuture(null);
         }
-        var reference = RentalPaymentReference.forRental(command.rentalId());
+        var reference = RentalPaymentReference.forRental(event.rentalId());
         return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
                          .getResultMessage();
     }
@@ -222,10 +222,11 @@ public class PaymentSaga {
      * Note where the two contexts meet. Rental events are selected by the {@code rentalId} tag; payment events by the
      * {@code paymentReference} tag, whose value happens to be that same rental identifier. The payment context has no
      * idea, and the rental context has no idea. Knowing it is exactly what this package is for.
+     * <p>
+     * The condition is repeated here on purpose. A nested class is not covered by the one on its outer class, so
+     * without it every recipe's model would be registered at once, and Spring would reject the second for deriving
+     * the same bean name.
      */
-    // Conditional in its own right: a nested class is not covered by the condition on its outer class, so
-    // without this every recipe's entity would be registered at once and Spring would reject the second
-    // one for deriving the same bean name.
     @ConditionalOnProperty(name = "saga.recipe", havingValue = "injectentity")
     @EventSourced(idType = RentalId.class)
     private static class State {

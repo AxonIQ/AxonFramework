@@ -38,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * every test works with freshly generated identifiers, filtering to its own messages is both precise and stable.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 public final class SagaRecipeAssertions {
 

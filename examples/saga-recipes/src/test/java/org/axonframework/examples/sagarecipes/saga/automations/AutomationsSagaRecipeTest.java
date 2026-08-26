@@ -23,7 +23,7 @@ import org.axonframework.extension.springboot.test.AxonSpringBootTest;
  * Runs the shared contract against the recipe with no process class at all.
  * <p>
  * This is the most interesting run of the matrix. The same six scenarios pass, but nothing here is called
- * {@code PaymentSaga}: the behaviour emerges from six independent slices, none of which knows the others exist. It is
+ * {@code PaymentProcess}: the behaviour emerges from six independent slices, none of which knows the others exist. It is
  * the strongest evidence the module offers that "saga" names a shape of behaviour rather than a thing that has to be
  * built.
  * <p>

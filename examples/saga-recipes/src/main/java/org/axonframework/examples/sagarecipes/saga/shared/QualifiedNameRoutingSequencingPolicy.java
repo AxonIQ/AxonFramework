@@ -44,6 +44,12 @@ import java.util.Optional;
  * <p>
  * Returning {@link Optional#empty()} for an unmapped name tells the processor that the message carries no sequencing
  * requirement, which is the correct answer for an event this saga does not handle.
+ * <p>
+ * Nothing about this is specific to the example. Any component handling events from more than one context hits the
+ * same problem, and the composition policies the framework ships,
+ * {@code FallbackSequencingPolicy} and {@code HierarchicalSequencingPolicy}, both work by attempting a conversion per
+ * candidate type. Routing on a name that is available without deserializing avoids that, so this is a candidate for
+ * the framework rather than something every application should have to write.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

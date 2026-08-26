@@ -27,6 +27,7 @@ import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -85,7 +86,7 @@ public class PaymentsAwaitingConfirmation {
     PaymentsAwaitingConfirmation(
             PendingPaymentRepository pending,
             CommandGateway commandGateway,
-            @org.springframework.beans.factory.annotation.Value("${saga.deadline.payment-timeout}")
+            @Value("${saga.deadline.payment-timeout}")
             Duration paymentTimeout
     ) {
         this.pending = pending;

@@ -48,7 +48,7 @@ class ApproveRequestCommandHandlerTest {
     private final String otherRenter = "renter-" + UUID.randomUUID();
 
     @Test
-    void givenPendingRequest_whenApproveRequest_thenBikeInUse() {
+    void givenPendingRequestWhenApproveRequestThenBikeInUse() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -68,7 +68,7 @@ class ApproveRequestCommandHandlerTest {
     class Idempotency {
 
         @Test
-        void givenRequestAlreadyApproved_whenApproveRequestAgain_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyApprovedWhenApproveRequestAgainThenNoEventsAndSuccess() {
             // given
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -86,7 +86,7 @@ class ApproveRequestCommandHandlerTest {
         }
 
         @Test
-        void givenRequestAlreadyRejected_whenApproveRequest_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyRejectedWhenApproveRequestThenNoEventsAndSuccess() {
             // given the timeout rejected the request before the confirmation arrived
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -104,7 +104,7 @@ class ApproveRequestCommandHandlerTest {
         }
 
         @Test
-        void givenBikeReservedByAnotherRenter_whenApproveRequest_thenNoEventsAndSuccess() {
+        void givenBikeReservedByAnotherRenterWhenApproveRequestThenNoEventsAndSuccess() {
             // given the bike moved on to a different renter
             var bikeId = BikeId.random();
 
@@ -124,7 +124,7 @@ class ApproveRequestCommandHandlerTest {
          * with {@code EntityNotFoundException} before the injected entity was marked nullable.
          */
         @Test
-        void givenNeverRequestedBike_whenApproveRequest_thenNoEventsAndSuccess() {
+        void givenNeverRequestedBikeWhenApproveRequestThenNoEventsAndSuccess() {
             // given
             var bikeId = BikeId.random();
 

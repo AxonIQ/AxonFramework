@@ -14,19 +14,13 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.eventsourcedappend;
+package org.axonframework.examples.sagarecipes.saga.eventsourced;
 
-import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
-import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
 import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
 import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
-import org.axonframework.examples.sagarecipes.rental.BikeId;
-import org.axonframework.examples.sagarecipes.rental.RentalId;
-import org.axonframework.examples.sagarecipes.rental.RentalTags;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
 import org.axonframework.examples.sagarecipes.rental.write.approverequest.ApproveRequest;
@@ -39,14 +33,11 @@ import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentIdResolve
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
-import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -55,11 +46,12 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The same event-sourced process, recording its facts by appending them directly.
+ * The event-sourced process again, recording its facts by appending them directly instead of by sending a command.
  * <p>
- * Identical decision model and identical observable behaviour to {@code saga.eventsourced}; only the recording
- * mechanism differs. The contract test runs against both, which is what turns "these are equivalent" into something
- * the build checks rather than a claim in a comment.
+ * {@link PaymentProcess} is the other half of the pair. Both read {@link ProcessState}, share this package's events,
+ * and produce the same commands in the same order; the only difference is the two lines that write a fact down. The
+ * contract test runs against both, which is what turns "these are equivalent" into something the build checks rather
+ * than a claim in a comment.
  * <p>
  * <b>This is supported.</b> {@code EventAppender} appears in the reference guide's table of parameters available to
  * event handlers, and the parameter resolver behind it looks only at the parameter type, never at the kind of
@@ -88,7 +80,7 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "eventsourced-append")
 @SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
-public class PaymentSaga {
+public class AppendingPaymentProcess {
 
     /**
      * Asks for payment as soon as a bike is requested, and only then records that it did.
@@ -102,7 +94,7 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(
             BikeRequested event,
-            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
@@ -131,14 +123,14 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(
             PaymentConfirmed event,
-            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
-        if (state == null || state.completed) {
+        if (state == null || state.completed()) {
             return CompletableFuture.completedFuture(null);
         }
-        return dispatcher.send(new ApproveRequest(state.bikeId, state.renter))
+        return dispatcher.send(new ApproveRequest(state.bikeId(), state.renter()))
                          .getResultMessage()
                          .thenRun(() -> complete(state, Outcome.APPROVED, appender));
     }
@@ -155,7 +147,7 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(
             PaymentRejected event,
-            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
@@ -174,7 +166,7 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(
             PaymentCancelled event,
-            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
@@ -193,11 +185,11 @@ public class PaymentSaga {
     @EventHandler
     CompletableFuture<?> on(
             RequestRejected event,
-            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable State state,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
-        if (state == null || state.completed) {
+        if (state == null || state.completed()) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId())))
@@ -216,10 +208,10 @@ public class PaymentSaga {
     @CommandHandler
     CompletableFuture<?> handle(
             CancelRentalPayment command,
-            @InjectEntity @Nullable State state,
+            @InjectEntity @Nullable ProcessState state,
             CommandDispatcher dispatcher
     ) {
-        if (state == null || state.completed) {
+        if (state == null || state.completed()) {
             return CompletableFuture.completedFuture(null);
         }
         return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId())))
@@ -227,58 +219,19 @@ public class PaymentSaga {
     }
 
     private CompletableFuture<?> rejectRequest(
-            @Nullable State state,
+            @Nullable ProcessState state,
             CommandDispatcher dispatcher,
             EventAppender appender
     ) {
-        if (state == null || state.completed) {
+        if (state == null || state.completed()) {
             return CompletableFuture.completedFuture(null);
         }
-        return dispatcher.send(new RejectRequest(state.bikeId, state.renter))
+        return dispatcher.send(new RejectRequest(state.bikeId(), state.renter()))
                          .getResultMessage()
                          .thenRun(() -> complete(state, Outcome.REJECTED, appender));
     }
 
-    private void complete(State state, Outcome outcome, EventAppender appender) {
-        appender.append(new RentalPaymentProcessCompleted(state.rentalId, outcome));
-    }
-
-    /**
-     * The process, sourced from its own events. Identical to the command-translating variant's model, and sourcing
-     * through it is also what gives the appends above a real append condition.
-     */
-    @ConditionalOnProperty(name = "saga.recipe", havingValue = "eventsourced-append")
-    @EventSourced(idType = RentalId.class)
-    private static class State {
-
-        private final RentalId rentalId;
-        private final BikeId bikeId;
-        private final String renter;
-        private boolean completed;
-
-        @EntityCreator
-        State(RentalPaymentRequested event) {
-            this.rentalId = event.rentalId();
-            this.bikeId = event.bikeId();
-            this.renter = event.renter();
-        }
-
-        @EventSourcingHandler
-        void evolve(RentalPaymentProcessCompleted event) {
-            this.completed = true;
-        }
-
-        /**
-         * Selects this process's own events, and only those.
-         *
-         * @param rentalId the rental this process concerns
-         * @return the criteria selecting exactly the events this process wrote
-         */
-        @EventCriteriaBuilder
-        private static EventCriteria criteria(RentalId rentalId) {
-            return EventCriteria.havingTags(Tag.of(RentalTags.RENTAL_ID, rentalId.raw()))
-                                .andBeingOneOfTypes(RentalPaymentRequested.class.getName(),
-                                                    RentalPaymentProcessCompleted.class.getName());
-        }
+    private void complete(ProcessState state, Outcome outcome, EventAppender appender) {
+        appender.append(new RentalPaymentProcessCompleted(state.rentalId(), outcome));
     }
 }

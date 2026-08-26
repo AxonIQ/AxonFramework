@@ -40,7 +40,7 @@ class EventSourcedSagaRecipeTest extends SagaRecipeContractTest {
      * worth asserting that it actually appears.
      */
     @Test
-    void givenBikeRequested_thenTheProcessRecordsThatItAskedForPayment() {
+    void givenBikeRequestedThenTheProcessRecordsThatItAskedForPayment() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
