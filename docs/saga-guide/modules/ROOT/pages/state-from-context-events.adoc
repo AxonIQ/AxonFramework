@@ -1,12 +1,21 @@
-= State Derived From Domain Events
-:navtitle: State from domain events
-:reftext: State derived from domain events
+= State From Context Events
+:navtitle: State from context events
+:reftext: State from context events
 
 The process stores nothing. Everything it needs to know has already been recorded by one context or the other, so
 instead of keeping a copy it rebuilds the answer from those events each time a handler runs.
 
 This is the approach a Dynamic Consistency Boundary makes possible. The decision model is an ordinary
 event-sourced entity, except that its criteria spans two contexts instead of one.
+
+[NOTE]
+.Works across one context only
+====
+The process rebuilds its state from events the contexts themselves wrote, which means it has to be able to read them:
+one event store, and a tag it can select on. If any part of the process waits on something whose events are not yours,
+this approach is unavailable, and xref::state-from-process-events.adoc[state from process events] is the one that
+replaces it.
+====
 
 == When to use it
 
@@ -15,7 +24,7 @@ process's state really is implied by events that already exist.
 
 That is a real set of conditions, and it is worth checking honestly. If the payment side is a third-party provider
 whose events you merely receive, this approach is unavailable and
-xref::state-from-process-events.adoc[the process's own events] applies instead.
+xref::state-from-process-events.adoc[process events] applies instead.
 
 When the conditions do hold, this is the approach with the fewest ways to go wrong.
 
@@ -119,5 +128,5 @@ would have governed.
 == Where next
 
 If the process must record steps that produce no domain event, or you need an audit trail of the process itself, move
-to xref::state-from-process-events.adoc[state from the process's own events]. If the process turns out to be
+to xref::state-from-process-events.adoc[state from process events]. If the process turns out to be
 several unrelated reactions rather than one thing, see xref::automation-slices.adoc[automation slices].

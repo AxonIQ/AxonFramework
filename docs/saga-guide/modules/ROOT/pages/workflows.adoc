@@ -1,4 +1,4 @@
-= Workflows
+= [.advanced-framework]#Workflows#
 :navtitle: Workflows
 :reftext: Workflows
 

@@ -176,9 +176,9 @@ xref:saga-guide:ROOT:index.adoc#choosing[guide] compares the four remaining appr
 
 * xref:saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to what you have and the smallest step.
 Start here if you are porting an existing saga.
-* xref:saga-guide:ROOT:state-from-domain-events.adoc[State derived from domain events] stores nothing, if both contexts write to
+* xref:saga-guide:ROOT:state-from-context-events.adoc[State from context events] stores nothing, if both contexts write to
 one event store and their events carry a tag you can select on.
-* xref:saga-guide:ROOT:state-from-process-events.adoc[State from the process's own events] suits integration with systems whose
+* xref:saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
 events are not yours, and gives an audit trail of the process.
 * xref:saga-guide:ROOT:automation-slices.adoc[Automation slices] break the process into independent reactions, which fits
 Vertical Slice Architecture and Event Modelling.
