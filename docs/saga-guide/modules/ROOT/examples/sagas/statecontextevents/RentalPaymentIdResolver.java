@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package sagas.statedomainevents;
+package sagas.statecontextevents;
 
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.QualifiedName;

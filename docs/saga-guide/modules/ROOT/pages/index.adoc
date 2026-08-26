@@ -32,13 +32,13 @@ takes, and when to reach for each.
 ====
 This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
 the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
-version 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
+Axon Framework 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
 while you write their replacement, and covers testing and the drainage strategy. This guide does not repeat any of
 that.
 ====
 
 [TIP]
-.Reach for Workflows first if you can
+.Reach for Workflows first
 ====
 xref::workflows.adoc[[.advanced-framework]#Workflows#] are the recommended way to orchestrate a process, whatever the
 process looks like. The flow is written as a single method that reads top to bottom, so the code is close to ordinary
@@ -46,10 +46,12 @@ imperative code, and the position within it is persisted for you: no state to ke
 deadline pattern to build. Extending it later is a line in the middle of a method rather than another handler and
 another piece of state, which is why the recommendation holds for small processes as much as large ones.
 
-Two things stop that from being the only answer. Workflows are part of Axoniq Framework and need a licence, and they
-are available as a preview rather than a production release. If you are on Axon Framework, or cannot yet depend on a
-preview, the approaches on this page are a complete answer rather than a consolation: each needs nothing beyond Axon
-Framework, and each is proven by the same contract test in the example module.
+Workflows are part of Axoniq Framework and are available as a preview. Trying them is free, so it is worth doing
+before settling on anything else here.
+
+They are not the only answer, and not because of what they cost. Not everything that reacts to an event is a process
+worth writing as a flow, and the approaches on this page are the right shape when it is not. Each needs nothing beyond
+Axon Framework, and each is proven by the same contract test in the example module.
 ====
 
 [#reactions]
@@ -101,8 +103,10 @@ cannot design away, and most process bugs are a violation of one of them.
 
 === Commands a process sends must be idempotent
 
-An event processor delivers at least once. If the tracking token is not committed, the event arrives again, and the
-process reacts again. Every command it sends will therefore sometimes be sent twice.
+An event processor delivers at least once. Its position in the stream is a
+xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tracking token],
+committed once a batch of events has been handled: if that commit does not happen, the events in the batch arrive
+again and the process reacts again. Every command it sends will therefore sometimes be sent twice.
 
 The fix belongs in the receiver, not the sender. Approving an already-approved request, or cancelling an
 already-settled payment, should append nothing and report success:
@@ -348,4 +352,6 @@ recorded list, because the recording command bus accumulates across every test s
 reset by a `when` phase that event-driven scenarios do not use. And keep correlation values unique per test, since a
 value used as a tag makes one test's events visible to another test's criteria.
 
-For the timeout path, see xref::deadlines.adoc[deadlines].
+Testing the timeout path needs one extra thing: `AxonTestFixture` cannot move the clock. Write the component that
+notices overdue work so that "now" is a parameter, and the test calls it directly instead of waiting.
+xref::deadlines.adoc[The deadlines page] shows the shape.

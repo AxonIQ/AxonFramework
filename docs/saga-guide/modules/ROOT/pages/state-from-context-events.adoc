@@ -38,7 +38,7 @@ When the conditions do hold, this is the approach with the fewest ways to go wro
 
 [source,java]
 ----
-include::example$sagas/statedomainevents/RentalPaymentProcess.java[tag=state,indent=0]
+include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=state,indent=0]
 ----
 <1> Rental events are selected by the rental tag.
 <2> Payment events are selected by the payment context's own reference tag, whose value happens to be the rental
@@ -58,7 +58,7 @@ surface. Include an event type only if an evolve method actually reacts to it.
 
 [source,java]
 ----
-include::example$sagas/statedomainevents/RentalPaymentProcess.java[tag=process,indent=0]
+include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=process,indent=0]
 ----
 <1> The entity is nullable because a process that has not started yet has no events, and therefore no entity.
 <2> The bike and the renter are read back from `BikeRequested`. This single line is the whole approach: what another
@@ -89,7 +89,7 @@ events carry `rentalId`; payment events carry `paymentReference`. Neither the `i
 
 [source,java]
 ----
-include::example$sagas/statedomainevents/RentalPaymentIdResolver.java[tag=resolver,indent=0]
+include::example$sagas/statecontextevents/RentalPaymentIdResolver.java[tag=resolver,indent=0]
 ----
 <1> Routing on the qualified name reads nothing from the payload, so an event this process does not handle costs
 nothing.

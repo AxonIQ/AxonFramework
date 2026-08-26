@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package sagas.statedomainevents;
+package sagas.statecontextevents;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
