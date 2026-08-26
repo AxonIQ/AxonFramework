@@ -34,6 +34,7 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.VersionedType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -73,7 +74,7 @@ class SnapshottingEntityLifecycleHandlerTest {
     private record Account(String id, String name, long balance) {}
 
     private static final String ACCOUNT_ID = "account-1";
-    private static final MessageType ACCOUNT_TYPE = new MessageType("Account");
+    private static final VersionedType ACCOUNT_TYPE = VersionedType.of("Account");
 
     private static final Converter CONVERTER = new Converter() {
         @Override

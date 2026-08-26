@@ -21,6 +21,7 @@ import org.apache.avro.SchemaCompatibility;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.message.SchemaStore;
+import org.apache.avro.util.ClassSecurityValidator;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.ConverterTestSuite;
@@ -65,6 +66,24 @@ class AvroConverterTest extends ConverterTestSuite<AvroConverter> {
     private static final GenericRecordToByteArrayConverter toByteArrayConverter = new GenericRecordToByteArrayConverter();
 
     private SchemaStore.Cache store;
+
+    private static ClassSecurityValidator.ClassSecurityPredicate originalGlobalValidator;
+
+    @BeforeAll
+    static void trustComplexObjectSchema() {
+        originalGlobalValidator = ClassSecurityValidator.getGlobal();
+        ClassSecurityValidator.setGlobal(
+                ClassSecurityValidator.composite(
+                        originalGlobalValidator,
+                        ClassSecurityValidator.builder().add(ComplexObject.class).build()
+                )
+        );
+    }
+
+    @AfterAll
+    static void restoreGlobalValidator() {
+        ClassSecurityValidator.setGlobal(originalGlobalValidator);
+    }
 
     @Override
     protected AvroConverter buildConverter() {

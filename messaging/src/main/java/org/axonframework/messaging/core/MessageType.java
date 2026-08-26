@@ -39,7 +39,7 @@ import static java.util.Objects.requireNonNull;
  * @author John Hendrikx
  * @since 5.0.0
  */
-public record MessageType(QualifiedName qualifiedName, String version) {
+public record MessageType(QualifiedName qualifiedName, String version) implements VersionedType {
 
     /**
      * The default version of a {@code MessageType} when none is given. Set to {@code 0.0.1}.
@@ -52,7 +52,7 @@ public record MessageType(QualifiedName qualifiedName, String version) {
      * {@link QualifiedName#QualifiedName(String) QualifiedName's name} and in {@link #version}, since either
      * containing this separator would make that representation ambiguous to parse back.
      */
-    public static final String VERSION_DELIMITER = "#";
+    public static final String VERSION_DELIMITER = VersionedType.VERSION_DELIMITER;
 
     /**
      * Pattern identifying a single valid segment of a {@code MessageType}'s String representation - either the
@@ -62,7 +62,7 @@ public record MessageType(QualifiedName qualifiedName, String version) {
      * {@code VALID_STRING_REPRESENTATION_PATTERN}, so a single definition governs what is considered valid
      * everywhere.
      */
-    static final Pattern VALID_SEGMENT = Pattern.compile("(?!\\s*$)[^#]+");
+    private static final Pattern VALID_SEGMENT = Pattern.compile("(?!\\s*$)[^" + VERSION_DELIMITER + "]+");
 
     private static final Pattern VALID_STRING_REPRESENTATION = Pattern.compile(
             "^(?<qualifiedName>" + VALID_SEGMENT.pattern() + ")" + VERSION_DELIMITER
@@ -71,19 +71,13 @@ public record MessageType(QualifiedName qualifiedName, String version) {
 
     /**
      * Constructor validating that the given {@code qualifiedName} is non-null, and that {@code version} is
-     * non-null, not blank, and does not contain the hash ({@code #}) used as version delimiter.
+     * non-null, not blank, and does not contain the {@link VersionedType#VERSION_DELIMITER}.
      */
     public MessageType {
         requireNonNull(qualifiedName, "The qualifiedName cannot be null.");
         requireNonNull(version, "The version is unsupported because it is null.");
 
-        if (!VALID_SEGMENT.matcher(version).matches()) {
-            throw new IllegalArgumentException(
-                    "The version [" + version + "] is unsupported because it is blank, or contains \""
-                            + VERSION_DELIMITER + "\", which is reserved as the separator in MessageType's "
-                            + "String representation."
-            );
-        }
+        SimpleVersionedType.validateVersion(version);
     }
 
     /**
@@ -203,7 +197,7 @@ public record MessageType(QualifiedName qualifiedName, String version) {
 
     /**
      * The output of {@code MessageType#toString()} is a concatenation of the {@link #qualifiedName()} and
-     * {@link #version()}, split by means of a hash ({@code #}).
+     * {@link #version()}, split by means of the {@link VersionedType#VERSION_DELIMITER}.
      * <p>
      * Thus, if {@code #qualifiedName()} returns {@code "my.context.BusinessName"} and the {@code #version()} returns
      * {@code "1.0.5"}, the result of <b>this</b> operation would be {@code "my.context.BusinessName#1.0.5"}.

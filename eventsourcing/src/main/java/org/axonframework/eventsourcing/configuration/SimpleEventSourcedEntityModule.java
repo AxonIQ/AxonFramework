@@ -41,6 +41,7 @@ import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.VersionedType;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
 import org.axonframework.modelling.configuration.EntityMetamodelConfigurationBuilder;
@@ -203,8 +204,9 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                             .orElseThrow(() -> new IllegalStateException("A Converter must be configured to use snapshotting."));
                         SnapshotStore snapshotStore = config.getOptionalComponent(SnapshotStore.class)
                             .orElseThrow(() -> new IllegalStateException("A SnapshotStore must be configured to use snapshotting."));
-                        MessageType messageType = config.getOptionalComponent(MessageTypeResolver.class)
+                        VersionedType versionedType = config.getOptionalComponent(MessageTypeResolver.class)
                             .flatMap(mtr -> mtr.resolve(entityType))
+                            .map(mt -> VersionedType.of(mt.qualifiedName(), mt.version()))
                             .orElseThrow(() -> new IllegalStateException("A MessageTypeResolver capable of resolving " + entityType + " must be configured to use snapshotting."));
 
                         entityLifecycleHandler = new SnapshottingEntityLifecycleHandler<>(
@@ -213,7 +215,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
                             tagResolver,
                             evolver,
                             snapshotPolicy,
-                            messageType,
+                            versionedType,
                             converter,
                             entityType,
                             snapshotStore

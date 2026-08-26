@@ -38,14 +38,14 @@
         the framework version and not covered by the axoniq-framework BOM. Its version therefore has
         to be stated here explicitly, managed centrally so example modules declare it version-free.
         -->
-        <axoniq-platform-framework-client.version>5.3.0</axoniq-platform-framework-client.version>
+        <axoniq-platform-framework-client.version>5.3.1</axoniq-platform-framework-client.version>
         <!--
         Kept separate from ${revision}: that property is this reactor's own CI-friendly version and must
         stay in sync with the parent's <version>. axoniq-framework-bom ships on its own release line, so
         reusing ${revision} here let a Dependabot bump of this dependency overwrite the reactor's own
         version instead.
         -->
-        <axoniq-framework.version>5.3.0</axoniq-framework.version>
+        <axoniq-framework.version>5.3.1</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>

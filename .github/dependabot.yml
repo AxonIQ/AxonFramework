@@ -22,6 +22,7 @@ updates:
   directories:
     - "/"
     - "!/examples/university-java-springboot-4"
+    - "!/extensions/spring/spring-boot-compatibility-tests/spring-boot-4"
   schedule:
     interval: weekly
     day: "sunday"
@@ -50,6 +51,27 @@ updates:
 
 - package-ecosystem: maven
   directory: "/examples/university-java-springboot-4"
+  schedule:
+    interval: weekly
+    day: "sunday"
+  open-pull-requests-limit: 5
+  labels:
+    - "Type: Dependency Upgrade"
+    - "Priority 1: Must"
+  milestone: 138
+  groups:
+    maven-dependencies:
+      update-types:
+        - "patch"
+        - "minor"
+        - "major"
+
+# Excluded from the general "/" maven entry above (which ignores Spring Boot 4.x) so this Spring Boot 4
+# compatibility module's default version keeps getting bumped to new Spring Boot 4 patch/minor releases on
+# its own cadence. The spring-boot-compatibility CI workflow additionally tests other 4.x versions directly via
+# -Dspring.boot.version overrides in its matrix, independent of what this module's pom.xml defaults to.
+- package-ecosystem: maven
+  directory: "/extensions/spring/spring-boot-compatibility-tests/spring-boot-4"
   schedule:
     interval: weekly
     day: "sunday"

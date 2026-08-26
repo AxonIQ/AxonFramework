@@ -30,7 +30,7 @@
     <description>Plain Java Example application for demo and integration testing.</description>
 
     <properties>
-        <jackson.version>2.22.1</jackson.version>
+        <jackson.version>2.22.2</jackson.version>
     </properties>
 
     <dependencyManagement>
@@ -91,12 +91,12 @@
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
-            <version>3.8.6</version>
+            <version>3.8.7</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.6.2</version>
+            <version>1.6.3</version>
         </dependency>
 
 
