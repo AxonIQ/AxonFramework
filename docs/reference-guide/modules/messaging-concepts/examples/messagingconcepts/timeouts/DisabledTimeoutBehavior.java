@@ -13,27 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package messagingconcepts.timeouts;
 
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.timeout.TaskTimeoutSettings;
+import org.axonframework.messaging.core.timeout.HandlerTimeoutConfiguration;
 import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfiguration;
 
-import java.util.Map;
+class DisabledTimeoutBehavior {
 
-class ProcessingContextTimeoutConfiguration {
-
-    // tag::processing-context-timeout-config[]
+    // tag::disable-timeout-behavior[]
     public void configureTimeoutBehavior(MessagingConfigurer configurer) {
-        configurer.componentRegistry(cr -> cr.registerComponent(
-                TimeoutUnitOfWorkFactoryConfiguration.class,
-                c -> new TimeoutUnitOfWorkFactoryConfiguration(
-                        new TaskTimeoutSettings(30000, 25000, 1000), // command bus
-                        new TaskTimeoutSettings(30000, 25000, 1000), // query bus
-                        new TaskTimeoutSettings(30000, 25000, 1000), // event processors without specific settings
-                        Map.of()                                     // settings per named event processor
+        configurer.componentRegistry(
+                cr -> cr.registerComponent(
+                        TimeoutUnitOfWorkFactoryConfiguration.class,
+                        c -> TimeoutUnitOfWorkFactoryConfiguration.DISABLED
+                ).registerComponent(
+                        HandlerTimeoutConfiguration.class,
+                        c -> HandlerTimeoutConfiguration.DISABLED
                 )
-        ));
+        );
     }
-    // end::processing-context-timeout-config[]
+    // end::disable-timeout-behavior[]
 }
