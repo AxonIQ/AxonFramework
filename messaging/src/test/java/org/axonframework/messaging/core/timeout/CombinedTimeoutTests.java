@@ -31,6 +31,7 @@ import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -38,9 +39,9 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The different timeout components, {@link TimeoutWrappedMessageHandlingMember} and
- * {@link UnitOfWorkTimeoutInterceptorBuilder} are tested in isolation, but this test class combines them to ensure that
- * the timeout behavior works as expected when both are used together.
+ * The different timeout components, {@link TimeoutWrappedMessageHandlingMember} and {@link TimeoutUnitOfWorkFactory}
+ * are tested in isolation, but this test class combines them to ensure that the timeout behavior works as expected when
+ * both are used together.
  */
 class CombinedTimeoutTests {
 
@@ -60,9 +61,9 @@ class CombinedTimeoutTests {
             Thread.sleep(200);
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(500);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -79,9 +80,9 @@ class CombinedTimeoutTests {
             Thread.sleep(200);
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(100);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -98,9 +99,9 @@ class CombinedTimeoutTests {
             }
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(500);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -117,9 +118,9 @@ class CombinedTimeoutTests {
             }
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(500);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -136,9 +137,9 @@ class CombinedTimeoutTests {
             }
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(300);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -155,9 +156,9 @@ class CombinedTimeoutTests {
             }
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(300);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
@@ -171,9 +172,9 @@ class CombinedTimeoutTests {
             Thread.currentThread().interrupt();
             return null;
         });
-        UnitOfWorkTimeoutInterceptorBuilder interceptor = createTimeoutInterceptor(100000);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100000);
 
-        CompletableFuture<?> result = doExecution(interceptor, mhm);
+        CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(InterruptedException.class, result.exceptionNow());
@@ -181,12 +182,12 @@ class CombinedTimeoutTests {
     }
 
     /**
-     * Drives the given {@code mhm} through the given {@code interceptorBuilder} for a batch of two events within the
-     * same {@link UnitOfWork}, mirroring the original test's use of a two-message batch: the unit-of-work-level timeout
-     * is shared across both messages, so scenarios where it is longer than a single handler invocation still time out
-     * once the cumulative processing time of both messages exceeds it.
+     * Drives the given {@code mhm} through a {@link UnitOfWork} created by the given {@code timeoutFactory} for a batch
+     * of two events, mirroring the original test's use of a two-message batch: the unit-of-work-level timeout is shared
+     * across both messages, so scenarios where it is longer than a single handler invocation still time out once the
+     * cumulative processing time of both messages exceeds it.
      */
-    private CompletableFuture<?> doExecution(UnitOfWorkTimeoutInterceptorBuilder interceptorBuilder,
+    private CompletableFuture<?> doExecution(TimeoutUnitOfWorkFactory timeoutFactory,
                                              TimeoutWrappedMessageHandlingMember<Object> mhm) {
         EventHandler terminalHandler = (event, context) -> {
             MessageStream<?> result = mhm.handle(event, context, null);
@@ -194,12 +195,12 @@ class CombinedTimeoutTests {
             return ((MessageStream) result).ignoreEntries();
         };
         EventMessageHandlerInterceptorChain chain = new EventMessageHandlerInterceptorChain(
-                List.of(interceptorBuilder.buildEventInterceptor()), terminalHandler
+                List.of(), terminalHandler
         );
         EventMessage first = EventTestUtils.asEventMessage("first");
         EventMessage second = EventTestUtils.asEventMessage("second");
 
-        UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+        UnitOfWork uow = timeoutFactory.create(UUID.randomUUID().toString());
         return uow.executeWithResult(
                 context -> chain.proceed(first, context)
                                 .first()
@@ -218,8 +219,9 @@ class CombinedTimeoutTests {
         );
     }
 
-    private UnitOfWorkTimeoutInterceptorBuilder createTimeoutInterceptor(int timeout) {
-        return new UnitOfWorkTimeoutInterceptorBuilder(
+    private TimeoutUnitOfWorkFactory createTimeoutFactory(int timeout) {
+        return new TimeoutUnitOfWorkFactory(
+                UnitOfWorkTestUtils.SIMPLE_FACTORY,
                 "TestComponent",
                 timeout,
                 500,

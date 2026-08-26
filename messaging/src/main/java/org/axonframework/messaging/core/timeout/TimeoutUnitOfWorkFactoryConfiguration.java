@@ -19,6 +19,8 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * Configuration for the timeout settings of an entire
  * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}, per bus or event processor.
@@ -28,10 +30,35 @@ import java.util.Map;
  * performed by other interceptors and the commit of the {@code ProcessingContext} itself.
  *
  * @author Steven van Beelen
- * @see UnitOfWorkTimeoutInterceptorBuilder
+ * @see TimeoutUnitOfWorkFactory
  * @since 5.4.0
  */
-public class UnitOfWorkTimeoutConfiguration {
+public class TimeoutUnitOfWorkFactoryConfiguration {
+
+    /**
+     * The {@code TimeoutUnitOfWorkFactoryConfiguration} applied when no other
+     * {@code TimeoutUnitOfWorkFactoryConfiguration} component is registered, giving the command bus, query bus, and
+     * event processors alike a 60-second timeout, a 10-second warning threshold, and a 1-second warning interval, with
+     * no per-processor overrides.
+     * <p>
+     * These match the defaults Spring Boot auto-configuration applies through {@code TimeoutProperties}, so
+     * unit-of-work-level timeout behavior is enabled out of the box regardless of whether an application uses Spring
+     * Boot. Construct a {@code TimeoutUnitOfWorkFactoryConfiguration} explicitly, or use
+     * {@link #TimeoutUnitOfWorkFactoryConfiguration()} for a fully disabled configuration, to opt out of these
+     * defaults.
+     */
+    public static final TimeoutUnitOfWorkFactoryConfiguration DEFAULT = new TimeoutUnitOfWorkFactoryConfiguration(
+            new TaskTimeoutSettings(60_000, 10_000, 1_000),
+            new TaskTimeoutSettings(60_000, 10_000, 1_000),
+            new TaskTimeoutSettings(60_000, 10_000, 1_000),
+            Map.of()
+    );
+
+    /**
+     * {@link TimeoutUnitOfWorkFactoryConfiguration} that disables
+     * {@link org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory}-specific timeout behavior.
+     */
+    public static final TimeoutUnitOfWorkFactoryConfiguration DISABLED = new TimeoutUnitOfWorkFactoryConfiguration();
 
     /**
      * Timeout settings for the command bus.
@@ -53,16 +80,12 @@ public class UnitOfWorkTimeoutConfiguration {
      */
     private final Map<String, TaskTimeoutSettings> eventProcessor;
 
-    /**
-     * Creates a new {@code UnitOfWorkTimeoutConfiguration} with default timeout settings. This means all timeouts are
-     * disabled.
-     */
-    public UnitOfWorkTimeoutConfiguration() {
-        this(new TaskTimeoutSettings(), new TaskTimeoutSettings(), new TaskTimeoutSettings(), Map.of());
+    private TimeoutUnitOfWorkFactoryConfiguration() {
+        this(TaskTimeoutSettings.DISABLED, TaskTimeoutSettings.DISABLED, TaskTimeoutSettings.DISABLED, Map.of());
     }
 
     /**
-     * Creates a new {@code UnitOfWorkTimeoutConfiguration} with the given timeout settings.
+     * Creates a new {@code TimeoutUnitOfWorkFactoryConfiguration} with the given timeout settings.
      *
      * @param commandBus      the timeout settings for the command bus
      * @param queryBus        the timeout settings for the query bus
@@ -70,14 +93,15 @@ public class UnitOfWorkTimeoutConfiguration {
      *                        map
      * @param eventProcessor  the timeout settings for specific, named event processors, keyed by processor name
      */
-    public UnitOfWorkTimeoutConfiguration(TaskTimeoutSettings commandBus,
-                                          TaskTimeoutSettings queryBus,
-                                          TaskTimeoutSettings eventProcessors,
-                                          Map<String, TaskTimeoutSettings> eventProcessor) {
-        this.commandBus = commandBus;
-        this.queryBus = queryBus;
-        this.eventProcessors = eventProcessors;
-        this.eventProcessor = eventProcessor;
+    public TimeoutUnitOfWorkFactoryConfiguration(TaskTimeoutSettings commandBus,
+                                                 TaskTimeoutSettings queryBus,
+                                                 TaskTimeoutSettings eventProcessors,
+                                                 Map<String, TaskTimeoutSettings> eventProcessor) {
+        this.commandBus = requireNonNull(commandBus, "The commandBus timeout properties may not be null.");
+        this.queryBus = requireNonNull(queryBus, "The queryBus timeout properties may not be null.");
+        this.eventProcessors =
+                requireNonNull(eventProcessors, "The eventProcessors timeout properties may not be null.");
+        this.eventProcessor = requireNonNull(eventProcessor, "The eventProcessor timeout properties may not be null.");
     }
 
     /**

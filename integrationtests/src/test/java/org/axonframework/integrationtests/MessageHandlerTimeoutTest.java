@@ -24,7 +24,7 @@ import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.timeout.AxonTimeoutException;
 import org.axonframework.messaging.core.timeout.HandlerTimeoutConfiguration;
 import org.axonframework.messaging.core.timeout.TaskTimeoutSettings;
-import org.axonframework.messaging.core.timeout.UnitOfWorkTimeoutConfiguration;
+import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfiguration;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventGateway;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * Integration test validating that handler-level ({@link HandlerTimeoutConfiguration}) and unit-of-work-level
- * ({@link UnitOfWorkTimeoutConfiguration}) timeout behavior works end-to-end through real command, query, and event
+ * ({@link TimeoutUnitOfWorkFactoryConfiguration}) timeout behavior works end-to-end through real command, query, and event
  * dispatch, wired up automatically through {@code ConfigurationEnhancers}.
  * <p>
  * The command/query {@code handlerLevelTimeoutFiresBeforeUnitOfWorkTimeout} scenarios may, rarely, fail with a checked
@@ -69,10 +69,10 @@ class MessageHandlerTimeoutTest {
      * Every test dispatches through this single-use, per-test thread instead of the shared JUnit test-execution
      * thread.
      * <p>
-     * A timeout scenario deliberately interrupts the thread handling it, and {@link UnitOfWorkTimeoutConfiguration}'s
+     * A timeout scenario deliberately interrupts the thread handling it, and {@link TimeoutUnitOfWorkFactoryConfiguration}'s
      * cleanup of its own scheduled interrupt is best-effort (dispatched via
      * {@code ProcessingContext#onError}/{@code #runOnAfterCommit}, not guaranteed to run before a caller observes the
-     * result - see {@code UnitOfWorkTimeoutInterceptorBuilder}'s javadoc). In production that rarely matters, since a
+     * result - see {@code TimeoutUnitOfWorkFactory}'s javadoc). In production that rarely matters, since a
      * thread is rarely reused for unrelated work within milliseconds of a fired timeout; but JUnit runs every test
      * method in this class on the very same thread, sequentially, which is exactly the pathological case. Giving each
      * test its own thread, discarded in {@link #tearDown()}, means a late-firing leftover interrupt lands on a thread
@@ -85,8 +85,8 @@ class MessageHandlerTimeoutTest {
         dispatchThread = Executors.newSingleThreadExecutor();
         MessagingConfigurer configurer = MessagingConfigurer.create();
         configurer = configurer.componentRegistry(
-                cr -> cr.registerComponent(UnitOfWorkTimeoutConfiguration.class,
-                                           c -> new UnitOfWorkTimeoutConfiguration(
+                cr -> cr.registerComponent(TimeoutUnitOfWorkFactoryConfiguration.class,
+                                           c -> new TimeoutUnitOfWorkFactoryConfiguration(
                                                    SHARED_UOW_SETTINGS,
                                                    SHARED_UOW_SETTINGS,
                                                    SHARED_UOW_SETTINGS,
