@@ -55,7 +55,8 @@ and the renter, so this slice has to look them up:
 include::example$sagas/verticalslices/VerticalSlices.java[tag=with-lookup,indent=0]
 ----
 <1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
-policy is enough and no custom policy is needed.
+policy is enough and no custom policy is needed. See xref::sequencing.adoc[sequencing] for the case a single process
+class faces, where two sides name the correlation differently.
 <2> The lookup is injected like any other entity.
 <3> A three-line decision model, selecting the single event that answers the question.
 

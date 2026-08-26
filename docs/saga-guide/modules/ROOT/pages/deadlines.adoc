@@ -24,8 +24,8 @@ your domain.
 * A *projection* of outstanding work, built purely from events.
 * A *sweep* that reads that projection and sends a command.
 
-.The timeout as its own event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank]
-image::EventModeling_PaymentDeadline.png[The payment timeout modelled as a projection and a sweep on prooph board]
+.The timeout as its own event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
+image::EventModeling_PaymentDeadline.png[The payment timeout modelled as a projection and a sweep on prooph board,link=self,window=_blank]
 
 Both halves are on the left of the model. `PaymentPrepared` puts a row on the green projection, and the purple sweeper
 reads it. Neither writes anything the other depends on, which is the property the rest of this page keeps returning to.
