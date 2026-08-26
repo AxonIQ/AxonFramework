@@ -12,7 +12,7 @@ folders:
 - [
   `./identifier-generation-guide/`](identifier-generation-guide) : [Guide that covers several considerations with regard to identifier generation in Axon Framework-based applications.](https://docs.axoniq.io/identifier-generation-guide/latest)
 - [
-  `./message-handler-tunning-guide/`](message-handler-customization-guide) : [Guide that covers the message handler tuning in your Axon Framework applications.](https://docs.axoniq.io/message-handler-customization-guide/latest)
+  `./message-handler-customization-guide/`](message-handler-customization-guide) : [Guide that covers the message handler tuning in your Axon Framework applications.](https://docs.axoniq.io/message-handler-customization-guide/latest)
 - [
   `./meta-annotations-guide/`](meta-annotations-guide) : [Guide that covers several considerations with regard to creating Meta Annotations for Axon Framework-based applications.](https://docs.axoniq.io/meta-annotations-guide/latest)
 - [
