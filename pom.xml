@@ -40,7 +40,6 @@
         <module>integrationtests</module>
 
         <module>stash/legacy</module>
-        <module>stash/legacy-saga</module>
 
         <module>docs/_samples</module>
 
@@ -183,7 +182,6 @@
                     <excludeArtifacts>
                         <excludeArtifact>axon-docs-samples</excludeArtifact>
                         <excludeArtifact>axon-legacy</excludeArtifact>
-                        <excludeArtifact>axon-legacy-saga</excludeArtifact>
                     </excludeArtifacts>
                 </configuration>
             </plugin>
