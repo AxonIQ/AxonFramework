@@ -26,8 +26,8 @@ concept. It is the one design property this module cannot afford to lose by acci
 Both contexts follow **Vertical Slice Architecture**, like `examples/university-java`. There is no service layer and
 no shared domain class. Each command gets a `write/<slicename>/` folder holding the command, its handler, and the
 handler's own decision model, so a slice sources exactly the events its own rule needs rather than sharing one
-aggregate-shaped model with every other slice. The `automations` recipe extends the same idea to the process itself,
-one folder per reaction.
+aggregate-shaped model with every other slice. The `verticalslices` recipe extends the same idea to the process itself,
+one folder per reaction (an automation slice, in Event Modelling terms).
 
 ## The recipes
 
@@ -39,11 +39,11 @@ Exactly one runs at a time, chosen with `saga.recipe`:
 | `injectentity`        | nowhere, derived from both contexts' events           | `saga/injectentity`     |
 | `eventsourced`        | its own events, recorded through a command            | `saga/eventsourced`     |
 | `eventsourced-append` | its own events, appended from the event handler       | `saga/eventsourced`     |
-| `automations`         | mostly nowhere, six independent slices                | `saga/automations`      |
+| `verticalslices`      | mostly nowhere, six independent slices                | `saga/verticalslices`   |
 
 Read the class-level Javadoc of each `PaymentProcess` for what it buys, what it costs, and how the process ends. The
 two event-sourced variants share a package, their events, and their `ProcessState`; they differ only in the two lines
-that write a fact down. `automations` documents itself in `package-info.java`, because it has no central class to
+that write a fact down. `verticalslices` documents itself in `package-info.java`, because it has no central class to
 document.
 
 `saga/deadline` sits outside the recipes. It replaces Axon Framework 4's `DeadlineManager` with a projection of outstanding
@@ -64,7 +64,7 @@ Everything runs in memory. No Axon Server and no database are required.
 ```
 
 Axon Server is started through `examples/docker-compose.yaml`. Switch recipes with
-`--saga.recipe=automations` and the observable behaviour should not change, which is the point.
+`--saga.recipe=verticalslices` and the observable behaviour should not change, which is the point.
 
 ## What to read first
 

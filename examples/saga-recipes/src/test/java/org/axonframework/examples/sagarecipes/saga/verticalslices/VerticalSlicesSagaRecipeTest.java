@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.automations;
+package org.axonframework.examples.sagarecipes.saga.verticalslices;
 
 import org.axonframework.examples.sagarecipes.saga.SagaRecipeContractTest;
 import org.axonframework.extension.springboot.test.AxonSpringBootTest;
@@ -30,7 +30,7 @@ import org.axonframework.extension.springboot.test.AxonSpringBootTest;
  * Nothing is added below, because there is nothing recipe-specific to assert. Two of the slices keep no state and the
  * rest keep only a read-through lookup, so the observable contract is the whole story.
  */
-@AxonSpringBootTest(properties = "saga.recipe=automations")
-class AutomationsSagaRecipeTest extends SagaRecipeContractTest {
+@AxonSpringBootTest(properties = "saga.recipe=verticalslices")
+class VerticalSlicesSagaRecipeTest extends SagaRecipeContractTest {
 
 }

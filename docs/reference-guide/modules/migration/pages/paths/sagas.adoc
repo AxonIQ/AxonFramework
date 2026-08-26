@@ -186,7 +186,7 @@ Start here if you are porting an existing saga.
 one event store and their events carry a tag you can select on.
 * xref:saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
 events are not yours, and gives an audit trail of the process.
-* xref:saga-guide:ROOT:automation-slices.adoc[Automation slices] break the process into independent reactions, which fits
+* xref:saga-guide:ROOT:vertical-slices.adoc[Vertical slices] break the process into independent reactions, which fits
 Vertical Slice Architecture and Event Modelling.
 
 [#deadlines]

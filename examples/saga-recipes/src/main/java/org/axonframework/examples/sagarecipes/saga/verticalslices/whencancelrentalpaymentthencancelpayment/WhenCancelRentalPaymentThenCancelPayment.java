@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.automations.whencancelrentalpaymentthencancelpayment;
+package org.axonframework.examples.sagarecipes.saga.verticalslices.whencancelrentalpaymentthencancelpayment;
 
 import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
 import org.axonframework.examples.sagarecipes.saga.shared.CancelRentalPayment;
@@ -35,14 +35,14 @@ import java.util.concurrent.CompletableFuture;
  * ever be a stale copy of that answer. Checking here would duplicate a decision that is not this slice's to make, and
  * would still need the payment context's check to be correct under a race.
  * <p>
- * So the whole slice is a translation: a rental-shaped request becomes a payment-shaped one. That is all an
- * automation ever is.
+ * So the whole slice is a translation: a rental-shaped request becomes a payment-shaped one. That is all a slice like
+ * this ever is.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component
-@ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "verticalslices")
 public class WhenCancelRentalPaymentThenCancelPayment {
 
     /**

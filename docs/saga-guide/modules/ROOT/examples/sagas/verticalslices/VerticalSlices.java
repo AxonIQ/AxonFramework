@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package sagas.automationslices;
+package sagas.verticalslices;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
@@ -41,9 +41,9 @@ import static sagas.shared.RentalPaymentApi.RENTAL_ID;
 import static sagas.shared.RentalPaymentApi.paymentReferenceFor;
 
 /**
- * Taking the process apart into independent automation slices.
+ * Taking the process apart into independent vertical slices (automation slices in Event Modelling terms).
  */
-public class AutomationSlices {
+public class VerticalSlices {
 
     // tag::stateless[]
     @Component

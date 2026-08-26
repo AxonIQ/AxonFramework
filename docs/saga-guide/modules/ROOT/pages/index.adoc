@@ -212,7 +212,7 @@ flowchart TD
     WORKFLOW{"Workflows available to you?"}
     USEWF["Write the flow as a workflow"]
     SLICES{"Do you follow<br/>Vertical Slice Architecture?"}
-    AUTOMATION["Automation slices.<br/>Each slice decides its own state."]
+    AUTOMATION["Vertical slices.<br/>Each slice decides its own state."]
     ONECLASS["One process class."]
     HOWSTATE{"How is that state held?"}
     REPO["In a repository<br/>(any number of event store contexts)"]
@@ -253,7 +253,7 @@ to keep, and extending it later is a line rather than a new handler. Many steps,
 are where the difference is largest, but there is no size below which something else is preferable.
 | A dependency and a licence, and it is a preview rather than a production release.
 
-| xref::automation-slices.adoc[Automation slices]
+| xref::vertical-slices.adoc[Vertical slices]
 | Vertical Slice Architecture and Event Modelling. The best transactional profile, since each slice does exactly one
 thing, and each picks its own answer to the state question below.
 | No single place describes the process any more. Only an event model shows it whole.
@@ -321,6 +321,28 @@ Every page in this section implements the same process, so the approaches can be
 for a bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the
 request is turned down and the bike released.
 
+.The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank]
+image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board]
+
+Read the model left to right. The blue stickies are commands, the orange ones events, the green ones information a
+reader can see, and the purple ones automations: the process reacting to something and sending a command because of it.
+The bottom two rows are the two bounded contexts, and the row between them is where every command enters and every view
+leaves.
+
+The flow it draws is this. An operator registers a bike, which is what gives the renter a list to pick from. The renter
+requests one, and the bike is held but not theirs: `BikeRequested` is a reservation, not a rental. The first automation
+reacts to it by asking the payment side to prepare a payment, the renter pays, and a second automation turns
+`PaymentConfirmed` into `ApproveRequest`, which is the moment the rental becomes real. Returning the bike ends it.
+
+Everything after that is the same story going wrong. A refused payment releases the bike; a released bike calls off its
+payment, so a rental turned down on grounds of its own cannot leave money outstanding; and a cancelled payment releases
+the bike in turn. Those three reactions are why the process exists at all, and following them across the model is the
+quickest way to see how little each one does.
+
+Note what is *not* on the model: nothing labelled "saga". The process is the purple row, and how much of it lives in one
+class is the question the rest of this guide answers. Timeouts are not here either, since nothing on this model notices
+that a payment simply never arrived. That is a model of its own, on xref::deadlines.adoc[the deadlines page].
+
 The full, runnable source lives in `examples/saga-recipes` in the
 link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank]. Every
 approach there is exercised by one shared contract test, so they are demonstrably interchangeable rather than merely
@@ -352,7 +374,7 @@ Where every event a component handles carries the correlation under the same pro
 
 [source,java]
 ----
-include::example$sagas/automationslices/AutomationSlices.java[tag=stateless,indent=0]
+include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0]
 ----
 <1> All events of one rental are handled sequentially; different rentals still run in parallel.
 <2> Returning the result is what makes the processor await the command.

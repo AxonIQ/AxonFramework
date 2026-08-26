@@ -144,4 +144,4 @@ would have governed.
 
 If the process must record steps that produce no domain event, or you need an audit trail of the process itself, move
 to xref::state-from-process-events.adoc[state from process events]. If the process turns out to be
-several unrelated reactions rather than one thing, see xref::automation-slices.adoc[automation slices].
+several unrelated reactions rather than one thing, see xref::vertical-slices.adoc[vertical slices].

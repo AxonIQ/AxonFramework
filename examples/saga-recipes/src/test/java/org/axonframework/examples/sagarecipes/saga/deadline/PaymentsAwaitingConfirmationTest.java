@@ -54,7 +54,7 @@ import static org.awaitility.Awaitility.await;
 @AxonSpringBootTest(properties = {
         // A recipe has to be active, for the mundane reason that the sweep dispatches a command and a command needs a
         // handler. Which recipe is immaterial.
-        "saga.recipe=automations",
+        "saga.recipe=verticalslices",
         // Sweeping is global: it acts on every overdue payment it finds, including ones other tests are relying on.
         // A property set nothing else uses gives this class a Spring context, and therefore an event store, of its own.
         "saga.deadline.sweep-interval=PT2H"

@@ -1,6 +1,6 @@
 * xref::index.adoc[]
 * xref::workflows.adoc[[.advanced-framework]#Workflows#]
-* xref::automation-slices.adoc[]
+* xref::vertical-slices.adoc[]
 * xref::state-in-a-repository.adoc[]
 * xref::state-from-context-events.adoc[]
 * xref::state-from-process-events.adoc[]
