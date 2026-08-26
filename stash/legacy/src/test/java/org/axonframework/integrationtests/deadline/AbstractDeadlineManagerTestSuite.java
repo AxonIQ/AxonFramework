@@ -157,9 +157,11 @@ public abstract class AbstractDeadlineManagerTestSuite {
      */
     public abstract DeadlineManager buildDeadlineManager(Configuration configuration);
 
-    // The aggregate-based scenarios below are retained for the deadline revival, but cannot be compiled
-    // yet: the AF4 aggregate API they build on (org.axonframework.modelling.command) lives in a module that
-    // has not been folded into axon-legacy. Uncomment once those types are available here.
+    // The aggregate-based scenarios below are retained for the deadline revival, but cannot be compiled yet.
+    // Scoping a deadline to an aggregate works here through AggregateScopeDescriptor; what these scenarios
+    // additionally need is the API for declaring aggregates and invoking their handlers (AggregateLifecycle,
+    // @AggregateIdentifier, @AggregateMember, @CreationPolicy, @EntityId, @TargetAggregateIdentifier), which
+    // is not part of this module. Uncomment once those types are available here.
     // TODO #3065
 
 //    @Test
@@ -1076,8 +1078,8 @@ public abstract class AbstractDeadlineManagerTestSuite {
     }
 
     // The MyAggregate and MyEntity definitions below are retained for the deadline revival, but cannot be
-    // compiled yet: the AF4 aggregate API they build on (org.axonframework.modelling.command) lives in a
-    // module that has not been folded into axon-legacy. Uncomment once those types are available here.
+    // compiled yet: they declare aggregate state and apply events, which needs the aggregate API that is not
+    // part of this module. Uncomment once those types are available here.
     // TODO #3065
 
 //    @SuppressWarnings({"unused", "FieldCanBeLocal"})
