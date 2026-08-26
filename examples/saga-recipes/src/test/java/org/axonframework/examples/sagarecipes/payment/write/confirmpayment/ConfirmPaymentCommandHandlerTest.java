@@ -37,7 +37,7 @@ class ConfirmPaymentCommandHandlerTest {
     private AxonTestFixture fixture;
 
     @Test
-    void givenPreparedPayment_whenConfirmPayment_thenPaymentConfirmed() {
+    void givenPreparedPaymentWhenConfirmPaymentThenPaymentConfirmed() {
         // given
         var reference = PaymentReference.of("rental-20");
         var paymentId = PaymentId.random();
@@ -53,7 +53,7 @@ class ConfirmPaymentCommandHandlerTest {
     }
 
     @Test
-    void givenNoPayment_whenConfirmPayment_thenRejected() {
+    void givenNoPaymentWhenConfirmPaymentThenRejected() {
         // given no payment was ever prepared
 
         // when / then
@@ -69,7 +69,7 @@ class ConfirmPaymentCommandHandlerTest {
     class Idempotency {
 
         @Test
-        void givenPaymentAlreadyConfirmed_whenConfirmPaymentAgain_thenNoEventsAndSuccess() {
+        void givenPaymentAlreadyConfirmedWhenConfirmPaymentAgainThenNoEventsAndSuccess() {
             // given
             var reference = PaymentReference.of("rental-21");
             var paymentId = PaymentId.random();
@@ -86,7 +86,7 @@ class ConfirmPaymentCommandHandlerTest {
         }
 
         @Test
-        void givenPaymentAlreadyCancelled_whenConfirmPayment_thenIgnoredSilently() {
+        void givenPaymentAlreadyCancelledWhenConfirmPaymentThenIgnoredSilently() {
             // given the timeout won the race
             var reference = PaymentReference.of("rental-22");
             var paymentId = PaymentId.random();

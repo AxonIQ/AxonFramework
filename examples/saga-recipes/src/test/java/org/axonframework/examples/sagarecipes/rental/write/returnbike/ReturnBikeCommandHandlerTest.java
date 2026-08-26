@@ -47,7 +47,7 @@ class ReturnBikeCommandHandlerTest {
     private final String renter = "renter-" + UUID.randomUUID();
 
     @Test
-    void givenBikeInUse_whenReturnBike_thenBikeReturned() {
+    void givenBikeInUseWhenReturnBikeThenBikeReturned() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -65,7 +65,7 @@ class ReturnBikeCommandHandlerTest {
     }
 
     @Test
-    void givenBikeAlreadyReturned_whenReturnBike_thenRejected() {
+    void givenBikeAlreadyReturnedWhenReturnBikeThenRejected() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -87,7 +87,7 @@ class ReturnBikeCommandHandlerTest {
      * with {@code EntityNotFoundException} instead of the intended message.
      */
     @Test
-    void givenBikeNeverInUse_whenReturnBike_thenRejected() {
+    void givenBikeNeverInUseWhenReturnBikeThenRejected() {
         // given
         var bikeId = BikeId.random();
 

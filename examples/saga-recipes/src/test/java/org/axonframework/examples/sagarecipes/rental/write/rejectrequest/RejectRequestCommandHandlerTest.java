@@ -43,7 +43,7 @@ class RejectRequestCommandHandlerTest {
     private final String renter = "renter-" + UUID.randomUUID();
 
     @Test
-    void givenPendingRequest_whenRejectRequest_thenRequestRejected() {
+    void givenPendingRequestWhenRejectRequestThenRequestRejected() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -63,7 +63,7 @@ class RejectRequestCommandHandlerTest {
     class Idempotency {
 
         @Test
-        void givenRequestAlreadyRejected_whenRejectRequestAgain_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyRejectedWhenRejectRequestAgainThenNoEventsAndSuccess() {
             // given
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -85,7 +85,7 @@ class RejectRequestCommandHandlerTest {
          * who is already riding it.
          */
         @Test
-        void givenRequestAlreadyApproved_whenRejectRequest_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyApprovedWhenRejectRequestThenNoEventsAndSuccess() {
             // given
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -103,7 +103,7 @@ class RejectRequestCommandHandlerTest {
         }
 
         @Test
-        void givenNeverRequestedBike_whenRejectRequest_thenNoEventsAndSuccess() {
+        void givenNeverRequestedBikeWhenRejectRequestThenNoEventsAndSuccess() {
             // given
             var bikeId = BikeId.random();
 

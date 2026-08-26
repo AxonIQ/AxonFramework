@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.eventsourcedappend;
+package org.axonframework.examples.sagarecipes.saga.eventsourced;
 
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
@@ -42,7 +42,7 @@ class EventSourcedAppendSagaRecipeTest extends SagaRecipeContractTest {
      * something the codebase had no precedent for: appending an event from inside an event handler.
      */
     @Test
-    void givenBikeRequested_thenTheProcessRecordsThatItAskedForPayment() {
+    void givenBikeRequestedThenTheProcessRecordsThatItAskedForPayment() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();

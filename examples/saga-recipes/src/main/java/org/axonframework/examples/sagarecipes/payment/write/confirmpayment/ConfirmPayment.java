@@ -20,12 +20,12 @@ import org.axonframework.examples.sagarecipes.payment.PaymentId;
 import org.axonframework.modelling.annotation.TargetEntityId;
 
 /**
- * Records that a payment was paid.
+ * Declares a payment paid.
  * <p>
  * Targets the payment identifier rather than the caller's reference, because this command comes from whoever is
  * paying, and the payment identifier is what they were handed.
  *
- * @param paymentId the payment that was paid
+ * @param paymentId the payment being declared paid
  * @author Mateusz Nowak
  * @since 5.4.0
  */

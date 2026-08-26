@@ -45,7 +45,7 @@ class RequestBikeCommandHandlerTest {
     private final String otherRenter = "renter-" + UUID.randomUUID();
 
     @Test
-    void givenAvailableBike_whenRequestBike_thenBikeRequested() {
+    void givenAvailableBikeWhenRequestBikeThenBikeRequested() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -61,7 +61,7 @@ class RequestBikeCommandHandlerTest {
     }
 
     @Test
-    void givenUnregisteredBike_whenRequestBike_thenRejected() {
+    void givenUnregisteredBikeWhenRequestBikeThenRejected() {
         // given no BikeRegistered at all
         var bikeId = BikeId.random();
 
@@ -78,7 +78,7 @@ class RequestBikeCommandHandlerTest {
     class Idempotency {
 
         @Test
-        void givenSameRequestAlreadyHandled_whenRequestBikeAgain_thenNoEventsAndSuccess() {
+        void givenSameRequestAlreadyHandledWhenRequestBikeAgainThenNoEventsAndSuccess() {
             // given the exact same rental was already requested
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -95,7 +95,7 @@ class RequestBikeCommandHandlerTest {
         }
 
         @Test
-        void givenRequestAlreadyHandledAndRentalFinished_whenRequestBikeAgain_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyHandledAndRentalFinishedWhenRequestBikeAgainThenNoEventsAndSuccess() {
             // given the rental this command asks for already ran its full course
             var bikeId = BikeId.random();
             var rentalId = RentalId.random();
@@ -114,7 +114,7 @@ class RequestBikeCommandHandlerTest {
         }
 
         @Test
-        void givenRequestAlreadyHandledOnAnotherBike_whenRequestBike_thenNoEventsAndSuccess() {
+        void givenRequestAlreadyHandledOnAnotherBikeWhenRequestBikeThenNoEventsAndSuccess() {
             // given this rental id was already used, for a different bike
             var bikeA = BikeId.random();
             var bikeB = BikeId.random();
@@ -141,7 +141,7 @@ class RequestBikeCommandHandlerTest {
     class OneBikePerRenter {
 
         @Test
-        void givenRenterHoldsAnotherBike_whenRequestBike_thenRejected() {
+        void givenRenterHoldsAnotherBikeWhenRequestBikeThenRejected() {
             // given the renter already reserved a different bike
             var bikeA = BikeId.random();
             var bikeB = BikeId.random();
@@ -158,7 +158,7 @@ class RequestBikeCommandHandlerTest {
         }
 
         @Test
-        void givenRenterReturnedPreviousBike_whenRequestBike_thenAccepted() {
+        void givenRenterReturnedPreviousBikeWhenRequestBikeThenAccepted() {
             // given the renter's previous rental completed
             var bikeA = BikeId.random();
             var bikeB = BikeId.random();
@@ -180,7 +180,7 @@ class RequestBikeCommandHandlerTest {
         }
 
         @Test
-        void givenPreviousRequestRejected_whenRequestBike_thenAccepted() {
+        void givenPreviousRequestRejectedWhenRequestBikeThenAccepted() {
             // given the renter's previous request was turned down
             var bikeA = BikeId.random();
             var bikeB = BikeId.random();
@@ -201,7 +201,7 @@ class RequestBikeCommandHandlerTest {
         }
 
         @Test
-        void givenAnotherRenterHoldsTheBike_whenRequestBike_thenRejected() {
+        void givenAnotherRenterHoldsTheBikeWhenRequestBikeThenRejected() {
             // given somebody else already reserved this bike
             var bikeId = BikeId.random();
 

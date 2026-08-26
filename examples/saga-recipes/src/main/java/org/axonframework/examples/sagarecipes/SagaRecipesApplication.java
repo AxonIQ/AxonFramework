@@ -33,10 +33,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * JPA backs the two components that keep state of their own, the repository recipe and the pending-payment to-do
  * list, so both can commit in the same transaction as the tracking token. That property is the whole point of the
  * repository recipe, and an in-memory map could not demonstrate it.
- * <p>
- * Note that no {@code @EntityScan} is declared. Spring Boot already registers entities under this package, and
- * Axon's {@code JpaAutoConfiguration} adds its own through {@code @RegisterDefaultEntities}. Declaring
- * {@code @EntityScan} here would replace both sets rather than add to them.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

@@ -42,7 +42,7 @@ class CancelPaymentCommandHandlerTest {
     private AxonTestFixture fixture;
 
     @Test
-    void givenPreparedPayment_whenCancelPayment_thenPaymentCancelled() {
+    void givenPreparedPaymentWhenCancelPaymentThenPaymentCancelled() {
         // given a payment nobody has paid yet
         var reference = PaymentReference.of("rental-10");
         var paymentId = PaymentId.random();
@@ -61,7 +61,7 @@ class CancelPaymentCommandHandlerTest {
     class ArrivingTooLate {
 
         @Test
-        void givenPaymentAlreadyConfirmed_whenCancelPayment_thenIgnoredSilently() {
+        void givenPaymentAlreadyConfirmedWhenCancelPaymentThenIgnoredSilently() {
             // given the payment was paid before the timeout fired
             var reference = PaymentReference.of("rental-11");
             var paymentId = PaymentId.random();
@@ -78,7 +78,7 @@ class CancelPaymentCommandHandlerTest {
         }
 
         @Test
-        void givenPaymentAlreadyRejected_whenCancelPayment_thenIgnoredSilently() {
+        void givenPaymentAlreadyRejectedWhenCancelPaymentThenIgnoredSilently() {
             // given
             var reference = PaymentReference.of("rental-12");
             var paymentId = PaymentId.random();
@@ -95,7 +95,7 @@ class CancelPaymentCommandHandlerTest {
         }
 
         @Test
-        void givenPaymentAlreadyCancelled_whenCancelPaymentAgain_thenIgnoredSilently() {
+        void givenPaymentAlreadyCancelledWhenCancelPaymentAgainThenIgnoredSilently() {
             // given the sweep already cancelled this payment on an earlier pass
             var reference = PaymentReference.of("rental-13");
             var paymentId = PaymentId.random();
@@ -112,7 +112,7 @@ class CancelPaymentCommandHandlerTest {
         }
 
         @Test
-        void givenNoPaymentAtAll_whenCancelPayment_thenIgnoredSilently() {
+        void givenNoPaymentAtAllWhenCancelPaymentThenIgnoredSilently() {
             // given preparing the payment never got as far as an event
 
             // when / then the caller wanted nothing outstanding, and nothing is outstanding

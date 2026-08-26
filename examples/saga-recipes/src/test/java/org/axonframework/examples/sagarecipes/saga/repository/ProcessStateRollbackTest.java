@@ -57,7 +57,6 @@ import static org.awaitility.Awaitility.await;
  * absent row means the transaction did its job.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 @AxonSpringBootTest(properties = {
         "saga.recipe=repository",
@@ -78,13 +77,13 @@ class ProcessStateRollbackTest {
     private AxonTestFixture fixture;
 
     @Autowired
-    private PaymentSagaStateRepository repository;
+    private PaymentProcessStateRepository repository;
 
     @Autowired
     private RejectedPayments rejectedPayments;
 
     @Test
-    void givenPreparePaymentAlwaysFails_whenBikeRequested_thenTheProcessStoresNothing() {
+    void givenPreparePaymentAlwaysFailsWhenBikeRequestedThenTheProcessStoresNothing() {
         // given a rental whose PreparePayment the interceptor will reject
         var bikeId = BikeId.random();
         var rentalId = RentalId.of(DOOMED_RENTAL);

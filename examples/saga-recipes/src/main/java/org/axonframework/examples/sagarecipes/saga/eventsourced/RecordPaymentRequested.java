@@ -27,7 +27,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  * A command that exists only to record a fact is a fair thing to be suspicious of. It is here because Event Modelling
  * asks that every event be produced by a command, which keeps the process's own write on the model as a write slice
  * rather than as a side effect hidden inside an event handler. The alternative is
- * {@code saga.eventsourcedappend}, which appends directly and is shorter.
+ * {@code saga.eventsourced}, which appends directly and is shorter.
  *
  * @param rentalId the rental being paid for
  * @param bikeId   the bike it concerns

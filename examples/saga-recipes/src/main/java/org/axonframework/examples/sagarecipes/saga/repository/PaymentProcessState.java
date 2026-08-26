@@ -38,7 +38,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
  */
 @Entity
 @Table(name = "saga_recipe_rental_payment_process")
-public class PaymentSagaState {
+public class PaymentProcessState {
 
     @Id
     private String rentalId;
@@ -51,10 +51,10 @@ public class PaymentSagaState {
     /**
      * Required by JPA.
      */
-    protected PaymentSagaState() {
+    protected PaymentProcessState() {
     }
 
-    private PaymentSagaState(RentalId rentalId, BikeId bikeId, String renter) {
+    private PaymentProcessState(RentalId rentalId, BikeId bikeId, String renter) {
         this.rentalId = rentalId.raw();
         this.bikeId = bikeId.raw();
         this.renter = renter;
@@ -68,8 +68,8 @@ public class PaymentSagaState {
      * @param renter   who is renting
      * @return the process state to store
      */
-    static PaymentSagaState paymentRequested(RentalId rentalId, BikeId bikeId, String renter) {
-        var state = new PaymentSagaState(rentalId, bikeId, renter);
+    static PaymentProcessState paymentRequested(RentalId rentalId, BikeId bikeId, String renter) {
+        var state = new PaymentProcessState(rentalId, bikeId, renter);
         state.paymentRequested = true;
         return state;
     }

@@ -31,6 +31,6 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "repository")
-interface PaymentSagaStateRepository extends JpaRepository<PaymentSagaState, String> {
+interface PaymentProcessStateRepository extends JpaRepository<PaymentProcessState, String> {
 
 }

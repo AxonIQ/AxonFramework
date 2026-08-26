@@ -56,7 +56,6 @@ import java.util.UUID;
  * that arrives too late.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 public abstract class SagaRecipeContractTest {
 
@@ -77,7 +76,7 @@ public abstract class SagaRecipeContractTest {
      * The bike rental sample application calls this {@code shouldStartSagaOnBikeRequested}.
      */
     @Test
-    void givenBikeRequested_thenPaymentIsPrepared() {
+    void givenBikeRequestedThenPaymentIsPrepared() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -97,7 +96,7 @@ public abstract class SagaRecipeContractTest {
      * The bike rental sample application calls this {@code shouldAcceptRequestOnPaymentConfirmed}.
      */
     @Test
-    void givenPaymentConfirmed_thenRequestApproved() {
+    void givenPaymentConfirmedThenRequestApproved() {
         // given a bike was requested and its payment prepared
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -120,7 +119,7 @@ public abstract class SagaRecipeContractTest {
      * The bike rental sample application calls this {@code shouldRejectRequestOnPaymentRejected}.
      */
     @Test
-    void givenPaymentRejected_thenRequestRejected() {
+    void givenPaymentRejectedThenRequestRejected() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -143,7 +142,7 @@ public abstract class SagaRecipeContractTest {
      * The payment was called off, which is how a timeout reaches the rental side.
      */
     @Test
-    void givenPaymentCancelled_thenRequestRejected() {
+    void givenPaymentCancelledThenRequestRejected() {
         // given
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -167,7 +166,7 @@ public abstract class SagaRecipeContractTest {
      * deadline. Here the process has to actively call off the payment, or it would stay outstanding forever.
      */
     @Test
-    void givenRequestRejectedOnOtherGrounds_thenPaymentIsCancelled() {
+    void givenRequestRejectedOnOtherGroundsThenPaymentIsCancelled() {
         // given a request turned down for a reason of the rental context's own
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -190,7 +189,7 @@ public abstract class SagaRecipeContractTest {
      * a payment identifier unconditionally, so a redelivered trigger created a second payment for the same rental.
      */
     @Test
-    void givenPaymentAlreadyPrepared_whenBikeRequestedIsRedelivered_thenNoSecondPreparePayment() {
+    void givenPaymentAlreadyPreparedWhenBikeRequestedIsRedeliveredThenNoSecondPreparePayment() {
         // given the payment for this rental already exists
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();
@@ -218,7 +217,7 @@ public abstract class SagaRecipeContractTest {
      * component that notices overdue payments is tested on its own, in {@code PaymentsAwaitingConfirmationTest}.
      */
     @Test
-    void givenPaymentNotConfirmed_whenAskedToGiveUp_thenRequestRejected() {
+    void givenPaymentNotConfirmedWhenAskedToGiveUpThenRequestRejected() {
         // given a payment was asked for and never arrived
         var bikeId = BikeId.random();
         var rentalId = RentalId.random();

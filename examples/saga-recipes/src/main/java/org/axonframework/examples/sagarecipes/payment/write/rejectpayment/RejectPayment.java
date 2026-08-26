@@ -20,11 +20,12 @@ import org.axonframework.examples.sagarecipes.payment.PaymentId;
 import org.axonframework.modelling.annotation.TargetEntityId;
 
 /**
- * Records that a payment was refused.
+ * Refuses a payment.
  * <p>
- * Like {@code ConfirmPayment}, this comes from the paying side, so it targets the payment identifier.
+ * Like {@link org.axonframework.examples.sagarecipes.payment.write.confirmpayment.ConfirmPayment}, this comes from
+ * the paying side, so it targets the payment identifier.
  *
- * @param paymentId the payment that was refused
+ * @param paymentId the payment being refused
  * @author Mateusz Nowak
  * @since 5.4.0
  */
