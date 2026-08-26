@@ -37,7 +37,7 @@ include::example$sagas/automationslices/AutomationSlices.java[tag=stateless,inde
 <2> Returning the result makes the processor await the command and leave the token where it is on failure.
 
 There is no check for whether payment was already asked for. There is nowhere to check, and no need: the reference is
-derived from the rental, and the payment context refuses to prepare a second payment under a reference it already
+derived from the rental, and the payment side refuses to prepare a second payment under a reference it already
 knows. Idempotency lives where the decision lives.
 
 That leaves the processor's tracking token as the entire to-do list. Everything before it has been done, everything
@@ -84,20 +84,24 @@ All three approaches from the rest of this guide are available inside a slice:
 
 | xref::state-in-a-repository.adoc[A repository]
 | The slice needs to remember something nothing else records, or you want its progress to be queryable.
-| One or many contexts
+| Any number of event store contexts
 
 | xref::state-from-context-events.adoc[Context events]
-| What the slice needs is already implied by events it can read. The lookup above is exactly this.
-| One context only
+| What the slice needs is already implied by events in the same event store context. The lookup above is exactly this.
+| One event store context only
 
 | xref::state-from-process-events.adoc[Process events]
 | The slice must record something of its own, typically because the other side's events are out of reach.
-| One or many contexts
+| Any number of event store contexts
 |===
 
-A process usually ends up mixing them. In the rental example, most slices need nothing, three read a lookup from
-context events, and none needs a repository. Had the payment side been a third-party provider whose events never
-reached this application, those three would have had to record their own instead, and only those three.
+The last column counts event store contexts, not bounded contexts, and it is the constraint an entity brings with it:
+a slice that injects one is sourcing from a single context, because no `EventCriteria` spans two.
+
+A process usually ends up mixing them, and choosing per slice is the advantage. In the rental example most slices need
+nothing, three read a lookup from context events, and none needs a repository. Had the payment side sat in a different
+Axon Server context, or been a third-party provider whose events never reached this application, those three would
+have had to record their own instead, and only those three. Nothing else about the process would change.
 
 [TIP]
 ====
@@ -128,7 +132,7 @@ payment-triggered ones are not, because a payment event knows only the reference
 
 The last slice is stateless for a different and more interesting reason. It could check whether cancelling is still
 worthwhile before passing the request on, and deliberately does not: that is a question about the payment, the payment
-context answers it authoritatively, and a check here could only ever be a stale copy of that answer. Duplicating a
+side answers it authoritatively, and a check here could only ever be a stale copy of that answer. Duplicating a
 decision that is not yours to make adds no safety and can add confusion.
 
 == Compensation

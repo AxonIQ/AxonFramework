@@ -2,35 +2,43 @@
 :navtitle: State from context events
 :reftext: State from context events
 
-The process stores nothing. Everything it needs to know has already been recorded by one context or the other, so
+The process stores nothing. Everything it needs to know has already been recorded by one side or the other, so
 instead of keeping a copy it rebuilds the answer from those events each time a handler runs.
 
-This is the approach a Dynamic Consistency Boundary makes possible. The decision model is an ordinary
-event-sourced entity, except that its criteria spans two contexts instead of one.
+This is the approach a Dynamic Consistency Boundary makes possible. The decision model is an ordinary event-sourced
+entity, except that its criteria spans two *bounded* contexts instead of one.
 
 [NOTE]
-.Works across one context only
+.Works across one event store context only
 ====
-The process rebuilds its state from events the contexts themselves wrote, which means it has to be able to read them:
-one event store, and a tag it can select on. If any part of the process waits on something whose events are not yours,
-this approach is unavailable, and xref::state-from-process-events.adoc[state from process events] is the one that
-replaces it.
+Both bounded contexts have to write their events to the same event store context. That is not a stylistic preference:
+an event-sourced entity is sourced from one context, `EventCriteria` selects within one, and no criteria spans two, so
+an entity assembled from events in two contexts cannot be injected at all.
+
+Within one context there is no limit on how many bounded contexts the criteria may reach across, which is why the
+example works: `rental` and `payment` share nothing but a partition of the event store.
+
+If the other side lives in a different Axon Server context, or in a system that is not an Axon event store,
+xref::state-from-process-events.adoc[state from process events] is the approach that replaces this one.
 ====
 
 [TIP]
 ====
-Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and they ask
-nothing of the events at all: no shared event store, no tag to select on. This page is what to write when they are not.
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and
+they ask nothing of the events at all: no shared event store context, no tag to select on. This page is what to write
+when they are not.
 ====
 
 == When to use it
 
-Use this when both contexts write to one event store, their events carry a tag the process can select on, and the
-process's state really is implied by events that already exist.
+Use this when both sides write to the same event store context, their events carry a tag the process can select on,
+and the process's state really is implied by events that already exist.
 
-That is a real set of conditions, and it is worth checking honestly. If the payment side is a third-party provider
-whose events you merely receive, this approach is unavailable and
-xref::state-from-process-events.adoc[process events] applies instead.
+That is a real set of conditions, and the first is the one to check first, because it is a deployment fact rather than
+a design choice. Two bounded contexts in one Axon Server context qualify; the same two split across two contexts do
+not, and no amount of tagging changes that. If the payment side is a third-party provider whose events you merely
+receive, this approach is likewise unavailable and xref::state-from-process-events.adoc[process events] applies
+instead.
 
 When the conditions do hold, this is the approach with the fewest ways to go wrong.
 
@@ -41,12 +49,13 @@ When the conditions do hold, this is the approach with the fewest ways to go wro
 include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=state,indent=0]
 ----
 <1> Rental events are selected by the rental tag.
-<2> Payment events are selected by the payment context's own reference tag, whose value happens to be the rental
+<2> Payment events are selected by the payment side's own reference tag, whose value happens to be the rental
 identifier.
 
-That pair of criterions is where the two contexts meet, and it is the only place in the application where they do. The
-rental context does not know payments exist; the payment context treats the reference as an opaque string. Holding
-that one piece of knowledge is what makes this class the process.
+That pair of criterions is where the two bounded contexts meet, and it is the only place in the application where they
+do. The rental side does not know payments exist; the payment side treats the reference as an opaque string. Holding
+that one piece of knowledge is what makes this class the process. Both criterions select within the same event store
+context, because a single `EventCriteria` cannot do anything else.
 
 [TIP]
 ====
@@ -115,11 +124,11 @@ a|
 * No schema, no migration, no cleanup.
 
 a|
-* Requires one event store, a tag on the correlated events, and ownership of both contexts.
+* Requires one event store context, a tag on the correlated events, and ownership of both sides.
 * Records only outcomes. A step that produces no event, such as sending an e-mail, leaves no trace and cannot be
   tracked.
 * One event-store read per handled event.
-* Needs an identifier resolver when the contexts name their correlation differently.
+* Needs an identifier resolver when the two sides name their correlation differently.
 |===
 
 [#ending]
