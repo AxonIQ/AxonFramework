@@ -1,0 +1,75 @@
+= Bike Rental Event Model
+:navtitle: Bike rental event model
+:reftext: Bike rental event model
+
+Every approach in this guide implements the same process, so they can be compared line for line: a renter asks for a
+bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the request
+is turned down and the bike released.
+
+== The domain
+
+Two bounded contexts carry the process, and neither knows the other exists.
+
+* `rental` holds bikes and rental requests. It never mentions payment.
+* `payment` is a generic payment context that can be paid for anything. It never mentions renting.
+
+The process is the only place allowed to know both, and that is what makes it the process rather than a feature of
+either side. In the example an ArchUnit test enforces the boundary, down to a check that no payment record carries a
+field named after a rental concept. It is the one design property the example cannot afford to lose by accident.
+
+The two contexts share one event store context, even though they share nothing else. That is a deployment fact, not a
+modelling one, and it is what leaves every state approach in this guide open. See
+xref::index.adoc#context-meaning[what "context" means] for why the distinction decides so much.
+
+[#example]
+== The event model
+
+.The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
+image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board,link=self,window=_blank]
+
+Read the model left to right. The blue stickies are commands, the orange ones events, the green ones information a
+reader can see, and the purple ones automations: the process reacting to something and sending a command because of it.
+The bottom two rows are the two bounded contexts, and the row between them is where every command enters and every view
+leaves.
+
+The flow it draws is this. An operator registers a bike, which is what gives the renter a list to pick from. The renter
+requests one, and the bike is held but not theirs: `BikeRequested` is a reservation, not a rental. The first automation
+reacts to it by asking the payment side to prepare a payment, the renter pays, and a second automation turns
+`PaymentConfirmed` into `ApproveRequest`, which is the moment the rental becomes real. Returning the bike ends it.
+
+Everything after that is the same story going wrong. A refused payment releases the bike; a released bike calls off its
+payment, so a rental turned down on grounds of its own cannot leave money outstanding; and a cancelled payment releases
+the bike in turn. Those three reactions are why the process exists at all, and following them across the model is the
+quickest way to see how little each one does.
+
+Note what is *not* on the model: nothing labelled "saga". The process is the purple row, and how much of it lives in one
+class is the question the rest of this guide answers. Timeouts are not here either, since nothing on this model notices
+that a payment simply never arrived. That is a model of its own, on xref::deadlines.adoc[the deadlines page].
+
+That the timeout is drawn as its own model rather than edited into this one is the real power of Event Modelling, and
+why it sits so naturally with xref::vertical-slices.adoc[Vertical Slice Architecture]: behaviour is added, not modified.
+Nothing already drawn, built or tested has to change to make room for it.
+
+== The shared events
+
+The two sides know nothing about each other, so each publishes its own events and neither imports the other's:
+
+[source,java]
+----
+include::example$sagas/shared/RentalPaymentApi.java[tag=rental-events,indent=0]
+----
+
+[source,java]
+----
+include::example$sagas/shared/RentalPaymentApi.java[tag=payment-events,indent=0]
+----
+<1> The payment side stores and echoes the caller's reference without ever interpreting it. It has no idea rentals
+exist, which is what leaves room for a process to be the only thing that knows both sides.
+
+The full, runnable source lives in `examples/saga-recipes` in the
+link:https://github.com/AxonFramework/AxonFramework/tree/main/examples/saga-recipes[Axon Framework repository,role=external,window=_blank].
+The behaviour every approach must produce is pinned by one shared
+link:https://github.com/AxonFramework/AxonFramework/blob/main/examples/saga-recipes/src/test/java/org/axonframework/examples/sagarecipes/saga/SagaRecipeContractTest.java[contract test,role=external,window=_blank],
+subclassed once per approach, so they are demonstrably interchangeable rather than merely claimed to be. Its scenarios
+mirror the Axon Framework 4 sample application's saga test, plus a redelivered trigger and a timeout that arrives after
+the payment already settled. xref::testing.adoc[Testing] covers how they are written and run.

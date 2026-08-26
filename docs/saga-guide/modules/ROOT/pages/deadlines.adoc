@@ -21,8 +21,10 @@ A deadline is two things pretending to be one: a record of work that is outstand
 notices when a piece of it has waited too long. Separating them gives you both without a scheduler that understands
 your domain.
 
-* A *projection* of outstanding work, built purely from events.
-* A *sweep* that reads that projection and sends a command.
+* A *projection* of outstanding work, built purely from events: a *to-do list*, in Event Modelling terms.
+* A *sweep* that reads that projection and sends a command. This is an Event Modelling *automation* working that
+  to-do list, the same purple building block that drives every other reaction in this guide, only triggered by what is
+  overdue rather than by an event arriving.
 
 .The timeout as its own event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
 image::EventModeling_PaymentDeadline.png[The payment timeout modelled as a projection and a sweep on prooph board,link=self,window=_blank]
@@ -36,13 +38,8 @@ release the bike. The two bounded contexts never address each other, and note wh
 `RejectRequest`. Not that a clock ran out, not that a deadline elapsed. No timeout concept crosses the boundary at all,
 which is why the rental context can stay ignorant that payments exist.
 
-The last automation closes the loop and does nothing: it cancels a payment that was cancelled three slices earlier, and
-the payment side ignores it. That is the idempotency rule from
-xref::index.adoc#two-rules[the two rules] earning its keep, and it is why two reactions racing on the same rental need
-nothing to order them.
-
 This model is drawn separately from
-xref::index.adoc#example[the one on the overview page] on purpose. The sweep is a different actor on a different
+xref::bike-rental-event-model.adoc[the bike rental event model] on purpose. The sweep is a different actor on a different
 schedule, and the projection is not part of any one approach: it is built from payment events, so it applies to every
 approach in this guide equally.
 

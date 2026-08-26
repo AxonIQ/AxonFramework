@@ -33,9 +33,11 @@ columns; a process whose correlation is derivable needs no mapping at all; a pro
 independent reactions has no life cycle to manage.
 
 So a process is written with the same building blocks as everything else: event handlers that react, command handlers
-that decide, and whichever form of state the process actually needs. This page describes the shapes that combination
-takes, and when to reach for each.
+that decide, and whichever form of state the process actually needs. The rest of this guide describes the shapes that
+combination takes and when to reach for each, starting from xref::bike-rental-event-model.adoc[a worked example] and a
+way of xref::choosing-an-approach.adoc[choosing an approach].
 
+[[context-meaning]]
 [IMPORTANT]
 .What "context" means on these pages
 ====
@@ -43,7 +45,7 @@ Two different things are called a context, and telling them apart decides which 
 pages the bare word *context* always means the second one.
 
 *Bounded context* is the modelling term: a boundary within which a term has one meaning. `rental` and `payment` in the
-example below are two bounded contexts. They are a property of your code.
+xref::bike-rental-event-model.adoc[bike rental example] are two bounded contexts. They are a property of your code.
 
 *Context* is the event store's unit of separation, and in Axon Server it is a named, logical partition of events with
 its own stream. Ordering is preserved within one context and does not exist between two, so events in different
@@ -58,7 +60,7 @@ types within a context, and there is no criteria that spans two, so a process ca
 events in more than one context. Where the other side of the process lives in a different Axon Server context, or in a
 system that is not an Axon event store at all, xref::state-from-context-events.adoc[state from context events] is
 unavailable, since it is the only approach that assembles an entity across both sides; the "Works across" column in
-<<state-approaches,the table below>> is reporting that constraint.
+xref::choosing-an-approach.adoc#state-approaches[the comparison table] is reporting that constraint.
 ====
 
 [NOTE]
@@ -84,7 +86,7 @@ Workflows are part of Axoniq Framework and are available as a preview. Trying th
 before settling on anything else here.
 
 They are not the only answer, and not because of what they cost. Not everything that reacts to an event is a process
-worth writing as a flow, and the approaches on this page are the right shape when it is not. Each needs nothing beyond
+worth writing as a flow, and the approaches in this guide are the right shape when it is not. Each needs nothing beyond
 Axon Framework, and each is proven by the same contract test in the example module.
 ====
 
@@ -94,12 +96,12 @@ Axon Framework, and each is proven by the same contract test in the example modu
 The saga and the process manager are two names for this shape, and they carry a classical distinction. A saga matches
 each event to a command in a mostly linear flow; a process manager holds the state of the sequence and branches on it
 to pick the next step. A rule of thumb: once the flow needs `if`/`else` to decide what happens next, it is a process
-manager. Axon Framework draws no line between them, because the same building blocks cover both, and the shapes below
-simply scale from the plainest event-to-command matching to the most branching.
+manager. Axon Framework draws no line between them, because the same building blocks cover both, and the shapes this
+guide describes simply scale from the plainest event-to-command matching to the most branching.
 
 That `if` is exactly what forces the first decision this guide is about. A branch has to read something the process
 remembered, so the moment you have a process to manage rather than a single reaction, you have state to keep, and the
-question becomes *where* it lives. That is what <<choosing,choosing an approach>> answers.
+question becomes *where* it lives. That is what xref::choosing-an-approach.adoc[choosing an approach] answers.
 
 [#reactions]
 == Reactions, and when one becomes a process
@@ -199,207 +201,4 @@ the command is lost, and the process waits forever. Retrying is the processor's 
 you give it back.
 ====
 
-Note that two of the approaches below sidestep this rule entirely, because they never record anything of their own.
-
-[#choosing]
-== Choosing an approach
-
-Two decisions, in order. First, where the process lives. Then, if it keeps state, how that state is held. The second
-question applies to a whole process class and to an individual slice alike.
-
-[mermaid,saga-choosing-an-approach,svg]
-----
-flowchart TD
-    START["An event arrives and<br/>something should happen"]
-    STATE{"Does the decision depend on<br/>anything that happened earlier?"}
-    REACTION["A single reaction.<br/>Event handler dispatches a command.<br/>Nothing else needed."]
-    WORKFLOW{"Workflows available to you?"}
-    USEWF["Write the flow as a workflow"]
-    SLICES{"Do you follow<br/>Vertical Slice Architecture?"}
-    AUTOMATION["Vertical slices.<br/>Each slice decides its own state."]
-    ONECLASS["One process class."]
-    HOWSTATE{"How is that state held?"}
-    REPO["In a repository<br/>(any number of event store contexts)"]
-    CONTEXT["From context events<br/>(one event store context only)"]
-    PROCESS["From process events<br/>(any number of event store contexts)"]
-
-    START --> STATE
-    STATE -->|No| REACTION
-    STATE -->|Yes| WORKFLOW
-    WORKFLOW -->|Yes| USEWF
-    WORKFLOW -->|No| SLICES
-    SLICES -->|Yes| AUTOMATION
-    SLICES -->|No| ONECLASS
-    AUTOMATION --> HOWSTATE
-    ONECLASS --> HOWSTATE
-    HOWSTATE --> REPO
-    HOWSTATE --> CONTEXT
-    HOWSTATE --> PROCESS
-----
-
-xref::workflows.adoc[[.advanced-framework]#Workflows#] come first because they are the recommended answer wherever they
-are available, and that recommendation does not depend on the process. They are the most advanced of the options and
-the easiest to write, and the gap widens as the process grows: adding a step is adding a line, where every other
-approach makes it a new handler, a new piece of state, and a new correlation to get right.
-
-The approaches after them are ordered by how little they ask of you, not by elegance. Each is a complete answer
-needing nothing beyond Axon Framework, and the same contract test in the example module holds for all of them.
-
-=== Where the process lives
-
-[cols="1,2,2",options="header"]
-|===
-| Approach | Good for | Costs
-
-| xref::workflows.adoc[[.advanced-framework]#Workflows#]
-| *Any process, and the recommended answer wherever it is available.* The flow is written as a flow, no state is yours
-to keep, and extending it later is a line rather than a new handler. Many steps, branching, compensation and waiting
-are where the difference is largest, but there is no size below which something else is preferable.
-| A dependency and a licence, and it is a preview rather than a production release.
-
-| xref::vertical-slices.adoc[Vertical slices]
-| Vertical Slice Architecture and Event Modelling. The best transactional profile, since each slice does exactly one
-thing, and each picks its own answer to the state question below.
-| No single place describes the process any more. Only an event model shows it whole.
-
-| One process class
-| Processes people reason about as a unit, and teams not organized around slices. The flow is legible in one file.
-| It couples the reactions together, so a change for one can affect another.
-|===
-
-If you are on Axoniq Framework and can accept a preview, write the process as a
-xref::workflows.adoc[[.advanced-framework]#workflow#] and stop reading here. Everything after this point is what to do
-when that is not available to you, and none of it is a workaround.
-
-[#state-approaches]
-=== How state is held
-
-These are not alternatives to the slice or the class. They are what goes *inside* one, and a slice-based process may
-use a different one per slice.
-
-The column that usually decides is the last, and it is the event store context that it counts, not the bounded
-context. A process coordinating entities whose events all live in one context can use any of the three, however many
-bounded contexts those entities belong to. A process waiting on another Axon Server context, another team's service or
-a payment provider cannot rebuild what it never receives, and is down to two.
-
-[cols="1,2,2,1",options="header"]
-|===
-| Approach | Good for | Costs | Works across
-
-| xref::state-in-a-repository.adoc[State in a repository]
-| The first thing to try. Ordinary, queryable state, and it does not care where the events it reacts to come from.
-| Two things happen per step, and they commit together only because a transaction manager is there to make them.
-| Any number of contexts
-
-| xref::state-from-context-events.adoc[State from context events]
-| Processes whose state is already implied by events in your own context. Stores nothing, so nothing can fall out of
-step.
-| Invisible: a step that produces no event leaves no trace. One extra read per event.
-| One context only, since the entity is sourced from one
-
-| xref::state-from-process-events.adoc[State from process events]
-| Long or regulated processes wanting an audit trail of the process itself, and integration with systems whose events
-are not yours.
-| The most machinery of the three: its own events, and either an extra command or an append from an event handler.
-| Any number of contexts, because it sources only its own
-|===
-
-If you want the smallest step and the fewest new ideas, start with
-xref::state-in-a-repository.adoc[state in a repository].
-
-[TIP]
-.Try removing the need for state first
-====
-Before choosing where to keep process state, check whether you need any. A common reason a process keeps state at all
-is to remember an identifier it could have computed.
-
-If the process can derive one side's correlation value from the other's, both directions are free: outbound it computes
-the value the receiver expects, inbound it reads that same value straight off the event. Several of the approaches
-above become dramatically simpler, and one of them becomes possible at all, because of that one choice.
-====
-
-[#example]
-== A worked example
-
-Every page in this section implements the same process, so the approaches can be compared line for line: a renter asks
-for a bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the
-request is turned down and the bike released.
-
-.The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
-image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board,link=self,window=_blank]
-
-Read the model left to right. The blue stickies are commands, the orange ones events, the green ones information a
-reader can see, and the purple ones automations: the process reacting to something and sending a command because of it.
-The bottom two rows are the two bounded contexts, and the row between them is where every command enters and every view
-leaves.
-
-The flow it draws is this. An operator registers a bike, which is what gives the renter a list to pick from. The renter
-requests one, and the bike is held but not theirs: `BikeRequested` is a reservation, not a rental. The first automation
-reacts to it by asking the payment side to prepare a payment, the renter pays, and a second automation turns
-`PaymentConfirmed` into `ApproveRequest`, which is the moment the rental becomes real. Returning the bike ends it.
-
-Everything after that is the same story going wrong. A refused payment releases the bike; a released bike calls off its
-payment, so a rental turned down on grounds of its own cannot leave money outstanding; and a cancelled payment releases
-the bike in turn. Those three reactions are why the process exists at all, and following them across the model is the
-quickest way to see how little each one does.
-
-Note what is *not* on the model: nothing labelled "saga". The process is the purple row, and how much of it lives in one
-class is the question the rest of this guide answers. Timeouts are not here either, since nothing on this model notices
-that a payment simply never arrived. That is a model of its own, on xref::deadlines.adoc[the deadlines page].
-
-The full, runnable source lives in `examples/saga-recipes` in the
-link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank]. Every
-approach there is exercised by one shared contract test, so they are demonstrably interchangeable rather than merely
-claimed to be.
-
-Two bounded contexts are involved, and they know nothing about each other. They share one event store context, which
-is what leaves the choice of state approach open:
-
-[source,java]
-----
-include::example$sagas/shared/RentalPaymentApi.java[tag=rental-events,indent=0]
-----
-
-[source,java]
-----
-include::example$sagas/shared/RentalPaymentApi.java[tag=payment-events,indent=0]
-----
-<1> The payment side stores and echoes the caller's reference without ever interpreting it. It has no idea rentals
-exist, which is what leaves room for a process to be the only thing that knows both sides.
-
-[#sequencing]
-== Sequencing
-
-A pooled streaming event processor handles many processes at once, so events belonging to *one* process must be kept
-in order while different instances run in parallel. Getting that wrong lets a `PaymentPrepared` still be in flight
-while the `PaymentConfirmed` that supersedes it is already handled. How to configure it, including the case where two
-bounded contexts name the correlation differently, is on xref::sequencing.adoc[its own page].
-
-[#testing]
-== Testing
-
-`AxonTestFixture` tests a process without any special support. Publish the events that lead up to the moment you care
-about, then assert on the command the process sends:
-
-[source,java]
-----
-fixture.given()
-       .events(new BikeRequested(bikeId, renter, rentalId),
-               new PaymentPrepared(paymentId, PRICE, paymentReferenceFor(rentalId)),
-               new PaymentConfirmed(paymentId, paymentReferenceFor(rentalId)))
-       .then()
-       .await(result -> result.commandsSatisfy( // <1>
-               commands -> assertThat(payloadsOf(commands)).contains(new ApproveRequest(bikeId, renter))
-       ), Duration.ofSeconds(5));
-----
-<1> `await` is required: a pooled streaming processor runs on its own threads, so the command has not been sent yet
-when the given phase returns.
-
-Two details save time. Filter assertions to the identifiers the test generated rather than asserting on the exact
-recorded list, because the recording command bus accumulates across every test sharing a Spring context and is only
-reset by a `when` phase that event-driven scenarios do not use. And keep correlation values unique per test, since a
-value used as a tag makes one test's events visible to another test's criteria.
-
-Testing the timeout path needs one extra thing: `AxonTestFixture` cannot move the clock. Write the component that
-notices overdue work so that "now" is a parameter, and the test calls it directly instead of waiting.
-xref::deadlines.adoc[The deadlines page] shows the shape.
+Note that two of the state approaches sidestep this rule entirely, because they never record anything of their own.

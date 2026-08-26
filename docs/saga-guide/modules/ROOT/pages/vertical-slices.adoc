@@ -168,8 +168,8 @@ draw on a whiteboard as a unit, then scattering it across six files hides someth
 independent rules that happen to concern the same identifier, this arrangement tells the truth and a process class does
 not.
 
-It is worth taking "only an event model shows it whole" literally rather than as a figure of speech.
-xref::index.adoc#example[The model on the overview page] is that whole view: every slice on this page is one purple
+It is worth taking "only an event model shows it whole" literally rather than as a figure of speech. The
+xref::bike-rental-event-model.adoc[bike rental event model] is that whole view: every slice on this page is one purple
 sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback is largely
 paid for already. If it does not, the six files really are the only description there is.
 
