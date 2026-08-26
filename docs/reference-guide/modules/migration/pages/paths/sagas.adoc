@@ -148,7 +148,8 @@ decides which approaches are even available to you.
 ====
 
 [#workflows]
-== [.advanced-framework]#Workflows#, the recommended replacement
+[.axoniq-feature]
+== Workflows, the recommended replacement
 
 The recommended replacement for sagas are xref:saga-guide:ROOT:workflows.adoc[Workflows]. They are the recommended way
 to orchestrate a process, and the closest thing to a like-for-like successor to a saga: the flow is written as a single

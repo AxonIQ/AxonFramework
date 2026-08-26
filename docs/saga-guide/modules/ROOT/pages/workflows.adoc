@@ -1,4 +1,5 @@
-= [.advanced-framework]#Workflows#
+[.axoniq-feature]
+= Workflows
 :navtitle: Workflows
 :reftext: Workflows
 
