@@ -7,14 +7,17 @@ state, a command. Workflows take the opposite position. The process is written a
 top to bottom, and the machinery that lets it survive a restart is provided rather than assembled.
 
 *This is the recommended way to orchestrate a business process, and the first option to consider.* Orchestration is
-what a workflow is for, and writing the flow as a flow removes most of what the other pages spend their length on. The
-reason those pages exist is that a workflow is not available to everyone:
+what a workflow is for, and writing the flow as a flow removes most of what the other pages spend their length on.
 
-* Workflows are part of Axoniq Framework, not Axon Framework, and require an Axoniq licence for production use.
-* They are available as a preview rather than a production release.
+The other pages exist because not everything that reacts to events is a process worth writing as a flow. A handful of
+independent reactions is better modelled as a handful of independent reactions, and forcing it into one method buys a
+centre it never needed. Where there genuinely is a flow, this is the page.
 
-If either of those rules them out for you, pick one of the approaches on the following pages. They are complete
-solutions using nothing beyond Axon Framework, not stopgaps waiting for a licence.
+[NOTE]
+====
+Workflows are part of Axoniq Framework rather than Axon Framework, and are available as a preview rather than a
+production release. Trying them out is free; running them in production needs an Axoniq licence.
+====
 
 Consult the
 link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Workflows documentation,role=external,window=_blank]
@@ -42,7 +45,8 @@ The consequences follow from that inversion:
   flow is the state, and it is persisted for you.
 * *Waiting becomes a first-class concept.* A timeout is part of the flow rather than a projection and a sweep, so
   xref::deadlines.adoc[the deadline pattern] is not needed.
-* *You take on a dependency and a licence.* This is the trade, and it is the reason the other four approaches exist.
+* *You take on a dependency.* Workflows live in Axoniq Framework, so the process is written against that rather than
+  against Axon Framework alone.
 
 == When it is the right answer
 
@@ -54,13 +58,12 @@ middle of a method. Adding one to any of the other approaches means a new handle
 information, and a correlation to get right, all of it spread across files. A process written as a workflow starts
 easier and stays easier, and the gap widens with every step.
 
-Availability is therefore the only question, and it is decided before any judgement about the process:
+What does decide against a workflow is the process not being one. If what you have is a set of reactions that happen to
+share a subject, xref::automation-slices.adoc[automation slices] keep them independent, and a workflow would give them a
+centre they do not need. That is a judgement about the shape of the work, not about the framework you are on.
 
-* If you cannot take an Axoniq licence, the question is settled. The other approaches need nothing beyond Axon
-  Framework.
-* If you are on Axon Framework rather than Axoniq Framework, workflows are not available to you today, and something
-  from the following pages is what you will write.
-* If a preview dependency is not acceptable in your production build, the same applies until the release lands.
+Practically, a preview dependency has to be acceptable in your build, and production use needs a licence. Neither
+affects trying it.
 
 The bike rental example running through the rest of this guide is deliberately not written as a workflow. That is so
 the other approaches can be compared line for line against the same process, not a suggestion that a process this small

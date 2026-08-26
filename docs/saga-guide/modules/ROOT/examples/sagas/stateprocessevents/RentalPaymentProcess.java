@@ -33,7 +33,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import sagas.shared.RentalPaymentApi.BikeRequested;
 import sagas.shared.RentalPaymentApi.PreparePayment;
-import sagas.statedomainevents.RentalPaymentIdResolver;
+import sagas.statecontextevents.RentalPaymentIdResolver;
 
 import java.util.concurrent.CompletableFuture;
 
