@@ -1,4 +1,4 @@
-= State From Process Events
+= State from Process Events
 :navtitle: State from process events
 :reftext: State from process events
 
@@ -11,6 +11,12 @@ record of the process itself rather than only of the entities it drove.
 The process sources only the events it wrote itself, so it needs nothing from the other side beyond being told that
 something happened. That is what makes it work where
 xref::state-from-context-events.adoc[state from context events] cannot.
+====
+
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and they cover
+the integration case here without any events of your own to design. This page is what to write when they are not.
 ====
 
 == When to use it
