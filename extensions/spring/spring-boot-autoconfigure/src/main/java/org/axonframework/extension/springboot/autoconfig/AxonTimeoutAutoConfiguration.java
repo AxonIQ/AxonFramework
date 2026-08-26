@@ -19,8 +19,8 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.extension.springboot.TimeoutProperties;
 import org.axonframework.messaging.core.timeout.HandlerTimeoutConfiguration;
 import org.axonframework.messaging.core.timeout.HandlerTimeoutConfigurationEnhancer;
-import org.axonframework.messaging.core.timeout.UnitOfWorkTimeoutConfiguration;
-import org.axonframework.messaging.core.timeout.UnitOfWorkTimeoutConfigurationEnhancer;
+import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfiguration;
+import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfigurationEnhancer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -28,50 +28,71 @@ import org.springframework.context.annotation.Bean;
 
 /**
  * Translates {@link TimeoutProperties} into the {@link HandlerTimeoutConfiguration} and
- * {@link UnitOfWorkTimeoutConfiguration} components that drive the timeout behavior.
+ * {@link TimeoutUnitOfWorkFactoryConfiguration} components that drive the timeout behavior.
  * <p>
- * The actual wiring of the timeout behavior &mdash; wrapping message handlers and registering interceptors on the
- * command bus, query bus, and event processors &mdash; is done by the {@link HandlerTimeoutConfigurationEnhancer} and
- * {@link UnitOfWorkTimeoutConfigurationEnhancer}. Both are automatically discovered through the
- * {@link java.util.ServiceLoader} mechanism, so this class only needs to make the two configuration components
- * available; Spring is not required for timeout behavior to work.
- * <p>
- * Setting {@code axon.timeout.enabled} to {@code false} prevents both components from being registered, which leaves
- * the enhancers at their fully disabled defaults.
+ * The actual wiring of the timeout behavior, wrapping message handlers with a timeout, and decorating the
+ * {@code UnitOfWorkFactory} used by the command bus, query bus, and every event processor so every {@code UnitOfWork}
+ * they create is time-limited, is done by the {@link HandlerTimeoutConfigurationEnhancer} and
+ * {@link TimeoutUnitOfWorkFactoryConfigurationEnhancer}.
  *
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
  * @since 4.11.0
  */
 @AutoConfiguration
-@EnableConfigurationProperties(value = {
-        TimeoutProperties.class
-})
-@ConditionalOnProperty(prefix = "axon.timeout", name = "enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(value = TimeoutProperties.class)
 public class AxonTimeoutAutoConfiguration {
 
     /**
      * Bean creation method for the {@link HandlerTimeoutConfiguration}, translated from the given {@code properties}.
      * Picked up by the {@link HandlerTimeoutConfigurationEnhancer} to wrap message handlers with a timeout.
      *
-     * @param properties The timeout properties to translate into a {@link HandlerTimeoutConfiguration}.
-     * @return The {@link HandlerTimeoutConfiguration} driving handler-level timeout behavior.
+     * @param properties the timeout properties to translate into a {@link HandlerTimeoutConfiguration}
+     * @return the {@link HandlerTimeoutConfiguration} driving handler-level timeout behavior
      */
     @Bean
+    @ConditionalOnProperty(prefix = "axon.timeout", name = "enabled", havingValue = "true", matchIfMissing = true)
     public HandlerTimeoutConfiguration handlerTimeoutConfiguration(TimeoutProperties properties) {
-        return properties.getHandler().toMessageHandlerTimeoutConfiguration();
+        return properties.getHandler().mapToConfiguration();
     }
 
     /**
-     * Bean creation method for the {@link UnitOfWorkTimeoutConfiguration}, translated from the given
-     * {@code properties}. Picked up by the {@link UnitOfWorkTimeoutConfigurationEnhancer} to register timeout
-     * interceptors on the command bus, query bus, and every event processor.
+     * Bean creation method specifically to disable handler-timeout behavior, by setting a
+     * {@link HandlerTimeoutConfiguration#DISABLED}
      *
-     * @param properties The timeout properties to translate into a {@link UnitOfWorkTimeoutConfiguration}.
-     * @return The {@link UnitOfWorkTimeoutConfiguration} driving transaction-level timeout behavior.
+     * @return a {@link HandlerTimeoutConfiguration#DISABLED} instance
      */
     @Bean
-    public UnitOfWorkTimeoutConfiguration unitOfWorkTimeoutConfiguration(TimeoutProperties properties) {
-        return properties.getUnitOfWork().toUnitOfWorkTimeoutConfiguration();
+    @ConditionalOnProperty(prefix = "axon.timeout", name = "enabled", havingValue = "false", matchIfMissing = false)
+    public HandlerTimeoutConfiguration disabledHandlerTimeoutConfiguration() {
+        return HandlerTimeoutConfiguration.DISABLED;
+    }
+
+    /**
+     * Bean creation method for the {@link TimeoutUnitOfWorkFactoryConfiguration}, translated from the given
+     * {@code properties}. Picked up by the {@link TimeoutUnitOfWorkFactoryConfigurationEnhancer} to decorate the
+     * {@code UnitOfWorkFactory} used by the command bus, query bus, and every event processor, constructing
+     * timeout-specific {@code UnitOfWork} instances for each.
+     *
+     * @param properties the timeout properties to translate into a {@link TimeoutUnitOfWorkFactoryConfiguration}
+     * @return the {@link TimeoutUnitOfWorkFactoryConfiguration} driving transaction-level timeout behavior
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "axon.timeout", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public TimeoutUnitOfWorkFactoryConfiguration timeoutUnitOfWorkFactoryConfiguration(TimeoutProperties properties) {
+        return properties.getUnitOfWork().mapToConfiguration();
+    }
+
+    /**
+     * Bean creation method specifically to disable
+     * {@link org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory}-timeout behavior, by setting a
+     * {@link TimeoutUnitOfWorkFactoryConfiguration#DISABLED}
+     *
+     * @return a {@link TimeoutUnitOfWorkFactoryConfiguration#DISABLED} instance
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "axon.timeout", name = "enabled", havingValue = "false", matchIfMissing = false)
+    public TimeoutUnitOfWorkFactoryConfiguration disabledTimeoutUnitOfWorkFactoryConfiguration() {
+        return TimeoutUnitOfWorkFactoryConfiguration.DISABLED;
     }
 }

@@ -18,7 +18,7 @@ package org.axonframework.extension.springboot;
 import org.axonframework.messaging.core.annotation.MessageHandlerTimeout;
 import org.axonframework.messaging.core.timeout.HandlerTimeoutConfiguration;
 import org.axonframework.messaging.core.timeout.TaskTimeoutSettings;
-import org.axonframework.messaging.core.timeout.UnitOfWorkTimeoutConfiguration;
+import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfiguration;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
@@ -218,7 +218,7 @@ public class TimeoutProperties {
          *
          * @return the {@link HandlerTimeoutConfiguration} based on this configuration
          */
-        public HandlerTimeoutConfiguration toMessageHandlerTimeoutConfiguration() {
+        public HandlerTimeoutConfiguration mapToConfiguration() {
             return new HandlerTimeoutConfiguration(events, commands, queries);
         }
     }
@@ -357,12 +357,12 @@ public class TimeoutProperties {
         }
 
         /**
-         * Converts this configuration to a {@link UnitOfWorkTimeoutConfiguration}.
+         * Converts this configuration to a {@link TimeoutUnitOfWorkFactoryConfiguration}.
          *
-         * @return the {@link UnitOfWorkTimeoutConfiguration} based on this configuration
+         * @return the {@link TimeoutUnitOfWorkFactoryConfiguration} based on this configuration
          */
-        public UnitOfWorkTimeoutConfiguration toUnitOfWorkTimeoutConfiguration() {
-            return new UnitOfWorkTimeoutConfiguration(commandBus, queryBus, eventProcessors, eventProcessor);
+        public TimeoutUnitOfWorkFactoryConfiguration mapToConfiguration() {
+            return new TimeoutUnitOfWorkFactoryConfiguration(commandBus, queryBus, eventProcessors, eventProcessor);
         }
     }
 }
