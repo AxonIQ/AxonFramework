@@ -300,7 +300,7 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
 As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
 
 - **Running sagas and scheduled deadlines**: There is no `Saga` construct, `SagaStore` or `DeadlineManager` in Axon Framework 5, and no tooling to carry the contents of an Axon Framework 4 `SagaStore` or scheduled deadlines across.
-  An `axon-legacy` module is being built to keep existing sagas and their deadlines running on Axon Framework 5 almost unchanged, so that long-running processes can drain after the upgrade rather than before it. It is not released yet.
+  An `axon-legacy` module is being built to keep existing sagas and their deadlines running on Axon Framework 5 almost unchanged, so that long-running processes can drain after the upgrade rather than before it. It will be released as part of 5.4.0.
   New processes are fully supported today: see xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] for the available approaches, and xref:migration:paths/sagas.adoc[Saga migration] for both the legacy module and the drainage strategy.
   A first-class replacement, Workflows, is in preview in Axoniq Framework.
 - **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
