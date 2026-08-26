@@ -74,9 +74,9 @@ public class HandlerTimeoutConfiguration {
     public HandlerTimeoutConfiguration(TaskTimeoutSettings events,
                                        TaskTimeoutSettings commands,
                                        TaskTimeoutSettings queries) {
-        this.events = events;
-        this.commands = commands;
-        this.queries = queries;
+        this.events = Objects.requireNonNull(events, "The events timeout settings may not be null.");
+        this.commands = Objects.requireNonNull(commands, "The commands timeout settings may not be null.");
+        this.queries = Objects.requireNonNull(queries, "The queries timeout settings may not be null.");
     }
 
     /**

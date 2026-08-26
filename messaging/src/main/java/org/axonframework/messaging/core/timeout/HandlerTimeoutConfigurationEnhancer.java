@@ -18,32 +18,25 @@ package org.axonframework.messaging.core.timeout;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.configuration.reflection.HandlerEnhancerDefinitionUtils;
 
 /**
  * A {@link ConfigurationEnhancer} that registers a {@link HandlerTimeoutHandlerEnhancerDefinition}, driven by the
  * {@link HandlerTimeoutConfiguration} present in the {@link org.axonframework.common.configuration.Configuration}.
  * <p>
- * This enhancer is automatically discovered through the {@link java.util.ServiceLoader} mechanism, so it applies to
- * every application using this module. When no {@link HandlerTimeoutConfiguration} component is registered,
- * {@link HandlerTimeoutConfiguration#HandlerTimeoutConfiguration() the fully disabled default} is used, meaning no
- * message handler is wrapped with a timeout. Register a {@code HandlerTimeoutConfiguration} component to opt into
- * handler-level timeout behavior.
- * <p>
- * The {@link HandlerTimeoutHandlerEnhancerDefinition} is registered through
- * {@link HandlerEnhancerDefinitionUtils#registerToComponentRegistry(ComponentRegistry, java.util.function.Function)},
- * which composes it with any other {@link HandlerEnhancerDefinition} already registered (for example, the
- * classpath-discovered defaults), rather than replacing it.
+ * Automatically registers a {@link HandlerTimeoutConfiguration#DEFAULT} {@code HandlerTimeoutConfiguration} when none
+ * is present yet.
  *
  * @author Steven van Beelen
  * @see HandlerTimeoutConfiguration
  * @see HandlerTimeoutHandlerEnhancerDefinition
  * @since 5.4.0
  */
-@RegistrationScope("Register the decorator once at the root; do not re-invoke in child module registries. The "
-        + "DecoratorDefinition is copied down and reaches module-built components on its own. Re-invoking per "
-        + "nesting level would register the decorator again, wrapping every handler with a timeout twice.")
+@RegistrationScope(
+        "Register the decorator once at the root; do not re-invoke in child module registries. The "
+                + "DecoratorDefinition is copied down and reaches module-built components on its own. Re-invoking per "
+                + "nesting level would register the decorator again, wrapping every handler with a timeout twice."
+)
 public class HandlerTimeoutConfigurationEnhancer implements ConfigurationEnhancer {
 
     @Override
