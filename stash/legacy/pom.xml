@@ -88,6 +88,28 @@
             <artifactId>jackson-module-parameter-names</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Scheduling -->
+        <dependency>
+            <groupId>org.quartz-scheduler</groupId>
+            <artifactId>quartz</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.jobrunr</groupId>
+            <artifactId>jobrunr</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.github.kagkarlsson</groupId>
+            <artifactId>db-scheduler</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <!-- Exercises db-scheduler's Gson-based serializer; optional, as db-scheduler itself is. -->
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- Annotation -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

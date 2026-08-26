@@ -113,7 +113,7 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
         String deadlineMessageId = deadlineMessage.identifier();
         DeadlineId deadlineId = new DeadlineId(deadlineName, deadlineScope, deadlineMessageId);
         Span span = spanFactory.createScheduleSpan(deadlineName, deadlineMessageId, deadlineMessage);
-        runOnPrepareCommitOrNow(spanned(span, () -> {
+        runOnPrepareCommitOrNow(DeadlineSpans.spanned(span, () -> {
             DeadlineMessage interceptedDeadlineMessage = processDispatchInterceptors(deadlineMessage);
             DeadlineTask deadlineTask = new DeadlineTask(deadlineId, interceptedDeadlineMessage);
             Duration triggerDuration = Duration.between(Instant.now(), triggerDateTime);
@@ -131,7 +131,7 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
     @Override
     public void cancelSchedule(String deadlineName, String scheduleId) {
         Span span = spanFactory.createCancelScheduleSpan(deadlineName, scheduleId);
-        runOnPrepareCommitOrNow(spanned(span, 
+        runOnPrepareCommitOrNow(DeadlineSpans.spanned(span, 
                 () -> scheduledTasks.keySet().stream()
                                     .filter(scheduledTaskId -> scheduledTaskId.deadlineName().equals(deadlineName)
                                             && scheduledTaskId.deadlineId().equals(scheduleId))
@@ -142,7 +142,7 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
     @Override
     public void cancelAll(String deadlineName) {
         Span span = spanFactory.createCancelAllSpan(deadlineName);
-        runOnPrepareCommitOrNow(spanned(span, 
+        runOnPrepareCommitOrNow(DeadlineSpans.spanned(span, 
                 () -> scheduledTasks.keySet().stream()
                                     .filter(scheduledTaskId -> scheduledTaskId.deadlineName().equals(deadlineName))
                                     .forEach(this::cancelSchedule)
@@ -152,7 +152,7 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
     @Override
     public void cancelAllWithinScope(String deadlineName, ScopeDescriptor scope) {
         Span span = spanFactory.createCancelAllWithinScopeSpan(deadlineName, scope);
-        runOnPrepareCommitOrNow(spanned(span, 
+        runOnPrepareCommitOrNow(DeadlineSpans.spanned(span, 
                 () -> scheduledTasks.keySet().stream()
                                     .filter(scheduledTaskId -> scheduledTaskId.deadlineName().equals(deadlineName)
                                             && scheduledTaskId.deadlineScope().equals(scope))
@@ -172,21 +172,6 @@ public class SimpleDeadlineManager extends AbstractDeadlineManager {
         scheduledExecutorService.shutdown();
     }
 
-    /**
-     * Wraps the given {@code task} so that, when eventually run, it executes as a branch-scoped operation of the given
-     * {@code span}: the span is started, the task runs inside its scope, failures are recorded on it, and the scope is
-     * closed again.
-     *
-     * @param span the span to run the task within
-     * @param task the task to run
-     * @return a {@link Runnable} that runs {@code task} within {@code span}
-     */
-    private static Runnable spanned(Span span, Runnable task) {
-        return () -> span.branch(null, context -> {
-            task.run();
-            return null;
-        });
-    }
 
     private record DeadlineId(String deadlineName, ScopeDescriptor deadlineScope, String deadlineId) {
 
