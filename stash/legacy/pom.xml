@@ -24,12 +24,13 @@
         <relativePath>../../build/parent/pom.xml</relativePath>
     </parent>
 
-    <artifactId>axon-legacy</artifactId>
+    <artifactId>stash-axon-legacy</artifactId>
 
-    <name>Axon Framework - Legacy</name>
+    <name>Axon Framework - Stash - Legacy</name>
     <description>
-        This module contains legacy solutions of Axon Framework 4, such as sagas and deadlines. Use this dependency to
-        ease the migration period for projects that cannot move off these APIs in one go.
+        Stashed Axon Framework 4 legacy solutions, such as sagas and deadlines, kept as a reference while they are
+        ported into the axon-legacy module. This module is deliberately not part of the reactor build: it is absent
+        from the root pom's module list and is therefore never compiled, tested, or published by CI.
     </description>
 
     <packaging>jar</packaging>
