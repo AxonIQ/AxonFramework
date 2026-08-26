@@ -48,7 +48,7 @@ public class HandlerTimeoutConfigurationEnhancer implements ConfigurationEnhance
 
     @Override
     public void enhance(ComponentRegistry registry) {
-        registry.registerIfNotPresent(HandlerTimeoutConfiguration.class, c -> new HandlerTimeoutConfiguration());
+        registry.registerIfNotPresent(HandlerTimeoutConfiguration.class, c -> HandlerTimeoutConfiguration.DEFAULT);
         HandlerEnhancerDefinitionUtils.registerToComponentRegistry(
                 registry,
                 c -> new HandlerTimeoutHandlerEnhancerDefinition(c.getComponent(HandlerTimeoutConfiguration.class))
