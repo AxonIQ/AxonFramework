@@ -1,16 +1,24 @@
-= State From the Process's Own Events
+= State From Process Events
 :navtitle: State from process events
-:reftext: State from the process's own events
+:reftext: State from process events
 
 The process writes down what it does, and sources itself from those facts. It is the only approach that leaves a
 record of the process itself rather than only of the entities it drove.
+
+[NOTE]
+.Works across one or many contexts
+====
+The process sources only the events it wrote itself, so it needs nothing from the other side beyond being told that
+something happened. That is what makes it work where
+xref::state-from-context-events.adoc[state from context events] cannot.
+====
 
 == When to use it
 
 Two situations make this the right choice, and both are common.
 
 The first is integration with something you do not own. Deriving state from
-xref::state-from-domain-events.adoc[domain events] needs the other context's events in your store, carrying a tag
+xref::state-from-context-events.adoc[context events] needs the other context's events in your store, carrying a tag
 you can select on. Against a payment provider that merely calls you back, that is impossible. This process reads only
 its own events, so it needs nothing from the other side beyond being told that something happened.
 
@@ -119,6 +127,6 @@ a|
 
 == Where next
 
-If the audit trail is not worth the machinery and you own both contexts, xref::state-from-domain-events.adoc[state
-derived from domain events] does the same job with less. If the process is really several independent reactions, see
+If the audit trail is not worth the machinery and you own both contexts, xref::state-from-context-events.adoc[state
+from context events] does the same job with less. If the process is really several independent reactions, see
 xref::automation-slices.adoc[automation slices].

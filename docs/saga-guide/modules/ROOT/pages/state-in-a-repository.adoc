@@ -8,6 +8,14 @@ right place to start if you are unsure.
 The state is an ordinary record with ordinary columns, which is the whole point: you can query it, index it, report on
 it, and join it. A process whose progress somebody will eventually ask about wants exactly that.
 
+[NOTE]
+.Works across one or many contexts
+====
+The process stores what it needs itself, so it never has to read the other side's events. That makes this the approach
+with the fewest prerequisites: it works just as well when the events it reacts to come from another Axon Server
+context, another team's service, or a third-party provider.
+====
+
 == When to use it
 
 Use this when the process genuinely has to remember something, and either you want that memory queryable or the events
@@ -15,7 +23,7 @@ it reacts to are not all in an event store you own.
 
 It asks nothing of the events it reacts to, which is what sets it apart. If the payment side is a third-party provider
 whose events you merely receive, this still works, where
-xref::state-from-domain-events.adoc[deriving state from domain events] cannot. What it does ask for is a place to
+xref::state-from-context-events.adoc[deriving state from context events] cannot. What it does ask for is a place to
 write and a transaction manager, for the reason below.
 
 == The state
@@ -143,6 +151,6 @@ a|
 == Where next
 
 If the state you are storing turns out to be derivable from events you already own, the process can stop storing
-anything: see xref::state-from-domain-events.adoc[state derived from domain events]. If you want a record of what
+anything: see xref::state-from-context-events.adoc[state from context events]. If you want a record of what
 the process itself did rather than only its outcomes, see
-xref::state-from-process-events.adoc[state from the process's own events].
+xref::state-from-process-events.adoc[state from process events].

@@ -66,6 +66,43 @@ a shared lookup couples them, so a change made for one slice can break another. 
 painful, that is a signal the slices are really one thing, and a process class may be the better shape after all.
 ====
 
+[#state-per-slice]
+== Each slice chooses its own state
+
+The lookup above is one answer to "where does this slice get what it needs". It is not the only one, and the choice is
+made per slice rather than once for the whole process. That is the practical difference between this approach and a
+process class: there, one decision covers every reaction; here, each slice answers only for itself.
+
+All three approaches from the rest of this guide are available inside a slice:
+
+[cols="1,2,1",options="header"]
+|===
+| Inside a slice | Reach for it when | Works across
+
+| xref::state-in-a-repository.adoc[A repository]
+| The slice needs to remember something nothing else records, or you want its progress to be queryable.
+| One or many contexts
+
+| xref::state-from-context-events.adoc[Context events]
+| What the slice needs is already implied by events it can read. The lookup above is exactly this.
+| One context only
+
+| xref::state-from-process-events.adoc[Process events]
+| The slice must record something of its own, typically because the other side's events are out of reach.
+| One or many contexts
+|===
+
+A process usually ends up mixing them. In the rental example, most slices need nothing, three read a lookup from
+context events, and none needs a repository. Had the payment side been a third-party provider whose events never
+reached this application, those three would have had to record their own instead, and only those three.
+
+[TIP]
+====
+Slices choosing differently is not inconsistency. A slice that needs a queryable record and one that needs a two-field
+lookup have different requirements, and making them share an answer is what produces the coupling this approach exists
+to avoid.
+====
+
 == The whole process
 
 The rental payment process decomposes into six slices, and the split between stateless and not is the interesting
@@ -126,5 +163,5 @@ not.
 
 If the process turns out to need a shared view of its own progress, see
 xref::state-in-a-repository.adoc[state in a repository] or
-xref::state-from-process-events.adoc[state from the process's own events]. For the timeout slice, see
+xref::state-from-process-events.adoc[state from process events]. For the timeout slice, see
 xref::deadlines.adoc[deadlines].
