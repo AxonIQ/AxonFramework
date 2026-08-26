@@ -44,7 +44,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * The rental payment process, remembering what it needs in a table of its own.
  * <p>
- * The closest of the recipes to an Axon Framework 4 saga. Two things happen per step, writing a row and dispatching a
+ * The most familiar of the recipes. Two things happen per step, writing a row and dispatching a
  * command, and getting them to agree is this recipe's whole difficulty.
  * <p>
  * <b>Where the transaction comes from.</b> Nowhere in this class, which is the point. When a
@@ -58,15 +58,15 @@ import java.util.concurrent.CompletableFuture;
  * Deferring the write until after the command succeeded is what forces it out of the transaction and into a callback
  * running on whichever thread completed the command's future, and that is a step no state-storing saga needs to take.
  * <p>
- * The exception is a process that cannot know what to store until the command has answered. Version 4's saga was in
- * exactly that position, having to keep the {@code paymentId} that {@code PaymentPreparedEvent} handed back. This one
- * is not: the payment reference is derived from the rental identifier, so everything worth storing is already in hand
- * before the command is sent.
+ * The exception is a process that cannot know what to store until the command has answered. A saga keeping the
+ * {@code paymentId} that {@code PaymentPreparedEvent} hands back is in exactly that position. This one is not: the
+ * payment reference is derived from the rental identifier, so everything worth storing is already in hand before the
+ * command is sent.
  * <p>
  * <b>Returning the future is load-bearing.</b> A {@link CommandDispatcher} hands back a future immediately and does
  * not enlist with the unit of work, so returning it is what makes the processor await the command and leave the token
  * where it is on failure. Drop the {@code return} and this silently becomes fire-and-forget: the token advances, the
- * command is lost, and the process waits forever. That is what replaces version 4's {@code retryPayment} deadline.
+ * command is lost, and the process waits forever. It is also what removes any need to schedule a retry.
  * <p>
  * <b>How it ends.</b> The row is deleted. That is safe here only because the commands this process sends are
  * idempotent: a redelivery after deletion restarts the process, re-dispatches, and the rental context declines to

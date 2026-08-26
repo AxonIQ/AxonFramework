@@ -22,7 +22,7 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 /**
  * Confirms a rental request once its payment has been paid.
  * <p>
- * Keeps the Axon Framework 4 signature: the command targets the bike and names the renter. Because no entity is
+ * The command targets the bike and names the renter, as in the bike rental sample application. Because no entity is
  * keyed by the rental itself, the sender has to know both, which is exactly the state a saga exists to hold.
  *
  * @param bikeId the bike whose reservation is being confirmed

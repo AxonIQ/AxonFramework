@@ -23,7 +23,7 @@ import java.util.UUID;
 /**
  * Identifies a bike.
  * <p>
- * This is the identifier every rental command targets, mirroring Axon Framework 4's {@code Bike} aggregate. The
+ * This is the identifier every rental command targets, as in the bike rental sample application. The
  * saga has to remember it precisely because no other entity does, which is what each recipe solves differently.
  *
  * @param raw the raw string representation

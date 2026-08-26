@@ -25,7 +25,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
  * A renter asked for a bike. The bike is now reserved, but the rental is not yet confirmed.
  * <p>
  * This event starts the rental payment process. It is also the only place the pairing of {@code bikeId} and
- * {@code renter} is recorded, which is exactly the state an Axon Framework 4 saga had to keep in order to send
+ * {@code renter} is recorded, which is exactly the state a saga has to keep in order to send
  * {@code ApproveRequest} later.
  *
  * @param bikeId   the bike being requested

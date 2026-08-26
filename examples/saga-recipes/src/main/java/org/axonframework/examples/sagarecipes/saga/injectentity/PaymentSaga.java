@@ -121,7 +121,7 @@ public class PaymentSaga {
             return CompletableFuture.completedFuture(null);
         }
         // The bike and the renter are read back from BikeRequested. This is the whole recipe in one line: the state
-        // an Axon Framework 4 saga had to store is recovered from events that already exist.
+        // a saga would otherwise have to store is recovered from events that already exist.
         return dispatcher.send(new ApproveRequest(state.bikeId, state.renter))
                          .getResultMessage();
     }
@@ -163,8 +163,8 @@ public class PaymentSaga {
     /**
      * Calls off the payment when the request is turned down for reasons of its own.
      * <p>
-     * This is the compensating direction, and it replaces version 4's {@code cancelAllWithinScope}: without it a
-     * rental rejected on other grounds would leave a payment outstanding forever.
+     * This is the compensating direction: without it a rental rejected on other grounds would leave a payment
+     * outstanding forever.
      *
      * @param event      the rejection
      * @param state      the process so far

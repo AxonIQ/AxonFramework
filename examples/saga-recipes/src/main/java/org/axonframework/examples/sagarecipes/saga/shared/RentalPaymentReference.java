@@ -28,7 +28,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
  * <p>
  * Because the mapping is derived rather than stored, the saga needs no state to correlate in either direction:
  * outbound it computes the reference from the rental, inbound it reads the reference off the payment event. That is
- * worth noticing before reaching for a saga at all, since a large share of Axon Framework 4 sagas kept state purely
+ * worth noticing before reaching for a saga at all, since a common reason to keep state is purely
  * to remember an identifier they could have computed.
  * <p>
  * The alternative, a randomly generated reference, would force a stored mapping and rule out the recipes that keep

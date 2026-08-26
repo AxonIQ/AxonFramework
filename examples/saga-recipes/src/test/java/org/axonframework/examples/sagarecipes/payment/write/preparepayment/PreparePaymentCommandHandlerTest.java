@@ -65,8 +65,8 @@ class PreparePaymentCommandHandlerTest {
 
         /**
          * The saga sends this command from an event handler, so a redelivered {@code BikeRequested} produces a second
-         * {@code PreparePayment}. Axon Framework 4 minted a payment identifier unconditionally here and would have
-         * created a second payment for the same rental.
+         * {@code PreparePayment}. Minting a payment identifier unconditionally here would create a second payment
+         * for the same rental.
          */
         @Test
         void givenPaymentAlreadyPrepared_whenPreparePaymentForSameReference_thenNoEventsAndSuccess() {

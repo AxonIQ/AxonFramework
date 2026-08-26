@@ -40,8 +40,8 @@ import java.util.Objects;
 /**
  * Confirms a rental request once its payment has been paid.
  * <p>
- * The saga sends this command from an event handler, so it arrives at least once. The guard is Axon Framework 4's,
- * unchanged, and it is what makes redelivery harmless: a request that is no longer pending, or that belongs to a
+ * The saga sends this command from an event handler, so it arrives at least once. The guard is what makes redelivery
+ * harmless: a request that is no longer pending, or that belongs to a
  * different renter, appends nothing and reports success.
  *
  * @author Mateusz Nowak

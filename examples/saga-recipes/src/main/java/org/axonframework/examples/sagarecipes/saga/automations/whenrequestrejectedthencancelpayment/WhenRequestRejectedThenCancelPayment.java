@@ -31,8 +31,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Calls off the payment whenever a request is turned down.
  * <p>
- * The compensating direction, and what replaces version 4's {@code cancelAllWithinScope}: without it, a rental
- * rejected on grounds of its own would leave a payment outstanding forever.
+ * The compensating direction: without it, a rental rejected on grounds of its own would leave a payment outstanding
+ * forever.
  * <p>
  * Stateless like its counterpart. Cancelling a payment that already settled, or that was never prepared, is a silent
  * success in the payment context, so this slice can send the command without knowing which case it is in.

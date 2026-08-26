@@ -34,14 +34,14 @@
  * Compare a bank transfer: the bank assigns its own transaction identifier, while you type your invoice number into
  * the reference field. The bank never parses your invoice number, it just prints it back on your statement. Every
  * real payment system carries both, Stripe as {@code pi_...} plus {@code client_reference_id}, ISO 20022 as
- * {@code TxId} plus {@code EndToEndId}, and Axon Framework 4's own bike-rental demo as {@code paymentId} plus
+ * {@code TxId} plus {@code EndToEndId}, and the bike rental sample application as {@code paymentId} plus
  * {@code paymentReference}.
  * <p>
  * The decision model for preparing and cancelling is keyed by the reference rather than by the payment identifier.
  * That single choice is what makes {@code PreparePayment} idempotent by construction: one payment per reference, with
  * the Dynamic Consistency Boundary append condition rejecting a second concurrent attempt, rather than a guard that
  * has to be remembered. It also means the saga can address an existing payment with a key it already knows, so it
- * never has to store the generated payment identifier the way an Axon Framework 4 saga did.
+ * never has to store the generated payment identifier.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

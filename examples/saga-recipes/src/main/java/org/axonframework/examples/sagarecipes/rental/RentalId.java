@@ -23,7 +23,7 @@ import java.util.UUID;
 /**
  * Identifies a single rental request.
  * <p>
- * This is Axon Framework 4's {@code rentalReference} under a clearer name. In the version 4 demo it was a random
+ * The bike rental sample application calls this a {@code rentalReference}. There it was a random
  * value minted inside the request handler and used only to correlate the payment; here it is supplied by the caller,
  * which makes {@code RequestBike} idempotent.
  * <p>

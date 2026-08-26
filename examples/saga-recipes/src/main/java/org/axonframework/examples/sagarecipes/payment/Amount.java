@@ -19,7 +19,8 @@ package org.axonframework.examples.sagarecipes.payment;
 /**
  * How much is to be paid.
  * <p>
- * Kept as a whole number of currency units, matching the flat price the Axon Framework 4 demo used. Money modelling
+ * Kept as a whole number of currency units, matching the flat price the bike rental sample application uses. Money
+ * modelling
  * is not what this example is about.
  *
  * @param value the amount to pay, always positive

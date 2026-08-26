@@ -36,8 +36,7 @@ import java.time.Instant;
 /**
  * Gives up on payments nobody paid, which is how a deadline is expressed without a deadline manager.
  * <p>
- * Axon Framework 4 scheduled a callback inside the saga through the {@code DeadlineManager}. Version 5 has no such
- * component, so the timeout becomes a projection plus a schedule: a to-do list of outstanding payments, and something
+ * Rather than scheduling a callback into the saga's own future, the timeout becomes a projection plus a schedule: a to-do list of outstanding payments, and something
  * that periodically asks which of them have waited too long.
  * <p>
  * This is deliberately <b>not</b> part of any recipe. It is a projection over payment events that dispatches

@@ -24,7 +24,8 @@ import org.axonframework.examples.sagarecipes.rental.RentalTags;
 /**
  * The rental request was turned down and the bike is available again.
  * <p>
- * Keeps the Axon Framework 4 name. This is the unsuccessful end of the rental payment process, reached when the
+ * Keeps the name used by the bike rental sample application. This is the unsuccessful end of the rental payment
+ * process, reached when the
  * payment is rejected or cancelled.
  *
  * @param bikeId   the bike that was released

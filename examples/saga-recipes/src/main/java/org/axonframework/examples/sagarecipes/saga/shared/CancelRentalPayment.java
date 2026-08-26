@@ -22,9 +22,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 /**
  * Asks the rental payment process to give up waiting for payment.
  * <p>
- * This is what replaces the Axon Framework 4 deadline. Version 4 scheduled a callback inside the saga through the
- * {@code DeadlineManager}; Axon Framework 5 has no such component, so the timeout becomes an ordinary command that
- * anyone may send at any moment: the scheduled sweep in {@code saga.deadline}, an operator, a test, or a REST call.
+ * This is how a timeout is expressed without a deadline manager. Rather than scheduling a callback into the saga's own
+ * future, the timeout becomes an ordinary command that anyone may send at any moment: the scheduled sweep in {@code saga.deadline}, an operator, a test, or a REST call.
  * <p>
  * Turning a deadline into a command has a pleasant side effect. A scheduled callback is invisible and can only be
  * triggered by waiting, whereas a command can be sent deliberately, which is what makes the timeout path testable

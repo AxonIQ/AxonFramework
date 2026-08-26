@@ -22,7 +22,8 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 /**
  * Turns down a rental request and releases the bike.
  * <p>
- * Keeps the Axon Framework 4 signature. Sent by the saga when the payment is rejected or cancelled.
+ * Keeps the signature used by the bike rental sample application. Sent by the saga when the payment is rejected or
+ * cancelled.
  *
  * @param bikeId the bike to release
  * @param renter who had reserved it

@@ -57,9 +57,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * The rental payment process, event-sourced from events of its own.
  * <p>
- * An Axon Framework 4 saga was state-sourced whether you wanted it or not: the framework serialized the instance into
- * a saga store. Version 5 takes that decision back, and one of the options it opens up is for the process to be
- * event-sourced like anything else, from facts it writes itself.
+ * A saga store serializes the process instance, so its state is a snapshot rather than a history. Nothing forces that
+ * here: the process can be event-sourced like anything else, from facts it writes itself.
  * <p>
  * <b>Why bother, given the derived-state recipe exists.</b> That one rebuilds its answer from the two contexts'
  * events, which requires them to be in your store and to carry a tag you can select on. Against a payment provider

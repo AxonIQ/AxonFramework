@@ -35,7 +35,7 @@ Exactly one runs at a time, chosen with `saga.recipe`:
 
 Read `package-info.java` in each for what it buys, what it costs, and how the process ends.
 
-`saga/deadline` sits outside the recipes. It replaces the version 4 `DeadlineManager` with a projection of outstanding
+`saga/deadline` sits outside the recipes. It replaces Axon Framework 4's `DeadlineManager` with a projection of outstanding
 payments plus a scheduled sweep, and applies to every recipe equally.
 
 ## Running the tests
@@ -58,8 +58,8 @@ Axon Server is started through `examples/docker-compose.yaml`. Switch recipes wi
 ## What to read first
 
 `SagaRecipeContractTest` is the most useful file in the module. It holds the scenarios every recipe must satisfy, and
-they mirror the Axon Framework 4 `PaymentSagaTest` method for method, with two cases version 4 never had: a redelivered
-trigger, and a timeout arriving after the payment already settled.
+they mirror the bike rental sample application's `PaymentSagaTest` method for method, with two cases that suite never
+had: a redelivered trigger, and a timeout arriving after the payment already settled.
 
 Each recipe subclass adds only what is specific to it. Anything asserted in the shared class is, by construction,
 behaviour that does not depend on the approach.
