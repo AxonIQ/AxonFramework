@@ -93,7 +93,7 @@ worth keeping apart.
 === The sweep
 
 Does it notice overdue work, and leave the rest alone? Because the projection removes a row when the payment settles,
-the row disappearing is the observable proof that the sweep reached the payment context:
+the row disappearing is the observable proof that the sweep reached the payment side:
 
 [source,java]
 ----
@@ -148,7 +148,7 @@ void givenPaymentNotConfirmed_whenAskedToGiveUp_thenRequestRejected() {
            ), TIMEOUT);
 }
 ----
-<1> The payment is not published by the test: the process asks for it, and the payment context creates it. Waiting for
+<1> The payment is not published by the test: the process asks for it, and the payment side creates it. Waiting for
 that command is what tells us the process has noticed this rental, which matters because the approaches that record
 their own progress do so asynchronously. Asking one to give up before it has noticed would find nothing to give up on.
 <2> Giving up is the *when*, because that is the action under test.

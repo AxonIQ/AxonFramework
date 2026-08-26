@@ -6,11 +6,12 @@ The process writes down what it does, and sources itself from those facts. It is
 record of the process itself rather than only of the entities it drove.
 
 [NOTE]
-.Works across one or many contexts
+.Works across any number of event store contexts
 ====
-The process sources only the events it wrote itself, so it needs nothing from the other side beyond being told that
-something happened. That is what makes it work where
-xref::state-from-context-events.adoc[state from context events] cannot.
+The process sources only the events it wrote itself, and it writes them to its own context, so the single-context rule
+is satisfied trivially. It needs nothing from the other side beyond being told that something happened, which is what
+makes it work where xref::state-from-context-events.adoc[state from context events] cannot: the other side may sit in
+a different Axon Server context, or in no event store at all.
 ====
 
 [TIP]
@@ -23,10 +24,12 @@ the integration case here without any events of your own to design. This page is
 
 Two situations make this the right choice, and both are common.
 
-The first is integration with something you do not own. Deriving state from
-xref::state-from-context-events.adoc[context events] needs the other context's events in your store, carrying a tag
-you can select on. Against a payment provider that merely calls you back, that is impossible. This process reads only
-its own events, so it needs nothing from the other side beyond being told that something happened.
+The first is integration with something you cannot source. Deriving state from
+xref::state-from-context-events.adoc[context events] needs the other side's events in the same event store context,
+carrying a tag you can select on. Against a payment provider that merely calls you back that is impossible, and it is
+equally impossible against a team whose events live in a different Axon Server context, because an entity cannot be
+sourced from two. This process reads only its own events, so it needs nothing from the other side beyond being told
+that something happened.
 
 The second is when the process itself is worth recording. A repository row is deleted when the process ends, and
 derived state was never written at all, so neither can answer "how did this rental turn out, and how long did it
@@ -53,7 +56,7 @@ written, every handler short-circuits on it.
 include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=state,indent=0]
 ----
 <1> The criteria selects only what the process itself wrote. This is precisely why the approach survives when the
-other context's events are out of reach.
+other side's events are out of reach.
 
 == Recording what the process did
 
@@ -120,7 +123,8 @@ the command succeeded would record something that is not yet true. Only the medi
 | Good | Not so good
 
 a|
-* Works when the other context's events are not yours to source.
+* Works when the other side's events are not yours to source, whether because they are someone else's or because
+  they live in another event store context.
 * Produces an audit trail of the process itself, which no other approach does.
 * Has a real, explicit end.
 * No second store: the process lives in the event store like everything else.
@@ -133,6 +137,6 @@ a|
 
 == Where next
 
-If the audit trail is not worth the machinery and you own both contexts, xref::state-from-context-events.adoc[state
-from context events] does the same job with less. If the process is really several independent reactions, see
+If the audit trail is not worth the machinery and both sides write to one event store context,
+xref::state-from-context-events.adoc[state from context events] does the same job with less. If the process is really several independent reactions, see
 xref::automation-slices.adoc[automation slices].
