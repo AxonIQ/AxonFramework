@@ -1,12 +1,13 @@
-= Automation Slices
-:navtitle: Automation slices
-:reftext: Automation slices
+= Vertical Slices
+:navtitle: Vertical slices
+:reftext: Vertical slices
 
 The other approaches keep the process in one class. This one asks whether it needs to be a thing at all.
 
 Often the answer is no. What looks like a saga is a handful of independent reactions, each of the form "when this
-happens, do that". In Event Modelling those are automation slices, drawn between an event and the command it triggers.
-In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists.
+happens, do that". In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists. If
+you model with Event Modelling you will recognise these as automation slices, drawn between an event and the command it
+triggers, so this page treats the two as mostly the same thing.
 
 == When to use it
 
@@ -31,7 +32,7 @@ The most instructive slice is the one that needs nothing:
 
 [source,java]
 ----
-include::example$sagas/automationslices/AutomationSlices.java[tag=stateless,indent=0]
+include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0]
 ----
 <1> Events of one rental are handled in order; different rentals still run in parallel.
 <2> Returning the result makes the processor await the command and leave the token where it is on failure.
@@ -51,7 +52,7 @@ and the renter, so this slice has to look them up:
 
 [source,java]
 ----
-include::example$sagas/automationslices/AutomationSlices.java[tag=with-lookup,indent=0]
+include::example$sagas/verticalslices/VerticalSlices.java[tag=with-lookup,indent=0]
 ----
 <1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
 policy is enough and no custom policy is needed.
@@ -165,6 +166,11 @@ That first drawback is the real one. If the process is something people reason a
 draw on a whiteboard as a unit, then scattering it across six files hides something important. If it is really a set of
 independent rules that happen to concern the same identifier, this arrangement tells the truth and a process class does
 not.
+
+It is worth taking "only an event model shows it whole" literally rather than as a figure of speech.
+xref::index.adoc#example[The model on the overview page] is that whole view: every slice on this page is one purple
+sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback is largely
+paid for already. If it does not, the six files really are the only description there is.
 
 == Where next
 

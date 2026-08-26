@@ -59,7 +59,7 @@ information, and a correlation to get right, all of it spread across files. A pr
 easier and stays easier, and the gap widens with every step.
 
 What does decide against a workflow is the process not being one. If what you have is a set of reactions that happen to
-share a subject, xref::automation-slices.adoc[automation slices] keep them independent, and a workflow would give them a
+share a subject, xref::vertical-slices.adoc[vertical slices] keep them independent, and a workflow would give them a
 centre they do not need. That is a judgement about the shape of the work, not about the framework you are on.
 
 Practically, a preview dependency has to be acceptable in your build, and production use needs a licence. Neither
@@ -75,7 +75,7 @@ Workflows are not one more entry on the same list so much as a different axis. T
 process lives and how it keeps its state; a workflow differs in *who reconstructs the flow*.
 
 That has a practical consequence worth planning for. A process written as
-xref::automation-slices.adoc[automation slices] is the furthest from a workflow, because it deliberately has no centre;
+xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it deliberately has no centre;
 converting it later means gathering the slices back into one flow. A process written as
 xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
 progress as facts, which is much the same information a workflow persists on your behalf.

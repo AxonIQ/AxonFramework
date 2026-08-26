@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.automations.whenrequestrejectedthencancelpayment;
+package org.axonframework.examples.sagarecipes.saga.verticalslices.whenbikerequestedthenpreparepayment;
 
-import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
-import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
+import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
+import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
+import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.annotation.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
@@ -29,32 +30,34 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Calls off the payment whenever a request is turned down.
+ * Asks for payment whenever a bike is requested.
  * <p>
- * The compensating direction: without it, a rental rejected on grounds of its own would leave a payment outstanding
- * forever.
+ * Completely stateless, and worth pausing on. There is no check for whether payment was already asked for, because
+ * there is nowhere to check and no need: the reference is derived from the rental, and the payment context refuses to
+ * prepare a second payment under a reference it already knows. Idempotency lives where the decision lives.
  * <p>
- * Stateless like its counterpart. Cancelling a payment that already settled, or that was never prepared, is a silent
- * success in the payment context, so this slice can send the command without knowing which case it is in.
+ * That leaves the processor's tracking token as the entire to-do list. Everything before it has been asked for,
+ * everything after it has not, and a redelivery is harmless.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Component
-@ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "verticalslices")
 @SequencingPolicy(type = PropertySequencingPolicy.class, parameters = "rentalId")
-public class WhenRequestRejectedThenCancelPayment {
+public class WhenBikeRequestedThenPreparePayment {
 
     /**
-     * Tells the payment context to stop waiting for this rental's payment.
+     * Asks the payment context to set up a payment for this rental.
      *
-     * @param event      the rejected request
+     * @param event      the bike request
      * @param dispatcher dispatches the resulting command
      * @return completes when the dispatched command has been handled
      */
     @EventHandler
-    public CompletableFuture<?> react(RequestRejected event, CommandDispatcher dispatcher) {
-        return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId())))
+    public CompletableFuture<?> react(BikeRequested event, CommandDispatcher dispatcher) {
+        var reference = RentalPaymentReference.forRental(event.rentalId());
+        return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
                          .getResultMessage();
     }
 }

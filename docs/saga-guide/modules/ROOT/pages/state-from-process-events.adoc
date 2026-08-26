@@ -139,4 +139,4 @@ a|
 
 If the audit trail is not worth the machinery and both sides write to one event store context,
 xref::state-from-context-events.adoc[state from context events] does the same job with less. If the process is really several independent reactions, see
-xref::automation-slices.adoc[automation slices].
+xref::vertical-slices.adoc[vertical slices].

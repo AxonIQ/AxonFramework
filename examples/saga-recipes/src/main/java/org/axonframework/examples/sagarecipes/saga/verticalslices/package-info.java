@@ -18,8 +18,8 @@
  * The rental payment process, taken apart.
  * <p>
  * The other recipes keep the process in one class. This one asks whether it needs to be a thing at all, and answers
- * no: what looked like a saga is a handful of independent reactions, each a slice of its own in the Event Modelling
- * sense of "when this happens, do that".
+ * no: what looked like a saga is a handful of independent reactions, each a vertical slice of its own (an automation
+ * slice, in Event Modelling terms) of the form "when this happens, do that".
  * <p>
  * It is also the only recipe documented here rather than on a class, for the same reason: there is no class that
  * describes it. Every other recipe is one class, so its class-level documentation is its package documentation.
@@ -68,4 +68,4 @@
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-package org.axonframework.examples.sagarecipes.saga.automations;
+package org.axonframework.examples.sagarecipes.saga.verticalslices;

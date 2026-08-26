@@ -24,6 +24,28 @@ your domain.
 * A *projection* of outstanding work, built purely from events.
 * A *sweep* that reads that projection and sends a command.
 
+.The timeout as its own event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank]
+image::EventModeling_PaymentDeadline.png[The payment timeout modelled as a projection and a sweep on prooph board]
+
+Both halves are on the left of the model. `PaymentPrepared` puts a row on the green projection, and the purple sweeper
+reads it. Neither writes anything the other depends on, which is the property the rest of this page keeps returning to.
+
+The right of the model is worth more attention than the left, because it is the part a timeout is usually assumed not to
+have. Giving up is not one decision in one place: the payment is called off, and only then does a further reaction
+release the bike. The two bounded contexts never address each other, and note what the rental side is finally told,
+`RejectRequest`. Not that a clock ran out, not that a deadline elapsed. No timeout concept crosses the boundary at all,
+which is why the rental context can stay ignorant that payments exist.
+
+The last automation closes the loop and does nothing: it cancels a payment that was cancelled three slices earlier, and
+the payment side ignores it. That is the idempotency rule from
+xref::index.adoc#two-rules[the two rules] earning its keep, and it is why two reactions racing on the same rental need
+nothing to order them.
+
+This model is drawn separately from
+xref::index.adoc#example[the one on the overview page] on purpose. The sweep is a different actor on a different
+schedule, and the projection is not part of any one approach: it is built from payment events, so it applies to every
+approach in this guide equally.
+
 [#a-command-not-an-event]
 == Why the timeout becomes a command
 

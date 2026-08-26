@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.sagarecipes.saga.automations.whenpaymentcancelledthenrejectrequest;
+package org.axonframework.examples.sagarecipes.saga.verticalslices.whenpaymentrejectedthenrejectrequest;
 
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
-import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
+import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.RentalId;
 import org.axonframework.examples.sagarecipes.rental.RentalTags;
@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Releases the bike whenever a payment is called off, which is how a timeout arrives here.
+ * Releases the bike whenever a payment is refused.
  * <p>
  * This slice cannot be stateless. A payment event carries only the reference, and rejecting the request needs the bike and
  * the renter, so the slice keeps a lookup of its own: three lines of Dynamic Consistency Boundary rather than a read
@@ -57,12 +57,12 @@ import java.util.concurrent.CompletableFuture;
  * @since 5.4.0
  */
 @Component
-@ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "verticalslices")
 @SequencingPolicy(type = PropertySequencingPolicy.class, parameters = "paymentReference")
-public class WhenPaymentCancelledThenRejectRequest {
+public class WhenPaymentRejectedThenRejectRequest {
 
     /**
-     * Turns down the rental request whose payment was called off.
+     * Turns down the rental request this payment belongs to.
      *
      * @param event      the payment event that triggered this
      * @param rental     the request this payment belongs to, or {@code null} if there is none
@@ -71,7 +71,7 @@ public class WhenPaymentCancelledThenRejectRequest {
      */
     @EventHandler
     CompletableFuture<?> react(
-            PaymentCancelled event,
+            PaymentRejected event,
             @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable RequestedRental rental,
             CommandDispatcher dispatcher
     ) {
@@ -85,7 +85,7 @@ public class WhenPaymentCancelledThenRejectRequest {
     /**
      * All this slice needs to know: which bike, and whose.
      */
-    @ConditionalOnProperty(name = "saga.recipe", havingValue = "automations")
+    @ConditionalOnProperty(name = "saga.recipe", havingValue = "verticalslices")
     @EventSourced(idType = RentalId.class)
     private static class RequestedRental {
 

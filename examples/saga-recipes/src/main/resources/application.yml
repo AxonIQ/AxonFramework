@@ -23,7 +23,7 @@ axon:
 saga:
   # Which implementation of the rental payment process is active. Exactly one may run at a time,
   # otherwise every recipe would dispatch the same commands.
-  # One of: repository | injectentity | eventsourced | eventsourced-append | automations
+  # One of: repository | injectentity | eventsourced | eventsourced-append | verticalslices
   recipe: injectentity
   deadline:
     # How long a prepared payment may stay unconfirmed before it is cancelled. Replaces the
