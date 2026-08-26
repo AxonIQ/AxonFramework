@@ -30,6 +30,7 @@
         <module>conversion</module>
         <module>extensions</module>
         <module>eventsourcing</module>
+        <module>legacy</module>
         <module>messaging</module>
         <module>migration</module>
         <module>modelling</module>
@@ -176,9 +177,15 @@
                     <publishingServerId>central</publishingServerId>
                     <!-- axon-docs-samples never publishes javadoc/sources jars (see its pom), so Central rejects
                          its bundle as incomplete. The plugin injects one publish execution per reactor build
-                         (first module wins), so this must be excluded here rather than on that module's own pom. -->
+                         (first module wins), so this must be excluded here rather than on that module's own pom.
+
+                         axon-legacy is excluded for the same reason: it currently has no sources, so the javadoc
+                         plugin produces no jar ("No Javadoc in project") and the bundle is incomplete. Drop this
+                         exclusion, and the matching entry in the javadoc profile's skippedModules, as soon as the
+                         first legacy sources are ported in from stash/legacy. -->
                     <excludeArtifacts>
                         <excludeArtifact>axon-docs-samples</excludeArtifact>
+                        <excludeArtifact>axon-legacy</excludeArtifact>
                     </excludeArtifacts>
                 </configuration>
             </plugin>
