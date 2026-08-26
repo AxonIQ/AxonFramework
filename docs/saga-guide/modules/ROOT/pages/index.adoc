@@ -1,13 +1,20 @@
-= Sagas and Process Managers
-:navtitle: Sagas
-:reftext: Sagas
+= Long-Running Processes
+:navtitle: Long-running processes
+:reftext: Long-running processes
 
-Some business processes are longer than a single decision. A rental is not paid for in the same breath as it is
-requested, an order is not shipped the instant it is placed, and a booking is not confirmed the moment it is made.
-These processes span more than one entity, often more than one bounded context, and they take time.
+A *saga*, or *process manager*, drives a business transaction that cannot be a transaction. It spans several
+components and often several systems, and it takes as long as the business takes, which may be seconds, days, or weeks.
+Nothing can hold a lock for that long or across that many owners, so nothing can roll it back either.
 
-The name for such a process is a *saga*, or a *process manager*: an event handler that manages a business transaction
-spanning several entities, remembering what it has seen so far and deciding what should happen next.
+Booking a trip is the classic example. A flight, a hotel and a car have to be reserved, each held by a different
+component, and if the hotel comes back unavailable an hour later the flight is already booked. Undoing it is not a
+rollback but another step of the process: the flight is cancelled, deliberately, by the same thing that booked it.
+That is *compensation*, and deciding when it is needed is most of what a saga does.
+
+The same shape turns up well short of trip booking, and inside a single application. A rental is not confirmed until
+its payment is, an order is not shipped until stock and payment both agree, and a subscription is not active until the
+first charge clears. In Axon Framework such a process is an event handler: it remembers what it has seen so far and
+decides what should happen next.
 
 Axon Framework has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
 at a time than bundled together:
@@ -77,6 +84,19 @@ They are not the only answer, and not because of what they cost. Not everything 
 worth writing as a flow, and the approaches on this page are the right shape when it is not. Each needs nothing beyond
 Axon Framework, and each is proven by the same contract test in the example module.
 ====
+
+[#saga-or-process-manager]
+== Saga or process manager
+
+The saga and the process manager are two names for this shape, and they carry a classical distinction. A saga matches
+each event to a command in a mostly linear flow; a process manager holds the state of the sequence and branches on it
+to pick the next step. A rule of thumb: once the flow needs `if`/`else` to decide what happens next, it is a process
+manager. Axon Framework draws no line between them, because the same building blocks cover both, and the shapes below
+simply scale from the plainest event-to-command matching to the most branching.
+
+That `if` is exactly what forces the first decision this guide is about. A branch has to read something the process
+remembered, so the moment you have a process to manage rather than a single reaction, you have state to keep, and the
+question becomes *where* it lives. That is what <<choosing,choosing an approach>> answers.
 
 [#reactions]
 == Reactions, and when one becomes a process
@@ -239,7 +259,7 @@ thing, and each picks its own answer to the state question below.
 | No single place describes the process any more. Only an event model shows it whole.
 
 | One process class
-| Processes people reason about as a unit, and teams not organised around slices. The flow is legible in one file.
+| Processes people reason about as a unit, and teams not organized around slices. The flow is legible in one file.
 | It couples the reactions together, so a change for one can affect another.
 |===
 
