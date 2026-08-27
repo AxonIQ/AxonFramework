@@ -74,7 +74,8 @@ import java.util.concurrent.TimeUnit;
  * }</pre>
  * <p>
  * When call-site tracking is needed, for example when multiple managers are defined or when
- * using the query bus directly, wrap results explicitly with {@link #track}:
+ * using the query bus directly, wrap results explicitly with {@link #track(MessageStream)} or
+ * {@link #track(Publisher)}:
  * <pre>{@code
  * // Via query gateway (returns Publisher<T>):
  * Publisher<MyDto> stream = shutdownManager.track(

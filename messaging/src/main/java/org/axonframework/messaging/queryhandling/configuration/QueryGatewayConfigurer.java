@@ -103,7 +103,7 @@ public class QueryGatewayConfigurer {
      * immediately when the application shuts down.
      * <p>
      * With this option set, callers do not need to wrap subscription query results with
-     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)} manually; the gateway handles tracking for every
      * dispatched subscription query automatically.
      * <p>
      * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
@@ -120,7 +120,7 @@ public class QueryGatewayConfigurer {
      * naturally first.
      * <p>
      * With this option set, callers do not need to wrap subscription query results with
-     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)} manually; the gateway handles tracking for every
      * dispatched subscription query automatically.
      * <p>
      * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
@@ -140,7 +140,7 @@ public class QueryGatewayConfigurer {
      * <p>
      * Use this overload to share a single {@link QueryShutdownManager} between several gateways,
      * or when the manager is also used for call-site tracking through
-     * {@link QueryShutdownManager#track}.
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)}.
      * <p>
      * The given manager's {@link QueryShutdownManager#shutdown()} is called at
      * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
@@ -159,7 +159,7 @@ public class QueryGatewayConfigurer {
      * when the application shuts down.
      * <p>
      * With this option set, callers do not need to wrap streaming query results with
-     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)} manually; the gateway handles tracking for every
      * dispatched streaming query automatically.
      * <p>
      * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
@@ -179,7 +179,7 @@ public class QueryGatewayConfigurer {
      * expected to complete shortly after shutdown begins.
      * <p>
      * With this option set, callers do not need to wrap streaming query results with
-     * {@link QueryShutdownManager#track} manually; the gateway handles tracking for every
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)} manually; the gateway handles tracking for every
      * dispatched streaming query automatically.
      * <p>
      * Cancellation happens at {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.
@@ -199,7 +199,7 @@ public class QueryGatewayConfigurer {
      * <p>
      * Use this overload to share a single {@link QueryShutdownManager} between several gateways,
      * or when the manager is also used for call-site tracking through
-     * {@link QueryShutdownManager#track}.
+     * {@link QueryShutdownManager#track(org.reactivestreams.Publisher)}.
      * <p>
      * The given manager's {@link QueryShutdownManager#shutdown()} is called at
      * {@link Phase#OUTBOUND_QUERY_CONNECTORS} during application shutdown.

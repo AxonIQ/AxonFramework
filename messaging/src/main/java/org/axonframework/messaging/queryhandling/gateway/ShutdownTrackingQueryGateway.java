@@ -53,7 +53,8 @@ import java.util.function.Function;
  * desired {@link QueryShutdownManager} instances.
  * <p>
  * When call-site tracking is preferred over gateway-level tracking, wrap individual results with
- * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track} instead.
+ * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track(org.reactivestreams.Publisher)}
+ * instead.
  *
  * @author Allard Buijze
  * @since 5.3.2
