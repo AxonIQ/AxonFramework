@@ -44,7 +44,7 @@ public class QueryShutdownConfiguration {
                                    MessageConverter converter,
                                    QueryShutdownManager shutdownManager) { // <1>
         DefaultQueryGateway base = new DefaultQueryGateway(queryBus, resolver, calculator, converter);
-        return new ShutdownTrackingQueryGateway(base, shutdownManager, shutdownManager); // <2>
+        return ShutdownTrackingQueryGateway.build(base, shutdownManager, shutdownManager); // <2>
     }
     // end::named-gateway-bean[]
 }

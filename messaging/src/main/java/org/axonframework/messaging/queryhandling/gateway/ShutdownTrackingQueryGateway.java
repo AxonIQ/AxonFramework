@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.queryhandling.gateway;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
@@ -89,7 +90,7 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
      * {@link #streamingQuery(Object, Class) straeming queries} respectively.
      * <p>
      * If both the {@code subscriptionQueryShutdownManager} and {@code streamingQueryShutdownManager} are {@code null},
-     * the {@code delegate} will be returned as is.
+     * an {@link AxonConfigurationException} is thrown.
      *
      * @param delegate                         the {@link QueryGateway} to delegate all operations to
      * @param subscriptionQueryShutdownManager the manager to track
@@ -98,17 +99,22 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
      * @param streamingQueryShutdownManager    the manager to track
      *                                         {@link #streamingQuery(Object, Class) streaming queries} with, or
      *                                         {@code null} to skip streaming query tracking
-     * @return a tracking wrapper around {@code delegate}, or {@code delegate} itself when both managers are
-     * {@code null}
+     * @return a tracking wrapper around {@code delegate}
+     * @throws AxonConfigurationException when both the {@code subscriptionQueryShutdownManager} and
+     *                                    {@code streamingQueryShutdownManager} are {@code null}
      */
-    public static QueryGateway build(QueryGateway delegate,
-                                     @Nullable QueryShutdownManager subscriptionQueryShutdownManager,
-                                     @Nullable QueryShutdownManager streamingQueryShutdownManager) {
-        return subscriptionQueryShutdownManager == null && streamingQueryShutdownManager == null
-                ? Objects.requireNonNull(delegate, "delegate must not be null")
-                : new ShutdownTrackingQueryGateway(delegate,
-                                                   subscriptionQueryShutdownManager,
-                                                   streamingQueryShutdownManager);
+    public static ShutdownTrackingQueryGateway build(QueryGateway delegate,
+                                                     @Nullable QueryShutdownManager subscriptionQueryShutdownManager,
+                                                     @Nullable QueryShutdownManager streamingQueryShutdownManager) {
+        if (subscriptionQueryShutdownManager == null && streamingQueryShutdownManager == null) {
+            throw new AxonConfigurationException(
+                    "Cannot create a ShutdownTrackingQueryGateway when both the subscription- "
+                            + "and streaming-query shutdown manager are null."
+            );
+        }
+        return new ShutdownTrackingQueryGateway(
+                delegate, subscriptionQueryShutdownManager, streamingQueryShutdownManager
+        );
     }
 
     @Override

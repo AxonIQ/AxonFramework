@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.queryhandling.gateway;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.common.lifecycle.ShutdownInProgressException;
@@ -145,21 +146,28 @@ class ShutdownTrackingQueryGatewayTest {
         void throwsNullPointerExceptionWhenDelegateIsNull() {
             // when / then
             assertThatNullPointerException()
-                    .isThrownBy(() -> new ShutdownTrackingQueryGateway(null, subscriptionManager, streamingManager));
+                    .isThrownBy(() -> ShutdownTrackingQueryGateway.build(null, subscriptionManager, streamingManager));
         }
 
         @Test
         void allowsNullSubscriptionQueryShutdownManager() {
             // when / then
             assertThatNoException()
-                    .isThrownBy(() -> new ShutdownTrackingQueryGateway(stubGateway, null, streamingManager));
+                    .isThrownBy(() -> ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager));
         }
 
         @Test
         void allowsNullStreamingQueryShutdownManager() {
             // when / then
             assertThatNoException()
-                    .isThrownBy(() -> new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null));
+                    .isThrownBy(() -> ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null));
+        }
+
+        @Test
+        void throwsAxonConfigurationExceptionWhenBothShutdownManagersAreNull() {
+            // when / then
+            assertThatExceptionOfType(AxonConfigurationException.class)
+                    .isThrownBy(() -> ShutdownTrackingQueryGateway.build(stubGateway, null, null));
         }
     }
 
@@ -171,7 +179,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.queryResult = CompletableFuture.completedFuture(RESPONSE);
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
 
             // when
             CompletableFuture<String> result = testSubject.query(QUERY, String.class, null);
@@ -187,7 +195,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.queryResult = CompletableFuture.completedFuture(RESPONSE);
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
             ProcessingContext ctx = new StubProcessingContext();
 
             // when
@@ -203,7 +211,7 @@ class ShutdownTrackingQueryGatewayTest {
             RuntimeException cause = new RuntimeException("query failed");
             stubGateway.queryResult = CompletableFuture.failedFuture(cause);
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
 
             // when
             CompletableFuture<String> result = testSubject.query(QUERY, String.class, null);
@@ -222,7 +230,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.queryManyResult = CompletableFuture.completedFuture(List.of(RESPONSE));
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
 
             // when
             CompletableFuture<List<String>> result = testSubject.queryMany(QUERY, String.class, null);
@@ -237,7 +245,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.queryManyResult = CompletableFuture.completedFuture(List.of());
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
             ProcessingContext ctx = new StubProcessingContext();
 
             // when
@@ -253,7 +261,7 @@ class ShutdownTrackingQueryGatewayTest {
             RuntimeException cause = new RuntimeException("query failed");
             stubGateway.queryManyResult = CompletableFuture.failedFuture(cause);
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
 
             // when
             CompletableFuture<List<String>> result = testSubject.queryMany(QUERY, String.class, null);
@@ -273,7 +281,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.streamingQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
 
             // when
             Publisher<String> result = testSubject.streamingQuery(QUERY, String.class, null);
@@ -292,7 +300,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.streamingQueryPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
             ProcessingContext ctx = new StubProcessingContext();
 
             // when
@@ -309,7 +317,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.streamingQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, streamingManager);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.streamingQuery(QUERY, String.class, null);
@@ -330,7 +338,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.streamingQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
 
             // when
             Publisher<String> result = testSubject.streamingQuery(QUERY, String.class, null);
@@ -349,7 +357,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.streamingQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
 
             // when
             Publisher<String> result = testSubject.streamingQuery(QUERY, String.class, null);
@@ -373,7 +381,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY,
@@ -395,7 +403,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.subscriptionQueryPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
             ProcessingContext ctx = new StubProcessingContext();
 
             // when
@@ -413,7 +421,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY,
@@ -437,7 +445,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY,
@@ -459,7 +467,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, streamingManager);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY,
@@ -486,7 +494,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryWithMapperPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY, String.class, msg -> RESPONSE, null, 256);
@@ -505,7 +513,7 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             stubGateway.subscriptionQueryWithMapperPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
             ProcessingContext ctx = new StubProcessingContext();
 
             // when
@@ -523,7 +531,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryWithMapperPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY, String.class, msg -> RESPONSE, null, 256);
@@ -544,7 +552,7 @@ class ShutdownTrackingQueryGatewayTest {
             Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
             stubGateway.subscriptionQueryWithMapperPublisher = sink.asFlux();
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
 
             // when
             Publisher<String> result = testSubject.subscriptionQuery(QUERY, String.class, msg -> RESPONSE, null, 256);
@@ -565,7 +573,7 @@ class ShutdownTrackingQueryGatewayTest {
         void alwaysDescribesDelegate() {
             // given
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
             MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
@@ -579,7 +587,7 @@ class ShutdownTrackingQueryGatewayTest {
         void describesSubscriptionQueryManagerWhenNonNull() {
             // given
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, null);
             MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
@@ -595,7 +603,7 @@ class ShutdownTrackingQueryGatewayTest {
         void describesStreamingQueryManagerWhenNonNull() {
             // given
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, streamingManager);
+                    ShutdownTrackingQueryGateway.build(stubGateway, null, streamingManager);
             MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
@@ -611,7 +619,7 @@ class ShutdownTrackingQueryGatewayTest {
         void describesBothManagersWhenBothAreSet() {
             // given
             ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, streamingManager);
+                    ShutdownTrackingQueryGateway.build(stubGateway, subscriptionManager, streamingManager);
             MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
@@ -622,23 +630,6 @@ class ShutdownTrackingQueryGatewayTest {
             assertThat(descriptor.getDescribedProperties())
                     .containsEntry("subscriptionQueryShutdownManager", subscriptionManager)
                     .containsEntry("streamingQueryShutdownManager", streamingManager);
-        }
-
-        @Test
-        void doesNotDescribeNullManagers() {
-            // given
-            ShutdownTrackingQueryGateway testSubject =
-                    new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            MockComponentDescriptor descriptor = new MockComponentDescriptor();
-
-            // when
-            testSubject.describeTo(descriptor);
-
-            // then
-            assertThat(descriptor.<Object>getProperty("delegate")).isSameAs(stubGateway);
-            assertThat(descriptor.getDescribedProperties())
-                    .doesNotContainKey("subscriptionQueryShutdownManager")
-                    .doesNotContainKey("streamingQueryShutdownManager");
         }
     }
 }
