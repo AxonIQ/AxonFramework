@@ -16,8 +16,10 @@
 package org.axonframework.messaging.queryhandling.gateway;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.common.lifecycle.ShutdownInProgressException;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
 import org.axonframework.messaging.queryhandling.QueryShutdownManager;
 import org.jspecify.annotations.NonNull;
@@ -33,8 +35,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Test class verifying correct workings of the {@link ShutdownTrackingQueryGateway}.
@@ -188,7 +188,7 @@ class ShutdownTrackingQueryGatewayTest {
             stubGateway.queryResult = CompletableFuture.completedFuture(RESPONSE);
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ProcessingContext ctx = mock(ProcessingContext.class);
+            ProcessingContext ctx = new StubProcessingContext();
 
             // when
             testSubject.query(QUERY, String.class, ctx);
@@ -238,7 +238,7 @@ class ShutdownTrackingQueryGatewayTest {
             stubGateway.queryManyResult = CompletableFuture.completedFuture(List.of());
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ProcessingContext ctx = mock(ProcessingContext.class);
+            ProcessingContext ctx = new StubProcessingContext();
 
             // when
             testSubject.queryMany(QUERY, String.class, ctx);
@@ -293,7 +293,7 @@ class ShutdownTrackingQueryGatewayTest {
             stubGateway.streamingQueryPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ProcessingContext ctx = mock(ProcessingContext.class);
+            ProcessingContext ctx = new StubProcessingContext();
 
             // when
             //noinspection ReactiveStreamsUnusedPublisher
@@ -396,7 +396,7 @@ class ShutdownTrackingQueryGatewayTest {
             stubGateway.subscriptionQueryPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ProcessingContext ctx = mock(ProcessingContext.class);
+            ProcessingContext ctx = new StubProcessingContext();
 
             // when
             //noinspection ReactiveStreamsUnusedPublisher
@@ -506,7 +506,7 @@ class ShutdownTrackingQueryGatewayTest {
             stubGateway.subscriptionQueryWithMapperPublisher = Flux.empty();
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ProcessingContext ctx = mock(ProcessingContext.class);
+            ProcessingContext ctx = new StubProcessingContext();
 
             // when
             //noinspection ReactiveStreamsUnusedPublisher
@@ -566,13 +566,13 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ComponentDescriptor descriptor = mock(ComponentDescriptor.class);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
             testSubject.describeTo(descriptor);
 
             // then
-            verify(descriptor).describeWrapperOf(stubGateway);
+            assertThat(descriptor.<Object>getProperty("delegate")).isSameAs(stubGateway);
         }
 
         @Test
@@ -580,14 +580,15 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, null);
-            ComponentDescriptor descriptor = mock(ComponentDescriptor.class);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
             testSubject.describeTo(descriptor);
 
             // then
-            verify(descriptor).describeProperty("subscriptionQueryShutdownManager", subscriptionManager);
-            verify(descriptor, never()).describeProperty(eq("streamingQueryShutdownManager"), (Object) any());
+            assertThat(descriptor.getDescribedProperties())
+                    .containsEntry("subscriptionQueryShutdownManager", subscriptionManager)
+                    .doesNotContainKey("streamingQueryShutdownManager");
         }
 
         @Test
@@ -595,14 +596,15 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, streamingManager);
-            ComponentDescriptor descriptor = mock(ComponentDescriptor.class);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
             testSubject.describeTo(descriptor);
 
             // then
-            verify(descriptor).describeProperty("streamingQueryShutdownManager", streamingManager);
-            verify(descriptor, never()).describeProperty(eq("subscriptionQueryShutdownManager"), (Object) any());
+            assertThat(descriptor.getDescribedProperties())
+                    .containsEntry("streamingQueryShutdownManager", streamingManager)
+                    .doesNotContainKey("subscriptionQueryShutdownManager");
         }
 
         @Test
@@ -610,15 +612,16 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, subscriptionManager, streamingManager);
-            ComponentDescriptor descriptor = mock(ComponentDescriptor.class);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
             testSubject.describeTo(descriptor);
 
             // then
-            verify(descriptor).describeWrapperOf(stubGateway);
-            verify(descriptor).describeProperty("subscriptionQueryShutdownManager", subscriptionManager);
-            verify(descriptor).describeProperty("streamingQueryShutdownManager", streamingManager);
+            assertThat(descriptor.<Object>getProperty("delegate")).isSameAs(stubGateway);
+            assertThat(descriptor.getDescribedProperties())
+                    .containsEntry("subscriptionQueryShutdownManager", subscriptionManager)
+                    .containsEntry("streamingQueryShutdownManager", streamingManager);
         }
 
         @Test
@@ -626,15 +629,16 @@ class ShutdownTrackingQueryGatewayTest {
             // given
             ShutdownTrackingQueryGateway testSubject =
                     new ShutdownTrackingQueryGateway(stubGateway, null, null);
-            ComponentDescriptor descriptor = mock(ComponentDescriptor.class);
+            MockComponentDescriptor descriptor = new MockComponentDescriptor();
 
             // when
             testSubject.describeTo(descriptor);
 
             // then
-            verify(descriptor).describeWrapperOf(stubGateway);
-            verify(descriptor, never()).describeProperty(eq("subscriptionQueryShutdownManager"), (Object) any());
-            verify(descriptor, never()).describeProperty(eq("streamingQueryShutdownManager"), (Object) any());
+            assertThat(descriptor.<Object>getProperty("delegate")).isSameAs(stubGateway);
+            assertThat(descriptor.getDescribedProperties())
+                    .doesNotContainKey("subscriptionQueryShutdownManager")
+                    .doesNotContainKey("streamingQueryShutdownManager");
         }
     }
 }
