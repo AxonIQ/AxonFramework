@@ -5,9 +5,8 @@
 Axon Framework 5 has no `Saga` construct. There is no `@Saga` stereotype, no `SagaStore`, no `SagaRepository`, no
 association values, and no `SagaTestFixture`. The `DeadlineManager` and `@DeadlineHandler` are gone with them.
 
-For *new* processes that is not a gap: the shapes a saga took are written directly, with the same building blocks as
-everything else, and the xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes four of them in
-detail.
+For *new* processes, the shapes a saga took are written directly, with the same building blocks as everything else.
+The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes four of them in detail.
 
 For sagas that are *already running*, rewriting is not an option, because a business process can take months to finish
 and you cannot ask it to stop halfway. That case is served by the `axon-legacy` module, described in <<legacy-module>>.
@@ -50,8 +49,7 @@ APIs it has to live with:
 * `DeadlineManager` and `@DeadlineHandler` move into the same module, so deadlines scheduled by a saga still fire and
   still reach it.
 
-The intended cost of adopting it is one dependency, which is why "almost unchanged" is the goal for your saga classes
-rather than "ported".
+The intended cost of adopting it is one dependency. The goal for your saga classes is "almost unchanged", not "ported".
 
 [NOTE]
 ====
@@ -61,10 +59,10 @@ link:https://github.com/AxonFramework/AxonFramework/issues/3065[GitHub Issue #30
 released, plan on the code-level migration below and on the drainage strategy in <<strategy>>.
 ====
 
-=== It deliberately will not start new sagas
+=== It does not start new sagas
 
-The module is a migration aid, not a supported way to write processes, and it is shaped to make that hard to ignore:
-`@StartSaga` is deprecated on arrival, and starting new instances through the legacy module is not the intent. Existing
+The module is a migration aid, not a supported way to write processes. `@StartSaga` is deprecated on arrival, and
+starting new instances through the legacy module is not the intent. Existing
 instances receive their events and run to completion; new work goes to the Axon Framework 5 implementation you write
 alongside.
 
@@ -86,7 +84,7 @@ Those defaults suit some processes well and others badly. A process that needs t
 against wants columns rather than a blob. A process whose correlation is derivable needs no association values at all.
 A process that is really a handful of independent reactions has no life cycle to manage.
 
-Axon Framework 5 hands each of those decisions back to you, which is why the replacement is a choice of approach rather
+Axon Framework 5 hands each of those decisions back to you. The replacement is a choice of approach rather
 than a class to extend. The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes the approaches
 without reference to Axon Framework 4; this page is the translation layer between them.
 
@@ -158,7 +156,7 @@ method that reads top to bottom, and its position is persisted for you.
 [NOTE]
 ====
 Workflows are available as a preview rather than a production release, and running them in production needs an Axoniq
-licence. Trying them out does not, so the translation below is worth reading before you commit to anything else.
+licence. Trying them out does not.
 ====
 
 A saga and a workflow describe the same thing differently. The saga is a set of `@SagaEventHandler` methods plus
@@ -193,10 +191,10 @@ Vertical Slice Architecture and Event Modelling.
 [#deadlines]
 == Deadlines, and why the timeout became a command
 
-Axon Framework 4 scheduled a callback into the saga's own future. There is no equivalent, and the replacement is deliberately
+Axon Framework 4 scheduled a callback into the saga's own future. There is no equivalent, and the replacement is
 shaped differently rather than being a like-for-like substitute. A scheduled callback was invisible from outside the
 saga, could be triggered only by waiting, and left a scope that had to be cancelled when the saga ended. None of those
-three properties survives, and none is missed.
+three properties survives in the replacement.
 
 Sagas scheduled deadlines for two reasons that no longer call for one at all. *Retrying a failed step* is the first:
 returning the command's `CompletableFuture` from the event handler leaves the tracking token where it is on failure, so
@@ -204,25 +202,25 @@ the event processor retries the whole reaction for you, and no retry has to be s
 is no longer relevant* is the second, and is covered below. Only a genuine timeout is left to translate.
 
 The timeout becomes a *command* asking the process to give up, sent by a scheduled sweep over a projection of
-outstanding work. The choice of a command rather than an event is the part worth understanding when migrating:
+outstanding work. The reasons for choosing a command rather than an event:
 
 * The elapsing of a timeout is not, by itself, a fact about the business. It is a *request* to abandon something, and
   the process may decline, because the payment arrived a moment ago. A request with a receiver entitled to say no is a
   command.
 * Publishing a `PaymentTimedOut` event would assert as settled something that has not been decided, and leaves no
   natural place to decide it. An event also has no result, so nothing can reject it.
-* A command can be sent by anyone: an operator, a support tool, a REST endpoint or a test. That is what makes the
-  timeout path testable without waiting, which a scheduled callback never was.
+* A command can be sent by anyone: an operator, a support tool, a REST endpoint or a test. This makes the timeout path
+  testable without waiting; a scheduled callback was not.
 * Nothing is scheduled, so nothing has to be cancelled. Every `cancelAllWithinScope` call in an `@EndSaga` method can
   be deleted rather than translated. Cancellation is replaced by the receiver *ignoring* the command: a timeout for a
   process that has already finished, or a payment that has already settled, appends nothing and reports success. That
   is the same idempotency the rest of the process already depends on, so it costs nothing extra.
 
-The last point is worth dwelling on, because it is where previous Framework versions mislead. A scheduled deadline had to be
-cancelled, and forgetting to cancel one meant a callback firing into a process that was already over. Here a late
-timeout command is harmless by construction: it is a request, and the receiver declines it. So instead of asking
-"which deadlines must I now cancel", ask "is my handler safe to receive this late", which is a question you can answer
-by reading one method rather than by tracing every path that ends a process.
+Earlier Framework versions required a scheduled deadline to be cancelled, and forgetting to cancel one meant a
+callback firing into a process that was already over. A late timeout command is harmless by construction: it is a
+request, and the receiver declines it. The relevant question when migrating is not "which deadlines must I now
+cancel" but "is my handler safe to receive this late". That question can be answered by reading one method, instead
+of tracing every path that ends a process.
 
 The full pattern, including where it gets harder, is on the xref:saga-guide:ROOT:deadlines.adoc[deadlines] page.
 
@@ -306,9 +304,9 @@ inspected framework-managed bookkeeping that no longer exists.
 | No equivalent. Structure the timeout so it can be invoked directly; see xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 |===
 
-The absence of `expectActiveSagas` is worth a moment, because it is the one people miss. It counted live instances in
-the saga store, and no approach here has a saga store to count. Assert on what the process *did* instead, which is a
-better test in any case: the commands it sent are the behaviour, and the count of live instances never was.
+The absence of `expectActiveSagas` is the one difference people most often miss. It counted live instances in
+the saga store, and no approach here has a saga store to count. Assert on what the process *did* instead: the
+commands it sent are the behaviour, and the count of live instances was not.
 
 == A working example
 

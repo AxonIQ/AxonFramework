@@ -67,7 +67,7 @@ thing, and each picks its own answer to the state question below.
 
 If you are on Axoniq Framework and can accept a preview, write the process as a
 xref::workflows.adoc[[.advanced-framework]#workflow#] and stop reading here. Everything after this point is what to do
-when that is not available to you, and none of it is a workaround.
+when that is not available to you.
 
 [#state-approaches]
 == How state is held

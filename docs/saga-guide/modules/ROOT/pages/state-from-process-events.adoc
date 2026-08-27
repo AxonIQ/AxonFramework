@@ -31,10 +31,9 @@ equally impossible against a team whose events live in a different Axon Server c
 sourced from two. This process reads only its own events, so it needs nothing from the other side beyond being told
 that something happened.
 
-The second is when the process itself is worth recording. A repository row is deleted when the process ends, and
-derived state was never written at all, so neither can answer "how did this rental turn out, and how long did it
-take". A process that writes its own events can, and for long-running or regulated processes that history is often the
-point.
+The second is auditing the process itself. A repository row is deleted when the process ends, and derived state is
+never written at all, so neither approach retains a record of how a rental turned out or how long it took. A process
+that writes its own events keeps that record, which matters for long-running or regulated processes.
 
 == The process's own events
 
@@ -55,8 +54,8 @@ written, every handler short-circuits on it.
 ----
 include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=state,indent=0]
 ----
-<1> The criteria selects only what the process itself wrote. This is precisely why the approach survives when the
-other side's events are out of reach.
+<1> The criteria selects only what the process itself wrote, so the approach works even when the other side's events
+are out of reach.
 
 == Recording what the process did
 
@@ -76,8 +75,8 @@ include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=translat
 <2> Recording only once it succeeded, as a second command.
 <3> The command handler is the only writer of the process's own events, and is itself idempotent.
 
-The cost is a second dispatch per step, and a command that exists only to record a fact. That is a fair thing to be
-suspicious of; it buys modelling discipline rather than behaviour.
+The cost is a second dispatch per step, and a command that exists only to record a fact: it adds modelling discipline
+without adding behaviour.
 
 === By appending directly
 
@@ -92,11 +91,9 @@ include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=appendin
 <2> Half the code of the command-translating version, and the append joins the same event store transaction that the
 work package commits alongside the tracking token.
 
-That last point sounds decisive and mostly is not. Recording becomes atomic with the token, which neither the
-repository approach nor the command-translating one manages. But because the command being recorded is idempotent, the
-window the others leave open costs nothing: a retry re-dispatches it as a no-op and then records. Atomic recording
-earns its keep only when the target command cannot be made idempotent, and at that point there is a larger problem to
-solve.
+Recording becomes atomic with the token, which neither the repository approach nor the command-translating one
+manages. Because the command being recorded is idempotent, this makes no practical difference: a retry re-dispatches
+it as a no-op and then records. Atomic recording matters only when the target command cannot be made idempotent.
 
 [WARNING]
 ====

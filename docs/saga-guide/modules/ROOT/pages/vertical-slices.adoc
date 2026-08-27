@@ -14,8 +14,8 @@ triggers, so this page treats the two as mostly the same thing.
 Use this if you already structure your application in vertical slices, or if you model with Event Modelling and the
 process appears on the model as a series of automations rather than as one box.
 
-It is also the approach with the best transactional profile, so it is worth considering even when the process does feel
-like one thing.
+It also has the best transactional profile of the approaches in this guide, which makes it applicable even when the
+process feels like one thing.
 
 [TIP]
 ====
@@ -66,9 +66,9 @@ token, and no transaction has to span anything.
 [NOTE]
 .Slices do not share lookups
 ====
-If three slices need the same lookup, each keeps its own. That duplication is deliberate: slices are independent, and
-a shared lookup couples them, so a change made for one slice can break another. If the duplication becomes genuinely
-painful, that is a signal the slices are really one thing, and a process class may be the better shape after all.
+If three slices need the same lookup, each keeps its own copy rather than sharing one. Slices are independent; a
+shared lookup couples them, so a change made for one slice can break another. Duplication that becomes painful is a
+sign the slices are really one thing, and a process class is the better shape in that case.
 ====
 
 [#state-per-slice]
@@ -108,8 +108,8 @@ have had to record their own instead, and only those three. Nothing else about t
 [TIP]
 ====
 Slices choosing differently is not inconsistency. A slice that needs a queryable record and one that needs a two-field
-lookup have different requirements, and making them share an answer is what produces the coupling this approach exists
-to avoid.
+lookup have different requirements; giving both the same answer would couple slices that this approach otherwise keeps
+independent.
 ====
 
 == The whole process
@@ -132,10 +132,10 @@ part:
 The rental-triggered slices are stateless because the trigger event carries everything the command needs. The
 payment-triggered ones are not, because a payment event knows only the reference.
 
-The last slice is stateless for a different and more interesting reason. It could check whether cancelling is still
-worthwhile before passing the request on, and deliberately does not: that is a question about the payment, the payment
-side answers it authoritatively, and a check here could only ever be a stale copy of that answer. Duplicating a
-decision that is not yours to make adds no safety and can add confusion.
+The last slice is stateless for a different reason: cancelling is not its decision to make. It does not check whether
+cancelling is still needed before passing the request on. That is a question about the payment, and the payment side
+answers it authoritatively; a check here would only be a stale copy of that answer, which adds no safety and can add
+confusion.
 
 == Compensation
 
@@ -163,15 +163,14 @@ a|
 * Duplication between slices that need the same lookup.
 |===
 
-That first drawback is the real one. If the process is something people reason about as a unit, discuss as a unit, and
-draw on a whiteboard as a unit, then scattering it across six files hides something important. If it is really a set of
-independent rules that happen to concern the same identifier, this arrangement tells the truth and a process class does
-not.
+The first drawback matters most. If the process is something people reason about, discuss, and draw on a whiteboard as
+one unit, then scattering it across six files hides that unit. If it is really a set of independent rules that happen
+to concern the same identifier, this arrangement reflects that structure directly, and a process class would not.
 
-It is worth taking "only an event model shows it whole" literally rather than as a figure of speech. The
+"Only an event model shows it whole" is meant literally, not as a figure of speech. The
 xref::bike-rental-event-model.adoc[bike rental event model] is that whole view: every slice on this page is one purple
 sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback is largely
-paid for already. If it does not, the six files really are the only description there is.
+offset. If it does not, the six files are the only description there is.
 
 == Where next
 

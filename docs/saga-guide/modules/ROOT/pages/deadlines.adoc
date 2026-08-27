@@ -17,7 +17,7 @@ built out of a projection and a sweep.
 
 == The shape of the replacement
 
-A deadline is two things pretending to be one: a record of work that is outstanding, and something that periodically
+A deadline consists of two things: a record of work that is outstanding, and something that periodically
 notices when a piece of it has waited too long. Separating them gives you both without a scheduler that understands
 your domain.
 
@@ -30,13 +30,13 @@ your domain.
 image::EventModeling_PaymentDeadline.png[The payment timeout modelled as a projection and a sweep on prooph board,link=self,window=_blank]
 
 Both halves are on the left of the model. `PaymentPrepared` puts a row on the green projection, and the purple sweeper
-reads it. Neither writes anything the other depends on, which is the property the rest of this page keeps returning to.
+reads it. Neither writes anything the other depends on. The rest of this page relies on that property.
 
-The right of the model is worth more attention than the left, because it is the part a timeout is usually assumed not to
+The right side of the model is the part a timeout is usually assumed not to
 have. Giving up is not one decision in one place: the payment is called off, and only then does a further reaction
-release the bike. The two bounded contexts never address each other, and note what the rental side is finally told,
-`RejectRequest`. Not that a clock ran out, not that a deadline elapsed. No timeout concept crosses the boundary at all,
-which is why the rental context can stay ignorant that payments exist.
+release the bike. The two bounded contexts never address each other, and what the rental side is finally told is
+`RejectRequest`. Not that a clock ran out, not that a deadline elapsed. No timeout concept crosses the boundary at all.
+The rental context stays ignorant that payments exist.
 
 This model is drawn separately from
 xref::bike-rental-event-model.adoc[the bike rental event model] on purpose. The sweep is a different actor on a different
@@ -46,7 +46,7 @@ approach in this guide equally.
 [#a-command-not-an-event]
 == Why the timeout becomes a command
 
-This is the design decision worth understanding, and it is the one that repays the most thought.
+The timeout is expressed as a command rather than an event.
 
 A timer that fires *inside* a process is invisible from outside it, can only be triggered by waiting, and has to be
 unscheduled when the process ends. None of that is necessary. Use an ordinary command that asks the process to give
@@ -82,7 +82,7 @@ include::example$sagas/deadlines/PaymentsAwaitingConfirmation.java[tag=sweeper,i
 ----
 <1> The moment the work became outstanding comes from the event message, not from the clock.
 <2> Every way the work can settle removes the row. Missing one leaves the sweep cancelling something forever.
-<3> The scheduled trigger, deliberately holding no logic.
+<3> The scheduled trigger holds no logic.
 <4> The work, taking the moment to judge against as an argument.
 
 [source,java]
@@ -105,13 +105,12 @@ avoided here by construction.
 
 == Testing a timeout
 
-`AxonTestFixture` cannot manipulate time, which is exactly why the work is a method taking `Instant` rather than logic
-inside the `@Scheduled` method. That also splits the testing into two halves that fail for different reasons, and are
-worth keeping apart.
+`AxonTestFixture` cannot manipulate time. For that reason, the work is a method taking `Instant` rather than logic
+inside the `@Scheduled` method. That also splits the testing into two halves that fail for different reasons.
 
 === The sweep
 
-Does it notice overdue work, and leave the rest alone? Because the projection removes a row when the payment settles,
+This test verifies that the sweep notices overdue work and leaves the rest alone. Because the projection removes a row when the payment settles,
 the row disappearing is the observable proof that the sweep reached the payment side:
 
 [source,java]
@@ -142,7 +141,7 @@ of its own.
 
 === The process
 
-Does it do the right thing when asked to give up? That is a different question, with no clock in it at all, so the
+This test verifies that the process does the right thing when asked to give up. That is a different question, with no clock in it at all, so the
 test says nothing about sweeping:
 
 [source,java]
@@ -172,13 +171,13 @@ that command is what tells us the process has noticed this rental, which matters
 their own progress do so asynchronously. Asking one to give up before it has noticed would find nothing to give up on.
 <2> Giving up is the *when*, because that is the action under test.
 
-Splitting the two is worth the extra test. A single test driving the sweep and asserting on the released bike passes
-or fails for at least three different reasons, and tells you nothing about which.
+A single test driving the sweep and asserting on the released bike passes
+or fails for at least three different reasons, and tells you nothing about which. Splitting the two tests avoids that ambiguity.
 
 [#caveats]
 == Where this pattern gets harder
 
-The naive version looks simpler than it is. These are worth knowing before you rely on it.
+The naive version looks simpler than it is. The following caveats apply before relying on it.
 
 Every instance sweeps::
 `@Scheduled` runs on all of them, so three instances dispatch each cancellation three times. Harmless when the command
@@ -195,7 +194,7 @@ real scheduler and have it send the same command.
 The query must stay a query::
 Filtering at the database on an indexed column, never loading everything and filtering in memory.
 
-The honest summary: this replaces a deadline *manager* with a deadline *projection*. It is simple, replayable and
+In summary, this replaces a deadline *manager* with a deadline *projection*. It is simple, replayable and
 needs no new infrastructure, but it is approximate in time and duplicated across instances, and it is acceptable only
 because every command it sends can be sent twice.
 
