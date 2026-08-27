@@ -413,11 +413,10 @@ so the named gateway is available everywhere Axon resolves components:
 include::example$queries/querydispatchers/shutdown/springboot/QueryShutdownConfiguration.java[tag=named-gateway-bean,indent=0]
 ----
 
-<1> Inject the `QueryShutdownManager` bean declared above. Spring's `@Qualifier` selects the right one when multiple managers are defined.
+<1> Inject the `QueryShutdownManager` bean declared above.
 <2> Pass the same manager for both subscription and streaming tracking, or pass separate managers if different policies are needed.
 
 Multiple `QueryShutdownManager` beans can coexist; each is registered with the lifecycle independently.
-Inject the appropriate manager by name using `@Qualifier` at each call site or gateway declaration.
 
 === Manual lifecycle integration
 
