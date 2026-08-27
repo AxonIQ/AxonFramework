@@ -8,11 +8,11 @@ state, a command. Workflows take the opposite position. The process is written a
 top to bottom, and the machinery that lets it survive a restart is provided rather than assembled.
 
 *This is the recommended way to orchestrate a business process, and the first option to consider.* Orchestration is
-what a workflow is for, and writing the flow as a flow removes most of what the other pages spend their length on.
+what a workflow is for, and writing the flow as a flow avoids the state-management concerns the other pages cover.
 
-The other pages exist because not everything that reacts to events is a process worth writing as a flow. A handful of
-independent reactions is better modelled as a handful of independent reactions, and forcing it into one method buys a
-centre it never needed. Where there genuinely is a flow, this is the page.
+The other approaches exist for cases where the reaction to events is not a single flow. A handful of independent
+reactions is better modelled as a handful of independent reactions; forcing them into one method gives them a centre
+they do not need. Use this page when the process genuinely is one flow.
 
 [NOTE]
 ====
@@ -28,15 +28,14 @@ for the API and current status.
 
 The approaches on the other pages are all *reactive*. Each event arrives independently, the process reconstructs
 enough context to decide what to do, and the flow between steps exists only in the reader's head or on an event model.
-That is why so much of this guide is about state: reconstructing context is the work.
+Reconstructing that context is why so much of this guide is about state.
 
 A workflow inverts that. The sequence is written as a sequence, and waiting is an ordinary statement rather than the
 end of one handler and the start of another. Where a reactive process spreads "ask for payment, then wait, then
 approve or reject" across three handlers and a stored correlation, a workflow expresses it as three lines.
 
-That is the headline: the code is close to ordinary imperative code, in a place where the framework usually asks you
-to think in reactions. What you give up is not correctness but choice, since the persistence of the flow's position is
-no longer yours to design.
+The code is close to ordinary imperative code, in a place where the framework usually asks you to think in reactions.
+Correctness is unaffected; what changes is that the persistence of the flow's position is no longer yours to design.
 
 The consequences follow from that inversion:
 
@@ -54,29 +53,30 @@ The consequences follow from that inversion:
 Whenever it is available to you. The recommendation does not depend on the size or shape of the process, and there is
 no threshold below which one of the other approaches becomes the better choice.
 
-The reason it holds for small processes too is that processes grow. Adding a step to a workflow is adding a line in the
+It holds for small processes too because processes grow. Adding a step to a workflow is adding a line in the
 middle of a method. Adding one to any of the other approaches means a new handler, a piece of state to carry the new
 information, and a correlation to get right, all of it spread across files. A process written as a workflow starts
 easier and stays easier, and the gap widens with every step.
 
-What does decide against a workflow is the process not being one. If what you have is a set of reactions that happen to
-share a subject, xref::vertical-slices.adoc[vertical slices] keep them independent, and a workflow would give them a
-centre they do not need. That is a judgement about the shape of the work, not about the framework you are on.
+The deciding factor against a workflow is that the process is not a single flow. If what you have is a set of
+reactions that happen to share a subject, xref::vertical-slices.adoc[vertical slices] keep them independent; a
+workflow would give them a centre they do not need. That decision is about the shape of the work, not about the
+framework you are on.
 
 Practically, a preview dependency has to be acceptable in your build, and production use needs a licence. Neither
 affects trying it.
 
-The bike rental example running through the rest of this guide is deliberately not written as a workflow. That is so
-the other approaches can be compared line for line against the same process, not a suggestion that a process this small
+The bike rental example running through the rest of this guide is not written as a workflow, so that the other
+approaches can be compared line for line against the same process. This is not a suggestion that a process this small
 is better off without one.
 
 == Relationship to the other approaches
 
-Workflows are not one more entry on the same list so much as a different axis. The other approaches differ in where the
-process lives and how it keeps its state; a workflow differs in *who reconstructs the flow*.
+The other approaches differ in where the process lives and how it keeps its state; a workflow differs in *who
+reconstructs the flow*.
 
-That has a practical consequence worth planning for. A process written as
-xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it deliberately has no centre;
+That has a practical consequence. A process written as
+xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no centre;
 converting it later means gathering the slices back into one flow. A process written as
 xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
 progress as facts, which is much the same information a workflow persists on your behalf.

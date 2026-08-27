@@ -9,7 +9,7 @@ can roll the whole process back.
 
 Booking a trip is the classic example. A flight, a hotel and a car have to be reserved, each held by a different
 component, and if the hotel comes back unavailable an hour later the flight is already booked. Undoing it is not a
-rollback but another step of the process: the flight is cancelled, deliberately, by the same thing that booked it.
+rollback but another step of the process: the flight is cancelled by the same thing that booked it.
 That is *compensation*, and deciding when it is needed is most of what a saga does.
 
 The same shape turns up well short of trip booking, and inside a single application. A rental is not confirmed until
@@ -79,15 +79,15 @@ that.
 xref::workflows.adoc[[.advanced-framework]#Workflows#] are the recommended way to orchestrate a process, whatever the
 process looks like. The flow is written as a single method that reads top to bottom, so the code is close to ordinary
 imperative code, and the position within it is persisted for you: no state to keep, no correlation to derive, and no
-deadline pattern to build. Extending it later is a line in the middle of a method rather than another handler and
-another piece of state, which is why the recommendation holds for small processes as much as large ones.
+deadline pattern to build. Extending it later means adding a line in the middle of a method, not another handler and
+another piece of state. The recommendation holds for small processes as much as large ones.
 
-Workflows are part of Axoniq Framework and are available as a preview. Trying them is free, so it is worth doing
-before settling on anything else here.
+Workflows are part of Axoniq Framework and are available as a preview, at no cost to try. Evaluate them before
+choosing one of the approaches below.
 
-They are not the only answer, and not because of what they cost. Not everything that reacts to an event is a process
-worth writing as a flow, and the approaches in this guide are the right shape when it is not. Each needs nothing beyond
-Axon Framework, and each is proven by the same contract test in the example module.
+Workflows are not the only answer, and cost is not the reason. Not every reaction to an event needs to be written as
+a flow, and the approaches in this guide are the right shape for those cases. Each needs nothing beyond Axon
+Framework, and each is proven by the same contract test in the example module.
 ====
 
 [#saga-or-process-manager]
@@ -180,15 +180,14 @@ twice, and no guard has to be remembered.
 === Recorded progress must commit with the tracking token
 
 A process that remembers anything is writing in two places: its own state, and the token that says which events it has
-seen. If those two can commit independently, the process drifts, and it drifts only under failure, which is the worst
-way to find out.
+seen. If those two can commit independently, the process drifts, and only under failure.
 
 They commit together without any effort on your part when the write happens inside the unit of work: with a
 `PlatformTransactionManager` present, the handler runs in a transaction that commits alongside the token, so an
-ordinary repository call in an ordinary handler is already atomic with it. That holds on the failure path too, which is
-the half worth remembering: a command that fails fails the handler, the transaction rolls back, and the write is undone
-along with the token. What breaks the property is moving the write out of the handler, typically into a callback on the
-command's future, which runs on a thread with nothing bound to it.
+ordinary repository call in an ordinary handler is already atomic with it. That holds on the failure path too: a
+command that fails fails the handler, the transaction rolls back, and the write is undone along with the token. What
+breaks the property is moving the write out of the handler, typically into a callback on the command's future, which
+runs on a thread with nothing bound to it.
 
 Ordering the write against the dispatch is a smaller question than it looks, and
 xref::state-in-a-repository.adoc#ordering[the repository page] works it through.

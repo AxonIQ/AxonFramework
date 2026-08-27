@@ -15,8 +15,8 @@ Both bounded contexts have to write their events to the same event store context
 an event-sourced entity is sourced from one context, `EventCriteria` selects within one, and no criteria spans two, so
 an entity assembled from events in two contexts cannot be injected at all.
 
-Within one context there is no limit on how many bounded contexts the criteria may reach across, which is why the
-example works: `rental` and `payment` share nothing but a partition of the event store.
+Within one context there is no limit on how many bounded contexts the criteria may reach across. `rental` and
+`payment` share nothing but a partition of the event store, and the criteria in the example select across both.
 
 If the other side lives in a different Axon Server context, or in a system that is not an Axon event store,
 xref::state-from-process-events.adoc[state from process events] is the approach that replaces this one.
@@ -34,9 +34,8 @@ when they are not.
 Use this when both sides write to the same event store context, their events carry a tag the process can select on,
 and the process's state really is implied by events that already exist.
 
-That is a real set of conditions, and the first is the one to check first, because it is a deployment fact rather than
-a design choice. Two bounded contexts in one Axon Server context qualify; the same two split across two contexts do
-not, and no amount of tagging changes that. If the payment side is a third-party provider whose events you merely
+Check the first condition first: it is a deployment fact, not a design choice. Two bounded contexts in one Axon Server
+context qualify; the same two split across two contexts do not, and no amount of tagging changes that. If the payment side is a third-party provider whose events you merely
 receive, this approach is likewise unavailable and xref::state-from-process-events.adoc[process events] applies
 instead.
 
@@ -52,9 +51,9 @@ include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=state,in
 <2> Payment events are selected by the payment side's own reference tag, whose value happens to be the rental
 identifier.
 
-That pair of criterions is where the two bounded contexts meet, and it is the only place in the application where they
-do. The rental side does not know payments exist; the payment side treats the reference as an opaque string. Holding
-that one piece of knowledge is what makes this class the process. Both criterions select within the same event store
+That pair of criteria is the only place in the application where the two bounded contexts meet. The rental side does
+not know payments exist; the payment side treats the reference as an opaque string. This class alone holds both
+pieces of knowledge. Both criterions select within the same event store
 context, because a single `EventCriteria` cannot do anything else.
 
 [TIP]
@@ -74,20 +73,20 @@ include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=process,
 process would have to store is recovered from an event that already exists.
 
 [#one-effect]
-== Why this is the safest shape
+== One effect per handler
 
 Compare this to xref::state-in-a-repository.adoc[keeping state in a repository]. There, a row is written and a
 command dispatched, and they agree only because a transaction spans them. Here only one thing happens: a command is
 dispatched.
 
-That difference removes an entire class of bug rather than relying on configuration to prevent it:
+That difference removes an entire class of bug:
 
 * If the command fails, no event is appended, the tracking token stays where it is, and the redelivery rebuilds an
   identical decision model and tries again.
 * If the command succeeded but the commit did not, the redelivery re-dispatches and the receiver's idempotency absorbs
   it.
 
-There is nothing to keep in step, because there is no second place anything is written.
+There is nothing to keep in step. Nothing is written to a second place.
 
 [#id-resolution]
 == Resolving which process an event belongs to
@@ -137,8 +136,7 @@ a|
 There is nothing to end. Being finished is a predicate over events that already exist, `state.requestSettled` in the
 sample, rather than a fact anyone records. Nothing to delete and nothing to clean up.
 
-That is not an omission. This approach has no life cycle to manage because it never held anything that a life cycle
-would have governed.
+This approach has no life cycle to manage: it never held anything for a life cycle to govern.
 
 == Where next
 

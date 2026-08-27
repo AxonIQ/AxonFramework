@@ -341,6 +341,36 @@ These terms are exceptions to sentence-case rules in H2-H6 headings:
 - ✅ "The processor starts immediately (consuming from the head of the stream)."
 - ❌ "The processor starts immediately — consuming from the head of the stream."
 
+### Discursive/rhetorical voice prohibition
+**Write in the plain reference voice used throughout the guide, not an essayistic or persuasive one.** This applies to
+every Antora module under `docs/`, including `docs/reference-guide/` and `docs/saga-guide/` (and any future guide
+module) - not only the reference guide proper. The bulk of the reference guide (e.g. `processing-context.adoc`,
+`event-publishing.adoc`, `command-handlers.adoc`, most `migration/pages/paths/*.adoc` files) states facts directly:
+short declarative sentences, tables, lists, and admonitions carry the structure. A minority of pages
+(`why-upgrade.adoc`, `solved-architecture-choices.adoc`) intentionally use a persuasive marketing voice with
+second-person address and rhetorical questions; that voice is reserved for those "why upgrade" pitch pages only and
+must not spread to reference, migration-path, or other guide content, including `docs/saga-guide/`.
+
+Avoid, in reference, migration-path, and guide pages alike:
+- **Rhetorical questions** used as section transitions: "What does this mean in practice?", "Why should X know about Y?"
+- **Dwelling asides** that comment on the text itself: "worth dwelling on", "is worth a moment", "the part worth understanding"
+- **Causal-chain rhetoric** stacking justifications into a persuasive argument: "which is why...", "That is not a gap:
+  ...", "None of those three properties survives, and none is missed."
+- **Direct reader address as a rhetorical device** (beyond plain instructional "you"): "Now if you're already
+  convinced...", "Let's explore...", "Here's a question worth thinking about:"
+- **Extended multi-sentence justifications for a design choice** where one or two plain sentences plus a `[NOTE]` would
+  do. State what the API is and how to use it; keep rationale to a sentence, not a paragraph of argument.
+
+Prefer instead:
+- State the fact, then (if needed) one sentence of rationale.
+- Use `[NOTE]`/`[TIP]`/`[IMPORTANT]` blocks for anything that would otherwise become a rhetorical detour.
+- Use tables and lists to carry structure instead of connective prose ("which is why", "That is the same... except").
+
+**How to verify:** before committing new or edited prose in `docs/reference-guide/` or `docs/saga-guide/`, scan the diff for
+`worth dwelling|worth a moment|worth understanding|worth knowing|which is why|deliberately|Let's explore|Here's a question|What does this mean|Now if you`. Any hit
+is a candidate for rewriting into the plain reference voice, unless the file is one of the intentional pitch pages
+listed above.
+
 ### ASCII-only text
 **All `.adoc` files must contain only ASCII characters.** Never use:
 - Curly/smart quotes: `"` `"` `'` `'` — use straight `"` and `'` instead
