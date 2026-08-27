@@ -314,6 +314,11 @@ Whenever this situation occurs, a Streaming Processor will construct an "initial
 Thus, the processor will begin at the start and handle every event present in the event source.
 This start position is configurable, as is described <<token_configuration,here>>.
 
+These events are handled as regular events, not as a replay.
+A processor starting for the first time has no previously built state to correct, so its first pass over the stream is a first pass rather than a repetition of one.
+Handlers therefore observe `ReplayStatus.REGULAR` throughout, handlers that opt out of replaying still handle this initial stream, and no replay-concluded notification is published.
+If you do want this initial catch-up flagged as a replay, for example because your handlers suppress side effects while replaying, configure the initial token to conclude its replay at the latest position instead, as shown in the xref:migration:paths/projectors-event-processors.adoc#initial-token-replay-status[migration guide].
+
 Conceptually, there are a couple of scenarios when a processor builds an initial token on application startup.
 The obvious one is already shared, namely when a processor starts for the first time.
 There are, however, also other situations when a token is built that might be unexpected, like:

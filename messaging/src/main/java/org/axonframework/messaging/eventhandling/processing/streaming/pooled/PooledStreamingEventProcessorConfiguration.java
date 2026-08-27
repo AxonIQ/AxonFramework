@@ -68,9 +68,10 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  * <ul>
  *     <li>The {@link ErrorHandler} is defaulted to a {@link PropagatingErrorHandler}.</li>
  *     <li>The {@code initialSegmentCount} defaults to {@code 16}.</li>
- *     <li>The {@code initialToken} function defaults to a {@link ReplayToken} that starts streaming
- *          from the {@link StreamableEventSource#latestToken(ProcessingContext) tail} with the replay flag enabled until the
- *          {@link StreamableEventSource#firstToken(ProcessingContext) head} at the moment of initialization is reached.</li>
+ *     <li>The {@code initialToken} function defaults to the
+ *          {@link StreamableEventSource#firstToken(ProcessingContext) first position} of the event stream, handling
+ *          every event the source holds as a regular event rather than as a replay. See
+ *          {@link #initialToken(Function)} for the reasoning and for how to replay the existing stream instead.</li>
  *     <li>The {@code tokenClaimInterval} defaults to {@code 5000} milliseconds.</li>
  *     <li>The {@link MaxSegmentProvider} (used by {@link PooledStreamingEventProcessor#maxCapacity()}) defaults to {@link MaxSegmentProvider#maxShort()}.</li>
  *     <li>The {@code claimExtensionThreshold} defaults to {@code 5000} milliseconds.</li>
@@ -291,11 +292,26 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Specifies the {@link Function} used to generate the initial {@link TrackingToken}s. The function will be given
      * the configured {@link StreamableEventSource} so that its methods can be invoked for token creation.
      * <p>
-     * Defaults to an automatic replay since the start of the stream.
+     * Defaults to the {@link StreamableEventSource#firstToken(ProcessingContext) first position} of the event stream,
+     * so a processor starting for the first time handles every event the source holds, beginning at the oldest one.
      * <p>
-     * More specifically, it defaults to a {@link ReplayToken} that starts streaming from the
-     * {@link StreamableEventSource#latestToken(ProcessingContext) tail} with the replay flag enabled until the
-     * {@link StreamableEventSource#firstToken(ProcessingContext) head} at the moment of initialization is reached.
+     * More specifically, it defaults to a {@link ReplayToken} whose
+     * {@link ReplayToken#getTokenAtReset() token at reset} is that same first position. The replay it describes is
+     * therefore concluded by the very first event handled, which means all events are handled in
+     * {@link org.axonframework.messaging.eventhandling.replay.ReplayStatus#REGULAR REGULAR} status. This is intended:
+     * the initial catch-up of a brand-new processor is not a replay, as there is no previously built state to correct.
+     * Handlers that opt out of replaying, like
+     * {@link org.axonframework.messaging.eventhandling.replay.ReplayBlockingEventHandlingComponent}, thus still handle
+     * this initial stream, and no {@link org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged} is
+     * published for it.
+     * <p>
+     * If your handlers rely on {@link org.axonframework.messaging.eventhandling.replay.ReplayStatus#REPLAY REPLAY}
+     * status to suppress side effects while a fresh processor catches up on an existing event store, configure the
+     * latest position as the token at reset so the entire catch-up towards it is flagged as a replay:
+     * <pre>{@code
+     * configuration.initialToken(source -> source.latestToken(null)
+     *                                            .thenApply(ReplayToken::createReplayToken));
+     * }</pre>
      *
      * @param initialToken The {@link Function} generating the initial {@link TrackingToken} based on a given
      *                     {@link StreamableEventSource}.
