@@ -26,24 +26,26 @@ import java.util.List;
  * Represents an UpdateChecker request, including machine and instance identifiers, operating system details, JVM
  * information, Kotlin version, and a list of library versions.
  *
- * @param machineId  The unique identifier for the machine. This is a UUID that is generated and stored in the user's
- *                   home directory.
- * @param instanceId The unique identifier for the instance of the application. This is a UUID that is generated for
- *                   each JVM instance.
- * @param osName     The name of the operating system (e.g., "Linux", "Windows").
- * @param osVersion  The version of the operating system (e.g., "6.11.0-26-generic").
- * @param osArch     The architecture of the operating system (e.g., "amd64", "x86_64").
- * @param jvmVersion The version of the Java Virtual Machine (JVM) (e.g., "17.0.2").
- * @param jvmVendor  The vendor of the JVM (e.g., "AdoptOpenJDK", "Oracle").
- * @param kotlinVersion The version of Kotlin used in the application, or "none" if Kotlin is not used.
- * @param libraries  A list of library versions used in the application, each represented by a {@link Artifact}
- *                   object containing the group ID, artifact ID, and version of the library.
+ * @param machineId       the unique identifier for the machine. This is a UUID that is generated and stored in the
+ *                        user's home directory
+ * @param machineUserName the name of the operating system user account running the JVM
+ * @param instanceId      the unique identifier for the instance of the application. This is a UUID that is
+ *                        generated for each JVM instance
+ * @param osName          the name of the operating system (e.g., "Linux", "Windows")
+ * @param osVersion       the version of the operating system (e.g., "6.11.0-26-generic")
+ * @param osArch          the architecture of the operating system (e.g., "amd64", "x86_64")
+ * @param jvmVersion      the version of the Java Virtual Machine (JVM) (e.g., "17.0.2")
+ * @param jvmVendor       the vendor of the JVM (e.g., "AdoptOpenJDK", "Oracle")
+ * @param kotlinVersion   the version of Kotlin used in the application, or "none" if Kotlin is not used
+ * @param libraries       a list of library versions used in the application, each represented by a {@link Artifact}
+ *                        object containing the group ID, artifact ID, and version of the library
  * @author Mitchell Herrijgers
  * @since 5.0.0
  */
 @Internal
 public record UpdateCheckRequest(
         String machineId,
+        String machineUserName,
         String instanceId,
         String osName,
         String osVersion,
@@ -53,11 +55,12 @@ public record UpdateCheckRequest(
         String kotlinVersion,
         List<Artifact> libraries
 ) {
+
     /**
-     * Converts the usage request into a query string format suitable for HTTP requests.
-     * All values are properly URL encoded.
+     * Converts the usage request into a query string format suitable for HTTP requests. All values are properly URL
+     * encoded.
      *
-     * @return The query string representation of the usage request.
+     * @return the query string representation of the usage request
      */
     public String toQueryString() {
         StringBuilder sb = new StringBuilder();
@@ -65,7 +68,9 @@ public record UpdateCheckRequest(
           .append("&java=").append(encode(jvmVersion + "; " + jvmVendor))
           .append("&kotlin=").append(encode(kotlinVersion));
         for (Artifact library : libraries) {
-            sb.append("&lib-").append(library.shortGroupId()).append(".").append(library.artifactId()).append("=").append(encode(library.version()));
+            sb.append("&lib-").append(library.shortGroupId())
+              .append(".").append(library.artifactId())
+              .append("=").append(encode(library.version()));
         }
         return sb.toString();
     }
@@ -77,7 +82,7 @@ public record UpdateCheckRequest(
     /**
      * Converts the usage request into a user agent string format.
      *
-     * @return The user agent string representation of the usage request.
+     * @return the user agent string representation of the usage request
      */
     public String toUserAgent() {
         String axonBaseVersion = getAxonBaseVersion();
@@ -88,7 +93,7 @@ public record UpdateCheckRequest(
         );
     }
 
-        private String getAxonBaseVersion() {
+    private String getAxonBaseVersion() {
         return libraries.stream()
                         .filter(a -> a.groupId().equals("org.axonframework"))
                         .filter(a -> a.artifactId().equals("axon-messaging"))

@@ -81,6 +81,7 @@ public class UpdateCheckerHttpClient {
                     .timeout(Duration.ofSeconds(10))
                     .headers("User-Agent", updateCheckRequest.toUserAgent())
                     .headers("X-Machine-Id", updateCheckRequest.machineId())
+                    .headers("X-Machine-User-Name", updateCheckRequest.machineUserName())
                     .headers("X-Instance-Id", updateCheckRequest.instanceId())
                     .headers("X-Uptime", String.valueOf(ManagementFactory.getRuntimeMXBean().getUptime()))
                     .headers("X-First-Run", firstRequest ? "true" : "false")
