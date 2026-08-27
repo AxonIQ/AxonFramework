@@ -71,7 +71,7 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
      *
      * @param delegate                        the {@link QueryGateway} to delegate all operations to
      * @param subscriptionQueryShutdownManager the manager to track subscription query streams with,
-     *                                        or {@code null} to skip subscription query tracking
+     *                                         or {@code null} to skip subscription query tracking
      * @param streamingQueryShutdownManager   the manager to track streaming query streams with,
      *                                        or {@code null} to skip streaming query tracking
      */
