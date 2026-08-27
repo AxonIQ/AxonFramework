@@ -240,12 +240,9 @@ public class QueryGatewayConfigurer {
                                                cfg.getComponent(QueryPriorityCalculator.class),
                                                cfg.getComponent(MessageConverter.class)
                                        );
-                                       if (subscriptionManager != null || streamingManager != null) {
-                                           return new ShutdownTrackingQueryGateway(base,
-                                                                                   subscriptionManager,
-                                                                                   streamingManager);
-                                       }
-                                       return base;
+                                       return ShutdownTrackingQueryGateway.build(
+                                               base, subscriptionManager, streamingManager
+                                       );
                                    });
 
         if (subscriptionManager != null || streamingManager != null) {

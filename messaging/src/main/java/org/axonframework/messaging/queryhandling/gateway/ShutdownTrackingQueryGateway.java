@@ -28,33 +28,32 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /**
- * A {@link QueryGateway} decorator that automatically registers subscription queries and streaming
- * queries with a {@link QueryShutdownManager}, ensuring they are cancelled during application
- * shutdown.
+ * A {@link QueryGateway} decorator that automatically registers subscription queries and streaming queries with a
+ * {@link QueryShutdownManager}, ensuring they are canceled during application shutdown.
  * <p>
- * This decorator wraps any {@link QueryGateway} implementation and transparently intercepts
- * {@link #subscriptionQuery} and {@link #streamingQuery} calls, passing their results through the
- * respective shutdown managers. All other gateway operations are delegated unchanged.
+ * This decorator wraps any {@link QueryGateway} implementation and transparently intercepts {@link #subscriptionQuery}
+ * and {@link #streamingQuery} calls, passing their results through the respective shutdown managers. All other gateway
+ * operations are delegated unchanged.
  * <p>
- * It is the gateway layer of a layered API: configure it once on the gateway and every dispatched
- * subscription or streaming query is tracked automatically, with no changes needed at call sites.
+ * It is the gateway layer of a layered API: configure it once on the gateway and every dispatched subscription or
+ * streaming query is tracked automatically, with no changes needed at call sites.
  * <p>
  * The recommended way to register this decorator is through
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer)},
- * which creates a named {@link QueryGateway} with shutdown tracking applied:
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerQueryGateway(String,
+ * java.util.function.Consumer)}, which creates a named {@link QueryGateway} with shutdown tracking applied:
  * <pre>{@code
  * MessagingConfigurer.create()
  *     .registerQueryGateway("reporting", g -> g
  *         .cancellingSubscriptionQueryOnShutdown()
  *     );
  * }</pre>
- * When using a dependency injection framework, a {@code ShutdownTrackingQueryGateway} can also be
- * registered as a named component by constructing it directly with a delegate gateway and the
- * desired {@link QueryShutdownManager} instances.
+ * When using a dependency injection framework, a {@code ShutdownTrackingQueryGateway} can also be registered as a named
+ * component by constructing it directly with a delegate gateway and the desired {@link QueryShutdownManager} instances.
+ * Use {@link #build(QueryGateway, QueryShutdownManager, QueryShutdownManager)} to create new
+ * {@code ShutdownTrackingQueryGateway} instances at all times.
  * <p>
  * When call-site tracking is preferred over gateway-level tracking, wrap individual results with
- * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track(org.reactivestreams.Publisher)}
- * instead.
+ * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track(org.reactivestreams.Publisher)} instead.
  *
  * @author Allard Buijze
  * @since 5.3.2
@@ -66,21 +65,50 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
     private final @Nullable QueryShutdownManager streamingQueryShutdownManager;
 
     /**
-     * Creates a new {@code ShutdownTrackingQueryGateway} that wraps the given {@code delegate} and
-     * tracks query streams with the given shutdown managers.
+     * Creates a new {@code ShutdownTrackingQueryGateway} that wraps the given {@code delegate} and tracks query streams
+     * with the given shutdown managers.
      *
-     * @param delegate                        the {@link QueryGateway} to delegate all operations to
-     * @param subscriptionQueryShutdownManager the manager to track subscription query streams with,
-     *                                         or {@code null} to skip subscription query tracking
-     * @param streamingQueryShutdownManager   the manager to track streaming query streams with,
-     *                                        or {@code null} to skip streaming query tracking
+     * @param delegate                         the {@link QueryGateway} to delegate all operations to
+     * @param subscriptionQueryShutdownManager the manager to track subscription query streams with, or {@code null} to
+     *                                         skip subscription query tracking
+     * @param streamingQueryShutdownManager    the manager to track streaming query streams with, or {@code null} to
+     *                                         skip streaming query tracking
      */
-    public ShutdownTrackingQueryGateway(QueryGateway delegate,
-                                        @Nullable QueryShutdownManager subscriptionQueryShutdownManager,
-                                        @Nullable QueryShutdownManager streamingQueryShutdownManager) {
+    private ShutdownTrackingQueryGateway(QueryGateway delegate,
+                                         @Nullable QueryShutdownManager subscriptionQueryShutdownManager,
+                                         @Nullable QueryShutdownManager streamingQueryShutdownManager) {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         this.subscriptionQueryShutdownManager = subscriptionQueryShutdownManager;
         this.streamingQueryShutdownManager = streamingQueryShutdownManager;
+    }
+
+    /**
+     * Builds a {@code ShutdownTrackingQueryGateway}, delegating to the given {@code delegate} while using the given
+     * {@code subscriptionQueryShutdownManager} and {@code streamingQueryShutdownManager} to automatically shutdown
+     * {@link #subscriptionQuery(Object, Class) subscription-} and
+     * {@link #streamingQuery(Object, Class) straeming queries} respectively.
+     * <p>
+     * If both the {@code subscriptionQueryShutdownManager} and {@code streamingQueryShutdownManager} are {@code null},
+     * the {@code delegate} will be returned as is.
+     *
+     * @param delegate                         the {@link QueryGateway} to delegate all operations to
+     * @param subscriptionQueryShutdownManager the manager to track
+     *                                         {@link #subscriptionQuery(Object, Class) subscription queries} with, or
+     *                                         {@code null} to skip subscription query tracking
+     * @param streamingQueryShutdownManager    the manager to track
+     *                                         {@link #streamingQuery(Object, Class) streaming queries} with, or
+     *                                         {@code null} to skip streaming query tracking
+     * @return a tracking wrapper around {@code delegate}, or {@code delegate} itself when both managers are
+     * {@code null}
+     */
+    public static QueryGateway build(QueryGateway delegate,
+                                     @Nullable QueryShutdownManager subscriptionQueryShutdownManager,
+                                     @Nullable QueryShutdownManager streamingQueryShutdownManager) {
+        return subscriptionQueryShutdownManager == null && streamingQueryShutdownManager == null
+                ? Objects.requireNonNull(delegate, "delegate must not be null")
+                : new ShutdownTrackingQueryGateway(delegate,
+                                                   subscriptionQueryShutdownManager,
+                                                   streamingQueryShutdownManager);
     }
 
     @Override
@@ -103,8 +131,8 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
                                            @Nullable ProcessingContext context) {
         Publisher<R> result = delegate.streamingQuery(query, responseType, context);
         return streamingQueryShutdownManager != null
-               ? streamingQueryShutdownManager.track(result)
-               : result;
+                ? streamingQueryShutdownManager.track(result)
+                : result;
     }
 
     @Override
@@ -114,8 +142,8 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
                                               int updateBufferSize) {
         Publisher<R> result = delegate.subscriptionQuery(query, responseType, context, updateBufferSize);
         return subscriptionQueryShutdownManager != null
-               ? subscriptionQueryShutdownManager.track(result)
-               : result;
+                ? subscriptionQueryShutdownManager.track(result)
+                : result;
     }
 
     @Override
@@ -126,8 +154,8 @@ public class ShutdownTrackingQueryGateway implements QueryGateway {
                                               int updateBufferSize) {
         Publisher<R> result = delegate.subscriptionQuery(query, responseType, mapper, context, updateBufferSize);
         return subscriptionQueryShutdownManager != null
-               ? subscriptionQueryShutdownManager.track(result)
-               : result;
+                ? subscriptionQueryShutdownManager.track(result)
+                : result;
     }
 
     @Override
