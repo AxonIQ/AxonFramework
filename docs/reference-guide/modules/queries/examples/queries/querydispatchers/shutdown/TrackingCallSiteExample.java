@@ -22,9 +22,6 @@ import org.axonframework.messaging.queryhandling.QueryResponseMessage;
 import org.axonframework.messaging.queryhandling.QueryShutdownManager;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.reactivestreams.Publisher;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
 
 class TrackingCallSiteExample {
 
@@ -32,11 +29,9 @@ class TrackingCallSiteExample {
     private QueryBus queryBus;
 
     // tag::track-call-sites[]
-    @Autowired
     QueryShutdownManager shutdownManager;
 
     // Via QueryGateway (returns Publisher<T>):
-    @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Publisher<MyDto> stream() {
         return shutdownManager.track( // <1>
             queryGateway.subscriptionQuery(new MyQuery(), MyDto.class)
