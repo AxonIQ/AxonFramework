@@ -446,7 +446,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
     class QueryGatewayMethod {
 
         @Test
-        void queryGateway_registersNamedGatewayAsComponent() {
+        void registersNamedGatewayAsComponent() {
             // given / when
             Configuration result = testSubject.registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults)
                                               .build();
@@ -458,7 +458,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         }
 
         @Test
-        void queryGateway_withShutdownCancellation_wrapsInShutdownTrackingGateway() {
+        void cancellingOnShutdownWrapsInShutdownTrackingGateway() {
             // given / when
             Configuration result = testSubject.registerQueryGateway("reporting", g ->
                     g.cancellingSubscriptionQueryOnShutdown()
@@ -470,7 +470,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         }
 
         @Test
-        void queryGateway_namedGatewayDoesNotAppearAsUnnamedDefault() {
+        void namedGatewayDoesNotAppearAsUnnamedDefault() {
             // given / when: a named gateway is registered; no unnamed default is registered
             // because MessagingConfigurationDefaults.registerIfNotPresent skips registration
             // when any QueryGateway (including named) is already present
@@ -484,7 +484,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         }
 
         @Test
-        void queryGateway_multipleCallsRegisterMultipleDistinctComponents() {
+        void multipleCallsRegisterMultipleDistinctComponents() {
             // given / when: two separate named gateways registered
             Configuration result = testSubject
                     .registerQueryGateway("reporting", g -> {

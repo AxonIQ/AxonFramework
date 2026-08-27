@@ -38,7 +38,7 @@ class QueryGatewayConfigurerTest {
     class WhenNoShutdownCancellationIsConfigured {
 
         @Test
-        void buildDefinition_producesDefinitionWithCorrectName() {
+        void producesDefinitionWithCorrectName() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
 
@@ -51,7 +51,7 @@ class QueryGatewayConfigurerTest {
         }
 
         @Test
-        void buildDefinition_producesDefaultQueryGateway() {
+        void producesDefaultQueryGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
             ComponentDefinition<QueryGateway> definition = configurer.buildDefinition();
@@ -72,7 +72,7 @@ class QueryGatewayConfigurerTest {
     class WhenSubscriptionShutdownCancellationIsConfigured {
 
         @Test
-        void buildDefinition_producesShutdownTrackingGateway() {
+        void producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
                     .cancellingSubscriptionQueryOnShutdown();
@@ -93,7 +93,7 @@ class QueryGatewayConfigurerTest {
     class WhenStreamingShutdownCancellationIsConfigured {
 
         @Test
-        void buildDefinition_producesShutdownTrackingGateway() {
+        void producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
                     .cancellingStreamingQueryOnShutdown();
@@ -114,7 +114,7 @@ class QueryGatewayConfigurerTest {
     class WhenBothShutdownCancellationsAreConfigured {
 
         @Test
-        void buildDefinition_producesShutdownTrackingGateway() {
+        void producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
                     .cancellingSubscriptionQueryOnShutdown()
@@ -131,11 +131,12 @@ class QueryGatewayConfigurerTest {
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
         }
     }
+
     @Nested
     class WhenShutdownCancellationIsConfiguredWithAGracePeriod {
 
         @Test
-        void buildDefinition_producesShutdownTrackingGateway() {
+        void producesShutdownTrackingGateway() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
                     .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
@@ -153,7 +154,7 @@ class QueryGatewayConfigurerTest {
         }
 
         @Test
-        void cancellingSubscriptionQueryOnShutdown_rejectsNullGracePeriod() {
+        void cancellingSubscriptionQueryOnShutdownRejectsNullGracePeriod() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
 
@@ -163,7 +164,7 @@ class QueryGatewayConfigurerTest {
         }
 
         @Test
-        void cancellingStreamingQueryOnShutdown_rejectsNullGracePeriod() {
+        void cancellingStreamingQueryOnShutdownRejectsNullGracePeriod() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
 
@@ -177,7 +178,7 @@ class QueryGatewayConfigurerTest {
     class WhenAnExplicitShutdownManagerIsProvided {
 
         @Test
-        void buildDefinition_producesShutdownTrackingGatewayUsingThatManager() {
+        void producesShutdownTrackingGatewayUsingThatManager() {
             // given: a single manager shared between both query types
             QueryShutdownManager sharedManager = QueryShutdownManager.closeImmediately();
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting")
@@ -196,7 +197,7 @@ class QueryGatewayConfigurerTest {
         }
 
         @Test
-        void cancellingSubscriptionQueryOnShutdown_rejectsNullManager() {
+        void cancellingSubscriptionQueryOnShutdownRejectsNullManager() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
 
@@ -206,7 +207,7 @@ class QueryGatewayConfigurerTest {
         }
 
         @Test
-        void cancellingStreamingQueryOnShutdown_rejectsNullManager() {
+        void cancellingStreamingQueryOnShutdownRejectsNullManager() {
             // given
             QueryGatewayConfigurer configurer = new QueryGatewayConfigurer("reporting");
 
