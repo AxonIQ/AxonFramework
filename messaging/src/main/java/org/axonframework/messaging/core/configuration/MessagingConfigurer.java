@@ -700,7 +700,7 @@ public class MessagingConfigurer implements ApplicationConfigurer {
      * Example:
      * <pre>{@code
      * MessagingConfigurer.create()
-     *     .queryGateway("reporting", g -> g
+     *     .registerQueryGateway("reporting", g -> g
      *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
      *         .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5))
      *     );
@@ -710,7 +710,7 @@ public class MessagingConfigurer implements ApplicationConfigurer {
      * @param configurerTask lambda consuming the {@link QueryGatewayConfigurer}
      * @return the current instance of the {@code Configurer} for a fluent API
      */
-    public MessagingConfigurer queryGateway(String name, Consumer<QueryGatewayConfigurer> configurerTask) {
+    public MessagingConfigurer registerQueryGateway(String name, Consumer<QueryGatewayConfigurer> configurerTask) {
         Objects.requireNonNull(name, "name must not be null");
         Objects.requireNonNull(configurerTask, "configurerTask must not be null");
         QueryGatewayConfigurer configurer = new QueryGatewayConfigurer(name);

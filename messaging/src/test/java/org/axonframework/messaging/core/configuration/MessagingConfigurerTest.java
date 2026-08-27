@@ -448,7 +448,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         @Test
         void queryGateway_registersNamedGatewayAsComponent() {
             // given / when
-            Configuration result = testSubject.queryGateway("reporting", QueryGatewayConfigurer::withDefaults)
+            Configuration result = testSubject.registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults)
                                               .build();
 
             // then: named gateway is present and is a plain DefaultQueryGateway
@@ -460,7 +460,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         @Test
         void queryGateway_withShutdownCancellation_wrapsInShutdownTrackingGateway() {
             // given / when
-            Configuration result = testSubject.queryGateway("reporting", g ->
+            Configuration result = testSubject.registerQueryGateway("reporting", g ->
                     g.cancellingSubscriptionQueryOnShutdown()
             ).build();
 
@@ -474,7 +474,7 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
             // given / when: a named gateway is registered; no unnamed default is registered
             // because MessagingConfigurationDefaults.registerIfNotPresent skips registration
             // when any QueryGateway (including named) is already present
-            Configuration result = testSubject.queryGateway("reporting", g -> {
+            Configuration result = testSubject.registerQueryGateway("reporting", g -> {
             }).build();
 
             // then: named gateway is accessible by name
@@ -487,9 +487,9 @@ class MessagingConfigurerTest extends ApplicationConfigurerTestSuite<MessagingCo
         void queryGateway_multipleCallsRegisterMultipleDistinctComponents() {
             // given / when: two separate named gateways registered
             Configuration result = testSubject
-                    .queryGateway("reporting", g -> {
+                    .registerQueryGateway("reporting", g -> {
                     })
-                    .queryGateway("internal", g -> {
+                    .registerQueryGateway("internal", g -> {
                     })
                     .build();
 

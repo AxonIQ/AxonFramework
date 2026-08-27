@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  * subscription or streaming query dispatched through a {@link org.axonframework.messaging.queryhandling.gateway.QueryGateway}
  * is automatically registered with a manager, requires explicit configuration. Use
  * {@link QueryShutdownManager#track} at individual call sites, or configure a named gateway with
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway} for
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerQueryGateway} for
  * automatic per-gateway tracking.
  * <p>
  * Example:

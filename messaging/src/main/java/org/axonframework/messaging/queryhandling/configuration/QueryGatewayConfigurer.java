@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture;
  * decorators.
  * <p>
  * Each call to
- * {@link MessagingConfigurer#queryGateway(String, java.util.function.Consumer) MessagingConfigurer.queryGateway(String, Consumer)}
+ * {@link MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer) MessagingConfigurer.registerQueryGateway(String, Consumer)}
  * produces one independently configured {@code QueryGateway} instance registered under the given
  * name. The gateway starts from a bare {@link DefaultQueryGateway} that shares infrastructure
  * with the main configuration (same {@link QueryBus}, {@link MessageTypeResolver},
@@ -48,10 +48,10 @@ import java.util.concurrent.CompletableFuture;
  * {@link ShutdownTrackingQueryGateway} when shutdown cancellation is configured.
  * <p>
  * This configurer is not intended to be instantiated directly. Access it via
- * {@link MessagingConfigurer#queryGateway(String, java.util.function.Consumer)}:
+ * {@link MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer)}:
  * <pre>{@code
  * MessagingConfigurer.create()
- *     .queryGateway("reporting", g -> g
+ *     .registerQueryGateway("reporting", g -> g
  *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10))
  *         .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5))
  *     );
@@ -72,7 +72,7 @@ public class QueryGatewayConfigurer {
      * <p>
      * This constructor is intended for use by {@link MessagingConfigurer} only. Users should access
      * this configurer via
-     * {@link MessagingConfigurer#queryGateway(String, java.util.function.Consumer)}.
+     * {@link MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer)}.
      *
      * @param name the name under which the produced {@link QueryGateway} is registered
      */
@@ -89,7 +89,7 @@ public class QueryGatewayConfigurer {
      * shutdown tracking:
      * <pre>{@code
      * MessagingConfigurer.create()
-     *     .queryGateway("reporting", QueryGatewayConfigurer::withDefaults);
+     *     .registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults);
      * }</pre>
      *
      * @return this configurer, unchanged

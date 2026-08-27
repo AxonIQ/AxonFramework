@@ -59,11 +59,11 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  * <p>
  * For gateway-level tracking, use
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)},
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer)},
  * which wires the manager into Axon's lifecycle automatically:
  * <pre>{@code
  * MessagingConfigurer.create()
- *     .queryGateway("sse", g -> g
+ *     .registerQueryGateway("sse", g -> g
  *         .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(10)));
  * }</pre>
  * For standalone use with call-site tracking, create the manager directly and register it with

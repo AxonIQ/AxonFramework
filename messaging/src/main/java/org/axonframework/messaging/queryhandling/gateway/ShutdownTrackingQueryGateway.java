@@ -40,11 +40,11 @@ import java.util.function.Function;
  * subscription or streaming query is tracked automatically, with no changes needed at call sites.
  * <p>
  * The recommended way to register this decorator is through
- * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#queryGateway(String, java.util.function.Consumer)},
+ * {@link org.axonframework.messaging.core.configuration.MessagingConfigurer#registerQueryGateway(String, java.util.function.Consumer)},
  * which creates a named {@link QueryGateway} with shutdown tracking applied:
  * <pre>{@code
  * MessagingConfigurer.create()
- *     .queryGateway("reporting", g -> g
+ *     .registerQueryGateway("reporting", g -> g
  *         .cancellingSubscriptionQueryOnShutdown()
  *     );
  * }</pre>

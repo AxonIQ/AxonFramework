@@ -28,7 +28,7 @@ class GatewayTrackingExample {
     void namedGatewayWithShutdownTracking() {
         // tag::gateway-level-tracking[]
         AxonConfiguration config = MessagingConfigurer.create()
-            .queryGateway("sse", g -> g
+            .registerQueryGateway("sse", g -> g
                 .cancellingSubscriptionQueryOnShutdown() // <1>
                 .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5)) // <2>
             )
@@ -41,17 +41,17 @@ class GatewayTrackingExample {
     void plainNamedGateway() {
         // tag::plain-named-gateway[]
         MessagingConfigurer.create()
-            .queryGateway("reporting", QueryGatewayConfigurer::withDefaults);
+            .registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults);
         // end::plain-named-gateway[]
     }
 
     void multipleGateways() {
         // tag::multiple-gateways[]
         MessagingConfigurer.create()
-            .queryGateway("sse", g -> g
+            .registerQueryGateway("sse", g -> g
                 .cancellingSubscriptionQueryOnShutdown()
             )
-            .queryGateway("internal", g -> g
+            .registerQueryGateway("internal", g -> g
                 .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(30))
             );
         // end::multiple-gateways[]
@@ -62,8 +62,8 @@ class GatewayTrackingExample {
         QueryShutdownManager manager = QueryShutdownManager.withGracePeriod(Duration.ofSeconds(10));
 
         MessagingConfigurer.create()
-            .queryGateway("sse", g -> g.cancellingSubscriptionQueryOnShutdown(manager))
-            .queryGateway("internal", g -> g.cancellingSubscriptionQueryOnShutdown(manager));
+            .registerQueryGateway("sse", g -> g.cancellingSubscriptionQueryOnShutdown(manager))
+            .registerQueryGateway("internal", g -> g.cancellingSubscriptionQueryOnShutdown(manager));
         // end::shared-manager[]
     }
 }
