@@ -22,17 +22,19 @@ import org.axonframework.messaging.queryhandling.configuration.QueryGatewayConfi
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 
 import java.time.Duration;
+import java.util.function.Consumer;
 
 class GatewayTrackingExample {
 
     void namedGatewayWithShutdownTracking() {
         // tag::gateway-level-tracking[]
+        Consumer<QueryGatewayConfigurer> configurer =
+                c -> c.cancellingSubscriptionQueryOnShutdown() // <1>
+                      .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5)); // <2>
+
         AxonConfiguration config = MessagingConfigurer.create()
-            .registerQueryGateway("sse", g -> g
-                .cancellingSubscriptionQueryOnShutdown() // <1>
-                .cancellingStreamingQueryOnShutdown(Duration.ofSeconds(5)) // <2>
-            )
-            .build();
+                                                      .registerQueryGateway("sse", configurer)
+                                                      .build();
 
         QueryGateway sseGateway = config.getComponent(QueryGateway.class, "sse"); // <3>
         // end::gateway-level-tracking[]
@@ -41,19 +43,23 @@ class GatewayTrackingExample {
     void plainNamedGateway() {
         // tag::plain-named-gateway[]
         MessagingConfigurer.create()
-            .registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults);
+                           .registerQueryGateway("reporting", QueryGatewayConfigurer::withDefaults);
         // end::plain-named-gateway[]
     }
 
     void multipleGateways() {
         // tag::multiple-gateways[]
         MessagingConfigurer.create()
-            .registerQueryGateway("sse", g -> g
-                .cancellingSubscriptionQueryOnShutdown()
-            )
-            .registerQueryGateway("internal", g -> g
-                .cancellingSubscriptionQueryOnShutdown(Duration.ofSeconds(30))
-            );
+                           .registerQueryGateway(
+                                   "sse",
+                                   configurer -> configurer.cancellingSubscriptionQueryOnShutdown()
+                           )
+                           .registerQueryGateway(
+                                   "internal",
+                                   configurer -> configurer.cancellingSubscriptionQueryOnShutdown(
+                                           Duration.ofSeconds(30)
+                                   )
+                           );
         // end::multiple-gateways[]
     }
 
@@ -62,8 +68,14 @@ class GatewayTrackingExample {
         QueryShutdownManager manager = QueryShutdownManager.withGracePeriod(Duration.ofSeconds(10));
 
         MessagingConfigurer.create()
-            .registerQueryGateway("sse", g -> g.cancellingSubscriptionQueryOnShutdown(manager))
-            .registerQueryGateway("internal", g -> g.cancellingSubscriptionQueryOnShutdown(manager));
+                           .registerQueryGateway(
+                                   "sse",
+                                   configurer -> configurer.cancellingSubscriptionQueryOnShutdown(manager)
+                           )
+                           .registerQueryGateway(
+                                   "internal",
+                                   configurer -> configurer.cancellingSubscriptionQueryOnShutdown(manager)
+                           );
         // end::shared-manager[]
     }
 }
