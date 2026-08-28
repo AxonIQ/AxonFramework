@@ -35,6 +35,7 @@ import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.QueryResponseMessage;
 import org.axonframework.messaging.queryhandling.SimpleQueryBus;
 import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -305,52 +306,59 @@ class TracingQueryBusTest {
         private CompletableFuture<Void> completeResult = CompletableFuture.completedFuture(null);
         private CompletableFuture<Void> completeExceptionallyResult = CompletableFuture.completedFuture(null);
 
+        @NonNull
         @Override
-        public MessageStream<QueryResponseMessage> query(QueryMessage query, @Nullable ProcessingContext context) {
+        public MessageStream<QueryResponseMessage> query(@NonNull QueryMessage query, @Nullable ProcessingContext context) {
             return queryResult;
         }
 
+        @NonNull
         @Override
-        public MessageStream<QueryResponseMessage> subscriptionQuery(QueryMessage query,
+        public MessageStream<QueryResponseMessage> subscriptionQuery(@NonNull QueryMessage query,
                                                                      @Nullable ProcessingContext context,
                                                                      int updateBufferSize) {
             return subscriptionQueryResult;
         }
 
+        @NonNull
         @Override
-        public MessageStream<SubscriptionQueryUpdateMessage> subscribeToUpdates(QueryMessage query,
+        public MessageStream<SubscriptionQueryUpdateMessage> subscribeToUpdates(@NonNull QueryMessage query,
                                                                                 int updateBufferSize) {
             return MessageStream.empty().cast();
         }
 
+        @NonNull
         @Override
-        public CompletableFuture<Void> emitUpdate(Predicate<QueryMessage> filter,
-                                                  Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+        public CompletableFuture<Void> emitUpdate(@NonNull Predicate<QueryMessage> filter,
+                                                  @NonNull Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                                   @Nullable ProcessingContext context) {
             return emitResult;
         }
 
+        @NonNull
         @Override
-        public CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
+        public CompletableFuture<Void> completeSubscriptions(@NonNull Predicate<QueryMessage> filter,
                                                              @Nullable ProcessingContext context) {
             return completeResult;
         }
 
+        @NonNull
         @Override
-        public CompletableFuture<Void> completeSubscriptionsExceptionally(Predicate<QueryMessage> filter,
-                                                                          Throwable cause,
+        public CompletableFuture<Void> completeSubscriptionsExceptionally(@NonNull Predicate<QueryMessage> filter,
+                                                                          @NonNull Throwable cause,
                                                                           @Nullable ProcessingContext context) {
             return completeExceptionallyResult;
         }
 
+        @NonNull
         @Override
-        public QueryBus subscribe(QualifiedName queryName, QueryHandler queryHandler) {
+        public QueryBus subscribe(@NonNull QualifiedName queryName, @NonNull QueryHandler queryHandler) {
             subscribedHandler.set(queryHandler);
             return this;
         }
 
         @Override
-        public void describeTo(ComponentDescriptor descriptor) {
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
             // not relevant
         }
     }
@@ -360,32 +368,32 @@ class TracingQueryBusTest {
         private @Nullable Object wrapped;
 
         @Override
-        public void describeWrapperOf(Object delegate) {
+        public void describeWrapperOf(@NonNull Object delegate) {
             this.wrapped = delegate;
         }
 
         @Override
-        public void describeProperty(String name, @Nullable Object object) {
+        public void describeProperty(@NonNull String name, @Nullable Object object) {
         }
 
         @Override
-        public void describeProperty(String name, @Nullable Collection<?> collection) {
+        public void describeProperty(@NonNull String name, @Nullable Collection<?> collection) {
         }
 
         @Override
-        public void describeProperty(String name, @Nullable Map<?, ?> map) {
+        public void describeProperty(@NonNull String name, @Nullable Map<?, ?> map) {
         }
 
         @Override
-        public void describeProperty(String name, @Nullable String value) {
+        public void describeProperty(@NonNull String name, @Nullable String value) {
         }
 
         @Override
-        public void describeProperty(String name, @Nullable Long value) {
+        public void describeProperty(@NonNull String name, @Nullable Long value) {
         }
 
         @Override
-        public void describeProperty(String name, @Nullable Boolean value) {
+        public void describeProperty(@NonNull String name, @Nullable Boolean value) {
         }
     }
 }
