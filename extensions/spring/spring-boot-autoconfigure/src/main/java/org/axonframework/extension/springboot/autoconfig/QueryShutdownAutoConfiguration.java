@@ -56,7 +56,7 @@ import java.util.concurrent.TimeUnit;
  * }</pre>
  *
  * @author Allard Buijze
- * @since 5.3.2
+ * @since 5.4.0
  */
 @AutoConfiguration
 @AutoConfigureAfter(AxonAutoConfiguration.class)

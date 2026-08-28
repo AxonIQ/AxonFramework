@@ -58,7 +58,7 @@ import java.util.concurrent.CompletableFuture;
  * }</pre>
  *
  * @author Allard Buijze
- * @since 5.3.2
+ * @since 5.4.0
  */
 public class QueryGatewayConfigurer {
 

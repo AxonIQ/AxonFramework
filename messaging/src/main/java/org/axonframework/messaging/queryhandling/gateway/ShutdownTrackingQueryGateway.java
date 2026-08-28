@@ -57,7 +57,7 @@ import java.util.function.Function;
  * {@link org.axonframework.messaging.queryhandling.QueryShutdownManager#track(org.reactivestreams.Publisher)} instead.
  *
  * @author Allard Buijze
- * @since 5.3.2
+ * @since 5.4.0
  */
 public class ShutdownTrackingQueryGateway implements QueryGateway {
 
