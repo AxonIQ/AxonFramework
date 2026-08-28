@@ -31,6 +31,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating {@link QueryGatewayConfigurer}.
+ *
+ * @author Allard Buijze
  */
 class QueryGatewayConfigurerTest {
 
@@ -153,6 +155,7 @@ class QueryGatewayConfigurerTest {
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void cancellingSubscriptionQueryOnShutdownRejectsNullGracePeriod() {
             // given
@@ -163,6 +166,7 @@ class QueryGatewayConfigurerTest {
                     .isInstanceOf(NullPointerException.class);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void cancellingStreamingQueryOnShutdownRejectsNullGracePeriod() {
             // given
@@ -196,6 +200,7 @@ class QueryGatewayConfigurerTest {
             assertThat(gateway).isInstanceOf(ShutdownTrackingQueryGateway.class);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void cancellingSubscriptionQueryOnShutdownRejectsNullManager() {
             // given
@@ -206,6 +211,7 @@ class QueryGatewayConfigurerTest {
                     .isInstanceOf(NullPointerException.class);
         }
 
+        @SuppressWarnings("DataFlowIssue")
         @Test
         void cancellingStreamingQueryOnShutdownRejectsNullManager() {
             // given
