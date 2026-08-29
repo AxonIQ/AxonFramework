@@ -177,8 +177,10 @@ class SimpleQueryBusTest {
             Optional<MessageStream.Entry<QueryResponseMessage>> nextResponse = result.next();
             assertThat(nextResponse).isPresent();
             assertThat(nextResponse.get().message().payload()).isEqualTo("query1234");
-            assertThat(result.isCompleted()).isFalse();  // not yet fully consumed, so not completed
-            assertThat(result.hasNextAvailable()).isFalse();  // results in full consumption
+
+            // the single response was handed out, so the stream is completed
+            assertThat(result.isCompleted()).isTrue();
+            assertThat(result.hasNextAvailable()).isFalse();
             assertThat(result.isCompleted()).isTrue();
         }
 

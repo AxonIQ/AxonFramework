@@ -187,6 +187,19 @@ public class QueueMessageStream<M extends Message> extends AbstractMessageStream
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        if (!queue.isEmpty()) {
+            return FetchResult.notReady();
+        }
+
+        return switch (state.get()) {
+            case State(boolean sealed, Throwable error) when sealed && error == null -> FetchResult.completed();
+            case State(boolean sealed, Throwable error) when sealed -> FetchResult.error(error);
+            default -> FetchResult.notReady();
+        };
+    }
+
+    @Override
     protected final void onCompleted() {
         queue.clear();
         seal();

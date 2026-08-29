@@ -67,6 +67,14 @@ class OnErrorContinueMessageStream<M extends Message> extends AbstractMessageStr
         return FetchResult.completed();
     }
 
+    @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        FetchResult<Entry<M>> state = terminalStateOf(current);
+
+        // An error on the current stream is not terminal while a continuation is still to be taken.
+        return !switchedToContinuation && state instanceof FetchResult.Error ? FetchResult.notReady() : state;
+    }
+
     private boolean switchToContinuation() {
         switchedToContinuation = true;
 
