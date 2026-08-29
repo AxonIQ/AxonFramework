@@ -71,6 +71,11 @@ final class SpanScopedMessageStream<M extends Message> extends AbstractMessageSt
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        return terminalStateOf(delegate);
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
     }
