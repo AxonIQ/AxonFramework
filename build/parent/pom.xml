@@ -53,7 +53,7 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.5.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.6.Final</hibernate-core.version>
         <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.13</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
@@ -76,7 +76,7 @@
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
-        <javassist.version>3.32.0-GA</javassist.version>
+        <javassist.version>3.33.0-GA</javassist.version>
         <eaio-uuid.version>3.2</eaio-uuid.version>
         <equalsverifier.version>4.5.1</equalsverifier.version>
         <!-- Reactive -->
