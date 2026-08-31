@@ -17,6 +17,7 @@ package org.axonframework.modelling.saga.repository.jdbc;
 
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -78,8 +79,7 @@ public class PostgresSagaSqlSchema extends GenericSagaSqlSchema {
         if (!exclusiveLoad) {
             return super.sql_loadSaga(connection, sagaId);
         }
-        final String sql = "SELECT " + sagaSchema.serializedSagaColumn() + ", " + sagaSchema.sagaTypeColumn() + ", " +
-                sagaSchema.revisionColumn() +
+        final String sql = "SELECT " + sagaSchema.serializedSagaColumn() +
                 " FROM " + sagaSchema().sagaEntryTable() +
                 " WHERE " + sagaSchema.sagaIdColumn() + " = ?" +
                 " FOR UPDATE";

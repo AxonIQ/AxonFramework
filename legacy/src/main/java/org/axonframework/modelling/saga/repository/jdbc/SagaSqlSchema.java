@@ -130,12 +130,11 @@ public interface SagaSqlSchema {
      * @param sagaIdentifier The identifier of the Saga to update
      * @param serializedSaga The serialized form of the saga to update
      * @param sagaType       The serialized type of the saga
-     * @param revision       The revision identifier of the serialized form
      * @return a statement that update a Saga entry, when executed
      * @throws SQLException when an error occurs creating the PreparedStatement
      */
     PreparedStatement sql_updateSaga(Connection connection, String sagaIdentifier, byte[] serializedSaga,
-                                     String sagaType, String revision) throws SQLException;
+                                     String sagaType) throws SQLException;
 
     /**
      * Creates a PreparedStatement that inserts a Saga entry, of given {@code sagaType} and with given
@@ -145,11 +144,10 @@ public interface SagaSqlSchema {
      * @param sagaIdentifier The identifier of the Saga to insert
      * @param serializedSaga The serialized form of the saga to insert
      * @param sagaType       The serialized type of the saga
-     * @param revision       The revision identifier of the serialized form
      * @return a statement that inserts a Saga entry, when executed
      * @throws SQLException when an error occurs creating the PreparedStatement
      */
-    PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String revision, String sagaType,
+    PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String sagaType,
                                     byte[] serializedSaga) throws SQLException;
 
     /**

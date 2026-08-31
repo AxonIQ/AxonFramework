@@ -56,8 +56,7 @@ public class GenericSagaSqlSchema implements SagaSqlSchema {
 
     @Override
     public PreparedStatement sql_loadSaga(Connection connection, String sagaId) throws SQLException {
-        final String sql = "SELECT " +
-                String.join(", ", sagaSchema.serializedSagaColumn(), sagaSchema.sagaTypeColumn(), sagaSchema.revisionColumn())
+        final String sql = "SELECT " + sagaSchema.serializedSagaColumn()
                 + " FROM " + sagaSchema.sagaEntryTable() +
                 " WHERE " + sagaSchema.sagaIdColumn() + " = ?";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
@@ -153,29 +152,30 @@ public class GenericSagaSqlSchema implements SagaSqlSchema {
 
     @Override
     public PreparedStatement sql_updateSaga(Connection connection, String sagaIdentifier, byte[] serializedSaga,
-                                            String sagaType, String revision) throws SQLException {
+                                            String sagaType) throws SQLException {
+        // Deliberately does not set the revision column. It exists for compatibility with tables written by Axon
+        // Framework 4, and leaving it out of the update means an existing value survives untouched.
         final String sql = "UPDATE " + sagaSchema.sagaEntryTable()
-                + " SET " + sagaSchema.serializedSagaColumn() + " = ?, " + sagaSchema.revisionColumn() + " = ? WHERE "
+                + " SET " + sagaSchema.serializedSagaColumn() + " = ? WHERE "
                 + sagaSchema.sagaIdColumn() + " = ?";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setBytes(1, serializedSaga);
-        preparedStatement.setString(2, revision);
-        preparedStatement.setString(3, sagaIdentifier);
+        preparedStatement.setString(2, sagaIdentifier);
         return preparedStatement;
     }
 
     @Override
-    public PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String revision,
-                                           String sagaType,
+    public PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String sagaType,
                                            byte[] serializedSaga) throws SQLException {
+        // Deliberately omits the revision column, which defaults to null. It exists for compatibility with tables
+        // written by Axon Framework 4, where it held the saga class's revision, and nothing reads it back.
         final String sql = "INSERT INTO " + sagaSchema.sagaEntryTable() + "(" +
-                String.join(", ", sagaSchema.sagaIdColumn(), sagaSchema.revisionColumn(), sagaSchema.sagaTypeColumn(),
-                        sagaSchema.serializedSagaColumn()) + ") VALUES(?,?,?,?)";
+                String.join(", ", sagaSchema.sagaIdColumn(), sagaSchema.sagaTypeColumn(),
+                        sagaSchema.serializedSagaColumn()) + ") VALUES(?,?,?)";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setString(1, sagaIdentifier);
-        preparedStatement.setString(2, revision);
-        preparedStatement.setString(3, sagaType);
-        preparedStatement.setBytes(4, serializedSaga);
+        preparedStatement.setString(2, sagaType);
+        preparedStatement.setBytes(3, serializedSaga);
         return preparedStatement;
     }
 

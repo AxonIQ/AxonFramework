@@ -61,9 +61,10 @@ public class JpaSagaStore implements SagaStore<Object> {
 
     private final String DELETE_SAGA_QUERY = "DELETE FROM " + sagaEntryEntityName() + " se WHERE se.sagaId = :id";
 
+    // Deliberately does not set s.revision. The column exists for compatibility with tables written by Axon
+    // Framework 4, and leaving it out of the update means an existing value survives untouched.
     private final String UPDATE_SAGA_QUERY =
-            "UPDATE " + sagaEntryEntityName() + " s SET s.serializedSaga = :serializedSaga, s.revision = :revision " +
-                    "WHERE s.sagaId = :sagaId";
+            "UPDATE " + sagaEntryEntityName() + " s SET s.serializedSaga = :serializedSaga WHERE s.sagaId = :sagaId";
 
     // Association Queries
     private static final String DELETE_ASSOCIATION_QUERY =
@@ -259,7 +260,6 @@ public class JpaSagaStore implements SagaStore<Object> {
         }
         int updateCount = entityManager.createNamedQuery(UPDATE_SAGA_NAMED_QUERY)
                                        .setParameter("serializedSaga", entry.getSerializedSaga())
-                                       .setParameter("revision", entry.getRevision())
                                        .setParameter(SAGA_ID_PARAM, entry.getSagaId())
                                        .executeUpdate();
         for (AssociationValue associationValue : associationValues.addedAssociations()) {

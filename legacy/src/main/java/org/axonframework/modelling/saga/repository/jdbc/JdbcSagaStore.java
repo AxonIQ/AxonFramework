@@ -185,8 +185,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
             statement = sqlSchema.sql_updateSaga(conn,
                                                  entry.getSagaId(),
                                                  entry.getSerializedSaga(),
-                                                 entry.getSagaType(),
-                                                 entry.getRevision()
+                                                 entry.getSagaType()
             );
             updateCount = statement.executeUpdate();
             if (updateCount != 0) {
@@ -233,7 +232,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
         PreparedStatement statement = null;
         try {
             conn = connectionProvider.getConnection();
-            statement = sqlSchema.sql_storeSaga(conn, entry.getSagaId(), entry.getRevision(), entry.getSagaType(),
+            statement = sqlSchema.sql_storeSaga(conn, entry.getSagaId(), entry.getSagaType(),
                                                 entry.getSerializedSaga());
             statement.executeUpdate();
 

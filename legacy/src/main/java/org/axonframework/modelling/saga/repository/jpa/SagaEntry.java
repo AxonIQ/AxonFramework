@@ -37,6 +37,11 @@ public class SagaEntry<T> {
     protected String sagaId; // NOSONAR
     @Basic
     protected String sagaType;
+    /**
+     * Never populated. The column is retained so that the table generated here matches one written by Axon Framework 4,
+     * where it held the {@code @Revision} value of the saga class. Nothing reads it: a saga is always converted into the
+     * type the caller asks for, and saga stores do not run upcasters.
+     */
     @Basic
     protected String revision;
     @Lob
@@ -85,7 +90,9 @@ public class SagaEntry<T> {
     }
 
     /**
-     * Returns the revision of the serialized saga
+     * Returns the revision of the serialized saga, which is always {@code null} for an entry constructed here.
+     * <p>
+     * The column is retained only so that a table generated from this entity matches one written by Axon Framework 4.
      *
      * @return the revision of the serialized saga
      */
