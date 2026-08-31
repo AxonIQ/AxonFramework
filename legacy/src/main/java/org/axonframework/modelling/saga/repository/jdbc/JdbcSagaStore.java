@@ -49,9 +49,17 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * through the {@link JdbcSagaStore#createSchema()} operation.
  * <p>
  * This store manages no transaction of its own. It obtains a {@link Connection} from the {@link ConnectionProvider} it
- * is given, so its changes commit together with whatever else the surrounding transaction covers. In a Spring
- * application, supply {@code SpringDataSourceConnectionProvider} so that the connection is the one bound to the current
- * Spring transaction.
+ * is given, so its changes commit together with whatever else the surrounding transaction covers.
+ * <p>
+ * That places a requirement on the {@code ConnectionProvider}, because this store is constructed once while the
+ * transaction it must join belongs to whichever unit of work is currently running, and several units of work may be in
+ * flight on different threads. <b>The provider must resolve the connection bound to the calling thread's transaction on
+ * every call</b>, which is what {@code SpringDataSourceConnectionProvider} does and what
+ * {@link DataSourceConnectionProvider} does not. Supply the former in a Spring application, and supply the same instance
+ * the transaction manager was given; a store holding a different provider writes outside the transaction entirely. The
+ * same requirement applies to any Axon Framework 5 component reached through a
+ * {@code TransactionalExecutorProvider}, since the executor published on the processing context wraps that same
+ * provider.
  * <p>
  * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several statements
  * -- {@link #insertSaga(Class, String, Object, Set)} writes the saga row plus one row per association value,
