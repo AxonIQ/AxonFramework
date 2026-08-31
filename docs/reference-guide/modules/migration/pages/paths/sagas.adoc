@@ -2,237 +2,172 @@
 :navtitle: Sagas
 :reftext: Saga migration
 
-Axon Framework 5 has no `Saga` construct. There is no `@Saga` stereotype, no `SagaStore`, no `SagaRepository`, no
-association values, and no `SagaTestFixture`. The `DeadlineManager` and `@DeadlineHandler` are gone with them.
+Axon Framework 5 allows you to replace the Axon Framework 4 `Saga` concept with existing core framework building blocks.
+The familiar `@Saga` stereotype and related APIs will not be ported to the Axon Framework 5 core.
+The same applies to the `DeadlineManager` and related APIs.
+There will, however, be a legacy layer to allow migrating running sagas and deadlines.
 
-For *new* processes, the shapes a saga took are written directly, with the same building blocks as everything else.
-The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes four of them in detail.
+For *new* processes, Axon Framework 5 allows several ways to implement them with the existing framework building blocks.
+The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes them in detail.
 
-For sagas that are *already running*, rewriting is not an option, because a business process can take months to finish
-and you cannot ask it to stop halfway. That case is served by the `axon-legacy` module, described in <<legacy-module>>.
+For sagas that are *already running* (considering business processes running for months), rewriting is not an option.
+That case is served by the `axon-legacy` module, described in <<legacy-module>>.
 
 [IMPORTANT]
-.Read this before planning a migration
 ====
-Which of the two situations you are in decides the whole plan.
+For saga migration you need to consider two scenarios:
 
-*Writing new processes.* Nothing is blocking you. Pick an approach from the
+*Writing new processes:* Pick an approach from the
 xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide and write it today.
 
-*Carrying running sagas across.* The route is the `axon-legacy` module, which brings the Axon Framework 4 saga and deadline
-infrastructure onto Axon Framework 5 so that existing saga classes keep running almost unchanged. It is *under
-development* and scheduled for 5.4.0, so until it lands there is no supported way to upgrade an application with sagas in
-flight: there is no tooling to convert the contents of an Axon Framework 4 `SagaStore` into any other representation, and none
-to carry scheduled deadlines across.
-
-Either way, treat the legacy module as a way to finish the processes you already have, not as a place to stay. See
-<<legacy-module>> and <<strategy>>.
+*Migrating running sagas:* Use the Axon Framework 4 compatible APIs of the `axon-legacy` module to keep existing saga classes running until all legacy saga instances are drained naturally.
+The legacy module should be treated as a way to finish existing instances, not to keep sagas in Axon Framework 5.
 ====
 
 [#legacy-module]
 == Running existing sagas on Axon Framework 5
 
-The `axon-legacy` module exists for one reason: a saga has a notion of time. An application cannot be moved from
-Axon Framework 4 to Axon Framework 5 on a given day if processes started weeks ago are still waiting for something to happen. Asking
-for those processes to be rewritten before the upgrade is asking for the upgrade to be postponed until they finish,
-which for some processes is never.
+The `axon-legacy` module exists to allow migrating to Axon Framework 5 while saga instances started on Axon Framework 4 are still running.
+This can happen easily if you have business processes covered by sagas that span weeks or months until finished.
+To allow a gradual migration, `axon-legacy` allows you to adopt running saga instances while not starting new instances, which should in the best case be covered by an Axon Framework 5 native implementation of the business process.
 
-So the Axon Framework 4 saga infrastructure is being brought forward into a module of its own, adapted to the Axon Framework 5
-APIs it has to live with:
+Specifically, the `axon-legacy` module brings forward the following Axon Framework 4 saga and deadline infrastructure adapted to the Axon Framework 5 APIs:
 
-* `@Saga`, `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism keep
-  working as they did.
-* `SagaStore` and its implementations come along, so an existing saga store is read where it is, with its existing
-  schema and its existing contents. That, rather than any conversion tool, is how state carries across.
-* The internals move onto `ProcessingContext`, `MessageStream` and `EventHandlingComponent`, and configuration is
-  picked up for `@Saga` annotated classes.
-* `DeadlineManager` and `@DeadlineHandler` move into the same module, so deadlines scheduled by a saga still fire and
-  still reach it.
+* `@Saga`, `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism
+* `SagaStore` and its concrete implementations, to support existing saga stores
+* `DeadlineManager` and `@DeadlineHandler`
 
-The intended cost of adopting it is one dependency. The goal for your saga classes is "almost unchanged", not "ported".
+The goal of the legacy module is to support your existing saga classes as is, by adding the `axon-legacy` module as a dependency to your project.
 
 [NOTE]
 ====
-*Not available yet.* The module is being worked on;
+The `axon-legacy` module is *under development* and scheduled for 5.4.0, so until it lands there is no supported way to upgrade an application with sagas in flight.
+
 link:https://github.com/AxonFramework/AxonFramework/issues/3728[GitHub Issue #3728] tracks the saga side and
 link:https://github.com/AxonFramework/AxonFramework/issues/3065[GitHub Issue #3065] the deadline side. Until they are
 released, plan on the code-level migration below and on the drainage strategy in <<strategy>>.
 ====
 
-=== It does not start new sagas
+The `axon-legacy` module is a migration aid and not intended to be a supported way to write new processes. `@StartSaga`
+is deprecated on purpose for that, and starting new instances through the legacy module is not intended.
+Existing instances receive their events and run to completion; new work goes to the Axon Framework 5 implementation you write alongside.
 
-The module is a migration aid, not a supported way to write processes. `@StartSaga` is deprecated on arrival, and
-starting new instances through the legacy module is not the intent. Existing
-instances receive their events and run to completion; new work goes to the Axon Framework 5 implementation you write
-alongside.
+== Mapping Axon Framework 4 saga concepts to Axon Framework 5
 
-That is the same drainage strategy described in <<strategy>>, with one important difference: the drain happens inside a
-single Axon Framework 5 application rather than across two deployments on two major versions. Everything else about the
-strategy, including the requirement that the commands your process sends be idempotent, applies unchanged.
+An Axon Framework 4 saga provides opinionated technical infrastructure to implement long-running business processes:
 
-[#why]
-== Why there is no replacement construct
+* State is *state-sourced*, the saga instance is serialized into a `SagaStore` as an opaque blob
+* Correlation requires *association values*, maintained with `SagaLifecycle.associateWith(...)`.
+* Life cycle is framework-managed, through `@StartSaga` and `@EndSaga`.
 
-An Axon Framework 4 Saga made three decisions on your behalf, and they were not separable:
+While those choices suit some processes well, they limit the options to implement your long-running processes.
 
-* State was *state-sourced*. The saga instance was serialized into a `SagaStore` as an opaque blob, so the only way to
-  ask a question of it was to load and deserialize it.
-* Correlation went through *association values*, maintained with `SagaLifecycle.associateWith(...)`.
-* Life cycle was framework-managed, through `@StartSaga` and `@EndSaga`.
-
-Those defaults suit some processes well and others badly. A process that needs to be queried, reported on, or joined
-against wants columns rather than a blob. A process whose correlation is derivable needs no association values at all.
-A process that is really a handful of independent reactions has no life cycle to manage.
-
-Axon Framework 5 hands each of those decisions back to you. The replacement is a choice of approach rather
-than a class to extend. The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes the approaches
-without reference to Axon Framework 4; this page is the translation layer between them.
-
-[#what-maps-to-what]
-== What maps to what
-
-The rest of this page is about writing the process again, which is what every saga eventually needs. Each construct
-below has something that replaces it, but not one for one: several of them turn out to have nothing to replace them
-because the need they served is gone.
+Axon Framework 5 broadens that choice and gives different options to implement long-running processes depending on your needs.
+The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes these approaches in detail, the following sections provide a mapping of Axon Framework 4 saga concepts to Axon Framework 5.
 
 [cols="1,2",options="header"]
 |===
 | Axon Framework 4 | Axon Framework 5
 
 | `@Saga`
-| An ordinary component with `@EventHandler` methods. Nothing marks it as special.
+| A `@Workflow` (see <<workflows,Workflows>>), or an ordinary component with `@EventHandler` methods.
 
 | `@SagaEventHandler(associationProperty = "...")`
-| `@EventHandler`. Correlation is resolved by the entity identifier, a property, or your own `EntityIdResolver`.
+| `awaitEvent(...)` in combination with `associate(...)` for a <<workflows,Workflow>>, or a plain `@EventHandler` resolving correlation by the entity identifier, a property, or your own `EntityIdResolver`.
 
 | `@StartSaga`
-| Nothing. The first event that concerns a process either creates its state or finds none, depending on the approach.
+| `@Workflow(startOnEvent = "...")` for a <<workflows,Workflow>>, the first event that concerns a process creating its state for a plain `@EventHandler` approach.
 
 | `@EndSaga`
-| Depends on the approach: delete the row, append a completion event, or nothing at all when state is derived.
+| the end of the workflow definition for a <<workflows,Workflow>>, for a plain `@EventHandler` depending on the approach: delete the row, append a completion event, or nothing at all when state is derived.
 
 | `SagaLifecycle.associateWith(...)`
-| A tag on the event, or a derived correlation value. See the tip below.
+| `awaitEvent(...)` in combination with `associate(...)` for a <<workflows,Workflow>>, a tag on the event, or a derived correlation value. See the tip below.
 
 | `SagaLifecycle.end()`
-| Whatever the chosen approach records as "finished".
+| a `return` statement in the workflow definition for a <<workflows,Workflow>>, or whatever the chosen approach records as "finished".
 
 | `SagaStore`, `SagaRepository`
-| A repository of your own, an event-sourced entity, or nothing.
+| Your regular event store for a <<workflows,Workflow>>, a repository of your own, an event-sourced entity, or nothing.
 
 | `DeadlineManager`, `@DeadlineHandler`
-| A projection of outstanding work plus a scheduled sweep that sends a command. See
+| `sleep(...)` for a <<workflows,Workflow>>, or a projection of outstanding work plus a scheduled sweep that sends a command. See
 xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 
-| `DeadlineManager.cancelAllWithinScope(...)`
-| Nothing. Nothing is scheduled, so nothing has to be cancelled: a timeout command that arrives too late is simply
-ignored by its receiver.
-
 | `SagaTestFixture`
-| `AxonTestFixture`, publishing events in the given phase and asserting on dispatched commands.
+| The dedicated <<workflows,Workflows>> Test infrastructure, or `AxonTestFixture` publishing events in the given phase and asserting on dispatched commands for a plain `@EventHandler` approach.
 |===
-
-[TIP]
-.Association values are often unnecessary
-====
-Axon Framework 4 Sagas commonly held state purely to remember an identifier. Every
-`SagaLifecycle.associateWith(key, value)` call existed so that a later event, carrying a different identifier, could
-find the saga again.
-
-If one side's correlation value is derivable from the other's, the whole mechanism disappears: the process computes the
-value the receiver expects on the way out, and reads that same value straight off the event on the way in. No
-association, and no stored mapping in either direction. Check for this before choosing where to keep state, because it
-decides which approaches are even available to you.
-====
 
 [#workflows]
 [.axoniq-feature]
-== Workflows, the recommended replacement
+== Replacing sagas with Workflows
 
-The recommended replacement for sagas are xref:saga-guide:ROOT:workflows.adoc[Workflows]. They are the recommended way
-to orchestrate a process, and the closest thing to a like-for-like successor to a saga: the flow is written as a single
-method that reads top to bottom, and its position is persisted for you.
+The recommended replacement for sagas are xref:saga-guide:ROOT:workflows.adoc[Workflows].
+They are the recommended way to orchestrate a process.
+The flow is written as a single method that reads top to bottom, using the regular event store for an event-sourced persistence of the process.
 
 [NOTE]
 ====
-Workflows are available as a preview rather than a production release, and running them in production needs an Axoniq
-licence. Trying them out does not.
+Workflows are an Axoniq Framework feature and require an Axoniq license to run in production.
+Workflows are currently available as a preview and can be tried out without a license.
 ====
 
-A saga and a workflow describe the same thing differently. The saga is a set of `@SagaEventHandler` methods plus
-association values; the workflow is the flow those handlers imply, written out. That makes the translation more
-mechanical than it looks:
+As described above, saga concepts translate pretty well onto Workflow concepts:
 
-* The association value becomes the workflow's identifier.
+* The association value becomes the workflow's identifier and manual `associate(...)` invocations when waiting on events.
 * Each `@SagaEventHandler` becomes a step.
-* `@EndSaga` becomes the end of the method.
-* Deadlines usually disappear, because waiting is expressed directly rather than scheduled.
+* `@EndSaga` becomes the end of the workflow definition method.
+* Deadlines are expressed as explicit wait or timeout on an event in the workflow.
 
-What does not translate is state. A `SagaStore` holds a serialized saga instance, not a position within a flow, so a
-saga already under way cannot be handed to a workflow. Running instances drain as described in <<strategy>>, whichever
-replacement you pick.
+What is different from Axon Framework 4 sagas is the processes state.
+Workflows do not rely on a persistent storage of the processes state, but instead use dedicated workflow events stored in the regular event store to source the state of the process.
+That means, a running saga holding a serialized instance in a `SagaStore` cannot be handed to a workflow.
+Running Axon Framework 4 saga instances need to drain as described in <<strategy>>, whichever replacement you pick.
+
+[#deadlines]
+== Migrating deadlines for sagas
+
+Axon Framework 4 allowed you to schedule deadlines to defer reactions in time for sagas.
+Axon Framework 5 does not bring back direct support for deadlines, but provides different capabilities to achieve the same functionality.
+
+In Axon Framework 4 you would set up a deadline using the `DeadlineManager` to trigger in the future and handle the trigger when the time elapsed by implementing a `@DeadlineHandler` - most probably taking some attributable action like sending a command.
+
+In Axon Framework 5 you can achieve the same by choosing the scheduling library of your choice, setting up a scheduled task wiring in the `CommandGateway` and sending the command via the gateway when the scheduled task triggered.
+Making sure the command handler you implement acts idempotent guarantees that an action scheduled for a process that progressed otherwise meanwhile is simply ignored.
+
+For additional details on deadlines for long-running processes in Axon Framework 5 check out the xref:saga-guide:ROOT:deadlines.adoc[deadlines] page.
 
 [#choosing]
 == Choosing a replacement
 
-Not every saga should become a workflow. A process that is really a handful of independent reactions is better off
-staying that way, and the xref:saga-guide:ROOT:index.adoc#choosing[guide] compares the alternatives properly. In
-short:
+Not every saga should become a workflow.
+Simple processes that only consist of a limited set of independent reactions can be implemented by means of regular Axon Framework 5 event- and command handlers.
+The xref:saga-guide:ROOT:index.adoc#long_running_processes[guide] compares the alternatives in more details.
+In short:
 
-* xref:saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to what you have and the smallest step.
+* xref:saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to how an Axon Framework 4 saga worked.
 Start here if you are porting an existing saga.
-* xref:saga-guide:ROOT:state-from-context-events.adoc[State from context events] stores nothing, if both contexts write to
-one event store and their events carry a tag you can select on.
+* xref:saga-guide:ROOT:state-from-context-events.adoc[State from context events] avoids persistent state in a repository.
+This is only possible if all involved contexts write to one event store and their events carry a tag you can select on.
 * xref:saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
 events are not yours, and gives an audit trail of the process.
 * xref:saga-guide:ROOT:vertical-slices.adoc[Vertical slices] break the process into independent reactions, which fits
 Vertical Slice Architecture and Event Modelling.
 
-[#deadlines]
-== Deadlines, and why the timeout became a command
-
-Axon Framework 4 scheduled a callback into the saga's own future. There is no equivalent, and the replacement is
-shaped differently rather than being a like-for-like substitute. A scheduled callback was invisible from outside the
-saga, could be triggered only by waiting, and left a scope that had to be cancelled when the saga ended. None of those
-three properties survives in the replacement.
-
-Sagas scheduled deadlines for two reasons that no longer call for one at all. *Retrying a failed step* is the first:
-returning the command's `CompletableFuture` from the event handler leaves the tracking token where it is on failure, so
-the event processor retries the whole reaction for you, and no retry has to be scheduled. *Cancelling a deadline that
-is no longer relevant* is the second, and is covered below. Only a genuine timeout is left to translate.
-
-The timeout becomes a *command* asking the process to give up, sent by a scheduled sweep over a projection of
-outstanding work. The reasons for choosing a command rather than an event:
-
-* The elapsing of a timeout is not, by itself, a fact about the business. It is a *request* to abandon something, and
-  the process may decline, because the payment arrived a moment ago. A request with a receiver entitled to say no is a
-  command.
-* Publishing a `PaymentTimedOut` event would assert as settled something that has not been decided, and leaves no
-  natural place to decide it. An event also has no result, so nothing can reject it.
-* A command can be sent by anyone: an operator, a support tool, a REST endpoint or a test. This makes the timeout path
-  testable without waiting; a scheduled callback was not.
-* Nothing is scheduled, so nothing has to be cancelled. Every `cancelAllWithinScope` call in an `@EndSaga` method can
-  be deleted rather than translated. Cancellation is replaced by the receiver *ignoring* the command: a timeout for a
-  process that has already finished, or a payment that has already settled, appends nothing and reports success. That
-  is the same idempotency the rest of the process already depends on, so it costs nothing extra.
-
-Earlier Framework versions required a scheduled deadline to be cancelled, and forgetting to cancel one meant a
-callback firing into a process that was already over. A late timeout command is harmless by construction: it is a
-request, and the receiver declines it. The relevant question when migrating is not "which deadlines must I now
-cancel" but "is my handler safe to receive this late". That question can be answered by reading one method, instead
-of tracing every path that ends a process.
-
-The full pattern, including where it gets harder, is on the xref:saga-guide:ROOT:deadlines.adoc[deadlines] page.
-
 [#strategy]
 == Migrating an application with running sagas
 
-Whether or not you use the <<legacy-module,legacy module>>, migrate by *drainage* rather than conversion. The old sagas
-finish where they are, and the new implementation takes over new work. What the legacy module changes is *where* the
-old sagas finish: inside the upgraded application, rather than in an Axon Framework 4 deployment kept alive alongside it.
+Whether or not you use the <<legacy-module,legacy module>>, you need to migrate running saga instances by *drainage*, that means letting saga instances created by Axon Framework 4 finish in a regular way while starting new process instances with an Axon Framework 5 compliant implementation.
 
-. *Stop starting new sagas.* Remove the `@StartSaga` annotation from the Axon Framework 4 Saga. Existing instances keep
-receiving their events and run to completion; no new ones are created.
+Without the legacy module, draining old saga instances needs to happen in an Axon Framework 4 deployment kept alive alongside the Axon Framework 5 application that migrated the process to the selected approach.
+The legacy module allows you to drain the old saga instances alongside the upgraded application in a single Axon Framework 5 application.
+Either way (using the legacy-module for drainage or not), new sagas must not be started from the Axon Framework 4 legacy code.
+
+The main steps for migrating running sagas outline as follows:
+
+. *Stop starting new sagas.* Remove the `@StartSaga` annotation from the Axon Framework 4 saga.
+Existing instances keep receiving their events and run to completion; no new ones are created.
+
 +
 [source,java]
 ----
@@ -248,38 +183,25 @@ public class PaymentSaga {
 ----
 <1> Removing this is the whole trick. The saga can still advance and still end; it just cannot begin.
 
-. *Keep the old saga running.* With the legacy module, add the dependency and let the existing class continue against
-its existing saga store in the upgraded application. Without it, keep the Axon Framework 4 deployment alive, because there is
-nowhere else for those instances to live.
+. *Keep the old saga running.* With the legacy module, add the dependency and let the existing class continue against its existing saga store in the upgraded application.
+Without it, keep the Axon Framework 4 deployment alive to drain existing saga instances without creating new ones.
 . *Implement the process in Axon Framework 5* using one of the approaches above, and let it handle the same trigger
 event.
-. *Wait for the old instances to drain.* Query the `SagaStore` for active instances and watch the count fall to zero.
-How long that takes is the length of your longest process, so measure it rather than guessing.
-. *Retire the Axon Framework 4 Saga* once nothing is left, together with its `SagaStore` table, its deadline scheduler, and
-the legacy dependency itself.
+. *Wait for the old instances to drain.* Monitor the `SagaStore` for active instances and watch the count fall to zero.
+How long that takes depends on your longest running process.
+. *Retire the Axon Framework 4 saga* once there are no more active instances in the `SagaStore`. The legacy saga code together with the `SagaStore` table, its deadline scheduler, and the legacy dependency can be removed once all instances are drained.
 
-[NOTE]
-====
-Both implementations are live during the drain, which means the trigger event is handled twice: once by the old saga
-for instances that already exist, and once by the new one. Make sure the commands the process sends are idempotent
-before you start, which they should be regardless. See
-xref:saga-guide:ROOT:index.adoc#two-rules[the two rules] in the guide.
-
-If double-sending is unacceptable for a particular step, gate the new implementation on the absence of an Axon Framework 4
-saga for that correlation value until the drain completes.
-====
-
-Scheduled deadlines drain the same way, provided whatever schedules them keeps running until the last saga ends: the
-Axon Framework 4 `DeadlineManager`, or the legacy module's port of it. Do not decommission it early.
+Scheduled deadlines drain the same way.
+As long as there are saga instances relying on deadline instances the Axon Framework 4 `DeadlineManager`, or the legacy module's port of it need to be kept online.
 
 == Testing
 
-A saga kept running on the <<legacy-module,legacy module>> keeps its existing tests. It is the replacement process
-that needs a new one, and `AxonTestFixture` is it: publish the events leading up to the moment you care about, then
-assert on the command the process sends.
+A saga kept running on the <<legacy-module,legacy module>> keeps its existing tests.
+For the process migrated to Axon Framework 5, new tests need to be established.
+The existing `AxonTestFixture`
+can be used to achieve that: publishes events that drive the process and asserting on the commands the process is expected to send.
 
-The mapping below covers the common cases. Two `SagaTestFixture` assertions have no counterpart, both because they
-inspected framework-managed bookkeeping that no longer exists.
+The mapping below covers the common cases:
 
 [cols="1,2",options="header"]
 |===
@@ -304,14 +226,8 @@ inspected framework-managed bookkeeping that no longer exists.
 | No equivalent. Structure the timeout so it can be invoked directly; see xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 |===
 
-The absence of `expectActiveSagas` is the one difference people most often miss. It counted live instances in
-the saga store, and no approach here has a saga store to count. Assert on what the process *did* instead: the
-commands it sent are the behaviour, and the count of live instances was not.
 
 == A working example
 
 `examples/saga-recipes` in the
-link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank] implements
-the bike-rental payment saga from an Axon Framework 4 sample application in every approach described here. One shared
-contract test runs the same scenarios against all of them, and its scenarios mirror the `PaymentSagaTest`
-method for method, which makes it a practical reference when porting your own tests.
+link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank] implements the bike-rental payment saga from an Axon Framework 4 sample application in every approach described here.
