@@ -16,32 +16,69 @@
 
 package org.axonframework.modelling.saga.repository;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.modelling.saga.SagaLifecycle;
-
-import static org.axonframework.modelling.saga.SagaLifecycle.associateWith;
-import static org.axonframework.modelling.saga.SagaLifecycle.removeAssociationWith;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
-* @author Allard Buijze
-*/
-@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+ * Saga used to verify that a {@link SagaStore} round-trips saga state.
+ * <p>
+ * It carries mutable state so that a load can assert more than "something came back": {@link #handled(String)} records
+ * an entry, and {@link #equals(Object)} compares the recorded list, so a stored and reloaded instance is only equal to
+ * the original if its state survived conversion.
+ *
+ * @author Allard Buijze
+ */
 public class StubSaga {
 
-    public void registerAssociationValue(AssociationValue associationValue) {
-        associateWith(associationValue);
+    private List<String> handledEvents = new ArrayList<>();
+
+    /**
+     * Records that the given {@code event} was handled, mutating this saga's state.
+     *
+     * @param event the event to record
+     */
+    public void handled(String event) {
+        handledEvents.add(event);
     }
 
-    public void removeAssociationValue(String key, String value) {
-        removeAssociationWith(key, value);
+    /**
+     * Returns the events recorded through {@link #handled(String)}, in order.
+     *
+     * @return the recorded events
+     */
+    public List<String> getHandledEvents() {
+        return handledEvents;
     }
 
-    public void end() {
-        SagaLifecycle.end();
+    /**
+     * Sets the recorded events. Present so that this saga is a plain bean, and therefore converts with any Jackson
+     * generation without needing annotations.
+     *
+     * @param handledEvents the recorded events
+     */
+    public void setHandledEvents(List<String> handledEvents) {
+        this.handledEvents = handledEvents;
     }
 
-    public void associate(String key, String value) {
-        associateWith(key, value);
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (other == null || getClass() != other.getClass()) {
+            return false;
+        }
+        return Objects.equals(handledEvents, ((StubSaga) other).handledEvents);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(handledEvents);
+    }
+
+    @Override
+    public String toString() {
+        return "StubSaga{handledEvents=" + handledEvents + "}";
     }
 }

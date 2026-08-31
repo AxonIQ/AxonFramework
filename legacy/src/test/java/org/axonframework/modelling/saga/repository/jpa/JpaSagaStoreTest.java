@@ -20,182 +20,113 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.Persistence;
-import org.axonframework.common.Assert;
-import org.axonframework.common.IdentifierFactory;
-import org.axonframework.common.TypeReference;
-import org.axonframework.common.jpa.EntityManagerProvider;
+import jakarta.persistence.TransactionRequiredException;
 import org.axonframework.common.jpa.SimpleEntityManagerProvider;
-import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
+import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.modelling.saga.Saga;
-import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
+import org.axonframework.modelling.saga.AssociationValuesImpl;
+import org.axonframework.modelling.saga.repository.SagaStore;
+import org.axonframework.modelling.saga.repository.SagaStoreTestSuite;
 import org.axonframework.modelling.saga.repository.StubSaga;
-import org.axonframework.conversion.json.JacksonSerializer;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.*;
+import static java.util.Collections.singleton;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the {@link JpaSagaStore}.
+ * <p>
+ * Writes run inside an {@link EntityTransaction} because JPA requires one; reads run outside, which is what makes the
+ * assertions reflect the database rather than the persistence context.
  *
  * @author Allard Buijze
  */
-@Disabled("TODO #3097")
-class JpaSagaStoreTest {
-    private static final TypeReference<Set<String>> SET_OF_STRINGS = new TypeReference<>() {};
+class JpaSagaStoreTest extends SagaStoreTestSuite {
 
-    private AnnotatedSagaRepository<StubSaga> repository;
+    private static final AssociationValue ORDER_1 = new AssociationValue("orderId", "order-1");
 
-    private final EntityManagerFactory entityManagerFactory =
-            Persistence.createEntityManagerFactory("jpaSagaStorePersistenceUnit");
-    private final EntityManager entityManager = entityManagerFactory.createEntityManager();
-    private final EntityManagerProvider entityManagerProvider = new SimpleEntityManagerProvider(entityManager);
-    private LegacyDefaultUnitOfWork<Message> unitOfWork;
+    private EntityManagerFactory entityManagerFactory;
+    private EntityManager entityManager;
+    private JpaSagaStore testSubject;
 
     @BeforeEach
     void setUp() {
-        JpaSagaStore sagaStore = JpaSagaStore.builder()
-                                             .entityManagerProvider(entityManagerProvider)
-                                             .serializer(JacksonSerializer.defaultSerializer())
-                                             .build();
-        repository = AnnotatedSagaRepository.<StubSaga>builder().sagaType(StubSaga.class).sagaStore(sagaStore).build();
-
-        entityManager.clear();
-        EntityTransaction transaction = entityManager.getTransaction();
-        transaction.begin();
-
-        entityManager.createQuery("DELETE FROM SagaEntry").executeUpdate();
-        entityManager.createQuery("DELETE FROM AssociationValueEntry").executeUpdate();
-
-        // the serialized form of the Saga exceeds the default length of a blob.
-        // So we must alter the table to prevent data truncation
-        entityManager.createNativeQuery("ALTER TABLE SagaEntry ALTER COLUMN serializedSaga VARBINARY(1024)")
-                     .executeUpdate();
-        transaction.commit();
-
-        startUnitOfWork();
-    }
-
-    protected void startUnitOfWork() {
-        Assert.isTrue(unitOfWork == null || !unitOfWork.isActive(),
-                () -> "Cannot start unit of work. There is one still active.");
-        unitOfWork = LegacyDefaultUnitOfWork.startAndGet(null);
-        EntityTransaction transaction = entityManager.getTransaction();
-        transaction.begin();
-        unitOfWork.onRollback(u -> transaction.rollback());
-        unitOfWork.onCommit(u -> transaction.commit());
+        entityManagerFactory = Persistence.createEntityManagerFactory("jpaSagaStorePersistenceUnit");
+        entityManager = entityManagerFactory.createEntityManager();
+        testSubject = JpaSagaStore.builder()
+                                  .entityManagerProvider(new SimpleEntityManagerProvider(entityManager))
+                                  .converter(new JacksonConverter())
+                                  .build();
     }
 
     @AfterEach
     void tearDown() {
-        while (CurrentUnitOfWork.isStarted()) {
-            CurrentUnitOfWork.get().rollback();
+        entityManager.close();
+        entityManagerFactory.close();
+    }
+
+    @Override
+    protected SagaStore<Object> testSubject() {
+        return testSubject;
+    }
+
+    @Override
+    protected void inTransaction(Runnable operation) {
+        EntityTransaction transaction = entityManager.getTransaction();
+        transaction.begin();
+        try {
+            operation.run();
+        } catch (RuntimeException e) {
+            transaction.rollback();
+            throw e;
         }
+        transaction.commit();
+        // The store's bulk JPQL updates bypass the persistence context, so drop it rather than let a stale managed
+        // entity answer a later read.
+        entityManager.clear();
+    }
+
+    /**
+     * Pins behaviour that differs per implementation, and is therefore not part of {@link SagaStoreTestSuite}. This
+     * store updates no saga row but applies the association changes regardless, leaving an association pointing at a
+     * saga that does not exist; {@code InMemorySagaStore} creates the saga and {@code JdbcSagaStore} changes nothing.
+     */
+    @Test
+    void updatingAnAbsentSagaStoresItsAddedAssociationsAnyway() {
+        // given no saga stored, and an association pending addition
+        AssociationValuesImpl associations = new AssociationValuesImpl();
+        associations.add(ORDER_1);
+
+        // when
+        inTransaction(() -> testSubject.updateSaga(StubSaga.class, "saga-1", new StubSaga(), associations));
+
+        // then no saga came into being, yet the association was written, leaving it pointing at nothing
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).containsExactly("saga-1");
     }
 
     @Test
-    void addingAnInactiveSagaDoesntStoreIt() {
-        unitOfWork.executeWithResult((ctx) -> {
-            Saga<StubSaga> saga = repository.createInstance(IdentifierFactory.getInstance().generateIdentifier(),
-                    StubSaga::new);
-            saga.execute(testSaga -> {
-                testSaga.registerAssociationValue(new AssociationValue("key", "value"));
-                testSaga.end();
-            });
-            return null;
-        });
-
-        entityManager.clear();
-
-        long result = entityManager.createQuery("select count(*) from SagaEntry", Long.class).getSingleResult();
-        assertEquals(0L, result);
-    }
-
-
-    @Test
-    void addAndLoadSaga_ByIdentifier() {
-        String identifier = unitOfWork.executeWithResult((ctx) -> repository.createInstance(
-                        IdentifierFactory.getInstance().generateIdentifier(), StubSaga::new).getSagaIdentifier())
-                .payloadAs(String.class);
-        entityManager.clear();
-        startUnitOfWork();
-        unitOfWork.execute((ctx) -> {
-            Saga<StubSaga> loaded = repository.load(identifier);
-            assertEquals(identifier, loaded.getSagaIdentifier());
-            assertNotNull(entityManager.find(SagaEntry.class, identifier));
-        });
+    void writingWithoutATransactionFailsRatherThanWritingPartialState() {
+        // given no active transaction / when / then
+        assertThatThrownBy(() -> testSubject.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1)))
+                .isInstanceOf(TransactionRequiredException.class);
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
     }
 
     @Test
-    void addAndLoadSaga_ByAssociationValue() {
-        String identifier = unitOfWork.executeWithResult((ctx) -> {
-            Saga<StubSaga> saga = repository.createInstance(IdentifierFactory.getInstance().generateIdentifier(),
-                    StubSaga::new);
-            saga.execute(s -> s.associate("key", "value"));
-            return saga.getSagaIdentifier();
-        }).payloadAs(String.class);
-        entityManager.clear();
-        startUnitOfWork();
-        unitOfWork.execute((ctx) -> {
-            Set<String> loaded = repository.find(new AssociationValue("key", "value"));
-            assertEquals(1, loaded.size());
-            Saga<StubSaga> loadedSaga = repository.load(loaded.iterator().next());
-            assertEquals(identifier, loadedSaga.getSagaIdentifier());
-            assertNotNull(entityManager.find(SagaEntry.class, identifier));
-        });
-    }
-
-    @Test
-    void loadSaga_NotFound() {
-        unitOfWork.execute((ctx) -> assertNull(repository.load("123456")));
-    }
-
-
-    @Test
-    void loadSaga_AssociationValueRemoved() {
-        String identifier = unitOfWork.executeWithResult((ctx) -> {
-            Saga<StubSaga> saga = repository.createInstance(IdentifierFactory.getInstance().generateIdentifier(),
-                    StubSaga::new);
-            saga.execute(s -> s.associate("key", "value"));
-            return saga.getSagaIdentifier();
-        }).payloadAs(String.class);
-        entityManager.clear();
-        startUnitOfWork();
-        unitOfWork.execute((ctx) -> {
-            Saga<StubSaga> loaded = repository.load(identifier);
-            loaded.execute(s -> s.removeAssociationValue("key", "value"));
-        });
-        entityManager.clear();
-        startUnitOfWork();
-        Set<String> found = unitOfWork.executeWithResult((ctx) -> repository.find(new AssociationValue("key", "value")))
-                .payloadAs(SET_OF_STRINGS);
-        assertEquals(0, found.size());
-    }
-
-    @Test
-    void endSaga() {
-        String identifier = unitOfWork.executeWithResult((ctx) -> {
-            Saga<StubSaga> saga = repository.createInstance(IdentifierFactory.getInstance().generateIdentifier(),
-                    StubSaga::new);
-            saga.execute(s -> s.associate("key", "value"));
-            return saga.getSagaIdentifier();
-        }).payloadAs(String.class);
-        entityManager.clear();
-        assertFalse(entityManager.createQuery("SELECT ae FROM AssociationValueEntry ae WHERE ae.sagaId = :id")
-                .setParameter("id", identifier).getResultList().isEmpty());
-        startUnitOfWork();
-        unitOfWork.execute((ctx) -> {
-            Saga<StubSaga> loaded = repository.load(identifier);
-            loaded.execute(StubSaga::end);
-        });
+    void rollingBackTheTransactionDiscardsTheInsertedSaga() {
+        // given a saga inserted inside a transaction that is then rolled back
+        EntityTransaction transaction = entityManager.getTransaction();
+        transaction.begin();
+        testSubject.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
+        transaction.rollback();
         entityManager.clear();
 
-        assertNull(entityManager.find(SagaEntry.class, identifier));
-        assertTrue(entityManager.createQuery("SELECT ae FROM AssociationValueEntry ae WHERE ae.sagaId = :id")
-                .setParameter("id", identifier).getResultList().isEmpty());
+        // when / then nothing was persisted, so the store did join the transaction
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).isEmpty();
     }
 }
