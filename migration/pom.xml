@@ -41,7 +41,11 @@
              without skipping the rest of the build. If `skipTests` is unset the
              expression stays unresolved and parses as `false`, so tests run. -->
         <skipAf4RecipeTests>${skipTests}</skipAf4RecipeTests>
-        <rewrite-recipe-bom.version>3.38.0</rewrite-recipe-bom.version>
+        <!-- Upgrading org.openrewrite.recipe:rewrite-recipe-bom from 3.37.0 to 3.38.0 crosses the OpenRewrite
+             Code Genome Project migration. The BOM itself remains available from Maven Central, but its newer managed
+             OpenRewrite artifacts require resolution from the Code Genome Project.
+             We need to adjust our maven configuration, see https://github.com/AxonIQ/AxonFramework/issues/4990 -->
+        <rewrite-recipe-bom.version>3.37.0</rewrite-recipe-bom.version>
         <!-- Axon Framework 4.x version used to resolve types in recipe tests
              (the rename recipes match AF4 fully-qualified names, so the test
              parser needs the AF4 classpath to produce a typed LST). -->
