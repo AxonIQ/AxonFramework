@@ -19,14 +19,12 @@ package org.axonframework.modelling.saga.repository.jdbc;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.DataSourceConnectionProvider;
-import org.axonframework.common.jdbc.UnitOfWorkAwareConnectionProviderWrapper;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.SagaStorageException;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.jpa.SagaEntry;
-import org.axonframework.conversion.SerializedObject;
-import org.axonframework.conversion.Serializer;
+import org.axonframework.conversion.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +35,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.function.Supplier;
 import javax.sql.DataSource;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
@@ -61,12 +58,12 @@ public class JdbcSagaStore implements SagaStore<Object> {
 
     private final ConnectionProvider connectionProvider;
     private final SagaSqlSchema sqlSchema;
-    private Serializer serializer;
+    private final Converter converter;
 
     /**
      * Instantiate a {@link JdbcSagaStore} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@link ConnectionProvider}, {@link SagaSqlSchema} and {@link Serializer} are not
+     * Will assert that the {@link ConnectionProvider}, {@link SagaSqlSchema} and {@link Converter} are not
      * {@code null}, and will throw an {@link AxonConfigurationException} if any of them is {@code null}.
      *
      * @param builder the {@link Builder} used to instantiate a {@link JdbcSagaStore} instance
@@ -75,7 +72,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
         builder.validate();
         this.connectionProvider = builder.connectionProvider;
         this.sqlSchema = builder.sqlSchema;
-        this.serializer = builder.serializer.get();
+        this.converter = builder.converter;
     }
 
     /**
@@ -83,12 +80,11 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * <p>
      * The {@link SagaSqlSchema} is defaulted to an {@link GenericSagaSqlSchema}.
      * <p>
-     * The {@link ConnectionProvider} and {@link Serializer} are <b>hard requirements</b> and as such should be
+     * The {@link ConnectionProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
      * <p>
      * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a {@link DataSourceConnectionProvider} wrapped by a {@link
-     * UnitOfWorkAwareConnectionProviderWrapper}.
+     * ConnectionProvider will be a {@link DataSourceConnectionProvider}.
      *
      * @return a Builder to be able to create a {@link JdbcSagaStore}
      */
@@ -106,14 +102,14 @@ public class JdbcSagaStore implements SagaStore<Object> {
             statement = sqlSchema.sql_loadSaga(conn, sagaIdentifier);
             resultSet = statement.executeQuery();
 
-            SerializedObject<?> serializedSaga = null;
+            byte[] serializedSaga = null;
             if (resultSet.next()) {
                 serializedSaga = sqlSchema.readSerializedSaga(resultSet);
             }
             if (serializedSaga == null) {
                 return null;
             }
-            S loadedSaga = serializer.deserialize(serializedSaga);
+            S loadedSaga = converter.convert(serializedSaga, sagaType);
             if (logger.isDebugEnabled()) {
                 logger.debug("Loaded saga id [{}] of type [{}]", sagaIdentifier, loadedSaga.getClass().getName());
             }
@@ -175,7 +171,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
 
     @Override
     public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
-        SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, serializer);
+        SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Updating saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
                                                                                  Charset.forName("UTF-8")));
@@ -228,7 +224,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
                            Set<AssociationValue> associationValues) {
-        SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, serializer);
+        SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Storing saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
                                                                                 Charset.forName("UTF-8")));
@@ -273,16 +269,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
 
 
     private String sagaTypeName(Class<?> sagaType) {
-        return serializer.typeForClass(sagaType).getName();
-    }
-
-    /**
-     * Sets the Serializer instance to serialize Sagas with. Defaults to the XStream Serializer.
-     *
-     * @param serializer the Serializer instance to serialize Sagas with
-     */
-    public void setSerializer(Serializer serializer) {
-        this.serializer = serializer;
+        return sagaType.getName();
     }
 
     /**
@@ -305,18 +292,17 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * <p>
      * The {@link SagaSqlSchema} is defaulted to an {@link GenericSagaSqlSchema}.
      * <p>
-     * The {@link ConnectionProvider} and {@link Serializer} are <b>hard requirements</b> and as such should be
+     * The {@link ConnectionProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
      * <p>
      * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a {@link DataSourceConnectionProvider} wrapped by a {@link
-     * UnitOfWorkAwareConnectionProviderWrapper}.
+     * ConnectionProvider will be a {@link DataSourceConnectionProvider}.
      */
     public static class Builder {
 
         private ConnectionProvider connectionProvider;
         private SagaSqlSchema sqlSchema = new GenericSagaSqlSchema();
-        private Supplier<Serializer> serializer;
+        private Converter converter;
 
         /**
          * Sets the {@link ConnectionProvider} which provides access to a JDBC connection.
@@ -331,20 +317,17 @@ public class JdbcSagaStore implements SagaStore<Object> {
         }
 
         /**
-         * Sets the {@link ConnectionProvider} by providing a {@link DataSource}. The given {@code dataSource} in turn
-         * will added to a {@link DataSourceConnectionProvider}, which is wrapped by a
-         * {@link UnitOfWorkAwareConnectionProviderWrapper}. This will provide access to a JDBC connection for this
+         * Sets the {@link ConnectionProvider} by providing a {@link DataSource}. The given {@code dataSource} is wrapped
+         * in a {@link DataSourceConnectionProvider}, which provides access to a JDBC connection for this
          * {@link SagaStore} implementation.
          *
-         * @param dataSource a {@link DataSource} which ends up in a {@link DataSourceConnectionProvider}, wrapped by a
-         *                   {@link UnitOfWorkAwareConnectionProviderWrapper} as the {@link ConnectionProvider} for this
-         *                   {@link SagaStore} implementation
+         * @param dataSource a {@link DataSource} which ends up in a {@link DataSourceConnectionProvider} as the
+         *                   {@link ConnectionProvider} for this {@link SagaStore} implementation
          * @return the current Builder instance, for fluent interfacing
          */
         public Builder dataSource(DataSource dataSource) {
             assertNonNull(dataSource, "DataSource used to instantiate a ConnectionProvider may not be null");
-            DataSourceConnectionProvider dataSourceConnectionProvider = new DataSourceConnectionProvider(dataSource);
-            this.connectionProvider = new UnitOfWorkAwareConnectionProviderWrapper(dataSourceConnectionProvider);
+            this.connectionProvider = new DataSourceConnectionProvider(dataSource);
             return this;
         }
 
@@ -363,14 +346,14 @@ public class JdbcSagaStore implements SagaStore<Object> {
         }
 
         /**
-         * Sets the {@link Serializer} used to de-/serialize a Saga instance.
+         * Sets the {@link Converter} used to convert a Saga instance to and from its serialized form.
          *
-         * @param serializer a {@link Serializer} used to de-/serialize a Saga instance
+         * @param converter a {@link Converter} used to convert a Saga instance to and from its serialized form
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder serializer(Serializer serializer) {
-            assertNonNull(serializer, "Serializer may not be null");
-            this.serializer = () -> serializer;
+        public Builder converter(Converter converter) {
+            assertNonNull(converter, "Converter may not be null");
+            this.converter = converter;
             return this;
         }
 
@@ -391,7 +374,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
          */
         protected void validate() throws AxonConfigurationException {
             assertNonNull(connectionProvider, "The ConnectionProvider is a hard requirement and should be provided");
-            assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
+            assertNonNull(converter, "The Converter is a hard requirement and should be provided");
         }
     }
 

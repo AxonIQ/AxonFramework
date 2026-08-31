@@ -24,8 +24,7 @@ import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.repository.SagaStore;
-import org.axonframework.conversion.Serializer;
-import org.axonframework.conversion.SimpleSerializedObject;
+import org.axonframework.conversion.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +33,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
@@ -56,11 +54,9 @@ public class JpaSagaStore implements SagaStore<Object> {
     private static final String SAGA_ID_PARAM = "sagaId";
     private static final String SAGA_TYPE_PARAM = "sagaType";
 
-    // Saga Queries, non-final to inject the return type and table name.
+    // Saga Queries, non-final to inject the table name.
     private final String LOAD_SAGA_QUERY =
-            "SELECT new " + serializedObjectType().getName() + "(" +
-                    "se.serializedSaga, se.sagaType, se.revision) " + "FROM " + sagaEntryEntityName() + " se " +
-                    "WHERE se.sagaId = :sagaId";
+            "SELECT se.serializedSaga FROM " + sagaEntryEntityName() + " se WHERE se.sagaId = :sagaId";
 
 
     private final String DELETE_SAGA_QUERY = "DELETE FROM " + sagaEntryEntityName() + " se WHERE se.sagaId = :id";
@@ -94,14 +90,14 @@ public class JpaSagaStore implements SagaStore<Object> {
     private static final String UPDATE_SAGA_NAMED_QUERY = "UPDATE_SAGA_NAMED_QUERY";
 
     private final EntityManagerProvider entityManagerProvider;
-    private final Serializer serializer;
+    private final Converter converter;
 
     private volatile boolean useExplicitFlush = true;
 
     /**
      * Instantiate a {@link JpaSagaStore} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@link EntityManagerProvider} and {@link Serializer} are not {@code null}, and will throw an
+     * Will assert that the {@link EntityManagerProvider} and {@link Converter} are not {@code null}, and will throw an
      * {@link AxonConfigurationException} if any of them is {@code null}.
      *
      * @param builder the {@link Builder} used to instantiate a {@link JpaSagaStore} instance
@@ -109,14 +105,14 @@ public class JpaSagaStore implements SagaStore<Object> {
     protected JpaSagaStore(Builder builder) {
         builder.validate();
         this.entityManagerProvider = builder.entityManagerProvider;
-        this.serializer = builder.serializer.get();
+        this.converter = builder.converter;
         addNamedQueriesTo(this.entityManagerProvider.getEntityManager());
     }
 
     /**
      * Instantiate a Builder to be able to create a {@link JpaSagaStore}.
      * <p>
-     * The {@link EntityManagerProvider} and {@link Serializer} are <b>hard requirements</b> and as such should be
+     * The {@link EntityManagerProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
      *
      * @return a Builder to be able to create a {@link JpaSagaStore}
@@ -147,22 +143,18 @@ public class JpaSagaStore implements SagaStore<Object> {
     public <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
 
-        final Class<? extends SimpleSerializedObject<?>> serializedObjectType = serializedObjectType();
-
-        List<? extends SimpleSerializedObject<?>> serializedSagaList =
-                entityManager.createNamedQuery(LOAD_SAGA_NAMED_QUERY, serializedObjectType)
-                             .setParameter(SAGA_ID_PARAM, sagaIdentifier)
-                             .setMaxResults(1)
-                             .getResultList();
+        List<byte[]> serializedSagaList = entityManager.createNamedQuery(LOAD_SAGA_NAMED_QUERY, byte[].class)
+                                                       .setParameter(SAGA_ID_PARAM, sagaIdentifier)
+                                                       .setMaxResults(1)
+                                                       .getResultList();
         if (serializedSagaList == null || serializedSagaList.isEmpty()) {
             return null;
         }
 
-        final SimpleSerializedObject<?> serializedSaga = serializedSagaList.get(0);
-        S loadedSaga = serializer.deserialize(serializedSaga);
+        S loadedSaga = converter.convert(serializedSagaList.get(0), sagaType);
         Set<AssociationValue> associationValues = loadAssociationValues(entityManager, sagaType, sagaIdentifier);
         if (logger.isDebugEnabled()) {
-            logger.debug("Loaded saga id [{}] of type [{}]", sagaIdentifier, serializedSaga.getType().getName());
+            logger.debug("Loaded saga id [{}] of type [{}]", sagaIdentifier, getSagaTypeName(sagaType));
         }
         return new EntryImpl<>(associationValues, loadedSaga);
     }
@@ -224,7 +216,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     private String getSagaTypeName(Class<?> sagaType) {
-        return serializer.typeForClass(sagaType).getName();
+        return sagaType.getName();
     }
 
     @Override
@@ -260,7 +252,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     @Override
     public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
-        SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, serializer);
+        SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
 
         if (logger.isDebugEnabled()) {
             logger.debug("Updating saga id {} as {}", sagaIdentifier, serializedSagaAsString(entry));
@@ -296,7 +288,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
                            Set<AssociationValue> associationValues) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
-        SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, serializer);
+        SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
         entityManager.persist(entry);
         for (AssociationValue associationValue : associationValues) {
             storeAssociationValue(entityManager, sagaType, sagaIdentifier, associationValue);
@@ -324,11 +316,12 @@ public class JpaSagaStore implements SagaStore<Object> {
      *
      * @param sagaIdentifier The identifier of the Saga
      * @param saga           The Saga instance
-     * @param serializer     The serializer to serialize to the {@link SagaEntry#getSerializedSaga()}
+     * @param converter      the converter used to convert the saga to the form stored in
+     *                       {@link SagaEntry#getSerializedSaga()}
      * @return An instanceof @{@link SagaEntry}
      */
-    protected SagaEntry<?> createSagaEntry(Object saga, String sagaIdentifier, Serializer serializer) {
-        return new SagaEntry<>(saga, sagaIdentifier, serializer);
+    protected SagaEntry<?> createSagaEntry(Object saga, String sagaIdentifier, Converter converter) {
+        return new SagaEntry<>(saga, sagaIdentifier, converter);
     }
 
     /**
@@ -341,24 +334,15 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     /**
-     * Intended for clients to override. Defaults to {@link SerializedSaga#getClass() SerialzedSaga.class}
-     *
-     * @return the serialized object type of the Saga this {@link SagaStore} stores
-     */
-    protected Class<? extends SimpleSerializedObject<?>> serializedObjectType() {
-        return SerializedSaga.class;
-    }
-
-    /**
      * Builder class to instantiate a {@link JpaSagaStore}.
      * <p>
-     * The {@link EntityManagerProvider} and {@link Serializer} are <b>hard requirements</b> and as such should be
+     * The {@link EntityManagerProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
      */
     public static class Builder {
 
         private EntityManagerProvider entityManagerProvider;
-        private Supplier<Serializer> serializer;
+        private Converter converter;
 
         /**
          * Sets the {@link EntityManagerProvider} which provides the {@link EntityManager} used to access the underlying
@@ -375,14 +359,14 @@ public class JpaSagaStore implements SagaStore<Object> {
         }
 
         /**
-         * Sets the {@link Serializer} used to de-/serialize a Saga instance.
+         * Sets the {@link Converter} used to convert a Saga instance to and from its serialized form.
          *
-         * @param serializer a {@link Serializer} used to de-/serialize a Saga instance
+         * @param converter a {@link Converter} used to convert a Saga instance to and from its serialized form
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder serializer(Serializer serializer) {
-            assertNonNull(serializer, "Serializer may not be null");
-            this.serializer = () -> serializer;
+        public Builder converter(Converter converter) {
+            assertNonNull(converter, "Converter may not be null");
+            this.converter = converter;
             return this;
         }
 
@@ -404,7 +388,7 @@ public class JpaSagaStore implements SagaStore<Object> {
         protected void validate() throws AxonConfigurationException {
             assertNonNull(entityManagerProvider,
                           "The EntityManagerProvider is a hard requirement and should be provided");
-            assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
+            assertNonNull(converter, "The Converter is a hard requirement and should be provided");
         }
     }
 

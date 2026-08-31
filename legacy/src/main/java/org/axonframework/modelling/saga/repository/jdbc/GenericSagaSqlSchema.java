@@ -16,8 +16,6 @@
 package org.axonframework.modelling.saga.repository.jdbc;
 
 import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.conversion.SerializedObject;
-import org.axonframework.conversion.SimpleSerializedObject;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -206,10 +204,8 @@ public class GenericSagaSqlSchema implements SagaSqlSchema {
     }
 
     @Override
-    public SerializedObject<byte[]> readSerializedSaga(ResultSet resultSet) throws SQLException {
-        return new SimpleSerializedObject<>(resultSet.getBytes(1), byte[].class,
-                resultSet.getString(2),
-                resultSet.getString(3));
+    public byte[] readSerializedSaga(ResultSet resultSet) throws SQLException {
+        return resultSet.getBytes(1);
     }
 
     /**

@@ -21,8 +21,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
-import org.axonframework.conversion.SerializedObject;
-import org.axonframework.conversion.Serializer;
+import org.axonframework.conversion.Converter;
 
 /**
  * Java Persistence Entity allowing sagas to be stored in a relational database.
@@ -45,25 +44,23 @@ public class SagaEntry<T> {
     protected byte[] serializedSaga;
 
     /**
-     * Constructs a new SagaEntry for the given {@code saga}. The given saga must be serializable. The provided saga is
-     * not modified by this operation.
+     * Constructs a new SagaEntry for the given {@code saga}. The given saga must be convertible to a byte array. The
+     * provided saga is not modified by this operation.
      *
      * @param saga           The saga to store
      * @param sagaIdentifier The saga identifier
-     * @param serializer     The conversion mechanism to convert the Saga to a byte stream
+     * @param converter      The conversion mechanism to convert the Saga to a byte stream
      */
-    public SagaEntry(T saga, String sagaIdentifier, Serializer serializer) {
+    public SagaEntry(T saga, String sagaIdentifier, Converter converter) {
         this.sagaId = sagaIdentifier;
-        SerializedObject<byte[]> serialized = serializer.serialize(saga, byte[].class);
-        this.serializedSaga = serialized.getData();
-        this.sagaType = serialized.getType().getName();
-        this.revision = serialized.getType().getRevision();
+        this.serializedSaga = converter.convert(saga, byte[].class);
+        this.sagaType = saga.getClass().getName();
     }
 
     /**
      * Constructor required by JPA. Do not use.
      *
-     * @see #SagaEntry(Object, String, Serializer)
+     * @see #SagaEntry(Object, String, Converter)
      */
     protected SagaEntry() {
         // required by JPA

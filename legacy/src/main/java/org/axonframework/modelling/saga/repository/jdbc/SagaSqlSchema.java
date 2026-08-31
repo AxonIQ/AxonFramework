@@ -16,7 +16,6 @@
 package org.axonframework.modelling.saga.repository.jdbc;
 
 import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.conversion.SerializedObject;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -172,16 +171,16 @@ public interface SagaSqlSchema {
     PreparedStatement sql_createTableSagaEntry(Connection connection) throws SQLException;
 
     /**
-     * Reads a SerializedObject from the given {@code resultSet}, which has been returned by executing the
+     * Reads the serialized form of a saga from the given {@code resultSet}, which has been returned by executing the
      * Statement returned from {@link #sql_loadSaga(java.sql.Connection, String)}
      * <p/>
      * Note: The implementation must not change the resultSet's cursor position
      *
      * @param resultSet The result set to read data from.
-     * @return a SerializedObject, containing the serialized data from the resultSet
+     * @return the serialized data from the resultSet
      * @throws SQLException when an exception occurs reading from the resultSet
      */
-    SerializedObject<?> readSerializedSaga(ResultSet resultSet) throws SQLException;
+    byte[] readSerializedSaga(ResultSet resultSet) throws SQLException;
 
     /**
      * Reads a Set of AssociationValues from the given {@code resultSet}, which has been returned by executing the

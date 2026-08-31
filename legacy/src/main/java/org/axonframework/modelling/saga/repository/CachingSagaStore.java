@@ -20,7 +20,6 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.caching.Cache;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
-import org.axonframework.modelling.saga.SagaRepository;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -66,7 +65,7 @@ public class CachingSagaStore<T> implements SagaStore<T> {
      * The {@code delegateSagaStore} of type {@link SagaStore}, the {@code associationsCache} and {@code sagaCache}
      * (both of type {@link Cache}) are <b>hard requirements</b> and as such should be provided.
      *
-     * @param <T> a generic specifying the Saga type contained in this {@link SagaRepository } implementation
+     * @param <T> a generic specifying the Saga type contained in this {@link SagaStore} implementation
      * @return a Builder to be able to create a {@link CachingSagaStore}
      */
     public static <T> Builder<T> builder() {
@@ -169,7 +168,7 @@ public class CachingSagaStore<T> implements SagaStore<T> {
      * The {@code delegateSagaStore} of type {@link SagaStore}, the {@code associationsCache} and {@code sagaCache}
      * (both of type {@link Cache}) are <b>hard requirements</b> and as such should be provided.
      *
-     * @param <T> a generic specifying the Saga type contained in this {@link SagaRepository} implementation
+     * @param <T> a generic specifying the Saga type contained in this {@link SagaStore} implementation
      */
     public static class Builder<T> {
 
