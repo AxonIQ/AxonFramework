@@ -47,6 +47,19 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * constructed with {@link SagaSqlSchema#sql_createTableAssocValueEntry(Connection)} and {@link
  * SagaSqlSchema#sql_createTableSagaEntry(Connection)} respectively. For convenience, these tables can be constructed
  * through the {@link JdbcSagaStore#createSchema()} operation.
+ * <p>
+ * This store manages no transaction of its own. It obtains a {@link Connection} from the {@link ConnectionProvider} it
+ * is given, so its changes commit together with whatever else the surrounding transaction covers. In a Spring
+ * application, supply {@code SpringDataSourceConnectionProvider} so that the connection is the one bound to the current
+ * Spring transaction.
+ * <p>
+ * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several statements
+ * -- {@link #insertSaga(Class, String, Object, Set)} writes the saga row plus one row per association value,
+ * {@link #updateSaga(Class, String, Object, AssociationValues)} writes the state update plus one insert per added and
+ * one delete per removed association, {@link #deleteSaga(Class, String, Set)} deletes the associations and the saga row
+ * separately, and {@link #loadSaga(Class, String)} reads the saga row and its associations in two queries. Without an
+ * ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
+ * associations inconsistent rather than failing cleanly.
  *
  * @author Allard Buijze
  * @author Kristian Rosenvold
@@ -84,7 +97,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * provided.
      * <p>
      * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a {@link DataSourceConnectionProvider}.
+     * ConnectionProvider will be a plain {@link DataSourceConnectionProvider}, whose connections are not bound to any
+     * ambient transaction.
      *
      * @return a Builder to be able to create a {@link JdbcSagaStore}
      */
@@ -295,7 +309,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * provided.
      * <p>
      * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a {@link DataSourceConnectionProvider}.
+     * ConnectionProvider will be a plain {@link DataSourceConnectionProvider}, whose connections are not bound to any
+     * ambient transaction.
      */
     public static class Builder {
 
@@ -319,6 +334,11 @@ public class JdbcSagaStore implements SagaStore<Object> {
          * Sets the {@link ConnectionProvider} by providing a {@link DataSource}. The given {@code dataSource} is wrapped
          * in a {@link DataSourceConnectionProvider}, which provides access to a JDBC connection for this
          * {@link SagaStore} implementation.
+         * <p>
+         * Connections obtained this way are taken straight from the {@code DataSource} and are therefore <b>not</b>
+         * bound to any ambient transaction. In a Spring application, pass a
+         * {@code SpringDataSourceConnectionProvider} to {@link #connectionProvider(ConnectionProvider)} instead, so that
+         * saga changes commit together with the surrounding Spring transaction.
          *
          * @param dataSource a {@link DataSource} which ends up in a {@link DataSourceConnectionProvider} as the
          *                   {@link ConnectionProvider} for this {@link SagaStore} implementation

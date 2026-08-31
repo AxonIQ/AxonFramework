@@ -43,6 +43,11 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * <p/>
  * After each operation that modified the backing store, {@link EntityManager#flush()} is invoked to ensure the store
  * contains the last modifications. To override this behavior, see {@link #setUseExplicitFlush(boolean)}
+ * <p>
+ * This store manages no transaction of its own. It obtains an {@link EntityManager} from the
+ * {@link EntityManagerProvider} it is given, so its changes commit together with whatever else the surrounding
+ * transaction covers. Since its operations issue several statements each, saga handling should run inside a transaction;
+ * JPA enforces this itself, and without an active transaction these methods fail rather than write partial state.
  *
  * @author Allard Buijze
  * @since 3.0
