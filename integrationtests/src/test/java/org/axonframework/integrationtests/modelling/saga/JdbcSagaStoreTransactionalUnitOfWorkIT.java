@@ -62,8 +62,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>
  * The wiring is the production one. The unit of work starts, commits and rolls back a Spring transaction, and the store
  * is handed the same {@link ConnectionProvider} the transaction manager holds, which is the entirety of the connection
- * between them. No {@code ProcessingContext} is passed to the store and no {@code TransactionalExecutorProvider} is
- * involved.
+ * between them. The processing context passed to the store does not replace that provider, and no
+ * {@code TransactionalExecutorProvider} is involved.
  * <p>
  * Every assertion reads through a connection taken outside the transaction, so what is observed is committed database
  * state.
